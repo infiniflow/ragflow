@@ -1,7 +1,7 @@
-import { PromptEditor } from '@/components/prompt-editor';
 import { Form } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { IOperatorForm } from '../../interface';
+import { PromptEditor } from '../components/prompt-editor';
 
 const TemplateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslation();

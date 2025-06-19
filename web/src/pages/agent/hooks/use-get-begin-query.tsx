@@ -1,8 +1,13 @@
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { Edge } from '@xyflow/react';
 import { DefaultOptionType } from 'antd/es/select';
+import { isEmpty } from 'lodash';
 import get from 'lodash/get';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { BeginId, Operator } from '../constant';
+import { AgentFormContext } from '../context';
+import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 
@@ -10,7 +15,9 @@ export const useGetBeginNodeDataQuery = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
   const getBeginNodeDataQuery = useCallback(() => {
-    return get(getNode(BeginId), 'data.form.query', []);
+    return buildBeginInputListFromObject(
+      get(getNode(BeginId), 'data.form.inputs', {}),
+    );
   }, [getNode]);
 
   return getBeginNodeDataQuery;
@@ -31,6 +38,64 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
   return isBeginNodeDataQuerySafe;
 };
 
+function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
+  return nodeIds.reduce<string[]>((pre, nodeId) => {
+    const currentEdges = edges.filter((x) => x.target === nodeId);
+
+    const upstreamNodeIds: string[] = currentEdges.map((x) => x.source);
+
+    const ids = upstreamNodeIds.concat(
+      filterAllUpstreamNodeIds(edges, upstreamNodeIds),
+    );
+
+    ids.forEach((x) => {
+      if (pre.every((y) => y !== x)) {
+        pre.push(x);
+      }
+    });
+
+    return pre;
+  }, []);
+}
+
+function buildOutputOptions(
+  outputs: Record<string, any> = {},
+  nodeId?: string,
+) {
+  return Object.keys(outputs).map((x) => ({
+    label: x,
+    value: `${nodeId}@${x}`,
+  }));
+}
+
+export function useBuildNodeOutputOptions(nodeId?: string) {
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
+
+  const nodeOutputOptions = useMemo(() => {
+    if (!nodeId) {
+      return [];
+    }
+    const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
+
+    const nodeWithOutputList = nodes.filter(
+      (x) =>
+        upstreamIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
+    );
+
+    return nodeWithOutputList
+      .filter((x) => x.id !== nodeId)
+      .map((x) => ({
+        label: x.data.name,
+        value: x.id,
+        title: x.data.name,
+        options: buildOutputOptions(x.data.form.outputs, x.id),
+      }));
+  }, [edges, nodeId, nodes]);
+
+  return nodeOutputOptions;
+}
+
 // exclude nodes with branches
 const ExcludedNodes = [
   Operator.Categorize,
@@ -39,13 +104,58 @@ const ExcludedNodes = [
   Operator.Note,
 ];
 
-export const useBuildComponentIdSelectOptions = (
-  nodeId?: string,
-  parentId?: string,
-) => {
-  const nodes = useGraphStore((state) => state.nodes);
+export function useBuildBeginVariableOptions() {
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
-  const query: BeginQuery[] = getBeginNodeDataQuery();
+
+  const options = useMemo(() => {
+    const query: BeginQuery[] = getBeginNodeDataQuery();
+    return [
+      {
+        label: <span>Begin Input</span>,
+        title: 'Begin Input',
+        options: query.map((x) => ({
+          label: x.name,
+          value: `begin@${x.key}`,
+        })),
+      },
+    ];
+  }, [getBeginNodeDataQuery]);
+
+  return options;
+}
+
+export const useBuildVariableOptions = (nodeId?: string) => {
+  const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
+  const beginOptions = useBuildBeginVariableOptions();
+
+  const options = useMemo(() => {
+    return [...beginOptions, ...nodeOutputOptions];
+  }, [beginOptions, nodeOutputOptions]);
+
+  return options;
+};
+
+export function useBuildQueryVariableOptions() {
+  const { data } = useFetchAgent();
+  const node = useContext(AgentFormContext);
+  const options = useBuildVariableOptions(node?.id);
+
+  const nextOptions = useMemo(() => {
+    const globalOptions = Object.keys(data?.dsl?.globals ?? {}).map((x) => ({
+      label: x,
+      value: x,
+    }));
+    return [
+      { ...options[0], options: [...options[0]?.options, ...globalOptions] },
+      ...options.slice(1),
+    ];
+  }, [data.dsl.globals, options]);
+
+  return nextOptions;
+}
+
+export function useBuildComponentIdOptions(nodeId?: string, parentId?: string) {
+  const nodes = useGraphStore((state) => state.nodes);
 
   // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
   const filterChildNodesToSameParentOrExternal = useCallback(
@@ -74,34 +184,33 @@ export const useBuildComponentIdSelectOptions = (
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
 
-  const groupedOptions = [
+  return [
     {
       label: <span>Component Output</span>,
       title: 'Component Output',
       options: componentIdOptions,
     },
-    {
-      label: <span>Begin Input</span>,
-      title: 'Begin Input',
-      options: query.map((x) => ({
-        label: x.name,
-        value: `begin@${x.key}`,
-      })),
-    },
   ];
+}
 
-  return groupedOptions;
-};
+export function useBuildComponentIdAndBeginOptions(
+  nodeId?: string,
+  parentId?: string,
+) {
+  const componentIdOptions = useBuildComponentIdOptions(nodeId, parentId);
+  const beginOptions = useBuildBeginVariableOptions();
+
+  return [...beginOptions, ...componentIdOptions];
+}
 
 export const useGetComponentLabelByValue = (nodeId: string) => {
-  const options = useBuildComponentIdSelectOptions(nodeId);
-  const flattenOptions = useMemo(
-    () =>
-      options.reduce<DefaultOptionType[]>((pre, cur) => {
-        return [...pre, ...cur.options];
-      }, []),
-    [options],
-  );
+  const options = useBuildComponentIdAndBeginOptions(nodeId);
+
+  const flattenOptions = useMemo(() => {
+    return options.reduce<DefaultOptionType[]>((pre, cur) => {
+      return [...pre, ...cur.options];
+    }, []);
+  }, [options]);
 
   const getLabel = useCallback(
     (val?: string) => {

@@ -1,6 +1,7 @@
 # Ragflow - Jurix
 
 ## Instalación y Ejecución
+
 1. Construir la imagen Docker:
 
    ```bash
@@ -14,7 +15,6 @@
    ```
 
 3. Iniciar todos los servicios:
-
    CPU
 
    ```bash

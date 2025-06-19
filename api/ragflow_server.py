@@ -18,8 +18,9 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
-from api.utils.log_utils import initRootLogger
-initRootLogger("ragflow_server")
+from api.utils.log_utils import init_root_logger
+from plugin import GlobalPluginManager
+init_root_logger("ragflow_server")
 
 import logging
 import os
@@ -27,7 +28,6 @@ import signal
 import sys
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import uuid
 
@@ -119,11 +119,21 @@ if __name__ == '__main__':
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
 
+    GlobalPluginManager.load_plugins()
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    thread = ThreadPoolExecutor(max_workers=1)
-    thread.submit(update_progress)
+    def delayed_start_update_progress():
+        logging.info("Starting update_progress thread (delayed)")
+        t = threading.Thread(target=update_progress, daemon=True)
+        t.start()
+
+    if RuntimeConfig.DEBUG:
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            threading.Timer(1.0, delayed_start_update_progress).start()
+    else:
+        threading.Timer(1.0, delayed_start_update_progress).start()
 
     # start http server
     try:

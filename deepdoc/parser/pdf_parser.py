@@ -61,7 +61,7 @@ class RAGFlowPdfParser:
 
         self.ocr = OCR()
         self.parallel_limiter = None
-        if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 1:
+        if PARALLEL_DEVICES > 1:
             self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(PARALLEL_DEVICES)]
 
         if hasattr(self, "model_speciess"):
@@ -180,13 +180,13 @@ class RAGFlowPdfParser:
         return fea
 
     @staticmethod
-    def sort_X_by_page(arr, threashold):
+    def sort_X_by_page(arr, threshold):
         # sort using y1 first and then x1
         arr = sorted(arr, key=lambda r: (r["page_number"], r["x0"], r["top"]))
         for i in range(len(arr) - 1):
             for j in range(i, -1, -1):
                 # restore the order using th
-                if abs(arr[j + 1]["x0"] - arr[j]["x0"]) < threashold \
+                if abs(arr[j + 1]["x0"] - arr[j]["x0"]) < threshold \
                         and arr[j + 1]["top"] < arr[j]["top"] \
                         and arr[j + 1]["page_number"] == arr[j]["page_number"]:
                     tmp = arr[j]
@@ -264,13 +264,13 @@ class RAGFlowPdfParser:
         for b in self.boxes:
             if b.get("layout_type", "") != "table":
                 continue
-            ii = Recognizer.find_overlapped_with_threashold(b, rows, thr=0.3)
+            ii = Recognizer.find_overlapped_with_threshold(b, rows, thr=0.3)
             if ii is not None:
                 b["R"] = ii
                 b["R_top"] = rows[ii]["top"]
                 b["R_bott"] = rows[ii]["bottom"]
 
-            ii = Recognizer.find_overlapped_with_threashold(
+            ii = Recognizer.find_overlapped_with_threshold(
                 b, headers, thr=0.3)
             if ii is not None:
                 b["H_top"] = headers[ii]["top"]
@@ -285,7 +285,7 @@ class RAGFlowPdfParser:
                 b["C_left"] = clmns[ii]["x0"]
                 b["C_right"] = clmns[ii]["x1"]
 
-            ii = Recognizer.find_overlapped_with_threashold(b, spans, thr=0.3)
+            ii = Recognizer.find_overlapped_with_threshold(b, spans, thr=0.3)
             if ii is not None:
                 b["H_top"] = spans[ii]["top"]
                 b["H_bott"] = spans[ii]["bottom"]
@@ -307,13 +307,13 @@ class RAGFlowPdfParser:
             [{"x0": b[0][0] / ZM, "x1": b[1][0] / ZM,
               "top": b[0][1] / ZM, "text": "", "txt": t,
               "bottom": b[-1][1] / ZM,
+              "chars": [],
               "page_number": pagenum} for b, t in bxs if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
-            self.mean_height[-1] / 3
+            self.mean_height[pagenum-1] / 3
         )
 
         # merge chars in the same rect
-        for c in Recognizer.sort_Y_firstly(
-                chars, self.mean_height[pagenum - 1] // 4):
+        for c in chars:
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
                 self.lefted_chars.append(c)
@@ -323,11 +323,20 @@ class RAGFlowPdfParser:
             if abs(ch - bh) / max(ch, bh) >= 0.7 and c["text"] != ' ':
                 self.lefted_chars.append(c)
                 continue
-            if c["text"] == " " and bxs[ii]["text"]:
-                if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", bxs[ii]["text"][-1]):
-                    bxs[ii]["text"] += " "
-            else:
-                bxs[ii]["text"] += c["text"]
+            bxs[ii]["chars"].append(c)
+
+        for b in bxs:
+            if not b["chars"]:
+                del b["chars"]
+                continue
+            m_ht = np.mean([c["height"] for c in b["chars"]])
+            for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
+                if c["text"] == " " and b["text"]:
+                    if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
+                        b["text"] += " "
+                else:
+                    b["text"] += c["text"]
+            del b["chars"]
 
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
@@ -346,8 +355,8 @@ class RAGFlowPdfParser:
             del boxes_to_reg[i]["box_image"]
         logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
-        if self.mean_height[-1] == 0:
-            self.mean_height[-1] = np.median([b["bottom"] - b["top"]
+        if self.mean_height[pagenum-1] == 0:
+            self.mean_height[pagenum-1] = np.median([b["bottom"] - b["top"]
                                               for b in bxs])
         self.boxes.append(bxs)
 
@@ -1006,7 +1015,7 @@ class RAGFlowPdfParser:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 with (pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))) as pdf:
                     self.pdf = pdf
-                    self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                    self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).annotated for i, p in
                                         enumerate(self.pdf.pages[page_from:page_to])]
 
                     try:

@@ -35,6 +35,6 @@ def crypt(line):
 
 
 if __name__ == "__main__":
-    pswd = crypt(sys.argv[1])
-    print(pswd)
-    print(decrypt(pswd))
+    passwd = crypt(sys.argv[1])
+    print(passwd)
+    print(decrypt(passwd))

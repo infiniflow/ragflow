@@ -1,5 +1,4 @@
 import { ReactComponent as SelectedFilesCollapseIcon } from '@/assets/svg/selected-files-collapse.svg';
-import Image from '@/components/image';
 import { useTranslate } from '@/hooks/common-hooks';
 import { ITestingChunk } from '@/interfaces/database/knowledge';
 import {
@@ -7,20 +6,24 @@ import {
   Collapse,
   Empty,
   Flex,
+  Image,
   Pagination,
   PaginationProps,
-  Popover,
   Space,
 } from 'antd';
 import camelCase from 'lodash/camelCase';
 import SelectFiles from './select-files';
 
 import {
+  useAllTestingResult,
+  useAllTestingSuccess,
   useSelectIsTestingSuccess,
   useSelectTestingResult,
 } from '@/hooks/knowledge-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
-import { useCallback, useState } from 'react';
+import { api_host } from '@/utils/api';
+import { showImage } from '@/utils/chat';
+import { useCallback } from 'react';
 import styles from './index.less';
 
 const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
@@ -47,14 +50,21 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
 
 interface IProps {
   handleTesting: (documentIds?: string[]) => Promise<any>;
+  selectedDocumentIds: string[];
+  setSelectedDocumentIds: (ids: string[]) => void;
 }
 
-const TestingResult = ({ handleTesting }: IProps) => {
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+const TestingResult = ({
+  handleTesting,
+  selectedDocumentIds,
+  setSelectedDocumentIds,
+}: IProps) => {
   const { documents, chunks, total } = useSelectTestingResult();
+  const { documents: documentsAll, total: totalAll } = useAllTestingResult();
   const { t } = useTranslate('knowledgeDetails');
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const isSuccess = useSelectIsTestingSuccess();
+  const isAllSuccess = useAllTestingSuccess();
 
   const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
     pagination.onChange?.(pageNumber, pageSize);
@@ -87,7 +97,8 @@ const TestingResult = ({ handleTesting }: IProps) => {
               >
                 <Space>
                   <span>
-                    {selectedDocumentIds?.length ?? 0}/{documents?.length ?? 0}
+                    {selectedDocumentIds?.length ?? 0}/
+                    {documentsAll?.length ?? 0}
                   </span>
                   {t('filesSelected')}
                 </Space>
@@ -113,22 +124,16 @@ const TestingResult = ({ handleTesting }: IProps) => {
         {isSuccess && chunks.length > 0 ? (
           chunks?.map((x) => (
             <Card key={x.chunk_id} title={<ChunkTitle item={x}></ChunkTitle>}>
-              <Flex gap={'middle'}>
-                {x.img_id && (
-                  <Popover
-                    placement="left"
-                    content={
-                      <Image
-                        id={x.img_id}
-                        className={styles.imagePreview}
-                      ></Image>
-                    }
-                  >
-                    <Image id={x.img_id} className={styles.image}></Image>
-                  </Popover>
+              <div className="flex justify-center">
+                {showImage(x.doc_type_kwd) && (
+                  <Image
+                    id={x.image_id}
+                    className={'object-contain max-h-[30vh] w-full text-center'}
+                    src={`${api_host}/document/image/${x.image_id}`}
+                  ></Image>
                 )}
-                <div>{x.content_with_weight}</div>
-              </Flex>
+              </div>
+              <div className="pt-4">{x.content_with_weight}</div>
             </Card>
           ))
         ) : isSuccess && chunks.length === 0 ? (

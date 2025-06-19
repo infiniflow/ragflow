@@ -1,13 +1,12 @@
-import { useTranslate } from '@/hooks/common-hooks';
-import { Flex } from 'antd';
-import { Play } from 'lucide-react';
-import { Operator, operatorMap } from '../../constant';
+import { cn } from '@/lib/utils';
+import { memo } from 'react';
+import { Operator } from '../../constant';
 import OperatorIcon from '../../operator-icon';
-import { needsSingleStepDebugging } from '../../utils';
-import NodeDropdown from './dropdown';
-import { NextNodePopover } from './popover';
+import { useTranslate } from '@/hooks/use-translate';
+import { RunTooltip } from '@/components/run-tooltip';
+import { NextNodePopover } from '@/components/next-node-popover';
+import { Play } from 'lucide-react';
 
-import { RunTooltip } from '../../flow-tooltip';
 interface IProps {
   id: string;
   label: string;
@@ -37,37 +36,24 @@ export function RunStatus({ id, name, label }: IProps) {
   );
 }
 
-const NodeHeader = ({
+const InnerNodeHeader = ({
   label,
-  id,
   name,
-  gap = 4,
   className,
   wrapperClassName,
 }: IProps) => {
   return (
-    <section className={wrapperClassName}>
-      {!ExcludedRunStateOperators.includes(label as Operator) && (
-        <RunStatus id={id} name={name} label={label}></RunStatus>
-      )}
-      <Flex
-        flex={1}
-        align="center"
-        justify={'space-between'}
-        gap={gap}
-        className={className}
-      >
-        <OperatorIcon
-          name={label as Operator}
-          color={operatorMap[label as Operator]?.color}
-        ></OperatorIcon>
+    <section className={cn(wrapperClassName, 'pb-4')}>
+      <div className={cn(className, 'flex gap-2.5')}>
+        <OperatorIcon name={label as Operator}></OperatorIcon>
         <span className="truncate text-center font-semibold text-sm">
           {name}
         </span>
-        <NodeDropdown id={id} label={label}></NodeDropdown>
-      </Flex>
+      </div>
     </section>
   );
 };
+
+const NodeHeader = memo(InnerNodeHeader);
 
 export default NodeHeader;

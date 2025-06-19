@@ -76,6 +76,24 @@
     --sidebar-ring: 217.2 91.2% 59.8%;
 
     --background-inverse-strong: rgba(255, 255, 255, 0.15);
+
+    --background-badge: rgba(22, 22, 24, 0.5);
+    --text-badge: rgba(151, 154, 171, 1);
+
+    --text-title: rgba(22, 22, 24, 1);
+    --text-sub-title: rgba(151, 154, 171, 1);
+    --text-sub-title-invert: rgba(91, 93, 106, 1);
+
+    --background-header-bar: rgba(11, 11, 12, 1);
+    --text-title-invert: rgba(255, 255, 255, 1);
+    --background-card: rgba(22, 22, 24, 0.05);
+
+    --background-checked: rgba(76, 164, 231, 1);
+    --background-highlight: rgba(76, 164, 231, 0.1);
+
+    --input-border: rgba(22, 22, 24, 0.2);
+    --dot-green: rgba(59, 160, 92, 1);
+    --dot-red: rgba(216, 73, 75, 1);
   }
 
   .dark {
@@ -125,6 +143,9 @@
     --background-core-weak: rgb(170, 0, 40);
     --background-core-weak-foreground: rgba(255, 255, 255, 1);
 
+    --background-badge: rgba(22, 22, 24, 0.5);
+    --text-badge: rgba(151, 154, 171, 1);
+
     --colors-background-core-standard: rgba(213, 0, 50, 1);
     --colors-background-core-strong: rgba(213, 0, 50, 0.9);
     --colors-background-core-weak: rgba(170, 0, 40, 1);
@@ -169,6 +190,23 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --text-title: rgba(255, 255, 255, 1);
+    --text-sub-title: rgba(91, 93, 106, 1);
+    --text-sub-title-invert: rgba(151, 154, 171, 1);
+    --background-header-bar: rgba(11, 11, 12, 1);
+
+    --text-title-invert: rgba(22, 22, 24, 1);
+
+    --background-card: rgba(255, 255, 255, 0.05);
+    --background-checked: rgba(76, 164, 231, 1);
+
+    --background-highlight: rgba(76, 164, 231, 0.1);
+
+    --input-border: rgba(255, 255, 255, 0.2);
+
+    --dot-green: rgba(59, 160, 92, 1);
+    --dot-red: rgba(216, 73, 75, 1);
   }
 }
 
@@ -177,7 +215,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-colors-background-neutral-standard text-foreground;
+    @apply bg-text-title-invert text-foreground;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;

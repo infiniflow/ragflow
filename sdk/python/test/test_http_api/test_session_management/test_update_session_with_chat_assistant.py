@@ -21,6 +21,7 @@ from common import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT, delete_chat_
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -43,12 +44,12 @@ class TestSessionWithChatAssistantUpdate:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"name": "valid_name"}, 0, ""),
+            pytest.param({"name": "valid_name"}, 0, "", marks=pytest.mark.p1),
             pytest.param({"name": "a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            ({"name": ""}, 102, "`name` can not be empty."),
-            ({"name": "duplicated_name"}, 0, ""),
-            ({"name": "case insensitive"}, 0, ""),
+            pytest.param({"name": ""}, 102, "`name` can not be empty.", marks=pytest.mark.p3),
+            pytest.param({"name": "duplicated_name"}, 0, "", marks=pytest.mark.p3),
+            pytest.param({"name": "case insensitive"}, 0, "", marks=pytest.mark.p3),
         ],
     )
     def test_name(self, get_http_api_auth, add_sessions_with_chat_assistant_func, payload, expected_code, expected_message):
@@ -66,6 +67,7 @@ class TestSessionWithChatAssistantUpdate:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
@@ -79,6 +81,7 @@ class TestSessionWithChatAssistantUpdate:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "session_id, expected_code, expected_message",
         [
@@ -92,6 +95,7 @@ class TestSessionWithChatAssistantUpdate:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_repeated_update_session(self, get_http_api_auth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         res = update_session_with_chat_assistant(get_http_api_auth, chat_assistant_id, session_ids[0], {"name": "valid_name_1"})
@@ -100,6 +104,7 @@ class TestSessionWithChatAssistantUpdate:
         res = update_session_with_chat_assistant(get_http_api_auth, chat_assistant_id, session_ids[0], {"name": "valid_name_2"})
         assert res["code"] == 0
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -115,7 +120,7 @@ class TestSessionWithChatAssistantUpdate:
         if expected_code != 0:
             assert expected_message in res["message"]
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_update_session(self, get_http_api_auth, add_sessions_with_chat_assistant_func):
         chunk_num = 50
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
@@ -134,6 +139,7 @@ class TestSessionWithChatAssistantUpdate:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
+    @pytest.mark.p3
     def test_update_session_to_deleted_chat_assistant(self, get_http_api_auth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         delete_chat_assistants(get_http_api_auth, {"ids": [chat_assistant_id]})

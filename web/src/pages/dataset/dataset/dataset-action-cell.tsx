@@ -11,7 +11,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { downloadDocument } from '@/utils/file-util';
-import { ArrowDownToLine, Pencil, ScrollText, Trash2 } from 'lucide-react';
+import { ArrowDownToLine, FolderPen, ScrollText, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { isParserRunning } from './utils';
@@ -50,10 +50,18 @@ export function DatasetActionCell({
   }, [record, showRenameModal]);
 
   return (
-    <section className="flex gap-4 items-center">
+    <section className="flex gap-4 items-center text-text-sub-title-invert">
+      <Button
+        variant={'ghost'}
+        size={'sm'}
+        disabled={isRunning}
+        onClick={handleRename}
+      >
+        <FolderPen />
+      </Button>
       <HoverCard>
         <HoverCardTrigger>
-          <Button variant="ghost" size={'icon'} disabled={isRunning}>
+          <Button variant="ghost" disabled={isRunning} size={'sm'}>
             <ScrollText />
           </Button>
         </HoverCardTrigger>
@@ -77,27 +85,20 @@ export function DatasetActionCell({
           </ul>
         </HoverCardContent>
       </HoverCard>
-      <Button
-        variant={'ghost'}
-        size={'icon'}
-        disabled={isRunning}
-        onClick={handleRename}
-      >
-        <Pencil />
-      </Button>
+
       {isVirtualDocument || (
         <Button
           variant={'ghost'}
-          size={'icon'}
           onClick={onDownloadDocument}
           disabled={isRunning}
+          size={'sm'}
         >
           <ArrowDownToLine />
         </Button>
       )}
       <ConfirmDeleteDialog onOk={handleRemove}>
-        <Button variant={'ghost'} size={'icon'} disabled={isRunning}>
-          <Trash2 className="text-text-delete-red" />
+        <Button variant={'ghost'} size={'sm'} disabled={isRunning}>
+          <Trash2 />
         </Button>
       </ConfirmDeleteDialog>
     </section>
