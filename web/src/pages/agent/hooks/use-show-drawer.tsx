@@ -14,6 +14,7 @@ export const useShowFormDrawer = () => {
     clickedNodeId: clickNodeId,
     setClickedNodeId,
     getNode,
+    setClickedToolId,
   } = useGraphStore((state) => state);
   const {
     visible: formDrawerVisible,
@@ -21,12 +22,13 @@ export const useShowFormDrawer = () => {
     showModal: showFormDrawer,
   } = useSetModalState();
 
-  const handleShow = useCallback(
-    (node: Node) => {
+  const handleShow: NodeMouseHandler = useCallback(
+    (e, node: Node) => {
       setClickedNodeId(node.id);
+      setClickedToolId(get(e.target, 'dataset.tool'));
       showFormDrawer();
     },
-    [showFormDrawer, setClickedNodeId],
+    [setClickedNodeId, setClickedToolId, showFormDrawer],
   );
 
   return {
@@ -118,7 +120,7 @@ export function useShowDrawer({
       if (!ExcludedNodes.some((x) => x === node.data.label)) {
         hideSingleDebugDrawer();
         hideRunOrChatDrawer();
-        showFormDrawer(node);
+        showFormDrawer(e, node);
       }
       // handle single debug icon click
       if (
