@@ -1,61 +1,178 @@
 ---
 sidebar_position: 3
 slug: /mcp_client
+
 ---
 
-# RAGFlow MCP client example
+# RAGFlow MCP client examples
 
-## Python example for interacting with the RAGFlow MCP server
+Python and curl MCP client examples.
+
+------
+
+## Example MCP Python client
 
 We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
 
 :::danger IMPORTANT
-If your MCP server is running in host mode, include your acquired API key in your client's `headers` as shown below:
+If your MCP server is running in host mode, include your acquired API key in your client's `headers` when connecting asynchronously to it:
+
 ```python
 async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
     # Rest of your code...
 ```
+
+Alternatively, to comply with [OAuth 2.1 Section 5](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-12#section-5), you can run the following code *instead* to connect to your MCP server:
+
+```python
+async with sse_client("http://localhost:9382/sse", headers={"Authorization": "YOUR_KEY_HERE"}) as streams:
+    # Rest of your code...
+```
+
 :::
 
-## curl example for interacting with the RAGFlow MCP server
+## Use curl to interact with the RAGFlow MCP server
 
-### MCP initialization process
+When interacting with the MCP server via HTTP requests, follow this initialization sequence:
 
-When interacting with the MCP server over raw HTTP requests, make sure to follow the correct initialization sequence. The connection lifecycle consists of the following steps:
+1. **The client sends an `initialize` request** with protocol version and capabilities.
+2. **The server replies with an `initialize` response**, including the supported protocol and capabilities.
+3. **The client confirms readiness with an `initialized` notification**.
+   _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
 
-1. **Client sends `initialize` request** with protocol version and capabilities.
-2. **Server replies with `initialize` response**, including its supported protocol and capabilities.
-3. **Client sends `initialized` notification** to acknowledge readiness.
-4. **The connection is ready** and further operations can proceed (e.g., tool listing or invocation).
+:::tip NOTE
+For more information about this initialization process, see [here](https://modelcontextprotocol.io/docs/concepts/architecture#1-initialization). 
+:::
 
-For more information, see [here](https://modelcontextprotocol.io/docs/concepts/architecture#1-initialization).
+In the following sections, we will walk you through a complete tool calling process.
 
-### Server-Sent Events
+### 1. Get a session ID
 
-First, to listen for incoming messages in self-host mode (for example) and get the required `session_id`, use:
+Each curl request with the MCP server must include a session ID:
 
 ```bash
 $ curl -N -H "api_key: YOUR_API_KEY" http://127.0.0.1:9382/sse
+```
 
+:::tip NOTE
+See [here](../acquire_ragflow_api_key.md) for information about acquiring an API key.
+:::
+
+#### Transport
+
+The transport will stream messages such as tool results, server responses, and keep-alive pings.
+
+_The server returns the session ID:_
+
+```bash
 event: endpoint
 data: /messages/?session_id=5c6600ef61b845a788ddf30dceb25c54
+```
 
+### 2. Send an `Initialize` request
+
+The client sends an `initialize` request with protocol version and capabilities:
+
+```bash
+session_id="5c6600ef61b845a788ddf30dceb25c54" && \
+
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "1.0",
+      "capabilities": {},
+      "clientInfo": {
+        "name": "ragflow-mcp-client",
+        "version": "0.1"
+      }
+    }
+  }' && \
+```
+
+#### Transport
+
+_The server replies with an `initialize` response, including the supported protocol and capabilities:_
+
+```bash
 event: message
 data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{"headers":{"host":"127.0.0.1:9382","user-agent":"curl/8.7.1","accept":"*/*","api_key":"ragflow-xxxxxxxxxxxx","accept-encoding":"gzip"}},"tools":{"listChanged":false}},"serverInfo":{"name":"ragflow-server","version":"1.9.4"}}}
 
 : ping - 2025-06-14 08:15:18.217575+00:00
+```
 
+### 3. Acknowledge readiness
+
+The client confirms readiness with an `initialized` notification:
+
+```bash
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "notifications/initialized",
+    "params": {}
+  }' && \
+```
+
+ _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
+
+### 4. Tool listing
+
+```bash
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/list",
+    "params": {}
+  }' && \
+```
+
+#### Transport
+
+```bash
 event: message
 data: {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"ragflow_retrieval","description":"Retrieve relevant chunks from the RAGFlow retrieve interface based on the question, using the specified dataset_ids and optionally document_ids. Below is the list of all available datasets, including their descriptions and IDs. If you're unsure which datasets are relevant to the question, simply pass all dataset IDs to the function.","inputSchema":{"type":"object","properties":{"dataset_ids":{"type":"array","items":{"type":"string"}},"document_ids":{"type":"array","items":{"type":"string"}},"question":{"type":"string"}},"required":["dataset_ids","question"]}}]}}
 
+```
+
+### 5. Tool calling
+
+```bash
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 4,
+    "method": "tools/call",
+    "params": {
+      "name": "ragflow_retrieval",
+      "arguments": {
+        "question": "How to install neovim?",
+        "dataset_ids": ["DATASET_ID_HERE"],
+        "document_ids": []
+      }
+
+```
+
+#### Transport
+
+```bash
 event: message
 data: {"jsonrpc":"2.0","id":4,"result":{...}}
 
 ```
 
-This will stream messages such as tool results, server responses, and keepalive pings.
-
-### Example using `curl`
+### A complete curl example
 
 ```bash
 session_id="YOUR_SESSION_ID" && \
@@ -122,4 +239,6 @@ curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
       }
     }
   }'
+
 ```
+
