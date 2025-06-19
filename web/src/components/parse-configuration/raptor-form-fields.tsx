@@ -2,8 +2,8 @@ import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import random from 'lodash/random';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { useFormContext } from 'react-hook-form';
+import { useCallback } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { SliderInputFormField } from '../slider-input-form-field';
 import { Button } from '../ui/button';
 import {
@@ -51,20 +51,10 @@ const RandomSeedField = 'parser_config.raptor.random_seed';
 const RaptorFormFields = () => {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
-
-  const [raptorValue, setRaptorValue] = useState(false);
-  const [manual, setManual] = useState(false);
+  const useRaptor = useWatch({ name: UseRaptorField });
 
   const handleGenerate = useCallback(() => {
     form.setValue(RandomSeedField, random(10000));
-  }, [form]);
-
-  useEffect(() => {
-    if (!manual) {
-      const defaultValues = form.formState.defaultValues?.parser_config ?? {};
-      const use_graphrag = defaultValues?.raptor?.use_raptor ?? false;
-      setRaptorValue(use_graphrag);
-    }
   }, [form]);
 
   return (
@@ -78,23 +68,22 @@ const RaptorFormFields = () => {
             form.setValue('parser_config.raptor.use_raptor', false);
           }
           return (
-            <FormItem className=" items-center space-y-0 ">
+            <FormItem
+              defaultChecked={false}
+              className="items-center space-y-0 "
+            >
               <div className="flex items-center">
                 <FormLabel
-                  className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
                   tooltip={t('useRaptorTip')}
+                  className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
                 >
                   {t('useRaptor')}
                 </FormLabel>
                 <div className="w-3/4">
                   <FormControl>
                     <Switch
-                      checked={raptorValue}
-                      onCheckedChange={(ev) => {
-                        setManual(true);
-                        setRaptorValue(ev);
-                        field.onChange(ev);
-                      }}
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
                     ></Switch>
                   </FormControl>
                 </div>
@@ -107,7 +96,7 @@ const RaptorFormFields = () => {
           );
         }}
       />
-      {raptorValue && (
+      {useRaptor && (
         <div className="space-y-3">
           <FormField
             control={form.control}
@@ -119,7 +108,6 @@ const RaptorFormFields = () => {
                     tooltip={t('promptTip')}
                     className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
                   >
-                    <span className="text-red-600">*</span>
                     {t('prompt')}
                   </FormLabel>
                   <div className="w-3/4">
