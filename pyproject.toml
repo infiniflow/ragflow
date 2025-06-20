@@ -129,6 +129,8 @@ dependencies = [
     "mcp>=1.6.0",
     "opensearch-py==2.7.1",
     "pluginlib==0.9.4",
+    "gunicorn>=21.2.0,<22.0.0",
+    "gevent>=23.9.0,<24.0.0",
 ]
 
 [project.optional-dependencies]

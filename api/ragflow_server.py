@@ -85,6 +85,18 @@ if __name__ == '__main__':
     logging.info(
         f'project base: {utils.file_utils.get_project_base_directory()}'
     )
+
+    # Warning about development mode
+    logging.warning("=" * 80)
+    logging.warning("⚠️  DEVELOPMENT MODE WARNING ⚠️")
+    logging.warning("You are running RAGFlow in development mode using FastAPI development server.")
+    logging.warning("This is NOT recommended for production environments!")
+    logging.warning("")
+    logging.warning("For production deployment, please use:")
+    logging.warning("1. Docker: The entrypoint.sh will automatically use Gunicorn WSGI")
+    logging.warning("2. Manual: gunicorn --workers 4 --bind 0.0.0.0:9380 api.wsgi:application")
+    logging.warning("=" * 80)
+
     show_configs()
     settings.init_settings()
     print_rag_settings()
@@ -137,7 +149,9 @@ if __name__ == '__main__':
 
     # start http server
     try:
-        logging.info("RAGFlow HTTP server start...")
+        logging.warning("Starting RAGFlow HTTP server in DEVELOPMENT mode...")
+        logging.warning(
+            "Consider using Gunicorn for production: gunicorn --workers 4 --bind 0.0.0.0:9380 api.wsgi:application")
         run_simple(
             hostname=settings.HOST_IP,
             port=settings.HOST_PORT,
