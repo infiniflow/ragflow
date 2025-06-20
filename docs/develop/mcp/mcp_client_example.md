@@ -14,7 +14,7 @@ Python and curl MCP client examples.
 
 We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
 
-:::danger IMPORTANT
+:::info IMPORTANT
 If your MCP server is running in host mode, include your acquired API key in your client's `headers` when connecting asynchronously to it:
 
 ```python
