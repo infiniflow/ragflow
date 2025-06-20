@@ -32,13 +32,13 @@ Released on June 23, 2025.
 - A context error occurring when using Sandbox in standalone mode. [#8340](https://github.com/infiniflow/ragflow/pull/8340)
 - An excessive CPU usage issue caused by Ollama. [#8216](https://github.com/infiniflow/ragflow/pull/8216)
 - A bug in the Code Component. [#7949](https://github.com/infiniflow/ragflow/pull/7949)
+- Added support for models installed via Ollama or VLLM when creating a knowledge base through the API. [#8069](https://github.com/infiniflow/ragflow/pull/8069)
+- Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/infiniflow/ragflow/pull/8149)
 
-### Improvements
+### Added models
 
-- Added support for Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
-- Added support for Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
-- Added support for models installed via Ollama or VLLM when creating a knowledge base through the API. Thanks to [Woody-Hu](https://github.com/Woody-Hu). [#8069](https://github.com/infiniflow/ragflow/pull/8069)
-- Enabled role-based authentication for S3 bucket access. Thanks to [Colstuwjx](https://github.com/Colstuwjx). [#8149](https://github.com/infiniflow/ragflow/pull/8149)
+- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
+- Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
 
 ## v0.19.0
 
