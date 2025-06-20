@@ -249,7 +249,9 @@ def debug():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        canvas.get_component(req["component_id"])["obj"]._param.debug_inputs = req["params"]
+        componant = canvas.get_component(req["component_id"])["obj"]
+        componant.reset()
+        componant._param.debug_inputs = req["params"]
         df = canvas.get_component(req["component_id"])["obj"].debug()
         return get_json_result(data=df.to_dict(orient="records"))
     except Exception as e:
