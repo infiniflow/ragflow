@@ -92,9 +92,6 @@ class Code(ComponentBase, ABC):
                 refered_component = self._canvas.get_component(input["component_id"])["obj"]
                 refered_component_name = refered_component.component_name
                 refered_component_id = refered_component._id
-                if refered_component_name.lower() == "answer":
-                    arguments[input["name"]] = self._canvas.get_history(1)[0]["content"]
-                    continue
 
                 debug_inputs = self._param.debug_inputs
                 if debug_inputs:
@@ -103,6 +100,10 @@ class Code(ComponentBase, ABC):
                             if "value" in param and param["name"] == input["name"]:
                                 arguments[input["name"]] = param["value"]
                 else:
+                    if refered_component_name.lower() == "answer":
+                        arguments[input["name"]] = self._canvas.get_history(1)[0]["content"]
+                        continue
+
                     _, out = refered_component.output(allow_partial=False)
                     if not out.empty:
                         arguments[input["name"]] = "\n".join(out["content"])
@@ -146,3 +147,6 @@ class Code(ComponentBase, ABC):
             cpn_id = input["component_id"]
             elements.append({"key": cpn_id, "name": input["name"]})
         return elements
+
+    def debug(self, **kwargs):
+        return self._run([], **kwargs)
