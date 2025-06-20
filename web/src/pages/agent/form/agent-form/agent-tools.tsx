@@ -36,7 +36,7 @@ export function AgentTools() {
           <ToolCard key={x}>
             {x}
             <div className="flex items-center gap-2 text-text-sub-title">
-              <PencilLine className="size-4 cursor-pointer" />
+              <PencilLine className="size-4 cursor-pointer" data-tool={x} />
               <X
                 className="size-4 cursor-pointer"
                 onClick={deleteNodeTool(x)}
