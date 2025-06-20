@@ -85,28 +85,20 @@ def test_list_chunks_with_success(get_api_key_fixture):
     ds = rag.create_dataset(name="test_list_chunks_with_success")
     with open("test_data/ragflow_test.txt", "rb") as file:
         blob = file.read()
-    '''
-    # chunk_size = 1024 * 1024
-    # chunks = [blob[i:i + chunk_size] for i in range(0, len(blob), chunk_size)]
-    documents = [
-        {'display_name': f'chunk_{i}.txt', 'blob': chunk} for i, chunk in enumerate(chunks)
-    ]
-    '''
     documents = [{"display_name": "test_list_chunks_with_success.txt", "blob": blob}]
     docs = ds.upload_documents(documents)
     ids = [doc.id for doc in docs]
     ds.async_parse_documents(ids)
-    '''
-    for n in range(100):
-        all_completed = all(doc.progress == 1 for doc in docs)
-        if all_completed:
-            break
-        sleep(1)
-    else:
-        raise Exception("Run time ERROR: Chunk document parsing did not complete in time.")
-    '''
     doc = docs[0]
-    doc.list_chunks()
+    res = doc.list_chunks()
+    assert "total" in res
+    assert "page" in res
+    assert "page_size" in res
+    assert "chunks" in res
+    assert isinstance(res["total"], int)
+    assert isinstance(res["page"], int)
+    assert isinstance(res["page_size"], int)
+    assert isinstance(res["chunks"], list)
 
 
 def test_add_chunk_with_success(get_api_key_fixture):

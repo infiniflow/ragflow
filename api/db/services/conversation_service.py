@@ -44,9 +44,9 @@ class ConversationService(CommonService):
         else:
             sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
 
+        total = sessions.count()
         sessions = sessions.paginate(page_number, items_per_page)
-
-        return list(sessions.dicts())
+        return list(sessions.dicts()), total
 
 
 def structure_answer(conv, ans, message_id, session_id):
