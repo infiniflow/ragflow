@@ -17,6 +17,7 @@ import {
 
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
+import DocumentHeader from './components/document-preview/document-header';
 
 import styles from './index.less';
 
@@ -137,7 +138,9 @@ const Chunk = () => {
         {/* <Divider></Divider> */}
         <Flex flex={1} gap={'middle'}>
           <div className="w-[40%]">
-            <div className="h-[50px]">kdsjfkdsjafkds</div>
+            <div className="h-[100px] flex flex-col justify-end pb-[5px]">
+              <DocumentHeader {...documentInfo} />
+            </div>
             {isPdf && (
               <section className={styles.documentPreview}>
                 <DocumentPreview
@@ -152,7 +155,7 @@ const Chunk = () => {
             className={isPdf ? styles.pagePdfWrapper : styles.pageWrapper}
           >
             <Spin spinning={loading} className={styles.spin} size="large">
-              <div className="h-[50px]">
+              <div className="h-[100px] flex flex-col justify-end pb-[5px]">
                 <div>
                   <h2 className="text-[24px]">Chunk Result</h2>
                   <div className="text-[14px] text-[#979AAB]">
