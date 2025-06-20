@@ -470,9 +470,10 @@ class BaiduYiyanRerank(Base):
         from qianfan.resources import Reranker
 
         key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = Reranker(ak=ak, sk=sk)
+        os.environ["QIANFAN_ACCESS_KEY"] = key.get("yiyan_ak", "")
+        os.environ["QIANFAN_SECRET_KEY"] = key.get("yiyan_sk", "")
+
+        self.client = Reranker()
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
