@@ -15,19 +15,22 @@
 #
 
 import logging
-import boto3
-from botocore.exceptions import ClientError
-from botocore.config import Config
 import time
 from io import BytesIO
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
+
+from api.utils import get_base_config
 from rag.utils import singleton
-from rag import settings
+
 
 @singleton
 class RAGFlowS3:
     def __init__(self):
         self.conn = None
-        self.s3_config = settings.S3
+        self.s3_config = get_base_config("s3", {})
         self.access_key = self.s3_config.get('access_key', None)
         self.secret_key = self.s3_config.get('secret_key', None)
         self.region = self.s3_config.get('region', None)
