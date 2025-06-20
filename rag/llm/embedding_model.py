@@ -762,7 +762,7 @@ class SILICONFLOWEmbed(Base):
             "input": text,
             "encoding_format": "float",
         }
-        response = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        response = requests.post(self.base_url, json=payload, headers=self.headers)
         try:
             res = response.json()
             return np.array(res["data"][0]["embedding"]), self.total_token_count(res)
