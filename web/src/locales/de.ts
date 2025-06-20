@@ -565,6 +565,7 @@ export default {
     },
     setting: {
       profile: 'Profil',
+      avatar: 'Avatar',
       profileDescription:
         'Aktualisieren Sie hier Ihr Foto und Ihre persönlichen Daten.',
       maxTokens: 'Maximale Tokens',
