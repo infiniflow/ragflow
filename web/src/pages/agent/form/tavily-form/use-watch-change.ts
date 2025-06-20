@@ -1,22 +1,34 @@
 import { useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../../store';
+import { getAgentNodeTools } from '../../utils';
 
-export function useWatchFormChange(id?: string, form?: UseFormReturn) {
+export function useWatchFormChange(form?: UseFormReturn<any>) {
   let values = useWatch({ control: form?.control });
-  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+  const { clickedToolId, clickedNodeId, findUpstreamNodeById, updateNodeForm } =
+    useGraphStore((state) => state);
 
   useEffect(() => {
+    const agentNode = findUpstreamNodeById(clickedNodeId);
     // Manually triggered form updates are synchronized to the canvas
-    if (id && form?.formState.isDirty) {
-      values = form?.getValues();
-      let nextValues: any = values;
+    if (agentNode && form?.formState.isDirty) {
+      const agentNodeId = agentNode?.id;
+      const tools = getAgentNodeTools(agentNode);
 
-      nextValues = {
-        ...values,
+      values = form?.getValues();
+      const nextTools = tools.map((x) => {
+        if (x.component_name === clickedToolId) {
+          return { ...x, params: { ...values } };
+        }
+        return x;
+      });
+
+      const nextValues = {
+        ...(agentNode?.data?.form ?? {}),
+        tools: nextTools,
       };
 
-      updateNodeForm(id, nextValues);
+      updateNodeForm(agentNodeId, nextValues);
     }
-  }, [form?.formState.isDirty, id, updateNodeForm, values]);
+  }, [form?.formState.isDirty, updateNodeForm, values]);
 }
