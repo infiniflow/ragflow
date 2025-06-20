@@ -1,4 +1,4 @@
-type OutputType = {
+export type OutputType = {
   title: string;
   type: string;
 };

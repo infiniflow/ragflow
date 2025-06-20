@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../../store';
-import { getAgentNodeTools } from '../../utils';
+import { convertToStringArray, getAgentNodeTools } from '../../utils';
 
 export function useWatchFormChange(form?: UseFormReturn<any>) {
   let values = useWatch({ control: form?.control });
@@ -18,7 +18,14 @@ export function useWatchFormChange(form?: UseFormReturn<any>) {
       values = form?.getValues();
       const nextTools = tools.map((x) => {
         if (x.component_name === clickedToolId) {
-          return { ...x, params: { ...values } };
+          return {
+            ...x,
+            params: {
+              ...values,
+              include_domains: convertToStringArray(values.include_domains),
+              exclude_domains: convertToStringArray(values.exclude_domains),
+            },
+          };
         }
         return x;
       });
