@@ -36,7 +36,7 @@ When interacting with the MCP server via HTTP requests, follow this initializati
 
 1. **The client sends an `initialize` request** with protocol version and capabilities.
 2. **The server replies with an `initialize` response**, including the supported protocol and capabilities.
-3. **The client confirms readiness with an `initialized` notification**.
+3. **The client confirms readiness with an `initialized` notification**.  
    _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
 
 :::tip NOTE
