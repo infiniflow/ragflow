@@ -263,6 +263,11 @@ const routes = [
     ],
   },
   {
+    path: `${Routes.ParsedResult}/chunks`,
+    layout: false,
+    component: `@/pages${Routes.Chunk}/parsed-result/add-knowledge/components/knowledge-chunk`,
+  },
+  {
     path: Routes.Chunk,
     layout: false,
     routes: [
@@ -270,10 +275,10 @@ const routes = [
         path: Routes.Chunk,
         component: `@/pages${Routes.Chunk}`,
         routes: [
-          {
-            path: `${Routes.ParsedResult}/:id`,
-            component: `@/pages${Routes.Chunk}/parsed-result`,
-          },
+          // {
+          //   path: `${Routes.ParsedResult}/:id`,
+          //   component: `@/pages${Routes.Chunk}/parsed-result`,
+          // },
           {
             path: `${Routes.ChunkResult}/:id`,
             component: `@/pages${Routes.Chunk}/chunk-result`,
