@@ -1,13 +1,19 @@
-import { ButtonLoading } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs-underlined';
 import { DocumentParserType } from '@/constants/knowledge';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
-import CategoryPanel from './category-panel';
 import { ChunkMethodForm } from './chunk-method-form';
+import ChunkMethodLearnMore from './chunk-method-learn-more';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
@@ -31,6 +37,7 @@ const enum MethodValue {
 }
 
 export default function DatasetSettings() {
+  const { t } = useTranslation();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -64,6 +71,10 @@ export default function DatasetSettings() {
 
   useFetchKnowledgeConfigurationOnMount(form);
 
+  const [currentTab, setCurrentTab] = useState<
+    'generalForm' | 'chunkMethodForm'
+  >('generalForm'); // currnet Tab state
+
   const parserId = useWatch({
     control: form.control,
     name: 'parser_id',
@@ -76,35 +87,66 @@ export default function DatasetSettings() {
   return (
     <section className="p-5 ">
       <TopTitle
-        title={'Configuration'}
-        description={`  Update your knowledge base configuration here, particularly the chunk
-          method.`}
+        title={t('knowledgeDetails.configuration')}
+        description={t('knowledgeConfiguration.titleDescription')}
       ></TopTitle>
       <div className="flex gap-14">
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 basis-full"
+            className="space-y-6 basis-full min-w-[1000px] max-w-[1000px]"
           >
-            <Tabs defaultValue="account">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="account">Account</TabsTrigger>
-                <TabsTrigger value="password">Password</TabsTrigger>
+            <Tabs
+              defaultValue="generalForm"
+              onValueChange={(val) => {
+                setCurrentTab(val);
+              }}
+            >
+              <TabsList className="grid w-full bg-background grid-cols-2 rounded-none bg-[#161618]">
+                <TabsTrigger
+                  value="generalForm"
+                  className="group bg-transparent p-0 !border-transparent"
+                >
+                  <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-white	">
+                      General
+                    </span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="chunkMethodForm"
+                  className="group bg-transparent p-0 !border-transparent"
+                >
+                  <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-white	">
+                      Chunk Method
+                    </span>
+                  </div>
+                </TabsTrigger>
               </TabsList>
-              <TabsContent value="account">
+              <TabsContent value="generalForm">
                 <GeneralForm></GeneralForm>
               </TabsContent>
-              <TabsContent value="password">
+              <TabsContent value="chunkMethodForm">
                 <ChunkMethodForm></ChunkMethodForm>
               </TabsContent>
             </Tabs>
-            <div className="text-right">
+            {/* <div className="text-right">
               <ButtonLoading type="submit">Submit</ButtonLoading>
-            </div>
+            </div> */}
           </form>
         </Form>
-
-        <CategoryPanel chunkMethod={parserId}></CategoryPanel>
+        <ChunkMethodLearnMore tab={currentTab} parserId={parserId} />
+        {/* <div
+          style={{
+            display: currentTab === 'chunkMethodForm' ? 'block' : 'none',
+          }}
+        >
+          <Button variant="outline">Learn More</Button>
+          <div className="bg-[#FFF]/10 p-[20px] rounded-[12px] mt-[10px]">
+            <CategoryPanel chunkMethod={parserId}></CategoryPanel>
+          </div>
+        </div> */}
       </div>
     </section>
   );

@@ -25,19 +25,29 @@ export function ChunkMethodItem() {
       control={form.control}
       name={'parser_id'}
       render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('chunkMethodTip')}>
-            {t('chunkMethod')}
-          </FormLabel>
-          <FormControl>
-            <RAGFlowSelect
-              {...field}
-              options={parserList}
-              placeholder={t('chunkMethodPlaceholder')}
-              // onChange={handleChunkMethodSelectChange}
-            />
-          </FormControl>
-          <FormMessage />
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('chunkMethodTip')}
+              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+            >
+              {t('chunkMethod')}
+            </FormLabel>
+            <div className="w-3/4 ">
+              <FormControl>
+                <RAGFlowSelect
+                  {...field}
+                  options={parserList}
+                  placeholder={t('chunkMethodPlaceholder')}
+                  // onChange={handleChunkMethodSelectChange}
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />
@@ -55,19 +65,29 @@ export function EmbeddingModelItem() {
       control={form.control}
       name={'embd_id'}
       render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('embeddingModelTip')}>
-            {t('embeddingModel')}
-          </FormLabel>
-          <FormControl>
-            <RAGFlowSelect
-              {...field}
-              options={embeddingModelOptions}
-              disabled={disabled}
-              placeholder={t('embeddingModelPlaceholder')}
-            />
-          </FormControl>
-          <FormMessage />
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('embeddingModelTip')}
+              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+            >
+              {t('embeddingModel')}
+            </FormLabel>
+            <div className="w-3/4">
+              <FormControl>
+                <RAGFlowSelect
+                  {...field}
+                  options={embeddingModelOptions}
+                  disabled={disabled}
+                  placeholder={t('embeddingModelPlaceholder')}
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />

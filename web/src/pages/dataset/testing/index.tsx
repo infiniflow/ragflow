@@ -1,6 +1,4 @@
-import { Button } from '@/components/ui/button';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
-import { Plus } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { TopTitle } from '../dataset-title';
 import TestingForm from './testing-form';
@@ -41,7 +39,7 @@ export default function RetrievalTesting() {
           description={`  Update your knowledge base configuration here, particularly the chunk
                   method.`}
         ></TopTitle>
-        <Button>Save as Preset</Button>
+        {/* <Button>Save as Preset</Button> */}
       </section>
       {count === 1 ? (
         <section className="flex divide-x h-full">
@@ -50,9 +48,9 @@ export default function RetrievalTesting() {
               <span className="text-text-title font-semibold text-2xl">
                 Test setting
               </span>
-              <Button variant={'outline'} onClick={addCount}>
+              {/* <Button variant={'outline'} onClick={addCount}>
                 <Plus /> Add New Test
-              </Button>
+              </Button> */}
             </div>
             <TestingForm
               loading={loading}

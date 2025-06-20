@@ -1,14 +1,44 @@
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
+import useGraphStore from '../../store';
+import { getAgentNodeTools } from '../../utils';
+
+export enum SearchDepth {
+  Basic = 'basic',
+  Advanced = 'advanced',
+}
+
+export enum Topic {
+  News = 'news',
+  General = 'general',
+}
 
 const defaultValues = {
-  content: [],
+  query: '',
+  search_depth: SearchDepth.Basic,
+  topic: Topic.General,
+  max_results: 5,
+  days: 7,
+  include_answer: false,
+  include_raw_content: true,
+  include_images: false,
+  include_image_descriptions: false,
+  include_domains: [],
+  exclude_domains: [],
 };
 
-export function useValues(node?: RAGFlowNodeType) {
+export function useValues() {
+  const { clickedToolId, clickedNodeId, findUpstreamNodeById } = useGraphStore(
+    (state) => state,
+  );
+
   const values = useMemo(() => {
-    const formData = node?.data?.form;
+    const agentNode = findUpstreamNodeById(clickedNodeId);
+    const tools = getAgentNodeTools(agentNode);
+
+    const formData = tools.find(
+      (x) => x.component_name === clickedToolId,
+    )?.params;
 
     if (isEmpty(formData)) {
       return defaultValues;
@@ -17,7 +47,7 @@ export function useValues(node?: RAGFlowNodeType) {
     return {
       ...formData,
     };
-  }, [node]);
+  }, [clickedNodeId, clickedToolId, findUpstreamNodeById]);
 
   return values;
 }
