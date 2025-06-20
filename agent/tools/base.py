@@ -72,11 +72,15 @@ class ToolParamBase(ComponentParamBase):
             if "enum" in p:
                 params[k]["enum"] = p["enum"]
 
+        desc = self.meta["description"]
+        if getattr(self, "description"):
+            desc = self.description
+
         return {
             "type": "function",
             "function": {
                 "name": self.meta["name"],
-                "description": self.meta["description"],
+                "description": desc,
                 "parameters": {
                     "type": "object",
                     "properties": params,

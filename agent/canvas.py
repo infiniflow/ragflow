@@ -249,7 +249,7 @@ class Canvas:
                         o["content"] = None
                     yield decorate("node_finished",
                                {
-                                   "inputs": cpn["obj"].get_input(),
+                                   "inputs": cpn["obj"].get_input_values(),
                                    "outputs": o,
                                    "component_id": self.path[i],
                                    "error": cpn["obj"].error(),
@@ -261,7 +261,7 @@ class Canvas:
                     iter = cpn["obj"].get_parent()
                     yield decorate("node_finished", # End of iteration
                                    {
-                                       "inputs": iter.get_input(),
+                                       "inputs": iter.get_input_values(),
                                        "outputs": iter.output(),
                                        "component_id": iter._id,
                                        "error": iter.error(),

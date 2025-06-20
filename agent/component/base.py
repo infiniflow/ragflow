@@ -466,6 +466,12 @@ class ComponentBase(ABC):
             res[var] = self.get_input_value(var)
         return res
 
+    def get_input_values(self) -> Union[Any, dict[str, Any]]:
+        if self._param.debug_inputs:
+            return self._param.debug_inputs
+
+        return {var: self.get_input_value(var) for var, o in self.get_input_elements().items()}
+
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
         for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE):

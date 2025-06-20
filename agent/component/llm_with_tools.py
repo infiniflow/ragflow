@@ -37,6 +37,18 @@ class AgentParam(LLMParam):
         super().__init__()
         self.llm_enabled_tools = []
         self.max_rounds = 5
+        self.description = ""
+
+    def get_meta(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": "agent",
+                "description": self.description,
+                "parameters": {
+                }
+            }
+        }
 
 
 class Agent(LLM):
