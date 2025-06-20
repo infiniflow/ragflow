@@ -13,6 +13,7 @@ import GoogleForm from '../google-form';
 import GoogleScholarForm from '../google-scholar-form';
 import PubMedForm from '../pubmed-form';
 import RetrievalForm from '../retrieval-form/next';
+import TavilyForm from '../tavily-form';
 import WikipediaForm from '../wikipedia-form';
 import YahooFinanceForm from '../yahoo-finance-form';
 
@@ -33,4 +34,5 @@ export const ToolFormConfigMap = {
   [Operator.YahooFinance]: YahooFinanceForm,
   [Operator.Crawler]: CrawlerForm,
   [Operator.Email]: EmailForm,
+  [Operator.Tavily]: TavilyForm,
 };

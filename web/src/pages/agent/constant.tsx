@@ -85,6 +85,7 @@ export enum Operator {
   WaitingDialogue = 'WaitingDialogue',
   Agent = 'Agent',
   Tool = 'Tool',
+  Tavily = 'Tavily',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -249,6 +250,7 @@ export const operatorMap: Record<
   [Operator.Code]: { backgroundColor: '#4c5458' },
   [Operator.WaitingDialogue]: { backgroundColor: '#a5d65c' },
   [Operator.Agent]: { backgroundColor: '#a5d65c' },
+  [Operator.Tavily]: { backgroundColor: '#a5d65c' },
 };
 
 export const componentMenuList = [
