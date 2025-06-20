@@ -1626,9 +1626,13 @@ class BaiduYiyanChat(Base):
         import qianfan
 
         key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = qianfan.ChatCompletion(ak=ak, sk=sk)
+
+        # Set ak and sk as environment variables
+        os.environ["QIANFAN_ACCESS_KEY"] = key.get("yiyan_ak", "")
+        os.environ["QIANFAN_SECRET_KEY"] = key.get("yiyan_sk", "")
+
+        # the ChatCompletion class cannot use ak and sk directly, but will get ak and sk of QIANFAN in the environment variable.        
+        self.client = qianfan.ChatCompletion()
         self.model_name = model_name.lower()
 
     def _clean_conf(self, gen_conf):
