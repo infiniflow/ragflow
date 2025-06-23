@@ -11,16 +11,20 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { IModalProps } from '@/interfaces/common';
 import { Operator } from '@/pages/agent/constant';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
 import OperatorIcon from '@/pages/agent/operator-icon';
-import { PropsWithChildren, useContext } from 'react';
+import { PropsWithChildren, createContext, useContext } from 'react';
 
 type OperatorItemProps = { operators: Operator[] };
+
+const HideModalContext = createContext<IModalProps<any>['showModal']>(() => {});
 
 function OperatorItemList({ operators }: OperatorItemProps) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
   const { nodeId, id, type, position } = useContext(HandleContext);
+  const hideModal = useContext(HideModalContext);
 
   return (
     <ul className="space-y-2">
@@ -34,6 +38,7 @@ function OperatorItemList({ operators }: OperatorItemProps) {
               id,
               position,
             })}
+            onSelect={() => hideModal?.()}
           >
             <OperatorIcon name={x}></OperatorIcon>
             {x}
@@ -95,16 +100,21 @@ function AccordionOperators() {
   );
 }
 
-export function NextStepDropdown({ children }: PropsWithChildren) {
+export function NextStepDropdown({
+  children,
+  hideModal,
+}: PropsWithChildren & IModalProps<any>) {
   return (
-    <DropdownMenu>
+    <DropdownMenu open onOpenChange={hideModal}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent
         onClick={(e) => e.stopPropagation()}
         className="w-[300px] font-semibold"
       >
         <DropdownMenuLabel>Next Step</DropdownMenuLabel>
-        <AccordionOperators></AccordionOperators>
+        <HideModalContext.Provider value={hideModal}>
+          <AccordionOperators></AccordionOperators>
+        </HideModalContext.Provider>
       </DropdownMenuContent>
     </DropdownMenu>
   );
