@@ -72,7 +72,7 @@ def list_chunk():
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_kwd": sres.field[id].get("important_kwd", []),
                 "question_kwd": sres.field[id].get("question_kwd", []),
-                "image_id": sres.field[id].get("img_id", ""),
+                "image_id": sres.field[id].get("img_id", ""), 
                 "available_int": int(sres.field[id].get("available_int", 1)),
                 "positions": sres.field[id].get("position_int", []),
             }

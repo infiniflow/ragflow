@@ -27,6 +27,7 @@ from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, se
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
 
 import logging
+import gc
 import os
 from datetime import datetime
 import json
@@ -634,6 +635,7 @@ async def handle_task():
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     redis_msg.ack()
+    gc.collect()
 
 
 async def report_status():
@@ -683,7 +685,8 @@ async def report_status():
             logging.exception("report_status got exception")
         finally:
             redis_lock.release()
-        await trio.sleep(30)
+        await trio.sleep(60)
+        gc.collect() 
 
 
 def recover_pending_tasks():
