@@ -29,6 +29,7 @@ Released on June 23, 2025.
 ### Fixed issues
 
 - A memory leak issue during high-concurrency requests.
+- Large file parsing freezes when GraphRAG entity resolution is enabled. [#8223](https://github.com/infiniflow/ragflow/pull/8223)
 - A context error occurring when using Sandbox in standalone mode. [#8340](https://github.com/infiniflow/ragflow/pull/8340)
 - An excessive CPU usage issue caused by Ollama. [#8216](https://github.com/infiniflow/ragflow/pull/8216)
 - A bug in the Code Component. [#7949](https://github.com/infiniflow/ragflow/pull/7949)

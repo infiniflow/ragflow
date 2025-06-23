@@ -87,6 +87,10 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 
 ## Frequently asked questions
 
+### Do I need to back up my knowledge bases before upgrading RAGFlow?
+
+No, you do not need to. Upgrading RAGFlow in itself will *not* remove your uploaded data or knowledge base settings. However, be aware that `docker compose -f docker/docker-compose.yml down -v` will remove Docker container volumes, resulting in data loss.
+
 ### Upgrade RAGFlow in an offline environment (without Internet access)
 
 1. From an environment with Internet access, pull the required Docker image.
