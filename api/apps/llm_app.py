@@ -25,6 +25,7 @@ from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import get_project_base_directory
+from api.utils.web_utils import is_valid_url
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 
 
@@ -55,6 +56,11 @@ def factories():
 @validate_request("llm_factory", "api_key")
 def set_api_key():
     req = request.json
+    
+    base_url = req.get("base_url")
+    if base_url and not is_valid_url(base_url):
+        return get_data_error_result(message="Invalid base URL: Access to private networks is restricted")
+    
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
@@ -137,6 +143,11 @@ def set_api_key():
 @validate_request("llm_factory")
 def add_llm():
     req = request.json
+    
+    api_base = req.get("api_base")
+    if api_base and not is_valid_url(api_base):
+        return get_data_error_result(message="Invalid base URL: Access to private networks is restricted")
+    
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
