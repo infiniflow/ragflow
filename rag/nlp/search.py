@@ -393,6 +393,9 @@ class Dealer:
                 break
             if len(ranks["chunks"]) >= page_size:
                 if aggs:
+                    if dnm not in ranks["doc_aggs"]:
+                        ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
+                    ranks["doc_aggs"][dnm]["count"] += 1
                     continue
                 break
             id = sres.ids[i]
