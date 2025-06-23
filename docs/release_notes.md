@@ -22,6 +22,24 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
+## v0.19.1
+
+Released on June 23, 2025.
+
+### Fixed issues
+
+- A memory leak issue during high-concurrency requests.
+- A context error occurring when using Sandbox in standalone mode. [#8340](https://github.com/infiniflow/ragflow/pull/8340)
+- An excessive CPU usage issue caused by Ollama. [#8216](https://github.com/infiniflow/ragflow/pull/8216)
+- A bug in the Code Component. [#7949](https://github.com/infiniflow/ragflow/pull/7949)
+- Added support for models installed via Ollama or VLLM when creating a knowledge base through the API. [#8069](https://github.com/infiniflow/ragflow/pull/8069)
+- Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/infiniflow/ragflow/pull/8149)
+
+### Added models
+
+- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
+- Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
+
 ## v0.19.0
 
 Released on May 26, 2025.
@@ -33,7 +51,7 @@ Released on May 26, 2025.
 - Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
 - Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model and OpenAI’s latest ChatGPT o3 inference model.
 
-> The following features are contributed by our community contributors:
+> The following features have been contributed by our community:
 
 - Agent component: Enables tool calling within the Generate Component. Thanks to [notsyncing](https://github.com/notsyncing).
 - Markdown rendering: Image references in a markdown file can be displayed after chunking. Thanks to [Woody-Hu](https://github.com/Woody-Hu).

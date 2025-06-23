@@ -14,7 +14,7 @@ Python and curl MCP client examples.
 
 We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
 
-:::danger IMPORTANT
+:::info IMPORTANT
 If your MCP server is running in host mode, include your acquired API key in your client's `headers` when connecting asynchronously to it:
 
 ```python
@@ -36,7 +36,7 @@ When interacting with the MCP server via HTTP requests, follow this initializati
 
 1. **The client sends an `initialize` request** with protocol version and capabilities.
 2. **The server replies with an `initialize` response**, including the supported protocol and capabilities.
-3. **The client confirms readiness with an `initialized` notification**.
+3. **The client confirms readiness with an `initialized` notification**.  
    _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
 
 :::tip NOTE
