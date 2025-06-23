@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
   BeginQueryType,
   BeginQueryTypeIconMap,
+  NodeHandleId,
   Operator,
 } from '../../constant';
 import { BeginQuery } from '../../interface';
@@ -17,7 +18,7 @@ import styles from './index.less';
 import { NodeWrapper } from './node-wrapper';
 
 // TODO: do not allow other nodes to connect to this node
-function InnerBeginNode({ data }: NodeProps<IBeginNode>) {
+function InnerBeginNode({ data, id }: NodeProps<IBeginNode>) {
   const { t } = useTranslation();
   const query: BeginQuery[] = get(data, 'form.query', []);
 
@@ -27,16 +28,17 @@ function InnerBeginNode({ data }: NodeProps<IBeginNode>) {
         type="source"
         position={Position.Right}
         isConnectable
-        className={styles.handle}
         style={RightHandleStyle}
+        nodeId={id}
+        id={NodeHandleId.Start}
       ></CommonHandle>
 
-      <Flex align="center" justify={'center'} gap={10}>
+      <section className="flex items-center justify-center gap-2">
         <OperatorIcon name={data.label as Operator}></OperatorIcon>
         <div className="truncate text-center font-semibold text-sm">
           {t(`flow.begin`)}
         </div>
-      </Flex>
+      </section>
       <Flex gap={8} vertical className={styles.generateParameters}>
         {query.map((x, idx) => {
           const Icon = BeginQueryTypeIconMap[x.type as BeginQueryType];

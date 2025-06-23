@@ -4,6 +4,7 @@ import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { memo } from 'react';
+import { NodeHandleId } from '../../constant';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
@@ -22,18 +23,21 @@ function InnerMessageNode({
     <ToolBar selected={selected} id={id} label={data.label}>
       <NodeWrapper>
         <CommonHandle
-          id="c"
-          type="source"
+          type="target"
           position={Position.Left}
           isConnectable={isConnectable}
           style={LeftHandleStyle}
+          nodeId={id}
+          id={NodeHandleId.End}
         ></CommonHandle>
         <CommonHandle
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
           style={RightHandleStyle}
-          id="b"
+          id={NodeHandleId.Start}
+          nodeId={id}
+          isConnectableEnd={false}
         ></CommonHandle>
         <NodeHeader
           id={id}

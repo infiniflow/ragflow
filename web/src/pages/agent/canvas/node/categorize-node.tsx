@@ -3,6 +3,7 @@ import { ICategorizeNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
 import { memo } from 'react';
+import { NodeHandleId } from '../../constant';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
@@ -23,7 +24,8 @@ export function InnerCategorizeNode({
           type="target"
           position={Position.Left}
           isConnectable
-          id={'a'}
+          id={NodeHandleId.End}
+          nodeId={id}
         ></CommonHandle>
 
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
@@ -45,6 +47,8 @@ export function InnerCategorizeNode({
                   position={Position.Right}
                   isConnectable
                   style={{ ...RightHandleStyle, top: position.top }}
+                  nodeId={id}
+                  isConnectableEnd={false}
                 ></CommonHandle>
               </div>
             );

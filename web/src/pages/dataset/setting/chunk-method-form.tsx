@@ -1,7 +1,12 @@
+import { Button } from '@/components/ui/button';
+import { Loader2Icon } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 
 import { DocumentParserType } from '@/constants/knowledge';
+import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
 import { useMemo } from 'react';
+import { useParams } from 'umi';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
 import { EmailConfiguration } from './configuration/email';
@@ -42,6 +47,12 @@ function EmptyComponent() {
 
 export function ChunkMethodForm() {
   const form = useFormContext();
+  const { t } = useTranslation();
+  // const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
+  const { id: kb_id } = useParams();
+
+  const { saveKnowledgeConfiguration, loading: submitLoading } =
+    useUpdateKnowledge();
 
   const finalParserId: DocumentParserType = useWatch({
     control: form.control,
@@ -55,8 +66,41 @@ export function ChunkMethodForm() {
   }, [finalParserId]);
 
   return (
-    <section className="overflow-auto max-h-[76vh]">
-      <ConfigurationComponent></ConfigurationComponent>
-    </section>
+    <>
+      <section className="overflow-auto max-h-[76vh]">
+        <ConfigurationComponent></ConfigurationComponent>
+      </section>
+      <div className="text-right pt-4">
+        <Button
+          disabled={submitLoading}
+          onClick={() => {
+            (async () => {
+              try {
+                let beValid = await form.formControl.trigger();
+                console.log('user chunk form: ', form);
+
+                if (beValid) {
+                  // setSubmitLoading(true);
+                  let postData = form.formState.values;
+                  delete postData['avatar']; // has submitted in first form general
+
+                  saveKnowledgeConfiguration({
+                    ...postData,
+                    kb_id,
+                  });
+                }
+              } catch (e) {
+                console.log(e);
+              } finally {
+                // setSubmitLoading(false);
+              }
+            })();
+          }}
+        >
+          {submitLoading && <Loader2Icon className="animate-spin" />}
+          {t('common.submit')}
+        </Button>
+      </div>
+    </>
   );
 }
