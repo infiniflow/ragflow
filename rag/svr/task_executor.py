@@ -434,7 +434,6 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tk_count += c
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
     cnts = cnts_
-
     title_w = float(parser_config.get("filename_embd_weight", 0.1))
     vects = (title_w * tts + (1 - title_w) *
              cnts) if len(tts) == len(cnts) else cnts
