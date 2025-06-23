@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import platform
 from io import BytesIO
 
 import pdfplumber
@@ -326,45 +327,42 @@ def get_libreoffice_path():
             "LibreOffice not found. Please install LibreOffice or specify the path manually.")
 
 
-def convert_to_pdf(input_path: str, output_dir: str = None) -> str:
+def convert_to_pdf(blob: bytes, output_dir: str = None) -> str:
     """
     使用LibreOffice将支持的文档格式转换为PDF
     返回转换后的PDF文件路径
     """
     if output_dir is None:
-        output_dir = os.path.dirname(input_path)
+        output_dir = tempfile.gettempdir()
         # 获取 LibreOffice 路径
     libreoffice_path = get_libreoffice_path()
     if not os.path.exists(libreoffice_path):
         raise FileNotFoundError(
             f"LibreOffice executable not found at: {libreoffice_path}")
-    # 创建临时目录用于转换
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".doc") as tmp_file:
+        tmp_file.write(blob)
+        tmp_file.flush()
+        input_path = tmp_file.name
+    try:
         cmd = [
             libreoffice_path,
             '--headless',
             '--convert-to',
             'pdf',
             '--outdir',
-            temp_dir,
+            output_dir,
             input_path
         ]
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        error_msg = f"转换失败: {e.stderr.decode('utf-8') if e.stderr else '未知错误'}"
+        raise RuntimeError(f"无法将文件转换为PDF: {error_msg}") from e
 
-        try:
-            print("正在转换文件为PDF...", input_path)
-            subprocess.run(cmd, check=True, capture_output=True)
-        except subprocess.CalledProcessError as e:
-            error_msg = f"转换失败: {e.stderr.decode('utf-8') if e.stderr else '未知错误'}"
-            raise RuntimeError(f"无法将文件转换为PDF: {error_msg}") from e
+    # 获取转换后的PDF文件
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    pdf_path = os.path.join(output_dir, f"{base_name}.pdf")
 
-        # 获取转换后的PDF文件
-        converted_files = list(Path(temp_dir).glob("*.pdf"))
-        if not converted_files:
-            raise FileNotFoundError("未生成PDF文件，转换可能失败")
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError("未生成PDF文件，转换可能失败")
 
-        # 将PDF移动到目标目录
-        pdf_path = converted_files[0]
-        target_path = os.path.join(output_dir, pdf_path.name)
-        shutil.move(str(pdf_path), target_path)
-
-        return target_path
+    return pdf_path
