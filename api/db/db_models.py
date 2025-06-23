@@ -799,6 +799,20 @@ class UserCanvasVersion(DataBaseModel):
         db_table = "user_canvas_version"
 
 
+class MCPServer(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=255, null=False, help_text="MCP Server name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    url = CharField(max_length=2048, null=False, help_text="MCP Server URL")
+    server_type = CharField(max_length=32, null=False, help_text="MCP Server type")
+    description = TextField(null=True, help_text="MCP Server description")
+    variables = JSONField(null=True, default=[], help_text="MCP Server variables")
+    headers = JSONField(null=True, default={}, help_text="MCP Server additional request headers")
+
+    class Meta:
+        db_table = "mcp_server"
+
+ 
 class Search(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
@@ -932,5 +946,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=[])))
     except Exception:
         pass
