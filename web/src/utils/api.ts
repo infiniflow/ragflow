@@ -143,4 +143,12 @@ export default {
   testDbConnect: `${api_host}/canvas/test_db_connect`,
   getInputElements: `${api_host}/canvas/input_elements`,
   debug: `${api_host}/canvas/debug`,
+
+  // mcp server
+  getMcpServerList: `${api_host}/mcp_server/list`,
+  getMultipleMcpServers: `${api_host}/mcp_server/get_multiple`,
+  getMcpServer: (serverId: string) => `${api_host}/mcp_server/get/${serverId}`,
+  createMcpServer: `${api_host}/mcp_server/create`,
+  updateMcpServer: `${api_host}/mcp_server/update`,
+  deleteMcpServer: `${api_host}/mcp_server/rm`,
 };
