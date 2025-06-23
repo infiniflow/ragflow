@@ -6,6 +6,7 @@
 - 🐳 [Docker Compose](#-docker-compose)
 - 🐬 [Docker environment variables](#-docker-environment-variables)
 - 🐋 [Service configuration](#-service-configuration)
+- 📋 [Setup Examples](#-setup-examples)
 
 </details>
 
@@ -192,3 +193,77 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 > [!TIP]  
 > If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
+
+
+## 📋 Setup Examples
+
+### 🔒 HTTPS Setup
+
+#### Prerequisites
+
+- A registered domain name pointing to your server
+- Port 80 and 443 open on your server
+- Docker and Docker Compose installed
+
+#### Getting and configuring certificates (Let's Encrypt)
+
+If you want your instance to be available under `https`, follow these steps:
+
+1. **Install Certbot and obtain certificates**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt update && sudo apt install certbot
+   
+   # CentOS/RHEL
+   sudo yum install certbot
+   
+   # Obtain certificates (replace with your actual domain)
+   sudo certbot certonly --standalone -d your-ragflow-domain.com
+   ```
+
+2. **Locate your certificates**  
+   Once generated, your certificates will be located at:
+   - Certificate: `/etc/letsencrypt/live/your-ragflow-domain.com/fullchain.pem`
+   - Private key: `/etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem`
+
+3. **Update docker-compose.yml**  
+   Add the certificate volumes to the `ragflow` service in your `docker-compose.yml`:
+   ```yaml
+   services:
+     ragflow:
+       # ...existing configuration...
+       volumes:
+         # SSL certificates
+         - /etc/letsencrypt/live/your-ragflow-domain.com/fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
+         - /etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem:/etc/nginx/ssl/privkey.pem:ro
+         # Switch to HTTPS nginx configuration
+         - ./nginx/ragflow.https.conf:/etc/nginx/conf.d/ragflow.conf
+         # ...other existing volumes...
+  
+   ```
+
+4. **Update nginx configuration**  
+   Edit `nginx/ragflow.https.conf` and replace `my_ragflow_domain.com` with your actual domain name.
+
+5. **Restart the services**
+   ```bash
+   docker-compose down
+   docker-compose up -d
+   ```
+
+
+> [!IMPORTANT]
+> - Ensure your domain's DNS A record points to your server's IP address
+> - Stop any services running on ports 80/443 before obtaining certificates with `--standalone`
+
+> [!TIP]
+> For development or testing, you can use self-signed certificates, but browsers will show security warnings.
+
+#### Alternative: Using existing certificates
+
+If you already have SSL certificates from another provider:
+
+1. Place your certificates in a directory accessible to Docker
+2. Update the volume paths in `docker-compose.yml` to point to your certificate files
+3. Ensure the certificate file contains the full certificate chain
+4. Follow steps 4-5 from the Let's Encrypt guide above
