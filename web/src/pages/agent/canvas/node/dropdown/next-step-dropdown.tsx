@@ -88,7 +88,7 @@ function AccordionOperators() {
       <AccordionItem value="item-5">
         <AccordionTrigger className="text-xl">Tools</AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList operators={[]}></OperatorItemList>
+          <OperatorItemList operators={[Operator.Tavily]}></OperatorItemList>
         </AccordionContent>
       </AccordionItem>
     </Accordion>

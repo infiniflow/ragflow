@@ -387,7 +387,7 @@ const initialQueryBaseValues = {
 };
 
 export const initialRetrievalValues = {
-  query: '',
+  query: AgentGlobals.SysQuery,
   top_n: 8,
   top_k: 1024,
   kb_ids: [],
@@ -686,6 +686,41 @@ export const initialAgentValues = {
   },
 };
 
+export enum TavilySearchDepth {
+  Basic = 'basic',
+  Advanced = 'advanced',
+}
+
+export enum TavilyTopic {
+  News = 'news',
+  General = 'general',
+}
+
+export const initialTavilyValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  search_depth: TavilySearchDepth.Basic,
+  topic: TavilyTopic.General,
+  max_results: 5,
+  days: 7,
+  include_answer: false,
+  include_raw_content: true,
+  include_images: false,
+  include_image_descriptions: false,
+  include_domains: [],
+  exclude_domains: [],
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'Object',
+    },
+  },
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -813,6 +848,7 @@ export const NodeMap = {
   [Operator.WaitingDialogue]: 'ragNode',
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
+  [Operator.Tavily]: 'ragNode',
 };
 
 export const LanguageOptions = [

@@ -33,6 +33,7 @@ import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SwitchForm from '../form/switch-form';
+import TavilyForm from '../form/tavily-form';
 import TemplateForm from '../form/template-form';
 import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
@@ -372,6 +373,11 @@ export function useFormConfigMap() {
     },
     [Operator.Tool]: {
       component: ToolForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.Tavily]: {
+      component: TavilyForm,
       defaultValues: {},
       schema: z.object({}),
     },

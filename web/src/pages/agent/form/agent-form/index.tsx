@@ -102,6 +102,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
             name={`prompts`}
             render={({ field }) => (
               <FormItem className="flex-1">
+                <FormLabel>User Prompt</FormLabel>
                 <FormControl>
                   <section>
                     <PromptEditor {...field} showToolbar={false}></PromptEditor>
