@@ -391,14 +391,20 @@ class Dealer:
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
-            if len(ranks["chunks"]) >= page_size:
-                if aggs:
-                    continue
-                break
+
             id = sres.ids[i]
             chunk = sres.field[id]
             dnm = chunk.get("docnm_kwd", "")
             did = chunk.get("doc_id", "")
+
+            if len(ranks["chunks"]) >= page_size:
+                if aggs:
+                    if dnm not in ranks["doc_aggs"]:
+                        ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
+                    ranks["doc_aggs"][dnm]["count"] += 1
+                    continue
+                break
+                
             position_int = chunk.get("position_int", [])
             d = {
                 "chunk_id": id,

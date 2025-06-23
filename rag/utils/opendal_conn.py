@@ -95,7 +95,7 @@ class OpenDALStorage:
             )
             cursor = conn.cursor()
             max_packet = self._kwargs.get('max_allowed_packet', 4194304)  # Default to 4MB if not specified
-            cursor.execute(SET_MAX_ALLOWED_PACKET_SQL.format(max_packet))
+            cursor.execute(SET_MAX_ALLOWED_PACKET_SQL, (max_packet,))
             conn.commit()
             cursor.close()
             conn.close()

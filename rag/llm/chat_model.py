@@ -61,6 +61,9 @@ class ToolCallSession(Protocol):
 
 
 class Base(ABC):
+    tools: list[Any]
+    toolcall_sessions: dict[str, ToolCallSession]
+    
     def __init__(self, key, model_name, base_url, **kwargs):
         timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
         self.client = OpenAI(api_key=key, base_url=base_url, timeout=timeout)
@@ -70,6 +73,8 @@ class Base(ABC):
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
         self.max_rounds = kwargs.get("max_rounds", 5)
         self.is_tools = False
+        self.tools = []
+        self.toolcall_sessions = {}
 
     def _get_delay(self):
         """Calculate retry delay time"""
@@ -145,8 +150,10 @@ class Base(ABC):
         if not (toolcall_session and tools):
             return
         self.is_tools = True
-        self.toolcall_session = toolcall_session
-        self.tools = tools
+
+        for tool in tools:
+            self.toolcall_sessions[tool["function"]["name"]] = toolcall_session
+            self.tools.append(tool)
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict):
         gen_conf = self._clean_conf()
@@ -157,9 +164,9 @@ class Base(ABC):
         tk_count = 0
         hist = deepcopy(history)
         # Implement exponential backoff retry strategy
-        for attempt in range(self.max_retries+1):
+        for attempt in range(self.max_retries + 1):
             history = hist
-            for _ in range(self.max_rounds*2):
+            for _ in range(self.max_rounds * 2):
                 try:
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, **gen_conf)
                     tk_count += self.total_token_count(response)
@@ -180,11 +187,10 @@ class Base(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = self.toolcall_session.tool_call(name, args)
+                            tool_response = self.toolcall_sessions[name].tool_call(name, args)
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
                         except Exception as e:
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-
 
                 except Exception as e:
                     e = self._exceptions(e, attempt)
@@ -198,7 +204,7 @@ class Base(ABC):
         gen_conf = self._clean_conf(gen_conf)
 
         # Implement exponential backoff retry strategy
-        for attempt in range(self.max_retries+1):
+        for attempt in range(self.max_retries + 1):
             try:
                 return self._chat(history, gen_conf)
             except Exception as e:
@@ -232,9 +238,9 @@ class Base(ABC):
         total_tokens = 0
         hist = deepcopy(history)
         # Implement exponential backoff retry strategy
-        for attempt in range(self.max_retries+1):
+        for attempt in range(self.max_retries + 1):
             history = hist
-            for _ in range(self.max_rounds*2):
+            for _ in range(self.max_rounds * 2):
                 reasoning_start = False
                 try:
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
@@ -287,7 +293,7 @@ class Base(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = self.toolcall_session.tool_call(name, args)
+                            tool_response = self.toolcall_sessions[name].tool_call(name, args)
                             history.append(
                                 {
                                     "role": "assistant",
@@ -453,11 +459,11 @@ class DeepSeekChat(Base):
 
 
 class AzureChat(Base):
-    def __init__(self, key, model_name, **kwargs):
+    def __init__(self, key, model_name, base_url, **kwargs):
         api_key = json.loads(key).get("api_key", "")
         api_version = json.loads(key).get("api_version", "2024-02-01")
-        super().__init__(key, model_name, kwargs["base_url"], **kwargs)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        super().__init__(key, model_name, base_url, **kwargs)
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
         self.model_name = model_name
 
 
@@ -586,7 +592,7 @@ class QWenChat(Base):
                     tool_name = assistant_output.tool_calls[0]["function"]["name"]
                     if tool_name:
                         arguments = json.loads(assistant_output.tool_calls[0]["function"]["arguments"])
-                        tool_info["content"] = self.toolcall_session.tool_call(name=tool_name, arguments=arguments)
+                        tool_info["content"] = self.toolcall_sessions[tool_name].tool_call(name=tool_name, arguments=arguments)
                     history.append(tool_info)
 
                     response = Generation.call(self.model_name, messages=history, result_format="message", tools=self.tools, **gen_conf)
@@ -709,7 +715,7 @@ class QWenChat(Base):
 
                                 tool_name = toolcall_message.tool_calls[0]["function"]["name"]
                                 history.append(toolcall_message)
-                                tool_info["content"] = self.toolcall_session.tool_call(name=tool_name, arguments=tool_arguments)
+                                tool_info["content"] = self.toolcall_sessions[tool_name].tool_call(name=tool_name, arguments=tool_arguments)
                                 history.append(tool_info)
                                 tool_info = {"content": "", "role": "tool"}
                                 tool_name = ""
@@ -925,10 +931,10 @@ class LocalAIChat(Base):
 
 
 class LocalLLM(Base):
-
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
         from jina import Client
+
         self.client = Client(port=12345, protocol="grpc", asyncio=True)
 
     def _prepare_prompt(self, system, history, gen_conf):
@@ -985,13 +991,7 @@ class VolcEngineChat(Base):
 
 
 class MiniMaxChat(Base):
-    def __init__(
-        self,
-        key,
-        model_name,
-        base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
-        **kwargs
-    ):
+    def __init__(self, key, model_name, base_url="https://api.minimax.chat/v1/text/chatcompletion_v2", **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         if not base_url:
@@ -1223,6 +1223,7 @@ class GeminiChat(Base):
 
     def _chat(self, history, gen_conf):
         from google.generativeai.types import content_types
+
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         hist = []
         for item in history:
