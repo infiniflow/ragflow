@@ -90,6 +90,8 @@ const selector = (state: RFState) => ({
   onConnect: state.onConnect,
   setNodes: state.setNodes,
   onSelectionChange: state.onSelectionChange,
+  onEdgeMouseEnter: state.onEdgeMouseEnter,
+  onEdgeMouseLeave: state.onEdgeMouseLeave,
 });
 
 export const useSelectCanvasData = () => {

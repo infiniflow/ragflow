@@ -5,14 +5,19 @@ import {
 } from '@/components/xyflow/tooltip-node';
 import { Position } from '@xyflow/react';
 import { Copy, Play, Trash2 } from 'lucide-react';
-import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
+import {
+  HTMLAttributes,
+  MouseEventHandler,
+  PropsWithChildren,
+  useCallback,
+} from 'react';
 import { Operator } from '../../constant';
 import { useDuplicateNode } from '../../hooks';
 import useGraphStore from '../../store';
 
-function IconWrapper({ children }: PropsWithChildren) {
+function IconWrapper({ children, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className="p-1.5 bg-text-title rounded-sm cursor-pointer">
+    <div className="p-1.5 bg-text-title rounded-sm cursor-pointer" {...props}>
       {children}
     </div>
   );
@@ -30,7 +35,7 @@ export function ToolBar({ selected, children, label, id }: ToolBarProps) {
     (store) => store.deleteIterationNodeById,
   );
 
-  const deleteNode: MouseEventHandler<SVGElement> = useCallback(
+  const deleteNode: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       e.stopPropagation();
       if (label === Operator.Iteration) {
@@ -44,7 +49,7 @@ export function ToolBar({ selected, children, label, id }: ToolBarProps) {
 
   const duplicateNode = useDuplicateNode();
 
-  const handleDuplicate: MouseEventHandler<SVGElement> = useCallback(
+  const handleDuplicate: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       e.stopPropagation();
       duplicateNode(id, label);
@@ -61,11 +66,11 @@ export function ToolBar({ selected, children, label, id }: ToolBarProps) {
           <IconWrapper>
             <Play className="size-3.5" />
           </IconWrapper>
-          <IconWrapper>
-            <Copy className="size-3.5" onClick={handleDuplicate} />
+          <IconWrapper onClick={handleDuplicate}>
+            <Copy className="size-3.5" />
           </IconWrapper>
-          <IconWrapper>
-            <Trash2 className="size-3.5" onClick={deleteNode} />
+          <IconWrapper onClick={deleteNode}>
+            <Trash2 className="size-3.5" />
           </IconWrapper>
         </section>
       </TooltipContent>
