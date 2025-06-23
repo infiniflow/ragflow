@@ -337,13 +337,13 @@ class LLMBundle:
 
         return txt[last_think_end + len("</think>") :]
 
-    def chat(self, system, history, gen_conf, **kwargs):
+    def chat(self, system, history, gen_conf):
         if self.langfuse:
             generation = self.trace.generation(name="chat", model=self.llm_name, input={"system": system, "history": history})
 
         chat = partial(self.mdl.chat, system, history, gen_conf)
         if self.is_tools and self.mdl.is_tools:
-            chat = partial(self.mdl.chat_with_tools, system, history, gen_conf, kwargs["max_rounds"])
+            chat = partial(self.mdl.chat_with_tools, system, history, gen_conf)
 
         txt, used_tokens = chat()
         txt = self._remove_reasoning_content(txt)
@@ -356,7 +356,7 @@ class LLMBundle:
 
         return txt
 
-    def chat_streamly(self, system, history, gen_conf, **kwargs):
+    def chat_streamly(self, system, history, gen_conf):
         if self.langfuse:
             generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
 
@@ -364,7 +364,7 @@ class LLMBundle:
         chat_streamly = partial(self.mdl.chat_streamly, system, history, gen_conf)
         total_tokens = 0
         if self.is_tools and self.mdl.is_tools:
-            chat_streamly = partial(self.mdl.chat_streamly_with_tools, system, history, gen_conf, kwargs["max_rounds"])
+            chat_streamly = partial(self.mdl.chat_streamly_with_tools, system, history, gen_conf)
 
         for txt in chat_streamly():
             if isinstance(txt, int):

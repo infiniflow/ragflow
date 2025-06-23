@@ -35,7 +35,7 @@ class AgentParam(LLMParam):
 
     def __init__(self):
         super().__init__()
-        self.llm_enabled_tools = []
+        self.tools = []
         self.max_rounds = 5
         self.description = ""
 
@@ -46,6 +46,12 @@ class AgentParam(LLMParam):
                 "name": "agent",
                 "description": self.description,
                 "parameters": {
+                    "user_prompt": {
+                        "type": "string",
+                        "description": "This is the order you need to sent to the agent.",
+                        "default": "{sys.query}",
+                        "required": True
+                    }
                 }
             }
         }
@@ -57,7 +63,7 @@ class Agent(LLM):
     def __init__(self, canvas, id, param: LLMParam):
         super().__init__(canvas, id, param)
         self.tools = {}
-        for cpn in self._param.llm_enabled_tools:
+        for cpn in self._param.tools:
             from agent.component import component_class
             param = component_class(cpn["component_name"] + "Param")()
             param.update(cpn["params"])
@@ -91,7 +97,7 @@ class Agent(LLM):
             return
 
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())
+        ans = self._generate(msg[0]["content"], msg[1:], conf=self._param.gen_conf())
         msg.pop(0)
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Extractor._chat got error. response: {ans}")
@@ -99,10 +105,10 @@ class Agent(LLM):
             return
         self.set_output("content", ans)
 
-    def stream_output_with_tools(self, chat_mdl, prompt, msg):
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
+    def stream_output_with_tools(self, prompt, msg):
+        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
-        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
+        for ans in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], gen_conf=self._param.gen_conf()):
             yield ans[len(answer):]
             answer = ans
         self.set_output("content", answer)

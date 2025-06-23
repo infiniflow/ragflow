@@ -63,6 +63,7 @@ class Message(ComponentBase):
                         pass
                 ans = v
             res[k] = ans
+            self.set_input_value(k, ans)
         return res
 
     def _stream(self):

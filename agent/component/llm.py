@@ -137,10 +137,10 @@ class LLM(ComponentBase):
 
         return prompt, msg
 
-    def _generate(self, sys_prompt:str, msg:list[dict], conf:dict) -> str:
+    def _generate(self, sys_prompt:str, msg:list[dict], conf:dict, **kwargs) -> str:
         if not self.imgs:
-            return self.chat_mdl.chat(sys_prompt, msg, conf)
-        return self.chat_mdl.chat(sys_prompt, msg, conf, image=self.imgs[0])
+            return self.chat_mdl.chat(sys_prompt, msg, conf, **kwargs)
+        return self.chat_mdl.chat(sys_prompt, msg, conf, image=self.imgs[0], **kwargs)
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
@@ -155,7 +155,7 @@ class LLM(ComponentBase):
         if self._param.output_structure:
             prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
             prompt += "\nRedundant information is FORBIDDEN."
-            for _ in range(self._param.retry_times+1):
+            for _ in range(self._param.max_retries+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
                 error = ""
                 ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())
@@ -180,7 +180,7 @@ class LLM(ComponentBase):
             self.set_output("content", partial(self._stream_output, prompt, msg))
             return
 
-        for _ in range(self._param.retry_times+1):
+        for _ in range(self._param.max_retries+1):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
             error = ""
             ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())

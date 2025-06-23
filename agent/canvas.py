@@ -124,6 +124,8 @@ class Canvas:
             except Exception as e:
                 raise ValueError(self.get_component_name(k) + f": {e}")
 
+            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
+
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]
         self.globals = self.dsl["globals"]
@@ -325,7 +327,7 @@ class Canvas:
         cpn_id, var_nm = exp.split("@")
         cpn = self.get_component(cpn_id)
         if not cpn:
-            raise Exception(f"Can't find variable: '{var_nm}'")
+            raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
         return cpn["obj"].output(var_nm)
 
     def get_tenant_id(self):

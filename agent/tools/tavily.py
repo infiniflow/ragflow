@@ -140,7 +140,7 @@ class TavilySearch(ToolBase, ABC):
         for fld in ["search_depth", "topic", "max_results", "days", "include_answer", "include_raw_content", "include_images", "include_image_descriptions", "include_domains", "exclude_domains"]:
             if fld not in kwargs:
                 kwargs[fld] = getattr(self._param, fld)
-        for _ in range(self._param.retry_times+1):
+        for _ in range(self._param.max_retries+1):
             try:
                 res = self.tavily_client.search(**kwargs)
                 self._retrieve_chunks(res)
