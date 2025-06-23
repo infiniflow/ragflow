@@ -28,7 +28,7 @@ import pdfplumber
 from cachetools import LRUCache, cached
 from PIL import Image
 from ruamel.yaml import YAML
-
+from pathlib import Path
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 
@@ -284,3 +284,87 @@ def read_potential_broken_pdf(blob):
         return repaired
 
     return blob
+
+
+def get_libreoffice_path():
+    """获取 LibreOffice 的可执行文件路径"""
+    system = platform.system()
+
+    if system == "Windows":
+        # Windows 常见安装路径
+        possible_paths = [
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files\LibreOffice\bin\soffice.exe"
+        ]
+    elif system == "Darwin":  # macOS
+        possible_paths = [
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+        ]
+    else:  # Linux
+        possible_paths = [
+            "/usr/bin/libreoffice",
+            "/usr/bin/soffice",
+            "/usr/local/bin/libreoffice"
+        ]
+
+    # 检查存在的路径
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+
+    # 尝试在 PATH 中查找
+    try:
+        if system == "Windows":
+            return subprocess.check_output("where soffice",
+                                           shell=True).decode().strip()
+        else:
+            return subprocess.check_output("which libreoffice || which soffice",
+                                           shell=True).decode().strip()
+    except:
+        raise RuntimeError(
+            "LibreOffice not found. Please install LibreOffice or specify the path manually.")
+
+
+def convert_to_pdf(input_path: str, output_dir: str = None) -> str:
+    """
+    使用LibreOffice将支持的文档格式转换为PDF
+    返回转换后的PDF文件路径
+    """
+    if output_dir is None:
+        output_dir = os.path.dirname(input_path)
+        # 获取 LibreOffice 路径
+    libreoffice_path = get_libreoffice_path()
+    if not os.path.exists(libreoffice_path):
+        raise FileNotFoundError(
+            f"LibreOffice executable not found at: {libreoffice_path}")
+    # 创建临时目录用于转换
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cmd = [
+            libreoffice_path,
+            '--headless',
+            '--convert-to',
+            'pdf',
+            '--outdir',
+            temp_dir,
+            input_path
+        ]
+
+        try:
+            print("正在转换文件为PDF...", input_path)
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            error_msg = f"转换失败: {e.stderr.decode('utf-8') if e.stderr else '未知错误'}"
+            raise RuntimeError(f"无法将文件转换为PDF: {error_msg}") from e
+
+        # 获取转换后的PDF文件
+        converted_files = list(Path(temp_dir).glob("*.pdf"))
+        if not converted_files:
+            raise FileNotFoundError("未生成PDF文件，转换可能失败")
+
+        # 将PDF移动到目标目录
+        pdf_path = converted_files[0]
+        target_path = os.path.join(output_dir, pdf_path.name)
+        shutil.move(str(pdf_path), target_path)
+
+        return target_path

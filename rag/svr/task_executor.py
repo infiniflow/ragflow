@@ -51,9 +51,12 @@ from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
 from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
 from api import settings
 from api.versions import get_ragflow_version
 from api.db.db_models import close_connection
+from api.utils.file_utils import convert_to_pdf
+from api.utils import get_uuid
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
     email, tag
 from rag.nlp import search, rag_tokenizer
@@ -551,6 +554,30 @@ async def do_handle_task(task):
             await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
         return
+    elif task.get("task_type", "") == "convert2pdf":
+        start_ts = timer()
+        bucket, name = File2DocumentService.get_by_document_id(doc_id=task["doc_id"])
+        binary = await get_storage_binary(bucket, name)
+        pdf_path = convert_to_pdf(binary)
+        pdf_name = pdf_path.split('/')[-1]
+        # 读取文件的二进制内容
+        with open(pdf_path, "rb") as file:
+            pdf = file.read()
+        file = {
+            "id": get_uuid(),
+            "parent_id": task["kb_id"],
+            "type": "pdf",
+            "name": pdf_name,
+            "location": pdf_name,
+            "size": len(pdf),
+        }
+        file = FileService.insert(file)
+        File2DocumentService.update_by_doc_id(task["doc_id"], {"pdf_file_id":file[id]})
+        STORAGE_IMPL.put(task["kb_id"],pdf_name, pdf)
+        # delete tmp file
+        os.remove(pdf_path)
+        progress_callback(prog=1.0, msg="Convert to Pdf done ({:.2f}s)".format(
+            timer() - start_ts))
     else:
         # Standard chunking methods
         start_ts = timer()
