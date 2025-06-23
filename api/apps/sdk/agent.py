@@ -14,8 +14,14 @@
 #  limitations under the License.
 #
 
+import json
+import time
+from typing import Any, cast
 from api.db.services.canvas_service import UserCanvasService
-from api.utils.api_utils import get_error_data_result, token_required
+from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.settings import RetCode
+from api.utils import get_uuid
+from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, token_required
 from api.utils.api_utils import get_result
 from flask import request
 
@@ -37,3 +43,86 @@ def list_agents(tenant_id):
         desc = True
     canvas = UserCanvasService.get_list(tenant_id,page_number,items_per_page,orderby,desc,id,title)
     return get_result(data=canvas)
+
+
+@manager.route("/agents", methods=["POST"])  # noqa: F821
+@token_required
+def create_agent(tenant_id: str):
+    req: dict[str, Any] = cast(dict[str, Any], request.json)
+    req["user_id"] = tenant_id
+
+    if req.get("dsl") is not None:
+        if not isinstance(req["dsl"], str):
+            req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
+
+        req["dsl"] = json.loads(req["dsl"])
+    else:
+        return get_json_result(data=False, message="No DSL data in request.", code=RetCode.ARGUMENT_ERROR)
+
+    if req.get("title") is not None:
+        req["title"] = req["title"].strip()
+    else:
+        return get_json_result(data=False, message="No title in request.", code=RetCode.ARGUMENT_ERROR)
+
+    if UserCanvasService.query(user_id=tenant_id, title=req["title"]):
+        return get_data_error_result(message=f"Agent with title {req['title']} already exists.")
+
+    agent_id = get_uuid()
+    req["id"] = agent_id
+
+    if not UserCanvasService.save(**req):
+        return get_data_error_result(message="Fail to create agent.")
+
+    UserCanvasVersionService.insert(
+        user_canvas_id=agent_id,
+        title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")),
+        dsl=req["dsl"]
+    )
+
+    return get_json_result(data=True)
+
+
+@manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
+@token_required
+def update_agent(tenant_id: str, agent_id: str):
+    req: dict[str, Any] = {k: v for k, v in cast(dict[str, Any], request.json).items() if v is not None}
+    req["user_id"] = tenant_id
+
+    if req.get("dsl") is not None:
+        if not isinstance(req["dsl"], str):
+            req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
+
+        req["dsl"] = json.loads(req["dsl"])
+    
+    if req.get("title") is not None:
+        req["title"] = req["title"].strip()
+
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+        return get_json_result(
+            data=False, message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR)
+
+    UserCanvasService.update_by_id(agent_id, req)
+
+    if req.get("dsl") is not None:
+        UserCanvasVersionService.insert(
+            user_canvas_id=agent_id,
+            title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")),
+            dsl=req["dsl"]
+        )
+
+        UserCanvasVersionService.delete_all_versions(agent_id)
+
+    return get_json_result(data=True)
+
+
+@manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821
+@token_required
+def delete_agent(tenant_id: str, agent_id: str):
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+        return get_json_result(
+            data=False, message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR)
+
+    UserCanvasService.delete_by_id(agent_id)
+    return get_json_result(data=True)

@@ -1,12 +1,11 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { Switch as AntSwitch, Form, Select } from 'antd';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
-import { useFormContext } from 'react-hook-form';
-import { DatasetConfigurationContainer } from '../dataset-configuration-container';
-import EntityTypesItem from '../entity-types-item';
+import { useFormContext, useWatch } from 'react-hook-form';
+import { EntityTypesFormField } from '../entity-types-form-field';
+import { FormContainer } from '../form-container';
 import {
   FormControl,
   FormField,
@@ -14,6 +13,7 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
+import { RAGFlowSelect } from '../ui/select';
 import { Switch } from '../ui/switch';
 
 const excludedTagParseMethods = [
@@ -46,23 +46,8 @@ export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
 
 type GraphRagItemsProps = {
   marginBottom?: boolean;
+  className?: string;
 };
-
-export function UseGraphRagItem() {
-  const { t } = useTranslate('knowledgeConfiguration');
-
-  return (
-    <Form.Item
-      name={['parser_config', 'graphrag', 'use_graphrag']}
-      label={t('useGraphRag')}
-      initialValue={false}
-      valuePropName="checked"
-      tooltip={t('useGraphRagTip')}
-    >
-      <AntSwitch />
-    </Form.Item>
-  );
-}
 
 export function UseGraphRagFormField() {
   const form = useFormContext();
@@ -73,17 +58,27 @@ export function UseGraphRagFormField() {
       control={form.control}
       name="parser_config.graphrag.use_graphrag"
       render={({ field }) => (
-        <FormItem defaultChecked={false}>
-          <FormLabel tooltip={t('useGraphRagTip')}>
-            {t('useGraphRag')}
-          </FormLabel>
-          <FormControl>
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            ></Switch>
-          </FormControl>
-          <FormMessage />
+        <FormItem defaultChecked={false} className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('useGraphRagTip')}
+              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+            >
+              {t('useGraphRag')}
+            </FormLabel>
+            <div className="w-3/4">
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                ></Switch>
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />
@@ -91,8 +86,17 @@ export function UseGraphRagFormField() {
 }
 
 // The three types "table", "resume" and "one" do not display this configuration.
-const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
+const GraphRagItems = ({
+  marginBottom = false,
+  className = 'p-10',
+}: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
+
+  const useRaptor = useWatch({
+    control: form.control,
+    name: 'parser_config.graphrag.use_graphrag',
+  });
 
   const methodOptions = useMemo(() => {
     return [MethodValue.Light, MethodValue.General].map((x) => ({
@@ -103,70 +107,112 @@ const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
 
   const renderWideTooltip = useCallback(
     (title: React.ReactNode | string) => {
-      return {
-        title: typeof title === 'string' ? t(title) : title,
-        overlayInnerStyle: { width: '32vw' },
-      };
+      return typeof title === 'string' ? t(title) : title;
     },
     [t],
   );
 
   return (
-    <DatasetConfigurationContainer className={cn({ 'mb-4': marginBottom })}>
-      <UseGraphRagItem></UseGraphRagItem>
-      <Form.Item
-        shouldUpdate={(prevValues, curValues) =>
-          prevValues.parser_config.graphrag.use_graphrag !==
-          curValues.parser_config.graphrag.use_graphrag
-        }
-      >
-        {({ getFieldValue }) => {
-          const useRaptor = getFieldValue([
-            'parser_config',
-            'graphrag',
-            'use_graphrag',
-          ]);
+    <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
+      <UseGraphRagFormField></UseGraphRagFormField>
+      {useRaptor && (
+        <>
+          <EntityTypesFormField name="parser_config.graphrag.entity_types"></EntityTypesFormField>
+          <FormField
+            control={form.control}
+            name="parser_config.graphrag.method"
+            render={({ field }) => (
+              <FormItem className=" items-center space-y-0 ">
+                <div className="flex items-center">
+                  <FormLabel
+                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    tooltip={renderWideTooltip(
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: t('graphRagMethodTip'),
+                        }}
+                      ></div>,
+                    )}
+                  >
+                    {t('graphRagMethod')}
+                  </FormLabel>
+                  <div className="w-3/4">
+                    <FormControl>
+                      <RAGFlowSelect
+                        {...field}
+                        options={methodOptions}
+                      ></RAGFlowSelect>
+                    </FormControl>
+                  </div>
+                </div>
+                <div className="flex pt-1">
+                  <div className="w-1/4"></div>
+                  <FormMessage />
+                </div>
+              </FormItem>
+            )}
+          />
 
-          return (
-            useRaptor && (
-              <>
-                <EntityTypesItem
-                  field={['parser_config', 'graphrag', 'entity_types']}
-                ></EntityTypesItem>
-                <Form.Item
-                  name={['parser_config', 'graphrag', 'method']}
-                  label={t('graphRagMethod')}
-                  tooltip={renderWideTooltip(
-                    <div
-                      dangerouslySetInnerHTML={{
-                        __html: t('graphRagMethodTip'),
-                      }}
-                    ></div>,
-                  )}
-                  initialValue={MethodValue.Light}
-                >
-                  <Select options={methodOptions} />
-                </Form.Item>
-                <Form.Item
-                  name={['parser_config', 'graphrag', 'resolution']}
-                  label={t('resolution')}
-                  tooltip={renderWideTooltip('resolutionTip')}
-                >
-                  <AntSwitch />
-                </Form.Item>
-                <Form.Item
-                  name={['parser_config', 'graphrag', 'community']}
-                  label={t('community')}
-                  tooltip={renderWideTooltip('communityTip')}
-                >
-                  <AntSwitch />
-                </Form.Item>
-              </>
-            )
-          );
-        }}
-      </Form.Item>
-    </DatasetConfigurationContainer>
+          <FormField
+            control={form.control}
+            name="parser_config.graphrag.resolution"
+            render={({ field }) => (
+              <FormItem className=" items-center space-y-0 ">
+                <div className="flex items-center">
+                  <FormLabel
+                    tooltip={renderWideTooltip('resolutionTip')}
+                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                  >
+                    {t('resolution')}
+                  </FormLabel>
+                  <div className="w-3/4">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
+                    </FormControl>
+                  </div>
+                </div>
+                <div className="flex pt-1">
+                  <div className="w-1/4"></div>
+                  <FormMessage />
+                </div>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="parser_config.graphrag.community"
+            render={({ field }) => (
+              <FormItem className=" items-center space-y-0 ">
+                <div className="flex items-center">
+                  <FormLabel
+                    tooltip={renderWideTooltip('communityTip')}
+                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                  >
+                    {t('community')}
+                  </FormLabel>
+                  <div className="w-3/4">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
+                    </FormControl>
+                  </div>
+                </div>
+                <div className="flex pt-1">
+                  <div className="w-1/4"></div>
+                  <FormMessage />
+                </div>
+              </FormItem>
+            )}
+          />
+        </>
+      )}
+    </FormContainer>
   );
 };
 

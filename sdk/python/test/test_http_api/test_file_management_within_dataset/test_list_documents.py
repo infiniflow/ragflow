@@ -21,6 +21,7 @@ from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import is_sorted
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -40,6 +41,7 @@ class TestAuthorization:
 
 
 class TestDocumentsList:
+    @pytest.mark.p1
     def test_default(self, get_http_api_auth, add_documents):
         dataset_id, _ = add_documents
         res = list_documnets(get_http_api_auth, dataset_id)
@@ -47,6 +49,7 @@ class TestDocumentsList:
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -63,6 +66,7 @@ class TestDocumentsList:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -105,6 +109,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -146,6 +151,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
@@ -174,6 +180,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
@@ -206,6 +213,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "params, expected_num",
         [
@@ -223,6 +231,7 @@ class TestDocumentsList:
         assert len(res["data"]["docs"]) == expected_num
         assert res["data"]["total"] == expected_num
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
@@ -257,6 +266,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_num, expected_message",
         [
@@ -291,6 +301,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, name, expected_code, expected_num, expected_message",
         [
@@ -328,7 +339,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_list(self, get_http_api_auth, add_documents):
         dataset_id, _ = add_documents
 
@@ -337,6 +348,7 @@ class TestDocumentsList:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
+    @pytest.mark.p3
     def test_invalid_params(self, get_http_api_auth, add_documents):
         dataset_id, _ = add_documents
         params = {"a": "b"}

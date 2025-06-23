@@ -27,6 +27,7 @@ import xxhash
 from peewee import fn
 
 from api import settings
+from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant
 from api.db.db_utils import bulk_insert_into_db
@@ -34,7 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import current_timestamp, get_format_time, get_uuid
 from rag.nlp import rag_tokenizer, search
-from rag.settings import get_svr_queue_name
+from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr
@@ -119,6 +120,22 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_total_size_by_kb_id(cls, kb_id, keywords="", run_status=[], types=[]):
+        query = cls.model.select(fn.COALESCE(fn.SUM(cls.model.size), 0)).where(
+            cls.model.kb_id == kb_id
+        )
+
+        if keywords:
+            query = query.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
+        if run_status:
+            query = query.where(cls.model.run.in_(run_status))
+        if types:
+            query = query.where(cls.model.type.in_(types))
+
+        return int(query.scalar()) or 0
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
@@ -131,7 +148,26 @@ class DocumentService(CommonService):
     def remove_document(cls, doc, tenant_id):
         cls.clear_chunk_num(doc.id)
         try:
+            page = 0
+            page_size = 1000
+            all_chunk_ids = []
+            while True:
+                chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
+                                                      page * page_size, page_size, search.index_name(tenant_id),
+                                                      [doc.kb_id])
+                chunk_ids = settings.docStoreConn.getChunkIds(chunks)
+                if not chunk_ids:
+                    break
+                all_chunk_ids.extend(chunk_ids)
+                page += 1
+            for cid in all_chunk_ids:
+                if STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                    STORAGE_IMPL.rm(doc.kb_id, cid)
+            if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
+                if STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
+                    STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+
             graph_source = settings.docStoreConn.getFields(
                 settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
@@ -448,7 +484,8 @@ class DocumentService(CommonService):
                     if t.progress == -1:
                         bad += 1
                     prg += t.progress if t.progress >= 0 else 0
-                    msg.append(t.progress_msg)
+                    if t.progress_msg.strip():
+                        msg.append(t.progress_msg)
                     if t.task_type == "raptor":
                         has_raptor = True
                     elif t.task_type == "graphrag":
@@ -478,6 +515,8 @@ class DocumentService(CommonService):
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
+                else:
+                    info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
                 cls.update_by_id(d["id"], info)
             except Exception as e:
                 if str(e).find("'0'") < 0:
@@ -524,6 +563,11 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
     assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+
+
+def get_queue_length(priority):
+    group_info = REDIS_CONN.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+    return int(group_info.get("lag", 0))
 
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):

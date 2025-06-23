@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import re
 from abc import ABC
 
 import pandas as pd
@@ -59,6 +60,7 @@ class Retrieval(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
+        query = re.split(r"(USER:|ASSISTANT:)", query)[-1]
 
         kb_ids: list[str] = self._param.kb_ids or []
 
@@ -94,6 +96,7 @@ class Retrieval(ComponentBase, ABC):
             rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
 
         if kbs:
+            query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
             kbinfos = settings.retrievaler.retrieval(
                 query,
                 embd_mdl,

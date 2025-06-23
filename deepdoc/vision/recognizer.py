@@ -52,20 +52,20 @@ class Recognizer:
         self.label_list = label_list
 
     @staticmethod
-    def sort_Y_firstly(arr, threashold):
+    def sort_Y_firstly(arr, threshold):
         def cmp(c1, c2):
             diff = c1["top"] - c2["top"]
-            if abs(diff) < threashold:
+            if abs(diff) < threshold:
                 diff = c1["x0"] - c2["x0"]
             return diff
         arr = sorted(arr, key=cmp_to_key(cmp))
         return arr
 
     @staticmethod
-    def sort_X_firstly(arr, threashold):
+    def sort_X_firstly(arr, threshold):
         def cmp(c1, c2):
             diff = c1["x0"] - c2["x0"]
-            if abs(diff) < threashold:
+            if abs(diff) < threshold:
                 diff = c1["top"] - c2["top"]
             return diff
         arr = sorted(arr, key=cmp_to_key(cmp))
@@ -133,7 +133,7 @@ class Recognizer:
 
     @staticmethod
     def layouts_cleanup(boxes, layouts, far=2, thr=0.7):
-        def notOverlapped(a, b):
+        def not_overlapped(a, b):
             return any([a["x1"] < b["x0"],
                         a["x0"] > b["x1"],
                         a["bottom"] < b["top"],
@@ -144,7 +144,7 @@ class Recognizer:
             j = i + 1
             while j < min(i + far, len(layouts)) \
                     and (layouts[i].get("type", "") != layouts[j].get("type", "")
-                         or notOverlapped(layouts[i], layouts[j])):
+                         or not_overlapped(layouts[i], layouts[j])):
                 j += 1
             if j >= min(i + far, len(layouts)):
                 i += 1
@@ -163,9 +163,9 @@ class Recognizer:
 
             area_i, area_i_1 = 0, 0
             for b in boxes:
-                if not notOverlapped(b, layouts[i]):
+                if not not_overlapped(b, layouts[i]):
                     area_i += Recognizer.overlapped_area(b, layouts[i], False)
-                if not notOverlapped(b, layouts[j]):
+                if not not_overlapped(b, layouts[j]):
                     area_i_1 += Recognizer.overlapped_area(b, layouts[j], False)
 
             if area_i > area_i_1:
@@ -239,15 +239,15 @@ class Recognizer:
                 e -= 1
             break
 
-        max_overlaped_i, max_overlaped = None, 0
+        max_overlapped_i, max_overlapped = None, 0
         for i in range(s, e):
             ov = Recognizer.overlapped_area(bxs[i], box)
-            if ov <= max_overlaped:
+            if ov <= max_overlapped:
                 continue
-            max_overlaped_i = i
-            max_overlaped = ov
+            max_overlapped_i = i
+            max_overlapped = ov
 
-        return max_overlaped_i
+        return max_overlapped_i
 
     @staticmethod
     def find_horizontally_tightest_fit(box, boxes):
@@ -264,7 +264,7 @@ class Recognizer:
         return min_i
 
     @staticmethod
-    def find_overlapped_with_threashold(box, boxes, thr=0.3):
+    def find_overlapped_with_threshold(box, boxes, thr=0.3):
         if not boxes:
             return
         max_overlapped_i, max_overlapped, _max_overlapped = None, thr, 0
@@ -408,18 +408,18 @@ class Recognizer:
 
     def __call__(self, image_list, thr=0.7, batch_size=16):
         res = []
-        imgs = []
+        images = []
         for i in range(len(image_list)):
             if not isinstance(image_list[i], np.ndarray):
-                imgs.append(np.array(image_list[i]))
+                images.append(np.array(image_list[i]))
             else:
-                imgs.append(image_list[i])
+                images.append(image_list[i])
 
-        batch_loop_cnt = math.ceil(float(len(imgs)) / batch_size)
+        batch_loop_cnt = math.ceil(float(len(images)) / batch_size)
         for i in range(batch_loop_cnt):
             start_index = i * batch_size
-            end_index = min((i + 1) * batch_size, len(imgs))
-            batch_image_list = imgs[start_index:end_index]
+            end_index = min((i + 1) * batch_size, len(images))
+            batch_image_list = images[start_index:end_index]
             inputs = self.preprocess(batch_image_list)
             logging.debug("preprocess")
             for ins in inputs:

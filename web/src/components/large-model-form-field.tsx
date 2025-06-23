@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/form';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { NextLLMSelect } from './llm-select';
+import { NextLLMSelect } from './llm-select/next';
 
 export function LargeModelFormField() {
   const form = useFormContext();

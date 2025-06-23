@@ -20,6 +20,7 @@ from common import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN, list_documnets, updat
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,6 +40,7 @@ class TestAuthorization:
 
 
 class TestDocumentsUpdated:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
         [
@@ -90,6 +92,7 @@ class TestDocumentsUpdated:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -107,6 +110,7 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -124,6 +128,7 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "meta_fields, expected_code, expected_message",
         [({"test": "test"}, 0, ""), ("test", 102, "meta_fields must be a dictionary")],
@@ -137,6 +142,7 @@ class TestDocumentsUpdated:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, expected_code, expected_message",
         [
@@ -167,13 +173,14 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
-            if chunk_method != "":
-                assert res["data"]["docs"][0]["chunk_method"] == chunk_method
-            else:
+            if chunk_method == "":
                 assert res["data"]["docs"][0]["chunk_method"] == "naive"
+            else:
+                assert res["data"]["docs"][0]["chunk_method"] == chunk_method
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -293,6 +300,7 @@ class TestDocumentsUpdated:
 
 
 class TestUpdateDocumentParserConfig:
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, parser_config, expected_code, expected_message",
         [
@@ -524,10 +532,7 @@ class TestUpdateDocumentParserConfig:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
-            if parser_config != {}:
-                for k, v in parser_config.items():
-                    assert res["data"]["docs"][0]["parser_config"][k] == v
-            else:
+            if parser_config == {}:
                 assert res["data"]["docs"][0]["parser_config"] == {
                     "chunk_token_num": 128,
                     "delimiter": r"\n",
@@ -535,5 +540,8 @@ class TestUpdateDocumentParserConfig:
                     "layout_recognize": "DeepDOC",
                     "raptor": {"use_raptor": False},
                 }
+            else:
+                for k, v in parser_config.items():
+                    assert res["data"]["docs"][0]["parser_config"][k] == v
         if expected_code != 0 or expected_message:
             assert res["message"] == expected_message

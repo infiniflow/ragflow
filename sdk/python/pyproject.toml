@@ -1,6 +1,6 @@
 [project]
 name = "ragflow-sdk"
-version = "0.18.0"
+version = "0.19.1"
 description = "Python client sdk of [RAGFlow](https://github.com/infiniflow/ragflow). RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license = { text = "Apache License, Version 2.0" }
@@ -24,4 +24,8 @@ test = [
 
 
 [tool.pytest.ini_options]
-markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+markers = [
+    "p1: high priority test cases",
+    "p2: medium priority test cases",
+    "p3: low priority test cases",
+]

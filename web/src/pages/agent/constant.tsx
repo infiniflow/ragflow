@@ -1,39 +1,23 @@
 import {
-  GitHubIcon,
-  KeywordIcon,
-  QWeatherIcon,
-  WikipediaIcon,
-} from '@/assets/icon/Icon';
-import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
-import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
-import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
-import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
-import { ReactComponent as BeginIcon } from '@/assets/svg/begin.svg';
-import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
-import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.svg';
-import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
-import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
-import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
-import { ReactComponent as EmailIcon } from '@/assets/svg/email.svg';
-import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
-import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
-import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
-import { ReactComponent as InvokeIcon } from '@/assets/svg/invoke-ai.svg';
-import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
-import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
-import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
-import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
-import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
-import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
-import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
-import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
+  initialKeywordsSimilarityWeightValue,
+  initialSimilarityThresholdValue,
+} from '@/components/similarity-slider';
+import {
+  AgentGlobals,
+  CodeTemplateStrMap,
+  ProgrammingLanguage,
+} from '@/constants/agent';
 
-// 邮件功能
+export enum AgentDialogueMode {
+  Conversational = 'conversational',
+  Task = 'task',
+}
 
 import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
 } from '@/constants/chat';
+import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 
@@ -43,20 +27,14 @@ export enum Channel {
   News = 'news',
 }
 
-import {
-  BranchesOutlined,
-  DatabaseOutlined,
-  FormOutlined,
-  MergeCellsOutlined,
-  MessageOutlined,
-  RocketOutlined,
-  SendOutlined,
-} from '@ant-design/icons';
+export enum PromptRole {
+  User = 'user',
+  Assistant = 'assistant',
+}
+
 import upperFirst from 'lodash/upperFirst';
 import {
-  CirclePower,
   CloudUpload,
-  IterationCcw,
   ListOrdered,
   OptionIcon,
   TextCursorInput,
@@ -103,7 +81,14 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
+  Code = 'Code',
+  WaitingDialogue = 'WaitingDialogue',
+  Agent = 'Agent',
+  Tool = 'Tool',
+  Tavily = 'Tavily',
 }
+
+export const SwitchLogicOperatorOptions = ['and', 'or'];
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -121,47 +106,10 @@ export const AgentOperatorList = [
   Operator.Concentrator,
   Operator.Template,
   Operator.Iteration,
+  Operator.WaitingDialogue,
   Operator.Note,
+  Operator.Agent,
 ];
-
-export const operatorIconMap = {
-  [Operator.Retrieval]: RocketOutlined,
-  [Operator.Generate]: MergeCellsOutlined,
-  [Operator.Answer]: SendOutlined,
-  [Operator.Begin]: BeginIcon,
-  [Operator.Categorize]: DatabaseOutlined,
-  [Operator.Message]: MessageOutlined,
-  [Operator.Relevant]: BranchesOutlined,
-  [Operator.RewriteQuestion]: FormOutlined,
-  [Operator.KeywordExtract]: KeywordIcon,
-  [Operator.DuckDuckGo]: DuckIcon,
-  [Operator.Baidu]: BaiduIcon,
-  [Operator.Wikipedia]: WikipediaIcon,
-  [Operator.PubMed]: PubMedIcon,
-  [Operator.ArXiv]: ArXivIcon,
-  [Operator.Google]: GoogleIcon,
-  [Operator.Bing]: BingIcon,
-  [Operator.GoogleScholar]: GoogleScholarIcon,
-  [Operator.DeepL]: DeepLIcon,
-  [Operator.GitHub]: GitHubIcon,
-  [Operator.BaiduFanyi]: baiduFanyiIcon,
-  [Operator.QWeather]: QWeatherIcon,
-  [Operator.ExeSQL]: ExeSqlIcon,
-  [Operator.Switch]: SwitchIcon,
-  [Operator.WenCai]: WenCaiIcon,
-  [Operator.AkShare]: AkShareIcon,
-  [Operator.YahooFinance]: YahooFinanceIcon,
-  [Operator.Jin10]: Jin10Icon,
-  [Operator.Concentrator]: ConcentratorIcon,
-  [Operator.TuShare]: TuShareIcon,
-  [Operator.Note]: NoteIcon,
-  [Operator.Crawler]: CrawlerIcon,
-  [Operator.Invoke]: InvokeIcon,
-  [Operator.Template]: TemplateIcon,
-  [Operator.Email]: EmailIcon,
-  [Operator.Iteration]: IterationCcw,
-  [Operator.IterationStart]: CirclePower,
-};
 
 export const operatorMap: Record<
   Operator,
@@ -299,6 +247,10 @@ export const operatorMap: Record<
   [Operator.Email]: { backgroundColor: '#e6f7ff' },
   [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
   [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
+  [Operator.Code]: { backgroundColor: '#4c5458' },
+  [Operator.WaitingDialogue]: { backgroundColor: '#a5d65c' },
+  [Operator.Agent]: { backgroundColor: '#a5d65c' },
+  [Operator.Tavily]: { backgroundColor: '#a5d65c' },
 };
 
 export const componentMenuList = [
@@ -335,6 +287,15 @@ export const componentMenuList = [
   },
   {
     name: Operator.Iteration,
+  },
+  {
+    name: Operator.Code,
+  },
+  {
+    name: Operator.WaitingDialogue,
+  },
+  {
+    name: Operator.Agent,
   },
   {
     name: Operator.Note,
@@ -404,18 +365,46 @@ export const componentMenuList = [
   },
 ];
 
+export const SwitchOperatorOptions = [
+  { value: '=', label: 'equal', icon: 'equal' },
+  { value: '≠', label: 'notEqual', icon: 'not-equals' },
+  { value: '>', label: 'gt', icon: 'Less' },
+  { value: '≥', label: 'ge', icon: 'Greater-or-equal' },
+  { value: '<', label: 'lt', icon: 'Less' },
+  { value: '≤', label: 'le', icon: 'less-or-equal' },
+  { value: 'contains', label: 'contains', icon: 'Contains' },
+  { value: 'not contains', label: 'notContains', icon: 'not-contains' },
+  { value: 'start with', label: 'startWith', icon: 'list-start' },
+  { value: 'end with', label: 'endWith', icon: 'list-end' },
+  { value: 'empty', label: 'empty', icon: 'circle' },
+  { value: 'not empty', label: 'notEmpty', icon: 'circle-slash-2' },
+];
+
+export const SwitchElseTo = 'end_cpn_ids';
+
 const initialQueryBaseValues = {
   query: [],
 };
 
 export const initialRetrievalValues = {
-  similarity_threshold: 0.2,
-  keywords_similarity_weight: 0.3,
+  query: AgentGlobals.SysQuery,
   top_n: 8,
-  ...initialQueryBaseValues,
+  top_k: 1024,
+  kb_ids: [],
+  rerank_id: '',
+  empty_response: '',
+  ...initialSimilarityThresholdValue,
+  ...initialKeywordsSimilarityWeightValue,
+  outputs: {
+    formalized_content: {
+      type: 'string',
+      value: '',
+    },
+  },
 };
 
 export const initialBeginValues = {
+  mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant, what can I do for you?`,
 };
 
@@ -457,6 +446,7 @@ export const initialRelevantValues = {
 
 export const initialCategorizeValues = {
   ...initialLlmBaseValues,
+  parameter: ModelVariableType.Precise,
   message_history_window_size: 1,
   category_description: {},
   ...initialQueryBaseValues,
@@ -563,7 +553,20 @@ export const initialExeSqlValues = {
   ...initialQueryBaseValues,
 };
 
-export const initialSwitchValues = { conditions: [] };
+export const initialSwitchValues = {
+  conditions: [
+    {
+      logical_operator: SwitchLogicOperatorOptions[0],
+      items: [
+        {
+          operator: SwitchOperatorOptions[0].value,
+        },
+      ],
+      to: [],
+    },
+  ],
+  [SwitchElseTo]: [],
+};
 
 export const initialWenCaiValues = {
   top_n: 20,
@@ -644,6 +647,79 @@ export const initialIterationValues = {
   delimiter: ',',
 };
 export const initialIterationStartValues = {};
+
+export const initialCodeValues = {
+  lang: 'python',
+  script: CodeTemplateStrMap[ProgrammingLanguage.Python],
+  arguments: [
+    {
+      name: 'arg1',
+    },
+    {
+      name: 'arg2',
+    },
+  ],
+};
+
+export const initialWaitingDialogueValues = {};
+
+export const initialAgentValues = {
+  ...initialLlmBaseValues,
+  sys_prompt: ``,
+  prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
+  message_history_window_size: 12,
+  tools: [],
+  outputs: {
+    structured_output: {
+      // topic: {
+      //   type: 'string',
+      //   description:
+      //     'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
+      //   enum: ['general', 'news'],
+      //   default: 'general',
+      // },
+    },
+    content: {
+      type: 'string',
+      value: '',
+    },
+  },
+};
+
+export enum TavilySearchDepth {
+  Basic = 'basic',
+  Advanced = 'advanced',
+}
+
+export enum TavilyTopic {
+  News = 'news',
+  General = 'general',
+}
+
+export const initialTavilyValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  search_depth: TavilySearchDepth.Basic,
+  topic: TavilyTopic.General,
+  max_results: 5,
+  days: 7,
+  include_answer: false,
+  include_raw_content: true,
+  include_images: false,
+  include_image_descriptions: false,
+  include_domains: [],
+  exclude_domains: [],
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'Object',
+    },
+  },
+};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -726,6 +802,9 @@ export const RestrictedUpstreamMap = {
   [Operator.Email]: [Operator.Begin],
   [Operator.Iteration]: [Operator.Begin],
   [Operator.IterationStart]: [Operator.Begin],
+  [Operator.Code]: [Operator.Begin],
+  [Operator.WaitingDialogue]: [Operator.Begin],
+  [Operator.Agent]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -765,6 +844,11 @@ export const NodeMap = {
   [Operator.Email]: 'emailNode',
   [Operator.Iteration]: 'group',
   [Operator.IterationStart]: 'iterationStartNode',
+  [Operator.Code]: 'ragNode',
+  [Operator.WaitingDialogue]: 'ragNode',
+  [Operator.Agent]: 'agentNode',
+  [Operator.Tool]: 'toolNode',
+  [Operator.Tavily]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -2903,25 +2987,6 @@ export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb', 'mssql'].map(
   }),
 );
 
-export const SwitchElseTo = 'end_cpn_id';
-
-export const SwitchOperatorOptions = [
-  { value: '=', label: 'equal' },
-  { value: '≠', label: 'notEqual' },
-  { value: '>', label: 'gt' },
-  { value: '≥', label: 'ge' },
-  { value: '<', label: 'lt' },
-  { value: '≤', label: 'le' },
-  { value: 'contains', label: 'contains' },
-  { value: 'not contains', label: 'notContains' },
-  { value: 'start with', label: 'startWith' },
-  { value: 'end with', label: 'endWith' },
-  { value: 'empty', label: 'empty' },
-  { value: 'not empty', label: 'notEmpty' },
-];
-
-export const SwitchLogicOperatorOptions = ['and', 'or'];
-
 export const WenCaiQueryTypeOptions = [
   'stock',
   'zhishu',
@@ -2983,3 +3048,9 @@ export const NoDebugOperatorsList = [
   Operator.Switch,
   Operator.Iteration,
 ];
+
+export enum NodeHandleId {
+  Start = 'start',
+  End = 'end',
+  Tool = 'tool',
+}

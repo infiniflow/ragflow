@@ -57,7 +57,7 @@ async def run_graphrag(
 
     subgraph = await generate_subgraph(
         LightKGExt
-        if row["kb_parser_config"]["graphrag"]["method"] != "general"
+        if "method" not in row["kb_parser_config"]["graphrag"] or row["kb_parser_config"]["graphrag"]["method"] != "general"
         else GeneralKGExt,
         tenant_id,
         kb_id,
@@ -88,7 +88,7 @@ async def run_graphrag(
         )
         assert new_graph is not None
 
-        if not with_resolution or not with_community:
+        if not with_resolution and not with_community:
             return
 
         if with_resolution:
@@ -166,7 +166,7 @@ async def generate_subgraph(
         )
     if ignored_rels:
         callback(msg=f"ignored {ignored_rels} relations due to missing entities.")
-    tidy_graph(subgraph, callback)
+    tidy_graph(subgraph, callback, check_attribute=False)
 
     subgraph.graph["source_id"] = [doc_id]
     chunk = {

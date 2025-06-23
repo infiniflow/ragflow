@@ -39,6 +39,7 @@ class OIDCClient(OAuthClient):
         })
 
         super().__init__(config)
+        self.issuer = config['issuer']
         self.jwks_uri = config['jwks_uri']
 
 
@@ -60,18 +61,14 @@ class OIDCClient(OAuthClient):
         Parse and validate OIDC ID Token (JWT format) with signature verification.
         """
         try:
-            # Decode JWT header to extract key ID (kid) without verifying signature
+            # Decode JWT header without verifying signature
             headers = jwt.get_unverified_header(id_token)
-            kid = headers.get("kid")
-            if not kid:
-                raise ValueError("ID Token missing 'kid' in header")
             
             # OIDC usually uses `RS256` for signing
             alg = headers.get("alg", "RS256")
 
             # Use PyJWT's PyJWKClient to fetch JWKS and find signing key
-            jwks_url = f"{self.issuer}/.well-known/jwks.json"
-            jwks_cli = jwt.PyJWKClient(jwks_url)
+            jwks_cli = jwt.PyJWKClient(self.jwks_uri)
             signing_key = jwks_cli.get_signing_key_from_jwt(id_token).key
 
             # Decode and verify signature
@@ -79,7 +76,7 @@ class OIDCClient(OAuthClient):
                 id_token,
                 key=signing_key,
                 algorithms=[alg],  
-                audience=self.client_id,
+                audience=str(self.client_id),
                 issuer=self.issuer,
             )
             return decoded_token

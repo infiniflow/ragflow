@@ -56,24 +56,20 @@ class RAGFlow:
         embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
         permission: str = "me",
         chunk_method: str = "naive",
-        pagerank: int = 0,
-        parser_config: DataSet.ParserConfig = None,
+        parser_config: Optional[DataSet.ParserConfig] = None,
     ) -> DataSet:
-        if parser_config:
-            parser_config = parser_config.to_json()
-        res = self.post(
-            "/datasets",
-            {
-                "name": name,
-                "avatar": avatar,
-                "description": description,
-                "embedding_model": embedding_model,
-                "permission": permission,
-                "chunk_method": chunk_method,
-                "pagerank": pagerank,
-                "parser_config": parser_config,
-            },
-        )
+        payload = {
+            "name": name,
+            "avatar": avatar,
+            "description": description,
+            "embedding_model": embedding_model,
+            "permission": permission,
+            "chunk_method": chunk_method,
+        }
+        if parser_config is not None:
+            payload["parser_config"] = parser_config.to_json()
+
+        res = self.post("/datasets", payload)
         res = res.json()
         if res.get("code") == 0:
             return DataSet(self, res["data"])
@@ -246,3 +242,40 @@ class RAGFlow:
                 result_list.append(Agent(self, data))
             return result_list
         raise Exception(res["message"])
+
+    def create_agent(self, title: str, dsl: dict, description: str | None = None) -> None:
+        req = {"title": title, "dsl": dsl}
+
+        if description is not None:
+            req["description"] = description
+
+        res = self.post("/agents", req)
+        res = res.json()
+
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+
+    def update_agent(self, agent_id: str, title: str | None = None, description: str | None = None, dsl: dict | None = None) -> None:
+        req = {}
+
+        if title is not None:
+            req["title"] = title
+
+        if description is not None:
+            req["description"] = description
+
+        if dsl is not None:
+            req["dsl"] = dsl
+
+        res = self.put(f"/agents/{agent_id}", req)
+        res = res.json()
+
+        if res.get("code") != 0:
+            raise Exception(res["message"])
+
+    def delete_agent(self, agent_id: str) -> None:
+        res = self.delete(f"/agents/{agent_id}", {})
+        res = res.json()
+
+        if res.get("code") != 0:
+            raise Exception(res["message"])

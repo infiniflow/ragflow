@@ -15,10 +15,10 @@ import React, {
 // import { shallow } from 'zustand/shallow';
 import { settledModelVariableMap } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
+import { ISwitchForm } from '@/interfaces/database/agent';
 import {
   ICategorizeForm,
   IRelevantForm,
-  ISwitchForm,
   RAGFlowNodeType,
 } from '@/interfaces/database/flow';
 import { message } from 'antd';
@@ -33,6 +33,7 @@ import {
   Operator,
   RestrictedUpstreamMap,
   SwitchElseTo,
+  initialAgentValues,
   initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
@@ -40,6 +41,7 @@ import {
   initialBeginValues,
   initialBingValues,
   initialCategorizeValues,
+  initialCodeValues,
   initialConcentratorValues,
   initialCrawlerValues,
   initialDeepLValues,
@@ -62,8 +64,10 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
@@ -141,6 +145,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.Email]: initialEmailValues,
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationValues,
+      [Operator.Code]: initialCodeValues,
+      [Operator.WaitingDialogue]: initialWaitingDialogueValues,
+      [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
+      [Operator.Tavily]: initialTavilyValues,
     };
   }, [llmId]);
 
@@ -257,7 +265,7 @@ export const useHandleDrop = () => {
     [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
   );
 
-  return { onDrop, onDragOver, setReactFlowInstance };
+  return { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance };
 };
 
 export const useHandleFormValuesChange = (
@@ -292,7 +300,13 @@ export const useHandleFormValuesChange = (
   useEffect(() => {
     const subscription = form?.watch((value, { name, type, values }) => {
       if (id && name) {
-        console.log('🚀 ~ useEffect ~ value:', type, values);
+        console.log(
+          '🚀 ~ useEffect ~ value:',
+          name,
+          type,
+          values,
+          operatorName,
+        );
         let nextValues: any = value;
 
         // Fixed the issue that the related form value does not change after selecting the freedom field of the model
@@ -318,7 +332,10 @@ export const useHandleFormValuesChange = (
             category_description: buildCategorizeObjectFromList(value.items),
           };
         }
-        updateNodeForm(id, nextValues);
+        // Manually triggered form updates are synchronized to the canvas
+        if (type) {
+          updateNodeForm(id, nextValues);
+        }
       }
     });
     return () => subscription?.unsubscribe();
@@ -528,9 +545,9 @@ export const useWatchNodeFormDataChange = () => {
         case Operator.Categorize:
           buildCategorizeEdgesByFormData(node.id, form as ICategorizeForm);
           break;
-        case Operator.Switch:
-          buildSwitchEdgesByFormData(node.id, form as ISwitchForm);
-          break;
+        // case Operator.Switch:
+        //   buildSwitchEdgesByFormData(node.id, form as ISwitchForm);
+        //   break;
         default:
           break;
       }
@@ -540,7 +557,6 @@ export const useWatchNodeFormDataChange = () => {
     buildCategorizeEdgesByFormData,
     getNode,
     buildRelevantEdgesByFormData,
-    buildSwitchEdgesByFormData,
   ]);
 };
 

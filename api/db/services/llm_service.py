@@ -105,7 +105,7 @@ class TenantLLMService(CommonService):
         if model_config:
             model_config = model_config.to_dict()
             llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
-            if not llm and fid: # for some cases seems fid mismatch
+            if not llm and fid:  # for some cases seems fid mismatch
                 llm = LLMService.query(llm_name=mdlnm)
             if llm:
                 model_config["is_tools"] = llm[0].is_tools
@@ -163,19 +163,13 @@ class TenantLLMService(CommonService):
     @classmethod
     @DB.connection_context()
     def increase_usage(cls, tenant_id, llm_type, used_tokens, llm_name=None):
-        try:
-            if not DB.is_connection_usable():
-                DB.connect()
-        except Exception:
-            DB.close()
-            DB.connect()
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
             logging.error(f"Tenant not found: {tenant_id}")
             return 0
 
         llm_map = {
-            LLMType.EMBEDDING.value: tenant.embd_id,
+            LLMType.EMBEDDING.value: tenant.embd_id if not llm_name else llm_name,
             LLMType.SPEECH2TEXT.value: tenant.asr_id,
             LLMType.IMAGE2TEXT.value: tenant.img2txt_id,
             LLMType.CHAT.value: tenant.llm_id if not llm_name else llm_name,
@@ -232,6 +226,7 @@ class LLMBundle:
 
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
+            logging.warning(f"Model {self.llm_name} does not support tool call, but you have assigned one or more tools to it!")
             return
         self.mdl.bind_tools(toolcall_session, tools)
 
@@ -240,7 +235,8 @@ class LLMBundle:
             generation = self.trace.generation(name="encode", model=self.llm_name, input={"texts": texts})
 
         embeddings, used_tokens = self.mdl.encode(texts)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
+        llm_name = getattr(self, "llm_name", None)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
             logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
@@ -253,7 +249,8 @@ class LLMBundle:
             generation = self.trace.generation(name="encode_queries", model=self.llm_name, input={"query": query})
 
         emd, used_tokens = self.mdl.encode_queries(query)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
+        llm_name = getattr(self, "llm_name", None)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
             logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
@@ -366,7 +363,7 @@ class LLMBundle:
 
         ans = ""
         chat_streamly = self.mdl.chat_streamly
-        total_tokens = 0 
+        total_tokens = 0
         if self.is_tools and self.mdl.is_tools:
             chat_streamly = self.mdl.chat_streamly_with_tools
 

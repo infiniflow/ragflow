@@ -29,9 +29,9 @@ export const buildMessageItemReference = (
   conversation: { message: IMessage[]; reference: IReference[] },
   message: IMessage,
 ) => {
-  const assistantMessages = conversation.message
-    ?.filter((x) => x.role === MessageType.Assistant)
-    .slice(1);
+  const assistantMessages = conversation.message?.filter(
+    (x) => x.role === MessageType.Assistant,
+  );
   const referenceIndex = assistantMessages.findIndex(
     (x) => x.id === message.id,
   );
@@ -43,10 +43,15 @@ export const buildMessageItemReference = (
 };
 
 const oldReg = /(#{2}\d+\${2})/g;
+export const currentReg = /\[ID:(\d+)\]/g;
 
 // To be compatible with the old index matching mode
 export const replaceTextByOldReg = (text: string) => {
-  return text?.replace(oldReg, function (substring) {
-    return `~~${substring.slice(2, -2)}==`;
-  });
+  return (
+    text
+      // ?.replace(currentReg, transformReg)
+      .replace(oldReg, (substring: string) => {
+        return `[ID:${substring.slice(2, -2)}]`;
+      })
+  );
 };
