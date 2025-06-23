@@ -19,6 +19,7 @@ from abc import ABC
 import requests
 from deepdoc.parser import HtmlParser
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.web_utils import is_valid_url
 
 
 class InvokeParam(ComponentParamBase):
@@ -74,6 +75,9 @@ class Invoke(ComponentBase, ABC):
         url = self._param.url.strip()
         if url.find("http") != 0:
             url = "http://" + url
+
+        if not is_valid_url(url):
+            return Invoke.be_output("Invalid URL: Access to private networks is restricted")
 
         method = self._param.method.lower()
         headers = {}
