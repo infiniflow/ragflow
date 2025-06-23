@@ -371,7 +371,7 @@ class ParserConfig(Base):
     raptor: RaptorConfig | None = None
     tag_kb_ids: list[str] = Field(default_factory=list)
     topn_tags: int = Field(default=1, ge=1, le=10)
-    filename_embd_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+    filename_embd_weight: float | None = Field(default=0.1, ge=0.0, le=1.0)
     task_page_size: int | None = Field(default=None, ge=1)
     pages: list[list[int]] | None = None
 
