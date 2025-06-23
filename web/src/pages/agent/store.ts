@@ -4,6 +4,7 @@ import {
   Connection,
   Edge,
   EdgeChange,
+  EdgeMouseHandler,
   OnConnect,
   OnEdgesChange,
   OnNodesChange,
@@ -27,6 +28,7 @@ import {
   generateNodeNamesWithIncreasingIndex,
   getOperatorIndex,
   isEdgeEqual,
+  mapEdgeMouseEvent,
 } from './utils';
 
 export type RFState = {
@@ -38,6 +40,9 @@ export type RFState = {
   clickedToolId: string; // currently selected tool id
   onNodesChange: OnNodesChange<RAGFlowNodeType>;
   onEdgesChange: OnEdgesChange;
+  onEdgeMouseEnter?: EdgeMouseHandler<Edge>;
+  /** This event handler is called when mouse of a user leaves an edge */
+  onEdgeMouseLeave?: EdgeMouseHandler<Edge>;
   onConnect: OnConnect;
   setNodes: (nodes: RAGFlowNodeType[]) => void;
   setEdges: (edges: Edge[]) => void;
@@ -97,6 +102,20 @@ const useGraphStore = create<RFState>()(
         set({
           edges: applyEdgeChanges(changes, get().edges),
         });
+      },
+      onEdgeMouseEnter: (event, edge) => {
+        const { edges, setEdges } = get();
+        const edgeId = edge.id;
+
+        // Updates edge
+        setEdges(mapEdgeMouseEvent(edges, edgeId, true));
+      },
+      onEdgeMouseLeave: (event, edge) => {
+        const { edges, setEdges } = get();
+        const edgeId = edge.id;
+
+        // Updates edge
+        setEdges(mapEdgeMouseEvent(edges, edgeId, false));
       },
       onConnect: (connection: Connection) => {
         const {
