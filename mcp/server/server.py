@@ -23,8 +23,7 @@ import click
 import requests
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from strenum import StrEnum
 
@@ -210,34 +209,46 @@ async def call_tool(name: str, arguments: dict, *, connector) -> list[types.Text
 async def handle_sse(request):
     async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
         await app.run(streams[0], streams[1], app.create_initialization_options(experimental_capabilities={"headers": dict(request.headers)}))
-
-
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        # Authentication is deferred, will be handled by RAGFlow core service.
-        if request.url.path.startswith("/sse") or request.url.path.startswith("/messages"):
-            token = None
-
-            auth_header = request.headers.get("Authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                token = auth_header.removeprefix("Bearer ").strip()
-            elif request.headers.get("api_key"):
-                token = request.headers["api_key"]
-
-            if not token:
-                return JSONResponse({"error": "Missing or invalid authorization header"}, status_code=401)
-        return await call_next(request)
+    return Response()
 
 
 def create_starlette_app():
     middleware = None
     if MODE == LaunchMode.HOST:
+        from starlette.types import ASGIApp, Receive, Scope, Send
+
+        class AuthMiddleware:
+            def __init__(self, app: ASGIApp):
+                self.app = app
+
+            async def __call__(self, scope: Scope, receive: Receive, send: Send):
+                if scope["type"] != "http":
+                    await self.app(scope, receive, send)
+                    return
+
+                path = scope["path"]
+                if path.startswith("/messages/") or path.startswith("/sse"):
+                    headers = dict(scope["headers"])
+                    token = None
+                    auth_header = headers.get(b"authorization")
+                    if auth_header and auth_header.startswith(b"Bearer "):
+                        token = auth_header.removeprefix(b"Bearer ").strip()
+                    elif b"api_key" in headers:
+                        token = headers[b"api_key"]
+
+                    if not token:
+                        response = JSONResponse({"error": "Missing or invalid authorization header"}, status_code=401)
+                        await response(scope, receive, send)
+                        return
+
+                await self.app(scope, receive, send)
+
         middleware = [Middleware(AuthMiddleware)]
 
     return Starlette(
         debug=True,
         routes=[
-            Route("/sse", endpoint=handle_sse),
+            Route("/sse", endpoint=handle_sse, methods=["GET"]),
             Mount("/messages/", app=sse.handle_post_message),
         ],
         middleware=middleware,
