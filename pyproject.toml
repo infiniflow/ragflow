@@ -129,6 +129,7 @@ dependencies = [
     "mcp>=1.6.0",
     "opensearch-py==2.7.1",
     "pluginlib==0.9.4",
+    "click>=8.1.8",
 ]
 
 [project.optional-dependencies]
@@ -166,6 +167,9 @@ packages = [
     'rag',
     'sdk.python.ragflow_sdk',
 ]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
