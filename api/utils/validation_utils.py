@@ -312,7 +312,7 @@ class PermissionEnum(StrEnum):
     team = auto()
 
 
-class ChunkMethodnEnum(StrEnum):
+class ChunkMethodEnum(StrEnum):
     naive = auto()
     book = auto()
     email = auto()
@@ -371,7 +371,7 @@ class ParserConfig(Base):
     raptor: RaptorConfig | None = None
     tag_kb_ids: list[str] = Field(default_factory=list)
     topn_tags: int = Field(default=1, ge=1, le=10)
-    filename_embd_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+    filename_embd_weight: float | None = Field(default=0.1, ge=0.0, le=1.0)
     task_page_size: int | None = Field(default=None, ge=1)
     pages: list[list[int]] | None = None
 
@@ -382,7 +382,7 @@ class CreateDatasetReq(Base):
     description: str | None = Field(default=None, max_length=65535)
     embedding_model: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255), Field(default="", serialization_alias="embd_id")]
     permission: PermissionEnum = Field(default=PermissionEnum.me, min_length=1, max_length=16)
-    chunk_method: ChunkMethodnEnum = Field(default=ChunkMethodnEnum.naive, min_length=1, max_length=32, serialization_alias="parser_id")
+    chunk_method: ChunkMethodEnum = Field(default=ChunkMethodEnum.naive, min_length=1, max_length=32, serialization_alias="parser_id")
     parser_config: ParserConfig | None = Field(default=None)
 
     @field_validator("avatar")
