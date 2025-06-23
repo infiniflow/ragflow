@@ -160,6 +160,7 @@ def iframe_completion(dialog_id, question, session_id=None, stream=True, **kwarg
         conv = {
             "id": session_id,
             "dialog_id": dialog_id,
+            "name": kwargs.get("name","New conversation"),
             "user_id": kwargs.get("user_id", ""),
             "message": [{"role": "assistant", "content": dia.prompt_config["prologue"], "created_at": time.time()}]
         }

@@ -1,5 +1,5 @@
 # base stage
-FROM ubuntu:22.04 AS base
+FROM registry.cn-hangzhou.aliyuncs.com/tecpie/ubuntu:22.04 AS base
 USER root
 SHELL ["/bin/bash", "-c"]
 

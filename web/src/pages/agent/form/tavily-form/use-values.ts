@@ -1,7 +1,8 @@
+import { AgentGlobals } from '@/constants/agent';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import useGraphStore from '../../store';
-import { getAgentNodeTools } from '../../utils';
+import { convertToObjectArray, getAgentNodeTools } from '../../utils';
 
 export enum SearchDepth {
   Basic = 'basic',
@@ -13,8 +14,9 @@ export enum Topic {
   General = 'general',
 }
 
-const defaultValues = {
-  query: '',
+export const defaultValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
   search_depth: SearchDepth.Basic,
   topic: Topic.General,
   max_results: 5,
@@ -25,6 +27,16 @@ const defaultValues = {
   include_image_descriptions: false,
   include_domains: [],
   exclude_domains: [],
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'Object',
+    },
+  },
 };
 
 export function useValues() {
@@ -46,6 +58,8 @@ export function useValues() {
 
     return {
       ...formData,
+      include_domains: convertToObjectArray(formData.include_domains),
+      exclude_domains: convertToObjectArray(formData.exclude_domains),
     };
   }, [clickedNodeId, clickedToolId, findUpstreamNodeById]);
 
