@@ -661,6 +661,7 @@ class File2Document(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     file_id = CharField(max_length=32, null=True, help_text="file id", index=True)
     document_id = CharField(max_length=32, null=True, help_text="document id", index=True)
+    kb_id = CharField(max_length=32, null=True, help_text="knowledge base id", index=True)
 
     class Meta:
         db_table = "file2document"
@@ -845,6 +846,10 @@ class Search(DataBaseModel):
 
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
+    try:
+        migrate(migrator.add_column("file2document", "kb_id", CharField(max_length=32, null=True, help_text="knowledge base id", index=True)))
+    except Exception:
+        pass
     try:
         migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
     except Exception:

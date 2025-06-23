@@ -229,10 +229,12 @@ export const useUploadFile = () => {
           message.success(t('message.uploaded'));
           setPaginationParams(1);
           queryClient.invalidateQueries({ queryKey: ['fetchFileList'] });
+          return { code: ret?.data?.code, files: ret?.data?.data || [] };
         }
-        return ret?.data?.code;
+        return { code: ret?.data?.code, files: [] };
       } catch (error) {
         console.log('🚀 ~ useUploadFile ~ error:', error);
+        return { code: 500, files: [] };
       }
     },
   });
