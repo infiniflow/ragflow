@@ -293,6 +293,9 @@ async def build_chunks(task, progress_callback):
             if isinstance(d["image"], bytes):
                 output_buffer = BytesIO(d["image"])
             else:
+                # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
+                if d["image"].mode in ("RGBA", "P"):
+                    d["image"] = d["image"].convert("RGB")
                 d["image"].save(output_buffer, format='JPEG')
             async with minio_limiter:
                 await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
