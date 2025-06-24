@@ -209,7 +209,7 @@ class TestDocumentsUpload:
             fps.append(fp)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(upload_documents, HttpApiAuth, dataset_id, fps[i : i + 1]) for i in range(count)]
+            futures = [executor.submit(upload_documents, HttpApiAuth, dataset_id, [fp]) for fp in fps]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
