@@ -43,7 +43,7 @@ const FormSheet = ({
 
   const currentFormMap = FormConfigMap[operatorName];
 
-  const OperatorForm = currentFormMap.component ?? EmptyContent;
+  const OperatorForm = currentFormMap?.component ?? EmptyContent;
 
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
     id: node?.id,

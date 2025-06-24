@@ -34,5 +34,5 @@ export const ToolFormConfigMap = {
   [Operator.YahooFinance]: YahooFinanceForm,
   [Operator.Crawler]: CrawlerForm,
   [Operator.Email]: EmailForm,
-  [Operator.Tavily]: TavilyForm,
+  [Operator.TavilySearch]: TavilyForm,
 };

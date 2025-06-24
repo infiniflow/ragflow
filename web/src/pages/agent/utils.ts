@@ -94,9 +94,20 @@ const buildComponentDownstreamOrUpstream = (
   edges: Edge[],
   nodeId: string,
   isBuildDownstream = true,
+  nodes: Node[],
 ) => {
   return edges
-    .filter((y) => y[isBuildDownstream ? 'source' : 'target'] === nodeId)
+    .filter((y) => {
+      const node = nodes.find((x) => x.id === nodeId);
+      let isNotUpstreamTool = true;
+      if (isBuildDownstream && node?.data.label === Operator.Agent) {
+        isNotUpstreamTool = !y.target.startsWith(Operator.Tool); // Exclude the tool operator downstream of the agent operator
+      }
+      return (
+        y[isBuildDownstream ? 'source' : 'target'] === nodeId &&
+        isNotUpstreamTool
+      );
+    })
     .map((y) => y[isBuildDownstream ? 'target' : 'source']);
 };
 
@@ -125,6 +136,8 @@ const buildOperatorParams = (operatorName: string) =>
     // initializeOperatorParams(operatorName), // Final processing, for guarantee
   );
 
+const ExcludeOperators = [Operator.Note, Operator.Tool];
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: RAGFlowNodeType[],
@@ -134,7 +147,7 @@ export const buildDslComponentsByGraph = (
   const components: DSLComponents = {};
 
   nodes
-    ?.filter((x) => x.data.label !== Operator.Note)
+    ?.filter((x) => !ExcludeOperators.some((y) => y === x.data.label))
     .forEach((x) => {
       const id = x.id;
       const operatorName = x.data.label;
@@ -147,8 +160,8 @@ export const buildDslComponentsByGraph = (
               x.data.form as Record<string, unknown>,
             ) ?? {},
         },
-        downstream: buildComponentDownstreamOrUpstream(edges, id, true),
-        upstream: buildComponentDownstreamOrUpstream(edges, id, false),
+        downstream: buildComponentDownstreamOrUpstream(edges, id, true, nodes),
+        upstream: buildComponentDownstreamOrUpstream(edges, id, false, nodes),
         parent_id: x?.parentId,
       };
     });

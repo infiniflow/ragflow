@@ -105,7 +105,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
-      [Operator.Tavily]: initialTavilyValues,
+      [Operator.TavilySearch]: initialTavilyValues,
     };
   }, [llmId]);
 

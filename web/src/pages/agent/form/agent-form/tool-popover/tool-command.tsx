@@ -16,7 +16,7 @@ const Menus = [
   {
     label: 'Search',
     list: [
-      Operator.Tavily,
+      Operator.TavilySearch,
       Operator.Google,
       Operator.Bing,
       Operator.DuckDuckGo,

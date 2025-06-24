@@ -37,6 +37,8 @@ export const useSelectNextMessages = () => {
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    addNewestOneQuestion,
+    addNewestOneAnswer,
   } = useSelectDerivedMessages();
 
   return {
@@ -48,6 +50,8 @@ export const useSelectNextMessages = () => {
     addNewestAnswer,
     removeLatestMessage,
     removeMessageById,
+    addNewestOneQuestion,
+    addNewestOneAnswer,
     removeMessagesAfterCurrentMessage,
   };
 };
@@ -57,7 +61,7 @@ function findMessageFromList(eventList: IEventList) {
     (x) => x.event === MessageEventType.Message,
   ) as IMessageEvent[];
   return {
-    id: messageEventList[0]?.message_id,
+    id: eventList[0]?.message_id,
     content: messageEventList.map((x) => x.data.content).join(''),
   };
 }
@@ -83,6 +87,8 @@ export const useSendNextMessage = () => {
     addNewestAnswer,
     removeLatestMessage,
     removeMessageById,
+    addNewestOneQuestion,
+    addNewestOneAnswer,
   } = useSelectNextMessages();
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -132,13 +138,13 @@ export const useSendNextMessage = () => {
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
-    if (content) {
-      addNewestAnswer({
+    if (answerList.length > 0) {
+      addNewestOneAnswer({
         answer: content,
         id: id,
       });
     }
-  }, [answerList, addNewestAnswer]);
+  }, [answerList, addNewestOneAnswer]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
@@ -147,20 +153,20 @@ export const useSendNextMessage = () => {
       setValue('');
       handleSendMessage({ id, content: value.trim(), role: MessageType.User });
     }
-    addNewestQuestion({
+    addNewestOneQuestion({
       content: value,
       id,
       role: MessageType.User,
     });
-  }, [addNewestQuestion, handleSendMessage, done, setValue, value]);
+  }, [value, done, addNewestOneQuestion, setValue, handleSendMessage]);
 
   useEffect(() => {
     if (prologue) {
-      addNewestAnswer({
+      addNewestOneAnswer({
         answer: prologue,
       });
     }
-  }, [addNewestAnswer, prologue]);
+  }, [addNewestOneAnswer, prologue]);
 
   useEffect(() => {
     addEventList(answerList);

@@ -376,7 +376,7 @@ export function useFormConfigMap() {
       defaultValues: {},
       schema: z.object({}),
     },
-    [Operator.Tavily]: {
+    [Operator.TavilySearch]: {
       component: TavilyForm,
       defaultValues: {},
       schema: z.object({}),
