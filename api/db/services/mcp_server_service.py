@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from peewee import fn
+
 from api.db.db_models import DB, MCPServer
 from api.db.services.common_service import CommonService
 
