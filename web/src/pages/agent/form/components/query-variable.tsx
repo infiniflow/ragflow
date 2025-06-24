@@ -10,7 +10,9 @@ import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 
-export function QueryVariable() {
+type QueryVariableProps = { name?: string };
+
+export function QueryVariable({ name = 'query' }: QueryVariableProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
@@ -19,7 +21,7 @@ export function QueryVariable() {
   return (
     <FormField
       control={form.control}
-      name="query"
+      name={name}
       render={({ field }) => (
         <FormItem>
           <FormLabel tooltip={t('chat.modelTip')}>{t('flow.query')}</FormLabel>

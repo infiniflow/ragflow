@@ -51,7 +51,6 @@ import useGraphStore from '../store';
 import {
   generateNodeNamesWithIncreasingIndex,
   getNodeDragHandle,
-  getRelativePositionToIterationNode,
 } from '../utils';
 
 export const useInitializeOperatorParams = () => {
@@ -234,11 +233,9 @@ function useAddToolNode() {
 }
 
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
-  const addNode = useGraphStore((state) => state.addNode);
-  const getNode = useGraphStore((state) => state.getNode);
-  const addEdge = useGraphStore((state) => state.addEdge);
-  const nodes = useGraphStore((state) => state.nodes);
-  const edges = useGraphStore((state) => state.edges);
+  const { edges, nodes, addEdge, addNode, getNode } = useGraphStore(
+    (state) => state,
+  );
   const getNodeName = useGetNodeName();
   const initializeOperatorParams = useInitializeOperatorParams();
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
@@ -256,6 +253,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     ) =>
       (event?: React.MouseEvent<HTMLElement>) => {
         const nodeId = params.nodeId;
+
+        const node = getNode(nodeId);
 
         // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
         // and you don't need to subtract the reactFlowBounds.left/top anymore
@@ -289,6 +288,11 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           dragHandle: getNodeDragHandle(type),
         };
 
+        if (node && node.parentId) {
+          newNode.parentId = node.parentId;
+          newNode.extent = 'parent';
+        }
+
         if (type === Operator.Iteration) {
           newNode.width = 500;
           newNode.height = 250;
@@ -307,6 +311,14 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           };
           addNode(newNode);
           addNode(iterationStartNode);
+          if (nodeId) {
+            addEdge({
+              source: nodeId,
+              target: newNode.id,
+              sourceHandle: NodeHandleId.Start,
+              targetHandle: NodeHandleId.End,
+            });
+          }
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom
@@ -345,15 +357,6 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
         } else if (type === Operator.Tool) {
           addToolNode(newNode, params.nodeId);
         } else {
-          const subNodeOfIteration = getRelativePositionToIterationNode(
-            nodes,
-            position,
-          );
-          if (subNodeOfIteration) {
-            newNode.parentId = subNodeOfIteration.parentId;
-            newNode.position = subNodeOfIteration.position;
-            newNode.extent = 'parent';
-          }
           addNode(newNode);
           addChildEdge(params.position, {
             source: params.nodeId,
