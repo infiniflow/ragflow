@@ -21,7 +21,7 @@ import lodashSet from 'lodash/set';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { Operator, SwitchElseTo } from './constant';
+import { NodeHandleId, Operator, SwitchElseTo } from './constant';
 import {
   duplicateNodeForm,
   generateDuplicateNode,
@@ -30,6 +30,7 @@ import {
   isEdgeEqual,
   mapEdgeMouseEvent,
 } from './utils';
+import { deleteAllDownstreamAgentsAndTool } from './utils/delete-node';
 
 export type RFState = {
   nodes: RAGFlowNodeType[];
@@ -70,6 +71,8 @@ export type RFState = {
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
+  deleteAgentDownstreamNodesById: (id: string) => void;
+  deleteAgentToolNodeById: (id: string) => void;
   deleteIterationNodeById: (id: string) => void;
   deleteEdgeBySourceAndSourceHandle: (connection: Partial<Connection>) => void;
   findNodeByName: (operatorName: Operator) => RAGFlowNodeType | undefined;
@@ -370,13 +373,54 @@ const useGraphStore = create<RFState>()(
         });
       },
       deleteNodeById: (id: string) => {
-        const { nodes, edges } = get();
+        const {
+          nodes,
+          edges,
+          getOperatorTypeFromId,
+          deleteAgentDownstreamNodesById,
+        } = get();
+        if (getOperatorTypeFromId(id) === Operator.Agent) {
+          deleteAgentDownstreamNodesById(id);
+          return;
+        }
         set({
           nodes: nodes.filter((node) => node.id !== id),
           edges: edges
             .filter((edge) => edge.source !== id)
             .filter((edge) => edge.target !== id),
         });
+      },
+      deleteAgentDownstreamNodesById: (id) => {
+        const { edges, nodes } = get();
+
+        const { downstreamAgentAndToolNodeIds, downstreamAgentAndToolEdges } =
+          deleteAllDownstreamAgentsAndTool(id, edges);
+
+        set({
+          nodes: nodes.filter(
+            (node) =>
+              !downstreamAgentAndToolNodeIds.some((x) => x === node.id) &&
+              node.id !== id,
+          ),
+          edges: edges.filter(
+            (edge) =>
+              edge.source !== id &&
+              edge.target !== id &&
+              !downstreamAgentAndToolEdges.some((x) => x.id === edge.id),
+          ),
+        });
+      },
+      deleteAgentToolNodeById: (id) => {
+        const { edges, deleteEdgeById, deleteNodeById } = get();
+
+        const edge = edges.find(
+          (x) => x.source === id && x.sourceHandle === NodeHandleId.Tool,
+        );
+
+        if (edge) {
+          deleteEdgeById(edge.id);
+          deleteNodeById(edge.target);
+        }
       },
       deleteIterationNodeById: (id: string) => {
         const { nodes, edges } = get();

@@ -1,14 +1,18 @@
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { OnBeforeDelete } from '@xyflow/react';
+import { Node, OnBeforeDelete } from '@xyflow/react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
+import { deleteAllDownstreamAgentsAndTool } from '../utils/delete-node';
 
 const UndeletableNodes = [Operator.Begin, Operator.IterationStart];
 
 export function useBeforeDelete() {
-  const getOperatorTypeFromId = useGraphStore(
-    (state) => state.getOperatorTypeFromId,
-  );
+  const { getOperatorTypeFromId, getNode } = useGraphStore((state) => state);
+
+  const agentPredicate = (node: Node) => {
+    return getOperatorTypeFromId(node.id) === Operator.Agent;
+  };
+
   const handleBeforeDelete: OnBeforeDelete<RAGFlowNodeType> = async ({
     nodes, // Nodes to be deleted
     edges, // Edges to be deleted
@@ -46,6 +50,27 @@ export function useBeforeDelete() {
 
       return true;
     });
+
+    // Delete the agent and tool nodes downstream of the agent node
+    if (nodes.some(agentPredicate)) {
+      nodes.filter(agentPredicate).forEach((node) => {
+        const { downstreamAgentAndToolEdges, downstreamAgentAndToolNodeIds } =
+          deleteAllDownstreamAgentsAndTool(node.id, edges);
+
+        downstreamAgentAndToolNodeIds.forEach((nodeId) => {
+          const currentNode = getNode(nodeId);
+          if (toBeDeletedNodes.every((x) => x.id !== nodeId) && currentNode) {
+            toBeDeletedNodes.push(currentNode);
+          }
+        });
+
+        downstreamAgentAndToolEdges.forEach((edge) => {
+          if (toBeDeletedEdges.every((x) => x.id !== edge.id)) {
+            toBeDeletedEdges.push(edge);
+          }
+        });
+      }, []);
+    }
 
     return {
       nodes: toBeDeletedNodes,

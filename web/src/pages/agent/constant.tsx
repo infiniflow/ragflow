@@ -3054,4 +3054,6 @@ export enum NodeHandleId {
   Start = 'start',
   End = 'end',
   Tool = 'tool',
+  AgentTop = 'agentTop',
+  AgentBottom = 'agentBottom',
 }

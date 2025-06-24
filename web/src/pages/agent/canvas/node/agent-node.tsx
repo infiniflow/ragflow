@@ -54,13 +54,13 @@ function InnerAgentNode({
           type="target"
           position={Position.Top}
           isConnectable={false}
-          id="f"
+          id={NodeHandleId.AgentTop}
         ></Handle>
         <Handle
           type="source"
           position={Position.Bottom}
           isConnectable={false}
-          id="e"
+          id={NodeHandleId.AgentBottom}
           style={{ left: 180 }}
         ></Handle>
         <Handle

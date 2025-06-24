@@ -5,9 +5,9 @@ import {
 } from '@/components/ui/popover';
 import { Operator } from '@/pages/agent/constant';
 import { AgentFormContext, AgentInstanceContext } from '@/pages/agent/context';
+import useGraphStore from '@/pages/agent/store';
 import { Position } from '@xyflow/react';
 import { PropsWithChildren, useCallback, useContext } from 'react';
-import { useDeleteToolNode } from '../use-delete-tool-node';
 import { useGetAgentToolNames } from '../use-get-tools';
 import { ToolCommand } from './tool-command';
 import { useUpdateAgentNodeTools } from './use-update-tools';
@@ -17,7 +17,9 @@ export function ToolPopover({ children }: PropsWithChildren) {
   const node = useContext(AgentFormContext);
   const { updateNodeTools } = useUpdateAgentNodeTools();
   const { toolNames } = useGetAgentToolNames();
-  const { deleteToolNode } = useDeleteToolNode();
+  const deleteAgentToolNodeById = useGraphStore(
+    (state) => state.deleteAgentToolNodeById,
+  );
 
   const handleChange = useCallback(
     (value: string[]) => {
@@ -29,11 +31,11 @@ export function ToolPopover({ children }: PropsWithChildren) {
             nodeId: node?.id,
           })();
         } else {
-          deleteToolNode(node.id); // TODO: The tool node should be derived from the agent tools data
+          deleteAgentToolNodeById(node.id); // TODO: The tool node should be derived from the agent tools data
         }
       }
     },
-    [addCanvasNode, deleteToolNode, node?.id, updateNodeTools],
+    [addCanvasNode, deleteAgentToolNodeById, node?.id, updateNodeTools],
   );
 
   return (
