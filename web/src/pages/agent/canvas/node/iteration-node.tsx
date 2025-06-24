@@ -1,15 +1,17 @@
-import { useTheme } from '@/components/theme-provider';
 import {
   IIterationNode,
   IIterationStartNode,
 } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
-import { Handle, NodeProps, NodeResizeControl, Position } from '@xyflow/react';
-import { ListRestart } from 'lucide-react';
+import { NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { memo } from 'react';
-import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
+import { NodeHandleId, Operator } from '../../constant';
+import OperatorIcon from '../../operator-icon';
+import { CommonHandle } from './handle';
+import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
+import { NodeWrapper } from './node-wrapper';
 
 function ResizeIcon() {
   return (
@@ -50,47 +52,43 @@ export function InnerIterationNode({
   isConnectable = true,
   selected,
 }: NodeProps<IIterationNode>) {
-  const { theme } = useTheme();
+  // const { theme } = useTheme();
 
   return (
     <section
-      className={cn(
-        'w-full h-full bg-zinc-200 opacity-70',
-        styles.iterationNode,
-        {
-          ['bg-gray-800']: theme === 'dark',
-          [styles.selectedIterationNode]: selected,
-        },
-      )}
+      className={cn('h-full bg-transparent rounded-b-md', {
+        [styles.selectedHeader]: selected,
+      })}
     >
       <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
         <ResizeIcon />
       </NodeResizeControl>
-      <Handle
-        id="c"
-        type="source"
+      <CommonHandle
+        id={NodeHandleId.End}
+        type="target"
         position={Position.Left}
         isConnectable={isConnectable}
         className={styles.handle}
-        style={LeftHandleStyle}
-      ></Handle>
-      <Handle
+        nodeId={id}
+      ></CommonHandle>
+      <CommonHandle
+        id={NodeHandleId.Start}
         type="source"
         position={Position.Right}
         isConnectable={isConnectable}
         className={styles.handle}
-        id="b"
-        style={RightHandleStyle}
-      ></Handle>
+        nodeId={id}
+      ></CommonHandle>
+
       <NodeHeader
         id={id}
         name={data.name}
         label={data.label}
         wrapperClassName={cn(
-          'p-2 bg-white rounded-t-[10px] absolute w-full top-[-60px] left-[-0.3px]',
-          styles.iterationHeader,
+          'bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-44px] left-[-0.3px]',
+          // styles.iterationHe ader,
           {
-            [`${styles.dark} text-white`]: theme === 'dark',
+            // [`${styles.dark} text-white`]: theme === 'dark',
             [styles.selectedHeader]: selected,
           },
         )}
@@ -101,29 +99,24 @@ export function InnerIterationNode({
 
 function InnerIterationStartNode({
   isConnectable = true,
-  selected,
+  id,
 }: NodeProps<IIterationStartNode>) {
-  const { theme } = useTheme();
-
   return (
-    <section
-      className={cn('bg-white p-2 rounded-xl', {
-        [styles.dark]: theme === 'dark',
-        [styles.selectedNode]: selected,
-      })}
-    >
-      <Handle
+    <NodeWrapper className="w-20">
+      <CommonHandle
         type="source"
         position={Position.Right}
         isConnectable={isConnectable}
         className={styles.handle}
         style={RightHandleStyle}
         isConnectableEnd={false}
-      ></Handle>
+        id={NodeHandleId.Start}
+        nodeId={id}
+      ></CommonHandle>
       <div>
-        <ListRestart className="size-7" />
+        <OperatorIcon name={Operator.Begin}></OperatorIcon>
       </div>
-    </section>
+    </NodeWrapper>
   );
 }
 

@@ -23,7 +23,7 @@ import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
 import InvokeForm from '../form/invoke-form';
-import IterationForm from '../form/iteration-from';
+import IterationForm from '../form/iteration-form';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
