@@ -346,7 +346,7 @@ class TestDocumentsList:
         count = 100
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_documents, HttpApiAuth, dataset_id) for i in range(count)]
+            futures = [executor.submit(list_documents, HttpApiAuth, dataset_id) for _ in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
