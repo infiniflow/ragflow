@@ -73,3 +73,12 @@ class MCPServerService(CommonService):
         if not servers:
             return None
         return servers
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_name_and_tenant(cls, name: str, tenant_id: str):
+        try:
+            mcp_server = cls.model.query(name=name, tenant_id=tenant_id)
+            return bool(mcp_server), mcp_server
+        except Exception:
+            return False, None

@@ -35,7 +35,7 @@ def list_mcp() -> Response:
 
 @manager.route("/detail", methods=["GET"])  # noqa: F821
 @login_required
-def get() -> Response:
+def detail() -> Response:
     mcp_id = request.args["mcp_id"]
     try:
         mcp_server = MCPServerService.get_or_none(id=mcp_id, tenant_id=current_user.id)
@@ -102,7 +102,7 @@ def update() -> Response:
         req["tenant_id"] = current_user.id
 
         if not MCPServerService.filter_update([MCPServer.id == req["id"], MCPServer.tenant_id == req["tenant_id"]], req):
-            return get_data_error_result()
+            return get_data_error_result(message="Failed to updated MCP server.")
 
         e, updated_mcp = MCPServerService.get_by_id(req["id"])
         if not e:
@@ -115,17 +115,100 @@ def update() -> Response:
 
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("id")
+@validate_request("mcp_ids")
 def rm() -> Response:
     req = request.get_json()
-    mcp_id = req["id"]
+    mcp_ids = req.get("mcp_ids", [])
 
     try:
         req["tenant_id"] = current_user.id
 
-        if not MCPServerService.filter_delete([MCPServer.id == mcp_id, MCPServer.tenant_id == req["tenant_id"]]):
-            return get_data_error_result(message=f"Failed to delete mcp server {mcp_id}")
+        if not MCPServerService.delete_by_ids(mcp_ids):
+            return get_data_error_result(message=f"Failed to delete MCP servers {mcp_ids}")
 
         return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/import", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("mcpServers")
+def import_multiple() -> Response:
+    req = request.get_json()
+    servers = req.get("mcpServers", {})
+
+    if not servers:
+        return get_data_error_result(message="No MCP servers provided.")
+
+    results = []
+    try:
+        for server_name, config in servers.items():
+            if not all(key in config for key in ["type", "url"]):
+                results.append({"server": server_name, "success": False, "message": "Missing required fields (type or url)"})
+                continue
+
+            base_name = server_name
+            new_name = base_name
+            counter = 0
+
+            while True:
+                e, _ = MCPServerService.get_by_name_and_tenant(name=new_name, tenant_id=current_user.id)
+                if not e:
+                    break
+                new_name = f"{base_name}_{counter}"
+                counter += 1
+
+            create_data = {
+                "id": get_uuid(),
+                "tenant_id": current_user.id,
+                "name": new_name,
+                "url": config["url"],
+                "server_type": config["type"],
+                "variables": {"authorization_token": config.get("authorization_token", ""), "tool_configuration": config.get("tool_configuration", {})},
+            }
+
+            if MCPServerService.insert(**create_data):
+                result = {"server": server_name, "success": True, "action": "created", "id": create_data["id"], "new_name": new_name}
+                if new_name != base_name:
+                    result["message"] = f"Renamed from '{base_name}' to avoid duplication"
+
+                results.append(result)
+            else:
+                results.append({"server": server_name, "success": False, "message": "Failed to create MCP server."})
+
+        return get_json_result(data={"results": results})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/export", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("mcp_ids")
+def export_multiple() -> Response:
+    req = request.get_json()
+    mcp_ids = req.get("mcp_ids", [])
+
+    if not mcp_ids:
+        return get_data_error_result(message="No MCP server IDs provided.")
+
+    try:
+        exported_servers = {}
+
+        for mcp_id in mcp_ids:
+            e, mcp_server = MCPServerService.get_by_id(mcp_id)
+
+            if e and mcp_server.tenant_id == current_user.id:
+                server_key = mcp_server.name
+
+                exported_servers[server_key] = {
+                    "type": mcp_server.server_type,
+                    "url": mcp_server.url,
+                    "name": mcp_server.name,
+                    "authorization_token": mcp_server.variables.get("authorization_token", ""),
+                    "tool_configuration": mcp_server.variables.get("tool_configuration", {}),
+                }
+
+        return get_json_result(data={"mcpServers": exported_servers})
     except Exception as e:
         return server_error_response(e)
