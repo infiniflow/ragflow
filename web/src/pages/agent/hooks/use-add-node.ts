@@ -315,7 +315,11 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           if (agentNode) {
             // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
             const allChildAgentNodeIds = edges
-              .filter((x) => x.source === nodeId && x.sourceHandle === 'e')
+              .filter(
+                (x) =>
+                  x.source === nodeId &&
+                  x.sourceHandle === NodeHandleId.AgentBottom,
+              )
               .map((x) => x.target);
 
             const xAxises = nodes
@@ -334,8 +338,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             addEdge({
               source: nodeId,
               target: newNode.id,
-              sourceHandle: 'e',
-              targetHandle: 'f',
+              sourceHandle: NodeHandleId.AgentBottom,
+              targetHandle: NodeHandleId.AgentTop,
             });
           }
         } else if (type === Operator.Tool) {
