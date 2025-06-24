@@ -10,15 +10,17 @@ import {
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
+import { Textarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Position } from '@xyflow/react';
 import { useContext, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { Operator, initialAgentValues } from '../../constant';
+import { NodeHandleId, Operator, initialAgentValues } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
+import useGraphStore from '../../store';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { AgentTools } from './agent-tools';
@@ -27,6 +29,7 @@ import { useWatchFormChange } from './use-watch-change';
 
 const FormSchema = z.object({
   sys_prompt: z.string(),
+  description: z.string().optional(),
   prompts: z.string().optional(),
   // prompts: z
   //   .array(
@@ -49,8 +52,16 @@ const FormSchema = z.object({
 
 const AgentForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
+  const { edges } = useGraphStore((state) => state);
 
   const defaultValues = useValues(node);
+
+  const isSubAgent = useMemo(() => {
+    const edge = edges.find(
+      (x) => x.target === node?.id && x.targetHandle === NodeHandleId.AgentTop,
+    );
+    return !!edge;
+  }, [edges, node?.id]);
 
   const outputList = useMemo(() => {
     return [
@@ -76,6 +87,20 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         }}
       >
         <FormContainer>
+          {isSubAgent && (
+            <FormField
+              control={form.control}
+              name={`description`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel>Description</FormLabel>
+                  <FormControl>
+                    <Textarea {...field}></Textarea>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          )}
           <LargeModelFormField></LargeModelFormField>
           <FormField
             control={form.control}
@@ -95,23 +120,28 @@ const AgentForm = ({ node }: INextOperatorForm) => {
           />
           <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
         </FormContainer>
-        <FormContainer>
-          {/* <DynamicPrompt></DynamicPrompt> */}
-          <FormField
-            control={form.control}
-            name={`prompts`}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>User Prompt</FormLabel>
-                <FormControl>
-                  <section>
-                    <PromptEditor {...field} showToolbar={false}></PromptEditor>
-                  </section>
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        </FormContainer>
+        {isSubAgent || (
+          <FormContainer>
+            {/* <DynamicPrompt></DynamicPrompt> */}
+            <FormField
+              control={form.control}
+              name={`prompts`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel>User Prompt</FormLabel>
+                  <FormControl>
+                    <section>
+                      <PromptEditor
+                        {...field}
+                        showToolbar={false}
+                      ></PromptEditor>
+                    </section>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </FormContainer>
+        )}
         <FormContainer>
           <AgentTools></AgentTools>
           <BlockButton
