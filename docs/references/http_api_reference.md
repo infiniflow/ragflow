@@ -3226,7 +3226,9 @@ Failure:
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily.
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
+
+![Image](https://github.com/user-attachments/assets/17a5a0fe-e411-4e35-8251-85c71444468b)
 
 :::tip NOTE
 The chat model autonomously determines the number of questions to generate based on the instruction, typically between five and ten.
