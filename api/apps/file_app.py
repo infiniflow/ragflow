@@ -99,6 +99,7 @@ def upload():
                 FileService.query,
                 name=file_obj_names[file_len - 1],
                 parent_id=last_folder.id)
+            STORAGE_IMPL.put(last_folder.id, location, blob)
             file = {
                 "id": get_uuid(),
                 "parent_id": last_folder.id,
@@ -110,7 +111,6 @@ def upload():
                 "size": len(blob),
             }
             file = FileService.insert(file)
-            STORAGE_IMPL.put(last_folder.id, location, blob)
             file_res.append(file.to_json())
         return get_json_result(data=file_res)
     except Exception as e:
