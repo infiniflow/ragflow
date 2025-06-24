@@ -150,7 +150,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Code]: initialCodeValues,
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
-      [Operator.Tavily]: initialTavilyValues,
+      [Operator.TavilySearch]: initialTavilyValues,
     };
   }, [llmId]);
 
