@@ -84,7 +84,7 @@ export enum Operator {
   WaitingDialogue = 'WaitingDialogue',
   Agent = 'Agent',
   Tool = 'Tool',
-  Tavily = 'Tavily',
+  TavilySearch = 'TavilySearch',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -249,7 +249,7 @@ export const operatorMap: Record<
   [Operator.Code]: { backgroundColor: '#4c5458' },
   [Operator.WaitingDialogue]: { backgroundColor: '#a5d65c' },
   [Operator.Agent]: { backgroundColor: '#a5d65c' },
-  [Operator.Tavily]: { backgroundColor: '#a5d65c' },
+  [Operator.TavilySearch]: { backgroundColor: '#a5d65c' },
 };
 
 export const componentMenuList = [
@@ -642,7 +642,7 @@ export const initialEmailValues = {
 };
 
 export const initialIterationValues = {
-  delimiter: ',',
+  items_ref: '',
 };
 export const initialIterationStartValues = {};
 
@@ -663,6 +663,7 @@ export const initialWaitingDialogueValues = {};
 
 export const initialAgentValues = {
   ...initialLlmBaseValues,
+  description: '',
   sys_prompt: ``,
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
@@ -788,6 +789,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Code]: [Operator.Begin],
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
+  [Operator.TavilySearch]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -831,7 +833,7 @@ export const NodeMap = {
   [Operator.WaitingDialogue]: 'ragNode',
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
-  [Operator.Tavily]: 'ragNode',
+  [Operator.TavilySearch]: 'ragNode',
 };
 
 export const LanguageOptions = [
@@ -3036,4 +3038,6 @@ export enum NodeHandleId {
   Start = 'start',
   End = 'end',
   Tool = 'tool',
+  AgentTop = 'agentTop',
+  AgentBottom = 'agentBottom',
 }

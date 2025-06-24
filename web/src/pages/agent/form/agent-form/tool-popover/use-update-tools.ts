@@ -3,7 +3,6 @@ import { AgentFormContext } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
 import { get } from 'lodash';
 import { useCallback, useContext, useMemo } from 'react';
-import { useDeleteToolNode } from '../use-delete-tool-node';
 
 export function useGetNodeTools() {
   const node = useContext(AgentFormContext);
@@ -48,7 +47,9 @@ export function useDeleteAgentNodeTools() {
   const { updateNodeForm } = useGraphStore((state) => state);
   const tools = useGetNodeTools();
   const node = useContext(AgentFormContext);
-  const { deleteToolNode } = useDeleteToolNode();
+  const deleteAgentToolNodeById = useGraphStore(
+    (state) => state.deleteAgentToolNodeById,
+  );
 
   const deleteNodeTool = useCallback(
     (value: string) => () => {
@@ -56,11 +57,11 @@ export function useDeleteAgentNodeTools() {
       if (node?.id) {
         updateNodeForm(node?.id, nextTools, ['tools']);
         if (nextTools.length === 0) {
-          deleteToolNode(node?.id);
+          deleteAgentToolNodeById(node?.id);
         }
       }
     },
-    [deleteToolNode, node?.id, tools, updateNodeForm],
+    [deleteAgentToolNodeById, node?.id, tools, updateNodeForm],
   );
 
   return { deleteNodeTool };
