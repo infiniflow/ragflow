@@ -43,6 +43,11 @@ spec:
           - mountPath: /etc/nginx/nginx.conf
             subPath: nginx.conf
             name: nginx-config-volume
+          {{- if .Values.oidc.enable }}
+          - mountPath: /ragflow/conf/service_conf.yaml.template
+            subPath: service_conf.yaml.template
+            name: nginx-config-volume
+          {{- end }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
