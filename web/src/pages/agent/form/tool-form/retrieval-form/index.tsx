@@ -7,6 +7,7 @@ import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { DescriptionField } from '../../components/description-field';
 import {
   EmptyResponseField,
   RetrievalPartialSchema,
@@ -16,6 +17,7 @@ import { useWatchFormChange } from '../use-watch-change';
 
 export const FormSchema = z.object({
   ...RetrievalPartialSchema,
+  description: z.string().optional(),
 });
 
 const RetrievalForm = () => {
@@ -37,6 +39,7 @@ const RetrievalForm = () => {
         }}
       >
         <FormContainer>
+          <DescriptionField></DescriptionField>
           <KnowledgeBaseFormField></KnowledgeBaseFormField>
         </FormContainer>
         <FormContainer>

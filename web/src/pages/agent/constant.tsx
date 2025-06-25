@@ -896,7 +896,10 @@ export enum VariableType {
 }
 
 export const DefaultAgentToolValuesMap = {
-  [Operator.Retrieval]: omit(initialRetrievalValues, 'query'),
+  [Operator.Retrieval]: {
+    ...omit(initialRetrievalValues, 'query'),
+    description: '',
+  },
   [Operator.TavilySearch]: {
     api_key: '',
   },
