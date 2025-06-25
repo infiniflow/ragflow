@@ -1,4 +1,5 @@
 import { IAgentForm } from '@/interfaces/database/agent';
+import { DefaultAgentToolValuesMap } from '@/pages/agent/constant';
 import { AgentFormContext } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
 import { get } from 'lodash';
@@ -23,7 +24,17 @@ export function useUpdateAgentNodeTools() {
       if (node?.id) {
         const nextValue = value.reduce<IAgentForm['tools']>((pre, cur) => {
           const tool = tools.find((x) => x.component_name === cur);
-          pre.push(tool ? tool : { component_name: cur, params: {} });
+          pre.push(
+            tool
+              ? tool
+              : {
+                  component_name: cur,
+                  params:
+                    DefaultAgentToolValuesMap[
+                      cur as keyof typeof DefaultAgentToolValuesMap
+                    ] || {},
+                },
+          );
           return pre;
         }, []);
 
