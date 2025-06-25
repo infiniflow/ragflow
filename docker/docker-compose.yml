@@ -33,10 +33,17 @@ services:
       - ../history_data_agent:/ragflow/history_data_agent
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
-      # Mount the rag directory to use local changes
-      - ../rag:/ragflow/rag
       # Mount Google Cloud ADC credentials for GCS access
       - ~/.config/gcloud:/root/.config/gcloud:ro
+      # Mount local source code for development
+      - ../api:/ragflow/api
+      - ../rag:/ragflow/rag
+      - ../agent:/ragflow/agent
+      - ../agentic_reasoning:/ragflow/agentic_reasoning
+      - ../deepdoc:/ragflow/deepdoc
+      - ../graphrag:/ragflow/graphrag
+      - ../plugin:/ragflow/plugin
+      - ../web/src:/ragflow/web/src
 
     env_file: .env
     environment:
