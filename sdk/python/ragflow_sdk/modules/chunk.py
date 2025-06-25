@@ -35,6 +35,12 @@ class Chunk(Base):
         self.document_name = ""
         self.document_id = ""
         self.available = True
+        # Additional fields for retrieval results
+        self.similarity = 0.0
+        self.vector_similarity = 0.0
+        self.term_similarity = 0.0
+        self.positions = []
+        self.doc_type = ""
         for k in list(res_dict.keys()):
             if k not in self.__dict__:
                 res_dict.pop(k)
