@@ -186,11 +186,9 @@ function useAddChildEdge() {
 }
 
 function useAddToolNode() {
-  const addNode = useGraphStore((state) => state.addNode);
-  const getNode = useGraphStore((state) => state.getNode);
-  const addEdge = useGraphStore((state) => state.addEdge);
-  const edges = useGraphStore((state) => state.edges);
-  const nodes = useGraphStore((state) => state.nodes);
+  const { nodes, edges, addEdge, getNode, addNode } = useGraphStore(
+    (state) => state,
+  );
 
   const addToolNode = useCallback(
     (newNode: Node<any>, nodeId?: string) => {
