@@ -44,13 +44,25 @@ class ESConnection(DocStoreConnection):
         logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
         for _ in range(ATTEMPT_TIME):
             try:
-                self.es = Elasticsearch(
-                    settings.ES["hosts"].split(","),
-                    basic_auth=(settings.ES["username"], settings.ES[
-                        "password"]) if "username" in settings.ES and "password" in settings.ES else None,
-                    verify_certs=False,
-                    timeout=600
-                )
+                api_key = settings.ES["api_key"]
+                if api_key:
+                    self.es = Elasticsearch(
+                        settings.ES["hosts"].split(","),
+                        api_key=api_key,
+                        verify_certs=False,
+                        timeout=600,
+                    )
+                else:
+                    self.es = Elasticsearch(
+                        settings.ES["hosts"].split(","),
+                        basic_auth=(
+                            (settings.ES["username"], settings.ES["password"])
+                            if "username" in settings.ES and "password" in settings.ES
+                            else None
+                        ),
+                        verify_certs=False,
+                        timeout=600,
+                    )
                 if self.es:
                     self.info = self.es.info()
                     break
