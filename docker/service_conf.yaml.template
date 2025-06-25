@@ -61,7 +61,7 @@ s3:
   # Current configuration for GCS
   region: '${GCS_REGION:-us-central1}'
   endpoint_url: '${STORAGE_ENDPOINT:-https://storage.googleapis.com}'
-  bucket: '${STORAGE_BUCKET:-toteqa_assets}'
+  bucket: '${STORAGE_BUCKET:-storage_bucket}'
   prefix_path: '${STORAGE_PREFIX_PATH:-ragflow}'
   signature_version: 'v4'
   addressing_style: 'path'
