@@ -347,6 +347,8 @@ def update(tenant_id, dataset_id):
                 return get_error_data_result(message=f"Dataset name '{req['name']}' already exists")
 
         if "embd_id" in req:
+            if not req["embd_id"]:
+                req["embd_id"] = kb.embd_id
             if kb.chunk_num != 0 and req["embd_id"] != kb.embd_id:
                 return get_error_data_result(message=f"When chunk_num ({kb.chunk_num}) > 0, embedding_model must remain {kb.embd_id}")
             ok, err = verify_embedding_availability(req["embd_id"], tenant_id)

@@ -53,7 +53,7 @@ class RAGFlow:
         name: str,
         avatar: Optional[str] = None,
         description: Optional[str] = None,
-        embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
+        embedding_model: Optional[str] = None,
         permission: str = "me",
         chunk_method: str = "naive",
         parser_config: Optional[DataSet.ParserConfig] = None,
