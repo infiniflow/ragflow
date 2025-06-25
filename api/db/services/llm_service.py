@@ -70,6 +70,8 @@ class TenantLLMService(CommonService):
             model_factories = settings.FACTORY_LLM_INFOS
             model_providers = set([f["name"] for f in model_factories])
             if arr[-1] not in model_providers:
+                if arr[-1] in ["OpenAI-API-Compatible"]:
+                    return arr[0], arr[-1]
                 return model_name, None
             return arr[0], arr[-1]
         except Exception as e:
