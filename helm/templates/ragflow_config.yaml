@@ -73,3 +73,116 @@ data:
 
         include /etc/nginx/conf.d/ragflow.conf;
     }
+  {{- if .Values.oidc.enable }}
+  service_conf.yaml.template: |
+    ragflow:
+      host: ${RAGFLOW_HOST:-0.0.0.0}
+      http_port: 9380
+    mysql:
+      name: '${MYSQL_DBNAME:-rag_flow}'
+      user: '${MYSQL_USER:-root}'
+      password: '${MYSQL_PASSWORD:-infini_rag_flow}'
+      host: '${MYSQL_HOST:-mysql}'
+      port: 3306
+      max_connections: 900
+      stale_timeout: 300
+    minio:
+      user: '${MINIO_USER:-rag_flow}'
+      password: '${MINIO_PASSWORD:-infini_rag_flow}'
+      host: '${MINIO_HOST:-minio}:9000'
+    es:
+      hosts: 'http://${ES_HOST:-es01}:9200'
+      username: '${ES_USER:-elastic}'
+      password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
+    os:
+      hosts: 'http://${OS_HOST:-opensearch01}:9201'
+      username: '${OS_USER:-admin}'
+      password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
+    infinity:
+      uri: '${INFINITY_HOST:-infinity}:23817'
+      db_name: 'default_db'
+    redis:
+      db: 1
+      password: '${REDIS_PASSWORD:-infini_rag_flow}'
+      host: '${REDIS_HOST:-redis}:6379'
+
+    # postgres:
+    #   name: '${POSTGRES_DBNAME:-rag_flow}'
+    #   user: '${POSTGRES_USER:-rag_flow}'
+    #   password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
+    #   host: '${POSTGRES_HOST:-postgres}'
+    #   port: 5432
+    #   max_connections: 100
+    #   stale_timeout: 30
+    # s3:
+    #   access_key: 'access_key'
+    #   secret_key: 'secret_key'
+    #   region: 'region'
+    #   endpoint_url: 'endpoint_url'
+    #   bucket: 'bucket'
+    #   prefix_path: 'prefix_path'
+    #   signature_version: 'v4'
+    #   addressing_style: 'path'
+    # oss:
+    #   access_key: '${ACCESS_KEY}'
+    #   secret_key: '${SECRET_KEY}'
+    #   endpoint_url: '${ENDPOINT}'
+    #   region: '${REGION}'
+    #   bucket: '${BUCKET}'
+    #   prefix_path: '${OSS_PREFIX_PATH}'
+    # azure:
+    #   auth_type: 'sas'
+    #   container_url: 'container_url'
+    #   sas_token: 'sas_token'
+    # azure:
+    #   auth_type: 'spn'
+    #   account_url: 'account_url'
+    #   client_id: 'client_id'
+    #   secret: 'secret'
+    #   tenant_id: 'tenant_id'
+    #   container_name: 'container_name'
+    # user_default_llm:
+    #   factory: 'Tongyi-Qianwen'
+    #   api_key: 'sk-xxxxxxxxxxxxx'
+    #   base_url: ''
+    #   default_models:
+    #     chat_model: 'qwen-plus'
+    #     embedding_model: 'BAAI/bge-large-zh-v1.5@BAAI'
+    #     rerank_model: ''
+    #     asr_model: ''
+    #     image2text_model: ''
+    oauth:
+    #     oauth2:
+    #     display_name: "OAuth2"
+    #     client_id: "your_client_id"
+    #     client_secret: "your_client_secret"
+    #     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
+    #     token_url: "https://your-oauth-provider.com/oauth/token"
+    #     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
+    #     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+      oidc:
+        display_name: '${DISPLAY_NAME}'
+        client_id: '${CLIENT_ID}'
+        client_secret: '${CLIENT_SECRETS}'
+        issuer: '${ISSUER}'
+        scope: '${SCOPE:openid}'
+        redirect_uri: '${REDIRECT_URI}'
+    #   github:
+    #     type: "github"
+    #     icon: "github"
+    #     display_name: "Github"
+    #     client_id: "your_client_id"
+    #     client_secret: "your_client_secret"
+    #     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+    # authentication:
+    #   client:
+    #     switch: false
+    #     http_app_key:
+    #     http_secret_key:
+    #   site:
+    #     switch: false
+    # permission:
+    #   switch: false
+    #   component: false
+    #   dataset: false
+  {{- end }}
