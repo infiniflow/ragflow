@@ -1224,6 +1224,8 @@ class GeminiChat(Base):
     def _chat(self, history, gen_conf):
         from google.generativeai.types import content_types
 
+        gen_conf = self._clean_conf(gen_conf)
+
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         hist = []
         for item in history:
@@ -1247,11 +1249,10 @@ class GeminiChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         from google.generativeai.types import content_types
 
+        gen_conf = self._clean_conf(gen_conf)
+
         if system:
             self.model._system_instruction = content_types.to_content(system)
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
         for item in history:
             if "role" in item and item["role"] == "assistant":
                 item["role"] = "model"
