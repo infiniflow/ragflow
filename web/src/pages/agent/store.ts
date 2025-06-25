@@ -56,6 +56,7 @@ export type RFState = {
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: RAGFlowNodeType) => void;
   getNode: (id?: string | null) => RAGFlowNodeType | undefined;
+  updateNode: (node: RAGFlowNodeType) => void;
   addEdge: (connection: Connection) => void;
   getEdge: (id: string) => Edge | undefined;
   updateFormDataOnConnect: (connection: Connection) => void;
@@ -191,6 +192,16 @@ const useGraphStore = create<RFState>()(
       },
       addNode: (node: RAGFlowNodeType) => {
         set({ nodes: get().nodes.concat(node) });
+      },
+      updateNode: (node) => {
+        const { nodes } = get();
+        const nextNodes = nodes.map((x) => {
+          if (x.id === node.id) {
+            return node;
+          }
+          return x;
+        });
+        set({ nodes: nextNodes });
       },
       getNode: (id?: string | null) => {
         return get().nodes.find((x) => x.id === id);

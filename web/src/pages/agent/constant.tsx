@@ -3058,3 +3058,8 @@ export enum NodeHandleId {
   AgentTop = 'agentTop',
   AgentBottom = 'agentBottom',
 }
+
+export enum VariableType {
+  String = 'string',
+  Array = 'array',
+}
