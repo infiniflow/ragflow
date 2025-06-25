@@ -68,15 +68,16 @@ redis:
 #   factory: 'Tongyi-Qianwen'
 #   api_key: 'sk-xxxxxxxxxxxxx'
 #   base_url: ''
-# oauth:
-#   oauth2:
-#     display_name: "OAuth2"
-#     client_id: "your_client_id"
-#     client_secret: "your_client_secret"
-#     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
-#     token_url: "https://your-oauth-provider.com/oauth/token"
-#     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+oauth:
+  oauth2:
+    display_name: "${OAUTH2_DISPLAY_NAME:-Okta}"
+    client_id: "${OAUTH2_CLIENT_ID}"
+    client_secret: "${OAUTH2_CLIENT_SECRET}"
+    authorization_url: "${OAUTH2_AUTHORIZATION_URL}"
+    token_url: "${OAUTH2_TOKEN_URL}"
+    userinfo_url: "${OAUTH2_USERINFO_URL}"
+    redirect_uri: "${OAUTH2_REDIRECT_URI}"
+    scope: "${OAUTH2_SCOPE:-openid email profile}"
 #   oidc:
 #     display_name: "OIDC"
 #     client_id: "your_client_id"
