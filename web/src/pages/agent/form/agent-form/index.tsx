@@ -10,17 +10,18 @@ import {
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Position } from '@xyflow/react';
 import { useContext, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { NodeHandleId, Operator, initialAgentValues } from '../../constant';
+import { Operator, initialAgentValues } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
+import { isBottomSubAgent } from '../../utils';
+import { DescriptionField } from '../components/description-field';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { AgentTools } from './agent-tools';
@@ -57,10 +58,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useValues(node);
 
   const isSubAgent = useMemo(() => {
-    const edge = edges.find(
-      (x) => x.target === node?.id && x.targetHandle === NodeHandleId.AgentTop,
-    );
-    return !!edge;
+    return isBottomSubAgent(edges, node?.id);
   }, [edges, node?.id]);
 
   const outputList = useMemo(() => {
@@ -87,20 +85,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         }}
       >
         <FormContainer>
-          {isSubAgent && (
-            <FormField
-              control={form.control}
-              name={`description`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea {...field}></Textarea>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          )}
+          {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
           <FormField
             control={form.control}

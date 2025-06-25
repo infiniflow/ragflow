@@ -186,11 +186,9 @@ function useAddChildEdge() {
 }
 
 function useAddToolNode() {
-  const addNode = useGraphStore((state) => state.addNode);
-  const getNode = useGraphStore((state) => state.getNode);
-  const addEdge = useGraphStore((state) => state.addEdge);
-  const edges = useGraphStore((state) => state.edges);
-  const nodes = useGraphStore((state) => state.nodes);
+  const { nodes, edges, addEdge, getNode, addNode } = useGraphStore(
+    (state) => state,
+  );
 
   const addToolNode = useCallback(
     (newNode: Node<any>, nodeId?: string) => {
@@ -232,8 +230,15 @@ function useAddToolNode() {
   return { addToolNode };
 }
 
+function isBottomSubAgent(type: string, position: Position) {
+  return (
+    (type === Operator.Agent && position === Position.Bottom) ||
+    type === Operator.Tool
+  );
+}
+
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
-  const { edges, nodes, addEdge, addNode, getNode } = useGraphStore(
+  const { edges, nodes, addEdge, addNode, getNode, updateNode } = useGraphStore(
     (state) => state,
   );
   const getNodeName = useGetNodeName();
@@ -291,6 +296,18 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
         if (node && node.parentId) {
           newNode.parentId = node.parentId;
           newNode.extent = 'parent';
+          const parentNode = getNode(node.parentId);
+          if (parentNode && !isBottomSubAgent(type, params.position)) {
+            const MoveRightDistance = 310;
+            updateNode({
+              ...parentNode,
+              width: (parentNode.width || 0) + MoveRightDistance,
+              position: {
+                x: parentNode.position.x + MoveRightDistance / 2,
+                y: parentNode.position.y,
+              },
+            });
+          }
         }
 
         if (type === Operator.Iteration) {
@@ -377,6 +394,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
       initializeOperatorParams,
       nodes,
       reactFlowInstance,
+      updateNode,
     ],
   );
 
