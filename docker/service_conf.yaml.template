@@ -12,7 +12,7 @@ mysql:
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
-  host: '${MINIO_HOST:-minio}:9000'
+  host: '${MINIO_HOST:-minio}:${MINIO_PORT:-9000}'
 es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
@@ -27,7 +27,7 @@ infinity:
 redis:
   db: 1
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
-  host: '${REDIS_HOST:-redis}:6379'
+  host: '${REDIS_HOST:-redis}:${REDIS_PORT:-6379}'
 
 # postgres:
 #   name: '${POSTGRES_DBNAME:-rag_flow}'
