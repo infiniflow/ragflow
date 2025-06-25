@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { initialRetrievalValues } from '../../constant';
+import { initialRetrievalValues, VariableType } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { Output } from '../components/output';
@@ -50,7 +50,10 @@ const IterationForm = ({ node }: INextOperatorForm) => {
         }}
       >
         <FormContainer>
-          <QueryVariable name="items_ref"></QueryVariable>
+          <QueryVariable
+            name="items_ref"
+            type={VariableType.Array}
+          ></QueryVariable>
         </FormContainer>
         <Output list={outputList}></Output>
       </form>

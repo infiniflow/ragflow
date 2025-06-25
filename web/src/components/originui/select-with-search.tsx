@@ -168,3 +168,5 @@ export const SelectWithSearch = forwardRef<
     </Popover>
   );
 });
+
+SelectWithSearch.displayName = 'SelectWithSearch';

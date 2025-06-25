@@ -6,17 +6,28 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { VariableType } from '../../constant';
 import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 
-type QueryVariableProps = { name?: string };
+type QueryVariableProps = { name?: string; type?: VariableType };
 
-export function QueryVariable({ name = 'query' }: QueryVariableProps) {
+export function QueryVariable({
+  name = 'query',
+  type = VariableType.String,
+}: QueryVariableProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
   const nextOptions = useBuildQueryVariableOptions();
+
+  const finalOptions = useMemo(() => {
+    return nextOptions.map((x) => {
+      return { ...x, options: x.options.filter((y) => y.type === type) };
+    });
+  }, [nextOptions, type]);
 
   return (
     <FormField
@@ -27,7 +38,7 @@ export function QueryVariable({ name = 'query' }: QueryVariableProps) {
           <FormLabel tooltip={t('chat.modelTip')}>{t('flow.query')}</FormLabel>
           <FormControl>
             <SelectWithSearch
-              options={nextOptions}
+              options={finalOptions}
               {...field}
             ></SelectWithSearch>
           </FormControl>

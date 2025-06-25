@@ -5,7 +5,7 @@ import { DefaultOptionType } from 'antd/es/select';
 import { isEmpty } from 'lodash';
 import get from 'lodash/get';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { BeginId, Operator } from '../constant';
+import { BeginId, BeginQueryType, Operator, VariableType } from '../constant';
 import { AgentFormContext } from '../context';
 import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
@@ -65,6 +65,7 @@ function buildOutputOptions(
   return Object.keys(outputs).map((x) => ({
     label: x,
     value: `${nodeId}@${x}`,
+    type: outputs[x]?.type,
   }));
 }
 
@@ -104,6 +105,19 @@ const ExcludedNodes = [
   Operator.Note,
 ];
 
+const StringList = [
+  BeginQueryType.Line,
+  BeginQueryType.Paragraph,
+  BeginQueryType.Options,
+];
+
+function transferToVariableType(type: string) {
+  if (StringList.some((x) => x === type)) {
+    return VariableType.String;
+  }
+  return type;
+}
+
 export function useBuildBeginVariableOptions() {
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
@@ -116,6 +130,7 @@ export function useBuildBeginVariableOptions() {
         options: query.map((x) => ({
           label: x.name,
           value: `begin@${x.key}`,
+          type: transferToVariableType(x.type),
         })),
       },
     ];
@@ -141,9 +156,11 @@ export function useBuildQueryVariableOptions() {
   const options = useBuildVariableOptions(node?.id);
 
   const nextOptions = useMemo(() => {
-    const globalOptions = Object.keys(data?.dsl?.globals ?? {}).map((x) => ({
-      label: x,
-      value: x,
+    const globals = data?.dsl?.globals ?? {};
+    const globalOptions = Object.entries(globals).map(([key, value]) => ({
+      label: key,
+      value: key,
+      type: Array.isArray(value) ? VariableType.Array : typeof value,
     }));
     return [
       { ...options[0], options: [...options[0]?.options, ...globalOptions] },

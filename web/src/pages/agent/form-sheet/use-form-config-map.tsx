@@ -1,5 +1,6 @@
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
+import IterationStartForm from '@/pages/flow/form/iteration-start-from';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { Operator } from '../constant';
@@ -367,7 +368,7 @@ export function useFormConfigMap() {
       schema: z.object({}),
     },
     [Operator.IterationStart]: {
-      component: () => <></>,
+      component: IterationStartForm,
       defaultValues: {},
       schema: z.object({}),
     },
