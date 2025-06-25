@@ -218,7 +218,20 @@ class EntityResolution(Extractor):
 
         return ans_list
 
+    def _has_digit_in_2gram_diff(self, a, b):
+        def to_2gram_set(s):
+            return {s[i:i+2] for i in range(len(s) - 1)}
+
+        set_a = to_2gram_set(a)
+        set_b = to_2gram_set(b)
+        diff = set_a ^ set_b
+
+        return any(any(c.isdigit() for c in pair) for pair in diff)
+
     def is_similarity(self, a, b):
+        if self._has_digit_in_2gram_diff(a, b):
+            return False
+
         if is_english(a) and is_english(b):
             if editdistance.eval(a, b) <= min(len(a), len(b)) // 2:
                 return True
