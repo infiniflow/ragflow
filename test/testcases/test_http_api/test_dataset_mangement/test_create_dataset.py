@@ -260,19 +260,21 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
+            ("empty", ""),
+            ("space", " "),
             ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
             ("missing_model_name", "@BAAI"),
             ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
             ("whitespace_only_model_name", " @BAAI"),
             ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
         ],
-        ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+        ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
     def test_embedding_model_format(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        if name == "missing_at":
+        if name in ["empty", "space", "missing_at"]:
             assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
             assert "Both model_name and provider must be non-empty strings" in res["message"], res
@@ -288,8 +290,8 @@ class TestDatasetCreate:
     def test_embedding_model_none(self, HttpApiAuth):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid string" in res["message"], res
+        assert res["code"] == 0, res
+        assert res["data"]["embedding_model"] == "BAAI/bge-large-zh-v1.5@BAAI", res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
