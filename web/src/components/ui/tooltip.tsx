@@ -4,6 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
+import { Info } from 'lucide-react';
 
 const TooltipProvider = TooltipPrimitive.Provider;
 
@@ -28,3 +29,16 @@ const TooltipContent = React.forwardRef<
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
+
+export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
+  return (
+    <Tooltip>
+      <TooltipTrigger>
+        <Info className="size-3 ml-2" />
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>{tooltip}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+};

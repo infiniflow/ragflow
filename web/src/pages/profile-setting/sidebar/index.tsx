@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { ProfileSettingRouteKey } from '@/constants/setting';
+import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
 import {
@@ -54,6 +55,8 @@ export function SideBar() {
   const { setTheme } = useTheme();
   const isDarkTheme = useIsDarkTheme();
 
+  const { logout } = useLogout();
+
   const handleThemeChange = useCallback(
     (checked: boolean) => {
       setTheme(checked ? 'dark' : 'light');
@@ -99,7 +102,13 @@ export function SideBar() {
             Dark
           </Label>
         </div>
-        <Button variant="outline" className="w-full gap-3">
+        <Button
+          variant="outline"
+          className="w-full gap-3"
+          onClick={() => {
+            logout();
+          }}
+        >
           <LogOut className="w-6 h-6" />
           Logout
         </Button>

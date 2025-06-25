@@ -68,8 +68,7 @@ class OIDCClient(OAuthClient):
             alg = headers.get("alg", "RS256")
 
             # Use PyJWT's PyJWKClient to fetch JWKS and find signing key
-            jwks_url = f"{self.issuer}/.well-known/jwks.json"
-            jwks_cli = jwt.PyJWKClient(jwks_url)
+            jwks_cli = jwt.PyJWKClient(self.jwks_uri)
             signing_key = jwks_cli.get_signing_key_from_jwt(id_token).key
 
             # Decode and verify signature

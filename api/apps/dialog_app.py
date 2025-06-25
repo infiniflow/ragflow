@@ -28,6 +28,7 @@ from api.utils.api_utils import get_json_result
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
+@validate_request("prompt_config")
 @login_required
 def set_dialog():
     req = request.json
@@ -43,33 +44,10 @@ def set_dialog():
     similarity_threshold = req.get("similarity_threshold", 0.1)
     vector_similarity_weight = req.get("vector_similarity_weight", 0.3)
     llm_setting = req.get("llm_setting", {})
-    default_prompt_with_dataset = {
-        "system": """你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
-以下是知识库：
-{knowledge}
-以上是知识库。""",
-        "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
-        "parameters": [
-            {"key": "knowledge", "optional": False}
-        ],
-        "empty_response": "Sorry! 知识库中未找到相关内容！"
-    }
-    default_prompt_no_dataset = {
-        "system": """You are a helpful assistant.""",
-        "prologue": "您好，我是您的助手小樱，长得可爱又善良，can I help you?",
-        "parameters": [
-           
-        ],
-        "empty_response": ""
-    }
-    prompt_config = req.get("prompt_config", default_prompt_with_dataset)
-
-    if not prompt_config["system"]:
-        prompt_config["system"] = default_prompt_with_dataset["system"]
+    prompt_config = req["prompt_config"]
     
-    if not req.get("kb_ids", []):
-        if prompt_config['system'] == default_prompt_with_dataset['system'] or "{knowledge}" in prompt_config['system']:
-            prompt_config = default_prompt_no_dataset
+    if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config['system']:
+        return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no knowledge base/Tavily used here.")
 
     for p in prompt_config["parameters"]:
         if p["optional"]:

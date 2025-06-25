@@ -78,8 +78,8 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.19.0-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.19.0`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.19.1-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.19.1`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `maidalun1020/bce-embedding-base_v1`
@@ -114,6 +114,16 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 - `MAX_CONTENT_LENGTH`  
   The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit. After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
+
+### Doc bulk size
+
+- `DOC_BULK_SIZE`  
+  The number of document chunks processed in a single batch during document parsing. Defaults to `4`.
+
+### Embedding batch size
+
+- `EMBEDDING_BATCH_SIZE`  
+  The number of text chunks processed in a single batch during embedding vectorization. Defaults to `16`.
 
 ## 🐋 Service configuration
 

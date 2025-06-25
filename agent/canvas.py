@@ -169,6 +169,7 @@ class Canvas:
     def run(self, running_hint_text = "is running...🕞", **kwargs):
         if not running_hint_text or not isinstance(running_hint_text, str):
             running_hint_text = "is running...🕞"
+        bypass_begin = bool(kwargs.get("bypass_begin", False))
 
         if self.answer:
             cpn_id = self.answer[0]
@@ -188,6 +189,12 @@ class Canvas:
         if not self.path:
             self.components["begin"]["obj"].run(self.history, **kwargs)
             self.path.append(["begin"])
+            if bypass_begin:
+                cpn = self.get_component("begin")
+                downstream = cpn["downstream"]
+                self.path.append(downstream)
+
+
 
         self.path.append([])
 
@@ -304,6 +311,8 @@ class Canvas:
 
     def get_history(self, window_size):
         convs = []
+        if window_size <= 0:
+            return convs
         for role, obj in self.history[window_size * -1:]:
             if isinstance(obj, list) and obj and all([isinstance(o, dict) for o in obj]):
                 convs.append({"role": role, "content": '\n'.join([str(s.get("content", "")) for s in obj])})

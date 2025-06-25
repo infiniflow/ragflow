@@ -19,7 +19,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Variable } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import theme from './theme';
@@ -42,12 +42,15 @@ const Nodes: Array<Klass<LexicalNode>> = [
   VariableNode,
 ];
 
+type PromptContentProps = { showToolbar?: boolean };
+
 type IProps = {
   value?: string;
   onChange?: (value?: string) => void;
-};
+  placeholder?: ReactNode;
+} & PromptContentProps;
 
-function PromptContent() {
+function PromptContent({ showToolbar = true }: PromptContentProps) {
   const [editor] = useLexicalComposerContext();
   const [isBlur, setIsBlur] = useState(false);
   const { t } = useTranslation();
@@ -78,18 +81,20 @@ function PromptContent() {
     <section
       className={cn('border rounded-sm ', { 'border-blue-400': !isBlur })}
     >
-      <div className="border-b px-2 py-2 justify-end flex">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-block cursor-pointer cursor p-0.5 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-sm">
-              <Variable size={16} onClick={handleVariableIconClick} />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('flow.insertVariableTip')}</p>
-          </TooltipContent>
-        </Tooltip>
-      </div>
+      {showToolbar && (
+        <div className="border-b px-2 py-2 justify-end flex">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-block cursor-pointer cursor p-0.5 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-sm">
+                <Variable size={16} onClick={handleVariableIconClick} />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('flow.insertVariableTip')}</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
       <ContentEditable
         className="min-h-40 relative px-2 py-1 focus-visible:outline-none"
         onBlur={handleBlur}
@@ -99,7 +104,12 @@ function PromptContent() {
   );
 }
 
-export function PromptEditor({ value, onChange }: IProps) {
+export function PromptEditor({
+  value,
+  onChange,
+  placeholder,
+  showToolbar,
+}: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
     namespace: 'PromptEditor',
@@ -124,16 +134,27 @@ export function PromptEditor({ value, onChange }: IProps) {
   );
 
   return (
-    <LexicalComposer initialConfig={initialConfig}>
-      <RichTextPlugin
-        contentEditable={<PromptContent></PromptContent>}
-        placeholder={
-          <div className="absolute top-2 left-2">{t('common.pleaseInput')}</div>
-        }
-        ErrorBoundary={LexicalErrorBoundary}
-      />
-      <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
-      <VariableOnChangePlugin onChange={onValueChange}></VariableOnChangePlugin>
-    </LexicalComposer>
+    <div className="relative">
+      <LexicalComposer initialConfig={initialConfig}>
+        <RichTextPlugin
+          contentEditable={
+            <PromptContent showToolbar={showToolbar}></PromptContent>
+          }
+          placeholder={
+            <div
+              className="absolute top-10 left-2 text-text-sub-title"
+              data-xxx
+            >
+              {placeholder || t('common.pleaseInput')}
+            </div>
+          }
+          ErrorBoundary={LexicalErrorBoundary}
+        />
+        <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
+        <VariableOnChangePlugin
+          onChange={onValueChange}
+        ></VariableOnChangePlugin>
+      </LexicalComposer>
+    </div>
   );
 }

@@ -15,8 +15,11 @@
 #
 import json
 import re
+
+from jinja2 import StrictUndefined
+from jinja2.sandbox import SandboxedEnvironment
+
 from agent.component.base import ComponentBase, ComponentParamBase
-from jinja2 import Template as Jinja2Template
 
 
 class TemplateParam(ComponentParamBase):
@@ -75,6 +78,11 @@ class Template(ComponentBase):
                     if p["key"] == key:
                         value = p.get("value", "")
                         self.make_kwargs(para, kwargs, value)
+
+                        origin_pattern = "{begin@" + key + "}"
+                        new_pattern = "begin_" + key
+                        content = content.replace(origin_pattern, new_pattern)
+                        kwargs[new_pattern] = kwargs.pop(origin_pattern, "")
                         break
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
@@ -89,19 +97,27 @@ class Template(ComponentBase):
                 else:
                     hist = ""
                 self.make_kwargs(para, kwargs, hist)
+
+                if ":" in component_id:
+                    origin_pattern = "{" + component_id + "}"
+                    new_pattern = component_id.replace(":", "_")
+                    content = content.replace(origin_pattern, new_pattern)
+                    kwargs[new_pattern] = kwargs.pop(component_id, "")
                 continue
 
             _, out = cpn.output(allow_partial=False)
 
             result = ""
             if "content" in out.columns:
-                result = "\n".join(
-                    [o if isinstance(o, str) else str(o) for o in out["content"]]
-                )
+                result = "\n".join([o if isinstance(o, str) else str(o) for o in out["content"]])
 
             self.make_kwargs(para, kwargs, result)
 
-        template = Jinja2Template(content)
+        env = SandboxedEnvironment(
+            autoescape=True,
+            undefined=StrictUndefined,
+        )
+        template = env.from_string(content)
 
         try:
             content = template.render(kwargs)
@@ -114,19 +130,16 @@ class Template(ComponentBase):
                     v = json.dumps(v, ensure_ascii=False)
                 except Exception:
                     pass
-            content = re.sub(
-                r"\{%s\}" % re.escape(n), v, content
-            )
-            content = re.sub(
-                r"(#+)", r" \1 ", content
-            )
+            # Process backslashes in strings, Use Lambda function to avoid escape issues
+            if isinstance(v, str):
+                v = v.replace("\\", "\\\\")
+            content = re.sub(r"\{%s\}" % re.escape(n), lambda match: v, content)
+            content = re.sub(r"(#+)", r" \1 ", content)
 
         return Template.be_output(content)
 
     def make_kwargs(self, para, kwargs, value):
-        self._param.inputs.append(
-            {"component_id": para["key"], "content": value}
-        )
+        self._param.inputs.append({"component_id": para["key"], "content": value})
         try:
             value = json.loads(value)
         except Exception:
