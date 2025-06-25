@@ -117,3 +117,13 @@ def is_valid_url(url: str) -> bool:
     except socket.gaierror:
         return False
     return True
+
+
+def safe_json_parse(data: str | dict) -> dict:
+    if isinstance(data, dict):
+        return data
+    try:
+        return json.loads(data) if data else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+

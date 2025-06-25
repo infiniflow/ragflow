@@ -40,8 +40,8 @@ def create():
         return get_data_error_result(message="Search name must be string.")
     if search_name.strip() == "":
         return get_data_error_result(message="Search name can't be empty.")
-    if len(search_name.encode("utf-8")) > DATASET_NAME_LIMIT:
-        return get_data_error_result(message=f"Search name length is {len(search_name)} which is large than {DATASET_NAME_LIMIT}")
+    if len(search_name.encode("utf-8")) > 255:
+        return get_data_error_result(message=f"Search name length is {len(search_name)} which is large than 255.")
     e, _ = TenantService.get_by_id(current_user.id)
     if not e:
         return get_data_error_result(message="Authorizationd identity.")

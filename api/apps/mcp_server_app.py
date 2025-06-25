@@ -1,39 +1,44 @@
 from flask import Response, request
 from flask_login import current_user, login_required
+
+from api.db import VALID_MCP_SERVER_TYPES
 from api.db.db_models import MCPServer
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
+from api.utils.web_utils import safe_json_parse
 
 
-@manager.route("/list", methods=["GET"])  # noqa: F821
+@manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
-def get_list() -> Response:
+def list_mcp() -> Response:
+    keywords = request.args.get("keywords", "")
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
+    orderby = request.args.get("orderby", "create_time")
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
+
+    req = request.get_json()
+    mcp_ids = req.get("mcp_ids", [])
     try:
-        return get_json_result(data=MCPServerService.get_servers(current_user.id) or [])
+        servers = MCPServerService.get_servers(current_user.id, mcp_ids, page_number, items_per_page, orderby, desc, keywords) or []
+
+        return get_json_result(data={"mcp_servers": servers, "total": len(servers)})
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route("/get_multiple", methods=["POST"])  # noqa: F821
+@manager.route("/detail", methods=["GET"])  # noqa: F821
 @login_required
-@validate_request("id_list")
-def get_multiple() -> Response:
-    req = request.json
-
+def detail() -> Response:
+    mcp_id = request.args["mcp_id"]
     try:
-        return get_json_result(data=MCPServerService.get_servers(current_user.id, id_list=req["id_list"]) or [])
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/get/<ms_id>", methods=["GET"])  # noqa: F821
-@login_required
-def get(ms_id: str) -> Response:
-    try:
-        mcp_server = MCPServerService.get_or_none(id=ms_id, tenant_id=current_user.id)
+        mcp_server = MCPServerService.get_or_none(id=mcp_id, tenant_id=current_user.id)
 
         if mcp_server is None:
             return get_json_result(code=RetCode.NOT_FOUND, data=None)
@@ -47,7 +52,18 @@ def get(ms_id: str) -> Response:
 @login_required
 @validate_request("name", "url", "server_type")
 def create() -> Response:
-    req = request.json
+    req = request.get_json()
+
+    server_type = req.get("server_type", "")
+    if server_type not in VALID_MCP_SERVER_TYPES:
+        return get_data_error_result(message="Unsupported MCP server type.")
+
+    server_name = req.get("name", "")
+    if not server_name or len(server_name.encode("utf-8")) > 255:
+        return get_data_error_result(message=f"Invaild MCP name or length is {len(server_name)} which is large than 255.")
+
+    req["headers"] = safe_json_parse(req.get("headers", {}))
+    req["variables"] = safe_json_parse(req.get("variables", {}))
 
     try:
         req["id"] = get_uuid()
@@ -57,9 +73,6 @@ def create() -> Response:
 
         if not e:
             return get_data_error_result(message="Tenant not found.")
-
-        if not req.get("headers"):
-            req["headers"] = {}
 
         if not MCPServerService.insert(**req):
             return get_data_error_result()
@@ -71,37 +84,131 @@ def create() -> Response:
 
 @manager.route("/update", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("id", "name", "url", "server_type")
+@validate_request("id")
 def update() -> Response:
-    req = request.json
+    req = request.get_json()
 
-    if not req.get("headers"):
-        req["headers"] = {}
+    server_type = req.get("server_type", "")
+    if server_type and server_type not in VALID_MCP_SERVER_TYPES:
+        return get_data_error_result(message="Unsupported MCP server type.")
+    server_name = req.get("name", "")
+    if server_name and len(server_name.encode("utf-8")) > 255:
+        return get_data_error_result(message=f"Invaild MCP name or length is {len(server_name)} which is large than 255.")
+
+    req["headers"] = safe_json_parse(req.get("headers", {}))
+    req["variables"] = safe_json_parse(req.get("variables", {}))
 
     try:
         req["tenant_id"] = current_user.id
 
         if not MCPServerService.filter_update([MCPServer.id == req["id"], MCPServer.tenant_id == req["tenant_id"]], req):
-            return get_data_error_result()
+            return get_data_error_result(message="Failed to updated MCP server.")
 
-        return get_json_result(data={"id": req["id"]})
+        e, updated_mcp = MCPServerService.get_by_id(req["id"])
+        if not e:
+            return get_data_error_result(message="Failed to fetch updated MCP server.")
+
+        return get_json_result(data=updated_mcp.to_dict())
     except Exception as e:
         return server_error_response(e)
 
 
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("id")
+@validate_request("mcp_ids")
 def rm() -> Response:
-    req = request.json
-    ms_id = req["id"]
+    req = request.get_json()
+    mcp_ids = req.get("mcp_ids", [])
 
     try:
         req["tenant_id"] = current_user.id
 
-        if not MCPServerService.filter_delete([MCPServer.id == ms_id, MCPServer.tenant_id == req["tenant_id"]]):
-            return get_data_error_result()
+        if not MCPServerService.delete_by_ids(mcp_ids):
+            return get_data_error_result(message=f"Failed to delete MCP servers {mcp_ids}")
 
-        return get_json_result(data={"id": req["id"]})
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/import", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("mcpServers")
+def import_multiple() -> Response:
+    req = request.get_json()
+    servers = req.get("mcpServers", {})
+
+    if not servers:
+        return get_data_error_result(message="No MCP servers provided.")
+
+    results = []
+    try:
+        for server_name, config in servers.items():
+            if not all(key in config for key in ["type", "url"]):
+                results.append({"server": server_name, "success": False, "message": "Missing required fields (type or url)"})
+                continue
+
+            base_name = server_name
+            new_name = base_name
+            counter = 0
+
+            while True:
+                e, _ = MCPServerService.get_by_name_and_tenant(name=new_name, tenant_id=current_user.id)
+                if not e:
+                    break
+                new_name = f"{base_name}_{counter}"
+                counter += 1
+
+            create_data = {
+                "id": get_uuid(),
+                "tenant_id": current_user.id,
+                "name": new_name,
+                "url": config["url"],
+                "server_type": config["type"],
+                "variables": {"authorization_token": config.get("authorization_token", ""), "tool_configuration": config.get("tool_configuration", {})},
+            }
+
+            if MCPServerService.insert(**create_data):
+                result = {"server": server_name, "success": True, "action": "created", "id": create_data["id"], "new_name": new_name}
+                if new_name != base_name:
+                    result["message"] = f"Renamed from '{base_name}' to avoid duplication"
+
+                results.append(result)
+            else:
+                results.append({"server": server_name, "success": False, "message": "Failed to create MCP server."})
+
+        return get_json_result(data={"results": results})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/export", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("mcp_ids")
+def export_multiple() -> Response:
+    req = request.get_json()
+    mcp_ids = req.get("mcp_ids", [])
+
+    if not mcp_ids:
+        return get_data_error_result(message="No MCP server IDs provided.")
+
+    try:
+        exported_servers = {}
+
+        for mcp_id in mcp_ids:
+            e, mcp_server = MCPServerService.get_by_id(mcp_id)
+
+            if e and mcp_server.tenant_id == current_user.id:
+                server_key = mcp_server.name
+
+                exported_servers[server_key] = {
+                    "type": mcp_server.server_type,
+                    "url": mcp_server.url,
+                    "name": mcp_server.name,
+                    "authorization_token": mcp_server.variables.get("authorization_token", ""),
+                    "tool_configuration": mcp_server.variables.get("tool_configuration", {}),
+                }
+
+        return get_json_result(data={"mcpServers": exported_servers})
     except Exception as e:
         return server_error_response(e)

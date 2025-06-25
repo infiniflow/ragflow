@@ -806,13 +806,13 @@ class MCPServer(DataBaseModel):
     url = CharField(max_length=2048, null=False, help_text="MCP Server URL")
     server_type = CharField(max_length=32, null=False, help_text="MCP Server type")
     description = TextField(null=True, help_text="MCP Server description")
-    variables = JSONField(null=True, default=[], help_text="MCP Server variables")
-    headers = JSONField(null=True, default={}, help_text="MCP Server additional request headers")
+    variables = JSONField(null=True, default=dict, help_text="MCP Server variables")
+    headers = JSONField(null=True, default=dict, help_text="MCP Server additional request headers")
 
     class Meta:
         db_table = "mcp_server"
 
- 
+
 class Search(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
@@ -949,6 +949,6 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=[])))
+        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict)))
     except Exception:
         pass
