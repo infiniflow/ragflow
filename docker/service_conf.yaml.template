@@ -17,6 +17,7 @@ es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
+  api_key: '${ES_APIKEY}'
 os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
@@ -37,15 +38,33 @@ redis:
 #   port: 5432
 #   max_connections: 100
 #   stale_timeout: 30
-# s3:
-#   access_key: 'access_key'
-#   secret_key: 'secret_key'
-#   region: 'region'
-#   endpoint_url: 'endpoint_url'
-#   bucket: 'bucket'
-#   prefix_path: 'prefix_path'
-#   signature_version: 'v4'
-#   addressing_style: 'path'
+s3:
+  # For AWS S3
+  # access_key: 'your_aws_access_key'
+  # secret_key: 'your_aws_secret_key'
+  # region: 'us-east-1'
+  # endpoint_url: 'https://s3.amazonaws.com'
+  # bucket: 'your_bucket_name'
+  # prefix_path: 'your_prefix_path'
+  # signature_version: 'v4'
+  # addressing_style: 'path'
+  
+  # For Google Cloud Storage (GCS) - Two options:
+  # Option 1: HMAC Keys (recommended for compatibility)
+  # Generate HMAC keys in GCS Console: Storage > Settings > Interoperability > Access keys for service accounts
+  # access_key: 'your_gcs_hmac_access_key'
+  # secret_key: 'your_gcs_hmac_secret_key'
+  # 
+  # Option 2: Application Default Credentials (for GCP environments)
+  # Leave access_key and secret_key empty, boto3 will use ADC/mounted service accounts
+  
+  # Current configuration for GCS
+  region: '${GCS_REGION:-us-central1}'
+  endpoint_url: '${STORAGE_ENDPOINT:-https://storage.googleapis.com}'
+  bucket: '${STORAGE_BUCKET:-toteqa_assets}'
+  prefix_path: '${STORAGE_PREFIX_PATH:-ragflow}'
+  signature_version: 'v4'
+  addressing_style: 'path'
 # oss:
 #   access_key: '${ACCESS_KEY}'
 #   secret_key: '${SECRET_KEY}'

@@ -2,33 +2,34 @@ ragflow:
   host: 0.0.0.0
   http_port: 9380
 mysql:
-  name: 'rag_flow'
-  user: 'root'
-  password: 'infini_rag_flow'
-  host: 'localhost'
+  name: "rag_flow"
+  user: "root"
+  password: "infini_rag_flow"
+  host: "localhost"
   port: 5455
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
 minio:
-  user: 'rag_flow'
-  password: 'infini_rag_flow'
-  host: 'localhost:9000'
+  user: "rag_flow"
+  password: "infini_rag_flow"
+  host: "localhost:9000"
 es:
-  hosts: 'http://localhost:1200'
-  username: 'elastic'
-  password: 'infini_rag_flow'
+  hosts: "http://${ES_HOST:-es01}:9200"
+  username: "${ES_USER:-elastic}"
+  password: "${ELASTIC_PASSWORD:-infini_rag_flow}"
+  api_key: "${ES_APIKEY}"
 os:
-  hosts: 'http://localhost:1201'
-  username: 'admin'
-  password: 'infini_rag_flow_OS_01'
+  hosts: "http://localhost:1201"
+  username: "admin"
+  password: "infini_rag_flow_OS_01"
 infinity:
-  uri: 'localhost:23817'
-  db_name: 'default_db'
+  uri: "localhost:23817"
+  db_name: "default_db"
 redis:
   db: 1
-  password: 'infini_rag_flow'
-  host: 'localhost:6379'
+  password: "infini_rag_flow"
+  host: "localhost:6379"
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'

@@ -1,4 +1,3 @@
-
 include:
   - ./docker-compose-base.yml
 
@@ -34,12 +33,18 @@ services:
       - ../history_data_agent:/ragflow/history_data_agent
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
+      # Mount the rag directory to use local changes
+      - ../rag:/ragflow/rag
+      # Mount Google Cloud ADC credentials for GCS access
+      - ~/.config/gcloud:/root/.config/gcloud:ro
 
     env_file: .env
     environment:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=${HF_ENDPOINT}
       - MACOS=${MACOS}
+      # Google Cloud ADC credentials path
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
     networks:
       - ragflow
     restart: on-failure
