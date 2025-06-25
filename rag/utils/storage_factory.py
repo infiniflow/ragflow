@@ -20,7 +20,8 @@ from enum import Enum
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
 from rag.utils.minio_conn import RAGFlowMinio
-from rag.utils.opendal_conn import OpenDALStorage
+
+# from rag.utils.opendal_conn import OpenDALStorage
 from rag.utils.s3_conn import RAGFlowS3
 from rag.utils.oss_conn import RAGFlowOSS
 
@@ -41,7 +42,7 @@ class StorageFactory:
         Storage.AZURE_SAS: RAGFlowAzureSasBlob,
         Storage.AWS_S3: RAGFlowS3,
         Storage.OSS: RAGFlowOSS,
-        Storage.OPENDAL: OpenDALStorage,
+        # Storage.OPENDAL: OpenDALStorage,
     }
 
     @classmethod
