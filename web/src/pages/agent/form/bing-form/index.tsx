@@ -2,8 +2,8 @@ import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Select } from 'antd';
 import { useMemo } from 'react';
-import { BingCountryOptions, BingLanguageOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import { BingCountryOptions, BingLanguageOptions } from '../../options';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
 const BingForm = ({ onValuesChange, form, node }: IOperatorForm) => {

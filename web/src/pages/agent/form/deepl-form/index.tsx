@@ -1,9 +1,9 @@
 import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Select } from 'antd';
-import { DeepLSourceLangOptions, DeepLTargetLangOptions } from '../../constant';
 import { useBuildSortOptions } from '../../form-hooks';
 import { IOperatorForm } from '../../interface';
+import { DeepLSourceLangOptions, DeepLTargetLangOptions } from '../../options';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
 const DeepLForm = ({ onValuesChange, form, node }: IOperatorForm) => {

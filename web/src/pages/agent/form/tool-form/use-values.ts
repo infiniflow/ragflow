@@ -1,5 +1,6 @@
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
+import { DefaultAgentToolValuesMap } from '../../constant';
 import useGraphStore from '../../store';
 import { getAgentNodeTools } from '../../utils';
 
@@ -12,10 +13,6 @@ export enum Topic {
   News = 'news',
   General = 'general',
 }
-
-export const defaultValues = {
-  api_key: '',
-};
 
 export function useValues() {
   const { clickedToolId, clickedNodeId, findUpstreamNodeById } = useGraphStore(
@@ -31,6 +28,11 @@ export function useValues() {
     )?.params;
 
     if (isEmpty(formData)) {
+      const defaultValues =
+        DefaultAgentToolValuesMap[
+          clickedToolId as keyof typeof DefaultAgentToolValuesMap
+        ];
+
       return defaultValues;
     }
 

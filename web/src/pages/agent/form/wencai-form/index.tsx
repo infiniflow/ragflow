@@ -10,8 +10,8 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { WenCaiQueryTypeOptions } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { WenCaiQueryTypeOptions } from '../../options';
 import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
 const WenCaiForm = ({ form, node }: INextOperatorForm) => {

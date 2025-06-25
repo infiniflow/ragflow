@@ -9,8 +9,8 @@ import {
 } from '@/components/ui/form';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
-import { LanguageOptions } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { LanguageOptions } from '../../options';
 import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
 const WikipediaForm = ({ form, node }: INextOperatorForm) => {

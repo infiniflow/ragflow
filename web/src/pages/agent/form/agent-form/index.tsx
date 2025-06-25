@@ -10,7 +10,6 @@ import {
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Position } from '@xyflow/react';
 import { useContext, useMemo } from 'react';
@@ -22,6 +21,7 @@ import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { isBottomSubAgent } from '../../utils';
+import { DescriptionField } from '../components/description-field';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { AgentTools } from './agent-tools';
@@ -85,20 +85,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         }}
       >
         <FormContainer>
-          {isSubAgent && (
-            <FormField
-              control={form.control}
-              name={`description`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea {...field}></Textarea>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          )}
+          {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
           <FormField
             control={form.control}

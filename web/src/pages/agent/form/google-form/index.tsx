@@ -1,8 +1,8 @@
 import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Select } from 'antd';
-import { GoogleCountryOptions, GoogleLanguageOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import { GoogleCountryOptions, GoogleLanguageOptions } from '../../options';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
 const GoogleForm = ({ onValuesChange, form, node }: IOperatorForm) => {

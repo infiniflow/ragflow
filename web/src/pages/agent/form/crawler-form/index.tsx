@@ -1,8 +1,8 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Select } from 'antd';
 import { useMemo } from 'react';
-import { CrawlerResultOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import { CrawlerResultOptions } from '../../options';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 const CrawlerForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
