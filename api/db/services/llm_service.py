@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import re
 from functools import partial
 
 from langfuse import Langfuse
@@ -215,6 +216,7 @@ class LLMBundle:
         self.max_length = model_config.get("max_tokens", 8192)
 
         self.is_tools = model_config.get("is_tools", False)
+        self.verbose_tool_use = kwargs.get("verbose_tool_use")
 
         langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
         if langfuse_keys:
@@ -309,7 +311,7 @@ class LLMBundle:
 
         return txt
 
-    def tts(self, text):
+    def tts(self, text: str) -> None:
         if self.langfuse:
             span = self.trace.span(name="tts", input={"text": text})
 
@@ -337,7 +339,7 @@ class LLMBundle:
 
         return txt[last_think_end + len("</think>") :]
 
-    def chat(self, system, history, gen_conf):
+    def chat(self, system: str, history: list, gen_conf: dict) -> str:
         if self.langfuse:
             generation = self.trace.generation(name="chat", model=self.llm_name, input={"system": system, "history": history})
 
@@ -348,6 +350,9 @@ class LLMBundle:
         txt, used_tokens = chat()
         txt = self._remove_reasoning_content(txt)
 
+        if not self.verbose_tool_use:
+            txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
+
         if isinstance(txt, int) and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
             logging.error("LLMBundle.chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
 
@@ -356,7 +361,7 @@ class LLMBundle:
 
         return txt
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system: str, history: list, gen_conf: dict):
         if self.langfuse:
             generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
 
@@ -376,8 +381,12 @@ class LLMBundle:
             if txt.endswith("</think>"):
                 ans = ans.rstrip("</think>")
 
+            if not self.verbose_tool_use:
+                txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
+
             ans += txt
             yield ans
+
         if total_tokens > 0:
             if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, txt, self.llm_name):
                 logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))

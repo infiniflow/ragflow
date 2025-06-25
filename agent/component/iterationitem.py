@@ -63,11 +63,15 @@ class IterationItem(ComponentBase, ABC):
             if p.component_name.lower() in ["categorize", "message", "switch", "userfillup", "interationitem"]:
                 continue
 
-            res = p.output(cid)
-            if not res:
-                res = []
-            res.append(obj.output())
-            p.set_output(cid, res)
+            for k, o in p._param.outputs.items():
+                _cid, var = o["ref"].split("@")
+                if _cid != cid:
+                    continue
+                res = p.output(k)
+                if not res:
+                    res = []
+                res.append(obj.output(var))
+                p.set_output(k, res)
 
     def end(self):
         return self._idx == -1

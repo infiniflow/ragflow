@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import time
 from copy import deepcopy
 from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
@@ -40,9 +40,9 @@ class LLMToolPluginCallSession(ToolCallSession):
     def __init__(self, tools_map: dict[str, object]):
         self.tools_map = tools_map
 
-    async def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
+    def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
-        return await self.tools_map[name].invoke(**arguments)
+        return self.tools_map[name].invoke(**arguments)
 
 
 class ToolParamBase(ComponentParamBase):
@@ -105,10 +105,13 @@ class ToolBase(ComponentBase):
     def invoke(self, **kwargs):
         self._param.debug_inputs = []
         print(kwargs, "#############################")
+
+        self.set_output("_created_time", time.perf_counter())
         try:
             self._invoke(**kwargs)
         except Exception as e:
             self._param.outputs["_ERROR"] = {"value": str(e)}
             raise e
 
+        self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()

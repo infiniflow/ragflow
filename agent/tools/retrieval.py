@@ -32,19 +32,8 @@ class RetrievalParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
-            "name": "dataset_retrieval",
-            "description": "This tool can be utilized for relevant content searching in the datasets.",
-            "parameters": {
-                "query": {
-                    "type": "string",
-                    "description": "Query to search the dataset.",
-                    "default": "{sys.query}",
-                    "required": True
-                }
-            }
-        }
         super().__init__()
+        self.description = "This tool can be utilized for relevant content searching in the datasets."
         self.similarity_threshold = 0.2
         self.keywords_similarity_weight = 0.5
         self.top_n = 8
@@ -64,6 +53,20 @@ class RetrievalParam(ToolParamBase):
 
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
+
+    def get_meta(self):
+        return {
+            "name": self._id,
+            "description": self._param.description,
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "Query to search the dataset.",
+                    "default": "",
+                    "required": True
+                }
+            }
+        }
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):

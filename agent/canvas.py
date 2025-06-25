@@ -212,8 +212,19 @@ class Canvas:
                 for t in thr:
                     t.result()
 
+        def _node_finished(cpn_obj):
+            return decorate("node_finished",{
+                           "inputs": cpn_obj.get_input_values(),
+                           "outputs": cpn_obj.output(),
+                           "component_id": cpn_obj._id,
+                           "error": cpn_obj.error(),
+                           "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
+                           "created_at": cpn_obj.output("_created_time"),
+                       })
+
         error = ""
         idx = len(self.path) - 1
+        partials = []
         while idx < len(self.path):
             to = len(self.path)
             for i in range(idx, to):
@@ -225,11 +236,21 @@ class Canvas:
                 cpn = self.get_component(self.path[i])
                 if cpn["obj"].component_name.lower() == "message":
                     if isinstance(cpn["obj"].output("content"), partial):
+                        _m = ""
                         for m in cpn["obj"].output("content")():
                             yield decorate("message", {"content": m})
+                            _m += m
+                        cpn["obj"].set_output("content", _m)
                     else:
                         yield decorate("message", {"content": cpn["obj"].output("content")})
                     yield decorate("message_end", {})
+
+                    while partials:
+                        _cpn = self.get_component(partials[0])
+                        if isinstance(_cpn["obj"].output("content"), partial):
+                            break
+                        yield _node_finished(_cpn["obj"])
+                        partials.pop(0)
 
                 if cpn["obj"].output("_references"):
                     self.retrieval[-1]["chunks"].extend(cpn["obj"].output("_references").get("chunks", []))
@@ -246,30 +267,14 @@ class Canvas:
                         error = cpn["obj"].error()
 
                 if cpn["obj"].component_name.lower() != "iteration":
-                    o = cpn["obj"].output()
                     if isinstance(cpn["obj"].output("content"), partial):
-                        o["content"] = None
-                    yield decorate("node_finished",
-                               {
-                                   "inputs": cpn["obj"].get_input_values(),
-                                   "outputs": o,
-                                   "component_id": self.path[i],
-                                   "error": cpn["obj"].error(),
-                                   "elapsed_time": cpn["obj"].output("_elapsed_time"),
-                                   "created_at": int(time.time()),
-                                })
+                        partials.append(self.path[i])
+                    else:
+                        yield _node_finished(cpn["obj"])
 
                 if cpn["obj"].component_name.lower() == "iterationitem" and cpn["obj"].end():
                     iter = cpn["obj"].get_parent()
-                    yield decorate("node_finished", # End of iteration
-                                   {
-                                       "inputs": iter.get_input_values(),
-                                       "outputs": iter.output(),
-                                       "component_id": iter._id,
-                                       "error": iter.error(),
-                                       "elapsed_time": iter.output("_elapsed_time"),
-                                       "created_at": int(time.time()),
-                                   })
+                    yield _node_finished(iter)
                     self.path.extend(self.get_component(cpn["parent_id"])["downstream"])
                 elif cpn["obj"].component_name.lower() in ["categorize", "switch"]:
                     self.path.extend(cpn["obj"].output("_next"))
@@ -277,6 +282,7 @@ class Canvas:
                     self.path.append(cpn["obj"].get_start())
                 else:
                     self.path.extend(cpn["downstream"])
+
             if error:
                 break
             idx = to
@@ -299,7 +305,7 @@ class Canvas:
                            "inputs": kwargs.get("inputs"),
                            "outputs": self.get_component_obj(self.path[-1]).output(),
                            "elapsed_time": time.perf_counter() - st,
-                           "created_at": int(time.time()),
+                           "created_at": st,
                        })
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
 

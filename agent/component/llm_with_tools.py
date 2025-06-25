@@ -17,8 +17,11 @@ import logging
 import os
 import re
 from functools import partial
+
+import json_repair
 import pandas as pd
 import trio
+from lmdb.tool import delta
 
 from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession
@@ -38,23 +41,6 @@ class AgentParam(LLMParam):
         self.tools = []
         self.max_rounds = 5
         self.description = ""
-
-    def get_meta(self):
-        return {
-            "type": "function",
-            "function": {
-                "name": "agent",
-                "description": self.description,
-                "parameters": {
-                    "user_prompt": {
-                        "type": "string",
-                        "description": "This is the order you need to sent to the agent.",
-                        "default": "{sys.query}",
-                        "required": True
-                    }
-                }
-            }
-        }
 
 
 class Agent(LLM):
@@ -79,19 +65,46 @@ class Agent(LLM):
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id,
                                   max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error,
-                                  max_rounds=self._param.max_rounds
+                                  max_rounds=self._param.max_rounds,
+                                  verbose_tool_use=True
                                   )
         self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools), [v.get_meta() for _,v in self.tools.items()])
 
+    def get_meta(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": self._id,
+                "description": self._param.description,
+                "parameters": {
+                    "user_prompt": {
+                        "type": "string",
+                        "description": "This is the order you need to sent to the agent.",
+                        "default": "",
+                        "required": True
+                    }
+                }
+            }
+        }
+
+    def _extract_tool_use(self, ans, use_tools):
+        patt = r"<tool_call>(.*?)</tool_call>"
+        for r in re.finditer(patt, ans, flags=re.DOTALL):
+            use_tools.append(json_repair.loads(r.group(1)))
+        return re.sub(patt, "", ans, flags=re.DOTALL)
+
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
+        if kwargs.get("user_prompt"):
+            self._param.prompts = [{"role": "user", "content": kwargs["user_prompt"]}]
+
         if not self.tools:
             return super()._invoke(**kwargs)
 
         prompt, msg = self._prepare_prompt_variables()
 
         print(prompt, "\n####################################")
-        downstreams = self._canvas.get_component(self._id)["downstream"]
+        downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
             self.set_output("content", partial(self.stream_output_with_tools, prompt, msg))
             return
@@ -103,15 +116,25 @@ class Agent(LLM):
             logging.error(f"Extractor._chat got error. response: {ans}")
             self.set_output("_ERROR", ans)
             return
+        use_tools = []
+        ans = self._extract_tool_use(ans, use_tools)
         self.set_output("content", ans)
+        if use_tools:
+            self.set_output("use_tools", use_tools)
 
     def stream_output_with_tools(self, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
+        answer_without_toolcall = ""
+        use_tools = []
         for ans in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], gen_conf=self._param.gen_conf()):
-            yield ans[len(answer):]
+            delta_ans = self._extract_tool_use(ans[len(answer):], use_tools)
+            yield delta_ans
             answer = ans
-        self.set_output("content", answer)
+            answer_without_toolcall += delta_ans
+        self.set_output("content", answer_without_toolcall)
+        if use_tools:
+            self.set_output("use_tools", use_tools)
 
     def debug(self, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)

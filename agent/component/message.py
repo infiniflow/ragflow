@@ -70,16 +70,23 @@ class Message(ComponentBase):
         s = 0
         rand_cnt = random.choice(self._param.content)
         all_content = ""
+        cache = {}
         for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
             all_content += rand_cnt[s: r.start()]
             yield rand_cnt[s: r.start()]
             s = r.end()
             exp = r.group(1)
+            if exp in cache:
+                yield cache[exp]
+                continue
             v = self._canvas.get_variable_value(exp)
             if isinstance(v, partial):
+                cnt = ""
                 for t in v():
                     all_content += t
+                    cnt += t
                     yield t
+                cache[exp] = cnt
             else:
                 if not isinstance(v, str):
                     try:
@@ -88,6 +95,7 @@ class Message(ComponentBase):
                         pass
                 all_content += v
                 yield v
+                cache[exp] = v
 
         if s < len(rand_cnt):
             all_content += rand_cnt[s: ]

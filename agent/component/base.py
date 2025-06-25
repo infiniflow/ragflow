@@ -412,14 +412,14 @@ class ComponentBase(ABC):
 
     def invoke(self, **kwargs) -> dict[str, Any]:
         self._param.debug_inputs = []
-        st = time.perf_counter()
+        self.set_output("_created_time", time.perf_counter())
         try:
             self._invoke(**kwargs)
         except Exception as e:
             self._param.outputs["_ERROR"] = {"value": str(e)}
             raise e
 
-        self._param.outputs["_elapsed_time"] = {"value": time.perf_counter() - st}
+        self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
