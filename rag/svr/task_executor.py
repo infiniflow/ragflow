@@ -543,6 +543,7 @@ async def do_handle_task(task):
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
         if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
+            progress_callback(prog=-1.0, msg="Internal configuration error.")
             return
         graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
@@ -558,8 +559,6 @@ async def do_handle_task(task):
         start_ts = timer()
         chunks = await build_chunks(task, progress_callback)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
-        if chunks is None:
-            return
         if not chunks:
             progress_callback(1., msg=f"No chunk built from {task_document_name}")
             return
@@ -614,6 +613,7 @@ async def do_handle_task(task):
             async with trio.open_nursery() as nursery:
                 for chunk_id in chunk_ids:
                     nursery.start_soon(delete_image, task_dataset_id, chunk_id)
+            progress_callback(-1, msg=f"Chunk updates failed since task {task['id']} is unknown.")
             return
         
     logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
