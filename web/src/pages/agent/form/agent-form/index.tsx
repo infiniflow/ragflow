@@ -17,10 +17,11 @@ import { useContext, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { NodeHandleId, Operator, initialAgentValues } from '../../constant';
+import { Operator, initialAgentValues } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
+import { isBottomSubAgent } from '../../utils';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { AgentTools } from './agent-tools';
@@ -57,10 +58,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useValues(node);
 
   const isSubAgent = useMemo(() => {
-    const edge = edges.find(
-      (x) => x.target === node?.id && x.targetHandle === NodeHandleId.AgentTop,
-    );
-    return !!edge;
+    return isBottomSubAgent(edges, node?.id);
   }, [edges, node?.id]);
 
   const outputList = useMemo(() => {
