@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { X } from 'lucide-react';
-import { ReactNode } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBuildSubNodeOutputOptions } from './use-build-options';
@@ -28,6 +28,26 @@ export function DynamicOutputForm({ node }: IProps) {
   const options = useBuildSubNodeOutputOptions(node?.id);
   const name = 'outputs';
 
+  const flatOptions = useMemo(() => {
+    return options.reduce<{ label: string; value: string; type: string }[]>(
+      (pre, cur) => {
+        pre.push(...cur.options);
+        return pre;
+      },
+      [],
+    );
+  }, [options]);
+
+  const findType = useCallback(
+    (val: string) => {
+      const type = flatOptions.find((x) => x.value === val)?.type;
+      if (type) {
+        return `Array<${type}>`;
+      }
+    },
+    [flatOptions],
+  );
+
   const { fields, remove, append } = useFieldArray({
     name: name,
     control: form.control,
@@ -36,12 +56,13 @@ export function DynamicOutputForm({ node }: IProps) {
   return (
     <div className="space-y-5">
       {fields.map((field, index) => {
-        const typeField = `${name}.${index}.name`;
+        const nameField = `${name}.${index}.name`;
+        const typeField = `${name}.${index}.type`;
         return (
           <div key={field.id} className="flex items-center gap-2">
             <FormField
               control={form.control}
-              name={typeField}
+              name={nameField}
               render={({ field }) => (
                 <FormItem className="flex-1">
                   <FormControl>
@@ -64,11 +85,20 @@ export function DynamicOutputForm({ node }: IProps) {
                     <SelectWithSearch
                       options={options}
                       {...field}
+                      onChange={(val) => {
+                        form.setValue(typeField, findType(val));
+                        field.onChange(val);
+                      }}
                     ></SelectWithSearch>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
+            />
+            <FormField
+              control={form.control}
+              name={typeField}
+              render={() => <div></div>}
             />
             <Button variant={'ghost'} onClick={() => remove(index)}>
               <X className="text-text-sub-title-invert " />

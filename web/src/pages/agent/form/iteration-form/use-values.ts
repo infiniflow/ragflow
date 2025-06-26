@@ -8,6 +8,7 @@ function convertToArray(outputObject: OutputObject) {
   return Object.entries(outputObject).map(([key, value]) => ({
     name: key,
     ref: value.ref,
+    type: value.type,
   }));
 }
 
