@@ -7,14 +7,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarProvider } from '@/components/ui/sidebar';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
 import { CodeXml, EllipsisVertical, Forward, Import, Key } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AgentSidebar } from './agent-sidebar';
 import AgentCanvas from './canvas';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
@@ -119,9 +118,7 @@ export default function Agent() {
       <ReactFlowProvider>
         <div>
           <SidebarProvider>
-            <AgentSidebar />
             <div className="w-full">
-              <SidebarTrigger />
               <div className="w-full h-full">
                 <AgentCanvas
                   drawerVisible={chatDrawerVisible}
