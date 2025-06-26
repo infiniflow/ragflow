@@ -224,11 +224,17 @@ def create():
          "content_with_weight": req["content_with_weight"]}
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
-    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_kwd", [])))
+    if not isinstance(d["important_kwd"], list):
+        return get_data_error_result(message="`important_kwd` is required to be a list")
+    d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
     d["question_kwd"] = req.get("question_kwd", [])
-    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req.get("question_kwd", [])))
+    if not isinstance(d["question_kwd"], list):
+        return get_data_error_result(message="`question_kwd` is required to be a list")
+    d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
 
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
