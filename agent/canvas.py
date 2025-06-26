@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -268,7 +269,11 @@ class Canvas:
 
                 if cpn["obj"].component_name.lower() != "iteration":
                     if isinstance(cpn["obj"].output("content"), partial):
-                        partials.append(self.path[i])
+                        if error:
+                            cpn["obj"].set_output("content", None)
+                            yield _node_finished(cpn["obj"])
+                        else:
+                            partials.append(self.path[i])
                     else:
                         yield _node_finished(cpn["obj"])
 
@@ -284,6 +289,7 @@ class Canvas:
                     self.path.extend(cpn["downstream"])
 
             if error:
+                logging.error(f"Runtime Error: {error}")
                 break
             idx = to
 
@@ -291,11 +297,15 @@ class Canvas:
                 path = [c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() == "userfillup"]
                 path.extend([c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() != "userfillup"])
                 another_inputs = {}
+                tips = ""
                 for c in path:
-                    if self.get_component(c)["obj"].component_name.lower() == "userfillup":
-                        another_inputs.update(self.get_component(c)["obj"].get_input_elements())
+                    o = self.get_component(c)["obj"]
+                    if o.component_name.lower() == "userfillup":
+                        another_inputs.update(o.get_input_elements())
+                        if o.get_param("enable_tips"):
+                            tips = o.get_param("tips")
                 self.path = path
-                yield decorate("user_inputs", another_inputs)
+                yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
                 return
 
         self.path = self.path[:idx]

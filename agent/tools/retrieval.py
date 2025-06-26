@@ -16,6 +16,8 @@
 import os
 import re
 from abc import ABC
+from typing import Any
+
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -32,6 +34,18 @@ class RetrievalParam(ToolParamBase):
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "search_my_dateset",
+            "description": "This tool can be utilized for relevant content searching in the datasets.",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "Query to search the dataset.",
+                    "default": "",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.description = "This tool can be utilized for relevant content searching in the datasets."
         self.similarity_threshold = 0.2
@@ -48,25 +62,15 @@ class RetrievalParam(ToolParamBase):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
         self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
-        self.check_empty(self.query, "[Retrieval] query")
 
 
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
-    def get_meta(self):
-        return {
-            "name": self._id,
-            "description": self._param.description,
-            "parameters": {
-                "query": {
-                    "type": "string",
-                    "description": "Query to search the dataset.",
-                    "default": "",
-                    "required": True
-                }
-            }
-        }
+    def get_meta(self) -> dict[str, Any]:
+        self._param.meta["name"] = self._id
+        self._param.meta["description"] = self._param.description
+        return super().get_meta()
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):

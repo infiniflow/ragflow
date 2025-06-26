@@ -104,6 +104,7 @@ def get(canvas_id):
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)
 
+
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
@@ -145,7 +146,7 @@ def run():
         return server_error_response(e)
 
     def sse():
-        nonlocal cvs, user_id
+        nonlocal canvas, user_id
         for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
             yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 

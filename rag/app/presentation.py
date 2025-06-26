@@ -102,6 +102,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     PPT file will be parsed by using this method automatically, setting-up for every PPT file is not necessary.
     """
     eng = lang.lower() == "english"
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -124,7 +127,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
         for pn, (txt, img) in enumerate(pdf_parser(filename, binary,
                                                    from_page=from_page, to_page=to_page, callback=callback)):

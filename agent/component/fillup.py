@@ -20,6 +20,8 @@ class UserFillUpParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
+        self.enable_tips = True
+        self.tips = "Please fill up the form"
 
     def check(self) -> bool:
         return True

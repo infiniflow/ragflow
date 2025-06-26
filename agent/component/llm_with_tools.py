@@ -103,7 +103,6 @@ class Agent(LLM):
 
         prompt, msg = self._prepare_prompt_variables()
 
-        print(prompt, "\n####################################")
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
             self.set_output("content", partial(self.stream_output_with_tools, prompt, msg))
