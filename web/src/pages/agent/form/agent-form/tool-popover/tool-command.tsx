@@ -42,6 +42,7 @@ const Menus = [
       Operator.Invoke,
       Operator.Crawler,
       Operator.Code,
+      Operator.Retrieval,
     ],
   },
 ];

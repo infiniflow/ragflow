@@ -14,7 +14,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialRetrievalValues } from '../../constant';
@@ -24,8 +24,7 @@ import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { useValues } from './use-values';
 
-const FormSchema = z.object({
-  query: z.string().optional(),
+export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
   keywords_similarity_weight: z.coerce.number(),
   top_n: z.coerce.number(),
@@ -33,11 +32,40 @@ const FormSchema = z.object({
   kb_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
+};
+
+export const FormSchema = z.object({
+  query: z.string().optional(),
+  ...RetrievalPartialSchema,
 });
 
-const RetrievalForm = ({ node }: INextOperatorForm) => {
+export function EmptyResponseField() {
   const { t } = useTranslation();
+  const form = useFormContext();
 
+  return (
+    <FormField
+      control={form.control}
+      name="empty_response"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('chat.emptyResponse')}</FormLabel>
+          <FormControl>
+            <Textarea
+              placeholder={t('common.namePlaceholder')}
+              {...field}
+              autoComplete="off"
+              rows={4}
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+const RetrievalForm = ({ node }: INextOperatorForm) => {
   const outputList = useMemo(() => {
     return [
       {
@@ -75,25 +103,7 @@ const RetrievalForm = ({ node }: INextOperatorForm) => {
           ></SimilaritySliderFormField>
           <TopNFormField></TopNFormField>
           <RerankFormFields></RerankFormFields>
-
-          <FormField
-            control={form.control}
-            name="empty_response"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('chat.emptyResponse')}</FormLabel>
-                <FormControl>
-                  <Textarea
-                    placeholder={t('common.namePlaceholder')}
-                    {...field}
-                    autoComplete="off"
-                    rows={4}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <EmptyResponseField></EmptyResponseField>
         </FormContainer>
         <Output list={outputList}></Output>
       </form>

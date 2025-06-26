@@ -139,13 +139,14 @@ export function useBuildBeginVariableOptions() {
   return options;
 }
 
-export const useBuildVariableOptions = (nodeId?: string) => {
+export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
   const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
+  const parentNodeOutputOptions = useBuildNodeOutputOptions(parentId);
   const beginOptions = useBuildBeginVariableOptions();
 
   const options = useMemo(() => {
-    return [...beginOptions, ...nodeOutputOptions];
-  }, [beginOptions, nodeOutputOptions]);
+    return [...beginOptions, ...nodeOutputOptions, ...parentNodeOutputOptions];
+  }, [beginOptions, nodeOutputOptions, parentNodeOutputOptions]);
 
   return options;
 };
@@ -153,7 +154,7 @@ export const useBuildVariableOptions = (nodeId?: string) => {
 export function useBuildQueryVariableOptions() {
   const { data } = useFetchAgent();
   const node = useContext(AgentFormContext);
-  const options = useBuildVariableOptions(node?.id);
+  const options = useBuildVariableOptions(node?.id, node?.parentId);
 
   const nextOptions = useMemo(() => {
     const globals = data?.dsl?.globals ?? {};
