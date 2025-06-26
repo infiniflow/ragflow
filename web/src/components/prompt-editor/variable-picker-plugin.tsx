@@ -224,6 +224,9 @@ export default function VariablePickerMenuPlugin({
       }
 
       $getRoot().clear().append(paragraph);
+      if ($isRangeSelection($getSelection())) {
+        $getRoot().selectEnd();
+      }
     },
     [findLabelByValue],
   );
