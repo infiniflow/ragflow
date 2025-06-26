@@ -23,6 +23,7 @@ from mcp_client.mcp_tool_call import shutdown_all_mcp_sessions
 from plugin import GlobalPluginManager
 init_root_logger("ragflow_server")
 
+import test
 import logging
 import os
 import signal
