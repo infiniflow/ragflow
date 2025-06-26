@@ -14,19 +14,18 @@ import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 
 type QueryVariableProps = { name?: string; type?: VariableType };
 
-export function QueryVariable({
-  name = 'query',
-  type = VariableType.String,
-}: QueryVariableProps) {
+export function QueryVariable({ name = 'query', type }: QueryVariableProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
   const nextOptions = useBuildQueryVariableOptions();
 
   const finalOptions = useMemo(() => {
-    return nextOptions.map((x) => {
-      return { ...x, options: x.options.filter((y) => y.type === type) };
-    });
+    return type
+      ? nextOptions.map((x) => {
+          return { ...x, options: x.options.filter((y) => y.type === type) };
+        })
+      : nextOptions;
   }, [nextOptions, type]);
 
   return (

@@ -646,6 +646,7 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  outputs: {},
 };
 export const initialIterationStartValues = {
   outputs: {

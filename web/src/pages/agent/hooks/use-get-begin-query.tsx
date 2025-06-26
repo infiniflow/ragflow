@@ -58,7 +58,7 @@ function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
   }, []);
 }
 
-function buildOutputOptions(
+export function buildOutputOptions(
   outputs: Record<string, any> = {},
   nodeId?: string,
 ) {
