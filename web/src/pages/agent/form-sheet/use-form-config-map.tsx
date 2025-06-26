@@ -33,6 +33,7 @@ import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
+import { StringTransformForm } from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TavilyForm from '../form/tavily-form';
 import TemplateForm from '../form/template-form';
@@ -385,6 +386,11 @@ export function useFormConfigMap() {
     },
     [Operator.UserFillUp]: {
       component: UserFillUpForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.StringTransform]: {
+      component: StringTransformForm,
       defaultValues: {},
       schema: z.object({}),
     },
