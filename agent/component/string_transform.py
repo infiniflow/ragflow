@@ -72,6 +72,8 @@ class StringTransform(ComponentBase, ABC):
                 param[k] = obj["value"]
                 continue
             param[k] = self._canvas.get_variable_value(obj["ref"])
+            if isinstance(param[k], list):
+                param[k] = self._param.delimiters[0].join([str(s) for s in param[k]])
 
         env = SandboxedEnvironment(
             autoescape=True,
