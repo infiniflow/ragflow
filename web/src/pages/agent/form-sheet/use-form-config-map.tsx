@@ -38,6 +38,7 @@ import TavilyForm from '../form/tavily-form';
 import TemplateForm from '../form/template-form';
 import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
+import UserFillUpForm from '../form/user-fill-up-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
@@ -379,6 +380,11 @@ export function useFormConfigMap() {
     },
     [Operator.TavilySearch]: {
       component: TavilyForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.UserFillUp]: {
+      component: UserFillUpForm,
       defaultValues: {},
       schema: z.object({}),
     },

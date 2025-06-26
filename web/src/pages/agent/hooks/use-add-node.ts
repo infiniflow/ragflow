@@ -43,6 +43,7 @@ import {
   initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialUserFillUpValues,
   initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
@@ -106,6 +107,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.UserFillUp]: initialUserFillUpValues,
     };
   }, [llmId]);
 
