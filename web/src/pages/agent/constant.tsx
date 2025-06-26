@@ -86,6 +86,7 @@ export enum Operator {
   Agent = 'Agent',
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
+  UserFillUp = 'UserFillUp',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -696,6 +697,12 @@ export const initialAgentValues = {
   },
 };
 
+export const initialUserFillUpValues = {
+  enable_tips: true,
+  tips: '',
+  inputs: [],
+};
+
 export enum TavilySearchDepth {
   Basic = 'basic',
   Advanced = 'advanced',
@@ -860,6 +867,7 @@ export const NodeMap = {
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.UserFillUp]: 'ragNode',
 };
 
 export enum BeginQueryType {

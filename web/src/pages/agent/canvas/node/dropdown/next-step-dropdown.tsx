@@ -67,7 +67,9 @@ function AccordionOperators() {
       <AccordionItem value="item-2">
         <AccordionTrigger className="text-xl">Dialogue </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList operators={[Operator.Message]}></OperatorItemList>
+          <OperatorItemList
+            operators={[Operator.Message, Operator.UserFillUp]}
+          ></OperatorItemList>
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-3">
