@@ -45,6 +45,9 @@ class TenantLLMService(CommonService):
             objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm)
         else:
             objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
+
+        if not objs and fid:
+            objs = cls.query(tenant_id=tenant_id, model_name=mdlnm, llm_factory=fid)
         if not objs:
             return
         return objs[0]
