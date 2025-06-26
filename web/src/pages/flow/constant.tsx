@@ -639,16 +639,7 @@ export const initialEmailValues = {
 export const initialIterationValues = {
   delimiter: ',',
 };
-export const initialIterationStartValues = {
-  outputs: {
-    item: {
-      type: 'unkown',
-    },
-    index: {
-      type: 'integer',
-    },
-  },
-};
+export const initialIterationStartValues = {};
 
 export const initialCodeValues = {
   lang: 'python',

@@ -646,7 +646,16 @@ export const initialEmailValues = {
 export const initialIterationValues = {
   items_ref: '',
 };
-export const initialIterationStartValues = {};
+export const initialIterationStartValues = {
+  outputs: {
+    item: {
+      type: 'unkown',
+    },
+    index: {
+      type: 'integer',
+    },
+  },
+};
 
 export const initialCodeValues = {
   lang: 'python',
