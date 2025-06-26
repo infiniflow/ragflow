@@ -98,12 +98,14 @@ class PlainPdf(PlainParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, **kwargs):
+          lang="Chinese", callback=None, parser_config=None, **kwargs):
     """
     The supported file formats are pdf, pptx.
     Every page will be treated as a chunk. And the thumbnail of every page will be stored.
     PPT file will be parsed by using this method automatically, setting-up for every PPT file is not necessary.
     """
+    if parser_config is None:
+        parser_config = {}
     eng = lang.lower() == "english"
     doc = {
         "docnm_kwd": filename,
@@ -126,7 +128,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer = kwargs.get("layout_recognize", "DeepDOC")
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
         if layout_recognizer == "DeepDOC":
             pdf_parser = Pdf()
             sections = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
