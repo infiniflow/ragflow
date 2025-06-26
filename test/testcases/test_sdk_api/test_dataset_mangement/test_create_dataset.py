@@ -217,19 +217,21 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
+            ("empty", ""),
+            ("space", " "),
             ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
             ("missing_model_name", "@BAAI"),
             ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
             ("whitespace_only_model_name", " @BAAI"),
             ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
         ],
-        ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+        ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
     def test_embedding_model_format(self, client, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         with pytest.raises(Exception) as excinfo:
             client.create_dataset(**payload)
-        if name == "missing_at":
+        if name in ["empty", "space", "missing_at"]:
             assert "Embedding model identifier must follow <model_name>@<provider> format" in str(excinfo.value), str(excinfo.value)
         else:
             assert "Both model_name and provider must be non-empty strings" in str(excinfo.value), str(excinfo.value)
@@ -243,9 +245,8 @@ class TestDatasetCreate:
     @pytest.mark.p2
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert "Input should be a valid string" in str(excinfo.value), str(excinfo.value)
+        dataset = client.create_dataset(**payload)
+        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -340,49 +341,6 @@ class TestDatasetCreate:
     @pytest.mark.p3
     def test_chunk_method_none(self, client):
         payload = {"name": "chunk_method_none", "chunk_method": None}
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "name, pagerank",
-        [
-            ("pagerank_min", 0),
-            ("pagerank_mid", 50),
-            ("pagerank_max", 100),
-        ],
-        ids=["min", "mid", "max"],
-    )
-    def test_pagerank(self, client, name, pagerank):
-        payload = {"name": name, "pagerank": pagerank}
-        dataset = client.create_dataset(**payload)
-        assert dataset.pagerank == pagerank, str(dataset)
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "name, pagerank, expected_message",
-        [
-            ("pagerank_min_limit", -1, "Input should be greater than or equal to 0"),
-            ("pagerank_max_limit", 101, "Input should be less than or equal to 100"),
-        ],
-        ids=["min_limit", "max_limit"],
-    )
-    def test_pagerank_invalid(self, client, name, pagerank, expected_message):
-        payload = {"name": name, "pagerank": pagerank}
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert expected_message in str(excinfo.value), str(excinfo.value)
-
-    @pytest.mark.p3
-    def test_pagerank_unset(self, client):
-        payload = {"name": "pagerank_unset"}
-        dataset = client.create_dataset(**payload)
-        assert dataset.pagerank == 0, str(dataset)
-
-    @pytest.mark.p3
-    def test_pagerank_none(self, client):
-        payload = {"name": "pagerank_unset", "pagerank": None}
         with pytest.raises(Exception) as excinfo:
             client.create_dataset(**payload)
         assert "not instance of" in str(excinfo.value), str(excinfo.value)
@@ -689,6 +647,7 @@ class TestDatasetCreate:
             {"name": "chunk_count", "chunk_count": 1},
             {"name": "token_num", "token_num": 1},
             {"name": "status", "status": "1"},
+            {"name": "pagerank", "pagerank": 50},
             {"name": "unknown_field", "unknown_field": "unknown_field"},
         ],
     )

@@ -380,28 +380,31 @@ class Dealer:
                 rank_feature=rank_feature)
         # Already paginated in search function
         idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
-
-
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
+        sim_np = np.array(sim)
         if doc_ids:
             similarity_threshold = 0
-            page_size = 30
-        sim_np = np.array(sim)
-        filtered_count = (sim_np >= similarity_threshold).sum()
+        filtered_count = (sim_np >= similarity_threshold).sum()    
         ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
-            if len(ranks["chunks"]) >= page_size:
-                if aggs:
-                    continue
-                break
+
             id = sres.ids[i]
             chunk = sres.field[id]
             dnm = chunk.get("docnm_kwd", "")
             did = chunk.get("doc_id", "")
+
+            if len(ranks["chunks"]) >= page_size:
+                if aggs:
+                    if dnm not in ranks["doc_aggs"]:
+                        ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
+                    ranks["doc_aggs"][dnm]["count"] += 1
+                    continue
+                break
+
             position_int = chunk.get("position_int", [])
             d = {
                 "chunk_id": id,

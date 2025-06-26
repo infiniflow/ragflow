@@ -20,3 +20,10 @@ async function main(args) {
 module.exports = { main };
 `,
 };
+
+export enum AgentGlobals {
+  SysQuery = 'sys.query',
+  SysUserId = 'sys.user_id',
+  SysConversationTurns = 'sys.conversation_turns',
+  SysFiles = 'sys.files',
+}

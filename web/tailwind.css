@@ -86,8 +86,11 @@
     --background-card: rgba(22, 22, 24, 0.05);
 
     --background-checked: rgba(76, 164, 231, 1);
+    --background-highlight: rgba(76, 164, 231, 0.1);
 
     --input-border: rgba(22, 22, 24, 0.2);
+    --dot-green: rgba(59, 160, 92, 1);
+    --dot-red: rgba(216, 73, 75, 1);
   }
 
   .dark {
@@ -195,7 +198,12 @@
     --background-card: rgba(255, 255, 255, 0.05);
     --background-checked: rgba(76, 164, 231, 1);
 
+    --background-highlight: rgba(76, 164, 231, 0.1);
+
     --input-border: rgba(255, 255, 255, 0.2);
+
+    --dot-green: rgba(59, 160, 92, 1);
+    --dot-red: rgba(216, 73, 75, 1);
   }
 }
 

@@ -73,11 +73,11 @@ class UserCanvasService(CommonService):
                 User.nickname,
                 User.avatar.alias('tenant_avatar'),
             ]
-            angents = cls.model.select(*fields) \
+            agents = cls.model.select(*fields) \
             .join(User, on=(cls.model.user_id == User.id)) \
             .where(cls.model.id == pid)
             # obj = cls.model.query(id=pid)[0]
-            return True, angents.dicts()[0]
+            return True, agents.dicts()[0]
         except Exception as e:
             print(e)
             return False, None
@@ -100,25 +100,25 @@ class UserCanvasService(CommonService):
             cls.model.update_time
         ]
         if keywords:
-            angents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
+            agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
                 ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission == 
                                                                 TenantPermission.TEAM.value)) | (
                     cls.model.user_id == user_id)),
                 (fn.LOWER(cls.model.title).contains(keywords.lower()))
             )
         else:
-            angents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
+            agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
                 ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission == 
                                                                 TenantPermission.TEAM.value)) | (
                     cls.model.user_id == user_id))
             )
         if desc:
-            angents = angents.order_by(cls.model.getter_by(orderby).desc())
+            agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
-            angents = angents.order_by(cls.model.getter_by(orderby).asc())
-        count = angents.count()
-        angents = angents.paginate(page_number, items_per_page)
-        return list(angents.dicts()), count
+            agents = agents.order_by(cls.model.getter_by(orderby).asc())
+        count = agents.count()
+        agents = agents.paginate(page_number, items_per_page)
+        return list(agents.dicts()), count
    
 
 def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
@@ -294,8 +294,22 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             "source": "agent",
             "dsl": cvs.dsl
         }
+        canvas.messages.append({"role": "user", "content": question, "id": message_id})
+        canvas.add_user_input(question)
+
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
+        if not conv.message:
+            conv.message = []
+        conv.message.append({
+            "role": "user",
+            "content": question,
+            "id": message_id
+        })
+        
+        if not conv.reference:
+            conv.reference = []
+        conv.reference.append({"chunks": [], "doc_aggs": []})
             
     # Handle existing session
     else:
@@ -331,7 +345,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     if stream:
         try:
             completion_tokens = 0
-            for ans in canvas.run(stream=True):
+            for ans in canvas.run(stream=True, bypass_begin=True):
                 if ans.get("running_status"):
                     completion_tokens += len(tiktokenenc.encode(ans.get("content", "")))
                     yield "data: " + json.dumps(
@@ -394,7 +408,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     else:  # Non-streaming mode
         try:
             all_answer_content = ""
-            for answer in canvas.run(stream=False):
+            for answer in canvas.run(stream=False, bypass_begin=True):
                 if answer.get("running_status"):
                     continue
                 

@@ -148,9 +148,9 @@ function start_mcp_server() {
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
-        --base_url="${MCP_BASE_URL}" \
+        --base-url="${MCP_BASE_URL}" \
         --mode="${MCP_MODE}" \
-        --api_key="${MCP_HOST_API_KEY}" &
+        --api-key="${MCP_HOST_API_KEY}" &
 }
 
 # -----------------------------------------------------------------------------

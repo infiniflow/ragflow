@@ -1,11 +1,15 @@
-import { useTheme } from '@/components/theme-provider';
 import { IAgentNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
-import classNames from 'classnames';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
+import { NodeHandleId } from '../../constant';
+import useGraphStore from '../../store';
+import { isBottomSubAgent } from '../../utils';
+import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
+import { NodeWrapper } from './node-wrapper';
+import { ToolBar } from './toolbar';
 
 function InnerAgentNode({
   id,
@@ -13,35 +17,60 @@ function InnerAgentNode({
   isConnectable = true,
   selected,
 }: NodeProps<IAgentNode>) {
-  const { theme } = useTheme();
+  const edges = useGraphStore((state) => state.edges);
+
+  const isHeadAgent = useMemo(() => {
+    return !isBottomSubAgent(edges, id);
+  }, [edges, id]);
+
   return (
-    <section
-      className={classNames(
-        styles.ragNode,
-        theme === 'dark' ? styles.dark : '',
-        {
-          [styles.selectedNode]: selected,
-        },
-      )}
-    >
-      <Handle
-        id="c"
-        type="source"
-        position={Position.Left}
-        isConnectable={isConnectable}
-        className={styles.handle}
-        style={LeftHandleStyle}
-      ></Handle>
-      <Handle
-        type="source"
-        position={Position.Right}
-        isConnectable={isConnectable}
-        className={styles.handle}
-        id="b"
-        style={RightHandleStyle}
-      ></Handle>
-      <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
-    </section>
+    <ToolBar selected={selected} id={id} label={data.label}>
+      <NodeWrapper>
+        {isHeadAgent && (
+          <>
+            <CommonHandle
+              type="target"
+              position={Position.Left}
+              isConnectable={isConnectable}
+              style={LeftHandleStyle}
+              nodeId={id}
+              id={NodeHandleId.End}
+            ></CommonHandle>
+            <CommonHandle
+              type="source"
+              position={Position.Right}
+              isConnectable={isConnectable}
+              className={styles.handle}
+              style={RightHandleStyle}
+              nodeId={id}
+              id={NodeHandleId.Start}
+              isConnectableEnd={false}
+            ></CommonHandle>
+          </>
+        )}
+        <Handle
+          type="target"
+          position={Position.Top}
+          isConnectable={false}
+          id={NodeHandleId.AgentTop}
+        ></Handle>
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          isConnectable={false}
+          id={NodeHandleId.AgentBottom}
+          style={{ left: 180 }}
+        ></Handle>
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          isConnectable={false}
+          id={NodeHandleId.Tool}
+          style={{ left: 20 }}
+        ></Handle>
+        <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+      </NodeWrapper>
+    </ToolBar>
   );
 }
 

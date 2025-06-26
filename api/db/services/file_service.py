@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import logging
-import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 

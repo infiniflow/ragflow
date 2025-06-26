@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from operator import attrgetter
 
@@ -206,30 +207,34 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
+            ("empty", ""),
+            ("space", " "),
             ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
             ("missing_model_name", "@BAAI"),
             ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
             ("whitespace_only_model_name", " @BAAI"),
             ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
         ],
-        ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+        ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
     def test_embedding_model_format(self, add_dataset_func, name, embedding_model):
         dataset = add_dataset_func
         with pytest.raises(Exception) as excinfo:
             dataset.update({"name": name, "embedding_model": embedding_model})
         error_msg = str(excinfo.value)
-        if name == "missing_at":
+        if name in ["empty", "space", "missing_at"]:
             assert "Embedding model identifier must follow <model_name>@<provider> format" in error_msg, error_msg
         else:
             assert "Both model_name and provider must be non-empty strings" in error_msg, error_msg
 
     @pytest.mark.p2
-    def test_embedding_model_none(self, add_dataset_func):
+    def test_embedding_model_none(self, client, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
-            dataset.update({"embedding_model": None})
-        assert "Input should be a valid string" in str(excinfo.value), str(excinfo.value)
+        dataset.update({"embedding_model": None})
+        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(retrieved_dataset)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -324,6 +329,7 @@ class TestDatasetUpdate:
             dataset.update({"chunk_method": None})
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(excinfo.value), str(excinfo.value)
 
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
     def test_pagerank(self, client, add_dataset_func, pagerank):
@@ -333,6 +339,30 @@ class TestDatasetUpdate:
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.pagerank == pagerank, str(retrieved_dataset)
+
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
+    @pytest.mark.p2
+    def test_pagerank_set_to_0(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        dataset.update({"pagerank": 50})
+        assert dataset.pagerank == 50, str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.pagerank == 50, str(retrieved_dataset)
+
+        dataset.update({"pagerank": 0})
+        assert dataset.pagerank == 0, str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.pagerank == 0, str(retrieved_dataset)
+
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
+    @pytest.mark.p2
+    def test_pagerank_infinity(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"pagerank": 50})
+        assert "'pagerank' can only be set when doc_engine is elasticsearch" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

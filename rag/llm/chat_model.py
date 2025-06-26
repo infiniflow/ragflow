@@ -34,6 +34,7 @@ from ollama import Client
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
+
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
 
@@ -69,6 +70,8 @@ class Base(ABC):
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
         self.max_rounds = kwargs.get("max_rounds", 5)
         self.is_tools = False
+        self.tools = []
+        self.toolcall_sessions = {}
 
     def _get_delay(self):
         """Calculate retry delay time"""
@@ -464,11 +467,11 @@ class DeepSeekChat(Base):
 
 
 class AzureChat(Base):
-    def __init__(self, key, model_name, **kwargs):
+    def __init__(self, key, model_name, base_url, **kwargs):
         api_key = json.loads(key).get("api_key", "")
         api_version = json.loads(key).get("api_version", "2024-02-01")
-        super().__init__(key, model_name, kwargs["base_url"], **kwargs)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        super().__init__(key, model_name, base_url, **kwargs)
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
         self.model_name = model_name
 
 
@@ -620,7 +623,7 @@ class OllamaChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
+        self.client = Client(host=base_url) if not key or key == "x" else Client(host=base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
@@ -638,7 +641,7 @@ class OllamaChat(Base):
         ctx_size = self._calculate_dynamic_ctx(history)
 
         gen_conf["num_ctx"] = ctx_size
-        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf)
+        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf, keep_alive=-1)
         ans = response["message"]["content"].strip()
         token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
         return ans, token_count
@@ -665,7 +668,7 @@ class OllamaChat(Base):
 
             ans = ""
             try:
-                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options)
+                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=-1)
                 for resp in response:
                     if resp["done"]:
                         token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
@@ -692,10 +695,10 @@ class LocalAIChat(Base):
 
 
 class LocalLLM(Base):
-
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
         from jina import Client
+
         self.client = Client(port=12345, protocol="grpc", asyncio=True)
 
     def _prepare_prompt(self, system, history, gen_conf):
@@ -752,13 +755,7 @@ class VolcEngineChat(Base):
 
 
 class MiniMaxChat(Base):
-    def __init__(
-        self,
-        key,
-        model_name,
-        base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
-        **kwargs
-    ):
+    def __init__(self, key, model_name, base_url="https://api.minimax.chat/v1/text/chatcompletion_v2", **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         if not base_url:
@@ -1012,12 +1009,9 @@ class GeminiChat(Base):
 
     def chat_streamly(self, system, history, gen_conf):
         from google.generativeai.types import content_types
-
+        gen_conf = self._clean_conf(gen_conf)
         if system:
             self.model._system_instruction = content_types.to_content(system)
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
         for item in history:
             if "role" in item and item["role"] == "assistant":
                 item["role"] = "model"
