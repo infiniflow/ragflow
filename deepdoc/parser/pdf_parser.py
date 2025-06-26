@@ -479,6 +479,9 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _concat_downward(self, concat_between_pages=True):
+        self.boxes = Recognizer.sort_Y_firstly(self.boxes, 0)
+        return
+
         # count boxes in the same row as a feature
         for i in range(len(self.boxes)):
             mh = self.mean_height[self.boxes[i]["page_number"] - 1]
@@ -1136,7 +1139,8 @@ class RAGFlowPdfParser:
             need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
-    def remove_tag(self, txt):
+    @staticmethod
+    def remove_tag(txt):
         return re.sub(r"@@[\t0-9.-]+?##", "", txt)
 
     def crop(self, text, ZM=3, need_position=False):
