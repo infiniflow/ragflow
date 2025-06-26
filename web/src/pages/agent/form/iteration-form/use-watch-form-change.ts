@@ -5,7 +5,7 @@ import { OutputArray, OutputObject } from './interface';
 
 function transferToObject(list: OutputArray) {
   return list.reduce<OutputObject>((pre, cur) => {
-    pre[cur.name] = { ref: cur.ref };
+    pre[cur.name] = { ref: cur.ref, type: cur.type };
     return pre;
   }, {});
 }
@@ -18,6 +18,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
     // Manually triggered form updates are synchronized to the canvas
     if (id && form?.formState.isDirty) {
       values = form?.getValues();
+      console.log('🚀 ~ useEffect ~ values:', values);
       let nextValues: any = {
         ...values,
         outputs: transferToObject(values.outputs),
