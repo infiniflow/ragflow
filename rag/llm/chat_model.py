@@ -158,7 +158,7 @@ class Base(ABC):
         self.tools = tools
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict):
-        gen_conf = self._clean_conf()
+        gen_conf = self._clean_conf(gen_conf)
         if system:
             history.insert(0, {"role": "system", "content": system})
 
@@ -171,10 +171,12 @@ class Base(ABC):
             history = hist
             try:
                 for _ in range(self.max_rounds*2):
+                    print(f"{self.tools=}")
+                    print(f"{history=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, **gen_conf)
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
-                        raise Exception("500 response structure error.")
+                        raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
                         if hasattr(response.choices[0].message, "reasoning_content") and response.choices[0].message.reasoning_content:
@@ -187,6 +189,7 @@ class Base(ABC):
                         return ans, tk_count
 
                     for tool_call in response.choices[0].message.tool_calls:
+                        print(f"response {tool_call=}")
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)

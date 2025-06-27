@@ -47,6 +47,7 @@ class RetrievalParam(ToolParamBase):
             }
         }
         super().__init__()
+        self.function_name = "search_my_dateset"
         self.description = "This tool can be utilized for relevant content searching in the datasets."
         self.similarity_threshold = 0.2
         self.keywords_similarity_weight = 0.5
@@ -66,11 +67,6 @@ class RetrievalParam(ToolParamBase):
 
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
-
-    def get_meta(self) -> dict[str, Any]:
-        self._param.meta["name"] = self._id
-        self._param.meta["description"] = self._param.description
-        return super().get_meta()
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):

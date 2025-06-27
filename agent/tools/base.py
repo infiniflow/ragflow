@@ -76,6 +76,10 @@ class ToolParamBase(ComponentParamBase):
         if getattr(self, "description"):
             desc = self.description
 
+        function_name = self.meta["name"]
+        if getattr(self, "function_name"):
+            desc = self.function_name
+
         return {
             "type": "function",
             "function": {

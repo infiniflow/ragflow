@@ -17,37 +17,48 @@ import logging
 import os
 import re
 from functools import partial
+from typing import Any
 
 import json_repair
 import pandas as pd
-import trio
-from lmdb.tool import delta
-
 from agent.component.llm import LLMParam, LLM
-from agent.tools.base import LLMToolPluginCallSession
+from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in
 
 
-class AgentParam(LLMParam):
+class AgentParam(LLMParam, ToolParamBase):
     """
     Define the Agent component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+                "name": "agent",
+                "description": "This is an agent for every task.",
+                "parameters": {
+                    "user_prompt": {
+                        "type": "string",
+                        "description": "This is the order you need to sent to the agent.",
+                        "default": "",
+                        "required": True
+                    }
+                }
+            }
         super().__init__()
+        self.function_name = "agent"
         self.tools = []
         self.max_rounds = 5
         self.description = ""
 
 
-class Agent(LLM):
+class Agent(LLM, ToolBase):
     component_name = "Agent"
 
     def __init__(self, canvas, id, param: LLMParam):
-        super().__init__(canvas, id, param)
+        LLM.__init__(self, canvas, id, param)
         self.tools = {}
         for cpn in self._param.tools:
             from agent.component import component_class
@@ -70,22 +81,9 @@ class Agent(LLM):
                                   )
         self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools), [v.get_meta() for _,v in self.tools.items()])
 
-    def get_meta(self):
-        return {
-            "type": "function",
-            "function": {
-                "name": self._id,
-                "description": self._param.description,
-                "parameters": {
-                    "user_prompt": {
-                        "type": "string",
-                        "description": "This is the order you need to sent to the agent.",
-                        "default": "",
-                        "required": True
-                    }
-                }
-            }
-        }
+    def get_meta(self) -> dict[str, Any]:
+        self._param.function_name= self._id
+        return super().get_meta()
 
     def _extract_tool_use(self, ans, use_tools):
         patt = r"<tool_call>(.*?)</tool_call>"
@@ -99,7 +97,7 @@ class Agent(LLM):
             self._param.prompts = [{"role": "user", "content": kwargs["user_prompt"]}]
 
         if not self.tools:
-            return super()._invoke(**kwargs)
+            return LLM._invoke(self, **kwargs)
 
         prompt, msg = self._prepare_prompt_variables()
 

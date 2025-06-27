@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 import base64
+import json
 import os
 import re
 from abc import ABC
 from enum import Enum
+from functools import partial
 from typing import Optional
 
 import json_repair
@@ -38,6 +40,7 @@ class StringTransformParam(ComponentParamBase):
         super().__init__()
         self.method = "split"
         self.script = ""
+        self.split_ref = ""
         self.delimiters = [","]
         self.outputs = {"result": {"value": "", "type": "string"}}
 
@@ -57,34 +60,46 @@ class StringTransform(ComponentBase, ABC):
             self._transform()
 
     def _split(self):
-        _, obj = self._param.inputs.items()[0]
-        if obj.get("value"):
-            self.set_output("result", re.split(r"(%s)"%("|".join([re.escape(d) for d in self._param.delimiters])), obj["value"], flags=re.DOTALL))
-            return
-
-        var = self._canvas.get_variable_value(obj["ref"])
+        var = self._canvas.get_variable_value(self._param.split_ref)
+        if not var:
+            var = ""
         assert isinstance(var, str), "The input variable is not a string: {}".format(type(var))
+        self.set_output("result", re.split(r"(%s)"%("|".join([re.escape(d) for d in self._param.delimiters])), var, flags=re.DOTALL))
 
     def _transform(self):
-        param = {}
-        for k, obj in self._param.inputs.items():
-            if obj.get("value"):
-                param[k] = obj["value"]
+        s = 0
+        all_content = ""
+        cache = {}
+        for r in re.finditer(self.variable_ref_patt, self.script, flags=re.DOTALL):
+            all_content += self.script[s: r.start()]
+            s = r.end()
+            exp = r.group(1)
+            if exp in cache:
+                yield cache[exp]
                 continue
-            param[k] = self._canvas.get_variable_value(obj["ref"])
-            if isinstance(param[k], list):
-                param[k] = self._param.delimiters[0].join([str(s) for s in param[k]])
+            v = self._canvas.get_variable_value(exp)
+            if isinstance(v, partial):
+                cnt = ""
+                for t in v():
+                    all_content += t
+                    cnt += t
+                cache[exp] = cnt
+            elif isinstance(v, list):
+                v = self._param.delimiters[0].join([str(_v) for _v in v])
+                all_content += v
+                cache[exp] = v
+            else:
+                if not isinstance(v, str):
+                    try:
+                        v = json.dumps(v, ensure_ascii=False)
+                    except Exception:
+                        pass
+                all_content += v
+                cache[exp] = v
 
-        env = SandboxedEnvironment(
-            autoescape=True,
-            undefined=StrictUndefined,
-        )
+        if s < len(self.script):
+            all_content += self.script[s: ]
 
-        template = env.from_string(self._param.script)
-        try:
-            content = template.render(param)
-            self.set_output("result", content)
-        except Exception as e:
-            self.set_output("_ERROR", str(e))
+        self.set_output("result", all_content)
 
 
