@@ -87,6 +87,7 @@ export enum Operator {
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
   UserFillUp = 'UserFillUp',
+  StringTransform = 'StringTransform',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -704,6 +705,32 @@ export const initialUserFillUpValues = {
   inputs: [],
 };
 
+export enum StringTransformMethod {
+  Merge = 'merge',
+  Split = 'split',
+}
+
+export enum StringTransformDelimiter {
+  Comma = ',',
+  Semicolon = ';',
+  Period = '.',
+  LineBreak = '\n',
+  Tab = '\t',
+  Space = ' ',
+}
+
+export const initialStringTransformValues = {
+  method: StringTransformMethod.Merge,
+  split_ref: '',
+  script: '',
+  delimiters: [],
+  outputs: {
+    result: {
+      type: 'string',
+    },
+  },
+};
+
 export enum TavilySearchDepth {
   Basic = 'basic',
   Advanced = 'advanced',
@@ -869,6 +896,7 @@ export const NodeMap = {
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
+  [Operator.StringTransform]: 'ragNode',
 };
 
 export enum BeginQueryType {

@@ -23,7 +23,7 @@ const HideModalContext = createContext<IModalProps<any>['showModal']>(() => {});
 
 function OperatorItemList({ operators }: OperatorItemProps) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
-  const { nodeId, id, type, position } = useContext(HandleContext);
+  const { nodeId, id, position } = useContext(HandleContext);
   const hideModal = useContext(HideModalContext);
 
   return (
@@ -89,7 +89,9 @@ function AccordionOperators() {
           Data Manipulation
         </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList operators={[Operator.Code]}></OperatorItemList>
+          <OperatorItemList
+            operators={[Operator.Code, Operator.StringTransform]}
+          ></OperatorItemList>
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-5">

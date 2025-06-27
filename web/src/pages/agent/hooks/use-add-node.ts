@@ -39,6 +39,7 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialStringTransformValues,
   initialSwitchValues,
   initialTavilyValues,
   initialTemplateValues,
@@ -108,6 +109,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
+      [Operator.StringTransform]: initialStringTransformValues,
     };
   }, [llmId]);
 
