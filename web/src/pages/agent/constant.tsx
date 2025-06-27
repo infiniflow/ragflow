@@ -723,7 +723,7 @@ export const initialStringTransformValues = {
   method: StringTransformMethod.Merge,
   split_ref: '',
   script: '',
-  delimiters: [],
+  delimiters: [StringTransformDelimiter.Comma],
   outputs: {
     result: {
       type: 'string',
@@ -851,6 +851,7 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.StringTransform]: [Operator.Begin],
 };
 
 export const NodeMap = {
