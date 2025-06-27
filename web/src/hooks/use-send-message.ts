@@ -11,6 +11,7 @@ export enum MessageEventType {
   Message = 'message',
   MessageEnd = 'message_end',
   WorkflowFinished = 'workflow_finished',
+  UserInputs = 'user_inputs',
 }
 
 export interface IAnswerEvent<T> {

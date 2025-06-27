@@ -852,6 +852,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
+  [Operator.UserFillUp]: [Operator.Begin],
 };
 
 export const NodeMap = {

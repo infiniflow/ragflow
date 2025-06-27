@@ -263,7 +263,6 @@ const DebugContent = ({
   const onSubmit = useCallback(
     (values: z.infer<typeof FormSchema>) => {
       console.log('🚀 ~ values:', values);
-      return values;
       const nextValues = Object.entries(values).map(([key, value]) => {
         const item = parameters[Number(key)];
         let nextValue = value;

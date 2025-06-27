@@ -6,6 +6,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { toLower } from 'lodash';
 import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +32,10 @@ export function QueryVariable({
   const finalOptions = useMemo(() => {
     return type
       ? nextOptions.map((x) => {
-          return { ...x, options: x.options.filter((y) => y.type === type) };
+          return {
+            ...x,
+            options: x.options.filter((y) => toLower(y.type).startsWith(type)),
+          };
         })
       : nextOptions;
   }, [nextOptions, type]);
