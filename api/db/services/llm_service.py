@@ -46,8 +46,17 @@ class TenantLLMService(CommonService):
         else:
             objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
 
-        if not objs and fid:
-            objs = cls.query(tenant_id=tenant_id, model_name=mdlnm, llm_factory=fid)
+        if (not objs) and fid:
+            if fid == "LocalAI":
+                mdlnm += "___LocalAI"
+            elif fid == "HuggingFace":
+                mdlnm += "___HuggingFace"
+            elif fid == "OpenAI-API-Compatible":
+                mdlnm += "___OpenAI-API"
+            elif fid == "VLLM":
+                mdlnm += "___VLLM"
+                
+            objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
         if not objs:
             return
         return objs[0]
