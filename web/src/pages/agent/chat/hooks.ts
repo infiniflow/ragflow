@@ -83,8 +83,6 @@ export const useSendNextMessage = () => {
     loading,
     derivedMessages,
     ref,
-    addNewestQuestion,
-    addNewestAnswer,
     removeLatestMessage,
     removeMessageById,
     addNewestOneQuestion,

@@ -156,7 +156,7 @@ class Base(ABC):
             self.tools.append(tool)
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict):
-        gen_conf = self._clean_conf()
+        gen_conf = self._clean_conf(gen_conf)
         if system:
             history.insert(0, {"role": "system", "content": system})
 

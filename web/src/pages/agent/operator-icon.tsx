@@ -1,6 +1,6 @@
 import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
-import { CirclePlay, MessageSquareMore } from 'lucide-react';
+import { CirclePlay } from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -19,7 +19,8 @@ export const OperatorIconMap = {
   [Operator.Switch]: 'condition',
   [Operator.Code]: 'code-set',
   [Operator.Agent]: 'agent-ai',
-  [Operator.UserFillUp]: MessageSquareMore,
+  [Operator.UserFillUp]: 'await',
+  [Operator.StringTransform]: 'a-textprocessing',
   // [Operator.Relevant]: BranchesOutlined,
   // [Operator.RewriteQuestion]: FormOutlined,
   // [Operator.KeywordExtract]: KeywordIcon,
