@@ -289,18 +289,26 @@ async def build_chunks(task, progress_callback):
                 return
 
             output_buffer = BytesIO()
-            if isinstance(d["image"], bytes):
-                output_buffer = BytesIO(d["image"])
-            else:
-                # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
-                if d["image"].mode in ("RGBA", "P"):
-                    d["image"] = d["image"].convert("RGB")
-                d["image"].save(output_buffer, format='JPEG')
-            async with minio_limiter:
-                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-            d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-            del d["image"]
-            docs.append(d)
+            try:
+                if isinstance(d["image"], bytes):
+                    output_buffer.write(d["image"])
+                    output_buffer.seek(0)
+                else:
+                    # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
+                    if d["image"].mode in ("RGBA", "P"):
+                        converted_image = d["image"].convert("RGB")
+                        d["image"].close()  # Close original image
+                        d["image"] = converted_image
+                    d["image"].save(output_buffer, format='JPEG')
+                    d["image"].close()  # Close PIL image after saving
+                
+                async with minio_limiter:
+                    await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+                del d["image"]  # Remove image reference
+                docs.append(d)
+            finally:
+                output_buffer.close()  # Ensure BytesIO is always closed
         except Exception:
             logging.exception(
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
