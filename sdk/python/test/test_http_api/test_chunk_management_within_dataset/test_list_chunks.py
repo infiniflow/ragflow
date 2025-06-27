@@ -59,6 +59,12 @@ class TestChunksList:
         res = list_chunks(get_http_api_auth, dataset_id, document_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
+            assert "total" in res["data"]
+            assert "page" in res["data"]
+            assert "page_size" in res["data"]
+            assert isinstance(res["data"]["total"], int)
+            assert isinstance(res["data"]["page"], int)
+            assert isinstance(res["data"]["page_size"], int)
             assert len(res["data"]["chunks"]) == expected_page_size
         else:
             assert res["message"] == expected_message
@@ -82,6 +88,12 @@ class TestChunksList:
         res = list_chunks(get_http_api_auth, dataset_id, document_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
+            assert "total" in res["data"]
+            assert "page" in res["data"]
+            assert "page_size" in res["data"]
+            assert isinstance(res["data"]["total"], int)
+            assert isinstance(res["data"]["page"], int)
+            assert isinstance(res["data"]["page_size"], int)
             assert len(res["data"]["chunks"]) == expected_page_size
         else:
             assert res["message"] == expected_message

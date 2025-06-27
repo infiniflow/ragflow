@@ -82,7 +82,7 @@ class TestCapability:
         assert res["code"] == 0, res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 0, res
+        assert len(res["data"]["datasets"]) == 0, res
 
     @pytest.mark.p3
     def test_concurrent_deletion(self, get_http_api_auth):
@@ -113,7 +113,7 @@ class TestDatasetsDelete:
         assert res["code"] == expected_code, res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == remaining, res
+        assert len(res["data"]["datasets"]) == remaining, res
 
     @pytest.mark.p1
     @pytest.mark.usefixtures("add_dataset_func")
@@ -123,7 +123,7 @@ class TestDatasetsDelete:
         assert res["code"] == 0, res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 1, res
+        assert len(res["data"]["datasets"]) == 1, res
 
     @pytest.mark.p1
     @pytest.mark.usefixtures("add_datasets_func")
@@ -133,7 +133,7 @@ class TestDatasetsDelete:
         assert res["code"] == 0, res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 0, res
+        assert len(res["data"]["datasets"]) == 0, res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
@@ -144,7 +144,7 @@ class TestDatasetsDelete:
         assert "Invalid UUID1 format" in res["message"], res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 1, res
+        assert len(res["data"]["datasets"]) == 1, res
 
     @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
@@ -163,7 +163,7 @@ class TestDatasetsDelete:
         assert "lacks permission for dataset" in res["message"], res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 1, res
+        assert len(res["data"]["datasets"]) == 1, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -183,7 +183,7 @@ class TestDatasetsDelete:
         assert "lacks permission for dataset" in res["message"], res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 3, res
+        assert len(res["data"]["datasets"]) == 3, res
 
     @pytest.mark.p2
     def test_ids_duplicate(self, get_http_api_auth, add_datasets_func):
@@ -194,7 +194,7 @@ class TestDatasetsDelete:
         assert "Duplicate ids:" in res["message"], res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 3, res
+        assert len(res["data"]["datasets"]) == 3, res
 
     @pytest.mark.p2
     def test_repeated_delete(self, get_http_api_auth, add_datasets_func):
@@ -216,4 +216,4 @@ class TestDatasetsDelete:
         assert "Extra inputs are not permitted" in res["message"], res
 
         res = list_datasets(get_http_api_auth)
-        assert len(res["data"]) == 1, res
+        assert len(res["data"]["datasets"]) == 1, res
