@@ -46,7 +46,7 @@ import faulthandler
 import numpy as np
 from peewee import DoesNotExist
 
-from api.db import LLMType, ParserType, TaskStatus
+from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
