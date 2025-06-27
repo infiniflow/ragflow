@@ -796,9 +796,12 @@ class BaiduYiyanEmbed(Base):
         import qianfan
 
         key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = qianfan.Embedding(ak=ak, sk=sk)
+        
+        os.environ["QIANFAN_ACCESS_KEY"] = key.get("yiyan_ak", "")
+        os.environ["QIANFAN_SECRET_KEY"] = key.get("yiyan_sk", "")
+
+
+        self.client = qianfan.Embedding()
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=16):
