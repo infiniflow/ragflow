@@ -18,11 +18,9 @@ import json
 import logging
 import os
 import random
-import re
 import time
 from abc import ABC
 from copy import deepcopy
-from http import HTTPStatus
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
