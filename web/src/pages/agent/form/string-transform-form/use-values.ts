@@ -6,20 +6,26 @@ import {
   StringTransformMethod,
 } from '../../constant';
 
+function transferDelimiters(formData: typeof initialStringTransformValues) {
+  return formData.method === StringTransformMethod.Merge
+    ? formData.delimiters[0]
+    : formData.delimiters;
+}
+
 export function useValues(node?: RAGFlowNodeType) {
   const values = useMemo(() => {
     const formData = node?.data?.form;
 
     if (isEmpty(formData)) {
-      return initialStringTransformValues;
+      return {
+        ...initialStringTransformValues,
+        delimiters: transferDelimiters(formData),
+      };
     }
 
     return {
       ...formData,
-      delimiters:
-        formData.method === StringTransformMethod.Merge
-          ? formData.delimiters[0]
-          : formData.delimiters,
+      delimiters: transferDelimiters(formData),
     };
   }, [node?.data?.form]);
 
