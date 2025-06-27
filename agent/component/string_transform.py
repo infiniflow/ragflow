@@ -57,25 +57,31 @@ class StringTransform(ComponentBase, ABC):
         if self._param.method == "split":
             self._split()
         else:
-            self._transform()
+            self._merge()
 
     def _split(self):
         var = self._canvas.get_variable_value(self._param.split_ref)
         if not var:
             var = ""
         assert isinstance(var, str), "The input variable is not a string: {}".format(type(var))
-        self.set_output("result", re.split(r"(%s)"%("|".join([re.escape(d) for d in self._param.delimiters])), var, flags=re.DOTALL))
+        self.set_input_value(self._param.split_ref, var)
+        res = []
+        for i,s in enumerate(re.split(r"(%s)"%("|".join([re.escape(d) for d in self._param.delimiters])), var, flags=re.DOTALL)):
+            if i % 2 == 1:
+                continue
+            res.append(s)
+        self.set_output("result", res)
 
-    def _transform(self):
+    def _merge(self):
         s = 0
         all_content = ""
         cache = {}
-        for r in re.finditer(self.variable_ref_patt, self.script, flags=re.DOTALL):
-            all_content += self.script[s: r.start()]
+        for r in re.finditer(self.variable_ref_patt, self._param.script, flags=re.DOTALL):
+            all_content += self._param.script[s: r.start()]
             s = r.end()
             exp = r.group(1)
             if exp in cache:
-                yield cache[exp]
+                all_content += cache[exp]
                 continue
             v = self._canvas.get_variable_value(exp)
             if isinstance(v, partial):
@@ -97,8 +103,11 @@ class StringTransform(ComponentBase, ABC):
                 all_content += v
                 cache[exp] = v
 
-        if s < len(self.script):
-            all_content += self.script[s: ]
+        if s < len(self._param.script):
+            all_content += self._param.script[s: ]
+
+        for k, v in cache.items():
+            self.set_input_value(k ,v)
 
         self.set_output("result", all_content)
 

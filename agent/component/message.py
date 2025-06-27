@@ -78,6 +78,7 @@ class Message(ComponentBase):
             exp = r.group(1)
             if exp in cache:
                 yield cache[exp]
+                all_content += cache[exp]
                 continue
             v = self._canvas.get_variable_value(exp)
             if isinstance(v, partial):

@@ -64,6 +64,8 @@ class IterationItem(ComponentBase, ABC):
                 continue
 
             for k, o in p._param.outputs.items():
+                if "ref" not in o:
+                    continue
                 _cid, var = o["ref"].split("@")
                 if _cid != cid:
                     continue

@@ -108,7 +108,7 @@ class TavilySearch(ToolBase, ABC):
             id = get_uuid()
             chunks.append({
                 "chunk_id": id,
-                "content_ltks": rag_tokenizer.tokenize(r["content"]),
+                #"content_ltks": rag_tokenizer.tokenize(r["content"]),
                 "content_with_weight": r["content"],
                 "doc_id": id,
                 "docnm_kwd": r["title"],

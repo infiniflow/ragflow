@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -239,8 +240,15 @@ class Canvas:
                     if isinstance(cpn["obj"].output("content"), partial):
                         _m = ""
                         for m in cpn["obj"].output("content")():
-                            yield decorate("message", {"content": m})
-                            _m += m
+                            if not m:
+                                continue
+                            if m == "<think>":
+                                yield decorate("message", {"content": "", "start_to_think": True})
+                            elif m == "</think>":
+                                yield decorate("message", {"content": "", "end_to_think": True})
+                            else:
+                                yield decorate("message", {"content": m})
+                                _m += m
                         cpn["obj"].set_output("content", _m)
                     else:
                         yield decorate("message", {"content": cpn["obj"].output("content")})
@@ -285,6 +293,8 @@ class Canvas:
                     self.path.extend(cpn["obj"].output("_next"))
                 elif cpn["obj"].component_name.lower() == "iteration":
                     self.path.append(cpn["obj"].get_start())
+                elif not cpn["downstream"] and cpn["obj"].get_parent():
+                        self.path.append(cpn["obj"].get_parent().get_start())
                 else:
                     self.path.extend(cpn["downstream"])
 

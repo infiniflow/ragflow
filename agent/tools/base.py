@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import time
 from copy import deepcopy
 from typing import TypedDict, List, Any
@@ -73,17 +74,17 @@ class ToolParamBase(ComponentParamBase):
                 params[k]["enum"] = p["enum"]
 
         desc = self.meta["description"]
-        if getattr(self, "description"):
+        if hasattr(self, "description"):
             desc = self.description
 
         function_name = self.meta["name"]
-        if getattr(self, "function_name"):
-            desc = self.function_name
+        if hasattr(self, "function_name"):
+            function_name = self.function_name
 
         return {
             "type": "function",
             "function": {
-                "name": self.meta["name"],
+                "name": function_name,
                 "description": desc,
                 "parameters": {
                     "type": "object",
@@ -115,7 +116,7 @@ class ToolBase(ComponentBase):
             self._invoke(**kwargs)
         except Exception as e:
             self._param.outputs["_ERROR"] = {"value": str(e)}
-            raise e
+            logging.exception(e)
 
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()

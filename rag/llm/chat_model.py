@@ -150,6 +150,30 @@ class Base(ABC):
             "result": res
         }, ensure_ascii=False, indent=2) + "</tool_call>"
 
+    def _append_history(self, hist, tool_call, tool_res):
+        hist.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "index": tool_call.index,
+                        "id": tool_call.id,
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments,
+                        },
+                        "type": "function",
+                    },
+                ],
+            }
+        )
+        try:
+            if isinstance(tool_res, dict):
+                tool_res = json.dumps(tool_res, ensure_ascii=False)
+        finally:
+            hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+        return hist
+
     def bind_tools(self, toolcall_session, tools):
         if not (toolcall_session and tools):
             return
@@ -175,7 +199,7 @@ class Base(ABC):
                     print(f"{history=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, **gen_conf)
                     tk_count += self.total_token_count(response)
-                    if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+                    if any([not response.choices, not response.choices[0].message]):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
@@ -194,7 +218,7 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             tool_response = self.toolcall_session.tool_call(name, args)
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
+                            history = self._append_history(history, tool_call, tool_response)
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
                             logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
@@ -303,23 +327,7 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             tool_response = self.toolcall_session.tool_call(name, args)
-                            history.append(
-                                {
-                                    "role": "assistant",
-                                    "tool_calls": [
-                                        {
-                                            "index": tool_call.index,
-                                            "id": tool_call.id,
-                                            "function": {
-                                                "name": tool_call.function.name,
-                                                "arguments": tool_call.function.arguments,
-                                            },
-                                            "type": "function",
-                                        },
-                                    ],
-                                }
-                            )
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
+                            history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
                             logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")

@@ -121,13 +121,26 @@ class Agent(LLM, ToolBase):
 
     def stream_output_with_tools(self, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        answer = ""
         answer_without_toolcall = ""
         use_tools = []
+        last_idx = 0
+        endswith_think = False
         for ans in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], gen_conf=self._param.gen_conf()):
-            delta_ans = self._extract_tool_use(ans[len(answer):], use_tools)
-            yield delta_ans
-            answer = ans
+            delta_ans = self._extract_tool_use(ans[last_idx:], use_tools)
+            if delta_ans.find("<think>") >= 0:
+                yield "<think>"
+            if delta_ans.endswith("</think>"):
+                endswith_think = True
+            elif endswith_think:
+                endswith_think = False
+                yield "</think>"
+            yield re.sub(r"(<think>|</think>)", "", delta_ans)
+
+            last_idx = len(ans)
+            if ans.endswith("</think>"):
+                last_idx -= len("</think>")
+            if answer_without_toolcall.endswith("</think>") and delta_ans.endswith("</think>"):
+                answer_without_toolcall.rstrip("</think>")
             answer_without_toolcall += delta_ans
         self.set_output("content", answer_without_toolcall)
         if use_tools:

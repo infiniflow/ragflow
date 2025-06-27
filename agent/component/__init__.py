@@ -24,6 +24,7 @@ from .message import Message, MessageParam
 from .iteration import Iteration, IterationParam
 from .iterationitem import IterationItem, IterationItemParam
 from .fillup import UserFillUp, UserFillUpParam
+from .string_transform import StringTransform, StringTransformParam
 
 
 def component_class(class_name):
@@ -48,7 +49,9 @@ __all__ = [
     "Message",
     "MessageParam",
     "Agent",
-    "AgentParam"
+    "AgentParam",
+    "StringTransformParam",
+    "StringTransform"
 ]
 """
     "RewriteQuestion",
