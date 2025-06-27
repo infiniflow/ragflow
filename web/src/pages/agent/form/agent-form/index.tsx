@@ -2,7 +2,6 @@ import { FormContainer } from '@/components/form-container';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
-import { BlockButton } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -11,20 +10,18 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Position } from '@xyflow/react';
-import { useContext, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { Operator, initialAgentValues } from '../../constant';
-import { AgentInstanceContext } from '../../context';
+import { initialAgentValues } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { isBottomSubAgent } from '../../utils';
 import { DescriptionField } from '../components/description-field';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
-import { AgentTools } from './agent-tools';
+import { AgentTools, Agents } from './agent-tools';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -73,8 +70,6 @@ const AgentForm = ({ node }: INextOperatorForm) => {
   });
 
   useWatchFormChange(node?.id, form);
-
-  const { addCanvasNode } = useContext(AgentInstanceContext);
 
   return (
     <Form {...form}>
@@ -129,14 +124,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         )}
         <FormContainer>
           <AgentTools></AgentTools>
-          <BlockButton
-            onClick={addCanvasNode(Operator.Agent, {
-              nodeId: node?.id,
-              position: Position.Bottom,
-            })}
-          >
-            Add Agent
-          </BlockButton>
+          <Agents node={node}></Agents>
         </FormContainer>
         <Output list={outputList}></Output>
       </form>
