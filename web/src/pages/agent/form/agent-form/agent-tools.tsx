@@ -70,7 +70,7 @@ export function AgentTools() {
             <ActionButton
               record={x}
               edit={() => {}}
-              deleteRecord={deleteNodeTool}
+              deleteRecord={deleteNodeTool(x)}
             ></ActionButton>
           </ToolCard>
         ))}
