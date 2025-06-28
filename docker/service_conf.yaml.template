@@ -9,6 +9,7 @@ mysql:
   port: 3306
   max_connections: 900
   stale_timeout: 300
+  max_allowed_packet: 1073741824
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
@@ -64,6 +65,10 @@ redis:
 #   secret: 'secret'
 #   tenant_id: 'tenant_id'
 #   container_name: 'container_name'
+# opendal:
+#   scheme: 'mysql'
+#   config:
+#     table: 'opendal_storage'
 # user_default_llm:
 #   factory: 'Tongyi-Qianwen'
 #   api_key: 'sk-xxxxxxxxxxxxx'

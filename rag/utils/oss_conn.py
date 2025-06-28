@@ -14,20 +14,22 @@
 #  limitations under the License.
 
 import logging
-import boto3
-from botocore.exceptions import ClientError
-from botocore.config import Config
 import time
 from io import BytesIO
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
+
+from api.utils import get_base_config
 from rag.utils import singleton
-from rag import settings
 
 
 @singleton
 class RAGFlowOSS:
     def __init__(self):
         self.conn = None
-        self.oss_config = settings.OSS
+        self.oss_config = get_base_config("oss", {})
         self.access_key = self.oss_config.get('access_key', None)
         self.secret_key = self.oss_config.get('secret_key', None)
         self.endpoint_url = self.oss_config.get('endpoint_url', None)

@@ -14,23 +14,24 @@
 #  limitations under the License.
 #
 
+import copy
+import json
 import logging
 import os
 import re
-import json
 import time
-import copy
+
 import infinity
+import pandas as pd
 from infinity.common import ConflictType, InfinityException, SortType
-from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
-from rag import settings
+from infinity.index import IndexInfo, IndexType
+
+from api.utils import get_base_config
+from api.utils.file_utils import get_project_base_directory
 from rag.settings import PAGERANK_FLD
 from rag.utils import singleton
-import pandas as pd
-from api.utils.file_utils import get_project_base_directory
-
 from rag.utils.doc_store_conn import (
     DocStoreConnection,
     MatchExpr,
@@ -127,8 +128,9 @@ def concat_dataframes(df_list: list[pd.DataFrame], selectFields: list[str]) -> p
 @singleton
 class InfinityConnection(DocStoreConnection):
     def __init__(self):
-        self.dbName = settings.INFINITY.get("db_name", "default_db")
-        infinity_uri = settings.INFINITY["uri"]
+        config = get_base_config("infinity", {"uri": "infinity:23817"})
+        self.dbName = config.get("db_name", "default_db")
+        infinity_uri = config["uri"]
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
