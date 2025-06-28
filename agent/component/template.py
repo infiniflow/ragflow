@@ -24,7 +24,7 @@ from agent.component.base import ComponentBase, ComponentParamBase
 
 class TemplateParam(ComponentParamBase):
     """
-    Define the Generate component parameters.
+    Define the Template component parameters.
     """
 
     def __init__(self):
@@ -53,11 +53,18 @@ class Template(ComponentBase):
             if cpn_id in key_set:
                 continue
             if cpn_id.lower().find("begin@") == 0:
-                cpn_id, key = cpn_id.split("@")
-                for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
-                    if p["key"] != key:
+                # Sửa lỗi tách cpn_id, key
+                parts = cpn_id.split("@", 1)
+                if len(parts) != 2:
+                    continue
+                cpn_id, key = parts
+                cpn = self._canvas.get_component(cpn_id)
+                if not cpn or "obj" not in cpn or not hasattr(cpn["obj"]._param, "query"):
+                    continue
+                for p in cpn["obj"]._param.query:
+                    if p.get("key") != key:
                         continue
-                    res.append({"key": r.group(1), "name": p["name"]})
+                    res.append({"key": r.group(1), "name": p.get("name", "")})
                     key_set.add(r.group(1))
                 continue
             cpn_nm = self._canvas.get_component_name(cpn_id)
@@ -73,27 +80,41 @@ class Template(ComponentBase):
         self._param.inputs = []
         for para in self.get_input_elements():
             if para["key"].lower().find("begin@") == 0:
-                cpn_id, key = para["key"].split("@")
-                for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
-                    if p["key"] == key:
+                parts = para["key"].split("@", 1)
+                if len(parts) != 2:
+                    continue
+                cpn_id, key = parts
+                cpn = self._canvas.get_component(cpn_id)
+                if not cpn or "obj" not in cpn or not hasattr(cpn["obj"]._param, "query"):
+                    continue
+                found = False
+                for p in cpn["obj"]._param.query:
+                    if p.get("key") == key:
                         value = p.get("value", "")
                         self.make_kwargs(para, kwargs, value)
 
                         origin_pattern = "{begin@" + key + "}"
                         new_pattern = "begin_" + key
-                        content = content.replace(origin_pattern, new_pattern)
-                        kwargs[new_pattern] = kwargs.pop(origin_pattern, "")
+                        content = content.replace(origin_pattern, "{" + new_pattern + "}")
+                        if origin_pattern in kwargs:
+                            kwargs[new_pattern] = kwargs.pop(origin_pattern)
+                        else:
+                            kwargs[new_pattern] = value
+                        found = True
                         break
-                else:
-                    assert False, f"Can't find parameter '{key}' for {cpn_id}"
+                if not found:
+                    raise AssertionError(f"Can't find parameter '{key}' for {cpn_id}")
                 continue
 
             component_id = para["key"]
-            cpn = self._canvas.get_component(component_id)["obj"]
-            if cpn.component_name.lower() == "answer":
+            cpn = self._canvas.get_component(component_id)
+            if not cpn or "obj" not in cpn:
+                continue
+            cpn_obj = cpn["obj"]
+            if getattr(cpn_obj, "component_name", "").lower() == "answer":
                 hist = self._canvas.get_history(1)
                 if hist:
-                    hist = hist[0]["content"]
+                    hist = hist[0].get("content", "")
                 else:
                     hist = ""
                 self.make_kwargs(para, kwargs, hist)
@@ -101,14 +122,21 @@ class Template(ComponentBase):
                 if ":" in component_id:
                     origin_pattern = "{" + component_id + "}"
                     new_pattern = component_id.replace(":", "_")
-                    content = content.replace(origin_pattern, new_pattern)
-                    kwargs[new_pattern] = kwargs.pop(component_id, "")
+                    content = content.replace(origin_pattern, "{" + new_pattern + "}")
+                    if component_id in kwargs:
+                        kwargs[new_pattern] = kwargs.pop(component_id)
+                    else:
+                        kwargs[new_pattern] = hist
                 continue
 
-            _, out = cpn.output(allow_partial=False)
+            output_result = cpn_obj.output(allow_partial=False)
+            if isinstance(output_result, tuple) and len(output_result) == 2:
+                _, out = output_result
+            else:
+                out = output_result
 
             result = ""
-            if "content" in out.columns:
+            if hasattr(out, "columns") and "content" in getattr(out, "columns", []):
                 result = "\n".join([o if isinstance(o, str) else str(o) for o in out["content"]])
 
             self.make_kwargs(para, kwargs, result)
@@ -129,7 +157,7 @@ class Template(ComponentBase):
                 try:
                     v = json.dumps(v, ensure_ascii=False)
                 except Exception:
-                    pass
+                    v = str(v)
             # Process backslashes in strings, Use Lambda function to avoid escape issues
             if isinstance(v, str):
                 v = v.replace("\\", "\\\\")
