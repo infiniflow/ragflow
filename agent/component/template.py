@@ -53,7 +53,6 @@ class Template(ComponentBase):
             if cpn_id in key_set:
                 continue
             if cpn_id.lower().find("begin@") == 0:
-                # Sửa lỗi tách cpn_id, key
                 parts = cpn_id.split("@", 1)
                 if len(parts) != 2:
                     continue
