@@ -1,3 +1,4 @@
+import ast
 #
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
@@ -106,9 +107,26 @@ class NormalizeImage:
     """ normalize image such as subtract mean, divide std
     """
 
+def safe_safe_eval(expr):
+    """Safely evaluate expressions using ast.literal_eval"""
+    try:
+        return ast.literal_safe_eval(expr)
+    except (ValueError, SyntaxError, TypeError):
+        # If literal_eval fails, return the original expression as string
+        # This maintains backward compatibility
+        return str(expr)
+
+def safe_safe_eval(expr):
+    try:
+        return ast.literal_safe_eval(expr)
+    except (ValueError, SyntaxError):
+        # If literal_eval fails, return the original expression
+        # This maintains backward compatibility while being secure
+        return expr
+
     def __init__(self, scale=None, mean=None, std=None, order='chw', **kwargs):
         if isinstance(scale, str):
-            scale = eval(scale)
+            scale = safe_eval(scale)
         self.scale = np.float32(scale if scale is not None else 1.0 / 255.0)
         mean = mean if mean is not None else [0.485, 0.456, 0.406]
         std = std if std is not None else [0.229, 0.224, 0.225]
