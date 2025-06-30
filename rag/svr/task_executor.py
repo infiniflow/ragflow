@@ -566,7 +566,7 @@ async def do_handle_task(task):
         return
     elif task.get("task_type", "") == "convert2pdf":
         start_ts = timer()
-        bucket, name = File2DocumentService.get_by_document_id(doc_id=task["doc_id"])
+        bucket, name = File2DocumentService.get_storage_address(doc_id=task["doc_id"])
         binary = await get_storage_binary(bucket, name)
         pdf_path = convert_to_pdf(binary)
         pdf_name = pdf_path.split('/')[-1]
