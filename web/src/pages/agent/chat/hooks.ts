@@ -6,6 +6,7 @@ import {
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
+  IInputEvent,
   IMessageEvent,
   MessageEventType,
   useSendMessageBySSE,
@@ -63,6 +64,21 @@ function findMessageFromList(eventList: IEventList) {
   return {
     id: eventList[0]?.message_id,
     content: messageEventList.map((x) => x.data.content).join(''),
+  };
+}
+
+function findInputFromList(eventList: IEventList) {
+  const inputEvent = eventList.find(
+    (x) => x.event === MessageEventType.UserInputs,
+  ) as IInputEvent;
+
+  if (!inputEvent) {
+    return {};
+  }
+
+  return {
+    id: inputEvent?.message_id,
+    data: inputEvent?.data,
   };
 }
 
@@ -136,10 +152,12 @@ export const useSendNextMessage = () => {
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
+    const inputAnswer = findInputFromList(answerList);
     if (answerList.length > 0) {
       addNewestOneAnswer({
         answer: content,
         id: id,
+        ...inputAnswer,
       });
     }
   }, [answerList, addNewestOneAnswer]);
@@ -181,5 +199,6 @@ export const useSendNextMessage = () => {
     ref,
     removeMessageById,
     stopOutputMessage,
+    send,
   };
 };
