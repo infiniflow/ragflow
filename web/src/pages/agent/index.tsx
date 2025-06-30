@@ -7,7 +7,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SidebarProvider } from '@/components/ui/sidebar';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -70,7 +69,7 @@ export default function Agent() {
   }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
 
   return (
-    <section>
+    <section className="h-full">
       <PageHeader back={navigateToAgentList} title={flowDetail.title}>
         <div className="flex items-center gap-2">
           <ButtonLoading
@@ -116,18 +115,10 @@ export default function Agent() {
         </div>
       </PageHeader>
       <ReactFlowProvider>
-        <div>
-          <SidebarProvider>
-            <div className="w-full">
-              <div className="w-full h-full">
-                <AgentCanvas
-                  drawerVisible={chatDrawerVisible}
-                  hideDrawer={hideChatDrawer}
-                ></AgentCanvas>
-              </div>
-            </div>
-          </SidebarProvider>
-        </div>
+        <AgentCanvas
+          drawerVisible={chatDrawerVisible}
+          hideDrawer={hideChatDrawer}
+        ></AgentCanvas>
       </ReactFlowProvider>
       {fileUploadVisible && (
         <UploadAgentDialog
