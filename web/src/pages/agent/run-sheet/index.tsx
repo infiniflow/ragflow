@@ -14,6 +14,7 @@ import { useGetBeginNodeDataQuery } from '../hooks/use-get-begin-query';
 import { useSaveGraphBeforeOpeningDebugDrawer } from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
+import { buildBeginQueryWithObject } from '../utils';
 
 const RunSheet = ({
   hideModal,
@@ -34,16 +35,7 @@ const RunSheet = ({
       const beginNode = getNode(BeginId);
       const inputs: Record<string, BeginQuery> = beginNode?.data.form.inputs;
 
-      const nextInputs = Object.keys(inputs).reduce<Record<string, BeginQuery>>(
-        (pre, key) => {
-          const item = nextValues.find((x) => x.key === key);
-          if (item) {
-            pre[key] = { ...item };
-          }
-          return pre;
-        },
-        {},
-      );
+      const nextInputs = buildBeginQueryWithObject(inputs, nextValues);
 
       const currentNodes = updateNodeForm(BeginId, nextInputs, ['inputs']);
       handleRun(currentNodes);

@@ -11,8 +11,14 @@ import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { Message } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { InputForm } from './input-form';
+import { get } from 'lodash';
+import { useCallback } from 'react';
+import { useParams } from 'umi';
+import DebugContent from '../debug-content';
+import { BeginQuery } from '../interface';
+import { buildBeginQueryWithObject } from '../utils';
 
 const AgentChatBox = () => {
   const {
@@ -25,7 +31,7 @@ const AgentChatBox = () => {
     derivedMessages,
     reference,
     stopOutputMessage,
-    send,
+    sendFormMessage,
   } = useSendNextMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -33,6 +39,35 @@ const AgentChatBox = () => {
   useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
   const { data: canvasInfo } = useFetchAgent();
+  const { id: canvasId } = useParams();
+
+  const getInputs = useCallback((message: Message) => {
+    return get(message, 'data.inputs', {}) as Record<string, BeginQuery>;
+  }, []);
+
+  const buildInputList = useCallback(
+    (message: Message) => {
+      return Object.entries(getInputs(message)).map(([key, val]) => {
+        return {
+          ...val,
+          key,
+        };
+      });
+    },
+    [getInputs],
+  );
+
+  const handleOk = useCallback(
+    (message: Message) => (values: BeginQuery[]) => {
+      const inputs = getInputs(message);
+      const nextInputs = buildBeginQueryWithObject(inputs, values);
+      sendFormMessage({
+        inputs: nextInputs,
+        id: canvasId,
+      });
+    },
+    [canvasId, getInputs, sendFormMessage],
+  );
 
   return (
     <>
@@ -62,7 +97,12 @@ const AgentChatBox = () => {
                     showLikeButton={false}
                     sendLoading={sendLoading}
                   >
-                    <InputForm send={send} message={message}></InputForm>
+                    <DebugContent
+                      parameters={buildInputList(message)}
+                      ok={handleOk(message)}
+                      isNext={false}
+                      btnText={'Submit'}
+                    ></DebugContent>
                   </MessageItem>
                 );
               })}
