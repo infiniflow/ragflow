@@ -549,7 +549,10 @@ class QWenChat(Base):
         dashscope.api_key = key
         self.model_name = model_name
         if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
-            super().__init__(key, model_name, "https://dashscope.aliyuncs.com/compatible-mode/v1", **kwargs)
+            # Use the provided base_url or default to the international endpoint
+            if not base_url:
+                base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            super().__init__(key, model_name, base_url, **kwargs)
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict) -> tuple[str, int]:
         if "max_tokens" in gen_conf:
@@ -749,7 +752,7 @@ class QWenChat(Base):
                     ans = resp.output.choices[0]["message"]["content"]
                     tk_count = self.total_token_count(resp)
                     if resp.output.choices[0].get("finish_reason", "") == "length":
-                        if is_chinese(ans):
+                        if is_chinese([ans]):
                             ans += LENGTH_NOTIFICATION_CN
                         else:
                             ans += LENGTH_NOTIFICATION_EN
