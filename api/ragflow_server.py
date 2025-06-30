@@ -19,7 +19,6 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 from api.utils.log_utils import init_root_logger
-from mcp_client.mcp_tool_call import shutdown_all_mcp_sessions
 from plugin import GlobalPluginManager
 init_root_logger("ragflow_server")
 
@@ -44,6 +43,7 @@ from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from api.utils import show_configs
 from rag.settings import print_rag_settings
+from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
