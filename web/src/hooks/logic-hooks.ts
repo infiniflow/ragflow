@@ -377,7 +377,7 @@ export const useSelectDerivedMessages = () => {
       if (idx !== -1) {
         return pre.map((x) => {
           if (x.id === answer.id) {
-            return { ...x, content: answer.answer };
+            return { ...x, ...answer, content: answer.answer };
           }
           return x;
         });
