@@ -558,7 +558,9 @@ class BaiChuanChat(Base):
 
 class QWenChat(Base):
     def __init__(self, key, model_name=Generation.Models.qwen_turbo, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", **kwargs)
+        if not base_url:
+                base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
         return
 
 
