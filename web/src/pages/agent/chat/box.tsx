@@ -12,6 +12,7 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
+import { InputForm } from './input-form';
 
 const AgentChatBox = () => {
   const {
@@ -24,6 +25,7 @@ const AgentChatBox = () => {
     derivedMessages,
     reference,
     stopOutputMessage,
+    send,
   } = useSendNextMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -59,7 +61,9 @@ const AgentChatBox = () => {
                     index={i}
                     showLikeButton={false}
                     sendLoading={sendLoading}
-                  ></MessageItem>
+                  >
+                    <InputForm send={send} message={message}></InputForm>
+                  </MessageItem>
                 );
               })}
             </Spin>
