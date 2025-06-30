@@ -722,9 +722,7 @@ class UpstageEmbed(OpenAIEmbed):
 
 
 class SILICONFLOWEmbed(Base):
-    def __init__(
-        self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"
-    ):
+    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1/embeddings"
         self.headers = {
@@ -911,9 +909,13 @@ class GPUStackEmbed(OpenAIEmbed):
 
 class NovitaEmbed(SILICONFLOWEmbed):
     def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai/embeddings"):
+        if not base_url:
+            base_url = "https://api.novita.ai/v3/openai/embeddings"
         super().__init__(key, model_name, base_url)
 
 
 class GiteeEmbed(SILICONFLOWEmbed):
     def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/embeddings"):
+        if not base_url:
+            base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
