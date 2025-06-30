@@ -19,7 +19,7 @@ import {
   NodeMap,
   Operator,
 } from './constant';
-import { IPosition } from './interface';
+import { BeginQuery, IPosition } from './interface';
 
 const buildEdges = (
   operatorIds: string[],
@@ -536,4 +536,22 @@ export function mapEdgeMouseEvent(
   );
 
   return nextEdges;
+}
+
+export function buildBeginQueryWithObject(
+  inputs: Record<string, BeginQuery>,
+  values: BeginQuery[],
+) {
+  const nextInputs = Object.keys(inputs).reduce<Record<string, BeginQuery>>(
+    (pre, key) => {
+      const item = values.find((x) => x.key === key);
+      if (item) {
+        pre[key] = { ...item };
+      }
+      return pre;
+    },
+    {},
+  );
+
+  return nextInputs;
 }
