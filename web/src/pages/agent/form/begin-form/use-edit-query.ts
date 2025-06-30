@@ -23,10 +23,7 @@ export const useEditQueryRecord = ({
       const nextQuery: BeginQuery[] =
         index > -1 ? inputs.toSpliced(index, 1, record) : [...inputs, record];
 
-      form.setValue('inputs', nextQuery, {
-        shouldDirty: true,
-        shouldTouch: true,
-      });
+      form.setValue('inputs', nextQuery);
 
       hideModal();
     },
@@ -45,11 +42,11 @@ export const useEditQueryRecord = ({
   const handleDeleteRecord = useCallback(
     (idx: number) => {
       const inputs = form?.getValues('inputs') || [];
-      const nextQuery = inputs.filter(
+      const nextInputs = inputs.filter(
         (item: BeginQuery, index: number) => index !== idx,
       );
 
-      form.setValue('inputs', nextQuery, { shouldDirty: true });
+      form.setValue('inputs', nextInputs);
     },
     [form],
   );

@@ -3,7 +3,7 @@ import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../../store';
 import { OutputArray, OutputObject } from './interface';
 
-function transferToObject(list: OutputArray) {
+export function transferToObject(list: OutputArray) {
   return list.reduce<OutputObject>((pre, cur) => {
     pre[cur.name] = { ref: cur.ref, type: cur.type };
     return pre;
