@@ -31,7 +31,7 @@ class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
     def _invoke(self, **kwargs):
-        for k, v in kwargs.get("inputs", {}):
+        for k, v in kwargs.get("inputs", {}).items():
             self.set_output(k, v)
 
 
