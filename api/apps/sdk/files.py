@@ -15,7 +15,7 @@ from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from rag.utils.storage_factory import STORAGE_IMPL
 
-@manager.route('/file/upload', methods=['POST'])
+@manager.route('/file/upload', methods=['POST']) # noqa: F821
 @token_required
 def upload(tenant_id):
     """
@@ -127,7 +127,7 @@ def upload(tenant_id):
         return server_error_response(e)
 
 
-@manager.route('/file/create', methods=['POST'])
+@manager.route('/file/create', methods=['POST']) # noqa: F821
 @token_required
 def create(tenant_id):
     """
@@ -205,7 +205,7 @@ def create(tenant_id):
         return server_error_response(e)
 
 
-@manager.route('/file/list', methods=['GET'])
+@manager.route('/file/list', methods=['GET']) # noqa: F821
 @token_required
 def list_files(tenant_id):
     """
@@ -297,7 +297,7 @@ def list_files(tenant_id):
         return server_error_response(e)
 
 
-@manager.route('/file/root_folder', methods=['GET'])
+@manager.route('/file/root_folder', methods=['GET']) # noqa: F821
 @token_required
 def get_root_folder(tenant_id):
     """
@@ -333,7 +333,7 @@ def get_root_folder(tenant_id):
         return server_error_response(e)
 
 
-@manager.route('/file/parent_folder', methods=['GET'])
+@manager.route('/file/parent_folder', methods=['GET']) # noqa: F821
 @token_required
 def get_parent_folder():
     """
@@ -378,7 +378,7 @@ def get_parent_folder():
         return server_error_response(e)
 
 
-@manager.route('/file/all_parent_folder', methods=['GET'])
+@manager.route('/file/all_parent_folder', methods=['GET']) # noqa: F821
 @token_required
 def get_all_parent_folders(tenant_id):
     """
@@ -426,7 +426,7 @@ def get_all_parent_folders(tenant_id):
         return server_error_response(e)
 
 
-@manager.route('/file/rm', methods=['POST'])
+@manager.route('/file/rm', methods=['POST']) # noqa: F821
 @token_required
 def rm(tenant_id):
     """
@@ -500,7 +500,7 @@ def rm(tenant_id):
         return server_error_response(e)
 
 
-@manager.route('/file/rename', methods=['POST'])
+@manager.route('/file/rename', methods=['POST']) # noqa: F821
 @token_required
 def rename(tenant_id):
     """
@@ -560,7 +560,7 @@ def rename(tenant_id):
         return server_error_response(e)
 
 
-@manager.route('/file/get/<file_id>', methods=['GET'])
+@manager.route('/file/get/<file_id>', methods=['GET']) # noqa: F821
 @token_required
 def get(tenant_id,file_id):
     """
@@ -608,7 +608,7 @@ def get(tenant_id,file_id):
         return server_error_response(e)
 
 
-@manager.route('/file/mv', methods=['POST'])
+@manager.route('/file/mv', methods=['POST']) # noqa: F821
 @token_required
 def move(tenant_id):
     """
