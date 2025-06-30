@@ -86,6 +86,8 @@ export enum Operator {
   Agent = 'Agent',
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
+  UserFillUp = 'UserFillUp',
+  StringTransform = 'StringTransform',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -645,8 +647,18 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  outputs: {},
 };
-export const initialIterationStartValues = {};
+export const initialIterationStartValues = {
+  outputs: {
+    item: {
+      type: 'unkown',
+    },
+    index: {
+      type: 'integer',
+    },
+  },
+};
 
 export const initialCodeValues = {
   lang: 'python',
@@ -683,6 +695,38 @@ export const initialAgentValues = {
     content: {
       type: 'string',
       value: '',
+    },
+  },
+};
+
+export const initialUserFillUpValues = {
+  enable_tips: true,
+  tips: '',
+  inputs: [],
+};
+
+export enum StringTransformMethod {
+  Merge = 'merge',
+  Split = 'split',
+}
+
+export enum StringTransformDelimiter {
+  Comma = ',',
+  Semicolon = ';',
+  Period = '.',
+  LineBreak = '\n',
+  Tab = '\t',
+  Space = ' ',
+}
+
+export const initialStringTransformValues = {
+  method: StringTransformMethod.Merge,
+  split_ref: '',
+  script: '',
+  delimiters: [StringTransformDelimiter.Comma],
+  outputs: {
+    result: {
+      type: 'string',
     },
   },
 };
@@ -807,6 +851,8 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.StringTransform]: [Operator.Begin],
+  [Operator.UserFillUp]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -851,6 +897,8 @@ export const NodeMap = {
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.UserFillUp]: 'ragNode',
+  [Operator.StringTransform]: 'ragNode',
 };
 
 export enum BeginQueryType {

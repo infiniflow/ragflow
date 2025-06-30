@@ -17,6 +17,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
   useEffect(() => {
+    // TODO: This should only be executed when the form changes
     if (id) {
       values = form?.getValues() || {};
 

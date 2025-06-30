@@ -46,7 +46,7 @@ import faulthandler
 import numpy as np
 from peewee import DoesNotExist
 
-from api.db import LLMType, ParserType, TaskStatus
+from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
@@ -213,8 +213,7 @@ async def collect():
     canceled = False
     task = TaskService.get_task(msg["id"])
     if task:
-        _, doc = DocumentService.get_by_id(task["doc_id"])
-        canceled = doc.run == TaskStatus.CANCEL.value or doc.progress < 0
+        canceled = TaskService.do_cancel(task["id"])
     if not task or canceled:
         state = "is unknown" if not task else "has been cancelled"
         FAILED_TASKS += 1
@@ -290,18 +289,26 @@ async def build_chunks(task, progress_callback):
                 return
 
             output_buffer = BytesIO()
-            if isinstance(d["image"], bytes):
-                output_buffer = BytesIO(d["image"])
-            else:
-                # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
-                if d["image"].mode in ("RGBA", "P"):
-                    d["image"] = d["image"].convert("RGB")
-                d["image"].save(output_buffer, format='JPEG')
-            async with minio_limiter:
-                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-            d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-            del d["image"]
-            docs.append(d)
+            try:
+                if isinstance(d["image"], bytes):
+                    output_buffer.write(d["image"])
+                    output_buffer.seek(0)
+                else:
+                    # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
+                    if d["image"].mode in ("RGBA", "P"):
+                        converted_image = d["image"].convert("RGB")
+                        d["image"].close()  # Close original image
+                        d["image"] = converted_image
+                    d["image"].save(output_buffer, format='JPEG')
+                    d["image"].close()  # Close PIL image after saving
+                
+                async with minio_limiter:
+                    await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+                del d["image"]  # Remove image reference
+                docs.append(d)
+            finally:
+                output_buffer.close()  # Ensure BytesIO is always closed
         except Exception:
             logging.exception(
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))

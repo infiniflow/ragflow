@@ -28,6 +28,7 @@ import {
   initialGoogleScholarValues,
   initialGoogleValues,
   initialInvokeValues,
+  initialIterationStartValues,
   initialIterationValues,
   initialJin10Values,
   initialKeywordExtractValues,
@@ -38,10 +39,12 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialStringTransformValues,
   initialSwitchValues,
   initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialUserFillUpValues,
   initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
@@ -99,12 +102,14 @@ export const useInitializeOperatorParams = () => {
       [Operator.Template]: initialTemplateValues,
       [Operator.Email]: initialEmailValues,
       [Operator.Iteration]: initialIterationValues,
-      [Operator.IterationStart]: initialIterationValues,
+      [Operator.IterationStart]: initialIterationStartValues,
       [Operator.Code]: initialCodeValues,
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.UserFillUp]: initialUserFillUpValues,
+      [Operator.StringTransform]: initialStringTransformValues,
     };
   }, [llmId]);
 
@@ -237,6 +242,34 @@ function isBottomSubAgent(type: string, position: Position) {
   );
 }
 
+function useResizeIterationNode() {
+  const { getNode, nodes, updateNode } = useGraphStore((state) => state);
+
+  const resizeIterationNode = useCallback(
+    (type: string, position: Position, parentId?: string) => {
+      const parentNode = getNode(parentId);
+      if (parentNode && !isBottomSubAgent(type, position)) {
+        const MoveRightDistance = 310;
+        const childNodeList = nodes.filter((x) => x.parentId === parentId);
+        const maxX = Math.max(...childNodeList.map((x) => x.position.x));
+        if (maxX + MoveRightDistance > parentNode.position.x) {
+          updateNode({
+            ...parentNode,
+            width: (parentNode.width || 0) + MoveRightDistance,
+            position: {
+              x: parentNode.position.x + MoveRightDistance / 2,
+              y: parentNode.position.y,
+            },
+          });
+        }
+      }
+    },
+    [getNode, nodes, updateNode],
+  );
+
+  return { resizeIterationNode };
+}
+
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const { edges, nodes, addEdge, addNode, getNode, updateNode } = useGraphStore(
     (state) => state,
@@ -246,6 +279,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
   const { addChildEdge } = useAddChildEdge();
   const { addToolNode } = useAddToolNode();
+  const { resizeIterationNode } = useResizeIterationNode();
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
@@ -298,15 +332,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           newNode.extent = 'parent';
           const parentNode = getNode(node.parentId);
           if (parentNode && !isBottomSubAgent(type, params.position)) {
-            const MoveRightDistance = 310;
-            updateNode({
-              ...parentNode,
-              width: (parentNode.width || 0) + MoveRightDistance,
-              position: {
-                x: parentNode.position.x + MoveRightDistance / 2,
-                y: parentNode.position.y,
-              },
-            });
+            resizeIterationNode(type, params.position, node.parentId);
           }
         }
 
@@ -321,7 +347,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             data: {
               label: Operator.IterationStart,
               name: Operator.IterationStart,
-              form: {},
+              form: initialIterationStartValues,
             },
             parentId: newNode.id,
             extent: 'parent',

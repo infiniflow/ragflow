@@ -8,7 +8,8 @@ from api.db.services.user_service import TenantService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
-from api.utils.web_utils import safe_json_parse
+from api.utils.web_utils import get_float, safe_json_parse
+from mcp_client.mcp_tool_call import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
@@ -84,7 +85,7 @@ def create() -> Response:
 
 @manager.route("/update", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("id")
+@validate_request("mcp_id")
 def update() -> Response:
     req = request.get_json()
 
@@ -95,13 +96,20 @@ def update() -> Response:
     if server_name and len(server_name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Invaild MCP name or length is {len(server_name)} which is large than 255.")
 
-    req["headers"] = safe_json_parse(req.get("headers", {}))
-    req["variables"] = safe_json_parse(req.get("variables", {}))
+    mcp_id = req.get("mcp_id", "")
+    e, mcp_server = MCPServerService.get_by_id(mcp_id)
+    if not e or mcp_server.tenant_id != current_user.id:
+        return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+
+    req["headers"] = safe_json_parse(req.get("headers", mcp_server.headers))
+    req["variables"] = safe_json_parse(req.get("variables", mcp_server.variables))
 
     try:
         req["tenant_id"] = current_user.id
+        req.pop("mcp_id", None)
+        req["id"] = mcp_id
 
-        if not MCPServerService.filter_update([MCPServer.id == req["id"], MCPServer.tenant_id == req["tenant_id"]], req):
+        if not MCPServerService.filter_update([MCPServer.id == mcp_id, MCPServer.tenant_id == current_user.id], req):
             return get_data_error_result(message="Failed to updated MCP server.")
 
         e, updated_mcp = MCPServerService.get_by_id(req["id"])
@@ -212,3 +220,105 @@ def export_multiple() -> Response:
         return get_json_result(data={"mcpServers": exported_servers})
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/list_tools", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("mcp_ids")
+def list_tools() -> Response:
+    req = request.get_json()
+    mcp_ids = req.get("mcp_ids", [])
+    if not mcp_ids:
+        return get_data_error_result(message="No MCP server IDs provided.")
+
+    timeout = get_float(req, "timeout", 10)
+
+    results = {}
+    tool_call_sessions = []
+    try:
+        for mcp_id in mcp_ids:
+            e, mcp_server = MCPServerService.get_by_id(mcp_id)
+
+            if e and mcp_server.tenant_id == current_user.id:
+                server_key = mcp_server.id
+
+                cached_tools = mcp_server.variables.get("tools", {})
+
+                tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+                tool_call_sessions.append(tool_call_session)
+
+                try:
+                    tools = tool_call_session.get_tools(timeout)
+                except Exception:
+                    tools = []
+
+                results[server_key] = []
+                for tool in tools:
+                    tool_dict = tool.model_dump()
+                    cached_tool = cached_tools.get(tool_dict["name"])
+
+                    tool_dict["enabled"] = cached_tool.get("enabled") if cached_tool and "enabled" in cached_tool else True
+                    results[server_key].append(tool_dict)
+
+        # PERF: blocking call to close sessions — consider moving to background thread or task queue
+        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
+        return get_json_result(data=results)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/test_tool", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("mcp_id", "tool_name", "arguments")
+def test_tool() -> Response:
+    req = request.get_json()
+    mcp_id = req.get("mcp_id", "")
+    if not mcp_id:
+        return get_data_error_result(message="No MCP server ID provided.")
+
+    timeout = get_float(req, "timeout", 10)
+
+    tool_name = req.get("tool_name", "")
+    arguments = req.get("arguments", {})
+    if not all([tool_name, arguments]):
+        return get_data_error_result(message="Require provide tool name and arguments.")
+
+    tool_call_sessions = []
+    try:
+        e, mcp_server = MCPServerService.get_by_id(mcp_id)
+        if not e or mcp_server.tenant_id != current_user.id:
+            return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+
+        tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+        tool_call_sessions.append(tool_call_session)
+        result = tool_call_session.tool_call(tool_name, arguments, timeout)
+
+        # PERF: blocking call to close sessions — consider moving to background thread or task queue
+        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
+        return get_json_result(data=result)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/cache_tools", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("mcp_id", "tools")
+def cache_tool() -> Response:
+    req = request.get_json()
+    mcp_id = req.get("mcp_id", "")
+    if not mcp_id:
+        return get_data_error_result(message="No MCP server ID provided.")
+    tools = req.get("tools", [])
+
+    e, mcp_server = MCPServerService.get_by_id(mcp_id)
+    if not e or mcp_server.tenant_id != current_user.id:
+        return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+
+    variables = mcp_server.variables
+    tools = {tool["name"]: tool for tool in tools if isinstance(tool, dict) and "name" in tool}
+    variables["tools"] = tools
+
+    if not MCPServerService.filter_update([MCPServer.id == mcp_id, MCPServer.tenant_id == current_user.id], {"variables": variables}):
+        return get_data_error_result(message="Failed to updated MCP server.")
+
+    return get_json_result(data=tools)

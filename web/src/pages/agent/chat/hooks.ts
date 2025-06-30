@@ -6,6 +6,7 @@ import {
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
+  IInputEvent,
   IMessageEvent,
   MessageEventType,
   useSendMessageBySSE,
@@ -21,6 +22,7 @@ import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
+import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
 
@@ -66,6 +68,21 @@ function findMessageFromList(eventList: IEventList) {
   };
 }
 
+function findInputFromList(eventList: IEventList) {
+  const inputEvent = eventList.find(
+    (x) => x.event === MessageEventType.UserInputs,
+  ) as IInputEvent;
+
+  if (!inputEvent) {
+    return {};
+  }
+
+  return {
+    id: inputEvent?.message_id,
+    data: inputEvent?.data,
+  };
+}
+
 const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
@@ -83,8 +100,6 @@ export const useSendNextMessage = () => {
     loading,
     derivedMessages,
     ref,
-    addNewestQuestion,
-    addNewestAnswer,
     removeLatestMessage,
     removeMessageById,
     addNewestOneQuestion,
@@ -138,10 +153,12 @@ export const useSendNextMessage = () => {
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
+    const inputAnswer = findInputFromList(answerList);
     if (answerList.length > 0) {
       addNewestOneAnswer({
         answer: content,
         id: id,
+        ...inputAnswer,
       });
     }
   }, [answerList, addNewestOneAnswer]);
@@ -159,6 +176,19 @@ export const useSendNextMessage = () => {
       role: MessageType.User,
     });
   }, [value, done, addNewestOneQuestion, setValue, handleSendMessage]);
+
+  const sendFormMessage = useCallback(
+    (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
+      send(body);
+      addNewestOneQuestion({
+        content: Object.entries(body.inputs)
+          .map(([key, val]) => `${key}: ${val.value}`)
+          .join('<br/>'),
+        role: MessageType.User,
+      });
+    },
+    [addNewestOneQuestion, send],
+  );
 
   useEffect(() => {
     if (prologue) {
@@ -183,5 +213,7 @@ export const useSendNextMessage = () => {
     ref,
     removeMessageById,
     stopOutputMessage,
+    send,
+    sendFormMessage,
   };
 };

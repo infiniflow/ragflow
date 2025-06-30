@@ -1,13 +1,11 @@
-import { omit } from 'lodash';
 import { useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
-import { BeginQuery } from '../../interface';
 import useGraphStore from '../../store';
+import { OutputArray, OutputObject } from './interface';
 
-function transferInputsArrayToObject(inputs: BeginQuery[] = []) {
-  return inputs.reduce<Record<string, Omit<BeginQuery, 'key'>>>((pre, cur) => {
-    pre[cur.key] = omit(cur, 'key');
-
+export function transferToObject(list: OutputArray) {
+  return list.reduce<OutputObject>((pre, cur) => {
+    pre[cur.name] = { ref: cur.ref, type: cur.type };
     return pre;
   }, {});
 }
@@ -17,12 +15,13 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
   useEffect(() => {
-    if (id) {
-      values = form?.getValues() || {};
-
-      const nextValues = {
+    // Manually triggered form updates are synchronized to the canvas
+    if (id && form?.formState.isDirty) {
+      values = form?.getValues();
+      console.log('🚀 ~ useEffect ~ values:', values);
+      let nextValues: any = {
         ...values,
-        inputs: transferInputsArrayToObject(values.inputs),
+        outputs: transferToObject(values.outputs),
       };
 
       updateNodeForm(id, nextValues);
