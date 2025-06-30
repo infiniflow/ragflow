@@ -64,6 +64,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
   initialWaitingDialogueValues,
@@ -89,6 +90,8 @@ const selector = (state: RFState) => ({
   onConnect: state.onConnect,
   setNodes: state.setNodes,
   onSelectionChange: state.onSelectionChange,
+  onEdgeMouseEnter: state.onEdgeMouseEnter,
+  onEdgeMouseLeave: state.onEdgeMouseLeave,
 });
 
 export const useSelectCanvasData = () => {
@@ -147,6 +150,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Code]: initialCodeValues,
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
+      [Operator.TavilySearch]: initialTavilyValues,
     };
   }, [llmId]);
 

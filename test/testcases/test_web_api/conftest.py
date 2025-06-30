@@ -16,11 +16,15 @@
 import pytest
 from common import (
     batch_create_datasets,
+    list_kbs,
+    rm_kb,
 )
-from configs import HOST_ADDRESS, VERSION
+
+# from configs import HOST_ADDRESS, VERSION
 from libs.auth import RAGFlowWebApiAuth
 from pytest import FixtureRequest
-from ragflow_sdk import RAGFlow
+
+# from ragflow_sdk import RAGFlow
 from utils.file_utils import (
     create_docx_file,
     create_eml_file,
@@ -69,32 +73,38 @@ def WebApiAuth(auth):
     return RAGFlowWebApiAuth(auth)
 
 
-@pytest.fixture(scope="session")
-def client(token: str) -> RAGFlow:
-    return RAGFlow(api_key=token, base_url=HOST_ADDRESS, version=VERSION)
+# @pytest.fixture(scope="session")
+# def client(token: str) -> RAGFlow:
+#     return RAGFlow(api_key=token, base_url=HOST_ADDRESS, version=VERSION)
 
 
 @pytest.fixture(scope="function")
-def clear_datasets(request: FixtureRequest, client: RAGFlow):
+def clear_datasets(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth):
     def cleanup():
-        client.delete_datasets(ids=None)
+        res = list_kbs(WebApiAuth, params={"page_size": 1000})
+        for kb in res["data"]["kbs"]:
+            rm_kb(WebApiAuth, {"kb_id": kb["id"]})
 
     request.addfinalizer(cleanup)
 
 
 @pytest.fixture(scope="class")
-def add_dataset(request: FixtureRequest, client: RAGFlow, WebApiAuth: RAGFlowWebApiAuth) -> str:
+def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        client.delete_datasets(ids=None)
+        res = list_kbs(WebApiAuth, params={"page_size": 1000})
+        for kb in res["data"]["kbs"]:
+            rm_kb(WebApiAuth, {"kb_id": kb["id"]})
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(WebApiAuth, 1)[0]
 
 
 @pytest.fixture(scope="function")
-def add_dataset_func(request: FixtureRequest, client: RAGFlow, WebApiAuth: RAGFlowWebApiAuth) -> str:
+def add_dataset_func(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        client.delete_datasets(ids=None)
+        res = list_kbs(WebApiAuth, params={"page_size": 1000})
+        for kb in res["data"]["kbs"]:
+            rm_kb(WebApiAuth, {"kb_id": kb["id"]})
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(WebApiAuth, 1)[0]

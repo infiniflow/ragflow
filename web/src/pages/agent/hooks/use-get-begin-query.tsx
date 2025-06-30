@@ -5,7 +5,7 @@ import { DefaultOptionType } from 'antd/es/select';
 import { isEmpty } from 'lodash';
 import get from 'lodash/get';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { BeginId, Operator } from '../constant';
+import { BeginId, BeginQueryType, Operator, VariableType } from '../constant';
 import { AgentFormContext } from '../context';
 import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
@@ -58,13 +58,14 @@ function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
   }, []);
 }
 
-function buildOutputOptions(
+export function buildOutputOptions(
   outputs: Record<string, any> = {},
   nodeId?: string,
 ) {
   return Object.keys(outputs).map((x) => ({
     label: x,
     value: `${nodeId}@${x}`,
+    type: outputs[x]?.type,
   }));
 }
 
@@ -104,6 +105,19 @@ const ExcludedNodes = [
   Operator.Note,
 ];
 
+const StringList = [
+  BeginQueryType.Line,
+  BeginQueryType.Paragraph,
+  BeginQueryType.Options,
+];
+
+function transferToVariableType(type: string) {
+  if (StringList.some((x) => x === type)) {
+    return VariableType.String;
+  }
+  return type;
+}
+
 export function useBuildBeginVariableOptions() {
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
@@ -116,6 +130,7 @@ export function useBuildBeginVariableOptions() {
         options: query.map((x) => ({
           label: x.name,
           value: `begin@${x.key}`,
+          type: transferToVariableType(x.type),
         })),
       },
     ];
@@ -124,13 +139,14 @@ export function useBuildBeginVariableOptions() {
   return options;
 }
 
-export const useBuildVariableOptions = (nodeId?: string) => {
+export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
   const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
+  const parentNodeOutputOptions = useBuildNodeOutputOptions(parentId);
   const beginOptions = useBuildBeginVariableOptions();
 
   const options = useMemo(() => {
-    return [...beginOptions, ...nodeOutputOptions];
-  }, [beginOptions, nodeOutputOptions]);
+    return [...beginOptions, ...nodeOutputOptions, ...parentNodeOutputOptions];
+  }, [beginOptions, nodeOutputOptions, parentNodeOutputOptions]);
 
   return options;
 };
@@ -138,12 +154,14 @@ export const useBuildVariableOptions = (nodeId?: string) => {
 export function useBuildQueryVariableOptions() {
   const { data } = useFetchAgent();
   const node = useContext(AgentFormContext);
-  const options = useBuildVariableOptions(node?.id);
+  const options = useBuildVariableOptions(node?.id, node?.parentId);
 
   const nextOptions = useMemo(() => {
-    const globalOptions = Object.keys(data?.dsl?.globals ?? {}).map((x) => ({
-      label: x,
-      value: x,
+    const globals = data?.dsl?.globals ?? {};
+    const globalOptions = Object.entries(globals).map(([key, value]) => ({
+      label: key,
+      value: key,
+      type: Array.isArray(value) ? VariableType.Array : typeof value,
     }));
     return [
       { ...options[0], options: [...options[0]?.options, ...globalOptions] },

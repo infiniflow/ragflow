@@ -175,7 +175,7 @@ export const useHandleUploadDocument = () => {
         const ret = await uploadDocument(filesPart);
 
         const files = ret?.data || [];
-        const succesfulFilenames = files.map((file: any) => file.name);
+        const successfulFilenames = files.map((file: any) => file.name);
 
         // set status to done or error on files (based on response)
         setFileList(
@@ -185,7 +185,7 @@ export const useHandleUploadDocument = () => {
             }
 
             let newFile = file;
-            newFile.status = succesfulFilenames.includes(file.name)
+            newFile.status = successfulFilenames.includes(file.name)
               ? 'done'
               : 'error';
             newFile.percent = 100;
@@ -197,7 +197,7 @@ export const useHandleUploadDocument = () => {
         return {
           code: ret?.code,
           fileIds: files.map((file: any) => file.id),
-          totalSuccess: succesfulFilenames.length,
+          totalSuccess: successfulFilenames.length,
         };
       };
       const totalFiles = fileList.length;

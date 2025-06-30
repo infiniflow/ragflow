@@ -19,6 +19,8 @@ export const OperatorIconMap = {
   [Operator.Switch]: 'condition',
   [Operator.Code]: 'code-set',
   [Operator.Agent]: 'agent-ai',
+  [Operator.UserFillUp]: 'await',
+  [Operator.StringTransform]: 'a-textprocessing',
   // [Operator.Relevant]: BranchesOutlined,
   // [Operator.RewriteQuestion]: FormOutlined,
   // [Operator.KeywordExtract]: KeywordIcon,

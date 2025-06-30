@@ -94,3 +94,7 @@ To remove the generated knowledge graph, delete all related files in your knowle
 ### Where is the created knowledge graph stored?
 
 All chunks of the created knowledge graph are stored in RAGFlow's document engine: either Elasticsearch or [Infinity](https://github.com/infiniflow/infinity).
+
+### How to export a created knowledge graph?
+
+Nope. Exporting a created knowledge graph is not supported. If you still consider this feature essential, please [raise an issue](https://github.com/infiniflow/ragflow/issues) explaining your use case and its importance.

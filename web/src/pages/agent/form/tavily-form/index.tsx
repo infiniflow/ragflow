@@ -15,20 +15,26 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import {
+  TavilySearchDepth,
+  TavilyTopic,
+  initialTavilyValues,
+} from '../../constant';
+import { INextOperatorForm } from '../../interface';
 import { Output, OutputType } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { DynamicDomain } from './dynamic-domain';
-import { SearchDepth, Topic, defaultValues, useValues } from './use-values';
+import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const TavilyForm = () => {
-  const values = useValues();
+const TavilyForm = ({ node }: INextOperatorForm) => {
+  const values = useValues(node);
 
   const FormSchema = z.object({
     api_key: z.string(),
     query: z.string(),
-    search_depth: z.enum([SearchDepth.Advanced, SearchDepth.Basic]),
-    topic: z.enum([Topic.News, Topic.General]),
+    search_depth: z.enum([TavilySearchDepth.Advanced, TavilySearchDepth.Basic]),
+    topic: z.enum([TavilyTopic.News, TavilyTopic.General]),
     max_results: z.coerce.number(),
     days: z.coerce.number(),
     include_answer: z.boolean(),
@@ -45,7 +51,7 @@ const TavilyForm = () => {
   });
 
   const outputList = useMemo(() => {
-    return Object.entries(defaultValues.outputs).reduce<OutputType[]>(
+    return Object.entries(initialTavilyValues.outputs).reduce<OutputType[]>(
       (pre, [key, val]) => {
         pre.push({ title: key, type: val.type });
         return pre;
@@ -54,7 +60,7 @@ const TavilyForm = () => {
     );
   }, []);
 
-  useWatchFormChange(form);
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
@@ -92,7 +98,7 @@ const TavilyForm = () => {
                   <RAGFlowSelect
                     placeholder="shadcn"
                     {...field}
-                    options={buildOptions(SearchDepth)}
+                    options={buildOptions(TavilySearchDepth)}
                   />
                 </FormControl>
                 <FormMessage />
@@ -104,12 +110,12 @@ const TavilyForm = () => {
             name="topic"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Topic</FormLabel>
+                <FormLabel>TavilyTopic</FormLabel>
                 <FormControl>
                   <RAGFlowSelect
                     placeholder="shadcn"
                     {...field}
-                    options={buildOptions(Topic)}
+                    options={buildOptions(TavilyTopic)}
                   />
                 </FormControl>
                 <FormMessage />

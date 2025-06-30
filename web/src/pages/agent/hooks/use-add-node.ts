@@ -28,6 +28,7 @@ import {
   initialGoogleScholarValues,
   initialGoogleValues,
   initialInvokeValues,
+  initialIterationStartValues,
   initialIterationValues,
   initialJin10Values,
   initialKeywordExtractValues,
@@ -38,9 +39,12 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialStringTransformValues,
   initialSwitchValues,
+  initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialUserFillUpValues,
   initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
@@ -50,7 +54,6 @@ import useGraphStore from '../store';
 import {
   generateNodeNamesWithIncreasingIndex,
   getNodeDragHandle,
-  getRelativePositionToIterationNode,
 } from '../utils';
 
 export const useInitializeOperatorParams = () => {
@@ -99,11 +102,14 @@ export const useInitializeOperatorParams = () => {
       [Operator.Template]: initialTemplateValues,
       [Operator.Email]: initialEmailValues,
       [Operator.Iteration]: initialIterationValues,
-      [Operator.IterationStart]: initialIterationValues,
+      [Operator.IterationStart]: initialIterationStartValues,
       [Operator.Code]: initialCodeValues,
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
+      [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.UserFillUp]: initialUserFillUpValues,
+      [Operator.StringTransform]: initialStringTransformValues,
     };
   }, [llmId]);
 
@@ -185,11 +191,9 @@ function useAddChildEdge() {
 }
 
 function useAddToolNode() {
-  const addNode = useGraphStore((state) => state.addNode);
-  const getNode = useGraphStore((state) => state.getNode);
-  const addEdge = useGraphStore((state) => state.addEdge);
-  const edges = useGraphStore((state) => state.edges);
-  const nodes = useGraphStore((state) => state.nodes);
+  const { nodes, edges, addEdge, getNode, addNode } = useGraphStore(
+    (state) => state,
+  );
 
   const addToolNode = useCallback(
     (newNode: Node<any>, nodeId?: string) => {
@@ -231,17 +235,51 @@ function useAddToolNode() {
   return { addToolNode };
 }
 
+function isBottomSubAgent(type: string, position: Position) {
+  return (
+    (type === Operator.Agent && position === Position.Bottom) ||
+    type === Operator.Tool
+  );
+}
+
+function useResizeIterationNode() {
+  const { getNode, nodes, updateNode } = useGraphStore((state) => state);
+
+  const resizeIterationNode = useCallback(
+    (type: string, position: Position, parentId?: string) => {
+      const parentNode = getNode(parentId);
+      if (parentNode && !isBottomSubAgent(type, position)) {
+        const MoveRightDistance = 310;
+        const childNodeList = nodes.filter((x) => x.parentId === parentId);
+        const maxX = Math.max(...childNodeList.map((x) => x.position.x));
+        if (maxX + MoveRightDistance > parentNode.position.x) {
+          updateNode({
+            ...parentNode,
+            width: (parentNode.width || 0) + MoveRightDistance,
+            position: {
+              x: parentNode.position.x + MoveRightDistance / 2,
+              y: parentNode.position.y,
+            },
+          });
+        }
+      }
+    },
+    [getNode, nodes, updateNode],
+  );
+
+  return { resizeIterationNode };
+}
+
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
-  const addNode = useGraphStore((state) => state.addNode);
-  const getNode = useGraphStore((state) => state.getNode);
-  const addEdge = useGraphStore((state) => state.addEdge);
-  const nodes = useGraphStore((state) => state.nodes);
-  const edges = useGraphStore((state) => state.edges);
+  const { edges, nodes, addEdge, addNode, getNode, updateNode } = useGraphStore(
+    (state) => state,
+  );
   const getNodeName = useGetNodeName();
   const initializeOperatorParams = useInitializeOperatorParams();
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
   const { addChildEdge } = useAddChildEdge();
   const { addToolNode } = useAddToolNode();
+  const { resizeIterationNode } = useResizeIterationNode();
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
@@ -254,6 +292,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     ) =>
       (event?: React.MouseEvent<HTMLElement>) => {
         const nodeId = params.nodeId;
+
+        const node = getNode(nodeId);
 
         // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
         // and you don't need to subtract the reactFlowBounds.left/top anymore
@@ -287,6 +327,15 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           dragHandle: getNodeDragHandle(type),
         };
 
+        if (node && node.parentId) {
+          newNode.parentId = node.parentId;
+          newNode.extent = 'parent';
+          const parentNode = getNode(node.parentId);
+          if (parentNode && !isBottomSubAgent(type, params.position)) {
+            resizeIterationNode(type, params.position, node.parentId);
+          }
+        }
+
         if (type === Operator.Iteration) {
           newNode.width = 500;
           newNode.height = 250;
@@ -298,13 +347,21 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             data: {
               label: Operator.IterationStart,
               name: Operator.IterationStart,
-              form: {},
+              form: initialIterationStartValues,
             },
             parentId: newNode.id,
             extent: 'parent',
           };
           addNode(newNode);
           addNode(iterationStartNode);
+          if (nodeId) {
+            addEdge({
+              source: nodeId,
+              target: newNode.id,
+              sourceHandle: NodeHandleId.Start,
+              targetHandle: NodeHandleId.End,
+            });
+          }
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom
@@ -313,7 +370,11 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           if (agentNode) {
             // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
             const allChildAgentNodeIds = edges
-              .filter((x) => x.source === nodeId && x.sourceHandle === 'e')
+              .filter(
+                (x) =>
+                  x.source === nodeId &&
+                  x.sourceHandle === NodeHandleId.AgentBottom,
+              )
               .map((x) => x.target);
 
             const xAxises = nodes
@@ -332,22 +393,13 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             addEdge({
               source: nodeId,
               target: newNode.id,
-              sourceHandle: 'e',
-              targetHandle: 'f',
+              sourceHandle: NodeHandleId.AgentBottom,
+              targetHandle: NodeHandleId.AgentTop,
             });
           }
         } else if (type === Operator.Tool) {
           addToolNode(newNode, params.nodeId);
         } else {
-          const subNodeOfIteration = getRelativePositionToIterationNode(
-            nodes,
-            position,
-          );
-          if (subNodeOfIteration) {
-            newNode.parentId = subNodeOfIteration.parentId;
-            newNode.position = subNodeOfIteration.position;
-            newNode.extent = 'parent';
-          }
           addNode(newNode);
           addChildEdge(params.position, {
             source: params.nodeId,
@@ -368,6 +420,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
       initializeOperatorParams,
       nodes,
       reactFlowInstance,
+      updateNode,
     ],
   );
 
