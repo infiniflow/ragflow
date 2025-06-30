@@ -661,6 +661,7 @@ class File2Document(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     file_id = CharField(max_length=32, null=True, help_text="file id", index=True)
     document_id = CharField(max_length=32, null=True, help_text="document id", index=True)
+    pdf_file_id = CharField(max_length=32, null=True, help_text="pdf file id", index=True)
 
     class Meta:
         db_table = "file2document"
@@ -746,6 +747,7 @@ class API4Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    name = CharField(max_length=255, null=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
@@ -950,5 +952,13 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "name", CharField(max_length=255, null=True, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("file2document", "pdf_file_id", CharField(max_length=32,null=False, help_text="pdf file id", index=True)))
     except Exception:
         pass

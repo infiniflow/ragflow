@@ -79,3 +79,11 @@ class File2DocumentService(CommonService):
         assert doc_id, "please specify doc_id"
         e, doc = DocumentService.get_by_id(doc_id)
         return doc.kb_id, doc.location
+
+    @classmethod
+    @DB.connection_context()
+    def update_by_doc_id(cls, doc_id, obj):
+        obj["update_time"] = current_timestamp()
+        obj["update_date"] = datetime_format(datetime.now())
+        cls.model.update(obj).where(cls.model.document_id == doc_id).execute()
+        return File2Document(**obj)
