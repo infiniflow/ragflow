@@ -50,7 +50,7 @@ class AgentParam(LLMParam, ToolParamBase):
         super().__init__()
         self.function_name = "agent"
         self.tools = []
-        self.max_rounds = 5
+        self.max_rounds = 50
         self.description = ""
 
 
@@ -110,7 +110,7 @@ class Agent(LLM, ToolBase):
         ans = self._generate(msg[0]["content"], msg[1:], conf=self._param.gen_conf())
         msg.pop(0)
         if ans.find("**ERROR**") >= 0:
-            logging.error(f"Extractor._chat got error. response: {ans}")
+            logging.error(f"Agent._chat got error. response: {ans}")
             self.set_output("_ERROR", ans)
             return
         use_tools = []

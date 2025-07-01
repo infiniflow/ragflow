@@ -33,25 +33,28 @@ from dashscope import Generation
 from ollama import Client
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
+from strenum import StrEnum
 from zhipuai import ZhipuAI
 
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
 
 # Error message constants
-ERROR_PREFIX = "**ERROR**"
-ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
-ERROR_AUTHENTICATION = "AUTH_ERROR"
-ERROR_INVALID_REQUEST = "INVALID_REQUEST"
-ERROR_SERVER = "SERVER_ERROR"
-ERROR_TIMEOUT = "TIMEOUT"
-ERROR_CONNECTION = "CONNECTION_ERROR"
-ERROR_MODEL = "MODEL_ERROR"
-ERROR_CONTENT_FILTER = "CONTENT_FILTERED"
-ERROR_QUOTA = "QUOTA_EXCEEDED"
-ERROR_MAX_RETRIES = "MAX_RETRIES_EXCEEDED"
-ERROR_GENERIC = "GENERIC_ERROR"
+class LLMErrorCode(StrEnum):
+    ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
+    ERROR_AUTHENTICATION = "AUTH_ERROR"
+    ERROR_INVALID_REQUEST = "INVALID_REQUEST"
+    ERROR_SERVER = "SERVER_ERROR"
+    ERROR_TIMEOUT = "TIMEOUT"
+    ERROR_CONNECTION = "CONNECTION_ERROR"
+    ERROR_MODEL = "MODEL_ERROR"
+    ERROR_MAX_ROUNDS = "ERROR_MAX_ROUNDS"
+    ERROR_CONTENT_FILTER = "CONTENT_FILTERED"
+    ERROR_QUOTA = "QUOTA_EXCEEDED"
+    ERROR_MAX_RETRIES = "MAX_RETRIES_EXCEEDED"
+    ERROR_GENERIC = "GENERIC_ERROR"
 
+ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
@@ -75,32 +78,34 @@ class Base(ABC):
 
     def _get_delay(self):
         """Calculate retry delay time"""
-        return self.base_delay + random.uniform(0, 0.5)
+        return self.base_delay * random.uniform(10, 150)
 
     def _classify_error(self, error):
         """Classify error based on error message content"""
         error_str = str(error).lower()
 
         if "rate limit" in error_str or "429" in error_str or "tpm limit" in error_str or "too many requests" in error_str or "requests per minute" in error_str:
-            return ERROR_RATE_LIMIT
+            return LLMErrorCode.ERROR_RATE_LIMIT
         elif "auth" in error_str or "key" in error_str or "apikey" in error_str or "401" in error_str or "forbidden" in error_str or "permission" in error_str:
-            return ERROR_AUTHENTICATION
+            return LLMErrorCode.ERROR_AUTHENTICATION
         elif "invalid" in error_str or "bad request" in error_str or "400" in error_str or "format" in error_str or "malformed" in error_str or "parameter" in error_str:
-            return ERROR_INVALID_REQUEST
+            return LLMErrorCode.ERROR_INVALID_REQUEST
         elif "server" in error_str or "502" in error_str or "503" in error_str or "504" in error_str or "500" in error_str or "unavailable" in error_str:
-            return ERROR_SERVER
+            return LLMErrorCode.ERROR_SERVER
         elif "timeout" in error_str or "timed out" in error_str:
-            return ERROR_TIMEOUT
+            return LLMErrorCode.ERROR_TIMEOUT
         elif "connect" in error_str or "network" in error_str or "unreachable" in error_str or "dns" in error_str:
-            return ERROR_CONNECTION
+            return LLMErrorCode.ERROR_CONNECTION
         elif "quota" in error_str or "capacity" in error_str or "credit" in error_str or "billing" in error_str or "limit" in error_str and "rate" not in error_str:
-            return ERROR_QUOTA
+            return LLMErrorCode.ERROR_QUOTA
         elif "filter" in error_str or "content" in error_str or "policy" in error_str or "blocked" in error_str or "safety" in error_str or "inappropriate" in error_str:
-            return ERROR_CONTENT_FILTER
+            return LLMErrorCode.ERROR_CONTENT_FILTER
         elif "model" in error_str or "not found" in error_str or "does not exist" in error_str or "not available" in error_str:
-            return ERROR_MODEL
+            return LLMErrorCode.ERROR_MODEL
+        elif "max rounds" in error_str:
+            return LLMErrorCode.ERROR_MODEL
         else:
-            return ERROR_GENERIC
+            return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
         if "max_tokens" in gen_conf:
@@ -129,19 +134,17 @@ class Base(ABC):
         logging.exception("OpenAI cat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
+        if attempt == self.max_retries:
+            error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
         # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = (error_code == ERROR_RATE_LIMIT or error_code == ERROR_SERVER) and attempt < self.max_retries
-
-        if should_retry:
-            delay = self._get_delay()
-            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
-            time.sleep(delay)
-        else:
-            # For non-rate limit errors or the last attempt, return an error message
-            if attempt == self.max_retries:
-                error_code = ERROR_MAX_RETRIES
+        should_retry = (error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER)
+        if not should_retry:
             return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+
+        delay = self._get_delay()
+        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+        time.sleep(delay)
 
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({
@@ -194,9 +197,8 @@ class Base(ABC):
         for attempt in range(self.max_retries+1):
             history = hist
             try:
-                for _ in range(self.max_rounds*2):
+                for _ in range(self.max_rounds+1):
                     print(f"{self.tools=}")
-                    print(f"{history=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, **gen_conf)
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
@@ -225,10 +227,12 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             ans += self._verbose_tool_use(name, {}, str(e))
 
+                raise Exception(f"Exceed max rounds: {self.max_rounds}")
             except Exception as e:
                 e = self._exceptions(e, attempt)
                 if e:
                     return e, tk_count
+
         assert False, "Shouldn't be here."
 
     def chat(self, system, history, gen_conf):
@@ -272,7 +276,7 @@ class Base(ABC):
         for attempt in range(self.max_retries+1):
             history = hist
             try:
-                for _ in range(self.max_rounds*2):
+                for _ in range(self.max_rounds+1):
                     reasoning_start = False
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
                     final_tool_calls = {}
@@ -334,13 +338,15 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             yield self._verbose_tool_use(name, {}, str(e))
 
+                raise Exception(f"Exceed max rounds: {self.max_rounds}")
             except Exception as e:
                 e = self._exceptions(e, attempt)
                 if e:
+                    yield e
                     yield total_tokens
                     return
 
-        yield total_tokens
+        assert False, "Shouldn't be here."
 
     def chat_streamly(self, system, history, gen_conf):
         if system:

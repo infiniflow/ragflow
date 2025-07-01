@@ -22,6 +22,7 @@ from typing import Optional
 import json_repair
 from pydantic import BaseModel, Field, field_validator
 from agent.component.base import ComponentBase, ComponentParamBase
+from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api import settings
 from api.utils.api_utils import timeout
 
@@ -57,35 +58,54 @@ class CodeExecutionRequest(BaseModel):
         raise ValueError(f"Unsupported language: {v}")
 
 
-class CodeExecParam(ComponentParamBase):
+class CodeExecParam(ToolParamBase):
     """
     Define the code sandbox component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "execute_code",
+            "description": "This tool has a sandbox that can execute code written in 'Python'/'Javascript'. It recieves a piece of code and return a Json string",
+            "parameters": {
+                "lang": {
+                    "type": "string",
+                    "description": "The programming language of this piece of code.",
+                    "enum": ["python", "javascript"],
+                    "required": True,
+                },
+                "script": {
+                    "type": "string",
+                    "description": "A piece of code in right format",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.lang = "python"
         self.script = "def main(arg1: str, arg2: str) -> dict: return {\"result\": arg1 + arg2}"
-        self.arguments = {"arg1": None, "arg2": None}
+        self.arguments = {}
         self.outputs = {"result": {"value": "", "type": "string"}}
 
     def check(self):
         self.check_valid_value(self.lang, "Support languages", ["python", "python3", "nodejs", "javascript"])
-        self.check_defined_type(self.enable_network, "Enable network", ["bool"])
+        self.check_empty(self.script, "Script")
 
 
-class CodeExec(ComponentBase, ABC):
+class CodeExec(ToolBase, ABC):
     component_name = "CodeExec"
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
+        lang = kwargs.get("lang", self._param.lang)
+        script = kwargs.get("script", self._param.script)
         arguments = {}
         for k, v in self._param.arguments.items():
             arguments[k] = self._canvas.get_variable_value(v) if v else None
 
         self._execute_code(
-            language=self._param.lang,
-            code=self._param.script,
+            language=lang,
+            code=script,
             arguments=arguments
         )
 

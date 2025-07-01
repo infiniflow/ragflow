@@ -129,6 +129,8 @@ class Retrieval(ToolBase, ABC):
         for ck in kbinfos["chunks"]:
             if "vector" in ck:
                 del ck["vector"]
+            if "content_ltks" in ck:
+                del ck["content_ltks"]
 
         if not kbinfos["chunks"]:
             self.set_output("_references", None)
