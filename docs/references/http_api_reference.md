@@ -1259,6 +1259,57 @@ Failure:
 
 ---
 
+
+### Preview document
+
+**GET** `/api/v1/datasets/{dataset_id}/documents/preview/{document_id}`
+
+Previews a document from a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/documents/preview/{document_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Output:
+  - `'{PATH_TO_THE_FILE}'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/preview/{document_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --output ./ragflow.txt
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `documents_id`: (*Path parameter*)  
+  The ID of the document to preview.
+
+#### Response
+
+Success:
+
+```json
+This is a test to verify the file preview feature.
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "You do not own the dataset 7898da028a0511efbf750242ac1220005."
+}
+```
+
+---
+
 ## CHUNK MANAGEMENT WITHIN DATASET
 
 ---
