@@ -2,7 +2,6 @@ import { Operator } from '../../constant';
 import AkShareForm from '../akshare-form';
 import ArXivForm from '../arxiv-form';
 import BingForm from '../bing-form';
-import CodeForm from '../code-form';
 import CrawlerForm from '../crawler-form';
 import DeepLForm from '../deepl-form';
 import DuckDuckGoForm from '../duckduckgo-form';
@@ -19,7 +18,7 @@ import TavilyForm from './tavily-form';
 
 export const ToolFormConfigMap = {
   [Operator.Retrieval]: RetrievalForm,
-  [Operator.Code]: CodeForm,
+  [Operator.Code]: () => <div></div>,
   [Operator.DuckDuckGo]: DuckDuckGoForm,
   [Operator.Wikipedia]: WikipediaForm,
   [Operator.PubMed]: PubMedForm,

@@ -24,6 +24,18 @@ export const useGetBeginNodeDataQuery = () => {
   return getBeginNodeDataQuery;
 };
 
+export const useGetBeginNodeDataInputs = () => {
+  const getNode = useGraphStore((state) => state.getNode);
+
+  const inputs = get(getNode(BeginId), 'data.form.inputs', {});
+
+  const beginNodeDataInputs = useMemo(() => {
+    return buildBeginInputListFromObject(inputs);
+  }, [inputs]);
+
+  return beginNodeDataInputs;
+};
+
 export const useGetBeginNodeDataQueryIsSafe = () => {
   const [isBeginNodeDataQuerySafe, setIsBeginNodeDataQuerySafe] =
     useState(false);
@@ -152,9 +164,9 @@ export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
   return options;
 };
 
-export function useBuildQueryVariableOptions() {
+export function useBuildQueryVariableOptions(n?: RAGFlowNodeType) {
   const { data } = useFetchAgent();
-  const node = useContext(AgentFormContext);
+  const node = useContext(AgentFormContext) || n;
   const options = useBuildVariableOptions(node?.id, node?.parentId);
 
   const nextOptions = useMemo(() => {
@@ -170,7 +182,7 @@ export function useBuildQueryVariableOptions() {
       { ...options[0], options: [...options[0]?.options, ...globalOptions] },
       ...options.slice(1),
     ];
-  }, [data.dsl.globals, options]);
+  }, [data.dsl?.globals, options]);
 
   return nextOptions;
 }
@@ -241,3 +253,22 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   );
   return getLabel;
 };
+
+export function useGetVariableLabelByValue(nodeId: string) {
+  const { getNode } = useGraphStore((state) => state);
+  const nextOptions = useBuildQueryVariableOptions(getNode(nodeId));
+
+  const flattenOptions = useMemo(() => {
+    return nextOptions.reduce<DefaultOptionType[]>((pre, cur) => {
+      return [...pre, ...cur.options];
+    }, []);
+  }, [nextOptions]);
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      return flattenOptions.find((x) => x.value === val)?.label;
+    },
+    [flattenOptions],
+  );
+  return getLabel;
+}
