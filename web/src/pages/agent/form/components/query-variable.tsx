@@ -34,7 +34,7 @@ export function QueryVariable({
       ? nextOptions.map((x) => {
           return {
             ...x,
-            options: x.options.filter((y) => toLower(y.type).startsWith(type)),
+            options: x.options.filter((y) => toLower(y.type).includes(type)),
           };
         })
       : nextOptions;

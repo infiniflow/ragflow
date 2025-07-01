@@ -2,7 +2,7 @@ import { useFetchModelId } from '@/hooks/logic-hooks';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { get, isEmpty } from 'lodash';
 import { useMemo } from 'react';
-import { initialAgentValues } from '../../constant';
+import { AgentExceptionMethod, initialAgentValues } from '../../constant';
 
 export function useValues(node?: RAGFlowNodeType) {
   const llmId = useFetchModelId();
@@ -23,7 +23,14 @@ export function useValues(node?: RAGFlowNodeType) {
       return defaultValues;
     }
 
-    return { ...formData, prompts: get(formData, 'prompts.0.content', '') };
+    return {
+      ...formData,
+      prompts: get(formData, 'prompts.0.content', ''),
+      exception_method:
+        formData.exception_method === null
+          ? AgentExceptionMethod.Null
+          : formData.exception_method,
+    };
   }, [defaultValues, node?.data?.form]);
 
   return values;

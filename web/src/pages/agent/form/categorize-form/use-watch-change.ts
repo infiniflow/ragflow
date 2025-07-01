@@ -4,7 +4,7 @@ import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../../store';
 import { buildCategorizeObjectFromList } from '../../utils';
 
-export function useWatchFormChange(id?: string, form?: UseFormReturn) {
+export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
   let values = useWatch({ control: form?.control });
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
