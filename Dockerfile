@@ -200,7 +200,6 @@ COPY graphrag graphrag
 COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
 COPY mcp mcp
-COPY mcp_client mcp_client
 COPY plugin plugin
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
