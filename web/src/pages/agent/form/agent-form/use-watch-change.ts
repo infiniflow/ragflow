@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
-import { PromptRole } from '../../constant';
+import { AgentExceptionMethod, PromptRole } from '../../constant';
 import useGraphStore from '../../store';
 
-export function useWatchFormChange(id?: string, form?: UseFormReturn) {
+export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
   let values = useWatch({ control: form?.control });
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
@@ -14,6 +14,10 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
       let nextValues: any = {
         ...values,
         prompts: [{ role: PromptRole.User, content: values.prompts }],
+        exception_method:
+          values.exception_method === AgentExceptionMethod.Null
+            ? null
+            : values.exception_method,
       };
 
       updateNodeForm(id, nextValues);
