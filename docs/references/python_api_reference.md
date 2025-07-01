@@ -461,7 +461,7 @@ dataset = rag_object.list_datasets(id='id')
 dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
-doc.update([{"parser_config": {"chunk_token_count": 256}}, {"chunk_method": "manual"}])
+doc.update([{"parser_config": {"chunk_token_num": 256}}, {"chunk_method": "manual"}])
 ```
 
 ---
