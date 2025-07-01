@@ -1,3 +1,4 @@
+import { AgentGlobals } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { Edge } from '@xyflow/react';
@@ -161,7 +162,9 @@ export function useBuildQueryVariableOptions() {
     const globalOptions = Object.entries(globals).map(([key, value]) => ({
       label: key,
       value: key,
-      type: Array.isArray(value) ? VariableType.Array : typeof value,
+      type: Array.isArray(value)
+        ? `${VariableType.Array}${key === AgentGlobals.SysFiles ? '<file>' : ''}`
+        : typeof value,
     }));
     return [
       { ...options[0], options: [...options[0]?.options, ...globalOptions] },
