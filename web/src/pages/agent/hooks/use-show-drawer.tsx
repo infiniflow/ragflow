@@ -5,6 +5,7 @@ import { useCallback, useEffect } from 'react';
 import { Operator } from '../constant';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
+import { useCacheChatLog } from './use-cache-chat-log';
 import { useGetBeginNodeDataQuery } from './use-get-begin-query';
 import { useSaveGraph } from './use-save-graph';
 
@@ -13,6 +14,7 @@ export const useShowFormDrawer = () => {
     clickedNodeId: clickNodeId,
     setClickedNodeId,
     getNode,
+    setClickedToolId,
   } = useGraphStore((state) => state);
   const {
     visible: formDrawerVisible,
@@ -20,12 +22,13 @@ export const useShowFormDrawer = () => {
     showModal: showFormDrawer,
   } = useSetModalState();
 
-  const handleShow = useCallback(
-    (node: Node) => {
+  const handleShow: NodeMouseHandler = useCallback(
+    (e, node: Node) => {
       setClickedNodeId(node.id);
+      setClickedToolId(get(e.target, 'dataset.tool'));
       showFormDrawer();
     },
-    [showFormDrawer, setClickedNodeId],
+    [setClickedNodeId, setClickedToolId, showFormDrawer],
   );
 
   return {
@@ -117,7 +120,7 @@ export function useShowDrawer({
       if (!ExcludedNodes.some((x) => x === node.data.label)) {
         hideSingleDebugDrawer();
         hideRunOrChatDrawer();
-        showFormDrawer(node);
+        showFormDrawer(e, node);
       }
       // handle single debug icon click
       if (
@@ -149,5 +152,25 @@ export function useShowDrawer({
     hideFormDrawer,
     hideRunOrChatDrawer,
     showChatModal,
+  };
+}
+
+export function useShowLogSheet({
+  setCurrentMessageId,
+}: Pick<ReturnType<typeof useCacheChatLog>, 'setCurrentMessageId'>) {
+  const { visible, showModal, hideModal } = useSetModalState();
+
+  const handleShow = useCallback(
+    (messageId: string) => {
+      setCurrentMessageId(messageId);
+      showModal();
+    },
+    [setCurrentMessageId, showModal],
+  );
+
+  return {
+    logSheetVisible: visible,
+    hideLogSheet: hideModal,
+    showLogSheet: handleShow,
   };
 }

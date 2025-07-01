@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from flask_login import current_user
 from peewee import fn
 
+from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileSource, FileType, ParserType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase
 from api.db.services import duplicate_name
@@ -412,8 +413,8 @@ class FileService(CommonService):
                 MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
                 if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
                     raise RuntimeError("Exceed the maximum file number of a free user!")
-                if len(file.filename.encode("utf-8")) >= 128:
-                    raise RuntimeError("Exceed the maximum length of file name!")
+                if len(file.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+                    raise RuntimeError(f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.")
 
                 filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
                 filetype = filename_type(filename)
@@ -492,4 +493,3 @@ class FileService(CommonService):
         if re.search(r"\.(eml)$", filename):
             return ParserType.EMAIL.value
         return default
-

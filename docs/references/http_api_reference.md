@@ -343,7 +343,6 @@ Creates a dataset.
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
-  - `"pagerank"`: `int`
   - `"parser_config"`: `object`
 
 ##### Request example
@@ -383,12 +382,6 @@ curl --request POST \
   Specifies who can access the dataset to create. Available options:  
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
-
-- `"pagerank"`: (*Body parameter*), `int`  
-  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
-  - Default: `0`
-  - Minimum: `0`
-  - Maximum: `100`
 
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method of the dataset to create. Available options:  
@@ -900,7 +893,7 @@ curl --request PUT \
 - `document_id`: (*Path parameter*)  
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
-- `"meta_fields"`: (*Body parameter*)， `dict[str, Any]` The meta fields of the document.
+- `"meta_fields"`: (*Body parameter*), `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
   - `"naive"`: General
@@ -2142,7 +2135,7 @@ Success:
         "id": "4606b4ec87ad11efbc4f0242ac120006",
         "messages": [
             {
-                "content": "Hi! I am your assistant，can I help you?",
+                "content": "Hi! I am your assistant, can I help you?",
                 "role": "assistant"
             }
         ],
@@ -2283,7 +2276,7 @@ Success:
             "id": "578d541e87ad11ef96b90242ac120006",
             "messages": [
                 {
-                    "content": "Hi! I am your assistant，can I help you?",
+                    "content": "Hi! I am your assistant, can I help you?",
                     "role": "assistant"
                 }
             ],
@@ -3227,22 +3220,22 @@ Failure:
 
 ---
 
-### Related Questions
+### Generate related questions
 
-**POST** `/v1/conversation/related_questions`
+**POST** `/v1/sessions/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, typically expires with in 24 hours. You can find the it in the browser request easily.
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily.
 
 :::tip NOTE
-The chat model dynamically determines the number of questions to generate based on the instruction, typically between five and ten.
+The chat model autonomously determines the number of questions to generate based on the instruction, typically between five and ten.
 :::
 
 #### Request
 
 - Method: POST
-- URL: `/v1/conversation/related_questions`
+- URL: `/v1/sessions/related_questions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -3253,7 +3246,7 @@ The chat model dynamically determines the number of questions to generate based 
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/conversation/related_questions \
+     --url http://{address}/v1/sessions/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '

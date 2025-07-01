@@ -19,7 +19,7 @@ import TOCInline from '@theme/TOCInline';
 
 ### What sets RAGFlow apart from other RAG products?
 
-The "garbage in garbage out" status quo remains unchanged despite the fact that LLMs have advanced Natural Language Processing (NLP) significantly. In response, RAGFlow introduces two unique features compared to other Retrieval-Augmented Generation (RAG) products.
+The "garbage in garbage out" status quo remains unchanged despite the fact that LLMs have advanced Natural Language Processing (NLP) significantly. In its response, RAGFlow introduces two unique features compared to other Retrieval-Augmented Generation (RAG) products.
 
 - Fine-grained document parsing: Document parsing involves images and tables, with the flexibility for you to intervene as needed.
 - Traceable answers with reduced hallucinations: You can trust RAGFlow's responses as you can view the citations and references supporting them.
@@ -30,17 +30,17 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 Each RAGFlow release is available in two editions:
 
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.1-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.1`
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.19.0-slim` and `v0.19.0`:  
+RAGFlow offers two Docker image editions, `v0.19.1-slim` and `v0.19.1`:  
   
-- `infiniflow/ragflow:v0.19.0-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.19.0`: The RAGFlow Docker image with embedding models including:
+- `infiniflow/ragflow:v0.19.1-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.19.1`: The RAGFlow Docker image with embedding models including:
   - Built-in embedding models:
     - `BAAI/bge-large-zh-v1.5`
     - `maidalun1020/bce-embedding-base_v1`
@@ -127,7 +127,19 @@ The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](.
 
 ### Do you support stream output?
 
-Yes, we do.
+Yes, we do. Stream output is enabled by default in the chat assistant and agent. Note that you cannot disable stream output via RAGFlow's UI. To disable stream output in responses, use RAGFlow's Python or RESTful APIs:
+
+Python:
+
+- [Create chat completion](./references/python_api_reference.md#create-chat-completion)
+- [Converse with chat assistant](./references/python_api_reference.md#converse-with-chat-assistant)
+- [Converse with agent](./references/python_api_reference.md#converse-with-agent)
+
+RESTful:
+
+- [Create chat completion](./references/http_api_reference.md#create-chat-completion)
+- [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant)
+- [Converse with agent](./references/http_api_reference.md#converse-with-agent)
 
 ---
 
@@ -487,5 +499,11 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 ### Where are my uploaded files stored in RAGFlow's image?
 
 All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+
+---
+
+### How to tune batch size for document parsing and embedding?
+
+You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
 
 ---
