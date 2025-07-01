@@ -1,6 +1,7 @@
 'use client';
 
 import { FormContainer } from '@/components/form-container';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
   FormControl,
@@ -9,14 +10,13 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { BlurInput } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useBuildVariableOptions } from '../../hooks/use-get-begin-query';
+import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -32,7 +32,7 @@ export const TypeOptions = [
   'Object',
 ].map((x) => ({ label: x, value: x }));
 
-export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
+export function DynamicVariableForm({ name = 'arguments' }: IProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
@@ -41,19 +41,19 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
     control: form.control,
   });
 
-  const valueOptions = useBuildVariableOptions(node?.id, node?.parentId);
+  const nextOptions = useBuildQueryVariableOptions();
 
   return (
     <div className="space-y-5">
       {fields.map((field, index) => {
         const typeField = `${name}.${index}.name`;
         return (
-          <div key={field.id} className="flex items-center gap-2">
+          <div key={field.id} className="flex w-full items-center gap-2">
             <FormField
               control={form.control}
               name={typeField}
               render={({ field }) => (
-                <FormItem className="w-2/5">
+                <FormItem className="flex-1 overflow-hidden">
                   <FormControl>
                     <BlurInput
                       {...field}
@@ -69,15 +69,12 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
               control={form.control}
               name={`${name}.${index}.component_id`}
               render={({ field }) => (
-                <FormItem className="flex-1">
+                <FormItem className="flex-1 overflow-hidden">
                   <FormControl>
-                    <RAGFlowSelect
-                      placeholder={t('common.pleaseSelect')}
-                      options={
-                        name === 'arguments' ? valueOptions : TypeOptions
-                      }
+                    <SelectWithSearch
+                      options={nextOptions}
                       {...field}
-                    ></RAGFlowSelect>
+                    ></SelectWithSearch>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
