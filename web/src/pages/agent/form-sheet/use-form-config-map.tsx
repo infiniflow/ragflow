@@ -23,7 +23,8 @@ import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
 import InvokeForm from '../form/invoke-form';
-import IterationForm from '../form/iteration-from';
+import IterationForm from '../form/iteration-form';
+import IterationStartForm from '../form/iteration-start-from';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
@@ -32,10 +33,13 @@ import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
+import { StringTransformForm } from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
+import TavilyForm from '../form/tavily-form';
 import TemplateForm from '../form/template-form';
 import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
+import UserFillUpForm from '../form/user-fill-up-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
@@ -366,12 +370,27 @@ export function useFormConfigMap() {
       schema: z.object({}),
     },
     [Operator.IterationStart]: {
-      component: () => <></>,
+      component: IterationStartForm,
       defaultValues: {},
       schema: z.object({}),
     },
     [Operator.Tool]: {
       component: ToolForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.TavilySearch]: {
+      component: TavilyForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.UserFillUp]: {
+      component: UserFillUpForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.StringTransform]: {
+      component: StringTransformForm,
       defaultValues: {},
       schema: z.object({}),
     },

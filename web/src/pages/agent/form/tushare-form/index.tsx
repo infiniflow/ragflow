@@ -2,8 +2,8 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { DatePicker, DatePickerProps, Form, Input, Select } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useMemo } from 'react';
-import { TuShareSrcOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import { TuShareSrcOptions } from '../../options';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
 const DateTimePicker = ({

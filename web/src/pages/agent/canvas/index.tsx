@@ -84,6 +84,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     onEdgesChange,
     onNodesChange,
     onSelectionChange,
+    onEdgeMouseEnter,
+    onEdgeMouseLeave,
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
@@ -170,6 +172,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onSelectionChange={onSelectionChange}
           nodeOrigin={[0.5, 0]}
           isValidConnection={isValidConnection}
+          onEdgeMouseEnter={onEdgeMouseEnter}
+          onEdgeMouseLeave={onEdgeMouseLeave}
+          className="h-full"
           defaultEdgeOptions={{
             type: 'buttonEdge',
             markerEnd: 'logo',

@@ -6,7 +6,7 @@ import { get } from 'lodash';
 import { memo } from 'react';
 import { NodeHandleId } from '../../constant';
 import { CommonHandle } from './handle';
-import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
+import { LeftHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
@@ -30,7 +30,7 @@ function InnerMessageNode({
           nodeId={id}
           id={NodeHandleId.End}
         ></CommonHandle>
-        <CommonHandle
+        {/* <CommonHandle
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
@@ -38,7 +38,7 @@ function InnerMessageNode({
           id={NodeHandleId.Start}
           nodeId={id}
           isConnectableEnd={false}
-        ></CommonHandle>
+        ></CommonHandle> */}
         <NodeHeader
           id={id}
           name={data.name}

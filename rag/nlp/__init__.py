@@ -225,15 +225,23 @@ def bullets_category(sections):
 
 
 def is_english(texts):
-    eng = 0
     if not texts:
         return False
-    for t in texts:
-        if re.match(r"[ `a-zA-Z.,':;/\"?<>!\(\)-]", t.strip()):
-            eng += 1
-    if eng / len(texts) > 0.8:
-        return True
-    return False
+
+    pattern = re.compile(r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]")
+
+    if isinstance(texts, str):
+        texts = list(texts)
+    elif isinstance(texts, list):
+        texts = [t for t in texts if isinstance(t, str) and t.strip()]
+    else:
+        return False
+
+    if not texts:
+        return False
+
+    eng = sum(1 for t in texts if pattern.fullmatch(t.strip()))
+    return (eng / len(texts)) > 0.8
 
 
 def is_chinese(text):

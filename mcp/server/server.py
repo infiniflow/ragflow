@@ -15,21 +15,21 @@
 #
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import wraps
 
+import click
 import requests
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from strenum import StrEnum
 
 import mcp.types as types
 from mcp.server.lowlevel import Server
-from mcp.server.sse import SseServerTransport
 
 
 class LaunchMode(StrEnum):
@@ -37,11 +37,19 @@ class LaunchMode(StrEnum):
     HOST = "host"
 
 
+class Transport(StrEnum):
+    SSE = "sse"
+    STEAMABLE_HTTP = "streamable-http"
+
+
 BASE_URL = "http://127.0.0.1:9380"
 HOST = "127.0.0.1"
 PORT = "9382"
 HOST_API_KEY = ""
 MODE = ""
+TRANSPORT_SSE_ENABLED = True
+TRANSPORT_STREAMABLE_HTTP_ENABLED = True
+JSON_RESPONSE = True
 
 
 class RAGFlowConnector:
@@ -115,17 +123,17 @@ class RAGFlowCtx:
 
 
 @asynccontextmanager
-async def server_lifespan(server: Server) -> AsyncIterator[dict]:
+async def sse_lifespan(server: Server) -> AsyncIterator[dict]:
     ctx = RAGFlowCtx(RAGFlowConnector(base_url=BASE_URL))
 
+    logging.info("Legacy SSE application started with StreamableHTTP session manager!")
     try:
         yield {"ragflow_ctx": ctx}
     finally:
-        pass
+        logging.info("Legacy SSE application shutting down...")
 
 
-app = Server("ragflow-server", lifespan=server_lifespan)
-sse = SseServerTransport("/messages/")
+app = Server("ragflow-mcp-server", lifespan=sse_lifespan)
 
 
 def with_api_key(required=True):
@@ -206,53 +214,121 @@ async def call_tool(name: str, arguments: dict, *, connector) -> list[types.Text
     raise ValueError(f"Tool not found: {name}")
 
 
-async def handle_sse(request):
-    async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-        await app.run(streams[0], streams[1], app.create_initialization_options(experimental_capabilities={"headers": dict(request.headers)}))
-
-
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        # Authentication is deferred, will be handled by RAGFlow core service.
-        if request.url.path.startswith("/sse") or request.url.path.startswith("/messages"):
-            token = None
-
-            auth_header = request.headers.get("Authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                token = auth_header.removeprefix("Bearer ").strip()
-            elif request.headers.get("api_key"):
-                token = request.headers["api_key"]
-
-            if not token:
-                return JSONResponse({"error": "Missing or invalid authorization header"}, status_code=401)
-        return await call_next(request)
-
-
 def create_starlette_app():
+    routes = []
     middleware = None
     if MODE == LaunchMode.HOST:
+        from starlette.types import ASGIApp, Receive, Scope, Send
+
+        class AuthMiddleware:
+            def __init__(self, app: ASGIApp):
+                self.app = app
+
+            async def __call__(self, scope: Scope, receive: Receive, send: Send):
+                if scope["type"] != "http":
+                    await self.app(scope, receive, send)
+                    return
+
+                path = scope["path"]
+                if path.startswith("/messages/") or path.startswith("/sse") or path.startswith("/mcp"):
+                    headers = dict(scope["headers"])
+                    token = None
+                    auth_header = headers.get(b"authorization")
+                    if auth_header and auth_header.startswith(b"Bearer "):
+                        token = auth_header.removeprefix(b"Bearer ").strip()
+                    elif b"api_key" in headers:
+                        token = headers[b"api_key"]
+
+                    if not token:
+                        response = JSONResponse({"error": "Missing or invalid authorization header"}, status_code=401)
+                        await response(scope, receive, send)
+                        return
+
+                await self.app(scope, receive, send)
+
         middleware = [Middleware(AuthMiddleware)]
+
+    # Add SSE routes if enabled
+    if TRANSPORT_SSE_ENABLED:
+        from mcp.server.sse import SseServerTransport
+
+        sse = SseServerTransport("/messages/")
+
+        async def handle_sse(request):
+            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+                await app.run(streams[0], streams[1], app.create_initialization_options(experimental_capabilities={"headers": dict(request.headers)}))
+            return Response()
+
+        routes.extend(
+            [
+                Route("/sse", endpoint=handle_sse, methods=["GET"]),
+                Mount("/messages/", app=sse.handle_post_message),
+            ]
+        )
+
+    # Add streamable HTTP route if enabled
+    streamablehttp_lifespan = None
+    if TRANSPORT_STREAMABLE_HTTP_ENABLED:
+        from starlette.types import Receive, Scope, Send
+
+        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+        session_manager = StreamableHTTPSessionManager(
+            app=app,
+            event_store=None,
+            json_response=JSON_RESPONSE,
+            stateless=True,
+        )
+
+        async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
+            await session_manager.handle_request(scope, receive, send)
+
+        @asynccontextmanager
+        async def streamablehttp_lifespan(app: Starlette) -> AsyncIterator[None]:
+            async with session_manager.run():
+                logging.info("StreamableHTTP application started with StreamableHTTP session manager!")
+                try:
+                    yield
+                finally:
+                    logging.info("StreamableHTTP application shutting down...")
+
+        routes.append(Mount("/mcp", app=handle_streamable_http))
 
     return Starlette(
         debug=True,
-        routes=[
-            Route("/sse", endpoint=handle_sse),
-            Mount("/messages/", app=sse.handle_post_message),
-        ],
+        routes=routes,
         middleware=middleware,
+        lifespan=streamablehttp_lifespan,
     )
 
 
-if __name__ == "__main__":
-    """
-    Launch example:
-        self-host:
-            uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=self-host --api_key=ragflow-xxxxx
-        host:
-            uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=host
-    """
-
-    import argparse
+@click.command()
+@click.option("--base-url", type=str, default="http://127.0.0.1:9380", help="API base URL for RAGFlow backend")
+@click.option("--host", type=str, default="127.0.0.1", help="Host to bind the RAGFlow MCP server")
+@click.option("--port", type=int, default=9382, help="Port to bind the RAGFlow MCP server")
+@click.option(
+    "--mode",
+    type=click.Choice(["self-host", "host"]),
+    default="self-host",
+    help=("Launch mode:\n  self-host: run MCP for a single tenant (requires --api-key)\n  host: multi-tenant mode, users must provide Authorization headers"),
+)
+@click.option("--api-key", type=str, default="", help="API key to use when in self-host mode")
+@click.option(
+    "--transport-sse-enabled/--no-transport-sse-enabled",
+    default=True,
+    help="Enable or disable legacy SSE transport mode (default: enabled)",
+)
+@click.option(
+    "--transport-streamable-http-enabled/--no-transport-streamable-http-enabled",
+    default=True,
+    help="Enable or disable streamable-http transport mode (default: enabled)",
+)
+@click.option(
+    "--json-response/--no-json-response",
+    default=True,
+    help="Enable or disable JSON response mode for streamable-http (default: enabled)",
+)
+def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_streamable_http_enabled, json_response):
     import os
 
     import uvicorn
@@ -260,31 +336,28 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description="RAGFlow MCP Server")
-    parser.add_argument("--base_url", type=str, default="http://127.0.0.1:9380", help="api_url: http://<host_address>")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="RAGFlow MCP SERVER host")
-    parser.add_argument("--port", type=str, default="9382", help="RAGFlow MCP SERVER port")
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="self-host",
-        help="Launch mode options:\n"
-        "  * self-host: Launches an MCP server to access a specific tenant space. The 'api_key' argument is required.\n"
-        "  * host: Launches an MCP server that allows users to access their own spaces. Each request must include a Authorization header "
-        "indicating the user's identification.",
-    )
-    parser.add_argument("--api_key", type=str, default="", help="RAGFlow MCP SERVER HOST API KEY")
-    args = parser.parse_args()
-    if args.mode not in ["self-host", "host"]:
-        parser.error("--mode is only accept 'self-host' or 'host'")
-    if args.mode == "self-host" and not args.api_key:
-        parser.error("--api_key is required when --mode is 'self-host'")
+    def parse_bool_flag(key: str, default: bool) -> bool:
+        val = os.environ.get(key, str(default))
+        return str(val).strip().lower() in ("1", "true", "yes", "on")
 
-    BASE_URL = os.environ.get("RAGFLOW_MCP_BASE_URL", args.base_url)
-    HOST = os.environ.get("RAGFLOW_MCP_HOST", args.host)
-    PORT = os.environ.get("RAGFLOW_MCP_PORT", args.port)
-    MODE = os.environ.get("RAGFLOW_MCP_LAUNCH_MODE", args.mode)
-    HOST_API_KEY = os.environ.get("RAGFLOW_MCP_HOST_API_KEY", args.api_key)
+    global BASE_URL, HOST, PORT, MODE, HOST_API_KEY, TRANSPORT_SSE_ENABLED, TRANSPORT_STREAMABLE_HTTP_ENABLED, JSON_RESPONSE
+    BASE_URL = os.environ.get("RAGFLOW_MCP_BASE_URL", base_url)
+    HOST = os.environ.get("RAGFLOW_MCP_HOST", host)
+    PORT = os.environ.get("RAGFLOW_MCP_PORT", str(port))
+    MODE = os.environ.get("RAGFLOW_MCP_LAUNCH_MODE", mode)
+    HOST_API_KEY = os.environ.get("RAGFLOW_MCP_HOST_API_KEY", api_key)
+    TRANSPORT_SSE_ENABLED = parse_bool_flag("RAGFLOW_MCP_TRANSPORT_SSE_ENABLED", transport_sse_enabled)
+    TRANSPORT_STREAMABLE_HTTP_ENABLED = parse_bool_flag("RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED", transport_streamable_http_enabled)
+    JSON_RESPONSE = parse_bool_flag("RAGFLOW_MCP_JSON_RESPONSE", json_response)
+
+    if MODE == LaunchMode.SELF_HOST and not HOST_API_KEY:
+        raise click.UsageError("--api-key is required when --mode is 'self-host'")
+
+    if TRANSPORT_STREAMABLE_HTTP_ENABLED and MODE == LaunchMode.HOST:
+        raise click.UsageError("The --host mode is not supported with streamable-http transport yet.")
+
+    if not TRANSPORT_STREAMABLE_HTTP_ENABLED and JSON_RESPONSE:
+        JSON_RESPONSE = False
 
     print(
         r"""
@@ -293,7 +366,7 @@ __  __  ____ ____       ____  _____ ______     _______ ____
 | |\/| | |   | |_) |    \___ \|  _| | |_) \ \ / /|  _| | |_) |
 | |  | | |___|  __/      ___) | |___|  _ < \ V / | |___|  _ <
 |_|  |_|\____|_|        |____/|_____|_| \_\ \_/  |_____|_| \_\
-    """,
+        """,
         flush=True,
     )
     print(f"MCP launch mode: {MODE}", flush=True)
@@ -301,8 +374,59 @@ __  __  ____ ____       ____  _____ ______     _______ ____
     print(f"MCP port: {PORT}", flush=True)
     print(f"MCP base_url: {BASE_URL}", flush=True)
 
+    if TRANSPORT_SSE_ENABLED:
+        print("SSE transport enabled: yes", flush=True)
+        print("SSE endpoint available at /sse", flush=True)
+    else:
+        print("SSE transport enabled: no", flush=True)
+
+    if TRANSPORT_STREAMABLE_HTTP_ENABLED:
+        print("Streamable HTTP transport enabled: yes", flush=True)
+        print("Streamable HTTP endpoint available at /mcp", flush=True)
+        if JSON_RESPONSE:
+            print("Streamable HTTP mode: JSON response enabled", flush=True)
+        else:
+            print("Streamable HTTP mode: SSE over HTTP enabled", flush=True)
+    else:
+        print("Streamable HTTP transport enabled: no", flush=True)
+        if JSON_RESPONSE:
+            print("Warning: --json-response ignored because streamable transport is disabled.", flush=True)
+
     uvicorn.run(
         create_starlette_app(),
         host=HOST,
         port=int(PORT),
     )
+
+
+if __name__ == "__main__":
+    """
+    Launch examples:
+
+    1. Self-host mode with both SSE and Streamable HTTP (in JSON response mode) enabled (default):
+        uv run mcp/server/server.py --host=127.0.0.1 --port=9382 \
+            --base-url=http://127.0.0.1:9380 \
+            --mode=self-host --api-key=ragflow-xxxxx
+
+    2. Host mode (multi-tenant, self-host only, clients must provide Authorization headers):
+        uv run mcp/server/server.py --host=127.0.0.1 --port=9382 \
+            --base-url=http://127.0.0.1:9380 \
+            --mode=host
+
+    3. Disable legacy SSE (only streamable HTTP will be active):
+        uv run mcp/server/server.py --no-transport-sse-enabled \
+            --mode=self-host --api-key=ragflow-xxxxx
+
+    4. Disable streamable HTTP (only legacy SSE will be active):
+        uv run mcp/server/server.py --no-transport-streamable-http-enabled \
+            --mode=self-host --api-key=ragflow-xxxxx
+
+    5. Use streamable HTTP with SSE-style events (disable JSON response):
+        uv run mcp/server/server.py --transport-streamable-http-enabled --no-json-response \
+            --mode=self-host --api-key=ragflow-xxxxx
+
+    6. Disable both transports (for testing):
+        uv run mcp/server/server.py --no-transport-sse-enabled --no-transport-streamable-http-enabled \
+            --mode=self-host --api-key=ragflow-xxxxx
+    """
+    main()

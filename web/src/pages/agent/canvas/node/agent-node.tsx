@@ -1,8 +1,9 @@
 import { IAgentNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { memo, useMemo } from 'react';
-import { NodeHandleId, Operator } from '../../constant';
+import { NodeHandleId } from '../../constant';
 import useGraphStore from '../../store';
+import { isBottomSubAgent } from '../../utils';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
@@ -16,19 +17,16 @@ function InnerAgentNode({
   isConnectable = true,
   selected,
 }: NodeProps<IAgentNode>) {
-  const getNode = useGraphStore((state) => state.getNode);
   const edges = useGraphStore((state) => state.edges);
 
-  const isNotParentAgent = useMemo(() => {
-    const edge = edges.find((x) => x.target === id);
-    const label = getNode(edge?.source)?.data.label;
-    return label !== Operator.Agent;
-  }, [edges, getNode, id]);
+  const isHeadAgent = useMemo(() => {
+    return !isBottomSubAgent(edges, id);
+  }, [edges, id]);
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
       <NodeWrapper>
-        {isNotParentAgent && (
+        {isHeadAgent && (
           <>
             <CommonHandle
               type="target"
@@ -54,13 +52,13 @@ function InnerAgentNode({
           type="target"
           position={Position.Top}
           isConnectable={false}
-          id="f"
+          id={NodeHandleId.AgentTop}
         ></Handle>
         <Handle
           type="source"
           position={Position.Bottom}
           isConnectable={false}
-          id="e"
+          id={NodeHandleId.AgentBottom}
           style={{ left: 180 }}
         ></Handle>
         <Handle

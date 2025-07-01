@@ -334,11 +334,57 @@ export const useSelectDerivedMessages = () => {
     [],
   );
 
+  const addNewestOneQuestion = useCallback((message: Message) => {
+    setDerivedMessages((pre) => {
+      return [
+        ...pre,
+        {
+          ...message,
+          id: buildMessageUuid(message), // The message id is generated on the front end,
+          // and the message id returned by the back end is the same as the question id,
+          //  so that the pair of messages can be deleted together when deleting the message
+        },
+      ];
+    });
+  }, []);
+
   // Add the streaming message to the last item in the message list
   const addNewestAnswer = useCallback((answer: IAnswer) => {
     setDerivedMessages((pre) => {
       return [
         ...(pre?.slice(0, -1) ?? []),
+        {
+          role: MessageType.Assistant,
+          content: answer.answer,
+          reference: answer.reference,
+          id: buildMessageUuid({
+            id: answer.id,
+            role: MessageType.Assistant,
+          }),
+          prompt: answer.prompt,
+          audio_binary: answer.audio_binary,
+          ...omit(answer, 'reference'),
+        },
+      ];
+    });
+  }, []);
+
+  // Add the streaming message to the last item in the message list
+  const addNewestOneAnswer = useCallback((answer: IAnswer) => {
+    setDerivedMessages((pre) => {
+      const idx = pre.findIndex((x) => x.id === answer.id);
+
+      if (idx !== -1) {
+        return pre.map((x) => {
+          if (x.id === answer.id) {
+            return { ...x, ...answer, content: answer.answer };
+          }
+          return x;
+        });
+      }
+
+      return [
+        ...(pre ?? []),
         {
           role: MessageType.Assistant,
           content: answer.answer,
@@ -406,6 +452,8 @@ export const useSelectDerivedMessages = () => {
     addNewestAnswer,
     removeLatestMessage,
     removeMessageById,
+    addNewestOneQuestion,
+    addNewestOneAnswer,
     removeMessagesAfterCurrentMessage,
   };
 };

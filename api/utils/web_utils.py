@@ -14,28 +14,28 @@
 #  limitations under the License.
 #
 
+import base64
+import ipaddress
+import json
 import re
 import socket
 from urllib.parse import urlparse
-import ipaddress
-import json
-import base64
 
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support.expected_conditions import staleness_of
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.expected_conditions import staleness_of
+from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 def html2pdf(
-        source: str,
-        timeout: int = 2,
-        install_driver: bool = True,
-        print_options: dict = {},
+    source: str,
+    timeout: int = 2,
+    install_driver: bool = True,
+    print_options: dict = {},
 ):
     result = __get_pdf_from_html(source, timeout, install_driver, print_options)
     return result
@@ -53,12 +53,7 @@ def __send_devtools(driver, cmd, params={}):
     return response.get("value")
 
 
-def __get_pdf_from_html(
-        path: str,
-        timeout: int,
-        install_driver: bool,
-        print_options: dict
-):
+def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_options: dict):
     webdriver_options = Options()
     webdriver_prefs = {}
     webdriver_options.add_argument("--headless")
@@ -78,9 +73,7 @@ def __get_pdf_from_html(
     driver.get(path)
 
     try:
-        WebDriverWait(driver, timeout).until(
-            staleness_of(driver.find_element(by=By.TAG_NAME, value="html"))
-        )
+        WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
     except TimeoutException:
         calculated_print_options = {
             "landscape": False,
@@ -89,8 +82,7 @@ def __get_pdf_from_html(
             "preferCSSPageSize": True,
         }
         calculated_print_options.update(print_options)
-        result = __send_devtools(
-            driver, "Page.printToPDF", calculated_print_options)
+        result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
         driver.quit()
         return base64.b64decode(result["data"])
 
@@ -101,6 +93,7 @@ def is_private_ip(ip: str) -> bool:
         return ip_obj.is_private
     except ValueError:
         return False
+
 
 def is_valid_url(url: str) -> bool:
     if not re.match(r"(https?)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", url):
@@ -117,3 +110,20 @@ def is_valid_url(url: str) -> bool:
     except socket.gaierror:
         return False
     return True
+
+
+def safe_json_parse(data: str | dict) -> dict:
+    if isinstance(data, dict):
+        return data
+    try:
+        return json.loads(data) if data else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
+    try:
+        parsed = float(req.get(key, default))
+        return parsed if parsed > 0 else default
+    except (TypeError, ValueError):
+        return default

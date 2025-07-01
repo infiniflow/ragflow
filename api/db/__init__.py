@@ -104,4 +104,11 @@ class CanvasType(StrEnum):
     ChatBot = "chatbot"
     DocBot = "docbot"
 
+
+class MCPServerType(StrEnum):
+    SSE = "sse"
+    STREAMABLE_HTTP = "streamable-http"
+
+VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
+
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"

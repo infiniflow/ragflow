@@ -629,4 +629,13 @@ class GPUStackRerank(Base):
 
 class NovitaRerank(JinaRerank):
     def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai/rerank"):
+        if not base_url:
+            base_url = "https://api.novita.ai/v3/openai/rerank"
+        super().__init__(key, model_name, base_url)
+
+
+class GiteeRerank(JinaRerank):
+    def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/rerank"):
+        if not base_url:
+            base_url = "https://ai.gitee.com/v1/rerank"
         super().__init__(key, model_name, base_url)
