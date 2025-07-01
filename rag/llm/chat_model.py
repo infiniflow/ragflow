@@ -1596,7 +1596,9 @@ class GoogleChat(Base):
             if "role" in item and item["role"] == "assistant":
                 item["role"] = "model"
             if "content" in item:
-                item["parts"] = item.pop("content")
+                item["parts"] = [{
+                    "text": item.pop("content"),
+                }]
 
         response = self.client.generate_content(hist, generation_config=gen_conf)
         ans = response.text
