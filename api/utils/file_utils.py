@@ -29,7 +29,6 @@ import pdfplumber
 from cachetools import LRUCache, cached
 from PIL import Image
 from ruamel.yaml import YAML
-from pathlib import Path
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 
@@ -318,12 +317,12 @@ def get_libreoffice_path():
         else:
             return subprocess.check_output("which libreoffice || which soffice",
                                            shell=True).decode().strip()
-    except:
+    except (subprocess.CalledProcessError,OSError):
         raise RuntimeError(
             "LibreOffice not found. Please install LibreOffice or specify the path manually.")
 
 
-def convert_to_pdf(blob: bytes, output_dir: str = None) -> str:
+def convert_to_pdf(blob: bytes, output_dir: str = None) -> bytes:
     if output_dir is None:
         output_dir = tempfile.gettempdir()
     libreoffice_path = get_libreoffice_path()
@@ -353,5 +352,8 @@ def convert_to_pdf(blob: bytes, output_dir: str = None) -> str:
 
     if not os.path.exists(pdf_path):
         raise FileNotFoundError("PDF file dose not generated")
-
-    return pdf_path
+    with open(pdf_path, "rb") as file:
+        pdf =  file.read()
+    # delete tmp file
+    os.remove(pdf_path)
+    return pdf

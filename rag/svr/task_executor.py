@@ -568,10 +568,8 @@ async def do_handle_task(task):
         start_ts = timer()
         bucket, name = File2DocumentService.get_storage_address(doc_id=task["doc_id"])
         binary = await get_storage_binary(bucket, name)
-        pdf_path = convert_to_pdf(binary)
+        pdf = convert_to_pdf(binary)
         pdf_name = os.path.splitext(name)[0] + ".pdf"
-        with open(pdf_path, "rb") as file:
-            pdf = file.read()
         file = {
             "id": get_uuid(),
             "parent_id": task["kb_id"],
@@ -583,8 +581,6 @@ async def do_handle_task(task):
         file = FileService.insert(file)
         File2DocumentService.update_by_doc_id(task["doc_id"], {"pdf_file_id":file.id})
         STORAGE_IMPL.put(task["kb_id"],pdf_name, pdf)
-        # delete tmp file
-        os.remove(pdf_path)
         progress_callback(prog=1.0, msg="Convert to Pdf done ({:.2f}s)".format(
             timer() - start_ts))
         return
