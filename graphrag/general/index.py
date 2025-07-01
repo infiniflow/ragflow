@@ -57,7 +57,7 @@ async def run_graphrag(
 
     subgraph = await generate_subgraph(
         LightKGExt
-        if "method" not in row["kb_parser_config"]["graphrag"] or row["kb_parser_config"]["graphrag"]["method"] != "general"
+        if "method" not in row["kb_parser_config"].get("graphrag", {}) or row["kb_parser_config"]["graphrag"]["method"] != "general"
         else GeneralKGExt,
         tenant_id,
         kb_id,
