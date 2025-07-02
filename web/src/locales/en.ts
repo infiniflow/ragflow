@@ -552,6 +552,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     setting: {
       profile: 'Profile',
       avatar: 'Avatar',
+      avatarTip: 'This will be displayed on your profile.',
       profileDescription: 'Update your photo and personal details here.',
       maxTokens: 'Max Tokens',
       maxTokensMessage: 'Max Tokens is required',
@@ -584,6 +585,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       currentPassword: 'Current password',
       currentPasswordMessage: 'Please input your password!',
       newPassword: 'New password',
+      changePassword: 'Change Password',
       newPasswordMessage: 'Please input your password!',
       newPasswordDescription:
         'Your new password must be more than 8 characters.',
