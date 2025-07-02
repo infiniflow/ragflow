@@ -249,8 +249,9 @@ def list_tools() -> Response:
 
                 try:
                     tools = tool_call_session.get_tools(timeout)
-                except Exception:
+                except Exception as e:
                     tools = []
+                    return get_data_error_result(message=f"MCP list tools error: {e}")
 
                 results[server_key] = []
                 for tool in tools:
@@ -322,3 +323,45 @@ def cache_tool() -> Response:
         return get_data_error_result(message="Failed to updated MCP server.")
 
     return get_json_result(data=tools)
+
+
+@manager.route("/test_mcp", methods=["POST"])  # noqa: F821
+@validate_request("url", "server_type")
+def test_mcp() -> Response:
+    req = request.get_json()
+
+    url = req.get("url", "")
+    if not url:
+        return get_data_error_result(message="Invaild MCP url.")
+
+    server_type = req.get("server_type", "")
+    if server_type not in VALID_MCP_SERVER_TYPES:
+        return get_data_error_result(message="Unsupported MCP server type.")
+
+    timeout = get_float(req, "timeout", 10)
+    headers = safe_json_parse(req.get("headers", {}))
+    variables = safe_json_parse(req.get("variables", {}))
+
+    mcp_server = MCPServer(id=f"{server_type}: {url}", server_type=server_type, url=url, headers=headers, variables=variables)
+
+    result = []
+    try:
+        tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+
+        try:
+            tools = tool_call_session.get_tools(timeout)
+        except Exception as e:
+            tools = []
+            return get_data_error_result(message=f"Test MCP error: {e}")
+        finally:
+            # PERF: blocking call to close sessions — consider moving to background thread or task queue
+            close_multiple_mcp_toolcall_sessions([tool_call_session])
+
+        for tool in tools:
+            tool_dict = tool.model_dump()
+            tool_dict["enabled"] = True
+            result.append(tool_dict)
+
+        return get_json_result(data=result)
+    except Exception as e:
+        return server_error_response(e)
