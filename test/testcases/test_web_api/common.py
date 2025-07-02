@@ -24,9 +24,7 @@ HEADERS = {"Content-Type": "application/json"}
 
 KB_APP_URL = f"/{VERSION}/kb"
 DOCUMENT_APP_URL = f"/{VERSION}/document"
-# FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
-# FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
-# CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
+CHUNK_API_URL = f"/{VERSION}/chunk"
 # CHAT_ASSISTANT_API_URL = "/api/v1/chats"
 # SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 # SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
@@ -164,3 +162,42 @@ def bulk_upload_documents(auth, kb_id, num, tmp_path):
     for document in res["data"]:
         document_ids.append(document["id"])
     return document_ids
+
+
+# CHUNK APP
+def add_chunk(auth, payload=None, *, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def list_chunks(auth, payload=None, *, headers=HEADERS):
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/list", headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
+def get_chunk(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/get", headers=headers, auth=auth, params=params)
+    return res.json()
+
+
+def update_chunk(auth, payload=None, *, headers=HEADERS):
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/set", headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_chunks(auth, payload=None, *, headers=HEADERS):
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/rm", headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
+def retrieval_chunks(auth, payload=None, *, headers=HEADERS):
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/retrieval_test", headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
+def batch_add_chunks(auth, doc_id, num):
+    chunk_ids = []
+    for i in range(num):
+        res = add_chunk(auth, {"doc_id": doc_id, "content_with_weight": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk_id"])
+    return chunk_ids
