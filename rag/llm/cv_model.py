@@ -240,7 +240,7 @@ class QWenCV(Base):
         # stupid as hell
         tmp_dir = get_project_base_directory("tmp")
         if not os.path.exists(tmp_dir):
-            os.mkdir(tmp_dir)
+            os.makedirs(tmp_dir, exist_ok=True)
         path = os.path.join(tmp_dir, "%s.jpg" % get_uuid())
         Image.open(io.BytesIO(binary)).save(path)
         return [
@@ -262,7 +262,7 @@ class QWenCV(Base):
         # stupid as hell
         tmp_dir = get_project_base_directory("tmp")
         if not os.path.exists(tmp_dir):
-            os.mkdir(tmp_dir)
+            os.makedirs(tmp_dir, exist_ok=True)
         path = os.path.join(tmp_dir, "%s.jpg" % get_uuid())
         Image.open(io.BytesIO(binary)).save(path)
 
