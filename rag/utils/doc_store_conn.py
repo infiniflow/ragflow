@@ -216,9 +216,12 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def insert(self, rows: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
+    def insert(self, rows: list[dict], indexName: str, knowledgebaseId: str = None) -> tuple[list[str], int]:
         """
         Update or insert a bulk of rows
+        Returns:
+            tuple[list[str], int]: A tuple containing (chunk_ids, real_insert_count)
+            where real_insert_count is the number of newly inserted documents (excluding updates)
         """
         raise NotImplementedError("Not implemented")
 

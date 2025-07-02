@@ -265,10 +265,9 @@ def create():
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
-        settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
-
+        _, insert_count = settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
         DocumentService.increment_chunk_num(
-            doc.id, doc.kb_id, c, 1, 0)
+            doc.id, doc.kb_id, c, insert_count, 0)
         return get_json_result(data={"chunk_id": chunck_id})
     except Exception as e:
         return server_error_response(e)
