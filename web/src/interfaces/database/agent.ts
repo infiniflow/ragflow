@@ -3,6 +3,7 @@ export interface ICategorizeItem {
   description?: string;
   examples?: { value: string }[];
   index: number;
+  to: string[];
 }
 
 export type ICategorizeItemResult = Record<

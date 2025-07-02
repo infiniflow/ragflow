@@ -1,5 +1,6 @@
 import {
   IAgentForm,
+  ICategorizeForm,
   ICategorizeItem,
   ICategorizeItemResult,
 } from '@/interfaces/database/agent';
@@ -158,6 +159,33 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
   return params;
 }
 
+function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
+  return edges.filter((x) => x.sourceHandle === handleId).map((x) => x.target);
+}
+
+function buildCategorizeTos(edges: Edge[], nodes: Node[], nodeId: string) {
+  const node = nodes.find((x) => x.id === nodeId);
+  const params = { ...(node?.data.form ?? {}) } as ICategorizeForm;
+  if (node && node.data.label === Operator.Categorize) {
+    const subEdges = edges.filter((x) => x.source === nodeId);
+
+    const categoryDescription = params.category_description || {};
+
+    const nextCategoryDescription = Object.entries(categoryDescription).reduce<
+      ICategorizeForm['category_description']
+    >((pre, [key, val]) => {
+      pre[key] = {
+        ...val,
+        to: filterTargetsBySourceHandleId(subEdges, key),
+      };
+      return pre;
+    }, {});
+
+    params.category_description = nextCategoryDescription;
+  }
+  return params;
+}
+
 const buildOperatorParams = (operatorName: string) =>
   pipe(
     removeUselessDataInTheOperator(operatorName),
@@ -190,8 +218,20 @@ export const buildDslComponentsByGraph = (
     .forEach((x) => {
       const id = x.id;
       const operatorName = x.data.label;
+      let params = x?.data.form ?? {};
 
-      const params = buildAgentTools(edges, nodes, id);
+      switch (operatorName) {
+        case Operator.Agent:
+          params = buildAgentTools(edges, nodes, id);
+          break;
+        case Operator.Categorize:
+          params = buildCategorizeTos(edges, nodes, id);
+          break;
+
+        default:
+          break;
+      }
+
       components[id] = {
         obj: {
           ...(oldDslComponents[id]?.obj ?? {}),
