@@ -8,7 +8,7 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { Input } from './ui/input';
+import { NumberInput } from './ui/input';
 
 const MessageHistoryWindowSizeItem = ({
   initialValue,
@@ -45,7 +45,7 @@ export function MessageHistoryWindowSizeFormField() {
             {t('flow.messageHistoryWindowSize')}
           </FormLabel>
           <FormControl>
-            <Input {...field} type={'number'}></Input>
+            <NumberInput {...field}></NumberInput>
           </FormControl>
           <FormMessage />
         </FormItem>

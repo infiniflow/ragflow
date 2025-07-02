@@ -54,7 +54,10 @@ const FormSheet = ({
 
   return (
     <Sheet open={visible} modal={false}>
-      <SheetContent className={cn('top-20 p-0')} closeIcon={false}>
+      <SheetContent
+        className={cn('top-20 p-0 flex flex-col pb-20')}
+        closeIcon={false}
+      >
         <SheetHeader>
           <SheetTitle className="hidden"></SheetTitle>
           <section className="flex-col border-b py-2 px-5">
@@ -86,7 +89,7 @@ const FormSheet = ({
             <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
           </section>
         </SheetHeader>
-        <section className="pt-4 overflow-auto max-h-[85vh]">
+        <section className="pt-4 overflow-auto flex-1">
           {visible && (
             <AgentFormContext.Provider value={node}>
               <OperatorForm node={node} key={node?.id}></OperatorForm>

@@ -54,9 +54,7 @@ const CategorizeForm = ({ form, node }: INextOperatorForm) => {
           <QueryVariable></QueryVariable>
           <LargeModelFormField></LargeModelFormField>
         </FormContainer>
-        <MessageHistoryWindowSizeFormField
-          useBlurInput
-        ></MessageHistoryWindowSizeFormField>
+        <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
         <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
       </form>
     </Form>

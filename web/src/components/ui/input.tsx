@@ -68,3 +68,18 @@ const SearchInput = (props: InputProps) => {
 };
 
 export { ExpandedInput, Input, SearchInput };
+
+type NumberInputProps = { onChange?(value: number): void } & InputProps;
+
+export const NumberInput = ({ onChange, ...props }: NumberInputProps) => {
+  return (
+    <Input
+      type="number"
+      onChange={(ev) => {
+        const value = ev.target.value;
+        onChange?.(value === '' ? 0 : Number(value)); // convert to number
+      }}
+      {...props}
+    ></Input>
+  );
+};

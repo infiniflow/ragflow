@@ -47,7 +47,7 @@ const GoogleModal = ({
       onCancel={hideModal}
       okButtonProps={{ loading }}
     >
-      <Form>
+      <Form form={form}>
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
