@@ -600,7 +600,7 @@ async def do_handle_task(task):
             raise
 
     for b in range(0, len(chunks), DOC_BULK_SIZE):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        doc_store_result, _ = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
         task_canceled = TaskService.do_cancel(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")

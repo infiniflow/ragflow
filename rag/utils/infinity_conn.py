@@ -463,7 +463,7 @@ class InfinityConnection(DocStoreConnection):
 
     def insert(
             self, documents: list[dict], indexName: str, knowledgebaseId: str = None
-    ) -> list[str]:
+    ) -> tuple[list[str], int]:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -526,14 +526,16 @@ class InfinityConnection(DocStoreConnection):
         ids = ["'{}'".format(d["id"]) for d in docs]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
-        table_instance.delete(str_filter)
+        delete_res = table_instance.delete(str_filter)
+        delete_count = delete_res.deleted_rows
         # for doc in documents:
         #     logger.info(f"insert position_int: {doc['position_int']}")
         # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(docs)
         self.connPool.release_conn(inf_conn)
+        real_insert_count = documents.count - delete_count
         logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
-        return []
+        return [], real_insert_count
 
     def update(
             self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str

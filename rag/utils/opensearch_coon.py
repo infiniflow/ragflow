@@ -285,9 +285,10 @@ class OSConnection(DocStoreConnection):
         logger.error(f"OSConnection.get timeout for {ATTEMPT_TIME} times!")
         raise Exception("OSConnection.get timeout.")
 
-    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
+    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> tuple[list[str], int]:
         # Refers to https://opensearch.org/docs/latest/api-reference/document-apis/bulk/
         operations = []
+        insert_count = len(documents)
         for d in documents:
             assert "_id" not in d
             assert "id" in d
@@ -300,17 +301,21 @@ class OSConnection(DocStoreConnection):
         res = []
         for _ in range(ATTEMPT_TIME):
             try:
+                temp_count = 0
                 res = []
                 r = self.os.bulk(index=(indexName), body=operations,
                                  refresh=False, timeout=60)
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
-                    return res
+                    return res, 0
 
                 for item in r["items"]:
                     for action in ["create", "delete", "index", "update"]:
                         if action in item and "error" in item[action]:
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
-                return res
+                        if "result" in item[action] and item[action]["result"] == "created":
+                            temp_count += 1
+                insert_count = temp_count
+                return res, insert_count
             except Exception as e:
                 res.append(str(e))
                 logger.warning("OSConnection.insert got exception: " + str(e))
@@ -319,7 +324,8 @@ class OSConnection(DocStoreConnection):
                     res.append(str(e))
                     time.sleep(3)
                     continue
-        return res
+        return res, insert_count
+
 
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
