@@ -661,16 +661,12 @@ export const initialIterationStartValues = {
 };
 
 export const initialCodeValues = {
-  lang: 'python',
+  lang: ProgrammingLanguage.Python,
   script: CodeTemplateStrMap[ProgrammingLanguage.Python],
-  arguments: [
-    {
-      name: 'arg1',
-    },
-    {
-      name: 'arg2',
-    },
-  ],
+  arguments: {
+    arg1: '',
+    arg2: '',
+  },
 };
 
 export const initialWaitingDialogueValues = {};

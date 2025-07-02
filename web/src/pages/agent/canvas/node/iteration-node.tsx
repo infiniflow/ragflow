@@ -11,6 +11,7 @@ import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
+import { ToolBar } from './toolbar';
 
 function ResizeIcon() {
   return (
@@ -55,10 +56,13 @@ export function IterationNode({
 
   return (
     <section
-      className={cn('h-full bg-transparent rounded-b-md', {
+      className={cn('h-full bg-transparent rounded-b-md relative', {
         [styles.selectedHeader]: selected,
       })}
     >
+      <ToolBar selected={selected} id={id} label={data.label}>
+        <div className="h-full w-full"></div>
+      </ToolBar>
       <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
         <ResizeIcon />
       </NodeResizeControl>
