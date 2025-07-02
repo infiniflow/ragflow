@@ -66,7 +66,26 @@ class CodeExecParam(ToolParamBase):
     def __init__(self):
         self.meta:ToolMeta = {
             "name": "execute_code",
-            "description": "This tool has a sandbox that can execute code written in 'Python'/'Javascript'. It recieves a piece of code and return a Json string",
+            "description": """
+This tool has a sandbox that can execute code written in 'Python'/'Javascript'. It recieves a piece of code and return a Json string.
+Here's a code example for Python(`main` function MUST be included):
+def main(arg1: str, arg2: str) -> dict:
+    return {
+        "result": arg1 + arg2,
+    }
+    
+Here's a code example for Javascript(`main` function MUST be included and exported):
+const axios = require('axios');
+async function main(args) {
+  try {
+    const response = await axios.get('https://github.com/infiniflow/ragflow');
+    console.log('Body:', response.data);
+  } catch (error) {
+    console.error('Error:', error.message);
+  }
+}
+module.exports = { main };
+            """,
             "parameters": {
                 "lang": {
                     "type": "string",
@@ -76,7 +95,7 @@ class CodeExecParam(ToolParamBase):
                 },
                 "script": {
                     "type": "string",
-                    "description": "A piece of code in right format",
+                    "description": "A piece of code in right format. There MUST be main function.",
                     "required": True
                 }
             }
@@ -127,12 +146,12 @@ class CodeExec(ToolBase, ABC):
                     self.set_output("_ERROR", stderr)
                     return
 
-                for k,v in json_repair.loads(body.get("stdout")).items():
-                    if k not in self._param.outputs:
-                        continue
-                    self.set_output(k ,v)
+                try:
+                    self.set_output("result", json_repair.loads(body.get("stdout")))
+                except:
+                    self.set_output("result", body.get("stdout"))
             else:
-                self.set_output("_ERROR", "There is no response from sanbox")
+                self.set_output("_ERROR", "There is no response from sandbox")
 
         except Exception as e:
             self.set_output("_ERROR", "construct code request error: " + str(e))

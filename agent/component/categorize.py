@@ -21,6 +21,7 @@ from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import LLMParam, LLM
 from api.utils.api_utils import timeout
+from rag.llm.chat_model import ERROR_PREFIX
 
 
 class CategorizeParam(LLMParam):
@@ -31,7 +32,7 @@ class CategorizeParam(LLMParam):
     def __init__(self):
         super().__init__()
         self.category_description = {}
-        self.prompts = []
+        self.update_prompt()
 
     def check(self):
         super().check()
@@ -88,16 +89,16 @@ class Categorize(LLM, ABC):
     def _invoke(self, **kwargs):
         msg = self._canvas.get_history(self._param.message_history_window_size)
         self._param.update_prompt()
-        args = self.get_input_elements()
-        prompt = self.string_format(self._param.sys_prompt, args)
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
 
         user_prompt = """
 ---- Real Data ----
 {} → 
 """.format(" | ".join(["{}: \"{}\"".format(c["role"].upper(), re.sub(r"\n", "", c["content"], flags=re.DOTALL)) for c in msg]))
-        ans = chat_mdl.chat(prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
-        logging.debug(f"input: {input}, answer: {str(ans)}")    
+        ans = chat_mdl.chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
+        logging.info(f"input: {user_prompt}, answer: {str(ans)}")
+        if ERROR_PREFIX in ans:
+            raise Exception(ans)
         # Count the number of times each category appears in the answer.
         category_counts = {}
         for c in self._param.category_description.keys():

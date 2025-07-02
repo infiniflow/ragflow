@@ -165,6 +165,20 @@ class Canvas:
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
 
+        for k in self.globals.keys():
+            if isinstance(self.globals[k], str):
+                self.globals[k] = ""
+            elif isinstance(self.globals[k], int):
+                self.globals[k] = 0
+            elif isinstance(self.globals[k], float):
+                self.globals[k] = 0
+            elif isinstance(self.globals[k], list):
+                self.globals[k] = []
+            elif isinstance(self.globals[k], dict):
+                self.globals[k] = {}
+            else:
+                self.globals[k] = None
+
     def get_component_name(self, cid):
         for n in self.dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
@@ -183,6 +197,8 @@ class Canvas:
                     self.globals[f"sys.{k}"] = self.get_files(kwargs[k])
                 else:
                     self.globals[f"sys.{k}"] = kwargs[k]
+        if not self.globals["sys.conversation_turns"] :
+            self.globals["sys.conversation_turns"] = 0
         self.globals["sys.conversation_turns"] += 1
 
         def decorate(event, dt):
@@ -224,6 +240,20 @@ class Canvas:
                            "created_at": cpn_obj.output("_created_time"),
                        })
 
+        def _node_logs(cpn_obj, tools_json):
+            try:
+                tools_json = json.loads(re.sub(r"(<tool_call>|</tool_call>)", "", tools_json, flags=re.DOTALL))
+            except:
+                pass
+            return decorate("node_logs",{
+                           "inputs": cpn_obj.get_input_values(),
+                           "logs": tools_json,
+                           "component_id": cpn_obj._id,
+                           "error": cpn_obj.error(),
+                           "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
+                           "created_at": cpn_obj.output("_created_time"),
+                       })
+
         error = ""
         idx = len(self.path) - 1
         partials = []
@@ -246,6 +276,8 @@ class Canvas:
                                 yield decorate("message", {"content": "", "start_to_think": True})
                             elif m == "</think>":
                                 yield decorate("message", {"content": "", "end_to_think": True})
+                            elif m.find("<tool_call>") >=0:
+                                yield _node_logs(cpn["obj"], m)
                             else:
                                 yield decorate("message", {"content": m})
                                 _m += m

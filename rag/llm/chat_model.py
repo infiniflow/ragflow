@@ -199,7 +199,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds+1):
                     print(f"{self.tools=}")
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, **gen_conf)
+                    response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -217,8 +217,12 @@ class Base(ABC):
                     for tool_call in response.choices[0].message.tool_calls:
                         print(f"response {tool_call=}")
                         name = tool_call.function.name
+                        print(f"{name=} ---------------------------------------")
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
+                            if name == "complete_task":
+                                print("TASK COMPLETE........................................")
+                                return args["answer"], tk_count
                             tool_response = self.toolcall_session.tool_call(name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             ans += self._verbose_tool_use(name, args, tool_response)
@@ -278,7 +282,8 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds+1):
                     reasoning_start = False
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
+                    print(f"{tools=}")
+                    response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
                     final_tool_calls = {}
                     answer = ""
                     for resp in response:
@@ -330,6 +335,12 @@ class Base(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
+                            yield self._verbose_tool_use(name, args, "Begin to call...")
+                            if name == "complete_task":
+                                print("COMPLETE TASK ........................................")
+                                yield args["answer"]
+                                yield total_tokens
+                                return
                             tool_response = self.toolcall_session.tool_call(name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
@@ -1444,79 +1455,10 @@ class BaiduYiyanChat(Base):
 
 
 class AnthropicChat(Base):
-    def __init__(self, key, model_name, base_url=None, **kwargs):
+    def __init__(self, key, model_name, base_url="https://api.anthropic.com/v1/", **kwargs):
+        if not base_url:
+            base_url = "https://api.anthropic.com/v1/"
         super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        import anthropic
-
-        self.client = anthropic.Anthropic(api_key=key)
-        self.model_name = model_name
-
-    def _clean_conf(self, gen_conf):
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
-        gen_conf["max_tokens"] = 8192
-        if "haiku" in self.model_name or "opus" in self.model_name:
-            gen_conf["max_tokens"] = 4096
-        return gen_conf
-
-    def _chat(self, history, gen_conf):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        response = self.client.messages.create(
-            model=self.model_name,
-            messages=[h for h in history if h["role"] != "system"],
-            system=system,
-            stream=False,
-            **gen_conf,
-        ).to_dict()
-        ans = response["content"][0]["text"]
-        if response["stop_reason"] == "max_tokens":
-            ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-        return (
-            ans,
-            response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
-        )
-
-    def chat_streamly(self, system, history, gen_conf):
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
-        gen_conf["max_tokens"] = 8192
-        if "haiku" in self.model_name or "opus" in self.model_name:
-            gen_conf["max_tokens"] = 4096
-
-        ans = ""
-        total_tokens = 0
-        reasoning_start = False
-        try:
-            response = self.client.messages.create(
-                model=self.model_name,
-                messages=history,
-                system=system,
-                stream=True,
-                **gen_conf,
-            )
-            for res in response:
-                if res.type == "content_block_delta":
-                    if res.delta.type == "thinking_delta" and res.delta.thinking:
-                        ans = ""
-                        if not reasoning_start:
-                            reasoning_start = True
-                            ans = "<think>"
-                        ans += res.delta.thinking + "</think>"
-                    else:
-                        reasoning_start = False
-                        text = res.delta.text
-                        ans = text
-                        total_tokens += num_tokens_from_string(text)
-                    yield ans
-        except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
-
-        yield total_tokens
 
 
 class GoogleChat(Base):

@@ -13,9 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import logging
 import os
 import re
+from copy import deepcopy
 from functools import partial
 from typing import Any
 
@@ -79,17 +81,45 @@ class Agent(LLM, ToolBase):
                                   max_rounds=self._param.max_rounds,
                                   verbose_tool_use=True
                                   )
-        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools), [v.get_meta() for _,v in self.tools.items()])
+        tool_metas = [v.get_meta() for _,v in self.tools.items()]
+        tool_metas.append({
+            "type": "function",
+            "function": {
+                "name": "complete_task",
+                "description": "When you have the final answer and are ready to complete the task, call this function with your answer",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"answer":{"type":"string", "description": "The final answer to the user's question"}},
+                    "required": ["answer"]
+                }
+            }
+        })
+        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools),tool_metas)
 
     def get_meta(self) -> dict[str, Any]:
         self._param.function_name= self._id
         return super().get_meta()
 
-    def _extract_tool_use(self, ans, use_tools):
+    def _extract_tool_use(self, ans, use_tools, clean=False):
         patt = r"<tool_call>(.*?)</tool_call>"
+        s = 0
+        txt = ""
         for r in re.finditer(patt, ans, flags=re.DOTALL):
-            use_tools.append(json_repair.loads(r.group(1)))
-        return re.sub(patt, "", ans, flags=re.DOTALL)
+            try:
+                res = json_repair.loads(r.group(1))
+                if isinstance(res["result"], dict):
+                    use_tools.append(deepcopy(res))
+                    res["result"] = "End"
+                txt += "<tool_call>{}</tool_call>".format(ans[s: r.start()] + json.dumps(res, ensure_ascii=False, indent=2))
+            except:
+                txt += "<tool_call>{}</tool_call>".format(r.group(1))
+
+            s = r.end()
+        if s < len(ans):
+            txt += ans[s:]
+        if clean:
+            return re.sub(patt, "", txt, flags=re.DOTALL)
+        return txt
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
@@ -114,7 +144,7 @@ class Agent(LLM, ToolBase):
             self.set_output("_ERROR", ans)
             return
         use_tools = []
-        ans = self._extract_tool_use(ans, use_tools)
+        ans = self._extract_tool_use(ans, use_tools, True)
         self.set_output("content", ans)
         if use_tools:
             self.set_output("use_tools", use_tools)
