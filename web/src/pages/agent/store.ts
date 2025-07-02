@@ -66,7 +66,6 @@ export type RFState = {
     target?: string | null,
     isConnecting?: boolean,
   ) => void;
-  deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
   duplicateNode: (id: string, name: string) => void;
   duplicateIterationNode: (id: string, name: string) => void;
   deleteEdge: () => void;
@@ -122,14 +121,10 @@ const useGraphStore = create<RFState>()(
         setEdges(mapEdgeMouseEvent(edges, edgeId, false));
       },
       onConnect: (connection: Connection) => {
-        const {
-          deletePreviousEdgeOfClassificationNode,
-          updateFormDataOnConnect,
-        } = get();
+        const { updateFormDataOnConnect } = get();
         set({
           edges: addEdge(connection, get().edges),
         });
-        deletePreviousEdgeOfClassificationNode(connection);
         updateFormDataOnConnect(connection);
       },
       onSelectionChange: ({ nodes, edges }: OnSelectionChangeParams) => {
@@ -216,7 +211,6 @@ const useGraphStore = create<RFState>()(
         set({
           edges: addEdge(connection, get().edges),
         });
-        get().deletePreviousEdgeOfClassificationNode(connection);
         //  TODO: This may not be reasonable. You need to choose between listening to changes in the form.
         get().updateFormDataOnConnect(connection);
       },
@@ -224,54 +218,17 @@ const useGraphStore = create<RFState>()(
         return get().edges.find((x) => x.id === id);
       },
       updateFormDataOnConnect: (connection: Connection) => {
-        const { getOperatorTypeFromId, updateNodeForm, updateSwitchFormData } =
-          get();
+        const { getOperatorTypeFromId, updateSwitchFormData } = get();
         const { source, target, sourceHandle } = connection;
         const operatorType = getOperatorTypeFromId(source);
         if (source) {
           switch (operatorType) {
-            case Operator.Relevant:
-              updateNodeForm(source, { [sourceHandle as string]: target });
-              break;
-            case Operator.Categorize:
-              if (sourceHandle)
-                updateNodeForm(source, target, [
-                  'category_description',
-                  sourceHandle,
-                  'to',
-                ]);
-              break;
             case Operator.Switch: {
               updateSwitchFormData(source, sourceHandle, target, true);
               break;
             }
             default:
               break;
-          }
-        }
-      },
-      deletePreviousEdgeOfClassificationNode: (connection: Connection) => {
-        // Delete the edge on the classification node or relevant node anchor when the anchor is connected to other nodes
-        const { edges, getOperatorTypeFromId, deleteEdgeById } = get();
-        // the node containing the anchor
-        const anchoredNodes = [
-          Operator.Categorize,
-          Operator.Relevant,
-          // Operator.Switch,
-        ];
-        if (
-          anchoredNodes.some(
-            (x) => x === getOperatorTypeFromId(connection.source),
-          )
-        ) {
-          const previousEdge = edges.find(
-            (x) =>
-              x.source === connection.source &&
-              x.sourceHandle === connection.sourceHandle &&
-              x.target !== connection.target,
-          );
-          if (previousEdge) {
-            deleteEdgeById(previousEdge.id);
           }
         }
       },
