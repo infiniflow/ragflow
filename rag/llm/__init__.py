@@ -112,6 +112,7 @@ from .cv_model import (
     AnthropicCV,
     SILICONFLOWCV,
     GPUStackCV,
+    GoogleCV,
 )
 
 from .rerank_model import (
@@ -211,7 +212,8 @@ CvModel = {
     "Tencent Hunyuan": HunyuanCV,
     "Anthropic": AnthropicCV,
     "SILICONFLOW": SILICONFLOWCV,
-    "GPUStack": GPUStackCV
+    "GPUStack": GPUStackCV,
+    "Google Cloud": GoogleCV
 }
 
 ChatModel = {
