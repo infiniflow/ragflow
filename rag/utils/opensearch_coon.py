@@ -312,7 +312,7 @@ class OSConnection(DocStoreConnection):
                     for action in ["create", "delete", "index", "update"]:
                         if action in item and "error" in item[action]:
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
-                        if "result" in item[action] and item[action]["result"] == "created":
+                        if action in item and "result" in item[action] and item[action]["result"] == "created":
                             temp_count += 1
                 insert_count = temp_count
                 return res, insert_count
