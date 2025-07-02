@@ -81,7 +81,7 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
-  Code = 'Code',
+  Code = 'CodeExec',
   WaitingDialogue = 'WaitingDialogue',
   Agent = 'Agent',
   Tool = 'Tool',
