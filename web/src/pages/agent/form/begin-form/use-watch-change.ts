@@ -4,7 +4,7 @@ import { UseFormReturn, useWatch } from 'react-hook-form';
 import { BeginQuery } from '../../interface';
 import useGraphStore from '../../store';
 
-function transferInputsArrayToObject(inputs: BeginQuery[] = []) {
+export function transferInputsArrayToObject(inputs: BeginQuery[] = []) {
   return inputs.reduce<Record<string, Omit<BeginQuery, 'key'>>>((pre, cur) => {
     pre[cur.key] = omit(cur, 'key');
 

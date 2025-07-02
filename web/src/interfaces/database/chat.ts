@@ -98,7 +98,7 @@ export interface IReference {
 
 export interface IAnswer {
   answer: string;
-  reference: IReference;
+  reference?: IReference;
   conversationId?: string;
   prompt?: string;
   id?: string;

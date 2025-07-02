@@ -3,6 +3,14 @@ import { useCallback, useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../../store';
 
+function convertToObject(list: Array<{ name: string; component_id: string }>) {
+  return list.reduce<Record<string, string>>((pre, cur) => {
+    pre[cur.name] = cur.component_id;
+
+    return pre;
+  }, {});
+}
+
 export function useWatchFormChange(id?: string, form?: UseFormReturn) {
   let values = useWatch({ control: form?.control });
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
@@ -11,7 +19,10 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
     // Manually triggered form updates are synchronized to the canvas
     if (id) {
       values = form?.getValues() || {};
-      let nextValues: any = values;
+      let nextValues: any = {
+        ...values,
+        arguments: convertToObject(values.arguments),
+      };
 
       updateNodeForm(id, nextValues);
     }

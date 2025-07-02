@@ -37,7 +37,7 @@ export class VariableNode extends DecoratorNode<ReactNode> {
     let content: ReactNode = (
       <span className="text-blue-600">{this.__label}</span>
     );
-    if (this.__value.startsWith(prefix)) {
+    if (this.__value?.startsWith(prefix)) {
       content = (
         <div>
           <span>{i18n.t(`flow.begin`)}</span> / {content}
