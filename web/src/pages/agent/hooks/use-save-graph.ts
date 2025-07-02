@@ -25,7 +25,7 @@ export const useSaveGraph = () => {
         dsl: buildDslData(currentNodes),
       });
     },
-    [setAgent, data, id, buildDslData],
+    [setAgent, id, data.title, buildDslData],
   );
 
   return { saveGraph, loading };

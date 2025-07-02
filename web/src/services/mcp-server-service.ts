@@ -21,15 +21,15 @@ const methods = {
   },
   add: {
     url: createMcpServer,
-    method: 'post'
+    method: 'post',
   },
   update: {
     url: updateMcpServer,
-    method: 'post'
+    method: 'post',
   },
   rm: {
     url: deleteMcpServer,
-    method: 'post'
+    method: 'post',
   },
 } as const;
 

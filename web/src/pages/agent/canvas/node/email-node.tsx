@@ -2,12 +2,12 @@ import { IEmailNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import { memo, useState } from 'react';
+import { useState } from 'react';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function InnerEmailNode({
+export function EmailNode({
   id,
   data,
   isConnectable = true,
@@ -76,5 +76,3 @@ export function InnerEmailNode({
     </section>
   );
 }
-
-export const EmailNode = memo(InnerEmailNode);

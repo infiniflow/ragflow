@@ -9,10 +9,9 @@ import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 
 import { ITemplateNode } from '@/interfaces/database/flow';
-import { memo } from 'react';
 import styles from './index.less';
 
-function InnerTemplateNode({
+export function TemplateNode({
   id,
   data,
   isConnectable = true,
@@ -74,5 +73,3 @@ function InnerTemplateNode({
     </section>
   );
 }
-
-export const TemplateNode = memo(InnerTemplateNode);

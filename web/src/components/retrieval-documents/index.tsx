@@ -2,10 +2,7 @@ import { ReactComponent as SelectedFilesCollapseIcon } from '@/assets/svg/select
 import { Collapse, Flex, Space } from 'antd';
 import SelectFiles from './select-files';
 
-import {
-  useAllTestingResult,
-  useSelectTestingResult,
-} from '@/hooks/knowledge-hooks';
+import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
 import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 
@@ -21,12 +18,7 @@ const RetrievalDocuments = ({
   setSelectedDocumentIds,
 }: IProps) => {
   const { t } = useTranslation();
-  const { documents: documentsAll } = useAllTestingResult();
   const { documents } = useSelectTestingResult();
-  const { documents: useDocuments } = {
-    documents:
-      documentsAll?.length > documents?.length ? documentsAll : documents,
-  };
 
   return (
     <Collapse
@@ -43,7 +35,7 @@ const RetrievalDocuments = ({
             >
               <Space>
                 <span>
-                  {selectedDocumentIds?.length ?? 0}/{useDocuments?.length ?? 0}
+                  {selectedDocumentIds?.length ?? 0}/{documents?.length ?? 0}
                 </span>
                 {t('knowledgeDetails.filesSelected')}
               </Space>

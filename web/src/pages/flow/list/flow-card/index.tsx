@@ -51,9 +51,7 @@ const FlowCard = ({ item }: IProps) => {
             >
               {item.title}
             </Typography.Title>
-            <p className="truncate" title={item.description}>
-              {item.description}
-            </p>
+            <p>{item.description}</p>
           </div>
           <div className={styles.footer}>
             <div className={styles.bottom}>

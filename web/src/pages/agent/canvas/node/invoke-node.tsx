@@ -4,13 +4,12 @@ import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-function InnerInvokeNode({
+export function InvokeNode({
   id,
   data,
   isConnectable = true,
@@ -58,5 +57,3 @@ function InnerInvokeNode({
     </section>
   );
 }
-
-export const InvokeNode = memo(InnerInvokeNode);

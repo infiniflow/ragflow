@@ -6,12 +6,11 @@ import { RightHandleStyle } from './handle-icon';
 import { useTheme } from '@/components/theme-provider';
 import { IRelevantNode } from '@/interfaces/database/flow';
 import { get } from 'lodash';
-import { memo } from 'react';
 import { useReplaceIdWithName } from '../../hooks';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-function InnerRelevantNode({ id, data, selected }: NodeProps<IRelevantNode>) {
+export function RelevantNode({ id, data, selected }: NodeProps<IRelevantNode>) {
   const yes = get(data, 'form.yes');
   const no = get(data, 'form.no');
   const replaceIdWithName = useReplaceIdWithName();
@@ -69,5 +68,3 @@ function InnerRelevantNode({ id, data, selected }: NodeProps<IRelevantNode>) {
     </section>
   );
 }
-
-export const RelevantNode = memo(InnerRelevantNode);

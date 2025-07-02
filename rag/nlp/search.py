@@ -245,7 +245,7 @@ class Dealer:
             for c in cites[i]:
                 if c in seted:
                     continue
-                res += f" [ID:{c}]"
+                res += f" ##{c}$$"
                 seted.add(c)
 
         return res, seted

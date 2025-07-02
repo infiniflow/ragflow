@@ -1,7 +1,7 @@
 import { useToast } from '@/components/hooks/use-toast';
 import { FileMimeType, Platform } from '@/constants/common';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useFetchAgent } from '@/hooks/use-agent-request';
+import { useFetchFlow } from '@/hooks/flow-hooks';
 import { IGraph } from '@/interfaces/database/flow';
 import { downloadJsonFile } from '@/utils/file-util';
 import { message } from 'antd';
@@ -19,7 +19,7 @@ export const useHandleExportOrImportJsonFile = () => {
     showModal: showFileUploadModal,
   } = useSetModalState();
   const setGraphInfo = useSetGraphInfo();
-  const { data } = useFetchAgent();
+  const { data } = useFetchFlow();
   const { t } = useTranslation();
   const { toast } = useToast();
 

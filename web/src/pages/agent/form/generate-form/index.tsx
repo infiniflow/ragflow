@@ -1,5 +1,6 @@
 import { NextLLMSelect } from '@/components/llm-select/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
+import { PromptEditor } from '@/components/prompt-editor';
 import {
   Form,
   FormControl,
@@ -11,7 +12,6 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useTranslation } from 'react-i18next';
 import { INextOperatorForm } from '../../interface';
-import { PromptEditor } from '../components/prompt-editor';
 
 const GenerateForm = ({ form }: INextOperatorForm) => {
   const { t } = useTranslation();

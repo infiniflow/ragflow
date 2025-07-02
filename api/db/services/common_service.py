@@ -269,6 +269,18 @@ class CommonService:
 
     @classmethod
     @DB.connection_context()
+    def delete_by_ids(cls, pids):
+        # Delete multiple records by their IDs
+        # Args:
+        #     pids: List of record IDs
+        # Returns:
+        #     Number of records deleted
+        with DB.atomic():
+            res = cls.model.delete().where(cls.model.id.in_(pids)).execute()
+            return res
+
+    @classmethod
+    @DB.connection_context()
     def filter_delete(cls, filters):
         # Delete records matching given filters
         # Args:

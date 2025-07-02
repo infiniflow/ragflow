@@ -1,9 +1,6 @@
 import { useFetchMindMap, useFetchRelatedQuestions } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
-import {
-  useTestChunkAllRetrieval,
-  useTestChunkRetrieval,
-} from '@/hooks/knowledge-hooks';
+import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
 import {
   useGetPaginationWithRouter,
   useSendMessageWithSse,
@@ -24,7 +21,6 @@ export const useSendQuestion = (kbIds: string[]) => {
     api.ask,
   );
   const { testChunk, loading } = useTestChunkRetrieval();
-  const { testChunkAll, loading: loadingAll } = useTestChunkAllRetrieval();
   const [sendingLoading, setSendingLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
   const { fetchRelatedQuestions, data: relatedQuestions } =
@@ -89,15 +85,6 @@ export const useSendQuestion = (kbIds: string[]) => {
         highlight: true,
         question: q,
         doc_ids: documentIds ?? selectedDocumentIds,
-        page,
-        size,
-      });
-
-      testChunkAll({
-        kb_id: kbIds,
-        highlight: true,
-        question: q,
-        doc_ids: [],
         page,
         size,
       });

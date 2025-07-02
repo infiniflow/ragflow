@@ -1,10 +1,10 @@
-import { useFetchAgent } from '@/hooks/use-agent-request';
+import { useFetchFlow } from '@/hooks/flow-hooks';
 import { IGraph } from '@/interfaces/database/flow';
 import { useEffect } from 'react';
 import { useSetGraphInfo } from './use-set-graph';
 
 export const useFetchDataOnMount = () => {
-  const { loading, data, refetch } = useFetchAgent();
+  const { loading, data, refetch } = useFetchFlow();
   const setGraphInfo = useSetGraphInfo();
 
   useEffect(() => {

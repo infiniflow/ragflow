@@ -4,12 +4,11 @@ import { IGenerateNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { memo } from 'react';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function InnerGenerateNode({
+export function GenerateNode({
   id,
   data,
   isConnectable = true,
@@ -56,5 +55,3 @@ export function InnerGenerateNode({
     </section>
   );
 }
-
-export const GenerateNode = memo(InnerGenerateNode);

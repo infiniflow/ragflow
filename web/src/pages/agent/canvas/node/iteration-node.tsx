@@ -4,7 +4,6 @@ import {
 } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { NodeProps, NodeResizeControl, Position } from '@xyflow/react';
-import { memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 import OperatorIcon from '../../operator-icon';
 import { CommonHandle } from './handle';
@@ -12,6 +11,7 @@ import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
+import { ToolBar } from './toolbar';
 
 function ResizeIcon() {
   return (
@@ -46,7 +46,7 @@ const controlStyle = {
   cursor: 'nwse-resize',
 };
 
-export function InnerIterationNode({
+export function IterationNode({
   id,
   data,
   isConnectable = true,
@@ -56,10 +56,13 @@ export function InnerIterationNode({
 
   return (
     <section
-      className={cn('h-full bg-transparent rounded-b-md', {
+      className={cn('h-full bg-transparent rounded-b-md relative', {
         [styles.selectedHeader]: selected,
       })}
     >
+      <ToolBar selected={selected} id={id} label={data.label}>
+        <div className="h-full w-full"></div>
+      </ToolBar>
       <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
         <ResizeIcon />
       </NodeResizeControl>
@@ -97,7 +100,7 @@ export function InnerIterationNode({
   );
 }
 
-function InnerIterationStartNode({
+export function IterationStartNode({
   isConnectable = true,
   id,
 }: NodeProps<IIterationStartNode>) {
@@ -119,7 +122,3 @@ function InnerIterationStartNode({
     </NodeWrapper>
   );
 }
-
-export const IterationStartNode = memo(InnerIterationStartNode);
-
-export const IterationNode = memo(InnerIterationNode);

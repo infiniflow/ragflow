@@ -5,7 +5,7 @@ import { useAddNode } from './hooks/use-add-node';
 import { useCacheChatLog } from './hooks/use-cache-chat-log';
 import { useShowLogSheet } from './hooks/use-show-drawer';
 
-export const AgentFormContext = createContext<RAGFlowNodeType | undefined>(
+export const FlowFormContext = createContext<RAGFlowNodeType | undefined>(
   undefined,
 );
 

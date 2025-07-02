@@ -73,7 +73,7 @@ const useFormField = () => {
   };
 };
 
-const InnerFormItem = React.forwardRef<
+const FormItem = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => {
@@ -85,10 +85,7 @@ const InnerFormItem = React.forwardRef<
     </FormItemContext.Provider>
   );
 });
-
-InnerFormItem.displayName = 'FormItem';
-
-const FormItem = React.memo(InnerFormItem);
+FormItem.displayName = 'FormItem';
 
 const FormLabel = React.forwardRef<
   React.ElementRef<typeof LabelPrimitive.Root>,
