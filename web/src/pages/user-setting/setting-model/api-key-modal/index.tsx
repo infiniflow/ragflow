@@ -19,7 +19,22 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = [LLMFactory.OpenAI, LLMFactory.AzureOpenAI];
+const modelsWithBaseUrl = [
+  LLMFactory.OpenAI,
+  LLMFactory.AzureOpenAI,
+  LLMFactory.TongYiQianWen,
+];
+
+const getBaseUrlPlaceholder = (factory: string) => {
+  switch (factory) {
+    case LLMFactory.OpenAI:
+      return 'https://api.openai.com/v1';
+    case LLMFactory.TongYiQianWen:
+      return 'https://dashscope.aliyuncs.com/api/v1';
+    default:
+      return 'https://api.openai.com/v1';
+  }
+};
 
 const ApiKeyModal = ({
   visible,
@@ -82,7 +97,7 @@ const ApiKeyModal = ({
             tooltip={t('baseUrlTip')}
           >
             <Input
-              placeholder="https://api.openai.com/v1"
+              placeholder={getBaseUrlPlaceholder(llmFactory)}
               onKeyDown={handleKeyDown}
             />
           </Form.Item>
