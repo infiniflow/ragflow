@@ -298,17 +298,20 @@ class ESConnection(DocStoreConnection):
                 res = []
                 r = self.es.bulk(index=(indexName), operations=operations,
                                  refresh=False, timeout="60s")
+                
+                for item in r["items"]:
+                    for action in ["create", "index"]:
+                        if action in item and "result" in item[action] and item[action]["result"] == "created":
+                            temp_count += 1
+                insert_count = temp_count       
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
-                    return res, 0
-
+                    return res, insert_count
+                
                 for item in r["items"]:
                     for action in ["create", "delete", "index", "update"]:
                         if action in item and "error" in item[action]:
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
-                        if action in item and "result" in item[action] and item[action]["result"] == "created":
-                            temp_count += 1
-                
-                insert_count = temp_count
+            
                 return res, insert_count
             except Exception as e:
                 res.append(str(e))
