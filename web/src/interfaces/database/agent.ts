@@ -135,9 +135,10 @@ export interface IRetrievalForm {
 }
 
 export interface ICodeForm {
-  inputs?: Array<{ name?: string; component_id?: string }>;
+  arguments: Record<string, string>;
   lang: string;
   script?: string;
+  outputs: Record<string, { value: string; type: string }>;
 }
 
 export interface IAgentForm {
