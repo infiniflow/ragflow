@@ -533,7 +533,7 @@ class InfinityConnection(DocStoreConnection):
         # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(docs)
         self.connPool.release_conn(inf_conn)
-        real_insert_count = documents.count - delete_count
+        real_insert_count = len(documents) - delete_count
         logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
         return [], real_insert_count
 

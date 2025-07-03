@@ -280,7 +280,7 @@ class ESConnection(DocStoreConnection):
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> tuple[list[str], int]:
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
-        insert_count = documents.count
+        insert_count = len(documents)
         for d in documents:
             assert "_id" not in d
             assert "id" in d
