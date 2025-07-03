@@ -1083,7 +1083,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     d["q_%d_vec" % len(v)] = v.tolist()
     _, count = settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
 
-    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, count, 0)
     # rename keys
     key_mapping = {
         "id": "id",
