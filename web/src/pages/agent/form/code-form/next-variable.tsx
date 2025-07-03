@@ -10,6 +10,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { BlurInput } from '@/components/ui/input';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { X } from 'lucide-react';
@@ -21,18 +22,19 @@ import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 interface IProps {
   node?: RAGFlowNodeType;
   name?: string;
+  isOutputs: boolean;
 }
 
 export const TypeOptions = [
   'String',
   'Number',
   'Boolean',
-  'Array[String]',
-  'Array[Number]',
+  'Array<String>',
+  'Array<Number>',
   'Object',
 ].map((x) => ({ label: x, value: x }));
 
-export function DynamicVariableForm({ name = 'arguments' }: IProps) {
+export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
@@ -67,14 +69,22 @@ export function DynamicVariableForm({ name = 'arguments' }: IProps) {
             <Separator className="w-3 text-text-sub-title" />
             <FormField
               control={form.control}
-              name={`${name}.${index}.component_id`}
+              name={`${name}.${index}.type`}
               render={({ field }) => (
                 <FormItem className="flex-1 overflow-hidden">
                   <FormControl>
-                    <SelectWithSearch
-                      options={nextOptions}
-                      {...field}
-                    ></SelectWithSearch>
+                    {isOutputs ? (
+                      <RAGFlowSelect
+                        placeholder={t('common.pleaseSelect')}
+                        options={TypeOptions}
+                        {...field}
+                      ></RAGFlowSelect>
+                    ) : (
+                      <SelectWithSearch
+                        options={nextOptions}
+                        {...field}
+                      ></SelectWithSearch>
+                    )}
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -86,9 +96,7 @@ export function DynamicVariableForm({ name = 'arguments' }: IProps) {
           </div>
         );
       })}
-      <BlockButton
-        onClick={() => append({ name: '', component_id: undefined })}
-      >
+      <BlockButton onClick={() => append({ name: '', type: undefined })}>
         {t('flow.addVariable')}
       </BlockButton>
     </div>
@@ -103,12 +111,17 @@ export function DynamicInputVariable({
   node,
   name,
   title,
+  isOutputs = false,
 }: IProps & { title: ReactNode }) {
   return (
     <section>
       <VariableTitle title={title}></VariableTitle>
       <FormContainer>
-        <DynamicVariableForm node={node} name={name}></DynamicVariableForm>
+        <DynamicVariableForm
+          node={node}
+          name={name}
+          isOutputs={isOutputs}
+        ></DynamicVariableForm>
       </FormContainer>
     </section>
   );
