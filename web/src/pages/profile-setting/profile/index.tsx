@@ -22,10 +22,9 @@ import { useFetchUserInfo, useSaveSetting } from '@/hooks/user-setting-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { rsaPsw } from '@/utils';
 import { transformFile2Base64 } from '@/utils/file-util';
-import { EditOutlined } from '@ant-design/icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
-import { Loader2Icon, Upload } from 'lucide-react';
+import { Loader2Icon, Pencil, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -235,9 +234,9 @@ export default function Profile() {
                                 <AvatarFallback className="rounded-md"></AvatarFallback>
                               </Avatar>
                               <div className="absolute inset-0 bg-[#000]/20 group-hover:bg-[#000]/60">
-                                <EditOutlined
-                                  style={{ fontSize: 20 }}
-                                  className="absolute right-2 bottom-1 opacity-50 hidden group-hover:block"
+                                <Pencil
+                                  size={16}
+                                  className="absolute right-1 bottom-1 opacity-50 hidden group-hover:block"
                                 />
                               </div>
                             </div>
