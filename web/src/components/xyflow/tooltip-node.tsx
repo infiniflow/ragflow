@@ -40,6 +40,7 @@ export const TooltipNode = forwardRef<HTMLDivElement, TooltipNodeProps>(
           onBlur={hideTooltip}
           tabIndex={0}
           selected={selected}
+          className="h-full bg-transparent"
         >
           {children}
         </BaseNode>
@@ -65,7 +66,7 @@ export const TooltipContent = forwardRef<HTMLDivElement, TooltipContentProps>(
       <div ref={ref}>
         <NodeToolbar
           isVisible={isTooltipVisible}
-          className=" bg-transparent  text-primary-foreground  "
+          className=" bg-transparent  text-primary-foreground"
           tabIndex={1}
           position={position}
           offset={0}
