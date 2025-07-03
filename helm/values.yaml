@@ -69,6 +69,30 @@ env:
   EMBEDDING_BATCH_SIZE: 16
 
 ragflow:
+
+  # Optional service configuration overrides
+  # to be written to local.service_conf.yaml
+  # inside the RAGFlow container
+  # https://ragflow.io/docs/dev/configurations#service-configuration
+  service_conf:
+
+  # Optional yaml formatted override for the
+  # llm_factories.json file inside the RAGFlow
+  # container.
+  llm_factories:
+    # factory_llm_infos:
+    # - name: OpenAI-API-Compatible
+    #   logo: ""
+    #   tags: "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION"
+    #   status: "1"
+    #   llm:
+    #     - llm_name: my-custom-llm
+    #       tags: "LLM,CHAT,"
+    #       max_tokens: 100000
+    #       model_type: chat
+    #       is_tools: false
+
+  # Kubernetes configuration
   deployment:
     strategy:
     resources:
