@@ -8,9 +8,7 @@ import { FormSchemaType } from './schema';
 
 function convertToObject(list: FormSchemaType['arguments'] = []) {
   return list.reduce<Record<string, string>>((pre, cur) => {
-    if (cur.name && cur.type) {
-      pre[cur.name] = cur.type;
-    }
+    pre[cur.name] = cur.type;
 
     return pre;
   }, {});
