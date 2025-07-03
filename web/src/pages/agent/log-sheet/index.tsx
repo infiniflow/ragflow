@@ -18,9 +18,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
+import {
+  ILogData,
+  ILogEvent,
+  MessageEventType,
+} from '@/hooks/use-send-message';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 import { BellElectric, NotebookText } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import JsonView from 'react18-json-view';
@@ -51,6 +56,25 @@ function JsonViewer({
   );
 }
 
+function concatData(
+  firstRecord: Record<string, any> | Array<Record<string, any>>,
+  nextRecord: Record<string, any> | Array<Record<string, any>>,
+) {
+  let result: Array<Record<string, any>> = [];
+
+  if (!isEmpty(firstRecord)) {
+    result = result.concat(firstRecord);
+  }
+
+  if (!isEmpty(nextRecord)) {
+    result = result.concat(nextRecord);
+  }
+
+  return isEmpty(result) ? {} : result;
+}
+
+type EventWithIndex = { startNodeIdx: number } & ILogEvent;
+
 export function LogSheet({
   hideModal,
   currentEventListWithoutMessage,
@@ -64,12 +88,51 @@ export function LogSheet({
     [getNode],
   );
 
+  // Look up to find the nearest start component id and concatenate the finish and log data into one
   const finishedNodeList = useMemo(() => {
     return currentEventListWithoutMessage.filter(
-      (x) => x.event === MessageEventType.NodeFinished,
-    ) as INodeEvent[];
+      (x) =>
+        x.event === MessageEventType.NodeFinished ||
+        x.event === MessageEventType.NodeLogs,
+    ) as ILogEvent[];
   }, [currentEventListWithoutMessage]);
-  console.log('🚀 ~ finishedNodeList ~ finishedNodeList:', finishedNodeList);
+
+  const nextList = useMemo(() => {
+    return finishedNodeList.reduce<Array<EventWithIndex>>((pre, cur) => {
+      const startNodeIdx = (
+        currentEventListWithoutMessage as Array<ILogEvent>
+      ).findLastIndex(
+        (x) =>
+          x.data.component_id === cur.data.component_id &&
+          x.event === MessageEventType.NodeStarted,
+      );
+
+      const item = pre.find((x) => x.startNodeIdx === startNodeIdx);
+
+      const { logs = {}, inputs = {}, outputs = {} } = cur.data;
+      if (item) {
+        const {
+          inputs: inputList,
+          outputs: outputList,
+          logs: logList,
+        } = item.data;
+
+        item.data = {
+          ...item.data,
+          inputs: concatData(inputList, inputs),
+          outputs: concatData(outputList, outputs),
+          logs: concatData(logList, logs),
+        };
+      } else {
+        pre.push({
+          ...cur,
+          startNodeIdx,
+        });
+      }
+
+      return pre;
+    }, []);
+  }, [currentEventListWithoutMessage, finishedNodeList]);
 
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
@@ -82,7 +145,7 @@ export function LogSheet({
         </SheetHeader>
         <section className="max-h-[82vh] overflow-auto mt-6">
           <Timeline>
-            {finishedNodeList.map((x, idx) => (
+            {nextList.map((x, idx) => (
               <TimelineItem
                 key={idx}
                 step={idx}
@@ -132,9 +195,16 @@ export function LogSheet({
                               title="Input"
                             ></JsonViewer>
 
+                            {isEmpty((x.data as ILogData)?.logs) || (
+                              <JsonViewer
+                                data={(x.data as ILogData)?.logs}
+                                title={'Logs'}
+                              ></JsonViewer>
+                            )}
+
                             <JsonViewer
                               data={x.data.outputs}
-                              title="Output"
+                              title={'Output'}
                             ></JsonViewer>
                           </div>
                         </AccordionContent>

@@ -22,6 +22,8 @@ import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
+import { transferInputsArrayToObject } from '../form/begin-form/use-watch-change';
+import { useGetBeginNodeDataQuery } from '../hooks/use-get-begin-query';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
@@ -109,6 +111,7 @@ export const useSendNextMessage = () => {
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { refetch } = useFetchAgent();
   const { addEventList } = useContext(AgentChatLogContext);
+  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     api.runCanvas,
@@ -191,12 +194,22 @@ export const useSendNextMessage = () => {
   );
 
   useEffect(() => {
-    if (prologue) {
+    const query = getBeginNodeDataQuery();
+    if (query.length > 0) {
+      send({ id: agentId, inputs: transferInputsArrayToObject(query) });
+    } else if (prologue) {
       addNewestOneAnswer({
         answer: prologue,
       });
     }
-  }, [addNewestOneAnswer, prologue]);
+  }, [
+    addNewestOneAnswer,
+    agentId,
+    getBeginNodeDataQuery,
+    prologue,
+    send,
+    sendFormMessage,
+  ]);
 
   useEffect(() => {
     addEventList(answerList);
