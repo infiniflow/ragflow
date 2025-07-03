@@ -56,48 +56,47 @@ export function InnerIterationNode({
   // const { theme } = useTheme();
 
   return (
-    <section
-      className={cn('h-full bg-transparent rounded-b-md relative', {
-        [styles.selectedHeader]: selected,
-      })}
-    >
-      <ToolBar selected={selected} id={id} label={data.label}>
-        <div className="h-full w-full"></div>
-      </ToolBar>
-      <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
-        <ResizeIcon />
-      </NodeResizeControl>
-      <CommonHandle
-        id={NodeHandleId.End}
-        type="target"
-        position={Position.Left}
-        isConnectable={isConnectable}
-        className={styles.handle}
-        nodeId={id}
-      ></CommonHandle>
-      <CommonHandle
-        id={NodeHandleId.Start}
-        type="source"
-        position={Position.Right}
-        isConnectable={isConnectable}
-        className={styles.handle}
-        nodeId={id}
-      ></CommonHandle>
+    <ToolBar selected={selected} id={id} label={data.label}>
+      <section
+        className={cn('h-full bg-transparent rounded-b-md ', {
+          [styles.selectedHeader]: selected,
+        })}
+      >
+        <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
+          <ResizeIcon />
+        </NodeResizeControl>
+        <CommonHandle
+          id={NodeHandleId.End}
+          type="target"
+          position={Position.Left}
+          isConnectable={isConnectable}
+          className={styles.handle}
+          nodeId={id}
+        ></CommonHandle>
+        <CommonHandle
+          id={NodeHandleId.Start}
+          type="source"
+          position={Position.Right}
+          isConnectable={isConnectable}
+          className={styles.handle}
+          nodeId={id}
+        ></CommonHandle>
 
-      <NodeHeader
-        id={id}
-        name={data.name}
-        label={data.label}
-        wrapperClassName={cn(
-          'bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-44px] left-[-0.3px]',
-          // styles.iterationHe ader,
-          {
-            // [`${styles.dark} text-white`]: theme === 'dark',
-            [styles.selectedHeader]: selected,
-          },
-        )}
-      ></NodeHeader>
-    </section>
+        <NodeHeader
+          id={id}
+          name={data.name}
+          label={data.label}
+          wrapperClassName={cn(
+            'bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-44px] left-[-0.3px]',
+            // styles.iterationHe ader,
+            {
+              // [`${styles.dark} text-white`]: theme === 'dark',
+              [styles.selectedHeader]: selected,
+            },
+          )}
+        ></NodeHeader>
+      </section>
+    </ToolBar>
   );
 }
 
