@@ -1,3 +1,4 @@
+import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import random from 'lodash/random';
@@ -130,6 +131,7 @@ const RaptorFormFields = () => {
             defaultValue={256}
             max={2048}
             min={0}
+            layout={FormLayout.Horizontal}
           ></SliderInputFormField>
           <SliderInputFormField
             name={'parser_config.raptor.threshold'}
@@ -139,6 +141,7 @@ const RaptorFormFields = () => {
             step={0.01}
             max={1}
             min={0}
+            layout={FormLayout.Horizontal}
           ></SliderInputFormField>
           <SliderInputFormField
             name={'parser_config.raptor.max_cluster'}
@@ -147,6 +150,7 @@ const RaptorFormFields = () => {
             defaultValue={64}
             max={1024}
             min={1}
+            layout={FormLayout.Horizontal}
           ></SliderInputFormField>
           <FormField
             control={form.control}

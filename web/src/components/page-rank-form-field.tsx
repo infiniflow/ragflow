@@ -1,3 +1,4 @@
+import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { SliderInputFormField } from './slider-input-form-field';
 
@@ -12,6 +13,7 @@ export function PageRankFormField() {
       defaultValue={0}
       max={100}
       min={0}
+      layout={FormLayout.Horizontal}
     ></SliderInputFormField>
   );
 }

@@ -1275,7 +1275,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',
-      openingCopy: 'Opening copy',
+      openingCopy: 'Opening greeting',
       openingSwitchTip:
         'Your users will see this welcome message at the beginning.',
       modeTip: 'The mode defines how the workflow is initiated.',
