@@ -667,6 +667,7 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
+  outputs: { result: { value: '', type: 'string' } },
 };
 
 export const initialWaitingDialogueValues = {};
