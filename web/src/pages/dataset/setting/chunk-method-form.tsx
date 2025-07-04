@@ -70,15 +70,22 @@ export function ChunkMethodForm() {
       <section className="overflow-auto max-h-[76vh]">
         <ConfigurationComponent></ConfigurationComponent>
       </section>
-      <div className="text-right pt-4">
+      <div className="text-right pt-4 flex justify-end gap-3">
+        <Button
+          type="reset"
+          className="bg-transparent text-color-white hover:bg-transparent border-gray-500 border-[1px]"
+          onClick={() => {
+            form.reset();
+          }}
+        >
+          {t('knowledgeConfiguration.cancel')}
+        </Button>
         <Button
           disabled={submitLoading}
           onClick={() => {
             (async () => {
               try {
                 let beValid = await form.formControl.trigger();
-                console.log('user chunk form: ', form);
-
                 if (beValid) {
                   // setSubmitLoading(true);
                   let postData = form.formState.values;
@@ -98,7 +105,7 @@ export function ChunkMethodForm() {
           }}
         >
           {submitLoading && <Loader2Icon className="animate-spin" />}
-          {t('common.submit')}
+          {t('knowledgeConfiguration.save')}
         </Button>
       </div>
     </>
