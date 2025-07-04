@@ -111,7 +111,7 @@ def kb_prompt(kbinfos, max_tokens):
         chunks_num += 1
         if max_tokens * 0.97 < used_token_count:
             knowledges = knowledges[:i]
-            logging.warning(f"Not all the retrieval into prompt: {i + 1}/{len(knowledges)}")
+            logging.warning(f"Not all the retrieval into prompt: {i - 1}/{len(knowledges)}")
             break
 
     docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
