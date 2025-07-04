@@ -23,17 +23,7 @@ import jinja2
 import json_repair
 
 from api import settings
-from rag.prompt_template import (
-    CITATION_PROMPT_TEMPLATE,
-    CONTENT_TAGGING_PROMPT_TEMPLATE,
-    CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE,
-    CROSS_LANGUAGES_USER_PROMPT_TEMPLATE,
-    FULL_QUESTION_PROMPT_TEMPLATE,
-    KEYWORD_PROMPT_TEMPLATE,
-    QUESTION_PROMPT_TEMPLATE,
-    VISION_LLM_DESCRIBE_PROMPT,
-    VISION_LLM_FIGURE_DESCRIBE_PROMPT,
-)
+from rag.prompt_template import load_prompt
 from rag.settings import TAG_FLD
 from rag.utils import encoder, num_tokens_from_string
 
@@ -145,6 +135,16 @@ def kb_prompt(kbinfos, max_tokens):
         knowledges.append(txt)
     return knowledges
 
+
+CITATION_PROMPT_TEMPLATE = load_prompt("citation_prompt")
+CONTENT_TAGGING_PROMPT_TEMPLATE = load_prompt("content_tagging_prompt")
+CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE = load_prompt("cross_languages_sys_prompt")
+CROSS_LANGUAGES_USER_PROMPT_TEMPLATE = load_prompt("cross_languages_user_prompt")
+FULL_QUESTION_PROMPT_TEMPLATE = load_prompt("full_question_prompt")
+KEYWORD_PROMPT_TEMPLATE = load_prompt("keyword_prompt")
+QUESTION_PROMPT_TEMPLATE = load_prompt("question_prompt")
+VISION_LLM_DESCRIBE_PROMPT = load_prompt("vision_llm_describe_prompt")
+VISION_LLM_FIGURE_DESCRIBE_PROMPT = load_prompt("vision_llm_figure_describe_prompt")
 
 PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
 
@@ -286,3 +286,15 @@ def vision_llm_describe_prompt(page=None) -> str:
 def vision_llm_figure_describe_prompt() -> str:
     template = PROMPT_JINJA_ENV.from_string(VISION_LLM_FIGURE_DESCRIBE_PROMPT)
     return template.render()
+
+
+if __name__ == "__main__":
+    print(CITATION_PROMPT_TEMPLATE)
+    print(CONTENT_TAGGING_PROMPT_TEMPLATE)
+    print(CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE)
+    print(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE)
+    print(FULL_QUESTION_PROMPT_TEMPLATE)
+    print(KEYWORD_PROMPT_TEMPLATE)
+    print(QUESTION_PROMPT_TEMPLATE)
+    print(VISION_LLM_DESCRIBE_PROMPT)
+    print(VISION_LLM_FIGURE_DESCRIBE_PROMPT)
