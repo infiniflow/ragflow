@@ -128,4 +128,12 @@ def test_list_chats_with_success(get_api_key_fixture):
     )
     rag.create_chat("test_list_1", dataset_ids=[kb.id], llm=llm)
     rag.create_chat("test_list_2", dataset_ids=[kb.id], llm=llm)
-    rag.list_chats()
+    res = rag.list_chats()
+    assert "total" in res
+    assert "page" in res
+    assert "page_size" in res
+    assert "chats" in res
+    assert isinstance(res["total"], int)
+    assert isinstance(res["page"], int)
+    assert isinstance(res["page_size"], int)
+    assert isinstance(res["chats"], list)

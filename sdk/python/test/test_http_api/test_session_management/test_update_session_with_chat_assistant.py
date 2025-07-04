@@ -63,7 +63,7 @@ class TestSessionWithChatAssistantUpdate:
         assert res["code"] == expected_code, res
         if expected_code == 0:
             res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, {"id": session_ids[0]})
-            assert res["data"][0]["name"] == payload["name"]
+            assert res["data"]["sessions"][0]["name"] == payload["name"]
         else:
             assert res["message"] == expected_message
 
