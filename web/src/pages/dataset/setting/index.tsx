@@ -102,7 +102,7 @@ export default function DatasetSettings() {
                 setCurrentTab(val);
               }}
             >
-              <TabsList className="grid w-full bg-background grid-cols-2 rounded-none bg-[#161618]">
+              <TabsList className="grid bg-background grid-cols-2 rounded-none bg-[#161618]">
                 <TabsTrigger
                   value="generalForm"
                   className="group bg-transparent p-0 !border-transparent"

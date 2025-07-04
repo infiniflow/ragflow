@@ -205,6 +205,7 @@ export default {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
+      photoTip: '你可以上傳4MB的文件',
       description: '描述',
       language: '文件語言',
       languageMessage: '請輸入語言',

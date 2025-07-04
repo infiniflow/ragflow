@@ -12,7 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { Upload } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
@@ -40,7 +42,16 @@ export default function Dataset() {
     handleFilterSubmit,
     loading,
   } = useFetchDocumentList();
-  const { filters } = useSelectDatasetFilters();
+  const { filters, documents: filteredDocuments } = useSelectDatasetFilters();
+  const [datasetInfo, setDatasetInfo] = useState<IDocumentInfo[]>(documents);
+
+  useMemo(() => {
+    setDatasetInfo(documents);
+  }, [documents]);
+
+  useMemo(() => {
+    setDatasetInfo(filteredDocuments);
+  }, [filteredDocuments]);
 
   const {
     createLoading,
@@ -100,7 +111,7 @@ export default function Dataset() {
         <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
       )}
       <DatasetTable
-        documents={documents}
+        documents={datasetInfo}
         pagination={pagination}
         setPagination={setPagination}
         rowSelection={rowSelection}

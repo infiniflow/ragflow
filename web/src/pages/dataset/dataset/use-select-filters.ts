@@ -19,7 +19,6 @@ export function useSelectDatasetFilters() {
       label: t(`knowledgeDetails.runningStatus${x.label}`),
     }));
   }, [documents, t]);
-
   const filters = useMemo(() => {
     return [
       { field: 'type', label: 'File Type', list: fileTypes },
@@ -27,5 +26,5 @@ export function useSelectDatasetFilters() {
     ];
   }, [fileStatus, fileTypes]);
 
-  return { fileTypes, fileStatus, filters };
+  return { fileTypes, fileStatus, filters, documents };
 }

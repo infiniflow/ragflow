@@ -207,6 +207,7 @@ export default {
         'Update your knowledge base configuration here, particularly the chunking method.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
+      photoTip: 'You can upload a file with 4 MB',
       description: 'Description',
       language: 'Document language',
       languageMessage: 'Please input your language!',
