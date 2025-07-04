@@ -1,6 +1,4 @@
 import { useFetchNextChunkList, useSwitchChunk } from '@/hooks/chunk-hooks';
-import type { PaginationProps } from 'antd';
-import { Flex, Pagination, Space, Spin, message } from 'antd';
 import classNames from 'classnames';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +17,12 @@ import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
 import DocumentHeader from './components/document-preview/document-header';
 
+import message from '@/components/ui/message';
+import {
+  RAGFlowPagination,
+  RAGFlowPaginationType,
+} from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
 import styles from './index.less';
 
 const Chunk = () => {
@@ -49,7 +53,7 @@ const Chunk = () => {
     documentId,
   } = useUpdateChunk();
 
-  const onPaginationChange: PaginationProps['onShowSizeChange'] = (
+  const onPaginationChange: RAGFlowPaginationType['onChange'] = (
     page,
     size,
   ) => {
@@ -123,21 +127,8 @@ const Chunk = () => {
   return (
     <>
       <div className={styles.chunkPage}>
-        {/* <ChunkToolBar
-          selectAllChunk={selectAllChunk}
-          createChunk={showChunkUpdatingModal}
-          removeChunk={handleRemoveChunk}
-          checked={selectedChunkIds.length === data.length}
-          switchChunk={handleSwitchChunk}
-          changeChunkTextMode={changeChunkTextMode}
-          searchString={searchString}
-          handleInputChange={handleInputChange}
-          available={available}
-          handleSetAvailable={handleSetAvailable}
-        ></ChunkToolBar> */}
-        {/* <Divider></Divider> */}
-        <Flex flex={1} gap={'middle'}>
-          <div className="w-[40%]">
+        <div className="flex flex-1 gap-8">
+          <div className="w-2/5">
             <div className="h-[100px] flex flex-col justify-end pb-[5px]">
               <DocumentHeader {...documentInfo} />
             </div>
@@ -150,9 +141,11 @@ const Chunk = () => {
               </section>
             )}
           </div>
-          <Flex
-            vertical
-            className={isPdf ? styles.pagePdfWrapper : styles.pageWrapper}
+          <div
+            className={classNames(
+              { [styles.pagePdfWrapper]: isPdf },
+              'flex flex-col w-3/5',
+            )}
           >
             <Spin spinning={loading} className={styles.spin} size="large">
               <div className="h-[100px] flex flex-col justify-end pb-[5px]">
@@ -180,12 +173,14 @@ const Chunk = () => {
                   />
                 </div>
                 <div className={styles.pageContent}>
-                  <Space
-                    direction="vertical"
-                    size={'middle'}
-                    className={classNames(styles.chunkContainer, {
-                      [styles.chunkOtherContainer]: !isPdf,
-                    })}
+                  <div
+                    className={classNames(
+                      styles.chunkContainer,
+                      {
+                        [styles.chunkOtherContainer]: !isPdf,
+                      },
+                      'flex flex-col gap-4',
+                    )}
                   >
                     {data.map((item) => (
                       <ChunkCard
@@ -202,20 +197,22 @@ const Chunk = () => {
                         textMode={textMode}
                       ></ChunkCard>
                     ))}
-                  </Space>
+                  </div>
                 </div>
               </div>
             </Spin>
             <div className={styles.pageFooter}>
-              <Pagination
-                {...pagination}
+              <RAGFlowPagination
+                pageSize={pagination.pageSize}
+                current={pagination.current}
                 total={total}
-                size={'small'}
-                onChange={onPaginationChange}
-              />
+                onChange={(page, pageSize) => {
+                  onPaginationChange(page, pageSize);
+                }}
+              ></RAGFlowPagination>
             </div>
-          </Flex>
-        </Flex>
+          </div>
+        </div>
       </div>
       {chunkUpdatingVisible && (
         <CreatingModal
