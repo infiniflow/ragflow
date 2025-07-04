@@ -104,6 +104,7 @@ def kb_prompt(kbinfos, max_tokens):
     from api.db.services.document_service import DocumentService
 
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
+    kwlg_len = len(knowledges)
     used_token_count = 0
     chunks_num = 0
     for i, c in enumerate(knowledges):
@@ -111,7 +112,7 @@ def kb_prompt(kbinfos, max_tokens):
         chunks_num += 1
         if max_tokens * 0.97 < used_token_count:
             knowledges = knowledges[:i]
-            logging.warning(f"Not all the retrieval into prompt: {i + 1}/{len(knowledges)}")
+            logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
             break
 
     docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
