@@ -9,7 +9,7 @@
 - STRICTLY prohibit the use of strikethrough symbols (e.g., ~~) or any other non-standard formatting syntax.
 - Any violation of the above rules — including incorrect formatting, prohibited styles, or unsupported citations — will result in no citation being added for that sentence.
 
-______________________________________________________________________
+---
 
 ## Example START
 
