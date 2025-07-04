@@ -44,8 +44,6 @@ interface IProps {
   btnText?: ReactNode;
 }
 
-const values = {};
-
 const DebugContent = ({
   parameters,
   ok,
@@ -56,15 +54,20 @@ const DebugContent = ({
 }: IProps) => {
   const { t } = useTranslation();
 
-  const FormSchema = useMemo(() => {
-    const obj = parameters.reduce<Record<string, z.ZodType>>(
+  const formSchemaValues = useMemo(() => {
+    const obj = parameters.reduce<{
+      schema: Record<string, z.ZodType>;
+      values: Record<string, any>;
+    }>(
       (pre, cur, idx) => {
         const type = cur.type;
         let fieldSchema;
+        let value;
         if (StringFields.some((x) => x === type)) {
-          fieldSchema = z.string();
+          fieldSchema = z.string().trim().min(1);
         } else if (type === BeginQueryType.Boolean) {
           fieldSchema = z.boolean();
+          value = false;
         } else if (type === BeginQueryType.Integer) {
           fieldSchema = z.coerce.number();
         } else {
@@ -72,22 +75,25 @@ const DebugContent = ({
         }
 
         if (cur.optional) {
-          fieldSchema.optional();
+          fieldSchema = fieldSchema.optional();
         }
 
-        pre[idx.toString()] = fieldSchema;
+        const index = idx.toString();
+
+        pre.schema[index] = fieldSchema;
+        pre.values[index] = value;
 
         return pre;
       },
-      {},
+      { schema: {}, values: {} },
     );
 
-    return z.object(obj);
+    return { schema: z.object(obj.schema), values: obj.values };
   }, [parameters]);
 
-  const form = useForm<z.infer<typeof FormSchema>>({
-    defaultValues: values,
-    resolver: zodResolver(FormSchema),
+  const form = useForm<z.infer<typeof formSchemaValues.schema>>({
+    defaultValues: formSchemaValues.values,
+    resolver: zodResolver(formSchemaValues.schema),
   });
 
   const submittable = true;
@@ -223,8 +229,7 @@ const DebugContent = ({
   );
 
   const onSubmit = useCallback(
-    (values: z.infer<typeof FormSchema>) => {
-      console.log('🚀 ~ values:', values);
+    (values: z.infer<typeof formSchemaValues.schema>) => {
       const nextValues = Object.entries(values).map(([key, value]) => {
         const item = parameters[Number(key)];
         let nextValue = value;
@@ -243,7 +248,7 @@ const DebugContent = ({
 
       ok(nextValues);
     },
-    [ok, parameters],
+    [formSchemaValues, ok, parameters],
   );
 
   return (
