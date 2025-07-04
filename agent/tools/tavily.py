@@ -96,19 +96,19 @@ class TavilySearch(ToolBase, ABC):
             id = get_uuid()
             chunks.append({
                 "chunk_id": id,
-                #"content_ltks": rag_tokenizer.tokenize(r["content"]),
                 "content_with_weight": r["content"],
                 "doc_id": id,
                 "docnm_kwd": r["title"],
-                "kb_id": [],
-                "important_kwd": [],
-                "image_id": "",
                 "similarity": r["score"],
-                "vector_similarity": 1.,
-                "term_similarity": 0,
-                "vector": [],
-                "positions": [],
-                "url": r["url"]
+                "url": r["url"],
+                #"content_ltks": rag_tokenizer.tokenize(r["content"]),
+                #"kb_id": [],
+                #"important_kwd": [],
+                #"image_id": "",
+                #"vector_similarity": 1.,
+                #"term_similarity": 0,
+                #"vector": [],
+                #"positions": [],
             })
             aggs.append({
                 "doc_name": r["title"],
@@ -130,6 +130,7 @@ class TavilySearch(ToolBase, ABC):
                 kwargs[fld] = getattr(self._param, fld)
         for _ in range(self._param.max_retries+1):
             try:
+                kwargs["include_images"] = False
                 res = self.tavily_client.search(**kwargs)
                 self._retrieve_chunks(res)
                 return

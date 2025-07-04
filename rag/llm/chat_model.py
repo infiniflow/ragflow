@@ -37,6 +37,7 @@ from strenum import StrEnum
 from zhipuai import ZhipuAI
 
 from rag.nlp import is_chinese, is_english
+from rag.prompts import react_prompt, COMPLETE_TASK, post_function_call_promt, tool_call_summary
 from rag.utils import num_tokens_from_string
 
 # Error message constants
@@ -53,6 +54,11 @@ class LLMErrorCode(StrEnum):
     ERROR_QUOTA = "QUOTA_EXCEEDED"
     ERROR_MAX_RETRIES = "MAX_RETRIES_EXCEEDED"
     ERROR_GENERIC = "GENERIC_ERROR"
+
+
+class ReActMode(StrEnum):
+    FUNCTION_CALL = "function_call"
+    REACT = "react"
 
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
@@ -72,6 +78,7 @@ class Base(ABC):
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
         self.max_rounds = kwargs.get("max_rounds", 5)
+        self.react_mode = kwargs.get("react_mode", ReActMode.FUNCTION_CALL)
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
@@ -112,18 +119,47 @@ class Base(ABC):
             del gen_conf["max_tokens"]
         return gen_conf
 
-    def _chat(self, history, gen_conf):
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf)
+    def _chat(self, history, gen_conf, **kwargs):
+        print("[HISTORY]", json.dumps(history, ensure_ascii=False, indent=2))
+        response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
             return "", 0
         ans = response.choices[0].message.content.strip()
+        print("[RES]", ans)
         if response.choices[0].finish_reason == "length":
-            if is_chinese(ans):
-                ans += LENGTH_NOTIFICATION_CN
-            else:
-                ans += LENGTH_NOTIFICATION_EN
+            ans = self._length_stop(ans)
         return ans, self.total_token_count(response)
+
+    def _chat_streamly(self, history, gen_conf, **kwargs):
+        print("[HISTORY STREAMLY]", json.dumps(history, ensure_ascii=False, indent=4))
+        reasoning_start = False
+        response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        for resp in response:
+            if not resp.choices:
+                continue
+            if not resp.choices[0].delta.content:
+                resp.choices[0].delta.content = ""
+            if kwargs.get("with_reasoning", True) and hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                ans = ""
+                if not reasoning_start:
+                    reasoning_start = True
+                    ans = "<think>"
+                ans += resp.choices[0].delta.reasoning_content + "</think>"
+            else:
+                reasoning_start = False
+                ans = resp.choices[0].delta.content
+
+            tol = self.total_token_count(resp)
+            if not tol:
+                tol = num_tokens_from_string(resp.choices[0].delta.content)
+
+            if resp.choices[0].finish_reason == "length":
+                if is_chinese(ans):
+                    ans += LENGTH_NOTIFICATION_CN
+                else:
+                    ans += LENGTH_NOTIFICATION_EN
+            yield ans, tol
 
     def _length_stop(self, ans):
         if is_chinese([ans]):
@@ -184,6 +220,96 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
+    def _react_with_tools(self, history, gen_conf):
+        hist = deepcopy(history)
+        prompt = react_prompt(self.tools)
+        if not history:
+            hist = [{"role": "system", "content": prompt}]
+        elif hist[0]["role"] == "system":
+            if hist[0]["content"].find(prompt[-100:]) < 0:
+                hist[0]["content"] += prompt
+        else:
+            hist.insert(0, {"role": "system", "content": prompt})
+
+        response, token_count = self._chat(hist, gen_conf, stop=["<|stop|>"])
+        if response.find(LENGTH_NOTIFICATION_CN) > 0 or response.find(LENGTH_NOTIFICATION_EN) > 0:
+            return response, token_count, True
+        hist.append({"role": "assistant", "content": response})
+        name = response
+        try:
+            response = re.sub(r"```.*", "", response)
+            func = json_repair.loads(response)
+            name = func["name"]
+            args = func["arguments"]
+            if name == COMPLETE_TASK:
+                hist.append({"role": "user", "content": f"Respond with a formal answer please. FORGET(DO NOT mention) about `{COMPLETE_TASK}`."})
+                response, token_count = self._chat(hist, gen_conf, stop=["<|stop|>"])
+                return response, token_count, True
+
+            history.append({"role": "assistant", "content": response})
+            tool_response = self.toolcall_session.tool_call(name, args)
+
+            # Summarize of function calling
+            if len(str(tool_response)) > 1024:
+                tool_response, tk_count = self._chat([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}], gen_conf)
+                token_count += tk_count
+
+            history.append({"role": "user", "content": post_function_call_promt(name, tool_response)})
+            return self._verbose_tool_use(name, args, tool_response), token_count, False
+        except Exception as e:
+            logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
+            history.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
+            return self._verbose_tool_use(name, {}, str(e)), token_count, False
+
+    def _react_with_tools_streamly(self, history, gen_conf):
+        hist = deepcopy(history)
+        prompt = react_prompt(self.tools)
+        if not history:
+            hist = [{"role": "system", "content": prompt}]
+        elif hist[0]["role"] == "system":
+            if hist[0]["content"].find(prompt[-100:]) < 0:
+                hist[0]["content"] += prompt
+        else:
+            hist.insert(0, {"role": "system", "content": prompt})
+
+        token_count = 0
+        response = ""
+        for delta_ans, tol in self._chat_streamly(hist, gen_conf, stop=["<|stop|>"], with_reasoning=False):
+            token_count += tol
+            response += delta_ans
+        hist.append({"role": "assistant", "content": response})
+        name = response
+        try:
+            response = re.sub(r"```.*", "", response)
+            func = json_repair.loads(response)
+            name = func["name"]
+            args = func["arguments"]
+            if name == COMPLETE_TASK:
+                hist.append({"role": "user", "content": f"Respond with a formal answer please. FORGET(DO NOT mention) about `{COMPLETE_TASK}`"})
+                yield "", token_count, False
+                for delta_ans, tol in self._chat_streamly(hist, gen_conf, with_reasoning=False):
+                    yield delta_ans, tol, False
+
+                yield "", 0, True
+                return
+
+            # Summarize of function calling
+            history.append({"role": "assistant", "content": response})
+            yield self._verbose_tool_use(name, args, "Begin to call..."), token_count, False
+            tool_response = self.toolcall_session.tool_call(name, args)
+            yield self._verbose_tool_use(name, args, tool_response), token_count, False
+
+            # Summarize of function calling
+            if len(str(tool_response)) > 1024:
+                tool_response, tk_count = self._chat([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}], gen_conf)
+                token_count += tk_count
+
+            history.append({"role": "user", "content": post_function_call_promt(name, tool_response)})
+        except Exception as e:
+            logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
+            history.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
+            return self._verbose_tool_use(name, {}, str(e)), token_count, False
+
     def chat_with_tools(self, system: str, history: list, gen_conf: dict):
         gen_conf = self._clean_conf(gen_conf)
         if system:
@@ -199,6 +325,13 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds+1):
                     print(f"{self.tools=}")
+                    if self.react_mode == ReActMode.REACT:
+                        response, tk_ct, fin = self._react_with_tools(history, gen_conf)
+                        tk_count += tk_ct
+                        ans += response
+                        if fin:
+                            return ans, tk_count
+                        continue
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
@@ -217,12 +350,8 @@ class Base(ABC):
                     for tool_call in response.choices[0].message.tool_calls:
                         print(f"response {tool_call=}")
                         name = tool_call.function.name
-                        print(f"{name=} ---------------------------------------")
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            if name == "complete_task":
-                                print("TASK COMPLETE........................................")
-                                return args["answer"], tk_count
                             tool_response = self.toolcall_session.tool_call(name, args)
                             history = self._append_history(history, tool_call, tool_response)
                             ans += self._verbose_tool_use(name, args, tool_response)
@@ -231,7 +360,12 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             ans += self._verbose_tool_use(name, {}, str(e))
 
-                raise Exception(f"Exceed max rounds: {self.max_rounds}")
+                logging.warning( f"Exceed max rounds: {self.max_rounds}")
+                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                response, token_count = self._chat(history, gen_conf)
+                ans += response
+                tk_count += token_count
+                return ans, tk_count
             except Exception as e:
                 e = self._exceptions(e, attempt)
                 if e:
@@ -281,6 +415,15 @@ class Base(ABC):
             history = hist
             try:
                 for _ in range(self.max_rounds+1):
+                    if self.react_mode == ReActMode.REACT:
+                        for response, tk_ct, fin  in self._react_with_tools_streamly(history, gen_conf):
+                            total_tokens += tk_ct
+                            yield response
+                            if fin:
+                                yield total_tokens
+                                return
+                        continue
+
                     reasoning_start = False
                     print(f"{tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
@@ -336,12 +479,8 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
-                            if name == "complete_task":
-                                print("COMPLETE TASK ........................................")
-                                yield args["answer"]
-                                yield total_tokens
-                                return
                             tool_response = self.toolcall_session.tool_call(name, args)
+                            print("tool_response: ", tool_response)
                             history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
@@ -349,7 +488,26 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             yield self._verbose_tool_use(name, {}, str(e))
 
-                raise Exception(f"Exceed max rounds: {self.max_rounds}")
+                logging.warning( f"Exceed max rounds: {self.max_rounds}")
+                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+                for resp in response:
+                    if any([not resp.choices, not resp.choices[0].delta, not hasattr(resp.choices[0].delta, "content")]):
+                        raise Exception("500 response structure error.")
+                    if not resp.choices[0].delta.content:
+                        resp.choices[0].delta.content = ""
+                        continue
+                    tol = self.total_token_count(resp)
+                    if not tol:
+                        total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                    else:
+                        total_tokens += tol
+                    answer += resp.choices[0].delta.content
+                    yield resp.choices[0].delta.content
+
+                yield total_tokens
+                return
+
             except Exception as e:
                 e = self._exceptions(e, attempt)
                 if e:
@@ -365,37 +523,10 @@ class Base(ABC):
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         total_tokens = 0
-        reasoning_start = False
         try:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
-            for resp in response:
-                if not resp.choices:
-                    continue
-                if not resp.choices[0].delta.content:
-                    resp.choices[0].delta.content = ""
-                if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
-                    ans = ""
-                    if not reasoning_start:
-                        reasoning_start = True
-                        ans = "<think>"
-                    ans += resp.choices[0].delta.reasoning_content + "</think>"
-                else:
-                    reasoning_start = False
-                    ans = resp.choices[0].delta.content
-
-                tol = self.total_token_count(resp)
-                if not tol:
-                    total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
-                else:
-                    total_tokens += tol
-
-                if resp.choices[0].finish_reason == "length":
-                    if is_chinese(ans):
-                        ans += LENGTH_NOTIFICATION_CN
-                    else:
-                        ans += LENGTH_NOTIFICATION_EN
-                yield ans
-
+            for delta_ans, tol in self._chat_streamly(history, gen_conf):
+                yield delta_ans
+                total_tokens += tol
         except openai.APIError as e:
             yield ans + "\n**ERROR**: " + str(e)
 
@@ -578,7 +709,9 @@ class BaiChuanChat(Base):
 
 class QWenChat(Base):
     def __init__(self, key, model_name=Generation.Models.qwen_turbo, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", **kwargs)
+        if not base_url:
+            base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
         return
 
 

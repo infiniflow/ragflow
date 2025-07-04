@@ -28,6 +28,7 @@ from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.utils.api_utils import timeout
+from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
 
 
@@ -79,21 +80,10 @@ class Agent(LLM, ToolBase):
                                   max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error,
                                   max_rounds=self._param.max_rounds,
-                                  verbose_tool_use=True
+                                  verbose_tool_use=True,
+                                  react_mode=ReActMode.REACT
                                   )
         tool_metas = [v.get_meta() for _,v in self.tools.items()]
-        tool_metas.append({
-            "type": "function",
-            "function": {
-                "name": "complete_task",
-                "description": "When you have the final answer and are ready to complete the task, call this function with your answer",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"answer":{"type":"string", "description": "The final answer to the user's question"}},
-                    "required": ["answer"]
-                }
-            }
-        })
         self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools),tool_metas)
 
     def get_meta(self) -> dict[str, Any]:

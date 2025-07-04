@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import logging
 import os
 from abc import ABC
 from enum import Enum
@@ -145,16 +146,31 @@ class CodeExec(ToolBase, ABC):
                 if stderr:
                     self.set_output("_ERROR", stderr)
                     return
-
                 try:
-                    self.set_output("result", json_repair.loads(body.get("stdout")))
+                    rt = eval(body.get("stdout", ""))
                 except:
-                    self.set_output("result", body.get("stdout"))
+                    rt = body.get("stdout", "")
+                logging.info(f"http://{settings.SANDBOX_HOST}:9385/run -> {rt}")
+                if isinstance(rt, tuple):
+                    for i, (k, o) in enumerate(self._param.outputs.items()):
+                        if k.find("_") == 0:
+                            continue
+                        o["value"] = rt[i]
+                elif isinstance(rt, dict):
+                    for i, (k, o) in enumerate(self._param.outputs.items()):
+                        if k not in rt or k.find("_") == 0:
+                            continue
+                        o["value"] = rt[k]
+                else:
+                    for i, (k, o) in enumerate(self._param.outputs.items()):
+                        if k.find("_") == 0:
+                            continue
+                        o["value"] = rt
             else:
                 self.set_output("_ERROR", "There is no response from sandbox")
 
         except Exception as e:
-            self.set_output("_ERROR", "construct code request error: " + str(e))
+            self.set_output("_ERROR", "Exception executing code: " + str(e))
 
     def _encode_code(self, code: str) -> str:
         return base64.b64encode(code.encode("utf-8")).decode("utf-8")

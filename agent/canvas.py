@@ -276,8 +276,9 @@ class Canvas:
                                 yield decorate("message", {"content": "", "start_to_think": True})
                             elif m == "</think>":
                                 yield decorate("message", {"content": "", "end_to_think": True})
-                            elif m.find("<tool_call>") >=0:
-                                yield _node_logs(cpn["obj"], m)
+                            elif m.find("<tool_call>") >=0 and partials:
+                                _cpn = self.get_component(partials[0])
+                                yield _node_logs(_cpn["obj"], m)
                             else:
                                 yield decorate("message", {"content": m})
                                 _m += m

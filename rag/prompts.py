@@ -26,6 +26,8 @@ from api.db import LLMType
 from rag.settings import TAG_FLD
 from rag.utils import encoder, num_tokens_from_string
 
+STOP_TOKEN="<|STOP|>"
+COMPLETE_TASK="complete_task"
 
 def chunks_format(reference):
     def get_value(d, k1, k2):
@@ -134,7 +136,6 @@ def kb_prompt(kbinfos, max_tokens, prefix=""):
 
 
 def citation_prompt():
-    print("USE PROMPT", flush=True)
     return """
 
 # Citation requirements:
@@ -488,3 +489,106 @@ Output format (include only sections relevant to the image content):
 Ensure high accuracy, clarity, and completeness in your analysis, and include only the information present in the image. Avoid unnecessary statements about missing elements.
 """
     return prompt
+
+
+def react_prompt(tools_description: list[dict]) -> str:
+    if not tools_description:
+        return ""
+    desc = {
+        COMPLETE_TASK: {
+            "type": "function",
+            "function": {
+                "name": COMPLETE_TASK,
+                "description": "When you have the final answer and are ready to complete the task, call this function with your answer",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"answer":{"type":"string", "description": "The final answer to the user's question"}},
+                    "required": ["answer"]
+                }
+            }
+    }}
+    for tool in tools_description:
+        desc[tool["function"]["name"]] = tool
+
+    desc = "\n\n".join([f"## {i+1}. {fnm}\n{json.dumps(des, ensure_ascii=False, indent=4)}" for i, (fnm, des) in enumerate(desc.items())])
+
+    return f"""
+
+# ==========  TOOLS (JSON-Schema) ==========
+You may invoke only the tools listed below.  
+Return a JSON object with exactly two top-level keys:  
+• "name": the tool to call  
+• "arguments": an object whose keys/values satisfy the schema
+
+{desc}
+
+# ==========  RESPONSE FORMAT ==========
+✦ **When you need a tool**  
+Return ONLY the Json (no additional keys, no commentary, end with `<|stop|>`), such as following:
+{{
+  "name": "<tool_name>",
+  "arguments": {{ /* tool arguments matching its schema */ }}
+}}<|stop|>
+
+✦ **When you are certain the task is solved OR no further information can be obtained**  
+Return ONLY:
+{{
+  "name": "complete_task",
+  "arguments": {{ "answer": "<final answer text>" }}
+}}<|stop|>
+
+⚠️ Any output that is not valid JSON or that contains extra fields will be rejected.
+
+# ==========  REASONING & REFLECTION ==========
+You may think privately (not shown to the user) before producing each JSON object.  
+Internal guideline:
+1. **Reason**: Analyse the user question; decide which tool (if any) is needed.  
+2. **Act**: Emit the JSON object to call the tool.  
+3. **Observe**: The system will return the tool’s result.  
+4. **Reflect**: Critically evaluate whether the new information answers the question or another tool is needed.  
+5. Repeat 1-4 until ready, then call `complete_task`.
+
+Never request a tool if:
+• It would return no new useful information, OR  
+• You have already assembled a satisfactory final answer.
+
+"""
+
+
+def post_function_call_promt(function_name, result):
+    return f"""
+**Act**
+Call `{function_name}`
+
+**Observe**
+After calling the function above, the response is as following:
+{result}
+
+**Reflect**: 
+
+"""
+
+
+def tool_call_summary(inputs, results):
+    results = re.sub(r"!\[[a-z]+\]\(data:image/png;base64[^()]+\)", "", str(results), flags=re.DOTALL)[:4096]
+    return f"""**Task Instruction:**
+
+    You are tasked with reading and analyzing tool call result based on the following inputs: **Inputs for current call**, and **Results**. Your objective is to extract relevant and helpful information for **Inputs for current call** from the **Results** and seamlessly integrate this information into the previous steps to continue reasoning for the original question.
+
+    **Guidelines:**
+
+    1. **Analyze the Results:**
+    - Carefully review the content of each results of tool call.
+    - Identify factual information that is relevant to the **Inputs for current call** and can aid in the reasoning process for the original question.
+
+    2. **Extract Relevant Information:**
+    - Select the information from the Searched Web Pages that directly contributes to advancing the previous reasoning steps.
+    - Ensure that the extracted information is accurate and relevant.
+
+    - **Inputs for current call:**  
+    {inputs}
+
+    - **Results:**  
+    {results}
+
+    """
