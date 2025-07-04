@@ -34,6 +34,8 @@ export enum PromptRole {
 }
 
 import {
+  Circle,
+  CircleSlash2,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -81,7 +83,7 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
-  Code = 'Code',
+  Code = 'CodeExec',
   WaitingDialogue = 'WaitingDialogue',
   Agent = 'Agent',
   Tool = 'Tool',
@@ -378,8 +380,16 @@ export const SwitchOperatorOptions = [
   { value: 'not contains', label: 'notContains', icon: 'not-contains' },
   { value: 'start with', label: 'startWith', icon: 'list-start' },
   { value: 'end with', label: 'endWith', icon: 'list-end' },
-  { value: 'empty', label: 'empty', icon: 'circle' },
-  { value: 'not empty', label: 'notEmpty', icon: 'circle-slash-2' },
+  {
+    value: 'empty',
+    label: 'empty',
+    icon: <Circle className="size-4" />,
+  },
+  {
+    value: 'not empty',
+    label: 'notEmpty',
+    icon: <CircleSlash2 className="size-4" />,
+  },
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
@@ -661,16 +671,13 @@ export const initialIterationStartValues = {
 };
 
 export const initialCodeValues = {
-  lang: 'python',
+  lang: ProgrammingLanguage.Python,
   script: CodeTemplateStrMap[ProgrammingLanguage.Python],
-  arguments: [
-    {
-      name: 'arg1',
-    },
-    {
-      name: 'arg2',
-    },
-  ],
+  arguments: {
+    arg1: '',
+    arg2: '',
+  },
+  outputs: {},
 };
 
 export const initialWaitingDialogueValues = {};

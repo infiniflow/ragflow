@@ -1,10 +1,10 @@
-import { IconFont } from '@/components/icon-font';
 import { Card, CardContent } from '@/components/ui/card';
 import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo, useCallback } from 'react';
 import { NodeHandleId, SwitchOperatorOptions } from '../../constant';
-import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
+import { LogicalOperatorIcon } from '../../form/switch-form';
+import { useGetVariableLabelByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
@@ -25,16 +25,21 @@ const getConditionKey = (idx: number, length: number) => {
 const ConditionBlock = ({
   condition,
   nodeId,
-}: {
-  condition: ISwitchCondition;
-  nodeId: string;
-}) => {
+}: { condition: ISwitchCondition } & { nodeId: string }) => {
   const items = condition?.items ?? [];
-  const getLabel = useGetComponentLabelByValue(nodeId);
+  const getLabel = useGetVariableLabelByValue(nodeId);
 
   const renderOperatorIcon = useCallback((operator?: string) => {
-    const name = SwitchOperatorOptions.find((x) => x.value === operator)?.icon;
-    return <IconFont name={name!}></IconFont>;
+    const item = SwitchOperatorOptions.find((x) => x.value === operator);
+    if (item) {
+      return (
+        <LogicalOperatorIcon
+          icon={item?.icon}
+          value={item?.value}
+        ></LogicalOperatorIcon>
+      );
+    }
+    return <></>;
   }, []);
 
   return (
@@ -83,8 +88,8 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
                   </div>
                   {position.condition && (
                     <ConditionBlock
-                      nodeId={id}
                       condition={position.condition}
+                      nodeId={id}
                     ></ConditionBlock>
                   )}
                 </section>
