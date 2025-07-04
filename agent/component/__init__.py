@@ -17,7 +17,7 @@
 import importlib
 from .begin import Begin, BeginParam
 from .llm import LLM, LLMParam
-from .llm_with_tools import Agent, AgentParam
+from .agent_with_tools import Agent, AgentParam
 from .categorize import Categorize, CategorizeParam
 from .switch import Switch, SwitchParam
 from .message import Message, MessageParam

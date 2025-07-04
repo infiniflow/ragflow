@@ -187,7 +187,7 @@ def reset():
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 def upload():
-    user_id = request.json.get("user_id", current_user.id)
+    user_id = request.args.get("user_id", current_user.id)
     def structured(filename, filetype, blob, content_type):
         nonlocal user_id
         if filetype == FileType.PDF.value:
@@ -207,7 +207,7 @@ def upload():
             "preview_url": None
         }
 
-    if request.json.get("url"):
+    if request.args.get("url"):
         from crawl4ai import (
             AsyncWebCrawler,
             BrowserConfig,
@@ -217,7 +217,7 @@ def upload():
             CrawlResult
         )
         try:
-            url = request.json["url"]
+            url = request.args.get("url")
             filename = re.sub(r"\?.*", "", url.split("/")[-1])
             async def adownload():
                 browser_config = BrowserConfig(
@@ -243,7 +243,7 @@ def upload():
                     filename += ".pdf"
                 return get_json_result(data=structured(filename, "pdf", page.pdf, page.response_headers["content-type"]))
 
-            return get_json_result(data=structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], request.json.get("user_id", current_user.id)))
+            return get_json_result(data=structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id))
 
         except Exception as e:
             return  server_error_response(e)
@@ -251,7 +251,7 @@ def upload():
     file = request.files['file']
     try:
         DocumentService.check_doc_health(current_user.id, file.filename)
-        return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type, request.json.get("user_id", current_user.id)))
+        return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
     except Exception as e:
         return  server_error_response(e)
 

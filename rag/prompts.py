@@ -18,6 +18,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from copy import deepcopy
 
 import json_repair
 
@@ -491,11 +492,12 @@ Ensure high accuracy, clarity, and completeness in your analysis, and include on
     return prompt
 
 
-def react_prompt(tools_description: list[dict]) -> str:
+def tool_schema(tools_description: list[dict], complete_task=False):
     if not tools_description:
         return ""
-    desc = {
-        COMPLETE_TASK: {
+    desc = {}
+    if complete_task:
+        desc[COMPLETE_TASK] = {
             "type": "function",
             "function": {
                 "name": COMPLETE_TASK,
@@ -506,13 +508,80 @@ def react_prompt(tools_description: list[dict]) -> str:
                     "required": ["answer"]
                 }
             }
-    }}
+        }
     for tool in tools_description:
         desc[tool["function"]["name"]] = tool
 
-    desc = "\n\n".join([f"## {i+1}. {fnm}\n{json.dumps(des, ensure_ascii=False, indent=4)}" for i, (fnm, des) in enumerate(desc.items())])
+    return "\n\n".join([f"## {i+1}. {fnm}\n{json.dumps(des, ensure_ascii=False, indent=4)}" for i, (fnm, des) in enumerate(desc.items())])
 
-    return f"""
+
+def analyze_task(chat_mdl, history:list, tools_description: list[dict]):
+    tools_desc = tool_schema(tools_description)
+    task = ""
+    for h in history:
+        if h["role"] == "user":
+            task = h["content"]
+            break
+    context = ""
+    if len(history) > 6:
+        for h in history[-6:]:
+            if h["role"] == "system":
+                continue
+            context += f"\n{h['role'].upper()}: {h['content'][:1024] + ('...' if len(h['content'])>1024 else '')}"
+
+    system_prompt = """
+Your responsibility is to execute assigned tasks to a high standard. Please:
+1. Carefully analyze the task requirements.
+2. Develop a reasonable execution plan.
+3. Execute step-by-step and document the reasoning process.
+4. Provide clear and accurate results.
+
+If difficulties are encountered, clearly state the problem and explore alternative approaches.
+Completed Task Analysis Prompt:
+"""
+    user_prompt = f"""
+Please analyze the following task:
+
+Task: {task}
+
+{f"Context: {context}" if context else ""}
+
+**Analysis Requirements:**
+1. What is the core objective of the task?
+2. What is the complexity level of the task?
+3. What types of specialized skills are required?
+4. Does the task need to be decomposed into subtasks? (If yes, propose the subtask structure)
+5. What are the expected success criteria?
+
+**Available Sub-Agents and Their Specializations:**
+{tools_desc}
+
+Provide a detailed analysis of the task based on the above requirements.
+"""
+    kwd, tk = chat_mdl._chat([{"role": "system", "content": system_prompt},{"role": "user", "content": user_prompt}], {})
+    if isinstance(kwd, tuple):
+        kwd = kwd[0]
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
+    if kwd.find("**ERROR**") >= 0:
+        return "", 0
+    return kwd, tk
+
+
+def next_step(chat_mdl, history:list, tools_description: list[dict]):
+    if not tools_description:
+        return ""
+    task_analisys, tk = analyze_task(chat_mdl, history, tools_description)
+    desc = tool_schema(tools_description)
+    sys_prompt = f"""
+You are an expert Planning Agent tasked with solving problems efficiently through structured plans.
+Your job is:
+1. Based on the task analysis, chose a right tool to execute.
+2. Track progress and adapt plans(tool calls) when necessary.
+3. Use `complete_task` if no further step you need to take from tools. (All necessary steps done or little hope to be done)
+
+# ========== TASK ANALYSIS =============
+{task_analisys}
+
 
 # ==========  TOOLS (JSON-Schema) ==========
 You may invoke only the tools listed below.  
@@ -544,15 +613,19 @@ You may think privately (not shown to the user) before producing each JSON objec
 Internal guideline:
 1. **Reason**: Analyse the user question; decide which tool (if any) is needed.  
 2. **Act**: Emit the JSON object to call the tool.  
-3. **Observe**: The system will return the tool’s result.  
-4. **Reflect**: Critically evaluate whether the new information answers the question or another tool is needed.  
-5. Repeat 1-4 until ready, then call `complete_task`.
-
-Never request a tool if:
-• It would return no new useful information, OR  
-• You have already assembled a satisfactory final answer.
 
 """
+    user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
+    hist = deepcopy(history)
+    hist[0]["content"] = sys_prompt
+    if hist[-1]["role"] == "user":
+        hist[-1]["content"] += user_prompt
+    else:
+        hist.append({"role": "user", "content": user_prompt})
+    json_str, tk_cnt = chat_mdl._chat(hist, {}, stop=["<|stop|>"])
+    tk_cnt += tk
+    json_str = re.sub(r"^.*</think>", "", json_str, flags=re.DOTALL)
+    return json_str, tk_cnt
 
 
 def post_function_call_promt(function_name, result):

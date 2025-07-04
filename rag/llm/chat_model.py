@@ -22,7 +22,6 @@ import re
 import time
 from abc import ABC
 from copy import deepcopy
-from http import HTTPStatus
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
@@ -37,7 +36,8 @@ from strenum import StrEnum
 from zhipuai import ZhipuAI
 
 from rag.nlp import is_chinese, is_english
-from rag.prompts import react_prompt, COMPLETE_TASK, post_function_call_promt, tool_call_summary
+from rag.prompts import COMPLETE_TASK, post_function_call_promt, tool_call_summary, analyze_task, \
+    next_step
 from rag.utils import num_tokens_from_string
 
 # Error message constants
@@ -220,18 +220,9 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    def _react_with_tools(self, history, gen_conf):
+    def _react_with_tools(self, history: list[dict], gen_conf: dict|None):
         hist = deepcopy(history)
-        prompt = react_prompt(self.tools)
-        if not history:
-            hist = [{"role": "system", "content": prompt}]
-        elif hist[0]["role"] == "system":
-            if hist[0]["content"].find(prompt[-100:]) < 0:
-                hist[0]["content"] += prompt
-        else:
-            hist.insert(0, {"role": "system", "content": prompt})
-
-        response, token_count = self._chat(hist, gen_conf, stop=["<|stop|>"])
+        response, token_count = next_step(self, hist, self.tools)
         if response.find(LENGTH_NOTIFICATION_CN) > 0 or response.find(LENGTH_NOTIFICATION_EN) > 0:
             return response, token_count, True
         hist.append({"role": "assistant", "content": response})
@@ -261,22 +252,9 @@ class Base(ABC):
             history.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
             return self._verbose_tool_use(name, {}, str(e)), token_count, False
 
-    def _react_with_tools_streamly(self, history, gen_conf):
+    def _react_with_tools_streamly(self, history: list[dict], gen_conf: dict|None):
         hist = deepcopy(history)
-        prompt = react_prompt(self.tools)
-        if not history:
-            hist = [{"role": "system", "content": prompt}]
-        elif hist[0]["role"] == "system":
-            if hist[0]["content"].find(prompt[-100:]) < 0:
-                hist[0]["content"] += prompt
-        else:
-            hist.insert(0, {"role": "system", "content": prompt})
-
-        token_count = 0
-        response = ""
-        for delta_ans, tol in self._chat_streamly(hist, gen_conf, stop=["<|stop|>"], with_reasoning=False):
-            token_count += tol
-            response += delta_ans
+        response, token_count = next_step(self, hist, self.tools)
         hist.append({"role": "assistant", "content": response})
         name = response
         try:

@@ -36,7 +36,7 @@ class TavilySearchParam(ToolParamBase):
             "parameters": {
                 "query": {
                     "type": "string",
-                    "description": "The search query to execute with Tavily.",
+                    "description": "The search query to execute with Tavily. Less keywords is recommanded.",
                     "default": "{sys.query}",
                     "required": True
                 },
