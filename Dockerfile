@@ -137,6 +137,9 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
         dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_arm64.deb; \
     fi
 
+# Install LibreOffice
+RUN apt update && \
+    apt install -y libreoffice
 
 # builder stage
 FROM base AS builder

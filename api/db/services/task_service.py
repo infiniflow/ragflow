@@ -364,6 +364,11 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             parse_task_array.append(task)
     else:
         parse_task_array.append(new_task())
+    if doc["type"] == FileType.DOC.value and doc["parser_config"].get(
+        "pdf_converter", False):
+        task = new_task()
+        task["task_type"] = "convert2pdf"
+        parse_task_array.append(task)
 
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     for task in parse_task_array:

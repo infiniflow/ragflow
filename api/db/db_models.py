@@ -661,6 +661,7 @@ class File2Document(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     file_id = CharField(max_length=32, null=True, help_text="file id", index=True)
     document_id = CharField(max_length=32, null=True, help_text="document id", index=True)
+    pdf_file_id = CharField(max_length=32, null=True, help_text="pdf file id", index=True)
 
     class Meta:
         db_table = "file2document"
@@ -950,5 +951,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("file2document", "pdf_file_id", CharField(max_length=32,null=False, help_text="pdf file id", index=True)))
     except Exception:
         pass
