@@ -130,7 +130,7 @@ class ESConnection(DocStoreConnection):
                 self._connect()
                 continue
             except Exception as e:
-                logger.exception("ESConnection.indexExist got exception")
+                logger.exception(e)
                 break
         return False
 
@@ -263,7 +263,7 @@ class ESConnection(DocStoreConnection):
                 self._connect()
                 continue
             except Exception as e:
-                logger.exception(f"ESConnection.search {str(indexNames)} query: " + str(q))
+                logger.exception(f"ESConnection.search {str(indexNames)} query: " + str(q) + str(e))
 
         logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
@@ -344,7 +344,7 @@ class ESConnection(DocStoreConnection):
                     return True
                 except Exception as e:
                     logger.exception(
-                        f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
+                        f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: "+str(e))
                     break
             return False
 
