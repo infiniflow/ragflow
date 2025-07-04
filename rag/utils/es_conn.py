@@ -264,6 +264,7 @@ class ESConnection(DocStoreConnection):
                 continue
             except Exception as e:
                 logger.exception(f"ESConnection.search {str(indexNames)} query: " + str(q) + str(e))
+                raise e
 
         logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
