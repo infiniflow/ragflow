@@ -141,8 +141,6 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
 RUN apt update && \
     apt install -y libreoffice
 
-ENV LD_LIBRARY_PATH=/usr/lib/libreoffice/program:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
-
 # builder stage
 FROM base AS builder
 USER root

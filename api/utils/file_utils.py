@@ -323,6 +323,11 @@ def get_libreoffice_path():
 
 
 def convert_to_pdf(blob: bytes, output_dir: str = None) -> bytes:
+    import os
+    os.environ[
+        "LD_LIBRARY_PATH"] = "/usr/lib/libreoffice/program:/usr/lib/x86_64-linux-gnu:" + os.environ.get(
+        "LD_LIBRARY_PATH", "")
+
     if output_dir is None:
         output_dir = tempfile.gettempdir()
     libreoffice_path = get_libreoffice_path()
