@@ -1,4 +1,7 @@
-import { useFetchNextChunkList, useSwitchChunk } from '@/hooks/chunk-hooks';
+import {
+  useFetchNextChunkList,
+  useSwitchChunk,
+} from '@/hooks/use-chunk-request';
 import classNames from 'classnames';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -156,7 +159,7 @@ const Chunk = () => {
                   </div>
                 </div>
               </div>
-              <div className=" rounded-[16px] bg-[#FFF]/10 pl-[20px] pb-[20px] pt-[20px] box-border	">
+              <div className=" rounded-[16px] bg-[#FFF]/10 pl-[20px] pb-[20px] pt-[20px] box-border	mb-2">
                 <ChunkResultBar
                   handleInputChange={handleInputChange}
                   searchString={searchString}
@@ -169,6 +172,8 @@ const Chunk = () => {
                 <div className="pt-[5px] pb-[5px]">
                   <CheckboxSets
                     selectAllChunk={selectAllChunk}
+                    switchChunk={handleSwitchChunk}
+                    removeChunk={handleRemoveChunk}
                     checked={selectedChunkIds.length === data.length}
                   />
                 </div>
@@ -199,18 +204,18 @@ const Chunk = () => {
                     ))}
                   </div>
                 </div>
+                <div className={styles.pageFooter}>
+                  <RAGFlowPagination
+                    pageSize={pagination.pageSize}
+                    current={pagination.current}
+                    total={total}
+                    onChange={(page, pageSize) => {
+                      onPaginationChange(page, pageSize);
+                    }}
+                  ></RAGFlowPagination>
+                </div>
               </div>
             </Spin>
-            <div className={styles.pageFooter}>
-              <RAGFlowPagination
-                pageSize={pagination.pageSize}
-                current={pagination.current}
-                total={total}
-                onChange={(page, pageSize) => {
-                  onPaginationChange(page, pageSize);
-                }}
-              ></RAGFlowPagination>
-            </div>
           </div>
         </div>
       </div>
