@@ -22,6 +22,7 @@ import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
+import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
 
@@ -176,6 +177,19 @@ export const useSendNextMessage = () => {
     });
   }, [value, done, addNewestOneQuestion, setValue, handleSendMessage]);
 
+  const sendFormMessage = useCallback(
+    (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
+      send(body);
+      addNewestOneQuestion({
+        content: Object.entries(body.inputs)
+          .map(([key, val]) => `${key}: ${val.value}`)
+          .join('<br/>'),
+        role: MessageType.User,
+      });
+    },
+    [addNewestOneQuestion, send],
+  );
+
   useEffect(() => {
     if (prologue) {
       addNewestOneAnswer({
@@ -200,5 +214,6 @@ export const useSendNextMessage = () => {
     removeMessageById,
     stopOutputMessage,
     send,
+    sendFormMessage,
   };
 };

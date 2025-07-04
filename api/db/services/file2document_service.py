@@ -87,3 +87,16 @@ class File2DocumentService(CommonService):
         obj["update_date"] = datetime_format(datetime.now())
         cls.model.update(obj).where(cls.model.document_id == doc_id).execute()
         return File2Document(**obj)
+
+    @classmethod
+    @DB.connection_context()
+    def get_preview_address(cls, doc_id=None):
+        f2d = cls.get_by_document_id(doc_id)
+        if f2d:
+            file = File.get_by_id(f2d[0].pdf_file_id) if f2d[0].pdf_file_id else File.get_by_id(f2d[0].file_id)
+            if not file.source_type or file.source_type == FileSource.LOCAL:
+                return file.parent_id, file.location
+            doc_id = f2d[0].document_id
+
+        e, doc = DocumentService.get_by_id(doc_id)
+        return doc.kb_id, doc.location

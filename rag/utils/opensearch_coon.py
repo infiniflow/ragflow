@@ -262,7 +262,7 @@ class OSConnection(DocStoreConnection):
                 if str(e).find("Timeout") > 0:
                     continue
                 raise e
-        logger.error("OSConnection.search timeout for 3 times!")
+        logger.error(f"OSConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("OSConnection.search timeout.")
 
     def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | None:
@@ -282,7 +282,7 @@ class OSConnection(DocStoreConnection):
                 if str(e).find("Timeout") > 0:
                     continue
                 raise e
-        logger.error("OSConnection.get timeout for 3 times!")
+        logger.error(f"OSConnection.get timeout for {ATTEMPT_TIME} times!")
         raise Exception("OSConnection.get timeout.")
 
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
@@ -557,5 +557,5 @@ class OSConnection(DocStoreConnection):
             except Exception:
                 logger.exception("OSConnection.sql got exception")
                 return None
-        logger.error("OSConnection.sql timeout for 3 times!")
+        logger.error(f"OSConnection.sql timeout for {ATTEMPT_TIME} times!")
         return None

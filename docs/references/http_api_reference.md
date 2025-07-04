@@ -881,7 +881,7 @@ curl --request PUT \
      {
           "name": "manual.txt", 
           "chunk_method": "manual", 
-          "parser_config": {"chunk_token_count": 128}
+          "parser_config": {"chunk_token_num": 128}
      }'
 
 ```
@@ -910,7 +910,7 @@ curl --request PUT \
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `256`.
+    - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
@@ -1254,6 +1254,57 @@ Failure:
 {
     "code": 102,
     "message": "`document_ids` is required"
+}
+```
+
+---
+
+
+### Preview document
+
+**GET** `/api/v1/datasets/{dataset_id}/documents/preview/{document_id}`
+
+Previews a document from a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/documents/preview/{document_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Output:
+  - `'{PATH_TO_THE_FILE}'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/preview/{document_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --output ./ragflow.txt
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `documents_id`: (*Path parameter*)  
+  The ID of the document to preview.
+
+#### Response
+
+Success:
+
+```json
+This is a test to verify the file preview feature.
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "You do not own the dataset 7898da028a0511efbf750242ac1220005."
 }
 ```
 
