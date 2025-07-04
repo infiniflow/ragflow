@@ -41,18 +41,21 @@ type ConditionCardsProps = {
   parentLength: number;
 } & IOperatorForm;
 
-const OperatorIcon = function OperatorIcon({
+export const LogicalOperatorIcon = function OperatorIcon({
   icon,
   value,
 }: Omit<(typeof SwitchOperatorOptions)[0], 'label'>) {
-  return (
-    <IconFont
-      name={icon}
-      className={cn('size-4', {
-        'rotate-180': value === '>',
-      })}
-    ></IconFont>
-  );
+  if (typeof icon === 'string') {
+    return (
+      <IconFont
+        name={icon}
+        className={cn('size-4', {
+          'rotate-180': value === '>',
+        })}
+      ></IconFont>
+    );
+  }
+  return icon;
 };
 
 function useBuildSwitchOperatorOptions() {
@@ -61,7 +64,12 @@ function useBuildSwitchOperatorOptions() {
   const switchOperatorOptions = useMemo(() => {
     return SwitchOperatorOptions.map((x) => ({
       value: x.value,
-      icon: <OperatorIcon icon={x.icon} value={x.value}></OperatorIcon>,
+      icon: (
+        <LogicalOperatorIcon
+          icon={x.icon}
+          value={x.value}
+        ></LogicalOperatorIcon>
+      ),
       label: t(`flow.switchOperatorOptions.${x.label}`),
     }));
   }, [t]);
