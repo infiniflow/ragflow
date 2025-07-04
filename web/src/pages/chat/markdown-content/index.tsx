@@ -31,7 +31,7 @@ import classNames from 'classnames';
 import { pipe } from 'lodash/fp';
 import styles from './index.less';
 
-const getChunkIndex = (match: string) => Number(match.slice(2, -2));
+const getChunkIndex = (match: string) => Number(match);
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
   reference,
@@ -121,7 +121,7 @@ const MarkdownContent = ({
         document,
       };
     },
-    [fileThumbnails, reference?.chunks, reference?.doc_aggs],
+    [fileThumbnails, reference],
   );
 
   const getPopoverContent = useCallback(
