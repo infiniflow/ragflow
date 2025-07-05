@@ -724,7 +724,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                 if not settings.docStoreConn.indexExist(idxnm, kb_id):
                     settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
                 try_create_idx = False
-            settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
+            _, _ = settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)

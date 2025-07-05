@@ -114,13 +114,13 @@ class Benchmark:
                     docs_count += len(docs)
                     docs, vector_size = self.embedding(docs)
                     self.init_index(vector_size)
-                    settings.docStoreConn.insert(docs, self.index_name, self.kb_id)
+                    _, _ = settings.docStoreConn.insert(docs, self.index_name, self.kb_id)
                     docs = []
 
         if docs:
             docs, vector_size = self.embedding(docs)
             self.init_index(vector_size)
-            settings.docStoreConn.insert(docs, self.index_name, self.kb_id)
+            _, _ = settings.docStoreConn.insert(docs, self.index_name, self.kb_id)
         return qrels, texts
 
     def trivia_qa_index(self, file_path, index_name):
@@ -155,12 +155,12 @@ class Benchmark:
                     docs_count += len(docs)
                     docs, vector_size = self.embedding(docs)
                     self.init_index(vector_size)
-                    settings.docStoreConn.insert(docs,self.index_name)
+                    _, _ = settings.docStoreConn.insert(docs,self.index_name)
                     docs = []
 
         docs, vector_size = self.embedding(docs)
         self.init_index(vector_size)
-        settings.docStoreConn.insert(docs, self.index_name)
+        _, _ = settings.docStoreConn.insert(docs, self.index_name)
         return qrels, texts
 
     def miracl_index(self, file_path, corpus_path, index_name):
@@ -210,12 +210,12 @@ class Benchmark:
                     docs_count += len(docs)
                     docs, vector_size = self.embedding(docs)
                     self.init_index(vector_size)
-                    settings.docStoreConn.insert(docs, self.index_name)
+                    _, _ = settings.docStoreConn.insert(docs, self.index_name)
                     docs = []
 
         docs, vector_size = self.embedding(docs)
         self.init_index(vector_size)
-        settings.docStoreConn.insert(docs, self.index_name)
+        _, _ = settings.docStoreConn.insert(docs, self.index_name)
         return qrels, texts
 
     def save_results(self, qrels, run, texts, dataset, file_path):

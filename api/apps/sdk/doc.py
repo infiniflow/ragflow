@@ -1081,9 +1081,9 @@ def add_chunk(tenant_id, dataset_id, document_id):
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
+    _, count = settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
 
-    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, count, 0)
     # rename keys
     key_mapping = {
         "id": "id",
