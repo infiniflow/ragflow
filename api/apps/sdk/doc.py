@@ -1459,3 +1459,63 @@ def retrieval_test(tenant_id):
                 code=settings.RetCode.DATA_ERROR,
             )
         return server_error_response(e)
+
+@manager.route("/datasets/<dataset_id>/documents/preview/<document_id>", methods=["GET"])  # noqa: F821
+@token_required
+def preview(tenant_id, dataset_id, document_id):
+    """
+    Preview a document from a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+        return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
+    doc = DocumentService.query(kb_id=dataset_id, id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_preview_address(document_id)  # minio address
+    file_stream = STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=settings.RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return send_file(
+        file,
+        as_attachment=True,
+        download_name=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
+

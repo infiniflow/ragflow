@@ -166,9 +166,7 @@ class Canvas:
                 return n["data"]["name"]
         return ""
 
-    def run(self, running_hint_text = "is running...🕞", **kwargs):
-        if not running_hint_text or not isinstance(running_hint_text, str):
-            running_hint_text = "is running...🕞"
+    def run(self, running_hint_text = "", **kwargs):
         bypass_begin = bool(kwargs.get("bypass_begin", False))
 
         if self.answer:
