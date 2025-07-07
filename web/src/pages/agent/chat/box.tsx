@@ -1,6 +1,5 @@
 import { MessageType } from '@/constants/chat';
 import { useGetFileIcon } from '@/pages/chat/hooks';
-import { buildMessageItemReference } from '@/pages/chat/utils';
 import { Spin } from 'antd';
 
 import { useSendNextMessage } from './hooks';
@@ -19,6 +18,7 @@ import { useParams } from 'umi';
 import DebugContent from '../debug-content';
 import { BeginQuery } from '../interface';
 import { buildBeginQueryWithObject } from '../utils';
+import { buildAgentMessageItemReference } from '../utils/chat';
 
 const AgentChatBox = () => {
   const {
@@ -88,7 +88,7 @@ const AgentChatBox = () => {
                     avatar={userInfo.avatar}
                     avatarDialog={canvasInfo.avatar}
                     item={message}
-                    reference={buildMessageItemReference(
+                    reference={buildAgentMessageItemReference(
                       { message: derivedMessages, reference },
                       message,
                     )}

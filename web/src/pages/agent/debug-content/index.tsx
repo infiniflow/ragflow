@@ -1,4 +1,3 @@
-import { FileUploader } from '@/components/file-uploader';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
@@ -19,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BeginQueryType } from '../constant';
 import { BeginQuery } from '../interface';
+import { FileUploadDirectUpload } from './uploader';
 
 export const BeginQueryComponentMap = {
   [BeginQueryType.Line]: 'string',
@@ -71,7 +71,7 @@ const DebugContent = ({
         } else if (type === BeginQueryType.Integer) {
           fieldSchema = z.coerce.number();
         } else {
-          fieldSchema = z.instanceof(File);
+          fieldSchema = z.record(z.any());
         }
 
         if (cur.optional) {
@@ -165,18 +165,16 @@ const DebugContent = ({
           <React.Fragment key={idx}>
             <FormField
               control={form.control}
-              name={'file'}
+              name={props.name}
               render={({ field }) => (
                 <div className="space-y-6">
                   <FormItem className="w-full">
                     <FormLabel>{t('assistantAvatar')}</FormLabel>
                     <FormControl>
-                      <FileUploader
+                      <FileUploadDirectUpload
                         value={field.value}
-                        onValueChange={field.onChange}
-                        maxFileCount={1}
-                        maxSize={4 * 1024 * 1024}
-                      />
+                        onChange={field.onChange}
+                      ></FileUploadDirectUpload>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -232,18 +230,7 @@ const DebugContent = ({
     (values: z.infer<typeof formSchemaValues.schema>) => {
       const nextValues = Object.entries(values).map(([key, value]) => {
         const item = parameters[Number(key)];
-        let nextValue = value;
-        if (Array.isArray(value)) {
-          nextValue = ``;
-
-          value.forEach((x) => {
-            nextValue +=
-              x?.originFileObj instanceof File
-                ? `${x.name}\n${x.response?.data}\n----\n`
-                : `${x.url}\n${x.result}\n----\n`;
-          });
-        }
-        return { ...item, value: nextValue };
+        return { ...item, value };
       });
 
       ok(nextValues);

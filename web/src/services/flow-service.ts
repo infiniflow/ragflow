@@ -18,6 +18,7 @@ const {
   debug,
   listCanvasTeam,
   settingCanvas,
+  uploadCanvasFile,
 } = api;
 
 const methods = {
@@ -79,6 +80,10 @@ const methods = {
   },
   settingCanvas: {
     url: settingCanvas,
+    method: 'post',
+  },
+  uploadCanvasFile: {
+    url: uploadCanvasFile,
     method: 'post',
   },
 } as const;
