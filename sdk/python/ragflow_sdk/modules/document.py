@@ -41,7 +41,7 @@ class Document(Base):
         self.progress = 0.0
         self.progress_msg = ""
         self.process_begin_at = None
-        self.process_duation = 0.0
+        self.process_duration = 0.0
         self.run = "0"
         self.status = "1"
         for k in list(res_dict.keys()):
