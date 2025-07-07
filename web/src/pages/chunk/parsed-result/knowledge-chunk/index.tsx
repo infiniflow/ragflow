@@ -138,7 +138,6 @@ const Chunk = () => {
             vertical
             className={isPdf ? styles.pagePdfWrapper : styles.pageWrapper}
           >
-            999
             <Spin spinning={loading} className={styles.spin} size="large">
               <div className={styles.pageContent}>
                 <Space
