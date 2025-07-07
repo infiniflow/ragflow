@@ -198,7 +198,7 @@ export default {
       deleteDocumentConfirmContent:
         '该文档与知识图谱相关联。删除后，相关节点和关系信息将被删除，但图不会立即更新。更新图动作是在解析承载知识图谱提取任务的新文档的过程中执行的。',
       plainText: 'Naive',
-      reRankModelWaring: '重排序模型非常耗时。',
+      reRankModelWaring: '重排序模型会消耗大量token。',
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
