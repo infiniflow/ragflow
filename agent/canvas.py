@@ -28,6 +28,7 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
 from api.utils import get_uuid
+from rag.utils.redis_conn import REDIS_CONN
 
 
 class Canvas:
@@ -179,6 +180,11 @@ class Canvas:
             else:
                 self.globals[k] = None
 
+        try:
+            REDIS_CONN.delete(f"{self.task_id}-logs")
+        except Exception as e:
+            logging.exception(e)
+
     def get_component_name(self, cid):
         for n in self.dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
@@ -187,7 +193,7 @@ class Canvas:
 
     def run(self, **kwargs):
         st = time.perf_counter()
-        message_id = get_uuid()
+        self.message_id = get_uuid()
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
 
@@ -202,11 +208,11 @@ class Canvas:
         self.globals["sys.conversation_turns"] += 1
 
         def decorate(event, dt):
-            nonlocal message_id, created_at
+            nonlocal created_at
             return {
                 "event": event,
                 #"conversation_id": "f3cc152b-24b0-4258-a1a1-7d5e9fc8a115",
-                "message_id": message_id,
+                "message_id": self.message_id,
                 "created_at": created_at,
                 "task_id": self.task_id,
                 "data": dt
@@ -456,4 +462,20 @@ class Canvas:
         for file in files:
             threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"])))
         return [th.result() for th in threads]
+
+    def tool_use_callback(self, agent_id: str, func_name: str, params: dict):
+        agent_ids = agent_id.split("-->")
+        try:
+            bin = REDIS_CONN.get(f"{self.task_id}-{self.message_id}-logs")
+            if bin:
+                obj = json.loads(bin.encode("utf-8"))
+            else:
+                obj = {
+                    "component_id": agent_ids[0],
+                    "trace": []
+                }
+            obj["trace"].append({"path": agent_id, "tool_name": func_name, "arguments": params})
+            REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
+        except Exception as e:
+            logging.exception(e)
 

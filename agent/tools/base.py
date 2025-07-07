@@ -16,6 +16,7 @@
 import logging
 import time
 from copy import deepcopy
+from functools import partial
 from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
 from rag.llm.chat_model import ToolCallSession
@@ -38,11 +39,13 @@ class ToolMeta(TypedDict):
 
 
 class LLMToolPluginCallSession(ToolCallSession):
-    def __init__(self, tools_map: dict[str, object]):
+    def __init__(self, tools_map: dict[str, object], callback: partial):
         self.tools_map = tools_map
+        self.callback = callback
 
     def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
+        self.callback(name, arguments)
         return self.tools_map[name].invoke(**arguments)
 
 

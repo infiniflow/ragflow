@@ -39,6 +39,7 @@ from api.db.db_models import APIToken
 import time
 
 from api.utils.file_utils import filename_type, read_potential_broken_pdf
+from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -403,3 +404,19 @@ def setting():
             code=RetCode.OPERATING_ERROR)
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
+
+
+@manager.route('/trace', methods=['GET'])  # noqa: F821
+@login_required
+def trace():
+    cvs_id = request.args.get("canvas_id")
+    msg_id = request.args.get("message_id")
+    try:
+        bin = REDIS_CONN.get(f"{cvs_id}-{msg_id}-logs")
+        if not bin:
+            return get_json_result(data={})
+
+        return get_json_result(data=json.loads(bin.encode("utf-8")))
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(data={})

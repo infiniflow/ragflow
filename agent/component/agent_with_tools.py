@@ -63,6 +63,9 @@ class Agent(LLM, ToolBase):
     def __init__(self, canvas, id, param: LLMParam):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
+        name = canvas.get_component_name(id)
+        if name:
+            id = name
         for cpn in self._param.tools:
             from agent.component import component_class
             param = component_class(cpn["component_name"] + "Param")()
@@ -72,7 +75,7 @@ class Agent(LLM, ToolBase):
             except Exception as e:
                 self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
                 return
-            cpn_id = "_" + cpn["component_name"]
+            cpn_id = f"{id}-->" + cpn.get("name", "")
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
@@ -84,7 +87,7 @@ class Agent(LLM, ToolBase):
                                   react_mode=ReActMode.REACT
                                   )
         tool_metas = [v.get_meta() for _,v in self.tools.items()]
-        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools),tool_metas)
+        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools, partial(self._canvas.tool_use_callback, id)), tool_metas)
 
     def get_meta(self) -> dict[str, Any]:
         self._param.function_name= self._id

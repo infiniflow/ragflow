@@ -37,7 +37,7 @@ class Begin(UserFillUp):
     def _invoke(self, **kwargs):
         for k, v in kwargs.get("inputs", {}).items():
             if isinstance(v, dict) and v.get("type", "").lower().find("file") >=0:
-                v = self._canvas.get_files([v])
+                v = self._canvas.get_files([v["value"]])
             else:
                 v = v.get("value")
             self.set_output(k, v)
