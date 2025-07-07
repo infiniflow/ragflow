@@ -1,4 +1,7 @@
-import { useFetchNextChunkList, useSwitchChunk } from '@/hooks/chunk-hooks';
+import {
+  useFetchNextChunkList,
+  useSwitchChunk,
+} from '@/hooks/use-chunk-request';
 import type { PaginationProps } from 'antd';
 import { Divider, Flex, Pagination, Space, Spin, message } from 'antd';
 import classNames from 'classnames';
