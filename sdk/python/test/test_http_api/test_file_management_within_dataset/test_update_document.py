@@ -228,7 +228,7 @@ class TestDocumentsUpdated:
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
             pytest.param(
-                {"process_duation": 1.0},
+                {"process_duration": 1.0},
                 102,
                 "The input parameters are invalid.",
                 marks=pytest.mark.skip(reason="issues/6104"),
