@@ -199,7 +199,8 @@ class QWenEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
-        import dashscope, time
+        import dashscope
+        import time
 
         batch_size = 4
         res = []
