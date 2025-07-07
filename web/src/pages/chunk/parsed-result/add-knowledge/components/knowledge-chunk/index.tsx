@@ -1,7 +1,4 @@
-import {
-  useFetchNextChunkList,
-  useSwitchChunk,
-} from '@/hooks/use-chunk-request';
+import { useFetchNextChunkList, useSwitchChunk } from '@/hooks/chunk-hooks';
 import classNames from 'classnames';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';

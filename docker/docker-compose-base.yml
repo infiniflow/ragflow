@@ -164,7 +164,7 @@ services:
     restart: on-failure
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+    image: quay.io/minio/minio
     container_name: ragflow-minio
     command: server --console-address ":9001" /data
     ports:
@@ -180,6 +180,11 @@ services:
     networks:
       - ragflow
     restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
   redis:
     # swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/valkey/valkey:8
