@@ -107,10 +107,10 @@ services:
     container_name: ragflow-sandbox-executor-manager
     profiles:
       - sandbox
-    image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE}
+    image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
     privileged: true
     ports:
-      - ${SANDBOX_EXECUTOR_MANAGER_PORT}:9385
+      - ${SANDBOX_EXECUTOR_MANAGER_PORT-9385}:9385
     env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
