@@ -57,5 +57,6 @@ export function useCacheChatLog() {
     filterEventListByEventType,
     filterEventListByMessageId,
     setCurrentMessageId,
+    currentMessageId,
   };
 }
