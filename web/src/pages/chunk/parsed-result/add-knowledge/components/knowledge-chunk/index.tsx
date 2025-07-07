@@ -3,7 +3,7 @@ import {
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
 import classNames from 'classnames';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
@@ -46,6 +46,7 @@ const Chunk = () => {
   const { t } = useTranslation();
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
   const { switchChunk } = useSwitchChunk();
+  const [chunkList, setChunkList] = useState(data);
   const {
     chunkUpdatingLoading,
     onChunkUpdatingOk,
@@ -56,6 +57,9 @@ const Chunk = () => {
     documentId,
   } = useUpdateChunk();
 
+  useEffect(() => {
+    setChunkList(data);
+  }, [data]);
   const onPaginationChange: RAGFlowPaginationType['onChange'] = (
     page,
     size,
@@ -118,10 +122,22 @@ const Chunk = () => {
         available_int: available,
         doc_id: documentId,
       });
-      if (!chunkIds && resCode === 0) {
+      if (ids?.length && resCode === 0) {
+        chunkList.forEach((x: any) => {
+          if (ids.indexOf(x['chunk_id']) > -1) {
+            x['available_int'] = available;
+          }
+        });
+        setChunkList(chunkList);
       }
     },
-    [switchChunk, documentId, selectedChunkIds, showSelectedChunkWarning],
+    [
+      switchChunk,
+      documentId,
+      selectedChunkIds,
+      showSelectedChunkWarning,
+      chunkList,
+    ],
   );
 
   const { highlights, setWidthAndHeight } =
@@ -187,7 +203,7 @@ const Chunk = () => {
                       'flex flex-col gap-4',
                     )}
                   >
-                    {data.map((item) => (
+                    {chunkList.map((item) => (
                       <ChunkCard
                         item={item}
                         key={item.chunk_id}

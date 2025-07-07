@@ -2,7 +2,7 @@ import message from '@/components/ui/message';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -94,7 +94,6 @@ export const useFetchNextChunkList = (): ResponseGetType<{
 
 export const useSwitchChunk = () => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const {
     data,
     isPending: loading,
@@ -109,7 +108,6 @@ export const useSwitchChunk = () => {
       const { data } = await kbService.switch_chunk(params);
       if (data.code === 0) {
         message.success(t('message.modified'));
-        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
       }
       return data?.code;
     },
