@@ -3,7 +3,14 @@ import { MessageType } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import classNames from 'classnames';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  PropsWithChildren,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import {
   useFetchDocumentInfosByIds,
@@ -23,7 +30,10 @@ import styles from './index.less';
 
 const { Text } = Typography;
 
-interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
+interface IProps
+  extends Partial<IRemoveMessageById>,
+    IRegenerateMessage,
+    PropsWithChildren {
   item: IMessage;
   reference: IReference;
   loading?: boolean;
@@ -52,6 +62,7 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  children,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -119,16 +130,14 @@ const MessageItem = ({
           <Flex vertical gap={8} flex={1}>
             <Space>
               {isAssistant ? (
-                index !== 0 && (
-                  <AssistantGroupButton
-                    messageId={item.id}
-                    content={item.content}
-                    prompt={item.prompt}
-                    showLikeButton={showLikeButton}
-                    audioBinary={item.audio_binary}
-                    showLoudspeaker={showLoudspeaker}
-                  ></AssistantGroupButton>
-                )
+                <AssistantGroupButton
+                  messageId={item.id}
+                  content={item.content}
+                  prompt={item.prompt}
+                  showLikeButton={showLikeButton}
+                  audioBinary={item.audio_binary}
+                  showLoudspeaker={showLoudspeaker}
+                ></AssistantGroupButton>
               ) : (
                 <UserGroupButton
                   content={item.content}
@@ -152,12 +161,16 @@ const MessageItem = ({
                   : styles.messageUserText
               }
             >
-              <MarkdownContent
-                loading={loading}
-                content={item.content}
-                reference={reference}
-                clickDocumentButton={clickDocumentButton}
-              ></MarkdownContent>
+              {item.data ? (
+                children
+              ) : (
+                <MarkdownContent
+                  loading={loading}
+                  content={item.content}
+                  reference={reference}
+                  clickDocumentButton={clickDocumentButton}
+                ></MarkdownContent>
+              )}
             </div>
             {isAssistant && referenceDocumentList.length > 0 && (
               <List

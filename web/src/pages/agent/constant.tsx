@@ -34,6 +34,8 @@ export enum PromptRole {
 }
 
 import {
+  Circle,
+  CircleSlash2,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -81,11 +83,13 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
-  Code = 'Code',
+  Code = 'CodeExec',
   WaitingDialogue = 'WaitingDialogue',
   Agent = 'Agent',
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
+  UserFillUp = 'UserFillUp',
+  StringTransform = 'StringTransform',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -376,8 +380,16 @@ export const SwitchOperatorOptions = [
   { value: 'not contains', label: 'notContains', icon: 'not-contains' },
   { value: 'start with', label: 'startWith', icon: 'list-start' },
   { value: 'end with', label: 'endWith', icon: 'list-end' },
-  { value: 'empty', label: 'empty', icon: 'circle' },
-  { value: 'not empty', label: 'notEmpty', icon: 'circle-slash-2' },
+  {
+    value: 'empty',
+    label: 'empty',
+    icon: <Circle className="size-4" />,
+  },
+  {
+    value: 'not empty',
+    label: 'notEmpty',
+    icon: <CircleSlash2 className="size-4" />,
+  },
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
@@ -645,6 +657,7 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  outputs: {},
 };
 export const initialIterationStartValues = {
   outputs: {
@@ -658,16 +671,13 @@ export const initialIterationStartValues = {
 };
 
 export const initialCodeValues = {
-  lang: 'python',
+  lang: ProgrammingLanguage.Python,
   script: CodeTemplateStrMap[ProgrammingLanguage.Python],
-  arguments: [
-    {
-      name: 'arg1',
-    },
-    {
-      name: 'arg2',
-    },
-  ],
+  arguments: {
+    arg1: '',
+    arg2: '',
+  },
+  outputs: {},
 };
 
 export const initialWaitingDialogueValues = {};
@@ -678,6 +688,13 @@ export const initialAgentValues = {
   sys_prompt: ``,
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
+  max_retries: 3,
+  delay_after_error: 1,
+  visual_files_var: '',
+  max_rounds: 5,
+  exception_method: null,
+  exception_comment: '',
+  exception_goto: '',
   tools: [],
   outputs: {
     structured_output: {
@@ -692,6 +709,38 @@ export const initialAgentValues = {
     content: {
       type: 'string',
       value: '',
+    },
+  },
+};
+
+export const initialUserFillUpValues = {
+  enable_tips: true,
+  tips: '',
+  inputs: [],
+};
+
+export enum StringTransformMethod {
+  Merge = 'merge',
+  Split = 'split',
+}
+
+export enum StringTransformDelimiter {
+  Comma = ',',
+  Semicolon = ';',
+  Period = '.',
+  LineBreak = '\n',
+  Tab = '\t',
+  Space = ' ',
+}
+
+export const initialStringTransformValues = {
+  method: StringTransformMethod.Merge,
+  split_ref: '',
+  script: '',
+  delimiters: [StringTransformDelimiter.Comma],
+  outputs: {
+    result: {
+      type: 'string',
     },
   },
 };
@@ -816,6 +865,8 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.StringTransform]: [Operator.Begin],
+  [Operator.UserFillUp]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -860,6 +911,8 @@ export const NodeMap = {
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.UserFillUp]: 'ragNode',
+  [Operator.StringTransform]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -902,6 +955,7 @@ export enum NodeHandleId {
 export enum VariableType {
   String = 'string',
   Array = 'array',
+  File = 'file',
 }
 
 export const DefaultAgentToolValuesMap = {
@@ -913,3 +967,9 @@ export const DefaultAgentToolValuesMap = {
     api_key: '',
   },
 };
+
+export enum AgentExceptionMethod {
+  Comment = 'comment',
+  Goto = 'goto',
+  Null = 'null',
+}

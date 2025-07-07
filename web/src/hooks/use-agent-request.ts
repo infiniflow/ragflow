@@ -26,6 +26,7 @@ export const enum AgentApiAction {
   ResetAgent = 'resetAgent',
   SetAgent = 'setAgent',
   FetchAgentTemplates = 'fetchAgentTemplates',
+  UploadCanvasFile = 'uploadCanvasFile',
 }
 
 export const EmptyDsl = {
@@ -267,4 +268,35 @@ export const useSetAgent = () => {
   });
 
   return { data, loading, setAgent: mutateAsync };
+};
+
+export const useUploadCanvasFile = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.UploadCanvasFile],
+    mutationFn: async (body: any) => {
+      let nextBody = body;
+      try {
+        if (Array.isArray(body)) {
+          nextBody = new FormData();
+          body.forEach((file: File) => {
+            nextBody.append('file', file as any);
+          });
+        }
+
+        const { data } = await flowService.uploadCanvasFile(nextBody);
+        if (data?.code === 0) {
+          message.success(i18n.t('message.uploaded'));
+        }
+        return data;
+      } catch (error) {
+        message.error('error');
+      }
+    },
+  });
+
+  return { data, loading, uploadCanvasFile: mutateAsync };
 };

@@ -479,6 +479,9 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _concat_downward(self, concat_between_pages=True):
+        self.boxes = Recognizer.sort_Y_firstly(self.boxes, 0)
+        return
+
         # count boxes in the same row as a feature
         for i in range(len(self.boxes)):
             mh = self.mean_height[self.boxes[i]["page_number"] - 1]

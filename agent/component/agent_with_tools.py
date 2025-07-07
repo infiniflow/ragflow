@@ -64,8 +64,6 @@ class Agent(LLM, ToolBase):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
         name = canvas.get_component_name(id)
-        if name:
-            id = name
         for cpn in self._param.tools:
             from agent.component import component_class
             param = component_class(cpn["component_name"] + "Param")()
@@ -75,7 +73,7 @@ class Agent(LLM, ToolBase):
             except Exception as e:
                 self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
                 return
-            cpn_id = f"{id}-->" + cpn.get("name", "")
+            cpn_id = f"{name}-->" + cpn.get("name", "")
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 

@@ -881,7 +881,7 @@ curl --request PUT \
      {
           "name": "manual.txt", 
           "chunk_method": "manual", 
-          "parser_config": {"chunk_token_count": 128}
+          "parser_config": {"chunk_token_num": 128}
      }'
 
 ```
@@ -910,7 +910,7 @@ curl --request PUT \
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `256`.
+    - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
@@ -1058,7 +1058,7 @@ Success:
                 },
                 "chunk_method": "naive",
                 "process_begin_at": null,
-                "process_duation": 0.0,
+                "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
                 "run": "0",
@@ -1417,7 +1417,7 @@ Success:
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
-            "process_duation": 0.54213,
+            "process_duration": 0.54213,
             "progress": 0.0,
             "progress_msg": "Task dispatched...",
             "run": "2",
@@ -3228,7 +3228,7 @@ Generates five to ten alternative question strings from the user's original quer
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
 
-![Image](https://github.com/user-attachments/assets/17a5a0fe-e411-4e35-8251-85c71444468b)
+![Image](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/login_token.jpg)
 
 :::tip NOTE
 The chat model autonomously determines the number of questions to generate based on the instruction, typically between five and ten.

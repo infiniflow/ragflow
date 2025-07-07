@@ -205,6 +205,7 @@ export default {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
+      photoTip: '你可以上傳4MB的文件',
       description: '描述',
       language: '文件語言',
       languageMessage: '請輸入語言',
@@ -535,6 +536,7 @@ export default {
     setting: {
       profile: '概述',
       avatar: '头像',
+      avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
@@ -567,6 +569,7 @@ export default {
       currentPassword: '當前密碼',
       currentPasswordMessage: '請輸入當前密碼',
       newPassword: '新密碼',
+      changePassword: '修改密碼',
       newPasswordMessage: '請輸入新密碼',
       newPasswordDescription: '您的新密碼必須超過 8 個字符。',
       confirmPassword: '確認新密碼',

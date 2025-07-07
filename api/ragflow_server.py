@@ -43,6 +43,7 @@ from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from api.utils import show_configs
 from rag.settings import print_rag_settings
+from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
@@ -66,6 +67,7 @@ def update_progress():
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
+    shutdown_all_mcp_sessions()
     stop_event.set()
     time.sleep(1)
     sys.exit(0)

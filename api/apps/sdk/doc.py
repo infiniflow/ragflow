@@ -300,7 +300,7 @@ def update_doc(tenant_id, dataset_id, document_id):
                 doc.kb_id,
                 doc.token_num * -1,
                 doc.chunk_num * -1,
-                doc.process_duation * -1,
+                doc.process_duration * -1,
             )
             if not e:
                 return get_error_data_result(message="Document not found!")
@@ -519,20 +519,20 @@ def list_docs(dataset_id, tenant_id):
 
     # rename key's name
     renamed_doc_list = []
+    key_mapping = {
+        "chunk_num": "chunk_count",
+        "kb_id": "dataset_id",
+        "token_num": "token_count",
+        "parser_id": "chunk_method",
+    }
+    run_mapping = {
+        "0": "UNSTART",
+        "1": "RUNNING",
+        "2": "CANCEL",
+        "3": "DONE",
+        "4": "FAIL",
+    }
     for doc in docs:
-        key_mapping = {
-            "chunk_num": "chunk_count",
-            "kb_id": "dataset_id",
-            "token_num": "token_count",
-            "parser_id": "chunk_method",
-        }
-        run_mapping = {
-            "0": "UNSTART",
-            "1": "RUNNING",
-            "2": "CANCEL",
-            "3": "DONE",
-            "4": "FAIL",
-        }
         renamed_doc = {}
         for key, value in doc.items():
             if key == "run":

@@ -121,7 +121,7 @@ class Docx(DocxParser):
             if block_type != 'p':
                 continue
                 
-            if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
+            if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
                 try:
                     level_match = re.search(r"(\d+)", block.style.name)
                     if level_match:

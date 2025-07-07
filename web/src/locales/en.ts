@@ -207,6 +207,7 @@ export default {
         'Update your knowledge base configuration here, particularly the chunking method.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
+      photoTip: 'You can upload a file with 4 MB',
       description: 'Description',
       language: 'Document language',
       languageMessage: 'Please input your language!',
@@ -552,6 +553,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     setting: {
       profile: 'Profile',
       avatar: 'Avatar',
+      avatarTip: 'This will be displayed on your profile.',
       profileDescription: 'Update your photo and personal details here.',
       maxTokens: 'Max Tokens',
       maxTokensMessage: 'Max Tokens is required',
@@ -584,6 +586,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       currentPassword: 'Current password',
       currentPasswordMessage: 'Please input your password!',
       newPassword: 'New password',
+      changePassword: 'Change Password',
       newPasswordMessage: 'Please input your password!',
       newPasswordDescription:
         'Your new password must be more than 8 characters.',
@@ -1273,7 +1276,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',
-      openingCopy: 'Opening copy',
+      openingCopy: 'Opening greeting',
       openingSwitchTip:
         'Your users will see this welcome message at the beginning.',
       modeTip: 'The mode defines how the workflow is initiated.',

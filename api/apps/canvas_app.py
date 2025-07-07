@@ -101,7 +101,7 @@ def save():
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_tenant_id(canvas_id)
-    if not e:
+    if not e or c["user_id"] != current_user.id:
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)
 
@@ -115,8 +115,9 @@ def getsse(canvas_id):
     objs = APIToken.query(beta=token)
     if not objs:
         return get_data_error_result(message='Authentication error: API key is invalid!"')
+    tenant_id = objs[0].tenant_id
     e, c = UserCanvasService.get_by_id(canvas_id)
-    if not e:
+    if not e or c.user_id != tenant_id:
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c.to_dict())
 

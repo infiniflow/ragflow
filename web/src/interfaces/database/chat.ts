@@ -73,6 +73,7 @@ export interface Message {
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
 }
 
 export interface IReferenceChunk {
@@ -97,11 +98,12 @@ export interface IReference {
 
 export interface IAnswer {
   answer: string;
-  reference: IReference;
+  reference?: IReference;
   conversationId?: string;
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
 }
 
 export interface Docagg {

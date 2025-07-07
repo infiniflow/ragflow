@@ -7,14 +7,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
 import { CodeXml, EllipsisVertical, Forward, Import, Key } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AgentSidebar } from './agent-sidebar';
 import AgentCanvas from './canvas';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
@@ -71,7 +69,7 @@ export default function Agent() {
   }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
 
   return (
-    <section>
+    <section className="h-full">
       <PageHeader back={navigateToAgentList} title={flowDetail.title}>
         <div className="flex items-center gap-2">
           <ButtonLoading
@@ -117,20 +115,10 @@ export default function Agent() {
         </div>
       </PageHeader>
       <ReactFlowProvider>
-        <div>
-          <SidebarProvider>
-            <AgentSidebar />
-            <div className="w-full">
-              <SidebarTrigger />
-              <div className="w-full h-full">
-                <AgentCanvas
-                  drawerVisible={chatDrawerVisible}
-                  hideDrawer={hideChatDrawer}
-                ></AgentCanvas>
-              </div>
-            </div>
-          </SidebarProvider>
-        </div>
+        <AgentCanvas
+          drawerVisible={chatDrawerVisible}
+          hideDrawer={hideChatDrawer}
+        ></AgentCanvas>
       </ReactFlowProvider>
       {fileUploadVisible && (
         <UploadAgentDialog

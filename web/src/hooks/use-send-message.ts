@@ -1,4 +1,5 @@
 import { Authorization } from '@/constants/authorization';
+import { BeginQuery } from '@/pages/agent/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -11,6 +12,8 @@ export enum MessageEventType {
   Message = 'message',
   MessageEnd = 'message_end',
   WorkflowFinished = 'workflow_finished',
+  UserInputs = 'user_inputs',
+  NodeLogs = 'node_logs',
 }
 
 export interface IAnswerEvent<T> {
@@ -30,13 +33,34 @@ export interface INodeData {
   created_at: number;
 }
 
+export interface IInputData {
+  content: string;
+  inputs: Record<string, BeginQuery>;
+  tips: string;
+}
+
 export interface IMessageData {
   content: string;
+}
+
+export interface ILogData extends INodeData {
+  logs: {
+    name: string;
+    result: string;
+    args: {
+      query: string;
+      topic: string;
+    };
+  };
 }
 
 export type INodeEvent = IAnswerEvent<INodeData>;
 
 export type IMessageEvent = IAnswerEvent<IMessageData>;
+
+export type IInputEvent = IAnswerEvent<IInputData>;
+
+export type ILogEvent = IAnswerEvent<ILogData>;
 
 export type IChatEvent = INodeEvent | IMessageEvent;
 

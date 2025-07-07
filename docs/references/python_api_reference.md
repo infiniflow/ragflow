@@ -461,7 +461,7 @@ dataset = rag_object.list_datasets(id='id')
 dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
-doc.update([{"parser_config": {"chunk_token_count": 256}}, {"chunk_method": "manual"}])
+doc.update([{"parser_config": {"chunk_token_num": 256}}, {"chunk_method": "manual"}])
 ```
 
 ---
@@ -552,7 +552,7 @@ A `Document` object contains the following attributes:
 - `progress`: `float` The current processing progress as a percentage. Defaults to `0.0`.
 - `progress_msg`: `str` A message indicating the current progress status. Defaults to `""`.
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
-- `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
+- `process_duration`: `float` Duration of the processing in seconds. Defaults to `0.0`.
 - `run`: `str` The document's processing status:
   - `"UNSTART"`  (default)
   - `"RUNNING"`

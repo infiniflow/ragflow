@@ -465,16 +465,19 @@ class Canvas:
 
     def tool_use_callback(self, agent_id: str, func_name: str, params: dict):
         agent_ids = agent_id.split("-->")
+        agent_name = self.get_component_name(agent_ids[0])
+        path = agent_name if len(agent_ids) < 2 else agent_name+"-->"+"-->".join(agent_ids[1:])
         try:
             bin = REDIS_CONN.get(f"{self.task_id}-{self.message_id}-logs")
             if bin:
                 obj = json.loads(bin.encode("utf-8"))
+                if obj[-1]["component_id"] == agent_ids[0]:
+                    obj[-1]["trace"].append({"path": path, "tool_name": func_name, "arguments": params})
             else:
-                obj = {
+                obj = [{
                     "component_id": agent_ids[0],
-                    "trace": []
-                }
-            obj["trace"].append({"path": agent_id, "tool_name": func_name, "arguments": params})
+                    "trace": [{"path": path, "tool_name": func_name, "arguments": params}]
+                }]
             REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
         except Exception as e:
             logging.exception(e)

@@ -6,6 +6,7 @@ import {
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
+  IInputEvent,
   IMessageEvent,
   MessageEventType,
   useSendMessageBySSE,
@@ -21,6 +22,9 @@ import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
+import { transferInputsArrayToObject } from '../form/begin-form/use-watch-change';
+import { useGetBeginNodeDataQuery } from '../hooks/use-get-begin-query';
+import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
 
@@ -66,6 +70,21 @@ function findMessageFromList(eventList: IEventList) {
   };
 }
 
+function findInputFromList(eventList: IEventList) {
+  const inputEvent = eventList.find(
+    (x) => x.event === MessageEventType.UserInputs,
+  ) as IInputEvent;
+
+  if (!inputEvent) {
+    return {};
+  }
+
+  return {
+    id: inputEvent?.message_id,
+    data: inputEvent?.data,
+  };
+}
+
 const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
@@ -83,8 +102,6 @@ export const useSendNextMessage = () => {
     loading,
     derivedMessages,
     ref,
-    addNewestQuestion,
-    addNewestAnswer,
     removeLatestMessage,
     removeMessageById,
     addNewestOneQuestion,
@@ -94,6 +111,7 @@ export const useSendNextMessage = () => {
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { refetch } = useFetchAgent();
   const { addEventList } = useContext(AgentChatLogContext);
+  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     api.runCanvas,
@@ -138,10 +156,12 @@ export const useSendNextMessage = () => {
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
+    const inputAnswer = findInputFromList(answerList);
     if (answerList.length > 0) {
       addNewestOneAnswer({
         answer: content,
         id: id,
+        ...inputAnswer,
       });
     }
   }, [answerList, addNewestOneAnswer]);
@@ -160,13 +180,36 @@ export const useSendNextMessage = () => {
     });
   }, [value, done, addNewestOneQuestion, setValue, handleSendMessage]);
 
+  const sendFormMessage = useCallback(
+    (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
+      send(body);
+      addNewestOneQuestion({
+        content: Object.entries(body.inputs)
+          .map(([key, val]) => `${key}: ${val.value}`)
+          .join('<br/>'),
+        role: MessageType.User,
+      });
+    },
+    [addNewestOneQuestion, send],
+  );
+
   useEffect(() => {
-    if (prologue) {
+    const query = getBeginNodeDataQuery();
+    if (query.length > 0) {
+      send({ id: agentId, inputs: transferInputsArrayToObject(query) });
+    } else if (prologue) {
       addNewestOneAnswer({
         answer: prologue,
       });
     }
-  }, [addNewestOneAnswer, prologue]);
+  }, [
+    addNewestOneAnswer,
+    agentId,
+    getBeginNodeDataQuery,
+    prologue,
+    send,
+    sendFormMessage,
+  ]);
 
   useEffect(() => {
     addEventList(answerList);
@@ -183,5 +226,7 @@ export const useSendNextMessage = () => {
     ref,
     removeMessageById,
     stopOutputMessage,
+    send,
+    sendFormMessage,
   };
 };

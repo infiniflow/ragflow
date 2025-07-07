@@ -97,30 +97,73 @@ export function RAGFlowPagination({
     setCurrentPageSize(pageSize.toString());
   }, [pageSize]);
 
+  // Generates an array of page numbers to display
+  const displayedPages = useMemo(() => {
+    const totalPages = pages.length;
+    const maxDisplayedPages = 5;
+
+    if (totalPages <= maxDisplayedPages) {
+      return pages;
+    }
+
+    const left = Math.max(2, currentPage - 2);
+    const right = Math.min(totalPages - 1, currentPage + 2);
+
+    const newPages = [];
+
+    newPages.push(1);
+
+    if (left > 2) {
+      newPages.push(-1); // Indicates an ellipsis
+    }
+
+    for (let i = left; i <= right; i++) {
+      newPages.push(i);
+    }
+
+    if (right < totalPages - 1) {
+      newPages.push(-1);
+    }
+
+    if (totalPages > 1) {
+      newPages.push(totalPages);
+    }
+
+    return newPages;
+  }, [pages, currentPage]);
+
   return (
-    <section className="flex items-center justify-end text-text-sub-title-invert ">
+    <section className="flex items-center justify-end text-text-sub-title-invert">
       <span className="mr-4">Total {total}</span>
       <Pagination className="w-auto mx-0 mr-4">
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious onClick={handlePreviousPageChange} />
           </PaginationItem>
-          {pages.map((x) => (
-            <PaginationItem
-              key={x}
-              className={cn({
-                ['bg-background-header-bar rounded-md text-text-title']:
-                  currentPage === x,
-              })}
-            >
-              <PaginationLink onClick={handlePageChange(x)} className="size-8">
-                {x}
-              </PaginationLink>
-            </PaginationItem>
-          ))}
-          <PaginationItem>
-            <PaginationEllipsis />
-          </PaginationItem>
+
+          {displayedPages.map((page, index) =>
+            page === -1 ? (
+              <PaginationItem key={`ellipsis-${index}`}>
+                <PaginationEllipsis />
+              </PaginationItem>
+            ) : (
+              <PaginationItem
+                key={page}
+                className={cn({
+                  ['bg-background-header-bar rounded-md text-text-title']:
+                    currentPage === page,
+                })}
+              >
+                <PaginationLink
+                  onClick={handlePageChange(page)}
+                  className="size-8"
+                >
+                  {page}
+                </PaginationLink>
+              </PaginationItem>
+            ),
+          )}
+
           <PaginationItem>
             <PaginationNext onClick={handleNextPageChange} />
           </PaginationItem>

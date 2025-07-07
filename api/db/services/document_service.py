@@ -239,10 +239,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
+    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
         num = cls.model.update(token_num=cls.model.token_num + token_num,
                                chunk_num=cls.model.chunk_num + chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -257,10 +257,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
+    def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
         num = cls.model.update(token_num=cls.model.token_num - token_num,
                                chunk_num=cls.model.chunk_num - chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -289,6 +289,24 @@ class DocumentService(CommonService):
         ).where(
             Knowledgebase.id == doc.kb_id).execute()
         return num
+
+
+    @classmethod
+    @DB.connection_context()
+    def clear_chunk_num_when_rerun(cls, doc_id):
+        doc = cls.model.get_by_id(doc_id)
+        assert doc, "Can't fine document in database."
+
+        num = (
+            Knowledgebase.update(
+                token_num=Knowledgebase.token_num - doc.token_num,
+                chunk_num=Knowledgebase.chunk_num - doc.chunk_num,
+            )
+            .where(Knowledgebase.id == doc.kb_id)
+            .execute()
+        )
+        return num
+
 
     @classmethod
     @DB.connection_context()
@@ -518,7 +536,7 @@ class DocumentService(CommonService):
 
                 msg = "\n".join(sorted(msg))
                 info = {
-                    "process_duation": datetime.timestamp(
+                    "process_duration": datetime.timestamp(
                         datetime.now()) -
                                        d["process_begin_at"].timestamp(),
                     "run": status}

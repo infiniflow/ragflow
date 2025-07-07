@@ -38,8 +38,8 @@ services:
     env_file: .env
     environment:
       - TZ=${TIMEZONE}
-      - HF_ENDPOINT=${HF_ENDPOINT}
-      - MACOS=${MACOS}
+      - HF_ENDPOINT=${HF_ENDPOINT-}
+      - MACOS=${MACOS-}
     networks:
       - ragflow
     restart: on-failure

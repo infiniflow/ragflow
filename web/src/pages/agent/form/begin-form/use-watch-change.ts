@@ -4,7 +4,7 @@ import { UseFormReturn, useWatch } from 'react-hook-form';
 import { BeginQuery } from '../../interface';
 import useGraphStore from '../../store';
 
-function transferInputsArrayToObject(inputs: BeginQuery[] = []) {
+export function transferInputsArrayToObject(inputs: BeginQuery[] = []) {
   return inputs.reduce<Record<string, Omit<BeginQuery, 'key'>>>((pre, cur) => {
     pre[cur.key] = omit(cur, 'key');
 
@@ -17,8 +17,8 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
   useEffect(() => {
-    if (id && form?.formState.isDirty) {
-      values = form?.getValues();
+    if (id) {
+      values = form?.getValues() || {};
 
       const nextValues = {
         ...values,

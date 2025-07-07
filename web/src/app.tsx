@@ -78,7 +78,7 @@ function Root({ children }: React.PropsWithChildren) {
         }}
         locale={locale}
       >
-        <SidebarProvider>
+        <SidebarProvider className="h-full">
           <App>{children}</App>
         </SidebarProvider>
         <Sonner position={'top-right'} expand richColors closeButton></Sonner>
