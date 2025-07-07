@@ -954,11 +954,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.rename_column("task", "process_duation", "process_duration"))
-    except Exception as e:
-        logging.exception(e)
+    except Exception:
         pass
     try:
         migrate(migrator.rename_column("document", "process_duation", "process_duration"))
-    except Exception as e:
-        logging.exception(e)
+    except Exception:
         pass
