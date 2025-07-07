@@ -199,7 +199,7 @@ class QWenEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
-        import dashscope
+        import dashscope, time
 
         batch_size = 4
         res = []
@@ -209,6 +209,7 @@ class QWenEmbed(Base):
             retry_max = 5
             resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
             while resp["output"] is None and retry_max > 0:
+                time.sleep(10)
                 resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
                 retry_max -= 1
             if retry_max == 0 and resp["output"] is None:
