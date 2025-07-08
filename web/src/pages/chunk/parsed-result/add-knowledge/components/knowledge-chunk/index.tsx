@@ -3,11 +3,11 @@ import {
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
 import classNames from 'classnames';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
-import DocumentPreview from './components/document-preview/preview';
+import DocumentPreview from './components/document-preview';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -143,6 +143,20 @@ const Chunk = () => {
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunkId);
 
+  const fileType = useMemo(() => {
+    switch (documentInfo?.type) {
+      case 'doc':
+        return documentInfo?.name.split('.').pop() || 'doc';
+      case 'visual':
+      case 'docx':
+      case 'txt':
+      case 'md':
+      case 'pdf':
+        return documentInfo?.type;
+    }
+    return 'unknown';
+  }, [documentInfo]);
+
   return (
     <>
       <div className={styles.chunkPage}>
@@ -151,14 +165,14 @@ const Chunk = () => {
             <div className="h-[100px] flex flex-col justify-end pb-[5px]">
               <DocumentHeader {...documentInfo} />
             </div>
-            {isPdf && (
-              <section className={styles.documentPreview}>
-                <DocumentPreview
-                  highlights={highlights}
-                  setWidthAndHeight={setWidthAndHeight}
-                ></DocumentPreview>
-              </section>
-            )}
+            <section className={styles.documentPreview}>
+              <DocumentPreview
+                className={styles.documentPreview}
+                fileType={fileType}
+                highlights={highlights}
+                setWidthAndHeight={setWidthAndHeight}
+              ></DocumentPreview>
+            </section>
           </div>
           <div
             className={classNames(
