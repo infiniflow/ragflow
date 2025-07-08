@@ -34,6 +34,12 @@ def set_dialog():
     req = request.json
     dialog_id = req.get("dialog_id")
     name = req.get("name", "New Dialog")
+    if not isinstance(name, str):
+        return get_data_error_result(message="Dialog name must be string.")
+    if name.strip() == "":
+        return get_data_error_result(message="Dialog name can't be empty.")
+    if len(name.encode("utf-8")) > 255:
+        return get_data_error_result(message=f"Dialog name length is {len(name)} which is larger than 255")
     description = req.get("description", "A helpful dialog")
     icon = req.get("icon", "")
     top_n = req.get("top_n", 6)
