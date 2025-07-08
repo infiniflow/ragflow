@@ -2,7 +2,7 @@ import { useMouse } from 'ahooks';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useMoveNote() {
-  const ref = useRef<HTMLImageElement>(null);
+  const ref = useRef<SVGSVGElement>(null);
   const mouse = useMouse();
   const [imgVisible, setImgVisible] = useState(false);
 

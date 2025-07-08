@@ -59,7 +59,7 @@ function NoteNode({ data, id }: NodeProps<INoteNode>) {
                 <FormControl>
                   <Textarea
                     placeholder={t('flow.notePlaceholder')}
-                    className="resize-none rounded-none p-1 h-full overflow-auto"
+                    className="resize-none rounded-none p-1 h-full overflow-auto bg-background-header-bar"
                     {...field}
                   />
                 </FormControl>

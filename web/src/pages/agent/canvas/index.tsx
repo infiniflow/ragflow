@@ -223,12 +223,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </Controls>
         </ReactFlow>
       </AgentInstanceContext.Provider>
-      <img
-        src="/images/flow-bg.png"
-        alt=""
-        className={cn('hidden absolute size-8', { block: imgVisible })}
+      <NotebookPen
+        className={cn('hidden absolute size-6', { block: imgVisible })}
         ref={ref}
-      />
+      ></NotebookPen>
       {formDrawerVisible && (
         <AgentInstanceContext.Provider value={{ addCanvasNode }}>
           <FormSheet

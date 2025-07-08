@@ -269,6 +269,10 @@ function useResizeIterationNode() {
 
   return { resizeIterationNode };
 }
+type CanvasMouseEvent = Pick<
+  React.MouseEvent<HTMLElement>,
+  'clientX' | 'clientY'
+>;
 
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const { edges, nodes, addEdge, addNode, getNode } = useGraphStore(
@@ -290,7 +294,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
         position: Position.Right,
       },
     ) =>
-      (event?: React.MouseEvent<HTMLElement>) => {
+      (event?: CanvasMouseEvent) => {
         const nodeId = params.nodeId;
 
         const node = getNode(nodeId);
@@ -303,7 +307,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           y: event?.clientY || 0,
         });
 
-        if (params.position === Position.Right) {
+        if (params.position === Position.Right && type !== Operator.Note) {
           position = calculateNewlyBackChildPosition(nodeId, params.id);
         }
 
@@ -425,7 +429,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   );
 
   const addNoteNode = useCallback(
-    (e: React.MouseEvent<HTMLElement>) => {
+    (e: CanvasMouseEvent) => {
       addCanvasNode(Operator.Note)(e);
     },
     [addCanvasNode],
