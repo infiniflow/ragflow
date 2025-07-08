@@ -414,6 +414,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mind: '思维导图',
       question: '问题',
       questionTip: `如果有给定的问题，则块的嵌入将基于它们。`,
+      chunkResult: '切片结果',
+      chunkResultTip: `查看用于嵌入和召回的切片段落。`,
+      enable: '启用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新会话',
