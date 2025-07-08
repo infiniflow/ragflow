@@ -50,12 +50,6 @@ const OllamaModal = ({
 
   const { t } = useTranslate('setting');
 
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      await handleOk();
-    }
-  };
-
   const handleOk = async () => {
     const values = await form.validateFields();
     const modelType =
@@ -73,6 +67,13 @@ const OllamaModal = ({
 
     onOk?.(data);
   };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+  
   const url =
     llmFactoryToUrlMap[llmFactory as LlmFactory] ||
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
