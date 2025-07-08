@@ -271,7 +271,7 @@ function useResizeIterationNode() {
 }
 
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
-  const { edges, nodes, addEdge, addNode, getNode, updateNode } = useGraphStore(
+  const { edges, nodes, addEdge, addNode, getNode } = useGraphStore(
     (state) => state,
   );
   const getNodeName = useGetNodeName();
@@ -420,9 +420,16 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
       initializeOperatorParams,
       nodes,
       reactFlowInstance,
-      updateNode,
+      resizeIterationNode,
     ],
   );
 
-  return { addCanvasNode };
+  const addNoteNode = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      addCanvasNode(Operator.Note)(e);
+    },
+    [addCanvasNode],
+  );
+
+  return { addCanvasNode, addNoteNode };
 }
