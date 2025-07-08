@@ -153,7 +153,7 @@ def citation_prompt():
 Document: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
 URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
 ID: 0
-The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it’s still his favorite crypto...
+The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it's still his favorite crypto...
 
 Document: Elon Musk's Dogecoin tweet sparks social media frenzy
 ID: 1
@@ -161,7 +161,7 @@ Musk said he is 'willing to serve' D.O.G.E. – shorthand for Dogecoin.
 
 Document: Causal effect of Elon Musk tweets on Dogecoin price
 ID: 2
-If you think of Dogecoin — the cryptocurrency based on a meme — you can’t help but also think of Elon Musk...
+If you think of Dogecoin — the cryptocurrency based on a meme — you can't help but also think of Elon Musk...
 
 Document: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
 ID: 3
@@ -461,17 +461,23 @@ FAILURE HANDLING:
 
 def vision_llm_figure_describe_prompt() -> str:
     prompt = """
-You are an expert visual data analyst. Analyze the image and provide a comprehensive description of its content. Focus on identifying the type of visual data representation (e.g., bar chart, pie chart, line graph, table, flowchart), its structure, and any text captions or labels included in the image.
+You are an expert visual data analyst. Analyze the image and provide a comprehensive description of its content. Focus on identifying the type of visual data representation (e.g., bar chart, pie chart, line graph, table, flowchart, rating scale form, evaluation form), its structure, and any text captions or labels included in the image.
 
+**STEP 1: CONTENT TYPE IDENTIFICATION**
+First determine if this is:
+A) Standard data visualization (chart, graph, diagram)
+B) Rating scale form / evaluation form / survey
+
+**FOR STANDARD DATA VISUALIZATIONS (A):**
 Tasks:
 1. Describe the overall structure of the visual representation. Specify if it is a chart, graph, table, or diagram.
 2. Identify and extract any axes, legends, titles, or labels present in the image. Provide the exact text where available.
 3. Extract the data points from the visual elements (e.g., bar heights, line graph coordinates, pie chart segments, table rows and columns).
 4. Analyze and explain any trends, comparisons, or patterns shown in the data.
 5. Capture any annotations, captions, or footnotes, and explain their relevance to the image.
-6. Only include details that are explicitly present in the image. If an element (e.g., axis, legend, or caption) does not exist or is not visible, do not mention it.
+6. Only include details that are explicitly present in the image.
 
-Output format (include only sections relevant to the image content):
+Output format for data visualizations:
 - Visual Type: [Type]
 - Title: [Title text, if available]
 - Axes / Legends / Labels: [Details, if available]
@@ -479,6 +485,52 @@ Output format (include only sections relevant to the image content):
 - Trends / Insights: [Analysis and interpretation]
 - Captions / Annotations: [Text and relevance, if available]
 
-Ensure high accuracy, clarity, and completeness in your analysis, and includes only the information present in the image. Avoid unnecessary statements about missing elements.
+**FOR RATING SCALE FORMS / EVALUATION FORMS (B):**
+These are forms with numbered items and corresponding rating scales (typically 1-5 scales with circles to mark).
+
+Critical Instructions for Rating Forms:
+1. **Preserve exact structure**: Maintain the relationship between item descriptions and rating options
+2. **Identify selections accurately**: Distinguish between filled circles (●) and empty circles (○)
+3. **Capture scale anchors**: Note labels like "(Best)" and "(Worst)" or similar descriptors
+4. **Maintain numbering**: Keep original item numbering (1., 2., 3., etc.)
+5. **Handle bilingual content**: Preserve both English and Chinese text if present
+
+Output format for rating scale forms:
+```
+## [Form Title/Section Header]
+
+| Item | Description | 1 | 2 | 3 | 4 | 5 |
+|------|-------------|---|---|---|---|---|
+| 1. | [Exact item text] | ○ | **●** | ○ | ○ | ○ |
+| 2. | [Exact item text] | ○ | ○ | **●** | ○ | ○ |
+
+**Scale Information:**
+- Range: 1-5
+- Anchors: (Best) 1 ... 5 (Worst)
+- Selected Ratings: Item 1 = 2, Item 2 = 3
+
+**Additional Sections:** [If multiple sections exist, repeat the table format]
+```
+
+**VISUAL MARKERS TO RECOGNIZE:**
+- ● = Selected/filled circle (mark with **●** in output)
+- ○ = Unselected/empty circle (mark with ○ in output)
+- ✓ = Checkmark (mark with **✓** in output)
+- Highlighted/darkened boxes = Selected (mark with **[SELECTED]** in output)
+
+**QUALITY REQUIREMENTS:**
+- Extract ALL visible text exactly as shown
+- Identify ALL selected options with 100% accuracy
+- Preserve multilingual content (English/Chinese/etc.)
+- Maintain logical grouping and section divisions
+- Note any special instructions or scoring information
+
+**ERROR HANDLING:**
+- If text is unclear: [UNCLEAR TEXT]
+- If selection is ambiguous: [UNCLEAR SELECTION]
+- If partially visible: [PARTIAL]
+- Do not guess or invent content
+
+Ensure high accuracy, clarity, and completeness in your analysis, and include only the information present in the image. Avoid unnecessary statements about missing elements.
 """
     return prompt
