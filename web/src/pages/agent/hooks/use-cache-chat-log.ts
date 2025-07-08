@@ -1,4 +1,8 @@
-import { IEventList, MessageEventType } from '@/hooks/use-send-message';
+import {
+  IEventList,
+  INodeEvent,
+  MessageEventType,
+} from '@/hooks/use-send-message';
 import { useCallback, useMemo, useState } from 'react';
 
 export const ExcludeTypes = [
@@ -41,11 +45,13 @@ export function useCacheChatLog() {
   }, []);
 
   const currentEventListWithoutMessage = useMemo(() => {
-    return eventList.filter(
+    const list = eventList.filter(
       (x) =>
         x.message_id === currentMessageId &&
         ExcludeTypes.every((y) => y !== x.event),
     );
+
+    return list as INodeEvent[];
   }, [currentMessageId, eventList]);
 
   return {
