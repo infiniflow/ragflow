@@ -1,11 +1,18 @@
 import Image from '@/components/image';
+import { useTheme } from '@/components/theme-provider';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 import { IChunk } from '@/interfaces/database/knowledge';
-import { Card, Checkbox, CheckboxProps, Flex, Popover, Switch } from 'antd';
+import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
-
-import { useTheme } from '@/components/theme-provider';
 import { ChunkTextMode } from '../../constant';
 import styles from './index.less';
 
@@ -39,8 +46,8 @@ const ChunkCard = ({
     switchChunk(available === 0 ? 1 : 0, [item.chunk_id]);
   };
 
-  const handleCheck: CheckboxProps['onChange'] = (e) => {
-    handleCheckboxClick(item.chunk_id, e.target.checked);
+  const handleCheck = (e: CheckedState) => {
+    handleCheckboxClick(item.chunk_id, e === 'indeterminate' ? false : e);
   };
 
   const handleContentDoubleClick = () => {
@@ -54,7 +61,7 @@ const ChunkCard = ({
   useEffect(() => {
     setEnabled(available === 1);
   }, [available]);
-
+  const [open, setOpen] = useState<boolean>(false);
   return (
     <Card
       className={classNames(styles.chunkCard, {
@@ -62,19 +69,34 @@ const ChunkCard = ({
           selected,
       })}
     >
-      <Flex gap={'middle'} justify={'space-between'}>
-        <Checkbox onChange={handleCheck} checked={checked}></Checkbox>
+      <div className="flex items-start justify-between gap-2">
+        <Checkbox onCheckedChange={handleCheck} checked={checked}></Checkbox>
         {item.image_id && (
-          <Popover
-            placement="right"
-            content={
-              <Image id={item.image_id} className={styles.imagePreview}></Image>
-            }
-          >
-            <Image id={item.image_id} className={styles.image}></Image>
+          <Popover open={open}>
+            <PopoverTrigger
+              asChild
+              onMouseEnter={() => setOpen(true)}
+              onMouseLeave={() => setOpen(false)}
+            >
+              <div>
+                <Image id={item.image_id} className={styles.image}></Image>
+              </div>
+            </PopoverTrigger>
+            <PopoverContent
+              className="p-0"
+              align={'start'}
+              side={'right'}
+              sideOffset={-20}
+            >
+              <div>
+                <Image
+                  id={item.image_id}
+                  className={styles.imagePreview}
+                ></Image>
+              </div>
+            </PopoverContent>
           </Popover>
         )}
-
         <section
           onDoubleClick={handleContentDoubleClick}
           onClick={handleContentClick}
@@ -89,11 +111,15 @@ const ChunkCard = ({
             })}
           ></div>
         </section>
-
         <div>
-          <Switch checked={enabled} onChange={onChange} />
+          <Switch
+            checked={enabled}
+            onCheckedChange={onChange}
+            aria-readonly
+            className="!m-0"
+          />
         </div>
-      </Flex>
+      </div>
     </Card>
   );
 };

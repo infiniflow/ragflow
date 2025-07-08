@@ -12,9 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { IDocumentInfo } from '@/interfaces/database/document';
 import { Upload } from 'lucide-react';
-import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
@@ -42,16 +40,7 @@ export default function Dataset() {
     handleFilterSubmit,
     loading,
   } = useFetchDocumentList();
-  const { filters, documents: filteredDocuments } = useSelectDatasetFilters();
-  const [datasetInfo, setDatasetInfo] = useState<IDocumentInfo[]>(documents);
-
-  useMemo(() => {
-    setDatasetInfo(documents);
-  }, [documents]);
-
-  useMemo(() => {
-    setDatasetInfo(filteredDocuments);
-  }, [filteredDocuments]);
+  const { filters, onOpenChange } = useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -69,7 +58,6 @@ export default function Dataset() {
     rowSelection,
     setRowSelection,
   });
-
   return (
     <section className="p-5">
       <ListFilterBar
@@ -78,13 +66,13 @@ export default function Dataset() {
         searchString={searchString}
         value={filterValue}
         onChange={handleFilterSubmit}
+        onOpenChange={onOpenChange}
         filters={filters}
         leftPanel={
           <div className="items-start">
-            <div className="pb-1">Dataset</div>
+            <div className="pb-1">{t('knowledgeDetails.dataset')}</div>
             <div className="text-text-sub-title-invert text-sm">
-              Please wait for your files to finish parsing before starting an
-              AI-powered chat.
+              {t('knowledgeDetails.datasetDescription')}
             </div>
           </div>
         }
@@ -111,7 +99,7 @@ export default function Dataset() {
         <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
       )}
       <DatasetTable
-        documents={datasetInfo}
+        documents={documents}
         pagination={pagination}
         setPagination={setPagination}
         rowSelection={rowSelection}

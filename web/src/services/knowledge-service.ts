@@ -155,6 +155,10 @@ const methods = {
     url: listTagByKnowledgeIds,
     method: 'get',
   },
+  documentFilter: {
+    url: api.get_dataset_filter,
+    method: 'post',
+  },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
@@ -187,5 +191,8 @@ export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
 ) => request.post(api.get_document_list, { data: body || {}, params });
+
+export const documentFilter = (kb_id: string) =>
+  request.post(api.get_dataset_filter, { kb_id });
 
 export default kbService;
