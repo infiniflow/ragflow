@@ -52,6 +52,7 @@ export default function ListFilterBar({
   leftPanel,
   value,
   onChange,
+  onOpenChange,
   filters,
   className,
   icon,
@@ -79,7 +80,12 @@ export default function ListFilterBar({
       </div>
       <div className="flex gap-5 items-center">
         {showFilter && (
-          <FilterPopover value={value} onChange={onChange} filters={filters}>
+          <FilterPopover
+            value={value}
+            onChange={onChange}
+            filters={filters}
+            onOpenChange={onOpenChange}
+          >
             <FilterButton count={filterCount}></FilterButton>
           </FilterPopover>
         )}
