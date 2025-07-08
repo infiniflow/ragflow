@@ -21,6 +21,7 @@ from common import (
     batch_create_datasets,
     bulk_upload_documents,
     delete_chunks,
+    delete_dialogs,
     list_chunks,
     list_documents,
     list_kbs,
@@ -93,6 +94,14 @@ def clear_datasets(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth):
         res = list_kbs(WebApiAuth, params={"page_size": 1000})
         for kb in res["data"]["kbs"]:
             rm_kb(WebApiAuth, {"kb_id": kb["id"]})
+
+    request.addfinalizer(cleanup)
+
+
+@pytest.fixture(scope="function")
+def clear_dialogs(request, WebApiAuth):
+    def cleanup():
+        delete_dialogs(WebApiAuth)
 
     request.addfinalizer(cleanup)
 
