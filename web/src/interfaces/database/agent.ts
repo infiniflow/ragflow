@@ -217,3 +217,8 @@ export interface IGraph {
   nodes: RAGFlowNodeType[];
   edges: Edge[];
 }
+
+export interface ITraceData {
+  component_id: string;
+  trace: Array<Record<string, any>>;
+}
