@@ -18,23 +18,24 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  ILogData,
-  ILogEvent,
-  MessageEventType,
-} from '@/hooks/use-send-message';
+import { useFetchMessageTrace } from '@/hooks/use-agent-request';
+import { ILogEvent, MessageEventType } from '@/hooks/use-send-message';
 import { IModalProps } from '@/interfaces/common';
+import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { BellElectric, NotebookText } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import useGraphStore from '../store';
 
 type LogSheetProps = IModalProps<any> &
-  Pick<ReturnType<typeof useCacheChatLog>, 'currentEventListWithoutMessage'>;
+  Pick<
+    ReturnType<typeof useCacheChatLog>,
+    'currentEventListWithoutMessage' | 'currentMessageId'
+  >;
 
 function JsonViewer({
   data,
@@ -78,14 +79,43 @@ type EventWithIndex = { startNodeIdx: number } & ILogEvent;
 export function LogSheet({
   hideModal,
   currentEventListWithoutMessage,
+  currentMessageId,
 }: LogSheetProps) {
   const getNode = useGraphStore((state) => state.getNode);
+
+  const { data: traceData, setMessageId } = useFetchMessageTrace();
+
+  useEffect(() => {
+    setMessageId(currentMessageId);
+  }, [currentMessageId, setMessageId]);
 
   const getNodeName = useCallback(
     (nodeId: string) => {
       return getNode(nodeId)?.data.name;
     },
     [getNode],
+  );
+
+  const hasTrace = useCallback(
+    (componentId: string) => {
+      if (Array.isArray(traceData)) {
+        return traceData?.some((x) => x.component_id === componentId);
+      }
+    },
+    [traceData],
+  );
+
+  const filterTrace = useCallback(
+    (componentId: string) => {
+      return traceData
+        ?.filter((x) => x.component_id === componentId)
+        .reduce<ITraceData['trace']>((pre, cur) => {
+          pre.push(...cur.trace);
+
+          return pre;
+        }, []);
+    },
+    [traceData],
   );
 
   // Look up to find the nearest start component id and concatenate the finish and log data into one
@@ -109,19 +139,14 @@ export function LogSheet({
 
       const item = pre.find((x) => x.startNodeIdx === startNodeIdx);
 
-      const { logs = {}, inputs = {}, outputs = {} } = cur.data;
+      const { inputs = {}, outputs = {} } = cur.data;
       if (item) {
-        const {
-          inputs: inputList,
-          outputs: outputList,
-          logs: logList,
-        } = item.data;
+        const { inputs: inputList, outputs: outputList } = item.data;
 
         item.data = {
           ...item.data,
           inputs: concatData(inputList, inputs),
           outputs: concatData(outputList, outputs),
-          logs: concatData(logList, logs),
         };
       } else {
         pre.push({
@@ -195,10 +220,10 @@ export function LogSheet({
                               title="Input"
                             ></JsonViewer>
 
-                            {isEmpty((x.data as ILogData)?.logs) || (
+                            {hasTrace(x.data.component_id) && (
                               <JsonViewer
-                                data={(x.data as ILogData)?.logs}
-                                title={'Logs'}
+                                data={filterTrace(x.data.component_id) ?? {}}
+                                title={'Trace'}
                               ></JsonViewer>
                             )}
 
