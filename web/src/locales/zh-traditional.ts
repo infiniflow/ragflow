@@ -396,6 +396,11 @@ export default {
       mind: '心智圖',
       question: '問題',
       questionTip: `如果存在給定的問題，則區塊的嵌入將基於它們。`,
+      chunkResult: '切片結果',
+      chunkResultTip: `查看用於嵌入和召回的切片段落`,
+      enable: '啟用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新會話',
