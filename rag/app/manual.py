@@ -25,6 +25,7 @@ from rag.utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, PlainParser, DocxParser
 from docx import Document
 from PIL import Image
+from mineru.parser.pdf_parser import RemoteMinerUParser
 
 
 class Pdf(PdfParser):
@@ -170,8 +171,6 @@ class Docx(DocxParser):
             html += "</table>"
             tbls.append(((None, html), ""))
         return ti_list, tbls
-
-
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     """
@@ -185,10 +184,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
+    parser_config = kwargs.get(
+        "parser_config", {"layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if parser_config.get("layout_recognize") == "Plain Text":
             pdf_parser = PlainParser()
+        elif parser_config.get("layout_recognize") == "MinerU":
+            pdf_parser = RemoteMinerUParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:
