@@ -45,8 +45,8 @@ class LLMToolPluginCallSession(ToolCallSession):
 
     def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
+        self.callback(name, arguments, "...")
         resp = self.tools_map[name].invoke(**arguments)
-        self.callback(name, arguments, resp)
         return resp
 
 
