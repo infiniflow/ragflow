@@ -126,12 +126,11 @@ class Dealer:
                         total = self.dataStore.getTotal(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
-                        filters.pop("doc_id", None)
                         matchDense.extra_options["similarity"] = 0.17
                         res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
                                                     orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                         total = self.dataStore.getTotal(res)
-                        logging.debug("Dealer.search 2 TOTAL: {}".format(total))
+                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
                 kwds.add(k)
