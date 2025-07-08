@@ -21,6 +21,7 @@ export const OperatorIconMap = {
   [Operator.Agent]: 'agent-ai',
   [Operator.UserFillUp]: 'await',
   [Operator.StringTransform]: 'a-textprocessing',
+  [Operator.Note]: 'notebook-pen',
   // [Operator.Relevant]: BranchesOutlined,
   // [Operator.RewriteQuestion]: FormOutlined,
   // [Operator.KeywordExtract]: KeywordIcon,

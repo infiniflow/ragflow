@@ -85,6 +85,10 @@ function findInputFromList(eventList: IEventList) {
   };
 }
 
+export function getLatestError(eventList: IEventList) {
+  return get(eventList.at(-1), 'data.outputs._ERROR');
+}
+
 const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
@@ -159,7 +163,7 @@ export const useSendNextMessage = () => {
     const inputAnswer = findInputFromList(answerList);
     if (answerList.length > 0) {
       addNewestOneAnswer({
-        answer: content,
+        answer: content || getLatestError(answerList),
         id: id,
         ...inputAnswer,
       });

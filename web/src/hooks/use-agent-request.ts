@@ -318,7 +318,7 @@ export const useFetchMessageTrace = () => {
     refetchOnWindowFocus: false,
     gcTime: 0,
     enabled: !!id && !!messageId,
-    refetchInterval: 2000,
+    refetchInterval: 3000,
     queryFn: async () => {
       const { data } = await flowService.trace({
         canvas_id: id,
