@@ -133,7 +133,7 @@ class TavilySearch(ToolBase, ABC):
                 kwargs["include_images"] = False
                 res = self.tavily_client.search(**kwargs)
                 self._retrieve_chunks(res)
-                return
+                return self.output("formalized_content")
             except Exception as e:
                 last_e = e
                 logging.error(f"Tavily error: {e}")

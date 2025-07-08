@@ -138,4 +138,6 @@ class Retrieval(ToolBase, ABC):
             return
 
         self.set_output("_references", kbinfos)
-        self.set_output("formalized_content", "\n".join(kb_prompt(kbinfos, 200000, prefix=self._id)))
+        form_cnt = "\n".join(kb_prompt(kbinfos, 200000, prefix=self._id))
+        self.set_output("formalized_content", form_cnt)
+        return form_cnt

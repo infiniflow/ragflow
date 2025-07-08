@@ -5,4 +5,3 @@ Call `{{ function_name }}`
 After calling the function above, the response is as following:
 {{ result }}
 
-**Reflect**: 

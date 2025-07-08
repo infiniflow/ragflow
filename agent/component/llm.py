@@ -137,10 +137,38 @@ class LLM(ComponentBase):
 
         return prompt, msg
 
-    def _generate(self, sys_prompt:str, msg:list[dict], conf:dict, **kwargs) -> str:
+    def _generate(self, msg:list[dict], **kwargs) -> str:
         if not self.imgs:
-            return self.chat_mdl.chat(sys_prompt, msg, conf, **kwargs)
-        return self.chat_mdl.chat(sys_prompt, msg, conf, image=self.imgs[0], **kwargs)
+            return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
+        return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), image=self.imgs[0], **kwargs)
+
+    def _generate_streamly(self, msg:list[dict], **kwargs) -> str:
+        ans = ""
+        last_idx = 0
+        endswith_think = False
+        def delta(txt):
+            nonlocal ans, last_idx, endswith_think
+            delta_ans = txt[last_idx:]
+            ans = txt
+            last_idx = len(ans)
+            if ans.endswith("</think>"):
+                last_idx -= len("</think>")
+
+            if delta_ans.find("<think>") >= 0:
+                return "<think>"
+            if delta_ans.endswith("</think>"):
+                endswith_think = True
+            elif endswith_think:
+                endswith_think = False
+                return "</think>"
+            return re.sub(r"(<think>|</think>)", "", delta_ans)
+
+        if not self.imgs:
+            for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs):
+                yield delta(txt)
+        else:
+            for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), image=self.imgs[0], **kwargs):
+                yield delta(txt)
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
@@ -158,7 +186,7 @@ class LLM(ComponentBase):
             for _ in range(self._param.max_retries+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
                 error = ""
-                ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())
+                ans = self._generate(msg)
                 msg.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
@@ -183,7 +211,7 @@ class LLM(ComponentBase):
         for _ in range(self._param.max_retries+1):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
             error = ""
-            ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())
+            ans = self._generate(msg)
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"LLM response error: {ans}")

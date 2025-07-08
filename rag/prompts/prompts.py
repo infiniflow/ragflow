@@ -353,7 +353,7 @@ def next_step(chat_mdl, history:list, tools_description: list[dict]):
     template = PROMPT_JINJA_ENV.from_string(NEXT_STEP)
     user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
     hist = deepcopy(history)
-    hist[0]["content"] = template.render(task_analisys=task_analisys, desc=desc)
+    hist[0]["content"] = template.render(task_analisys=task_analisys, desc=desc, today=datetime.now().strftime("%Y-%m-%d"))
     if hist[-1]["role"] == "user":
         hist[-1]["content"] += user_prompt
     else:

@@ -172,6 +172,8 @@ class CodeExec(ToolBase, ABC):
         except Exception as e:
             self.set_output("_ERROR", "Exception executing code: " + str(e))
 
+        return self.output()
+
     def _encode_code(self, code: str) -> str:
         return base64.b64encode(code.encode("utf-8")).decode("utf-8")
 

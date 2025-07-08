@@ -225,7 +225,7 @@ class Canvas:
         yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
 
         def _run_batch(f, t):
-            with ThreadPoolExecutor(max_workers=3) as executor:
+            with ThreadPoolExecutor(max_workers=5) as executor:
                 thr = []
                 for i in range(f, t):
                     cpn = self.get_component_obj(self.path[i])

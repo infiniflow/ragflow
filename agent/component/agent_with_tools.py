@@ -17,12 +17,15 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
 from typing import Any
 
 import json_repair
 import pandas as pd
+from distributed import as_completed
+
 from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
@@ -30,6 +33,7 @@ from api.db.services.llm_service import LLMBundle
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
+from rag.prompts.prompts import next_step, COMPLETE_TASK, tool_call_summary, post_function_call_promt
 
 
 class AgentParam(LLMParam, ToolParamBase):
@@ -83,8 +87,9 @@ class Agent(LLM, ToolBase):
                                   verbose_tool_use=True,
                                   react_mode=ReActMode.REACT
                                   )
-        tool_metas = [v.get_meta() for _,v in self.tools.items()]
-        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools, partial(self._canvas.tool_use_callback, id.split("-->")[0])), tool_metas)
+        self.tool_metas = [v.get_meta() for _,v in self.tools.items()]
+        self.toolcall_session = LLMToolPluginCallSession(self.tools, partial(self._canvas.tool_use_callback, id.split("-->")[0]))
+        #self.chat_mdl.bind_tools(self.toolcall_session, self.tool_metas)
 
     def get_meta(self) -> dict[str, Any]:
         self._param.function_name= self._id.split("-->")[-1]
@@ -127,14 +132,16 @@ class Agent(LLM, ToolBase):
             return
 
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        ans = self._generate(msg[0]["content"], msg[1:], conf=self._param.gen_conf())
-        msg.pop(0)
+        use_tools = []
+        ans = ""
+        for delta_ans, tk in self._react_with_tools_streamly(msg, use_tools):
+            ans += delta_ans
+
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Agent._chat got error. response: {ans}")
             self.set_output("_ERROR", ans)
             return
-        use_tools = []
-        ans = self._extract_tool_use(ans, use_tools, True)
+
         self.set_output("content", ans)
         if use_tools:
             self.set_output("use_tools", use_tools)
@@ -143,25 +150,10 @@ class Agent(LLM, ToolBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer_without_toolcall = ""
         use_tools = []
-        last_idx = 0
-        endswith_think = False
-        for ans in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], gen_conf=self._param.gen_conf()):
-            delta_ans = self._extract_tool_use(ans[last_idx:], use_tools, True)
-            if delta_ans.find("<think>") >= 0:
-                yield "<think>"
-            if delta_ans.endswith("</think>"):
-                endswith_think = True
-            elif endswith_think:
-                endswith_think = False
-                yield "</think>"
-            yield re.sub(r"(<think>|</think>)", "", delta_ans)
-
-            last_idx = len(ans)
-            if ans.endswith("</think>"):
-                last_idx -= len("</think>")
-            if answer_without_toolcall.endswith("</think>") and delta_ans.endswith("</think>"):
-                answer_without_toolcall.rstrip("</think>")
+        for delta_ans,_ in self._react_with_tools_streamly(msg, use_tools):
             answer_without_toolcall += delta_ans
+            yield delta_ans
+
         self.set_output("content", answer_without_toolcall)
         if use_tools:
             self.set_output("use_tools", use_tools)
@@ -179,3 +171,57 @@ class Agent(LLM, ToolBase):
         u = kwargs.get("user")
         ans = chat_mdl.chat(prompt, [{"role": "user", "content": u if u else "Output: "}], self._param.gen_conf())
         return pd.DataFrame([ans])
+
+    def _react_with_tools_streamly(self, history: list[dict], use_tools):
+        token_count = 0
+        tool_metas = [v.get_meta() for _,v in self.tools.items()]
+        hist = deepcopy(history)
+        def use_tool(name, args):
+            nonlocal use_tools, token_count
+            # Summarize of function calling
+            tool_response = self.toolcall_session.tool_call(name, args)
+            use_tools.append({
+                "name": name,
+                "arguments": args,
+                "results": tool_response
+            })
+
+            # Summarize of function calling
+            if len(str(tool_response)) > 1024:
+                tool_response = self._generate([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}])
+
+            return name, tool_response
+
+        for _ in range(self._param.max_rounds + 1):
+            response, tk = next_step(self.chat_mdl, hist, tool_metas)
+            token_count += tk
+            hist.append({"role": "assistant", "content": response})
+            try:
+                functions = json_repair.loads(re.sub(r"```.*", "", response))
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    thr = []
+                    for func in functions:
+                        name = func["name"]
+                        args = func["arguments"]
+                        if name == COMPLETE_TASK:
+                            hist.append({"role": "user", "content": f"Respond with a formal answer please. FORGET(DO NOT mention) about `{COMPLETE_TASK}`"})
+                            yield "", token_count
+                            for delta_ans in self._generate_streamly(hist):
+                                yield delta_ans, 0
+
+                            yield "", 0
+                            return
+
+                        thr.append(executor.submit(use_tool, name, args))
+
+                    hist.append({"role": "user", "content": "\n\n".join([post_function_call_promt(*th.result()) for th in thr])})
+
+            except Exception as e:
+                logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
+                hist.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
+
+        logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
+        hist.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+        response, tk = self._generate(hist)
+        token_count += tk
+        yield response, token_count
