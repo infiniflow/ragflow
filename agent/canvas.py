@@ -246,20 +246,6 @@ class Canvas:
                            "created_at": cpn_obj.output("_created_time"),
                        })
 
-        def _node_logs(cpn_obj, tools_json):
-            try:
-                tools_json = json.loads(re.sub(r"(<tool_call>|</tool_call>)", "", tools_json, flags=re.DOTALL))
-            except:
-                pass
-            return decorate("node_logs",{
-                           "inputs": cpn_obj.get_input_values(),
-                           "logs": tools_json,
-                           "component_id": cpn_obj._id,
-                           "error": cpn_obj.error(),
-                           "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
-                           "created_at": cpn_obj.output("_created_time"),
-                       })
-
         error = ""
         idx = len(self.path) - 1
         partials = []
@@ -282,9 +268,6 @@ class Canvas:
                                 yield decorate("message", {"content": "", "start_to_think": True})
                             elif m == "</think>":
                                 yield decorate("message", {"content": "", "end_to_think": True})
-                            elif m.find("<tool_call>") >=0 and partials:
-                                _cpn = self.get_component(partials[0])
-                                yield _node_logs(_cpn["obj"], m)
                             else:
                                 yield decorate("message", {"content": m})
                                 _m += m
@@ -460,10 +443,10 @@ class Canvas:
         exe = ThreadPoolExecutor(max_workers=5)
         threads = []
         for file in files:
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"])))
+            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
         return [th.result() for th in threads]
 
-    def tool_use_callback(self, agent_id: str, func_name: str, params: dict):
+    def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any):
         agent_ids = agent_id.split("-->")
         agent_name = self.get_component_name(agent_ids[0])
         path = agent_name if len(agent_ids) < 2 else agent_name+"-->"+"-->".join(agent_ids[1:])
@@ -472,11 +455,16 @@ class Canvas:
             if bin:
                 obj = json.loads(bin.encode("utf-8"))
                 if obj[-1]["component_id"] == agent_ids[0]:
-                    obj[-1]["trace"].append({"path": path, "tool_name": func_name, "arguments": params})
+                    obj[-1]["trace"].append({"path": path, "tool_name": func_name, "arguments": params, "result": result})
+                else:
+                    obj.append({
+                    "component_id": agent_ids[0],
+                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result}]
+                })
             else:
                 obj = [{
                     "component_id": agent_ids[0],
-                    "trace": [{"path": path, "tool_name": func_name, "arguments": params}]
+                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result}]
                 }]
             REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
         except Exception as e:

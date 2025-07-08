@@ -1,8 +1,7 @@
 import os
 
-BASE_DIR = os.path.dirname(__file__)
 
-PROMPT_DIR = os.path.join(BASE_DIR, "prompts")
+PROMPT_DIR = os.path.dirname(__file__)
 
 _loaded_prompts = {}
 

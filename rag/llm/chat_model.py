@@ -272,7 +272,6 @@ class Base(ABC):
 
             # Summarize of function calling
             history.append({"role": "assistant", "content": response})
-            yield self._verbose_tool_use(name, args, "Begin to call..."), token_count, False
             tool_response = self.toolcall_session.tool_call(name, args)
             yield self._verbose_tool_use(name, args, tool_response), token_count, False
 

@@ -28,7 +28,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
-from rag.llm import GptV4
+from rag.llm.cv_model import GptV4
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -467,7 +467,7 @@ class FileService(CommonService):
         return "\n\n".join(res)
 
     @staticmethod
-    def parse(filename, blob, img_base64=True):
+    def parse(filename, blob, img_base64=True, tenant_id=None):
         from rag.app import audio, email, naive, picture, presentation
 
         def dummy(prog=None, msg=""):
@@ -475,7 +475,7 @@ class FileService(CommonService):
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
         parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
-        kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": current_user.id}
+        kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": current_user.id if current_user else tenant_id}
         file_type = filename_type(filename)
         if img_base64 and file_type == FileType.VISUAL.value:
             return GptV4.image2base64(blob)

@@ -49,7 +49,7 @@ class TavilySearchParam(ToolParamBase):
                 },
                 "include_domains": {
                     "type": "array",
-                    "description": "default:[]. A list of domains to specifically include in the search results.",
+                    "description": "default:[]. A list of domains only from which the search results can be included.",
                     "default": [],
                     "items": {
                         "type": "string",
@@ -59,7 +59,7 @@ class TavilySearchParam(ToolParamBase):
                 },
                 "exclude_domains": {
                     "type": "array",
-                    "description": "default:[]. A list of domains to specifically exclude from the search results.",
+                    "description": "default:[]. A list of domains from which the search results can not be included",
                     "default": [],
                     "items": {
                         "type": "string",

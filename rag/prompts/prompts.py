@@ -17,14 +17,13 @@ import datetime
 import json
 import logging
 import re
-from collections import defaultdict
 from copy import deepcopy
 
 import jinja2
 import json_repair
 
 from api import settings
-from rag.prompt_template import load_prompt
+from rag.prompts.prompt_template import load_prompt
 from rag.settings import TAG_FLD
 from rag.utils import encoder, num_tokens_from_string
 

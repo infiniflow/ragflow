@@ -41,3 +41,4 @@ class Begin(UserFillUp):
             else:
                 v = v.get("value")
             self.set_output(k, v)
+            self.set_input_value(k, v)

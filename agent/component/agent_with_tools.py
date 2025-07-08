@@ -63,7 +63,6 @@ class Agent(LLM, ToolBase):
     def __init__(self, canvas, id, param: LLMParam):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
-        name = canvas.get_component_name(id)
         for cpn in self._param.tools:
             from agent.component import component_class
             param = component_class(cpn["component_name"] + "Param")()
@@ -73,7 +72,7 @@ class Agent(LLM, ToolBase):
             except Exception as e:
                 self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
                 return
-            cpn_id = f"{name}-->" + cpn.get("name", "")
+            cpn_id = f"{id}-->" + cpn.get("name", "").replace(" ", "_")
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
@@ -85,10 +84,10 @@ class Agent(LLM, ToolBase):
                                   react_mode=ReActMode.REACT
                                   )
         tool_metas = [v.get_meta() for _,v in self.tools.items()]
-        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools, partial(self._canvas.tool_use_callback, id)), tool_metas)
+        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools, partial(self._canvas.tool_use_callback, id.split("-->")[0])), tool_metas)
 
     def get_meta(self) -> dict[str, Any]:
-        self._param.function_name= self._id
+        self._param.function_name= self._id.split("-->")[-1]
         return super().get_meta()
 
     def _extract_tool_use(self, ans, use_tools, clean=False):
@@ -147,7 +146,7 @@ class Agent(LLM, ToolBase):
         last_idx = 0
         endswith_think = False
         for ans in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], gen_conf=self._param.gen_conf()):
-            delta_ans = self._extract_tool_use(ans[last_idx:], use_tools)
+            delta_ans = self._extract_tool_use(ans[last_idx:], use_tools, True)
             if delta_ans.find("<think>") >= 0:
                 yield "<think>"
             if delta_ans.endswith("</think>"):
