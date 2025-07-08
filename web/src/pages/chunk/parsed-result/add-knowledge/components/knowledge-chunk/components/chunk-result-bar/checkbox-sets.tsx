@@ -40,7 +40,7 @@ export default (props: ICheckboxSetProps) => {
           id="all_chunks_checkbox"
           onCheckedChange={handleSelectAllCheck}
           checked={checked}
-          className=" data-[state=checked]:bg-transparent data-[state=checked]:border-white data-[state=checked]:text-white  border-muted-foreground text-muted-foreground hover:text-white hover:border-white "
+          className=" data-[state=checked]:bg-white data-[state=checked]:border-white data-[state=checked]:text-black  border-muted-foreground text-muted-foreground hover:text-black hover:border-white "
         />
         <Label htmlFor="all_chunks_checkbox">{t('chunk.selectAll')}</Label>
       </div>
