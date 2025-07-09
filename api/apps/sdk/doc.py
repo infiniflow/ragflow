@@ -1515,7 +1515,7 @@ def preview(tenant_id, dataset_id, document_id):
     return send_file(
         file,
         as_attachment=True,
-        download_name=doc[0].name,
+        download_name=doc_location,
         mimetype="application/octet-stream",  # Set a default MIME type
     )
 
