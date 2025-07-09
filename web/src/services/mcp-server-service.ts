@@ -3,39 +3,66 @@ import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
 
 const {
-  getMcpServerList,
-  getMultipleMcpServers,
+  listMcpServer,
   createMcpServer,
   updateMcpServer,
   deleteMcpServer,
+  getMcpServer,
+  importMcpServer,
+  exportMcpServer,
+  listMcpServerTools,
+  testMcpServerTool,
+  cacheMcpServerTool,
+  testMcpServer,
 } = api;
 
 const methods = {
-  get_list: {
-    url: getMcpServerList,
-    method: 'get',
-  },
-  get_multiple: {
-    url: getMultipleMcpServers,
+  list: {
+    url: listMcpServer,
     method: 'post',
   },
-  add: {
+  get: {
+    url: getMcpServer,
+    method: 'post',
+  },
+  create: {
     url: createMcpServer,
-    method: 'post'
+    method: 'post',
   },
   update: {
     url: updateMcpServer,
-    method: 'post'
+    method: 'post',
   },
-  rm: {
+  delete: {
     url: deleteMcpServer,
-    method: 'post'
+    method: 'post',
+  },
+  import: {
+    url: importMcpServer,
+    method: 'post',
+  },
+  export: {
+    url: exportMcpServer,
+    method: 'post',
+  },
+  listTools: {
+    url: listMcpServerTools,
+    method: 'get',
+  },
+  testTool: {
+    url: testMcpServerTool,
+    method: 'post',
+  },
+  cacheTool: {
+    url: cacheMcpServerTool,
+    method: 'post',
+  },
+  test: {
+    url: testMcpServer,
+    method: 'post',
   },
 } as const;
 
 const mcpServerService = registerServer<keyof typeof methods>(methods, request);
-
-export const getMcpServer = (serverId: string) =>
-  request.get(api.getMcpServer(serverId));
 
 export default mcpServerService;

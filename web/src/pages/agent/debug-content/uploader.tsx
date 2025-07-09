@@ -76,7 +76,7 @@ export function FileUploadDirectUpload({
       onUpload={onUpload}
       onFileReject={onFileReject}
       maxFiles={1}
-      className="w-full max-w-md"
+      className="w-full"
       multiple={false}
     >
       <FileUploadDropzone>

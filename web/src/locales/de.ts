@@ -549,7 +549,7 @@ export default {
         'Ob ein Wissensgraph im angegebenen Wissensspeicher während der Wiederherstellung für die Beantwortung von Fragen mit mehreren Schritten verwendet werden soll. Wenn aktiviert, beinhaltet dies iterative Suchen über Entitäten-, Beziehungs- und Gemeinschaftsberichtssegmente, was die Wiederherstellungszeit erheblich verlängert.',
       keyword: 'Schlüsselwortanalyse',
       keywordTip:
-        'LLM anwenden, um die Fragen des Benutzers zu analysieren und Schlüsselwörter zu extrahieren, die während der Relevanzberechnung hervorgehoben werden.',
+        'LLM anwenden, um die Fragen des Benutzers zu analysieren und Schlüsselwörter zu extrahieren, die während der Relevanzberechnung hervorgehoben werden. Funktioniert gut bei langen Anfragen, erhöht jedoch die Antwortzeit.',
       languageTip:
         'Ermöglicht die Umformulierung von Sätzen in der angegebenen Sprache oder verwendet standardmäßig die letzte Frage, wenn keine ausgewählt ist.',
       avatarHidden: 'Avatar ausblenden',
