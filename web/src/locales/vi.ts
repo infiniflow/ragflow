@@ -1167,5 +1167,10 @@ export default {
       knowledge: 'kiến thức',
       chat: 'trò chuyện',
     },
+    knowledgeGraph: {
+      statistics: 'Thống kê Đồ thị',
+      nodes: 'Nút',
+      edges: 'Cạnh',
+    },
   },
 };

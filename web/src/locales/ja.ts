@@ -1098,5 +1098,10 @@ export default {
       knowledge: 'ナレッジ',
       chat: 'チャット',
     },
+    knowledgeGraph: {
+      statistics: 'グラフ統計',
+      nodes: 'ノード',
+      edges: 'エッジ',
+    },
   },
 };

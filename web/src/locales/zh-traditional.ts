@@ -1184,5 +1184,10 @@ export default {
       knowledge: '知識',
       chat: '聊天',
     },
+    knowledgeGraph: {
+      statistics: '圖統計',
+      nodes: '節點',
+      edges: '邊',
+    },
   },
 };

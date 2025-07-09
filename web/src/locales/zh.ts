@@ -1263,5 +1263,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         },
       },
     },
+    knowledgeGraph: {
+      statistics: '图统计',
+      nodes: '节点',
+      edges: '边',
+    },
   },
 };

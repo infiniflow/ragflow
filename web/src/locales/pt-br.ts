@@ -1140,5 +1140,10 @@ export default {
       knowledge: 'conhecimento',
       chat: 'bate-papo',
     },
+    knowledgeGraph: {
+      statistics: 'Estatísticas do Grafo',
+      nodes: 'Nós',
+      edges: 'Arestas',
+    },
   },
 };

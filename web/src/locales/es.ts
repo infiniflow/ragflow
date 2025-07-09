@@ -867,5 +867,10 @@ export default {
       knowledge: 'Conocimiento',
       chat: 'Chat',
     },
+    knowledgeGraph: {
+      statistics: 'Estadísticas del Grafo',
+      nodes: 'Nodos',
+      edges: 'Aristas',
+    },
   },
 };

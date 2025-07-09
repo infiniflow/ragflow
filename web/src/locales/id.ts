@@ -1029,5 +1029,10 @@ export default {
       knowledge: 'pengetahuan',
       chat: 'obrolan',
     },
+    knowledgeGraph: {
+      statistics: 'Statistik Grafik',
+      nodes: 'Node',
+      edges: 'Edge',
+    },
   },
 };
