@@ -1,5 +1,6 @@
 import message from '@/components/ui/message';
-import { IMcpServerListResponse } from '@/interfaces/database/mcp';
+import { IMcpServerListResponse, IMCPTool } from '@/interfaces/database/mcp';
+import { ITestMcpRequestBody } from '@/interfaces/request/mcp';
 import i18n from '@/locales/config';
 import mcpServerService from '@/services/mcp-server-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -164,12 +165,12 @@ export const useTestMcpServer = () => {
     data,
     isPending: loading,
     mutateAsync,
-  } = useMutation({
+  } = useMutation<IMCPTool[], Error, ITestMcpRequestBody>({
     mutationKey: [McpApiAction.TestMcpServer],
-    mutationFn: async (params: Record<string, any>) => {
-      const { data = {} } = await mcpServerService.test(params);
+    mutationFn: async (params) => {
+      const { data } = await mcpServerService.test(params);
 
-      return data;
+      return data?.data || [];
     },
   });
 
