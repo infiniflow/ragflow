@@ -286,7 +286,7 @@ class OllamaEmbed(Base):
             # remove special tokens if they exist
             for token in OllamaEmbed._special_tokens:
                 txt = txt.replace(token, "")
-            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True})
+            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
             try:
                 arr.append(res["embedding"])
             except Exception as _e:
@@ -298,7 +298,7 @@ class OllamaEmbed(Base):
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
             text = text.replace(token, "")
-        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True})
+        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
         try:
             return np.array(res["embedding"]), 128
         except Exception as _e:
