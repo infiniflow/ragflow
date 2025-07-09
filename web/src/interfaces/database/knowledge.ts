@@ -155,6 +155,11 @@ export interface INextTestingResult {
 export type IRenameTag = { fromTag: string; toTag: string };
 
 export interface IKnowledgeGraph {
-  graph: Record<string, any>;
+  graph: {
+    nodes?: any[];
+    edges?: any[];
+    total_nodes?: number;
+    total_edges?: number;
+  };
   mind_map: TreeData;
 }
