@@ -28,13 +28,17 @@ export const useEditMcp = () => {
 
   const handleOk = useCallback(
     async (values: any) => {
+      let code;
       if (id) {
-        updateMcpServer(values);
+        code = await updateMcpServer(values);
       } else {
-        createMcpServer(values);
+        code = await createMcpServer(values);
+      }
+      if (code === 0) {
+        hideEditModal();
       }
     },
-    [createMcpServer, id, updateMcpServer],
+    [createMcpServer, hideEditModal, id, updateMcpServer],
   );
 
   return {

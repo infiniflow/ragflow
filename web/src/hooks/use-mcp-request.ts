@@ -66,7 +66,7 @@ export const useCreateMcpServer = () => {
           queryKey: [McpApiAction.ListMcpServer],
         });
       }
-      return data;
+      return data.code;
     },
   });
 
@@ -90,7 +90,7 @@ export const useUpdateMcpServer = () => {
           queryKey: [McpApiAction.ListMcpServer],
         });
       }
-      return data;
+      return data.code;
     },
   });
 

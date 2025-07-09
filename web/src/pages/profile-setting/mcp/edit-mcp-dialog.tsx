@@ -19,7 +19,7 @@ export function EditMcpDialog({ hideModal, loading, onOk }: IModalProps<any>) {
         <DialogHeader>
           <DialogTitle>Edit profile</DialogTitle>
         </DialogHeader>
-        <EditMcpForm onOk={onOk} hideModal={hideModal}></EditMcpForm>
+        <EditMcpForm onOk={onOk}></EditMcpForm>
         <DialogFooter>
           <ButtonLoading type="submit" form={FormId} loading={loading}>
             {t('common.save')}
