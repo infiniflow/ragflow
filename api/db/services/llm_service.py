@@ -45,6 +45,18 @@ class TenantLLMService(CommonService):
             objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm)
         else:
             objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
+
+        if (not objs) and fid:
+            if fid == "LocalAI":
+                mdlnm += "___LocalAI"
+            elif fid == "HuggingFace":
+                mdlnm += "___HuggingFace"
+            elif fid == "OpenAI-API-Compatible":
+                mdlnm += "___OpenAI-API"
+            elif fid == "VLLM":
+                mdlnm += "___VLLM"
+                
+            objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
         if not objs:
             return
         return objs[0]
@@ -169,7 +181,7 @@ class TenantLLMService(CommonService):
             return 0
 
         llm_map = {
-            LLMType.EMBEDDING.value: tenant.embd_id,
+            LLMType.EMBEDDING.value: tenant.embd_id if not llm_name else llm_name,
             LLMType.SPEECH2TEXT.value: tenant.asr_id,
             LLMType.IMAGE2TEXT.value: tenant.img2txt_id,
             LLMType.CHAT.value: tenant.llm_id if not llm_name else llm_name,
@@ -235,7 +247,8 @@ class LLMBundle:
             generation = self.trace.generation(name="encode", model=self.llm_name, input={"texts": texts})
 
         embeddings, used_tokens = self.mdl.encode(texts)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
+        llm_name = getattr(self, "llm_name", None)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
             logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
@@ -248,7 +261,8 @@ class LLMBundle:
             generation = self.trace.generation(name="encode_queries", model=self.llm_name, input={"query": query})
 
         emd, used_tokens = self.mdl.encode_queries(query)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
+        llm_name = getattr(self, "llm_name", None)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
             logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:

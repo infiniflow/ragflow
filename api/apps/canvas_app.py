@@ -81,16 +81,15 @@ def save():
     UserCanvasVersionService.delete_all_versions(req["id"])
     return get_json_result(data=req)
 
- 
-
 
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_tenant_id(canvas_id)
-    if not e:
+    if not e or c["user_id"] != current_user.id:
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)
+
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(canvas_id):
@@ -101,8 +100,9 @@ def getsse(canvas_id):
     objs = APIToken.query(beta=token)
     if not objs:
         return get_data_error_result(message='Authentication error: API key is invalid!"')
+    tenant_id = objs[0].tenant_id
     e, c = UserCanvasService.get_by_id(canvas_id)
-    if not e:
+    if not e or c.user_id != tenant_id:
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c.to_dict())
 
@@ -249,7 +249,9 @@ def debug():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        canvas.get_component(req["component_id"])["obj"]._param.debug_inputs = req["params"]
+        componant = canvas.get_component(req["component_id"])["obj"]
+        componant.reset()
+        componant._param.debug_inputs = req["params"]
         df = canvas.get_component(req["component_id"])["obj"].debug()
         return get_json_result(data=df.to_dict(orient="records"))
     except Exception as e:

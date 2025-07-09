@@ -105,14 +105,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     ],
                     {"temperature": 0.3, "max_tokens": self._max_token},
                 )
-            cnt = re.sub(
-                "(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)",
-                "",
-                cnt,
-            )
-            logging.debug(f"SUM: {cnt}")
-            embds = await self._embedding_encode(cnt)
-            chunks.append((cnt, embds))
+                cnt = re.sub(
+                    "(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)",
+                    "",
+                    cnt,
+                )
+                logging.debug(f"SUM: {cnt}")
+                embds = await self._embedding_encode(cnt)
+                chunks.append((cnt, embds))
 
         labels = []
         while end - start > 1:
@@ -151,8 +151,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 for c in range(n_clusters):
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
                     assert len(ck_idx) > 0
-                    async with chat_limiter:
-                        nursery.start_soon(summarize, ck_idx)
+                    nursery.start_soon(summarize, ck_idx)
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(
                 len(chunks) - end, n_clusters

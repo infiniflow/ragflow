@@ -35,7 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import current_timestamp, get_format_time, get_uuid
 from rag.nlp import rag_tokenizer, search
-from rag.settings import get_svr_queue_name
+from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr
@@ -72,7 +72,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page,
-                     orderby, desc, keywords, run_status, types):
+                     orderby, desc, keywords, run_status, types, suffix):
         if keywords:
             docs = cls.model.select().where(
                 (cls.model.kb_id == kb_id),
@@ -85,6 +85,8 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.run.in_(run_status))
         if types:
             docs = docs.where(cls.model.type.in_(types))
+        if suffix:
+            docs = docs.where(cls.model.suffix.in_(suffix))
 
         count = docs.count()
         if desc:
@@ -97,6 +99,54 @@ class DocumentService(CommonService):
             docs = docs.paginate(page_number, items_per_page)
 
         return list(docs.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def get_filter_by_kb_id(cls, kb_id, keywords, run_status, types, suffix):
+        """
+        returns:
+        {
+            "suffix": {
+                "ppt": 1,
+                "doxc": 2
+            },
+            "run_status": {
+             "1": 2,
+             "2": 2
+            }
+        }, total
+        where "1" => RUNNING, "2" => CANCEL
+        """
+        if keywords:
+            query = cls.model.select().where(
+                (cls.model.kb_id == kb_id),
+                (fn.LOWER(cls.model.name).contains(keywords.lower()))
+            )
+        else:
+            query  = cls.model.select().where(cls.model.kb_id == kb_id)
+
+
+        if run_status:
+            query = query.where(cls.model.run.in_(run_status))
+        if types:
+            query = query.where(cls.model.type.in_(types))
+        if suffix:
+            query = query.where(cls.model.suffix.in_(suffix))
+
+        rows = query.select(cls.model.run, cls.model.suffix)
+        total = rows.count()
+
+        suffix_counter = {}
+        run_status_counter = {}
+
+        for row in rows:
+            suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
+            run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
+
+        return {
+            "suffix": suffix_counter,
+            "run_status": run_status_counter
+        }, total
 
     @classmethod
     @DB.connection_context()
@@ -228,10 +278,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
+    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
         num = cls.model.update(token_num=cls.model.token_num + token_num,
                                chunk_num=cls.model.chunk_num + chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -246,10 +296,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
+    def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
         num = cls.model.update(token_num=cls.model.token_num - token_num,
                                chunk_num=cls.model.chunk_num - chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -278,6 +328,24 @@ class DocumentService(CommonService):
         ).where(
             Knowledgebase.id == doc.kb_id).execute()
         return num
+
+
+    @classmethod
+    @DB.connection_context()
+    def clear_chunk_num_when_rerun(cls, doc_id):
+        doc = cls.model.get_by_id(doc_id)
+        assert doc, "Can't fine document in database."
+
+        num = (
+            Knowledgebase.update(
+                token_num=Knowledgebase.token_num - doc.token_num,
+                chunk_num=Knowledgebase.chunk_num - doc.chunk_num,
+            )
+            .where(Knowledgebase.id == doc.kb_id)
+            .execute()
+        )
+        return num
+
 
     @classmethod
     @DB.connection_context()
@@ -484,7 +552,8 @@ class DocumentService(CommonService):
                     if t.progress == -1:
                         bad += 1
                     prg += t.progress if t.progress >= 0 else 0
-                    msg.append(t.progress_msg)
+                    if t.progress_msg.strip():
+                        msg.append(t.progress_msg)
                     if t.task_type == "raptor":
                         has_raptor = True
                     elif t.task_type == "graphrag":
@@ -506,7 +575,7 @@ class DocumentService(CommonService):
 
                 msg = "\n".join(sorted(msg))
                 info = {
-                    "process_duation": datetime.timestamp(
+                    "process_duration": datetime.timestamp(
                         datetime.now()) -
                     d["process_begin_at"].timestamp(),
                     "run": status}
@@ -514,6 +583,8 @@ class DocumentService(CommonService):
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
+                else:
+                    info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
                 cls.update_by_id(d["id"], info)
             except Exception as e:
                 if str(e).find("'0'") < 0:
@@ -560,6 +631,11 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
     assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+
+
+def get_queue_length(priority):
+    group_info = REDIS_CONN.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+    return int(group_info.get("lag", 0))
 
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):

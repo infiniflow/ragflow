@@ -343,7 +343,6 @@ Creates a dataset.
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
-  - `"pagerank"`: `int`
   - `"parser_config"`: `object`
 
 ##### Request example
@@ -383,12 +382,6 @@ curl --request POST \
   Specifies who can access the dataset to create. Available options:  
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
-
-- `"pagerank"`: (*Body parameter*), `int`  
-  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
-  - Default: `0`
-  - Minimum: `0`
-  - Maximum: `100`
 
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method of the dataset to create. Available options:  
@@ -888,7 +881,7 @@ curl --request PUT \
      {
           "name": "manual.txt", 
           "chunk_method": "manual", 
-          "parser_config": {"chunk_token_count": 128}
+          "parser_config": {"chunk_token_num": 128}
      }'
 
 ```
@@ -900,7 +893,7 @@ curl --request PUT \
 - `document_id`: (*Path parameter*)  
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
-- `"meta_fields"`: (*Body parameter*)， `dict[str, Any]` The meta fields of the document.
+- `"meta_fields"`: (*Body parameter*), `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
   - `"naive"`: General
@@ -917,7 +910,7 @@ curl --request PUT \
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `256`.
+    - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
@@ -1065,7 +1058,7 @@ Success:
                 },
                 "chunk_method": "naive",
                 "process_begin_at": null,
-                "process_duation": 0.0,
+                "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
                 "run": "0",
@@ -1424,7 +1417,7 @@ Success:
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
-            "process_duation": 0.54213,
+            "process_duration": 0.54213,
             "progress": 0.0,
             "progress_msg": "Task dispatched...",
             "run": "2",
@@ -2142,7 +2135,7 @@ Success:
         "id": "4606b4ec87ad11efbc4f0242ac120006",
         "messages": [
             {
-                "content": "Hi! I am your assistant，can I help you?",
+                "content": "Hi! I am your assistant, can I help you?",
                 "role": "assistant"
             }
         ],
@@ -2283,7 +2276,7 @@ Success:
             "id": "578d541e87ad11ef96b90242ac120006",
             "messages": [
                 {
-                    "content": "Hi! I am your assistant，can I help you?",
+                    "content": "Hi! I am your assistant, can I help you?",
                     "role": "assistant"
                 }
             ],
@@ -3227,16 +3220,18 @@ Failure:
 
 ---
 
-### Related Questions
+### Generate related questions
 
 **POST** `/v1/sessions/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, typically expires with in 24 hours. You can find the it in the browser request easily.
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
+
+![Image](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/login_token.jpg)
 
 :::tip NOTE
-The chat model dynamically determines the number of questions to generate based on the instruction, typically between five and ten.
+The chat model autonomously determines the number of questions to generate based on the instruction, typically between five and ten.
 :::
 
 #### Request

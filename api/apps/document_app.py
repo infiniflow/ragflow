@@ -17,13 +17,14 @@ import json
 import os.path
 import pathlib
 import re
+from pathlib import Path
 
 import flask
 from flask import request
 from flask_login import current_user, login_required
 
 from api import settings
-from api.constants import IMG_BASE64_PREFIX
+from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileSource, FileType, ParserType, TaskStatus
 from api.db.db_models import File, Task
 from api.db.services import duplicate_name
@@ -61,18 +62,21 @@ def upload():
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=settings.RetCode.ARGUMENT_ERROR)
+        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
 
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
     err, files = FileService.upload_document(kb, file_objs, current_user.id)
 
+    if err:
+        return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
+
     if not files:
         return get_json_result(data=files, message="There seems to be an issue with your file format. Please verify it is correct and not corrupted.", code=settings.RetCode.DATA_ERROR)
     files = [f[0] for f in files]  # remove the blob
 
-    if err:
-        return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
     return get_json_result(data=files)
 
 
@@ -122,6 +126,7 @@ def web_crawl():
             "location": location,
             "size": len(blob),
             "thumbnail": thumbnail(filename, blob),
+            "suffix": Path(filename).suffix.lstrip("."),
         }
         if doc["type"] == FileType.VISUAL:
             doc["parser_id"] = ParserType.PICTURE.value
@@ -146,6 +151,12 @@ def create():
     kb_id = req["kb_id"]
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+    if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+        return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+
+    if req["name"].strip() == "":
+        return get_json_result(data=False, message="File name can't be empty.", code=settings.RetCode.ARGUMENT_ERROR)
+    req["name"] = req["name"].strip()
 
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -164,6 +175,7 @@ def create():
                 "created_by": current_user.id,
                 "type": FileType.VIRTUAL,
                 "name": req["name"],
+                "suffix": Path(req["name"]).suffix.lstrip("."),
                 "location": "",
                 "size": 0,
             }
@@ -190,7 +202,10 @@ def list_docs():
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
     orderby = request.args.get("orderby", "create_time")
-    desc = request.args.get("desc", True)
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
 
     req = request.get_json()
 
@@ -206,14 +221,55 @@ def list_docs():
         if invalid_types:
             return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
 
+    suffix = req.get("suffix", [])
+
     try:
-        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types)
+        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix)
 
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/v1/document/image/{kb_id}-{doc_item['thumbnail']}"
 
         return get_json_result(data={"total": tol, "docs": docs})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/filter", methods=["POST"])  # noqa: F821
+@login_required
+def get_filter():
+    req = request.get_json()
+
+    kb_id = req.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+    tenants = UserTenantService.query(user_id=current_user.id)
+    for tenant in tenants:
+        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
+            break
+    else:
+        return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+
+
+    keywords = req.get("keywords", "")
+
+    suffix = req.get("suffix", [])
+
+    run_status = req.get("run_status", [])
+    if run_status:
+        invalid_status = {s for s in run_status if s not in VALID_TASK_STATUS}
+        if invalid_status:
+            return get_data_error_result(message=f"Invalid filter run status conditions: {', '.join(invalid_status)}")
+
+    types = req.get("types", [])
+    if types:
+        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
+        if invalid_types:
+            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
+
+    try:
+        filter, total = DocumentService.get_filter_by_kb_id(kb_id, keywords, run_status, types, suffix)
+        return get_json_result(data={"total": total, "filter": filter})
     except Exception as e:
         return server_error_response(e)
 
@@ -353,6 +409,13 @@ def run():
                 info["progress_msg"] = ""
                 info["chunk_num"] = 0
                 info["token_num"] = 0
+
+            e, doc = DocumentService.get_by_id(id)
+            if not e:
+                return get_data_error_result(message="Document not found!")
+            if doc.run == TaskStatus.DONE.value:
+                DocumentService.clear_chunk_num_when_rerun(doc.id)
+
             DocumentService.update_by_id(id, info)
             tenant_id = DocumentService.get_tenant_id(id)
             if not tenant_id:
@@ -401,6 +464,9 @@ def rename():
             return get_data_error_result(message="Document not found!")
         if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
             return get_json_result(data=False, message="The extension of file can't be changed", code=settings.RetCode.ARGUMENT_ERROR)
+        if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+
         for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
             if d.name == req["name"]:
                 return get_data_error_result(message="Duplicated document name in the same knowledgebase.")
@@ -468,7 +534,7 @@ def change_parser():
         if "parser_config" in req:
             DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
-            e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, doc.process_duation * -1)
+            e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, doc.process_duration * -1)
             if not e:
                 return get_data_error_result(message="Document not found!")
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])

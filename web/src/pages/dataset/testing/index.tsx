@@ -1,6 +1,4 @@
-import { Button } from '@/components/ui/button';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
-import { Plus } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { TopTitle } from '../dataset-title';
 import TestingForm from './testing-form';
@@ -37,11 +35,10 @@ export default function RetrievalTesting() {
     <div className="p-5">
       <section className="flex justify-between items-center">
         <TopTitle
-          title={'Configuration'}
-          description={`  Update your knowledge base configuration here, particularly the chunk
-                  method.`}
+          title={'Retrieval testing'}
+          description={`Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.`}
         ></TopTitle>
-        <Button>Save as Preset</Button>
+        {/* <Button>Save as Preset</Button> */}
       </section>
       {count === 1 ? (
         <section className="flex divide-x h-full">
@@ -50,9 +47,9 @@ export default function RetrievalTesting() {
               <span className="text-text-title font-semibold text-2xl">
                 Test setting
               </span>
-              <Button variant={'outline'} onClick={addCount}>
+              {/* <Button variant={'outline'} onClick={addCount}>
                 <Plus /> Add New Test
-              </Button>
+              </Button> */}
             </div>
             <TestingForm
               loading={loading}

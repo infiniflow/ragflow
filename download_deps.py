@@ -25,8 +25,8 @@ def get_urls(use_china_mirrors=False) -> Union[str, list[str]]:
             "https://repo.huaweicloud.com/repository/maven/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar",
             "https://repo.huaweicloud.com/repository/maven/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar.md5",
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
-            ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chrome-linux64.zip", "chrome-linux64-121-0-6167-85"],
-            ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
+            ["https://registry.npmmirror.com/-/binary/chrome-for-testing/121.0.6167.85/linux64/chrome-linux64.zip", "chrome-linux64-121-0-6167-85"],
+            ["https://registry.npmmirror.com/-/binary/chrome-for-testing/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
         ]
     else:
         return [
@@ -35,8 +35,8 @@ def get_urls(use_china_mirrors=False) -> Union[str, list[str]]:
             "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar",
             "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar.md5",
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
-            "https://bit.ly/chrome-linux64-121-0-6167-85",
-            "https://bit.ly/chromedriver-linux64-121-0-6167-85",
+            "https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chrome-linux64.zip",
+            "https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chromedriver-linux64.zip",
         ]
 
 repos = [
@@ -50,7 +50,7 @@ repos = [
 def download_model(repo_id):
     local_dir = os.path.abspath(os.path.join("huggingface.co", repo_id))
     os.makedirs(local_dir, exist_ok=True)
-    snapshot_download(repo_id=repo_id, local_dir=local_dir, local_dir_use_symlinks=False)
+    snapshot_download(repo_id=repo_id, local_dir=local_dir)
 
 
 if __name__ == "__main__":

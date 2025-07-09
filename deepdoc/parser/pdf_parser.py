@@ -180,13 +180,13 @@ class RAGFlowPdfParser:
         return fea
 
     @staticmethod
-    def sort_X_by_page(arr, threashold):
+    def sort_X_by_page(arr, threshold):
         # sort using y1 first and then x1
         arr = sorted(arr, key=lambda r: (r["page_number"], r["x0"], r["top"]))
         for i in range(len(arr) - 1):
             for j in range(i, -1, -1):
                 # restore the order using th
-                if abs(arr[j + 1]["x0"] - arr[j]["x0"]) < threashold \
+                if abs(arr[j + 1]["x0"] - arr[j]["x0"]) < threshold \
                         and arr[j + 1]["top"] < arr[j]["top"] \
                         and arr[j + 1]["page_number"] == arr[j]["page_number"]:
                     tmp = arr[j]
@@ -264,13 +264,13 @@ class RAGFlowPdfParser:
         for b in self.boxes:
             if b.get("layout_type", "") != "table":
                 continue
-            ii = Recognizer.find_overlapped_with_threashold(b, rows, thr=0.3)
+            ii = Recognizer.find_overlapped_with_threshold(b, rows, thr=0.3)
             if ii is not None:
                 b["R"] = ii
                 b["R_top"] = rows[ii]["top"]
                 b["R_bott"] = rows[ii]["bottom"]
 
-            ii = Recognizer.find_overlapped_with_threashold(
+            ii = Recognizer.find_overlapped_with_threshold(
                 b, headers, thr=0.3)
             if ii is not None:
                 b["H_top"] = headers[ii]["top"]
@@ -285,7 +285,7 @@ class RAGFlowPdfParser:
                 b["C_left"] = clmns[ii]["x0"]
                 b["C_right"] = clmns[ii]["x1"]
 
-            ii = Recognizer.find_overlapped_with_threashold(b, spans, thr=0.3)
+            ii = Recognizer.find_overlapped_with_threshold(b, spans, thr=0.3)
             if ii is not None:
                 b["H_top"] = spans[ii]["top"]
                 b["H_bott"] = spans[ii]["bottom"]
@@ -479,6 +479,9 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _concat_downward(self, concat_between_pages=True):
+        self.boxes = Recognizer.sort_Y_firstly(self.boxes, 0)
+        return
+
         # count boxes in the same row as a feature
         for i in range(len(self.boxes)):
             mh = self.mean_height[self.boxes[i]["page_number"] - 1]
@@ -1136,7 +1139,8 @@ class RAGFlowPdfParser:
             need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
-    def remove_tag(self, txt):
+    @staticmethod
+    def remove_tag(txt):
         return re.sub(r"@@[\t0-9.-]+?##", "", txt)
 
     def crop(self, text, ZM=3, need_position=False):

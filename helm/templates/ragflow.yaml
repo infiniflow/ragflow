@@ -43,6 +43,16 @@ spec:
           - mountPath: /etc/nginx/nginx.conf
             subPath: nginx.conf
             name: nginx-config-volume
+          {{- with .Values.ragflow.service_conf }}
+          - mountPath: /ragflow/conf/local.service_conf.yaml
+            subPath: local.service_conf.yaml
+            name: service-conf-volume
+          {{- end }}
+          {{- with .Values.ragflow.llm_factories }}
+          - mountPath: /ragflow/conf/llm_factories.json
+            subPath: llm_factories.json
+            name: service-conf-volume
+          {{- end }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
@@ -54,6 +64,9 @@ spec:
         - name: nginx-config-volume
           configMap:
             name: nginx-config
+        - name: service-conf-volume
+          configMap:
+            name: ragflow-service-config
 ---
 apiVersion: v1
 kind: Service

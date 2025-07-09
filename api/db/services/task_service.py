@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import random
 import xxhash
@@ -256,36 +257,55 @@ class TaskService(CommonService):
     @DB.connection_context()
     def update_progress(cls, id, info):
         """Update the progress information for a task.
-    
+
         This method updates both the progress message and completion percentage of a task.
         It handles platform-specific behavior (macOS vs others) and uses database locking
         when necessary to ensure thread safety.
-    
+
+        Update Rules:
+            - progress_msg: Always appends the new message to the existing one, and trims the result to max 3000 lines.
+            - progress: Only updates if the current progress is not -1 AND
+                        (the new progress is -1 OR greater than the existing progress),
+                        to avoid overwriting valid progress with invalid or regressive values.
+
         Args:
             id (str): The unique identifier of the task to update.
             info (dict): Dictionary containing progress information with keys:
                         - progress_msg (str, optional): Progress message to append
                         - progress (float, optional): Progress percentage (0.0 to 1.0)
         """
+        task = cls.model.get_by_id(id)
+        if not task:
+            logging.warning("Update_progress error: task not found")
+            return
+
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
-                task = cls.model.get_by_id(id)
                 progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
-                cls.model.update(progress=info["progress"]).where(
-                    cls.model.id == id
+                prog = info["progress"]
+                cls.model.update(progress=prog).where(
+                    (cls.model.id == id) &
+                    (
+                        (cls.model.progress != -1) &
+                        ((prog == -1) | (prog > cls.model.progress))
+                    )
                 ).execute()
             return
 
         with DB.lock("update_progress", -1):
             if info["progress_msg"]:
-                task = cls.model.get_by_id(id)
                 progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
-                cls.model.update(progress=info["progress"]).where(
-                    cls.model.id == id
+                prog = info["progress"]
+                cls.model.update(progress=prog).where(
+                    (cls.model.id == id) &
+                    (
+                        (cls.model.progress != -1) &
+                        ((prog == -1) | (prog > cls.model.progress))
+                    )
                 ).execute()
 
 
@@ -318,9 +338,11 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         file_bin = STORAGE_IMPL.get(bucket, name)
         do_layout = doc["parser_config"].get("layout_recognize", "DeepDOC")
         pages = PdfParser.total_page_number(doc["name"], file_bin)
-        page_size = doc["parser_config"].get("task_page_size", 12)
+        if pages is None:
+            pages = 0
+        page_size = doc["parser_config"].get("task_page_size") or 12
         if doc["parser_id"] == "paper":
-            page_size = doc["parser_config"].get("task_page_size", 22)
+            page_size = doc["parser_config"].get("task_page_size") or 22
         if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC":
             page_size = 10 ** 9
         page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
@@ -367,12 +389,12 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         for task in parse_task_array:
             ck_num += reuse_prev_task_chunks(task, prev_tasks, chunking_config)
         TaskService.filter_delete([Task.doc_id == doc["id"]])
-        chunk_ids = []
-        for task in prev_tasks:
-            if task["chunk_ids"]:
-                chunk_ids.extend(task["chunk_ids"].split())
-        if chunk_ids:
-            settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(chunking_config["tenant_id"]),
+        pre_chunk_ids = []
+        for pre_task in prev_tasks:
+            if pre_task["chunk_ids"]:
+                pre_chunk_ids.extend(pre_task["chunk_ids"].split())
+        if pre_chunk_ids:
+            settings.docStoreConn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]),
                                          chunking_config["kb_id"])
     DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 

@@ -3,6 +3,7 @@ import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { Operator } from '../constant';
+import AgentForm from '../form/agent-form';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -22,7 +23,8 @@ import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
 import InvokeForm from '../form/invoke-form';
-import IterationForm from '../form/iteration-from';
+import IterationForm from '../form/iteration-form';
+import IterationStartForm from '../form/iteration-start-from';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
@@ -31,9 +33,13 @@ import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
+import { StringTransformForm } from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
+import TavilyForm from '../form/tavily-form';
 import TemplateForm from '../form/template-form';
+import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
+import UserFillUpForm from '../form/user-fill-up-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
@@ -191,6 +197,11 @@ export function useFormConfigMap() {
           z.object({ name: z.string(), component_id: z.string() }),
         ),
       }),
+    },
+    [Operator.Agent]: {
+      component: AgentForm,
+      defaultValues: {},
+      schema: z.object({}),
     },
     [Operator.Baidu]: {
       component: BaiduForm,
@@ -359,7 +370,27 @@ export function useFormConfigMap() {
       schema: z.object({}),
     },
     [Operator.IterationStart]: {
-      component: () => <></>,
+      component: IterationStartForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.Tool]: {
+      component: ToolForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.TavilySearch]: {
+      component: TavilyForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.UserFillUp]: {
+      component: UserFillUpForm,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.StringTransform]: {
+      component: StringTransformForm,
       defaultValues: {},
       schema: z.object({}),
     },

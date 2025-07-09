@@ -168,9 +168,9 @@ export default {
       html4excel: 'Excel sang HTML',
       html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel 97-2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng. Để biết thêm thông tin, vui lòng xem https://ragflow.io/docs/dev/enable_excel2html.`,
       autoKeywords: 'Từ khóa tự động',
-      autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối.`,
+      autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Để biết chi tiết, vui lòng xem https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Câu hỏi tự động',
-      autoQuestionsTip: `Để tăng điểm xếp hạng, hãy trích xuất N câu hỏi cho mỗi đoạn kiến thức bằng mô hình trò chuyện được xác định trong "Cài đặt mô hình hệ thống". Lưu ý rằng việc này sẽ tiêu tốn thêm token. Kết quả có thể được xem và chỉnh sửa trong danh sách các đoạn. Lỗi trích xuất câu hỏi sẽ không chặn quá trình phân đoạn; kết quả trống sẽ được thêm vào đoạn gốc.`,
+      autoQuestionsTip: `Để tăng điểm xếp hạng, hãy trích xuất N câu hỏi cho mỗi đoạn kiến thức bằng mô hình trò chuyện được xác định trong "Cài đặt mô hình hệ thống". Lưu ý rằng việc này sẽ tiêu tốn thêm token. Kết quả có thể được xem và chỉnh sửa trong danh sách các đoạn. Lỗi trích xuất câu hỏi sẽ không chặn quá trình phân đoạn; kết quả trống sẽ được thêm vào đoạn gốc. Để biết chi tiết, vui lòng xem https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token". Thiết lập các dấu phân cách chỉ sau khi hiểu cơ chế phân đoạn và phân khối văn bản.`,
       redo: `Bạn có muốn xóa các đoạn {{chunkNum}} hiện có không?`,
       knowledgeGraph: 'Đồ thị tri thức',
@@ -214,7 +214,7 @@ export default {
       methodTitle: 'Mô tả phương thức phân khối',
       methodExamples: 'Ví dụ',
       methodExamplesDescription:
-        'Các ảnh chụp màn hình sau được cung cấp để minh họa.',
+        'Để giúp bạn hiểu rõ hơn, chúng tôi đã cung cấp ảnh chụp màn hình liên quan để tham khảo.',
       dialogueExamplesTitle: 'Ví dụ hội thoại',
       methodEmpty: 'Mô tả bằng hình ảnh các danh mục cơ sở kiến thức',
       book: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -499,12 +499,13 @@ export default {
         'Có nên sử dụng đồ thị tri thức trong cơ sở tri thức được chỉ định trong quá trình thu hồi để trả lời câu hỏi đa bước hay không. Khi được kích hoạt, điều này sẽ liên quan đến các tìm kiếm lặp lại trên các đoạn thực thể, mối quan hệ và báo cáo cộng đồng, làm tăng đáng kể thời gian thu hồi.',
       keyword: 'Phân tích từ khóa',
       keywordTip:
-        'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan.',
+        'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan. Hoạt động tốt với các truy vấn dài nhưng sẽ làm tăng thời gian phản hồi.',
       languageTip:
         'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
     },
     setting: {
       profile: 'Hồ sơ',
+      avatar: 'Avatar',
       profileDescription: 'Cập nhật ảnh và thông tin cá nhân của bạn tại đây.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',

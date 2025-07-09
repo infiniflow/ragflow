@@ -1,5 +1,6 @@
 export enum Routes {
   Login = '/login',
+  Logout = '/logout',
   Home = '/home',
   Datasets = '/datasets',
   DatasetBase = '/dataset',
@@ -13,6 +14,18 @@ export enum Routes {
   Chat = '/next-chat',
   Files = '/files',
   ProfileSetting = '/profile-setting',
+  Profile = '/profile',
+  Mcp = '/mcp',
+  Team = '/team',
+  Plan = '/plan',
+  Model = '/model',
+  Prompt = '/prompt',
+  ProfileMcp = `${ProfileSetting}${Mcp}`,
+  ProfileTeam = `${ProfileSetting}${Team}`,
+  ProfilePlan = `${ProfileSetting}${Plan}`,
+  ProfileModel = `${ProfileSetting}${Model}`,
+  ProfilePrompt = `${ProfileSetting}${Prompt}`,
+  ProfileProfile = `${ProfileSetting}${Profile}`,
   DatasetTesting = '/testing',
   DatasetSetting = '/setting',
   Chunk = '/chunk',
@@ -49,6 +62,7 @@ const routes = [
       {
         path: '/knowledge',
         component: '@/pages/knowledge',
+        // component: '@/pages/knowledge/datasets',
       },
       {
         path: '/knowledge',
@@ -93,6 +107,7 @@ const routes = [
           { path: '/user-setting', redirect: '/user-setting/profile' },
           {
             path: '/user-setting/profile',
+            // component: '@/pages/user-setting/setting-profile',
             component: '@/pages/user-setting/setting-profile',
           },
           {
@@ -261,6 +276,11 @@ const routes = [
     ],
   },
   {
+    path: `${Routes.ParsedResult}/chunks`,
+    layout: false,
+    component: `@/pages${Routes.Chunk}/parsed-result/add-knowledge/components/knowledge-chunk`,
+  },
+  {
     path: Routes.Chunk,
     layout: false,
     routes: [
@@ -268,10 +288,10 @@ const routes = [
         path: Routes.Chunk,
         component: `@/pages${Routes.Chunk}`,
         routes: [
-          {
-            path: `${Routes.ParsedResult}/:id`,
-            component: `@/pages${Routes.Chunk}/parsed-result`,
-          },
+          // {
+          //   path: `${Routes.ParsedResult}/:id`,
+          //   component: `@/pages${Routes.Chunk}/parsed-result`,
+          // },
           {
             path: `${Routes.ChunkResult}/:id`,
             component: `@/pages${Routes.Chunk}/chunk-result`,
@@ -296,27 +316,31 @@ const routes = [
     routes: [
       {
         path: Routes.ProfileSetting,
-        redirect: `${Routes.ProfileSetting}/profile`,
+        redirect: `${Routes.ProfileProfile}`,
       },
       {
-        path: `${Routes.ProfileSetting}/profile`,
-        component: `@/pages${Routes.ProfileSetting}/profile`,
+        path: `${Routes.ProfileProfile}`,
+        component: `@/pages${Routes.ProfileProfile}`,
       },
       {
-        path: `${Routes.ProfileSetting}/team`,
-        component: `@/pages${Routes.ProfileSetting}/team`,
+        path: `${Routes.ProfileTeam}`,
+        component: `@/pages${Routes.ProfileTeam}`,
       },
       {
-        path: `${Routes.ProfileSetting}/plan`,
-        component: `@/pages${Routes.ProfileSetting}/plan`,
+        path: `${Routes.ProfilePlan}`,
+        component: `@/pages${Routes.ProfilePlan}`,
       },
       {
-        path: `${Routes.ProfileSetting}/model`,
-        component: `@/pages${Routes.ProfileSetting}/model`,
+        path: `${Routes.ProfileModel}`,
+        component: `@/pages${Routes.ProfileModel}`,
       },
       {
-        path: `${Routes.ProfileSetting}/prompt`,
-        component: `@/pages${Routes.ProfileSetting}/prompt`,
+        path: `${Routes.ProfilePrompt}`,
+        component: `@/pages${Routes.ProfilePrompt}`,
+      },
+      {
+        path: Routes.ProfileMcp,
+        component: `@/pages${Routes.ProfileMcp}`,
       },
     ],
   },

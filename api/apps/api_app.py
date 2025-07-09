@@ -45,6 +45,7 @@ from rag.utils.storage_factory import STORAGE_IMPL
 from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
 from functools import partial
+from pathlib import Path
 
 
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
@@ -439,7 +440,8 @@ def upload():
             "name": filename,
             "location": location,
             "size": len(blob),
-            "thumbnail": thumbnail(filename, blob)
+            "thumbnail": thumbnail(filename, blob),
+            "suffix": Path(filename).suffix.lstrip("."),
         }
 
         form_data = request.form

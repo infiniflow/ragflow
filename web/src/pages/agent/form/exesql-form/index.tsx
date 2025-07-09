@@ -4,8 +4,8 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useTestDbConnect } from '@/hooks/flow-hooks';
 import { Button, Flex, Form, Input, InputNumber, Select } from 'antd';
 import { useCallback } from 'react';
-import { ExeSQLOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import { ExeSQLOptions } from '../../options';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
 const ExeSQLForm = ({ onValuesChange, form, node }: IOperatorForm) => {
