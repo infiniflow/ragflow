@@ -1,4 +1,5 @@
 import { AgentGlobals } from '@/constants/agent';
+import { ITraceData } from '@/interfaces/database/agent';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
@@ -9,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
 import { get, set } from 'lodash';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
@@ -26,6 +27,8 @@ export const enum AgentApiAction {
   ResetAgent = 'resetAgent',
   SetAgent = 'setAgent',
   FetchAgentTemplates = 'fetchAgentTemplates',
+  UploadCanvasFile = 'uploadCanvasFile',
+  Trace = 'trace',
 }
 
 export const EmptyDsl = {
@@ -267,4 +270,64 @@ export const useSetAgent = () => {
   });
 
   return { data, loading, setAgent: mutateAsync };
+};
+
+export const useUploadCanvasFile = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.UploadCanvasFile],
+    mutationFn: async (body: any) => {
+      let nextBody = body;
+      try {
+        if (Array.isArray(body)) {
+          nextBody = new FormData();
+          body.forEach((file: File) => {
+            nextBody.append('file', file as any);
+          });
+        }
+
+        const { data } = await flowService.uploadCanvasFile(nextBody);
+        if (data?.code === 0) {
+          message.success(i18n.t('message.uploaded'));
+        }
+        return data;
+      } catch (error) {
+        message.error('error');
+      }
+    },
+  });
+
+  return { data, loading, uploadCanvasFile: mutateAsync };
+};
+
+export const useFetchMessageTrace = () => {
+  const { id } = useParams();
+  const [messageId, setMessageId] = useState('');
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<ITraceData[]>({
+    queryKey: [AgentApiAction.Trace, id, messageId],
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+    enabled: !!id && !!messageId,
+    refetchInterval: 3000,
+    queryFn: async () => {
+      const { data } = await flowService.trace({
+        canvas_id: id,
+        message_id: messageId,
+      });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch, setMessageId };
 };

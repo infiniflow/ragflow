@@ -396,6 +396,11 @@ export default {
       mind: '心智圖',
       question: '問題',
       questionTip: `如果存在給定的問題，則區塊的嵌入將基於它們。`,
+      chunkResult: '切片結果',
+      chunkResultTip: `查看用於嵌入和召回的切片段落`,
+      enable: '啟用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新會話',
@@ -522,7 +527,7 @@ export default {
       useKnowledgeGraph提示:
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
       keyword: '關鍵字分析',
-      keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
+      keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。對於長查詢效果良好，但會增加回應時間。`,
       reasoning: '推理',
       reasoningTip:
         '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',

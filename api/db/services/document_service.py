@@ -72,7 +72,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page,
-                     orderby, desc, keywords, run_status, types):
+                     orderby, desc, keywords, run_status, types, suffix):
         if keywords:
             docs = cls.model.select().where(
                 (cls.model.kb_id == kb_id),
@@ -85,6 +85,8 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.run.in_(run_status))
         if types:
             docs = docs.where(cls.model.type.in_(types))
+        if suffix:
+            docs = docs.where(cls.model.suffix.in_(suffix))
 
         count = docs.count()
         if desc:
@@ -97,6 +99,54 @@ class DocumentService(CommonService):
             docs = docs.paginate(page_number, items_per_page)
 
         return list(docs.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def get_filter_by_kb_id(cls, kb_id, keywords, run_status, types, suffix):
+        """
+        returns:
+        {
+            "suffix": {
+                "ppt": 1,
+                "doxc": 2
+            },
+            "run_status": {
+             "1": 2,
+             "2": 2
+            }
+        }, total
+        where "1" => RUNNING, "2" => CANCEL
+        """
+        if keywords:
+            query = cls.model.select().where(
+                (cls.model.kb_id == kb_id),
+                (fn.LOWER(cls.model.name).contains(keywords.lower()))
+            )
+        else:
+            query  = cls.model.select().where(cls.model.kb_id == kb_id)
+
+
+        if run_status:
+            query = query.where(cls.model.run.in_(run_status))
+        if types:
+            query = query.where(cls.model.type.in_(types))
+        if suffix:
+            query = query.where(cls.model.suffix.in_(suffix))
+
+        rows = query.select(cls.model.run, cls.model.suffix)
+        total = rows.count()
+
+        suffix_counter = {}
+        run_status_counter = {}
+
+        for row in rows:
+            suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
+            run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
+
+        return {
+            "suffix": suffix_counter,
+            "run_status": run_status_counter
+        }, total
 
     @classmethod
     @DB.connection_context()
@@ -228,10 +278,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
+    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
         num = cls.model.update(token_num=cls.model.token_num + token_num,
                                chunk_num=cls.model.chunk_num + chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -246,10 +296,10 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
+    def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
         num = cls.model.update(token_num=cls.model.token_num - token_num,
                                chunk_num=cls.model.chunk_num - chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -525,7 +575,7 @@ class DocumentService(CommonService):
 
                 msg = "\n".join(sorted(msg))
                 info = {
-                    "process_duation": datetime.timestamp(
+                    "process_duration": datetime.timestamp(
                         datetime.now()) -
                     d["process_begin_at"].timestamp(),
                     "run": status}

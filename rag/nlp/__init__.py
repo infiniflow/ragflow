@@ -559,9 +559,6 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
     if not texts or len(texts) != len(images):
         return [], []
-    # Enuser texts is str not tuple, if it is tuple, convert to str (get the first item)
-    if isinstance(texts[0], tuple):
-        texts = [t[0] for t in texts]
     cks = [""]
     result_images = [None]
     tk_nums = [0]
@@ -596,6 +593,12 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         for sub_sec in splited_sec:
             if re.match(f"^{dels}$", sub_sec):
                 continue
+        # if text is tuple, unpack it
+        if isinstance(text, tuple):
+            text_str = text[0]
+            text_pos = text[1] if len(text) > 1 else ""
+            add_chunk(text_str, image, text_pos)
+        else:
             add_chunk(text, image)
 
     return cks, result_images
