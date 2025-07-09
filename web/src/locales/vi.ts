@@ -1171,6 +1171,12 @@ export default {
       statistics: 'Thống kê Đồ thị',
       nodes: 'Nút',
       edges: 'Cạnh',
+      resolveEntities: 'Giải quyết Thực thể',
+      detectCommunities: 'Phát hiện Cộng đồng',
+      resolving: 'Đang giải quyết...',
+      detecting: 'Đang phát hiện...',
+      entityResolutionSuccess: 'Giải quyết thực thể hoàn thành thành công',
+      communityDetectionSuccess: 'Phát hiện cộng đồng hoàn thành thành công',
     },
   },
 };

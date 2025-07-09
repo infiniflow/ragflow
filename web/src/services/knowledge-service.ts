@@ -182,6 +182,14 @@ export function deleteKnowledgeGraph(knowledgeId: string) {
   return request.delete(api.getKnowledgeGraph(knowledgeId));
 }
 
+export function resolveEntities(knowledgeId: string) {
+  return request.post(api.resolveEntities(knowledgeId));
+}
+
+export function detectCommunities(knowledgeId: string) {
+  return request.post(api.detectCommunities(knowledgeId));
+}
+
 export const listDataset = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchKnowledgeListRequestBody,

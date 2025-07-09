@@ -1102,6 +1102,12 @@ export default {
       statistics: 'グラフ統計',
       nodes: 'ノード',
       edges: 'エッジ',
+      resolveEntities: 'エンティティ解決',
+      detectCommunities: 'コミュニティ検出',
+      resolving: '解決中...',
+      detecting: '検出中...',
+      entityResolutionSuccess: 'エンティティ解決が正常に完了しました',
+      communityDetectionSuccess: 'コミュニティ検出が正常に完了しました',
     },
   },
 };

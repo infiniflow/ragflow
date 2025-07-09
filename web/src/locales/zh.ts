@@ -1267,6 +1267,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       statistics: '图统计',
       nodes: '节点',
       edges: '边',
+      resolveEntities: '解析实体',
+      detectCommunities: '检测社区',
+      resolving: '解析中...',
+      detecting: '检测中...',
+      entityResolutionSuccess: '实体解析完成成功',
+      communityDetectionSuccess: '社区检测完成成功',
     },
   },
 };

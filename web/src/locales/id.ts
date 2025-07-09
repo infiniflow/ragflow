@@ -1033,6 +1033,12 @@ export default {
       statistics: 'Statistik Grafik',
       nodes: 'Node',
       edges: 'Edge',
+      resolveEntities: 'Selesaikan Entitas',
+      detectCommunities: 'Deteksi Komunitas',
+      resolving: 'Menyelesaikan...',
+      detecting: 'Mendeteksi...',
+      entityResolutionSuccess: 'Penyelesaian entitas berhasil diselesaikan',
+      communityDetectionSuccess: 'Deteksi komunitas berhasil diselesaikan',
     },
   },
 };

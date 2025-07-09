@@ -1307,6 +1307,12 @@ This delimiter is used to split the input text into several text pieces echo of 
       statistics: 'Graph Statistics',
       nodes: 'Nodes',
       edges: 'Edges',
+      resolveEntities: 'Resolve Entities',
+      detectCommunities: 'Detect Communities',
+      resolving: 'Resolving...',
+      detecting: 'Detecting...',
+      entityResolutionSuccess: 'Entity resolution completed successfully',
+      communityDetectionSuccess: 'Community detection completed successfully',
     },
   },
 };

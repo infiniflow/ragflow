@@ -13,6 +13,8 @@ import kbService, {
   listTag,
   removeTag,
   renameTag,
+  resolveEntities,
+  detectCommunities,
 } from '@/services/knowledge-service';
 import {
   useInfiniteQuery,
@@ -494,4 +496,54 @@ export const useRemoveKnowledgeGraph = () => {
   });
 
   return { data, loading, removeKnowledgeGraph: mutateAsync };
+};
+
+export const useResolveEntities = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['resolveEntities'],
+    mutationFn: async () => {
+      const { data } = await resolveEntities(knowledgeBaseId);
+      if (data.code === 0) {
+        message.success(i18n.t(`knowledgeGraph.entityResolutionSuccess`, 'Entity resolution completed successfully'));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeGraph'],
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, resolveEntities: mutateAsync };
+};
+
+export const useDetectCommunities = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['detectCommunities'],
+    mutationFn: async () => {
+      const { data } = await detectCommunities(knowledgeBaseId);
+      if (data.code === 0) {
+        message.success(i18n.t(`knowledgeGraph.communityDetectionSuccess`, 'Community detection completed successfully'));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeGraph'],
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, detectCommunities: mutateAsync };
 };

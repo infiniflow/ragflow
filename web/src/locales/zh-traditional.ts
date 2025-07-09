@@ -1188,6 +1188,12 @@ export default {
       statistics: '圖統計',
       nodes: '節點',
       edges: '邊',
+      resolveEntities: '解析實體',
+      detectCommunities: '檢測社區',
+      resolving: '解析中...',
+      detecting: '檢測中...',
+      entityResolutionSuccess: '實體解析完成成功',
+      communityDetectionSuccess: '社區檢測完成成功',
     },
   },
 };
