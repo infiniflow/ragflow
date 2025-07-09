@@ -21,6 +21,7 @@ export enum Routes {
   ParsedResult = `${Chunk}${Parsed}`,
   Result = '/result',
   ResultView = `${Chunk}${Result}`,
+  Price = '/price',
 }
 
 const routes = [
@@ -326,6 +327,11 @@ const routes = [
         component: `@/pages${Routes.ProfileSetting}/prompt`,
       },
     ],
+  },
+  {
+    path: Routes.Price,
+    layout: false,
+    component: `@/pages${Routes.Price}`,
   },
 ];
 
