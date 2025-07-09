@@ -41,7 +41,8 @@ from rag.settings import PAGERANK_FLD
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.entity_resolution import EntityResolution
 from graphrag.general.community_reports_extractor import CommunityReportsExtractor
-from rag.llm import LLMBundle, LLMType
+from api.db.services.llm_service import LLMBundle
+from api.db import LLMType
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
