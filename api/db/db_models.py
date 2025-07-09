@@ -634,6 +634,7 @@ class Document(DataBaseModel):
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
     meta_fields = JSONField(null=True, default={})
+    suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -958,5 +959,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.rename_column("document", "process_duation", "process_duration"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
     except Exception:
         pass

@@ -2,10 +2,10 @@ import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { ProfileSettingRouteKey } from '@/constants/setting';
 import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
+import { Routes } from '@/routes';
 import {
   AlignEndVertical,
   Banknote,
@@ -22,9 +22,10 @@ const menuItems = [
   {
     section: 'Account & collaboration',
     items: [
-      { icon: User, label: 'Profile', key: ProfileSettingRouteKey.Profile },
-      { icon: LayoutGrid, label: 'Team', key: ProfileSettingRouteKey.Team },
-      { icon: Banknote, label: 'Plan', key: ProfileSettingRouteKey.Plan },
+      { icon: User, label: 'Profile', key: Routes.Profile },
+      { icon: LayoutGrid, label: 'Team', key: Routes.Team },
+      { icon: Banknote, label: 'Plan', key: Routes.Plan },
+      { icon: Banknote, label: 'MCP', key: Routes.Mcp },
     ],
   },
   {
@@ -33,17 +34,17 @@ const menuItems = [
       {
         icon: Box,
         label: 'Model management',
-        key: ProfileSettingRouteKey.Model,
+        key: Routes.Model,
       },
       {
         icon: FileCog,
         label: 'Prompt management',
-        key: ProfileSettingRouteKey.Prompt,
+        key: Routes.Prompt,
       },
       {
         icon: AlignEndVertical,
         label: 'Chunking method',
-        key: ProfileSettingRouteKey.Chunk,
+        key: Routes.Chunk,
       },
     ],
   },

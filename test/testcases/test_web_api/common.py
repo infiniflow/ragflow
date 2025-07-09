@@ -25,7 +25,7 @@ HEADERS = {"Content-Type": "application/json"}
 KB_APP_URL = f"/{VERSION}/kb"
 DOCUMENT_APP_URL = f"/{VERSION}/document"
 CHUNK_API_URL = f"/{VERSION}/chunk"
-# CHAT_ASSISTANT_API_URL = "/api/v1/chats"
+DIALOG_APP_URL = f"/{VERSION}/dialog"
 # SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 # SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
 
@@ -201,3 +201,60 @@ def batch_add_chunks(auth, doc_id, num):
         res = add_chunk(auth, {"doc_id": doc_id, "content_with_weight": f"chunk test {i}"})
         chunk_ids.append(res["data"]["chunk_id"])
     return chunk_ids
+
+
+# DIALOG APP
+def create_dialog(auth, payload=None, *, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/set", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def update_dialog(auth, payload=None, *, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/set", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def get_dialog(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/get", headers=headers, auth=auth, params=params)
+    return res.json()
+
+
+def list_dialogs(auth, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/list", headers=headers, auth=auth)
+    return res.json()
+
+
+def delete_dialog(auth, payload=None, *, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def batch_create_dialogs(auth, num, kb_ids=None):
+    if kb_ids is None:
+        kb_ids = []
+
+    dialog_ids = []
+    for i in range(num):
+        payload = {
+            "name": f"dialog_{i}",
+            "description": f"Test dialog {i}",
+            "kb_ids": kb_ids,
+            "prompt_config": {"system": "You are a helpful assistant. Use the following knowledge to answer questions: {knowledge}", "parameters": [{"key": "knowledge", "optional": False}]},
+            "top_n": 6,
+            "top_k": 1024,
+            "similarity_threshold": 0.1,
+            "vector_similarity_weight": 0.3,
+            "llm_setting": {"model": "gpt-3.5-turbo", "temperature": 0.7},
+        }
+        res = create_dialog(auth, payload)
+        if res["code"] == 0:
+            dialog_ids.append(res["data"]["id"])
+    return dialog_ids
+
+
+def delete_dialogs(auth):
+    res = list_dialogs(auth)
+    if res["code"] == 0 and res["data"]:
+        dialog_ids = [dialog["id"] for dialog in res["data"]]
+        if dialog_ids:
+            delete_dialog(auth, {"dialog_ids": dialog_ids})

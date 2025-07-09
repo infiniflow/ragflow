@@ -47,3 +47,8 @@ interface GraphRag {
   resolution?: boolean;
   use_graphrag?: boolean;
 }
+
+export type IDocumentInfoFilter = {
+  run_status: Record<number, number>;
+  suffix: Record<string, number>;
+};
