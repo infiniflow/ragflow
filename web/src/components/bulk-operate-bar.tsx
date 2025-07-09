@@ -13,15 +13,23 @@ export type BulkOperateItemType = {
   onClick(): void;
 };
 
-type BulkOperateBarProps = { list: BulkOperateItemType[]; count: number };
+type BulkOperateBarProps = {
+  list: BulkOperateItemType[];
+  count: number;
+  className?: string;
+};
 
-export function BulkOperateBar({ list, count }: BulkOperateBarProps) {
+export function BulkOperateBar({
+  list,
+  count,
+  className,
+}: BulkOperateBarProps) {
   const isDeleteItem = useCallback((id: string) => {
     return id === 'delete';
   }, []);
 
   return (
-    <Card className="mb-4">
+    <Card className={cn('mb-4', className)}>
       <CardContent className="p-1 pl-5 flex items-center gap-6">
         <section className="text-text-sub-title-invert flex items-center gap-2">
           <span>Selected: {count} Files</span>

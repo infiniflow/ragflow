@@ -465,7 +465,7 @@ export const initialCategorizeValues = {
 };
 
 export const initialMessageValues = {
-  messages: [],
+  content: [''],
 };
 
 export const initialKeywordExtractValues = {

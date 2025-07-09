@@ -1,3 +1,4 @@
+import sonnerMessage from '@/components/ui/message';
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -14,7 +15,6 @@ import {
 import { Message } from '@/interfaces/database/chat';
 import i18n from '@/locales/config';
 import api from '@/utils/api';
-import { message } from 'antd';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
 import { useCallback, useContext, useEffect, useMemo } from 'react';
@@ -27,8 +27,6 @@ import { useGetBeginNodeDataQuery } from '../hooks/use-get-begin-query';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
-
-const antMessage = message;
 
 export const useSelectNextMessages = () => {
   const { data: flowDetail, loading } = useFetchAgent();
@@ -139,7 +137,7 @@ export const useSendNextMessage = () => {
       const res = await send(params);
 
       if (receiveMessageError(res)) {
-        antMessage.error(res?.data?.message);
+        sonnerMessage.error(res?.data?.message);
 
         // cancel loading
         setValue(message.content);

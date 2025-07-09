@@ -30,7 +30,6 @@ const ServerTypeOptions = buildOptions(ServerType);
 
 export function EditMcpForm({
   initialName,
-  hideModal,
   onOk,
 }: IModalProps<any> & { initialName?: string }) {
   const { t } = useTranslation();
@@ -61,11 +60,8 @@ export function EditMcpForm({
     defaultValues: { name: '', server_type: ServerType.SSE, url: '' },
   });
 
-  async function onSubmit(data: z.infer<typeof FormSchema>) {
-    const ret = await onOk?.(data);
-    if (ret) {
-      hideModal?.();
-    }
+  function onSubmit(data: z.infer<typeof FormSchema>) {
+    onOk?.(data);
   }
 
   useEffect(() => {
