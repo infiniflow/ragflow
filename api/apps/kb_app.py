@@ -15,9 +15,9 @@
 #
 import json
 import os
-import asyncio
 import logging
 import networkx as nx
+import trio
 from typing import Dict, Any
 
 from flask import request
@@ -39,8 +39,7 @@ from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
 from rag.utils.storage_factory import STORAGE_IMPL
-from graphrag.entity_resolution import EntityResolution
-from graphrag.general.community_reports_extractor import CommunityReportsExtractor
+from graphrag.general.index import resolve_entities, extract_community
 from api.db.services.llm_service import LLMBundle
 from api.db import LLMType
 
@@ -445,36 +444,48 @@ def resolve_entities(kb_id):
         for edge in graph_data["edges"]:
             graph.add_edge(edge["source"], edge["target"], **{k: v for k, v in edge.items() if k not in ["source", "target"]})
         
+        # Set source_id for the graph (required by GraphRAG functions)
+        graph.graph["source_id"] = ["api_call"]
+        
         # Get all nodes as subgraph nodes for entity resolution
         subgraph_nodes = set(graph.nodes())
         
-        # Run entity resolution asynchronously
+        # Run entity resolution using the existing GraphRAG functions
         def progress_callback(msg=""):
             logging.info(f"Entity resolution progress: {msg}")
         
         async def run_entity_resolution():
             chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
-            entity_resolver = EntityResolution(chat_model)
+            embedding_model = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=None, lang=kb.language)
             
-            result = await entity_resolver(graph, subgraph_nodes, callback=progress_callback)
-            return result
+            # Get all nodes as subgraph nodes for entity resolution
+            subgraph_nodes = set(graph.nodes())
+            
+            # Call the existing resolve_entities function
+            await resolve_entities(
+                graph=graph,
+                subgraph_nodes=subgraph_nodes,
+                tenant_id=kb.tenant_id,
+                kb_id=kb_id,
+                doc_id="api_call",  # Use placeholder since this is a manual API call
+                llm_bdl=chat_model,
+                embed_bdl=embedding_model,
+                callback=progress_callback
+            )
+            
+            return graph
         
-        # Execute async function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            resolution_result = loop.run_until_complete(run_entity_resolution())
-        finally:
-            loop.close()
+        # Execute the async function using trio
+        updated_graph = trio.run(run_entity_resolution)
         
         # Convert updated graph back to JSON format
         updated_nodes = []
-        for node_id, node_data in resolution_result.graph.nodes(data=True):
+        for node_id, node_data in updated_graph.nodes(data=True):
             node_dict = {"id": node_id, **node_data}
             updated_nodes.append(node_dict)
         
         updated_edges = []
-        for source, target, edge_data in resolution_result.graph.edges(data=True):
+        for source, target, edge_data in updated_graph.edges(data=True):
             edge_dict = {"source": source, "target": target, **edge_data}
             updated_edges.append(edge_dict)
         
@@ -493,7 +504,7 @@ def resolve_entities(kb_id):
         
         return get_json_result(
             data=True,
-            message='Entity resolution completed successfully.',
+            message=f'Entity resolution completed successfully. Graph now has {len(updated_nodes)} nodes and {len(updated_edges)} edges.',
             code=settings.RetCode.SUCCESS
         )
         
@@ -568,37 +579,45 @@ def detect_communities(kb_id):
         for edge in graph_data["edges"]:
             graph.add_edge(edge["source"], edge["target"], **{k: v for k, v in edge.items() if k not in ["source", "target"]})
         
+        # Set source_id for the graph (required by GraphRAG functions)
+        graph.graph["source_id"] = ["api_call"]
+        
         # Set node degrees for community detection
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
         
-        # Run community detection asynchronously
+        # Run community detection using the existing GraphRAG functions
         def progress_callback(msg=""):
             logging.info(f"Community detection progress: {msg}")
         
         async def run_community_detection():
             chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
-            community_extractor = CommunityReportsExtractor(chat_model)
+            embedding_model = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=None, lang=kb.language)
             
-            result = await community_extractor(graph, callback=progress_callback)
-            return result
+            # Call the existing extract_community function
+            await extract_community(
+                graph=graph,
+                tenant_id=kb.tenant_id,
+                kb_id=kb_id,
+                doc_id="api_call",  # Use placeholder since this is a manual API call
+                llm_bdl=chat_model,
+                embed_bdl=embedding_model,
+                callback=progress_callback
+            )
+            
+            return graph
         
-        # Execute async function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            community_result = loop.run_until_complete(run_community_detection())
-        finally:
-            loop.close()
+        # Execute the async function using trio
+        updated_graph = trio.run(run_community_detection)
         
         # Convert updated graph back to JSON format
         updated_nodes = []
-        for node_id, node_data in graph.nodes(data=True):
+        for node_id, node_data in updated_graph.nodes(data=True):
             node_dict = {"id": node_id, **node_data}
             updated_nodes.append(node_dict)
         
         updated_edges = []
-        for source, target, edge_data in graph.edges(data=True):
+        for source, target, edge_data in updated_graph.edges(data=True):
             edge_dict = {"source": source, "target": target, **edge_data}
             updated_edges.append(edge_dict)
         
@@ -615,23 +634,9 @@ def detect_communities(kb_id):
             kb_id
         )
         
-        # Store community reports
-        community_reports = {
-            "structured_output": community_result.structured_output,
-            "reports": community_result.output
-        }
-        
-        # Store community reports separately
-        settings.docStoreConn.update(
-            {"knowledge_graph_kwd": ["community"], "kb_id": [kb_id]},
-            {"content_with_weight": json.dumps(community_reports)},
-            search.index_name(kb.tenant_id),
-            kb_id
-        )
-        
         return get_json_result(
             data=True,
-            message=f'Community detection completed successfully. Found {len(community_result.structured_output)} communities.',
+            message=f'Community detection completed successfully. Graph now has {len(updated_nodes)} nodes and {len(updated_edges)} edges.',
             code=settings.RetCode.SUCCESS
         )
         
