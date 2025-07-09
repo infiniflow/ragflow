@@ -15,6 +15,10 @@
 #
 import json
 import os
+import asyncio
+import logging
+import networkx as nx
+from typing import Dict, Any
 
 from flask import request
 from flask_login import login_required, current_user
@@ -35,6 +39,9 @@ from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
 from rag.utils.storage_factory import STORAGE_IMPL
+from graphrag.entity_resolution import EntityResolution
+from graphrag.general.community_reports_extractor import CommunityReportsExtractor
+from rag.llm import LLMBundle, LLMType
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -373,3 +380,264 @@ def delete_knowledge_graph(kb_id):
     settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
 
     return get_json_result(data=True)
+
+
+@manager.route('/<kb_id>/knowledge_graph/resolve_entities', methods=['POST'])  # noqa: F821
+@login_required
+def resolve_entities(kb_id):
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    
+    try:
+        _, kb = KnowledgebaseService.get_by_id(kb_id)
+        
+        # Check if knowledge graph exists
+        if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
+            return get_json_result(
+                data=False,
+                message='Knowledge graph not found.',
+                code=settings.RetCode.DATA_ERROR
+            )
+        
+        # Retrieve existing knowledge graph
+        req = {
+            "kb_id": [kb_id],
+            "knowledge_graph_kwd": ["graph"]
+        }
+        
+        sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+        if not len(sres.ids):
+            return get_json_result(
+                data=False,
+                message='Knowledge graph not found.',
+                code=settings.RetCode.DATA_ERROR
+            )
+        
+        # Get graph data
+        graph_data = None
+        for id in sres.ids[:1]:
+            try:
+                graph_data = json.loads(sres.field[id]["content_with_weight"])
+                break
+            except Exception:
+                continue
+        
+        if not graph_data or "nodes" not in graph_data or "edges" not in graph_data:
+            return get_json_result(
+                data=False,
+                message='Invalid knowledge graph data.',
+                code=settings.RetCode.DATA_ERROR
+            )
+        
+        # Create NetworkX graph from stored data
+        graph = nx.Graph()
+        
+        # Add nodes
+        for node in graph_data["nodes"]:
+            graph.add_node(node["id"], **{k: v for k, v in node.items() if k != "id"})
+        
+        # Add edges
+        for edge in graph_data["edges"]:
+            graph.add_edge(edge["source"], edge["target"], **{k: v for k, v in edge.items() if k not in ["source", "target"]})
+        
+        # Get all nodes as subgraph nodes for entity resolution
+        subgraph_nodes = set(graph.nodes())
+        
+        # Run entity resolution asynchronously
+        def progress_callback(msg=""):
+            logging.info(f"Entity resolution progress: {msg}")
+        
+        async def run_entity_resolution():
+            chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
+            entity_resolver = EntityResolution(chat_model)
+            
+            result = await entity_resolver(graph, subgraph_nodes, callback=progress_callback)
+            return result
+        
+        # Execute async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            resolution_result = loop.run_until_complete(run_entity_resolution())
+        finally:
+            loop.close()
+        
+        # Convert updated graph back to JSON format
+        updated_nodes = []
+        for node_id, node_data in resolution_result.graph.nodes(data=True):
+            node_dict = {"id": node_id, **node_data}
+            updated_nodes.append(node_dict)
+        
+        updated_edges = []
+        for source, target, edge_data in resolution_result.graph.edges(data=True):
+            edge_dict = {"source": source, "target": target, **edge_data}
+            updated_edges.append(edge_dict)
+        
+        updated_graph_data = {
+            "nodes": updated_nodes,
+            "edges": updated_edges
+        }
+        
+        # Update stored knowledge graph
+        settings.docStoreConn.update(
+            {"knowledge_graph_kwd": ["graph"], "kb_id": [kb_id]},
+            {"content_with_weight": json.dumps(updated_graph_data)},
+            search.index_name(kb.tenant_id),
+            kb_id
+        )
+        
+        return get_json_result(
+            data=True,
+            message='Entity resolution completed successfully.',
+            code=settings.RetCode.SUCCESS
+        )
+        
+    except Exception as e:
+        logging.error(f"Entity resolution failed: {str(e)}")
+        return get_json_result(
+            data=False,
+            message=f'Entity resolution failed: {str(e)}',
+            code=settings.RetCode.SERVER_ERROR
+        )
+
+
+@manager.route('/<kb_id>/knowledge_graph/detect_communities', methods=['POST'])  # noqa: F821
+@login_required
+def detect_communities(kb_id):
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    
+    try:
+        _, kb = KnowledgebaseService.get_by_id(kb_id)
+        
+        # Check if knowledge graph exists
+        if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
+            return get_json_result(
+                data=False,
+                message='Knowledge graph not found.',
+                code=settings.RetCode.DATA_ERROR
+            )
+        
+        # Retrieve existing knowledge graph
+        req = {
+            "kb_id": [kb_id],
+            "knowledge_graph_kwd": ["graph"]
+        }
+        
+        sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+        if not len(sres.ids):
+            return get_json_result(
+                data=False,
+                message='Knowledge graph not found.',
+                code=settings.RetCode.DATA_ERROR
+            )
+        
+        # Get graph data
+        graph_data = None
+        for id in sres.ids[:1]:
+            try:
+                graph_data = json.loads(sres.field[id]["content_with_weight"])
+                break
+            except Exception:
+                continue
+        
+        if not graph_data or "nodes" not in graph_data or "edges" not in graph_data:
+            return get_json_result(
+                data=False,
+                message='Invalid knowledge graph data.',
+                code=settings.RetCode.DATA_ERROR
+            )
+        
+        # Create NetworkX graph from stored data
+        graph = nx.Graph()
+        
+        # Add nodes
+        for node in graph_data["nodes"]:
+            graph.add_node(node["id"], **{k: v for k, v in node.items() if k != "id"})
+        
+        # Add edges
+        for edge in graph_data["edges"]:
+            graph.add_edge(edge["source"], edge["target"], **{k: v for k, v in edge.items() if k not in ["source", "target"]})
+        
+        # Set node degrees for community detection
+        for node_degree in graph.degree:
+            graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
+        
+        # Run community detection asynchronously
+        def progress_callback(msg=""):
+            logging.info(f"Community detection progress: {msg}")
+        
+        async def run_community_detection():
+            chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
+            community_extractor = CommunityReportsExtractor(chat_model)
+            
+            result = await community_extractor(graph, callback=progress_callback)
+            return result
+        
+        # Execute async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            community_result = loop.run_until_complete(run_community_detection())
+        finally:
+            loop.close()
+        
+        # Convert updated graph back to JSON format
+        updated_nodes = []
+        for node_id, node_data in graph.nodes(data=True):
+            node_dict = {"id": node_id, **node_data}
+            updated_nodes.append(node_dict)
+        
+        updated_edges = []
+        for source, target, edge_data in graph.edges(data=True):
+            edge_dict = {"source": source, "target": target, **edge_data}
+            updated_edges.append(edge_dict)
+        
+        updated_graph_data = {
+            "nodes": updated_nodes,
+            "edges": updated_edges
+        }
+        
+        # Update stored knowledge graph
+        settings.docStoreConn.update(
+            {"knowledge_graph_kwd": ["graph"], "kb_id": [kb_id]},
+            {"content_with_weight": json.dumps(updated_graph_data)},
+            search.index_name(kb.tenant_id),
+            kb_id
+        )
+        
+        # Store community reports
+        community_reports = {
+            "structured_output": community_result.structured_output,
+            "reports": community_result.output
+        }
+        
+        # Store community reports separately
+        settings.docStoreConn.update(
+            {"knowledge_graph_kwd": ["community"], "kb_id": [kb_id]},
+            {"content_with_weight": json.dumps(community_reports)},
+            search.index_name(kb.tenant_id),
+            kb_id
+        )
+        
+        return get_json_result(
+            data=True,
+            message=f'Community detection completed successfully. Found {len(community_result.structured_output)} communities.',
+            code=settings.RetCode.SUCCESS
+        )
+        
+    except Exception as e:
+        logging.error(f"Community detection failed: {str(e)}")
+        return get_json_result(
+            data=False,
+            message=f'Community detection failed: {str(e)}',
+            code=settings.RetCode.SERVER_ERROR
+        )
