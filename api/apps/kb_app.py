@@ -349,11 +349,15 @@ def knowledge_graph(kb_id):
         obj[ty] = content_json
 
     if "nodes" in obj["graph"]:
+        total_nodes = len(obj["graph"]["nodes"])
         obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
         if "edges" in obj["graph"]:
+            total_edges = len(obj["graph"]["edges"])
             node_id_set = { o["id"] for o in obj["graph"]["nodes"] }
             filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
             obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
+            obj["graph"]["total_edges"] = total_edges
+        obj["graph"]["total_nodes"] = total_nodes
     return get_json_result(data=obj)
 
 @manager.route('/<kb_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
