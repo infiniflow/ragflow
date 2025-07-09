@@ -78,6 +78,7 @@ export default {
   upload_and_parse: `${api_host}/document/upload_and_parse`,
   parse: `${api_host}/document/parse`,
   setMeta: `${api_host}/document/set_meta`,
+  get_dataset_filter: `${api_host}/document/filter`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,
@@ -147,10 +148,15 @@ export default {
   trace: `${api_host}/canvas/trace`,
 
   // mcp server
-  getMcpServerList: `${api_host}/mcp_server/list`,
-  getMultipleMcpServers: `${api_host}/mcp_server/get_multiple`,
-  getMcpServer: (serverId: string) => `${api_host}/mcp_server/get/${serverId}`,
+  listMcpServer: `${api_host}/mcp_server/list`,
+  getMcpServer: `${api_host}/mcp_server/detail`,
   createMcpServer: `${api_host}/mcp_server/create`,
   updateMcpServer: `${api_host}/mcp_server/update`,
   deleteMcpServer: `${api_host}/mcp_server/rm`,
+  importMcpServer: `${api_host}/mcp_server/import`,
+  exportMcpServer: `${api_host}/mcp_server/export`,
+  listMcpServerTools: `${api_host}/mcp_server/list_tools`,
+  testMcpServerTool: `${api_host}/mcp_server/test_tool`,
+  cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
+  testMcpServer: `${api_host}/mcp_server/test_mcp`,
 };
