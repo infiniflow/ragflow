@@ -353,15 +353,15 @@ class LLMBundle:
 
         return txt[last_think_end + len("</think>") :]
 
-    def chat(self, system: str, history: list, gen_conf: dict, **kwargs) -> str:
+    def chat(self, system: str, history: list, gen_conf: dict={}, **kwargs) -> str:
         if self.langfuse:
             generation = self.trace.generation(name="chat", model=self.llm_name, input={"system": system, "history": history})
 
-        chat = partial(self.mdl.chat, system, history, gen_conf)
+        chat_partial = partial(self.mdl.chat, system, history, gen_conf)
         if self.is_tools and self.mdl.is_tools:
-            chat = partial(self.mdl.chat_with_tools, system, history, gen_conf)
+            chat_partial = partial(self.mdl.chat_with_tools, system, history, gen_conf)
 
-        txt, used_tokens = chat(**kwargs)
+        txt, used_tokens = chat_partial(**kwargs)
         txt = self._remove_reasoning_content(txt)
 
         if not self.verbose_tool_use:
@@ -375,17 +375,17 @@ class LLMBundle:
 
         return txt
 
-    def chat_streamly(self, system: str, history: list, gen_conf: dict, **kwargs):
+    def chat_streamly(self, system: str, history: list, gen_conf: dict={}, **kwargs):
         if self.langfuse:
             generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
 
         ans = ""
-        chat_streamly = partial(self.mdl.chat_streamly, system, history, gen_conf)
+        chat_partial = partial(self.mdl.chat_streamly, system, history, gen_conf)
         total_tokens = 0
         if self.is_tools and self.mdl.is_tools:
-            chat_streamly = partial(self.mdl.chat_streamly_with_tools, system, history, gen_conf)
+            chat_partial = partial(self.mdl.chat_streamly_with_tools, system, history, gen_conf)
 
-        for txt in chat_streamly(**kwargs):
+        for txt in chat_partial(**kwargs):
             if isinstance(txt, int):
                 total_tokens = txt
                 if self.langfuse:

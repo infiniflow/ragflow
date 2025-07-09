@@ -32,7 +32,13 @@ class TavilySearchParam(ToolParamBase):
     def __init__(self):
         self.meta:ToolMeta = {
             "name": "tavily_search",
-            "description": "Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results. Unlike other search APIs such as Serp or Google, Tavily focuses on optimizing search for AI developers and autonomous AI agents. We take care of all the burden of searching, scraping, filtering and extracting the most relevant information from online sources. All in a single API call!",
+            "description": """
+Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results. 
+When searching:
+   - Start with specific query which should focus on just a single aspect.
+   - Broaden search terms if needed
+   - Cross-reference information from multiple sources
+             """,
             "parameters": {
                 "query": {
                     "type": "string",
@@ -136,6 +142,9 @@ class TavilySearch(ToolBase, ABC):
                 return self.output("formalized_content")
             except Exception as e:
                 last_e = e
-                logging.error(f"Tavily error: {e}")
+                logging.exception(f"Tavily error: {e}")
         if last_e:
             self.set_output("_ERROR", str(last_e))
+            return f"Tavily error: {last_e}"
+
+        assert False, self.output()

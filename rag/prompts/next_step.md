@@ -10,7 +10,7 @@ Your job is:
 
 # ==========  TOOLS (JSON-Schema) ==========
 You may invoke only the tools listed below.  
-Return a JSON object with exactly two top-level keys:  
+Return a JSON array of objects in which item is with exactly two top-level keys:  
 • "name": the tool to call  
 • "arguments": an object whose keys/values satisfy the schema
 

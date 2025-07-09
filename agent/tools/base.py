@@ -121,6 +121,7 @@ class ToolBase(ComponentBase):
         except Exception as e:
             self._param.outputs["_ERROR"] = {"value": str(e)}
             logging.exception(e)
+            res = str(e)
 
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return res

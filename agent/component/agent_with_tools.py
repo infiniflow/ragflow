@@ -17,14 +17,13 @@ import json
 import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from functools import partial
 from typing import Any
 
 import json_repair
 import pandas as pd
-from distributed import as_completed
 
 from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
@@ -145,6 +144,7 @@ class Agent(LLM, ToolBase):
         self.set_output("content", ans)
         if use_tools:
             self.set_output("use_tools", use_tools)
+        return ans
 
     def stream_output_with_tools(self, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
@@ -187,8 +187,8 @@ class Agent(LLM, ToolBase):
             })
 
             # Summarize of function calling
-            if len(str(tool_response)) > 1024:
-                tool_response = self._generate([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}])
+            #if len(str(tool_response)) > 1024:
+            #    tool_response = self._generate([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}])
 
             return name, tool_response
 
@@ -221,7 +221,7 @@ class Agent(LLM, ToolBase):
                 hist.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
-        hist.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+        hist.append({"role": "user", "content": f"Exceed max rounds: {self._param.max_rounds}"})
         response, tk = self._generate(hist)
         token_count += tk
         yield response, token_count

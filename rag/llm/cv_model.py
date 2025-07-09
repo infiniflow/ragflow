@@ -45,7 +45,7 @@ class Base(ABC):
     def describe_with_prompt(self, image, prompt=None):
         raise NotImplementedError("Please implement encode method!")
 
-    def chat(self, system, history, gen_conf, image=""):
+    def chat(self, system, history, gen_conf, image="", **kwargs):
         if system:
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
         try:
@@ -63,7 +63,7 @@ class Base(ABC):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, image=""):
+    def chat_streamly(self, system, history, gen_conf, image="", **kwargs):
         if system:
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
 

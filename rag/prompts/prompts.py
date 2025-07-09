@@ -334,32 +334,30 @@ def analyze_task(chat_mdl, history:list, tools_description: list[dict]):
 
     template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_USER)
 
-    kwd, tk = chat_mdl._chat([
-        {"role": "system", "content": ANALYZE_TASK_SYSTEM},
-        {"role": "user", "content": template.render(task=task, context=context, tools_desc=tools_desc)}], {})
+    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": template.render(task=task, context=context, tools_desc=tools_desc)}], {})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
-        return "", 0
-    return kwd, tk
+        return ""
+    return kwd
 
 
 def next_step(chat_mdl, history:list, tools_description: list[dict]):
     if not tools_description:
         return ""
-    task_analisys, tk = analyze_task(chat_mdl, history, tools_description)
+    task_analisys = analyze_task(chat_mdl, history, tools_description)
     desc = tool_schema(tools_description)
     template = PROMPT_JINJA_ENV.from_string(NEXT_STEP)
     user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
     hist = deepcopy(history)
-    hist[0]["content"] = template.render(task_analisys=task_analisys, desc=desc, today=datetime.now().strftime("%Y-%m-%d"))
     if hist[-1]["role"] == "user":
         hist[-1]["content"] += user_prompt
     else:
         hist.append({"role": "user", "content": user_prompt})
-    json_str, tk_cnt = chat_mdl._chat(hist, {}, stop=["<|stop|>"])
-    tk_cnt += tk
+    json_str = chat_mdl.chat(template.render(task_analisys=task_analisys, desc=desc, today=datetime.datetime.now().strftime("%Y-%m-%d")),
+                             hist[1:], stop=["<|stop|>"])
+    tk_cnt = num_tokens_from_string(task_analisys+json_str)
     json_str = re.sub(r"^.*</think>", "", json_str, flags=re.DOTALL)
     return json_str, tk_cnt
 

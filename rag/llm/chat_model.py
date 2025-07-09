@@ -286,7 +286,7 @@ class Base(ABC):
             history.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
             return self._verbose_tool_use(name, {}, str(e)), token_count, False
 
-    def chat_with_tools(self, system: str, history: list, gen_conf: dict):
+    def chat_with_tools(self, system: str, history: list, gen_conf: dict={}):
         gen_conf = self._clean_conf(gen_conf)
         if system:
             history.insert(0, {"role": "system", "content": system})
@@ -348,7 +348,7 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    def chat(self, system, history, gen_conf):
+    def chat(self, system, history, gen_conf={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -356,7 +356,7 @@ class Base(ABC):
         # Implement exponential backoff retry strategy
         for attempt in range(self.max_retries + 1):
             try:
-                return self._chat(history, gen_conf)
+                return self._chat(history, gen_conf, **kwargs)
             except Exception as e:
                 e = self._exceptions(e, attempt)
                 if e:
@@ -377,7 +377,7 @@ class Base(ABC):
 
         return final_tool_calls
 
-    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict):
+    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict={}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system:
@@ -492,14 +492,14 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf: dict={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         total_tokens = 0
         try:
-            for delta_ans, tol in self._chat_streamly(history, gen_conf):
+            for delta_ans, tol in self._chat_streamly(history, gen_conf, **kwargs):
                 yield delta_ans
                 total_tokens += tol
         except openai.APIError as e:
@@ -644,7 +644,7 @@ class BaiChuanChat(Base):
             "top_p": gen_conf.get("top_p", 0.85),
         }
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=history,
@@ -659,7 +659,7 @@ class BaiChuanChat(Base):
                 ans += LENGTH_NOTIFICATION_EN
         return ans, self.total_token_count(response)
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -734,7 +734,7 @@ class ZhipuChat(Base):
 
         return super().chat_with_tools(system, history, gen_conf)
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -794,7 +794,7 @@ class OllamaChat(Base):
             options[k] = gen_conf[k]
         return options
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         # Calculate context size
         ctx_size = self._calculate_dynamic_ctx(history)
 
@@ -804,7 +804,7 @@ class OllamaChat(Base):
         token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
         return ans, token_count
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -885,7 +885,7 @@ class LocalLLM(Base):
             yield answer + "\n**ERROR**: " + str(e)
         yield num_tokens_from_string(answer)
 
-    def chat(self, system, history, gen_conf):
+    def chat(self, system, history, gen_conf={}, **kwargs):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = self._prepare_prompt(system, history, gen_conf)
@@ -894,7 +894,7 @@ class LocalLLM(Base):
         total_tokens = next(chat_gen)
         return ans, total_tokens
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = self._prepare_prompt(system, history, gen_conf)
@@ -1013,7 +1013,7 @@ class MistralChat(Base):
                 del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
@@ -1023,7 +1023,7 @@ class MistralChat(Base):
                 ans += LENGTH_NOTIFICATION_EN
         return ans, self.total_token_count(response)
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
@@ -1032,7 +1032,7 @@ class MistralChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf)
+            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
             for resp in response:
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
@@ -1076,7 +1076,7 @@ class BedrockChat(Base):
                 del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         hist = []
         for item in history:
@@ -1097,7 +1097,7 @@ class BedrockChat(Base):
         ans = response["output"]["message"]["content"][0]["text"]
         return ans, num_tokens_from_string(ans)
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         from botocore.exceptions import ClientError
 
         for k in list(gen_conf.keys()):
@@ -1155,7 +1155,7 @@ class GeminiChat(Base):
                 del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         from google.generativeai.types import content_types
 
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
@@ -1178,7 +1178,7 @@ class GeminiChat(Base):
         ans = response.text
         return ans, response.usage_metadata.total_token_count
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         from google.generativeai.types import content_types
         gen_conf = self._clean_conf(gen_conf)
         if system:
@@ -1219,7 +1219,7 @@ class GroqChat(Base):
                 del gen_conf[k]
         return gen_conf
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
@@ -1347,7 +1347,7 @@ class CoHereChat(Base):
             response.meta.tokens.input_tokens + response.meta.tokens.output_tokens,
         )
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -1466,7 +1466,7 @@ class ReplicateChat(Base):
         self.model_name = model_name
         self.client = Client(api_token=key)
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:] if item["role"] != "system"])
         response = self.client.run(
@@ -1476,7 +1476,7 @@ class ReplicateChat(Base):
         ans = "".join(response)
         return ans, num_tokens_from_string(ans)
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:]])
@@ -1520,7 +1520,7 @@ class HunyuanChat(Base):
             _gen_conf["TopP"] = gen_conf["top_p"]
         return _gen_conf
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         from tencentcloud.hunyuan.v20230901 import models
 
         hist = [{k.capitalize(): v for k, v in item.items()} for item in history]
@@ -1531,7 +1531,7 @@ class HunyuanChat(Base):
         ans = response.Choices[0].Message.Content
         return ans, response.Usage.TotalTokens
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
             TencentCloudSDKException,
         )
@@ -1622,7 +1622,7 @@ class BaiduYiyanChat(Base):
         ans = response["result"]
         return ans, self.total_token_count(response)
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -1706,7 +1706,7 @@ class GoogleChat(Base):
                     del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf):
+    def _chat(self, history, gen_conf={}, **kwargs):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         if "claude" in self.model_name:
             response = self.client.messages.create(
@@ -1744,7 +1744,7 @@ class GoogleChat(Base):
         ans = response.text
         return ans, response.usage_metadata.total_token_count
 
-    def chat_streamly(self, system, history, gen_conf):
+    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if "claude" in self.model_name:
             if "max_tokens" in gen_conf:
                 del gen_conf["max_tokens"]
