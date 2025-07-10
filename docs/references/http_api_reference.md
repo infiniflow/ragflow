@@ -410,7 +410,7 @@ curl --request POST \
       - Minimum: `0`
       - Maximum: `10`
     - `"chunk_token_num"`: `int`
-      - Defaults to `128`
+      - Defaults to `512`
       - Minimum: `1`
       - Maximum: `2048`
     - `"delimiter"`: `string`
@@ -631,7 +631,7 @@ curl --request PUT \
       - Minimum: `0`
       - Maximum: `10`
     - `"chunk_token_num"`: `int`
-      - Defaults to `128`
+      - Defaults to `512`
       - Minimum: `1`
       - Maximum: `2048`
     - `"delimiter"`: `string`
