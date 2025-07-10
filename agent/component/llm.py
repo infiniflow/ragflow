@@ -110,14 +110,8 @@ class LLM(ComponentBase):
 
         args = {}
         vars = self.get_input_elements()
-        references = {"chunks": [], "doc_aggs": []}
         prompt = self._param.sys_prompt
         for k, o in vars.items():
-            if o.get("_references"):
-                ref = o["_references"]
-                prompt = replace_ids(prompt, len(references["chunks"]), o["_cpn_id"])
-                references["chunks"].extend(ref["chunks"])
-                references["doc_aggs"].extend(ref["doc_aggs"])
             args[k] = o["value"]
             if not isinstance(args[k], str):
                 try:
@@ -131,9 +125,8 @@ class LLM(ComponentBase):
         prompt = self.string_format(prompt, args)
         for m in msg:
             m["content"] = self.string_format(m["content"], args)
-        if references["chunks"]:
+        if self._canvas.get_reference()["chunks"]:
             prompt += citation_prompt()
-            self._canvas.retrieval = references
 
         return prompt, msg
 

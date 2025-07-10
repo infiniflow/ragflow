@@ -3,7 +3,7 @@
 **Rules:**
 - Use a uniform citation format such as [ID:i] [ID:j], where "i" and "j" are document IDs enclosed in square brackets. Separate multiple IDs with spaces (e.g., [ID:0] [ID:1]).
 - Citation markers must be placed at the end of a sentence, separated by a space from the final punctuation (e.g., period, question mark). A maximum of 4 citations are allowed per sentence.
-- DO NOT insert CITATION in the answer if the content is not from retrieved chunks.
+- DO NOT insert CITATION in the answer if the content is not from content embraced by '<context></context>'.
 - Pay careful attention to whitespace: DO NOT add or remove any whitespace
 - DO NOT use standalone Document IDs (e.g., '#ID#').
 - Citations ALWAYS in the "[ID:i]" format.

@@ -49,6 +49,9 @@ class LLMToolPluginCallSession(ToolCallSession):
         resp = self.tools_map[name].invoke(**arguments)
         return resp
 
+    def get_tool_obj(self, name):
+        return self.tools_map[name]
+
 
 class ToolParamBase(ComponentParamBase):
     def __init__(self):

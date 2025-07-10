@@ -32,7 +32,8 @@ from api.db.services.llm_service import LLMBundle
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
-from rag.prompts.prompts import next_step, COMPLETE_TASK, post_function_call_promt
+from rag.prompts.prompts import next_step, COMPLETE_TASK, post_function_call_promt, analyze_task, form_history, \
+    citation_prompt
 from rag.utils import num_tokens_from_string
 
 
@@ -76,7 +77,7 @@ class Agent(LLM, ToolBase):
             except Exception as e:
                 self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
                 return
-            cpn_id = f"{id}-->" + cpn.get("name", cpn.get_meta()["function"]["name"]).replace(" ", "_")
+            cpn_id = f"{id}-->" + cpn.get("name", "").replace(" ", "_")
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
@@ -122,7 +123,7 @@ class Agent(LLM, ToolBase):
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
         if kwargs.get("user_prompt"):
-            self._param.prompts = [{"role": "user", "content": kwargs["user_prompt"]}]
+            self._param.prompts = [{"role": "user", "content": str(kwargs["user_prompt"])}]
 
         if not self.tools:
             return LLM._invoke(self, **kwargs)
@@ -180,9 +181,22 @@ class Agent(LLM, ToolBase):
         token_count = 0
         tool_metas = [v.get_meta() for _,v in self.tools.items()]
         hist = deepcopy(history)
+        last_calling = ""
         def use_tool(name, args):
-            nonlocal use_tools, token_count
+            nonlocal hist, use_tools, token_count,last_calling
+            print(f"{last_calling=} == {name=}", )
             # Summarize of function calling
+            if all([
+                isinstance(self.toolcall_session.get_tool_obj(name), Agent),
+                last_calling,
+                last_calling != name
+            ]):
+                args["user_prompt"] = "\n".join([
+                        f"The chat history with other agents are as following: \n" + form_history(hist[:-1]),
+                        "\nHere is my request:",
+                        str(args["user_prompt"])
+                ])
+            last_calling = name
             tool_response = self.toolcall_session.tool_call(name, args)
             use_tools.append({
                 "name": name,
@@ -196,8 +210,9 @@ class Agent(LLM, ToolBase):
 
             return name, tool_response
 
+        task_desc = analyze_task(self.chat_mdl, history[-1]["content"], [], tool_metas)
         for _ in range(self._param.max_rounds + 1):
-            response, tk = next_step(self.chat_mdl, hist, tool_metas)
+            response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc)
             token_count += tk
             hist.append({"role": "assistant", "content": response})
             try:
@@ -210,6 +225,8 @@ class Agent(LLM, ToolBase):
                         name = func["name"]
                         args = func["arguments"]
                         if name == COMPLETE_TASK:
+                            if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"]:
+                                hist[0]["content"] += citation_prompt()
                             hist.append({"role": "user", "content": f"Respond with a formal answer please. FORGET(DO NOT mention) about `{COMPLETE_TASK}`"})
                             yield "", token_count
                             for delta_ans in self._generate_streamly(hist):

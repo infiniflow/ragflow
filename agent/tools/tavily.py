@@ -103,7 +103,7 @@ class TavilySearch(ToolBase, ABC):
             if not r["raw_content"] and not r["content"]:
                 continue
             content = r["raw_content"] if r["raw_content"] else r["content"]
-            content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_+-]+\)", "", content)
+            content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+-]+\)", "", content)
             if not content:
                 continue
             id = get_uuid()
@@ -129,8 +129,8 @@ class TavilySearch(ToolBase, ABC):
                 "count": 1,
                 "url": r["url"]
             })
-        self._canvas.add_retrievals(chunks, aggs)
-        self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, prefix=self._id)))
+        self._canvas.add_refernce(chunks, aggs)
+        self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, True)))
         self.set_output("json", response)
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))

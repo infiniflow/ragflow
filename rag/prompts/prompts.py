@@ -30,9 +30,11 @@ from rag.utils import encoder, num_tokens_from_string
 STOP_TOKEN="<|STOP|>"
 COMPLETE_TASK="complete_task"
 
+def get_value(d, k1, k2):
+    return d.get(k1, d.get(k2))
+
+
 def chunks_format(reference):
-    def get_value(d, k1, k2):
-        return d.get(k1, d.get(k2))
 
     return [
         {
@@ -102,10 +104,10 @@ def message_fit_in(msg, max_length=4000):
     return max_length, msg
 
 
-def kb_prompt(kbinfos, max_tokens, prefix=""):
+def kb_prompt(kbinfos, max_tokens, hash_id=False):
     from api.db.services.document_service import DocumentService
 
-    knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
+    knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
     used_token_count = 0
     chunks_num = 0
@@ -127,13 +129,13 @@ def kb_prompt(kbinfos, max_tokens, prefix=""):
 
     knowledges = []
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        cnt = f"\nID: " + (f"{prefix}_{i}" if prefix else f"{i}")
+        cnt = "\nID: {}".format(i if not hash_id else hash(ck["chunk_id"]) % 1000)
         cnt += draw_node("Title", ck["docnm_kwd"])
         cnt += draw_node("URL", ck['url'])  if "url" in ck else ""
         for k, v in docs.get(ck["doc_id"], {}).items():
             cnt += draw_node(k, v)
         cnt += "\n└── Content:\n"
-        cnt += ck["content_with_weight"]
+        cnt += get_value(ck, "content", "content_with_weight")
         knowledges.append(cnt)
 
     return knowledges
@@ -320,23 +322,25 @@ def tool_schema(tools_description: list[dict], complete_task=False):
     return "\n\n".join([f"## {i+1}. {fnm}\n{json.dumps(des, ensure_ascii=False, indent=4)}" for i, (fnm, des) in enumerate(desc.items())])
 
 
-def analyze_task(chat_mdl, history:list, tools_description: list[dict]):
-    tools_desc = tool_schema(tools_description)
-    task = ""
-    for h in history:
-        if h["role"] == "user":
-            task = h["content"]
-            break
+def form_history(history, limit=-6):
     context = ""
-    if len(history) > 6:
-        for h in history[-6:]:
-            if h["role"] == "system":
-                continue
-            context += f"\n{h['role'].upper()}: {h['content'][:1024] + ('...' if len(h['content'])>1024 else '')}"
+    for h in history[limit:]:
+        if h["role"] == "system":
+            continue
+        role = "USER"
+        if h["role"].upper()!= role:
+            role = "AGENT"
+        context += f"\n{role}: {h['content'][:1024] + ('...' if len(h['content'])>1024 else '')}"
+    return context
+
+
+def analyze_task(chat_mdl, task_name, history:list, tools_description: list[dict]):
+    tools_desc = tool_schema(tools_description)
+    context = form_history(history)
 
     template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_USER)
 
-    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": template.render(task=task, context=context, tools_desc=tools_desc)}], {})
+    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": template.render(task=task_name, context=context, tools_desc=tools_desc)}], {})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
@@ -345,10 +349,10 @@ def analyze_task(chat_mdl, history:list, tools_description: list[dict]):
     return kwd
 
 
-def next_step(chat_mdl, history:list, tools_description: list[dict]):
+def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc):
     if not tools_description:
         return ""
-    task_analisys = analyze_task(chat_mdl, history, tools_description)
+    #task_analisys = analyze_task(chat_mdl, history, tools_description)
     desc = tool_schema(tools_description)
     template = PROMPT_JINJA_ENV.from_string(NEXT_STEP)
     user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
@@ -357,9 +361,9 @@ def next_step(chat_mdl, history:list, tools_description: list[dict]):
         hist[-1]["content"] += user_prompt
     else:
         hist.append({"role": "user", "content": user_prompt})
-    json_str = chat_mdl.chat(template.render(task_analisys=task_analisys, desc=desc, today=datetime.datetime.now().strftime("%Y-%m-%d")),
+    json_str = chat_mdl.chat(template.render(task_analisys=task_desc, desc=desc, today=datetime.datetime.now().strftime("%Y-%m-%d")),
                              hist[1:], stop=["<|stop|>"])
-    tk_cnt = num_tokens_from_string(task_analisys+json_str)
+    tk_cnt = num_tokens_from_string(json_str)
     json_str = re.sub(r"^.*</think>", "", json_str, flags=re.DOTALL)
     return json_str, tk_cnt
 

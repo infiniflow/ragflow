@@ -275,7 +275,7 @@ class Canvas:
                         cpn["obj"].set_output("content", _m)
                     else:
                         yield decorate("message", {"content": cpn["obj"].output("content")})
-                    yield decorate("message_end", {"reference": self.retrieval})
+                    yield decorate("message_end", {"reference": self.get_reference()})
 
                     while partials:
                         _cpn = self.get_component(partials[0])
@@ -471,16 +471,20 @@ class Canvas:
         except Exception as e:
             logging.exception(e)
 
-    def add_retrievals(self, chunks: list[object], doc_infos: list[object]):
+    def add_refernce(self, chunks: list[object], doc_infos: list[object]):
         if not self.retrieval:
             self.retrieval = [{"chunks": {}, "doc_aggs": {}}]
 
         r = self.retrieval[-1]
         for ck in chunks:
-            if ck["chunk_id"] not in r:
-                r[ck["chunk_id"]] = ck
+            cid = str(hash(ck["chunk_id"])%1000)
+            if cid not in r:
+                r["chunks"][cid] = ck
 
         for doc in doc_infos:
             if doc["doc_name"] not in r:
-                r[doc["doc_name"]] = doc
+                r["doc_aggs"][doc["doc_name"]] = doc
+
+    def get_reference(self):
+        return self.retrieval[-1]
 
