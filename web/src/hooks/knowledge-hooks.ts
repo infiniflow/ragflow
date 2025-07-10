@@ -525,6 +525,7 @@ export const useResolveEntities = () => {
 
 export const useDetectCommunities = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
+  const [progress, setProgress] = useState(null);
 
   const queryClient = useQueryClient();
   const {
@@ -534,16 +535,37 @@ export const useDetectCommunities = () => {
   } = useMutation({
     mutationKey: ['detectCommunities'],
     mutationFn: async () => {
+      // Reset progress at start
+      setProgress({
+        total_communities: 0,
+        processed_communities: 0,
+        tokens_used: 0,
+        current_status: 'starting'
+      });
+      
       const { data } = await detectCommunities(knowledgeBaseId);
       if (data.code === 0) {
+        // Update progress with final results if available
+        if (data.data && data.data.progress) {
+          setProgress({
+            ...data.data.progress,
+            current_status: 'completed'
+          });
+        }
+        
         message.success(i18n.t(`knowledgeGraph.communityDetectionSuccess`, 'Community detection completed successfully'));
         queryClient.invalidateQueries({
           queryKey: ['fetchKnowledgeGraph'],
         });
+        
+        // Clear progress after a delay
+        setTimeout(() => setProgress(null), 3000);
+      } else {
+        setProgress(null);
       }
       return data;
     },
   });
 
-  return { data, loading, detectCommunities: mutateAsync };
+  return { data, loading, detectCommunities: mutateAsync, progress };
 };

@@ -586,9 +586,40 @@ def detect_communities(kb_id):
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
         
+        # Progress tracking variables
+        progress_data = {
+            "total_communities": 0,
+            "processed_communities": 0,
+            "tokens_used": 0,
+            "current_status": "initializing"
+        }
+        
         # Run community detection using the existing GraphRAG functions
         def progress_callback(msg=""):
+            import re
             logging.info(f"Community detection progress: {msg}")
+            
+            # Parse progress messages to extract metrics
+            if "communities:" in msg.lower():
+                # Extract community progress (e.g., "Communities: 3/4")
+                match = re.search(r'communities?:\s*(\d+)/(\d+)', msg, re.IGNORECASE)
+                if match:
+                    progress_data["processed_communities"] = int(match.group(1))
+                    progress_data["total_communities"] = int(match.group(2))
+            
+            if "tokens:" in msg.lower() or "token" in msg.lower():
+                # Extract token usage (e.g., "used tokens: 12750")
+                match = re.search(r'tokens?[^\d]*(\d+)', msg, re.IGNORECASE)
+                if match:
+                    progress_data["tokens_used"] = int(match.group(1))
+            
+            # Update status based on message content
+            if "completed" in msg.lower():
+                progress_data["current_status"] = "completed"
+            elif "processing" in msg.lower() or "generating" in msg.lower():
+                progress_data["current_status"] = "processing"
+            elif "detecting" in msg.lower():
+                progress_data["current_status"] = "detecting"
         
         async def run_community_detection():
             chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
@@ -634,9 +665,21 @@ def detect_communities(kb_id):
             kb_id
         )
         
+        # Count communities in the updated graph
+        communities = set()
+        for node_data in updated_nodes:
+            if "community" in node_data:
+                communities.add(node_data["community"])
+        
         return get_json_result(
-            data=True,
-            message=f'Community detection completed successfully. Graph now has {len(updated_nodes)} nodes and {len(updated_edges)} edges.',
+            data={
+                "success": True,
+                "nodes_count": len(updated_nodes),
+                "edges_count": len(updated_edges),
+                "communities_count": len(communities),
+                "progress": progress_data
+            },
+            message=f'Community detection completed successfully. Graph now has {len(updated_nodes)} nodes, {len(updated_edges)} edges, and {len(communities)} communities. Tokens used: {progress_data["tokens_used"]}',
             code=settings.RetCode.SUCCESS
         )
         

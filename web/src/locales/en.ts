@@ -1313,6 +1313,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       detecting: 'Detecting...',
       entityResolutionSuccess: 'Entity resolution completed successfully',
       communityDetectionSuccess: 'Community detection completed successfully',
+      communityProgress: 'Community Detection',
+      communities: 'Communities',
+      tokensUsed: 'Tokens Used',
+      status: 'Status',
     },
   },
 };

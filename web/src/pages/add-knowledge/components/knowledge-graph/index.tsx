@@ -12,7 +12,7 @@ const KnowledgeGraph: React.FC = () => {
   const { t } = useTranslation();
   const { handleDeleteKnowledgeGraph } = useDeleteKnowledgeGraph();
   const { resolveEntities, loading: resolvingEntities } = useResolveEntities();
-  const { detectCommunities, loading: detectingCommunities } = useDetectCommunities();
+  const { detectCommunities, loading: detectingCommunities, progress: communityProgress } = useDetectCommunities();
 
   const totalNodes = data?.graph?.total_nodes || 0;
   const totalEdges = data?.graph?.total_edges || 0;
@@ -91,6 +91,39 @@ const KnowledgeGraph: React.FC = () => {
               {displayedEdges.toLocaleString()} / {totalEdges.toLocaleString()}
             </span>
           </div>
+          
+          {/* Community Detection Progress */}
+          {detectingCommunities && communityProgress && (
+            <div className="mt-3 pt-2 border-t border-gray-200">
+              <div className="text-sm font-medium text-blue-700 mb-1">
+                {t('knowledgeGraph.communityProgress', 'Community Detection')}
+              </div>
+              <div className="space-y-1">
+                {communityProgress.total_communities > 0 && (
+                  <div className="flex justify-between gap-2">
+                    <span>{t('knowledgeGraph.communities', 'Communities')}:</span>
+                    <span className="font-mono text-blue-600">
+                      {communityProgress.processed_communities}/{communityProgress.total_communities}
+                    </span>
+                  </div>
+                )}
+                {communityProgress.tokens_used > 0 && (
+                  <div className="flex justify-between gap-2">
+                    <span>{t('knowledgeGraph.tokensUsed', 'Tokens Used')}:</span>
+                    <span className="font-mono text-green-600">
+                      {communityProgress.tokens_used.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between gap-2">
+                  <span>{t('knowledgeGraph.status', 'Status')}:</span>
+                  <span className="text-blue-600 capitalize">
+                    {communityProgress.current_status}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       
