@@ -750,7 +750,7 @@ class TestDatasetUpdate:
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
         assert res["data"][0]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
@@ -767,7 +767,7 @@ class TestDatasetUpdate:
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
         assert res["data"][0]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
