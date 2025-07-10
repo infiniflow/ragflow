@@ -29,6 +29,7 @@ export function useUpdateAgentNodeTools() {
               ? tool
               : {
                   component_name: cur,
+                  name: cur,
                   params:
                     DefaultAgentToolValuesMap[
                       cur as keyof typeof DefaultAgentToolValuesMap
