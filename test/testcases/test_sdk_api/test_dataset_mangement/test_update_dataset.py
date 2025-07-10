@@ -636,7 +636,7 @@ class TestDatasetUpdate:
         expected_config = DataSet.ParserConfig(
             client,
             {
-                "chunk_token_num": 128,
+                "chunk_token_num": 512,
                 "delimiter": r"\n",
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
@@ -655,7 +655,7 @@ class TestDatasetUpdate:
         expected_config = DataSet.ParserConfig(
             client,
             {
-                "chunk_token_num": 128,
+                "chunk_token_num": 512,
                 "delimiter": r"\n",
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
