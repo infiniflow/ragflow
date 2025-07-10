@@ -124,6 +124,8 @@ class Retrieval(ToolBase, ABC):
         if self._param.use_kg and kbs:
             ck = settings.kg_retrievaler.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
+                ck["content"] = ck["content_with_weight"]
+                del ck["content_with_weight"]
                 kbinfos["chunks"].insert(0, ck)
 
         for ck in kbinfos["chunks"]:
@@ -133,11 +135,10 @@ class Retrieval(ToolBase, ABC):
                 del ck["content_ltks"]
 
         if not kbinfos["chunks"]:
-            self.set_output("_references", None)
             self.set_output("formalized_content", self._param.empty_response)
             return
 
-        self.set_output("_references", kbinfos)
+        self._canvas.add_retrievals(kbinfos["chunks"], kbinfos["doc_aggs"])
         form_cnt = "\n".join(kb_prompt(kbinfos, 200000, prefix=self._id))
         self.set_output("formalized_content", form_cnt)
         return form_cnt

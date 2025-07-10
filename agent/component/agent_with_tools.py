@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
 from typing import Any
@@ -32,7 +32,8 @@ from api.db.services.llm_service import LLMBundle
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
-from rag.prompts.prompts import next_step, COMPLETE_TASK, tool_call_summary, post_function_call_promt
+from rag.prompts.prompts import next_step, COMPLETE_TASK, post_function_call_promt
+from rag.utils import num_tokens_from_string
 
 
 class AgentParam(LLMParam, ToolParamBase):
@@ -43,11 +44,11 @@ class AgentParam(LLMParam, ToolParamBase):
     def __init__(self):
         self.meta:ToolMeta = {
                 "name": "agent",
-                "description": "This is an agent for every task.",
+                "description": "This is an agent for a specific task.",
                 "parameters": {
                     "user_prompt": {
                         "type": "string",
-                        "description": "This is the order you need to sent to the agent.",
+                        "description": "This is the order you need to send to the agent.",
                         "default": "",
                         "required": True
                     }
@@ -75,7 +76,7 @@ class Agent(LLM, ToolBase):
             except Exception as e:
                 self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
                 return
-            cpn_id = f"{id}-->" + cpn.get("name", "").replace(" ", "_")
+            cpn_id = f"{id}-->" + cpn.get("name", cpn.get_meta()["function"]["name"]).replace(" ", "_")
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
@@ -92,7 +93,10 @@ class Agent(LLM, ToolBase):
 
     def get_meta(self) -> dict[str, Any]:
         self._param.function_name= self._id.split("-->")[-1]
-        return super().get_meta()
+        m = super().get_meta()
+        if hasattr(self._param, "user_prompt") and self._param.user_prompt:
+            m["function"]["parameters"]["properties"]["user_prompt"] = self._param.user_prompt
+        return m
 
     def _extract_tool_use(self, ans, use_tools, clean=False):
         patt = r"<tool_call>(.*?)</tool_call>"
@@ -198,6 +202,8 @@ class Agent(LLM, ToolBase):
             hist.append({"role": "assistant", "content": response})
             try:
                 functions = json_repair.loads(re.sub(r"```.*", "", response))
+                if not isinstance(functions, list):
+                    raise TypeError(f"List should be returned, but `{functions}`")
                 with ThreadPoolExecutor(max_workers=5) as executor:
                     thr = []
                     for func in functions:
@@ -222,6 +228,6 @@ class Agent(LLM, ToolBase):
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
         hist.append({"role": "user", "content": f"Exceed max rounds: {self._param.max_rounds}"})
-        response, tk = self._generate(hist)
-        token_count += tk
+        response = self._generate(hist)
+        token_count += num_tokens_from_string(response)
         yield response, token_count

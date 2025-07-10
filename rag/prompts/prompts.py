@@ -110,6 +110,8 @@ def kb_prompt(kbinfos, max_tokens, prefix=""):
     used_token_count = 0
     chunks_num = 0
     for i, c in enumerate(knowledges):
+        if not c:
+            continue
         used_token_count += num_tokens_from_string(c)
         chunks_num += 1
         if max_tokens * 0.97 < used_token_count:

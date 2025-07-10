@@ -15,6 +15,7 @@
 #
 import logging
 import os
+import re
 from abc import ABC
 from tavily import TavilyClient
 
@@ -99,10 +100,16 @@ class TavilySearch(ToolBase, ABC):
         chunks = []
         aggs = []
         for r in response["results"]:
+            if not r["raw_content"] and not r["content"]:
+                continue
+            content = r["raw_content"] if r["raw_content"] else r["content"]
+            content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_+-]+\)", "", content)
+            if not content:
+                continue
             id = get_uuid()
             chunks.append({
                 "chunk_id": id,
-                "content_with_weight": r["raw_content"],
+                "content": content,
                 "doc_id": id,
                 "docnm_kwd": r["title"],
                 "similarity": r["score"],
@@ -122,9 +129,8 @@ class TavilySearch(ToolBase, ABC):
                 "count": 1,
                 "url": r["url"]
             })
-        ref = {"chunks": chunks, "doc_aggs": aggs}
-        self.set_output("_references", ref)
-        self.set_output("formalized_content", "\n".join(kb_prompt(ref, 200000, prefix=self._id)))
+        self._canvas.add_retrievals(chunks, aggs)
+        self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, prefix=self._id)))
         self.set_output("json", response)
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))

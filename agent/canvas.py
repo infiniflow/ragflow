@@ -223,6 +223,7 @@ class Canvas:
             self.retrieval.append({"chunks": [], "doc_aggs": []})
 
         yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
+        self.retrieval.append({"chunks": {}, "doc_aggs": {}})
 
         def _run_batch(f, t):
             with ThreadPoolExecutor(max_workers=5) as executor:
@@ -274,7 +275,7 @@ class Canvas:
                         cpn["obj"].set_output("content", _m)
                     else:
                         yield decorate("message", {"content": cpn["obj"].output("content")})
-                    yield decorate("message_end", {})
+                    yield decorate("message_end", {"reference": self.retrieval})
 
                     while partials:
                         _cpn = self.get_component(partials[0])
@@ -469,4 +470,17 @@ class Canvas:
             REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
         except Exception as e:
             logging.exception(e)
+
+    def add_retrievals(self, chunks: list[object], doc_infos: list[object]):
+        if not self.retrieval:
+            self.retrieval = [{"chunks": {}, "doc_aggs": {}}]
+
+        r = self.retrieval[-1]
+        for ck in chunks:
+            if ck["chunk_id"] not in r:
+                r[ck["chunk_id"]] = ck
+
+        for doc in doc_infos:
+            if doc["doc_name"] not in r:
+                r[doc["doc_name"]] = doc
 

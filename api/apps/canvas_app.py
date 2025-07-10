@@ -149,11 +149,15 @@ def run():
 
     def sse():
         nonlocal canvas, user_id
-        for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
-            yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+        try:
+            for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-        cvs.dsl = json.loads(str(canvas))
-        UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+            cvs.dsl = json.loads(str(canvas))
+            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+        except Exception as e:
+            logging.exception(e)
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": False}, ensure_ascii=False) + "\n\n"
 
     resp = Response(sse(), mimetype="text/event-stream")
     resp.headers.add_header("Cache-control", "no-cache")
