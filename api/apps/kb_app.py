@@ -39,7 +39,7 @@ from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
 from rag.utils.storage_factory import STORAGE_IMPL
-from graphrag.general.index import resolve_entities, extract_community
+from graphrag.general.index import resolve_entities as graphrag_resolve_entities_impl, extract_community
 from api.db.services.llm_service import LLMBundle
 from api.db import LLMType
 
@@ -464,15 +464,15 @@ def resolve_entities(kb_id):
             subgraph_nodes = set(graph.nodes())
             
             # Call the existing resolve_entities function
-            await resolve_entities(
-                graph=graph,
-                subgraph_nodes=subgraph_nodes,
-                tenant_id=kb.tenant_id,
-                kb_id=kb_id,
-                doc_id="api_call",  # Use placeholder since this is a manual API call
-                llm_bdl=chat_model,
-                embed_bdl=embedding_model,
-                callback=progress_callback
+            await graphrag_resolve_entities_impl(
+                graph,
+                subgraph_nodes,
+                kb.tenant_id,
+                kb_id,
+                "api_call",  # Use placeholder since this is a manual API call
+                chat_model,
+                embedding_model,
+                progress_callback
             )
             
             return graph
