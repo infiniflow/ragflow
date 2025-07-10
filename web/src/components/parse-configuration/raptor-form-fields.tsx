@@ -64,10 +64,10 @@ const RaptorFormFields = () => {
         control={form.control}
         name={UseRaptorField}
         render={({ field }) => {
-          if (typeof field.value === 'undefined') {
-            // default value set
-            form.setValue('parser_config.raptor.use_raptor', false);
-          }
+          // if (typeof field.value === 'undefined') {
+          //   // default value set
+          //   form.setValue('parser_config.raptor.use_raptor', false);
+          // }
           return (
             <FormItem
               defaultChecked={false}
