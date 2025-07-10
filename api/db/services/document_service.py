@@ -606,6 +606,17 @@ class DocumentService(CommonService):
             pass
         return False
 
+    @classmethod
+    @DB.connection_context()
+    def has_documents_parsing(cls, kb_id):
+        """Check if any documents in the knowledge base are currently being parsed."""
+        docs = cls.model.select().where(
+            cls.model.kb_id == kb_id,
+            cls.model.run == TaskStatus.RUNNING.value,
+            cls.model.progress < 1
+        )
+        return docs.count() > 0
+
 
 def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     chunking_config = DocumentService.get_chunking_config(doc["id"])

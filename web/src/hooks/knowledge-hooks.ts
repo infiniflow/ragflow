@@ -16,6 +16,8 @@ import kbService, {
   resolveEntities,
   detectCommunities,
   getCommunityDetectionProgress,
+  getEntityResolutionProgress,
+  checkDocumentParsing,
 } from '@/services/knowledge-service';
 import {
   useInfiniteQuery,
@@ -460,7 +462,7 @@ export const useFetchTagListByKnowledgeIds = () => {
 export function useFetchKnowledgeGraph() {
   const knowledgeBaseId = useKnowledgeBaseId();
 
-  const { data, isFetching: loading } = useQuery<IKnowledgeGraph>({
+  const { data, isFetching: loading, refetch } = useQuery<IKnowledgeGraph>({
     queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
     initialData: { graph: {}, mind_map: {} } as IKnowledgeGraph,
     enabled: !!knowledgeBaseId,
@@ -471,7 +473,7 @@ export function useFetchKnowledgeGraph() {
     },
   });
 
-  return { data, loading };
+  return { data, loading, refetch };
 }
 
 export const useRemoveKnowledgeGraph = () => {
@@ -489,7 +491,7 @@ export const useRemoveKnowledgeGraph = () => {
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
         queryClient.invalidateQueries({
-          queryKey: ['fetchKnowledgeGraph'],
+          queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
         });
       }
       return data?.code;
@@ -501,6 +503,8 @@ export const useRemoveKnowledgeGraph = () => {
 
 export const useResolveEntities = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
+  const [progress, setProgress] = useState(null);
+  const pollingRef = useRef(null);
 
   const queryClient = useQueryClient();
   const {
@@ -510,18 +514,127 @@ export const useResolveEntities = () => {
   } = useMutation({
     mutationKey: ['resolveEntities'],
     mutationFn: async () => {
+      // Start the entity resolution operation
       const { data } = await resolveEntities(knowledgeBaseId);
+      return data;
+    },
+    onSuccess: (data) => {
       if (data.code === 0) {
         message.success(i18n.t(`knowledgeGraph.entityResolutionSuccess`, 'Entity resolution completed successfully'));
         queryClient.invalidateQueries({
-          queryKey: ['fetchKnowledgeGraph'],
+          queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
         });
+        
+        // Clear progress after a delay
+        setTimeout(() => setProgress(null), 3000);
       }
-      return data;
+    },
+    onError: () => {
+      setProgress(null);
+      // Clear any ongoing polling
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
     },
   });
 
-  return { data, loading, resolveEntities: mutateAsync };
+  // Function to start polling
+  const startPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    
+    pollingRef.current = setInterval(async () => {
+      try {
+        const { data: progressData } = await getEntityResolutionProgress(knowledgeBaseId);
+        if (progressData.code === 0 && progressData.data) {
+          setProgress(progressData.data);
+          
+          // If status is completed, clear progress after a delay
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 10000); // Clear after 10 seconds
+            
+            // Stop polling since operation is completed
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+          }
+        } else if (progressData.code === 0 && progressData.data === null) {
+          // Operation completed or not running, stop polling
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch entity resolution progress:', error);
+      }
+    }, 1000); // Poll every second
+  };
+
+  // Check for ongoing operation on component mount
+  useEffect(() => {
+    const checkInitialProgress = async () => {
+      try {
+        const { data: progressData } = await getEntityResolutionProgress(knowledgeBaseId);
+        
+        if (progressData.code === 0 && progressData.data) {
+          setProgress(progressData.data);
+          
+          // If status is completed, clear progress after a delay
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 10000); // Clear after 10 seconds
+          } else {
+            // Start polling since operation is still ongoing
+            startPolling();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check initial entity resolution progress:', error);
+      }
+    };
+    
+    if (knowledgeBaseId) {
+      checkInitialProgress();
+    }
+  }, [knowledgeBaseId]);
+
+  // Start polling when mutation starts
+  useEffect(() => {
+    if (loading) {
+      // Reset progress at start
+      setProgress({
+        total_pairs: 0,
+        processed_pairs: 0,
+        remaining_pairs: 0,
+        current_status: 'starting'
+      });
+
+      // Start polling for progress
+      startPolling();
+    } else {
+      // Stop polling when mutation completes
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [loading, knowledgeBaseId]);
+
+  return { data, loading, resolveEntities: mutateAsync, progress };
 };
 
 export const useDetectCommunities = () => {
@@ -545,7 +658,7 @@ export const useDetectCommunities = () => {
       if (data.code === 0) {
         message.success(i18n.t(`knowledgeGraph.communityDetectionSuccess`, 'Community detection completed successfully'));
         queryClient.invalidateQueries({
-          queryKey: ['fetchKnowledgeGraph'],
+          queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
         });
         
         // Clear progress after a delay
@@ -578,7 +691,7 @@ export const useDetectCommunities = () => {
           if (progressData.data.current_status === 'completed') {
             setTimeout(() => {
               setProgress(null);
-            }, 3000); // Clear after 3 seconds
+            }, 10000); // Clear after 10 seconds
             
             // Stop polling since operation is completed
             if (pollingRef.current) {
@@ -612,7 +725,7 @@ export const useDetectCommunities = () => {
           if (progressData.data.current_status === 'completed') {
             setTimeout(() => {
               setProgress(null);
-            }, 3000); // Clear after 3 seconds
+            }, 10000); // Clear after 10 seconds
           } else {
             // Start polling since operation is still ongoing
             startPolling();
@@ -658,4 +771,53 @@ export const useDetectCommunities = () => {
   }, [loading, knowledgeBaseId]);
 
   return { data, loading, detectCommunities: mutateAsync, progress };
+};
+
+export const useCheckDocumentParsing = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const [isParsing, setIsParsing] = useState(false);
+  const pollingRef = useRef(null);
+
+  // Function to check parsing status
+  const checkParsing = async () => {
+    try {
+      const { data } = await checkDocumentParsing(knowledgeBaseId);
+      if (data.code === 0) {
+        setIsParsing(data.data.is_parsing);
+      }
+    } catch (error) {
+      console.error('Failed to check document parsing status:', error);
+    }
+  };
+
+  // Start polling
+  const startPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    
+    pollingRef.current = setInterval(checkParsing, 5000); // Poll every 5 seconds
+  };
+
+  // Stop polling  
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
+  // Effect to start polling when knowledge base ID changes
+  useEffect(() => {
+    if (knowledgeBaseId) {
+      checkParsing(); // Check immediately
+      startPolling(); // Start polling
+    }
+
+    return () => {
+      stopPolling();
+    };
+  }, [knowledgeBaseId]);
+
+  return { isParsing, checkParsing, startPolling, stopPolling };
 };

@@ -49,6 +49,10 @@ export default {
     `${api_host}/kb/${knowledgeId}/knowledge_graph/detect_communities`,
   getCommunityDetectionProgress: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph/progress`,
+  getEntityResolutionProgress: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph/progress?operation=entity_resolution`,
+  checkDocumentParsing: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/document_parsing_status`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,

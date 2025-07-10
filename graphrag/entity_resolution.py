@@ -152,7 +152,7 @@ class EntityResolution(Extractor):
         )
 
     async def _resolve_candidate(self, candidate_resolution_i: tuple[str, list[tuple[str, str]]], resolution_result: set[str], resolution_result_lock: trio.Lock):
-        gen_conf = {"temperature": 0.5}
+        gen_conf = {"temperature": 0.5, "max_tokens": 8000}
         pair_txt = [
             f'When determining whether two {candidate_resolution_i[0]}s are the same, you should only focus on critical properties and overlook noisy factors.\n']
         for index, candidate in enumerate(candidate_resolution_i[1]):

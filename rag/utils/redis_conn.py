@@ -347,15 +347,20 @@ class RedisDistributedLock:
         self.lock = Lock(REDIS_CONN.REDIS, lock_key, timeout=timeout, blocking_timeout=blocking_timeout)
 
     def acquire(self):
-        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
+        # Don't delete existing locks - just try to acquire properly
         return self.lock.acquire(token=self.lock_value)
 
     async def spin_acquire(self):
-        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
+        # Don't delete existing locks - just try to acquire properly
         while True:
             if self.lock.acquire(token=self.lock_value):
                 break
-            await trio.sleep(10)
+            await trio.sleep(1)  # Reduced sleep time for faster acquisition
 
     def release(self):
-        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
+        # Properly release the underlying Redis lock
+        try:
+            self.lock.release()
+        except Exception as e:
+            # Fallback to delete if release fails
+            REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)

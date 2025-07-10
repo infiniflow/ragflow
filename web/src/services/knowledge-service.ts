@@ -194,6 +194,14 @@ export function getCommunityDetectionProgress(knowledgeId: string) {
   return request.get(api.getCommunityDetectionProgress(knowledgeId));
 }
 
+export function getEntityResolutionProgress(knowledgeId: string) {
+  return request.get(api.getEntityResolutionProgress(knowledgeId));
+}
+
+export function checkDocumentParsing(knowledgeId: string) {
+  return request.get(api.checkDocumentParsing(knowledgeId));
+}
+
 export const listDataset = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchKnowledgeListRequestBody,

@@ -87,7 +87,7 @@ class CommunityReportsExtractor(Extractor):
                 "relation_df": rela_df.to_csv(index_label="id")
             }
             text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
-            gen_conf = {"temperature": 0.3}
+            gen_conf = {"temperature": 0.3, "max_tokens": 8000}
             async with chat_limiter:
                 try:
                     with trio.move_on_after(120) as cancel_scope:

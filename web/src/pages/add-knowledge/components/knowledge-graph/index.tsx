@@ -1,6 +1,6 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
-import { useFetchKnowledgeGraph, useResolveEntities, useDetectCommunities } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeGraph, useResolveEntities, useDetectCommunities, useCheckDocumentParsing } from '@/hooks/knowledge-hooks';
 import { Trash2, Network, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,8 +11,9 @@ const KnowledgeGraph: React.FC = () => {
   const { data } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
   const { handleDeleteKnowledgeGraph } = useDeleteKnowledgeGraph();
-  const { resolveEntities, loading: resolvingEntities } = useResolveEntities();
+  const { resolveEntities, loading: resolvingEntities, progress: entityProgress } = useResolveEntities();
   const { detectCommunities, loading: detectingCommunities, progress: communityProgress } = useDetectCommunities();
+  const { isParsing } = useCheckDocumentParsing();
 
   const totalNodes = data?.graph?.total_nodes || 0;
   const totalEdges = data?.graph?.total_edges || 0;
@@ -51,8 +52,9 @@ const KnowledgeGraph: React.FC = () => {
           variant="outline"
           size={'sm'}
           onClick={handleResolveEntities}
-          disabled={resolvingEntities || totalNodes === 0}
+          disabled={resolvingEntities || totalNodes === 0 || isParsing}
           className="flex items-center gap-2"
+          title={isParsing ? t('knowledgeGraph.waitForParsing', 'Please wait for document parsing to complete') : undefined}
         >
           <Network className="w-4 h-4" />
           {resolvingEntities ? t('knowledgeGraph.resolving', 'Resolving...') : t('knowledgeGraph.resolveEntities', 'Resolve Entities')}
@@ -62,8 +64,9 @@ const KnowledgeGraph: React.FC = () => {
           variant="outline"
           size={'sm'}
           onClick={handleDetectCommunities}
-          disabled={detectingCommunities || totalNodes === 0}
+          disabled={detectingCommunities || totalNodes === 0 || isParsing}
           className="flex items-center gap-2"
+          title={isParsing ? t('knowledgeGraph.waitForParsing', 'Please wait for document parsing to complete') : undefined}
         >
           <Users className="w-4 h-4" />
           {detectingCommunities ? t('knowledgeGraph.detecting', 'Detecting...') : t('knowledgeGraph.detectCommunities', 'Detect Communities')}
@@ -106,6 +109,39 @@ const KnowledgeGraph: React.FC = () => {
             </span>
           </div>
           
+          {/* Entity Resolution Progress */}
+          {entityProgress && (
+            <div className="mt-3 pt-2 border-t border-gray-200">
+              <div className="text-sm font-medium text-orange-700 mb-1">
+                {t('knowledgeGraph.entityProgress', 'Entity Resolution')}
+              </div>
+              <div className="space-y-1">
+                {entityProgress.total_pairs > 0 && (
+                  <div className="flex justify-between gap-2">
+                    <span>{t('knowledgeGraph.entityPairs', 'Entity Pairs')}:</span>
+                    <span className="font-mono text-orange-600">
+                      {entityProgress.processed_pairs}/{entityProgress.total_pairs}
+                    </span>
+                  </div>
+                )}
+                {entityProgress.remaining_pairs > 0 && (
+                  <div className="flex justify-between gap-2">
+                    <span>{t('knowledgeGraph.remaining', 'Remaining')}:</span>
+                    <span className="font-mono text-gray-600">
+                      {entityProgress.remaining_pairs.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between gap-2">
+                  <span>{t('knowledgeGraph.status', 'Status')}:</span>
+                  <span className="text-orange-600 capitalize">
+                    {entityProgress.current_status}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Community Detection Progress */}
           {communityProgress && (
             <div className="mt-3 pt-2 border-t border-gray-200">
@@ -135,6 +171,18 @@ const KnowledgeGraph: React.FC = () => {
                     {communityProgress.current_status}
                   </span>
                 </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Document Parsing Status */}
+          {isParsing && (
+            <div className="mt-3 pt-2 border-t border-gray-200">
+              <div className="text-sm font-medium text-yellow-700 mb-1">
+                {t('knowledgeGraph.documentsParsing', 'Documents Parsing')}
+              </div>
+              <div className="text-xs text-yellow-600">
+                {t('knowledgeGraph.waitForParsing', 'Please wait for document parsing to complete')}
               </div>
             </div>
           )}

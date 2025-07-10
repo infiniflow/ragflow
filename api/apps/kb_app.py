@@ -20,7 +20,7 @@ import networkx as nx
 import trio
 from typing import Dict, Any
 
-from flask import request
+from flask import request, Blueprint
 from flask_login import login_required, current_user
 
 from api.db.services import duplicate_name
@@ -43,8 +43,12 @@ from graphrag.general.index import resolve_entities as graphrag_resolve_entities
 from api.db.services.llm_service import LLMBundle
 from api.db import LLMType
 
-# Global progress storage for community detection
+# Global progress storage for community detection and entity resolution
 community_detection_progress = {}
+entity_resolution_progress = {}
+
+# Create manager blueprint if not already defined
+manager = Blueprint('kb', __name__)
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
@@ -359,12 +363,12 @@ def knowledge_graph(kb_id):
 
     if "nodes" in obj["graph"]:
         total_nodes = len(obj["graph"]["nodes"])
-        obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
+        obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:500]
         if "edges" in obj["graph"]:
             total_edges = len(obj["graph"]["edges"])
             node_id_set = { o["id"] for o in obj["graph"]["nodes"] }
             filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
-            obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
+            obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:300]
             obj["graph"]["total_edges"] = total_edges
         obj["graph"]["total_nodes"] = total_nodes
     return get_json_result(data=obj)
@@ -396,6 +400,14 @@ def resolve_entities(kb_id):
     
     try:
         _, kb = KnowledgebaseService.get_by_id(kb_id)
+        
+        # Check if documents are currently being parsed
+        if DocumentService.has_documents_parsing(kb_id):
+            return get_json_result(
+                data=False,
+                message='Cannot perform entity resolution while documents are being parsed. Please wait for parsing to complete.',
+                code=423  # HTTP 423 Locked
+            )
         
         # Check if knowledge graph exists
         if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
@@ -452,30 +464,96 @@ def resolve_entities(kb_id):
         # Get all nodes as subgraph nodes for entity resolution
         subgraph_nodes = set(graph.nodes())
         
+        # Progress tracking variables
+        progress_data = {
+            "total_pairs": 0,
+            "processed_pairs": 0,
+            "remaining_pairs": 0,
+            "current_status": "initializing"
+        }
+        
+        # Initialize progress data in global storage
+        entity_resolution_progress[kb_id] = progress_data
+        
         # Run entity resolution using the existing GraphRAG functions
         def progress_callback(msg=""):
+            import re
             logging.info(f"Entity resolution progress: {msg}")
+            
+            # Parse progress messages to extract metrics
+            # Format: "Identified X candidate pairs"
+            if "identified" in msg.lower() and "candidate pairs" in msg.lower():
+                match = re.search(r'Identified (\d+) candidate pairs', msg, re.IGNORECASE)
+                if match:
+                    total_pairs = int(match.group(1))
+                    progress_data["total_pairs"] = total_pairs
+                    progress_data["processed_pairs"] = 0
+                    progress_data["remaining_pairs"] = total_pairs
+                    progress_data["current_status"] = "processing"
+            
+            # Format: "Resolved X pairs, Y are remained to resolve"
+            elif "resolved" in msg.lower() and "remained to resolve" in msg.lower():
+                match = re.search(r'Resolved (\d+) pairs, (\d+) are remained to resolve', msg, re.IGNORECASE)
+                if match:
+                    processed_pairs = int(match.group(1))
+                    remaining_pairs = int(match.group(2))
+                    total_pairs = processed_pairs + remaining_pairs
+                    progress_data["total_pairs"] = total_pairs
+                    progress_data["processed_pairs"] = processed_pairs
+                    progress_data["remaining_pairs"] = remaining_pairs
+                    progress_data["current_status"] = "processing"
+            
+            # Format: "Resolved X candidate pairs, Y of them are selected to merge"
+            elif "resolved" in msg.lower() and "candidate pairs" in msg.lower() and "selected to merge" in msg.lower():
+                match = re.search(r'Resolved (\d+) candidate pairs', msg, re.IGNORECASE)
+                if match:
+                    total_pairs = int(match.group(1))
+                    progress_data["total_pairs"] = total_pairs
+                    progress_data["processed_pairs"] = total_pairs
+                    progress_data["remaining_pairs"] = 0
+                    progress_data["current_status"] = "completed"
+            
+            # Update status based on message content
+            if "done" in msg.lower():
+                progress_data["current_status"] = "completed"
+            
+            # Update the global progress storage
+            entity_resolution_progress[kb_id] = progress_data.copy()
         
         async def run_entity_resolution():
-            chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
-            embedding_model = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=None, lang=kb.language)
+            from rag.utils.redis_conn import RedisDistributedLock
             
-            # Get all nodes as subgraph nodes for entity resolution
-            subgraph_nodes = set(graph.nodes())
-            
-            # Call the existing resolve_entities function
-            await graphrag_resolve_entities_impl(
-                graph,
-                subgraph_nodes,
-                kb.tenant_id,
-                kb_id,
-                "api_call",  # Use placeholder since this is a manual API call
-                chat_model,
-                embedding_model,
-                progress_callback
+            # Acquire the same lock used by document parsing
+            graphrag_task_lock = RedisDistributedLock(
+                f"graphrag_task_{kb_id}", 
+                lock_value="api_entity_resolution", 
+                timeout=1200
             )
             
-            return graph
+            try:
+                await graphrag_task_lock.spin_acquire()
+                
+                chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
+                embedding_model = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=None, lang=kb.language)
+                
+                # Get all nodes as subgraph nodes for entity resolution
+                subgraph_nodes = set(graph.nodes())
+                
+                # Call the existing resolve_entities function
+                await graphrag_resolve_entities_impl(
+                    graph,
+                    subgraph_nodes,
+                    kb.tenant_id,
+                    kb_id,
+                    "api_call",  # Use placeholder since this is a manual API call
+                    chat_model,
+                    embedding_model,
+                    progress_callback
+                )
+                
+                return graph
+            finally:
+                graphrag_task_lock.release()
         
         # Execute the async function using trio
         updated_graph = trio.run(run_entity_resolution)
@@ -504,14 +582,41 @@ def resolve_entities(kb_id):
             kb_id
         )
         
+        # Mark operation as completed but don't delete immediately
+        # Frontend will handle cleanup after showing final status
+        progress_data["current_status"] = "completed"
+        entity_resolution_progress[kb_id] = progress_data.copy()
+        
+        # Schedule cleanup after 30 seconds to prevent memory buildup
+        def cleanup_progress():
+            import time
+            time.sleep(30)
+            if kb_id in entity_resolution_progress:
+                del entity_resolution_progress[kb_id]
+        
+        import threading
+        threading.Thread(target=cleanup_progress, daemon=True).start()
+        
+        # Extract merge information from final progress data
+        total_pairs = progress_data.get("total_pairs", 0)
+        
         return get_json_result(
-            data=True,
-            message=f'Entity resolution completed successfully. Graph now has {len(updated_nodes)} nodes and {len(updated_edges)} edges.',
+            data={
+                "success": True,
+                "nodes_count": len(updated_nodes),
+                "edges_count": len(updated_edges),
+                "total_pairs_analyzed": total_pairs,
+                "progress": progress_data
+            },
+            message=f'Entity resolution completed successfully. Analyzed {total_pairs} candidate pairs. Graph now has {len(updated_nodes)} nodes and {len(updated_edges)} edges.',
             code=settings.RetCode.SUCCESS
         )
         
     except Exception as e:
         logging.error(f"Entity resolution failed: {str(e)}")
+        # Clean up progress data on error
+        if kb_id in entity_resolution_progress:
+            del entity_resolution_progress[kb_id]
         return get_json_result(
             data=False,
             message=f'Entity resolution failed: {str(e)}',
@@ -531,6 +636,14 @@ def detect_communities(kb_id):
     
     try:
         _, kb = KnowledgebaseService.get_by_id(kb_id)
+        
+        # Check if documents are currently being parsed
+        if DocumentService.has_documents_parsing(kb_id):
+            return get_json_result(
+                data=False,
+                message='Cannot perform community detection while documents are being parsed. Please wait for parsing to complete.',
+                code=423  # HTTP 423 Locked
+            )
         
         # Check if knowledge graph exists
         if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
@@ -624,21 +737,35 @@ def detect_communities(kb_id):
             community_detection_progress[kb_id] = progress_data.copy()
         
         async def run_community_detection():
-            chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
-            embedding_model = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=None, lang=kb.language)
+            from rag.utils.redis_conn import RedisDistributedLock
             
-            # Call the existing extract_community function
-            await extract_community(
-                graph=graph,
-                tenant_id=kb.tenant_id,
-                kb_id=kb_id,
-                doc_id="api_call",  # Use placeholder since this is a manual API call
-                llm_bdl=chat_model,
-                embed_bdl=embedding_model,
-                callback=progress_callback
+            # Acquire the same lock used by document parsing
+            graphrag_task_lock = RedisDistributedLock(
+                f"graphrag_task_{kb_id}", 
+                lock_value="api_community_detection", 
+                timeout=1200
             )
             
-            return graph
+            try:
+                await graphrag_task_lock.spin_acquire()
+                
+                chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
+                embedding_model = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=None, lang=kb.language)
+                
+                # Call the existing extract_community function
+                await extract_community(
+                    graph=graph,
+                    tenant_id=kb.tenant_id,
+                    kb_id=kb_id,
+                    doc_id="api_call",  # Use placeholder since this is a manual API call
+                    llm_bdl=chat_model,
+                    embed_bdl=embedding_model,
+                    callback=progress_callback
+                )
+                
+                return graph
+            finally:
+                graphrag_task_lock.release()
         
         # Execute the async function using trio
         updated_graph = trio.run(run_community_detection)
@@ -714,7 +841,7 @@ def detect_communities(kb_id):
 
 @manager.route('/<kb_id>/knowledge_graph/progress', methods=['GET'])  # noqa: F821
 @login_required
-def get_community_detection_progress(kb_id):
+def get_progress(kb_id):
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -722,13 +849,21 @@ def get_community_detection_progress(kb_id):
             code=settings.RetCode.AUTHENTICATION_ERROR
         )
     
-    # Get progress data for this kb_id
-    progress_data = community_detection_progress.get(kb_id, None)
+    # Check for operation type parameter
+    operation = request.args.get('operation', 'community_detection')
+    
+    # Get progress data for this kb_id based on operation type
+    if operation == 'entity_resolution':
+        progress_data = entity_resolution_progress.get(kb_id, None)
+        operation_name = 'entity resolution'
+    else:
+        progress_data = community_detection_progress.get(kb_id, None)
+        operation_name = 'community detection'
     
     if progress_data is None:
         return get_json_result(
             data=None,
-            message='No active community detection operation.',
+            message=f'No active {operation_name} operation.',
             code=settings.RetCode.SUCCESS
         )
     
@@ -737,3 +872,32 @@ def get_community_detection_progress(kb_id):
         message='Progress retrieved successfully.',
         code=settings.RetCode.SUCCESS
     )
+
+
+@manager.route('/<kb_id>/document_parsing_status', methods=['GET'])  # noqa: F821
+@login_required
+def check_document_parsing_status(kb_id):
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    
+    try:
+        # Check if any documents are currently being parsed
+        is_parsing = DocumentService.has_documents_parsing(kb_id)
+        
+        return get_json_result(
+            data={"is_parsing": is_parsing},
+            message='Document parsing status retrieved successfully.',
+            code=settings.RetCode.SUCCESS
+        )
+        
+    except Exception as e:
+        logging.error(f"Failed to check document parsing status: {str(e)}")
+        return get_json_result(
+            data=False,
+            message=f'Failed to check document parsing status: {str(e)}',
+            code=settings.RetCode.SERVER_ERROR
+        )
