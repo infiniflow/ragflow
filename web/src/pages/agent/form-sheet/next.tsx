@@ -14,7 +14,7 @@ import { Play, X } from 'lucide-react';
 import { BeginId, Operator } from '../constant';
 import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
-import { useHandleNodeNameChange } from '../hooks';
+import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import OperatorIcon from '../operator-icon';
 import { needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
