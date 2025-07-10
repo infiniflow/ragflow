@@ -233,6 +233,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
             node={clickedNode}
             visible={formDrawerVisible}
             hideModal={hideFormDrawer}
+            chatVisible={chatVisible}
             singleDebugDrawerVisible={singleDebugDrawerVisible}
             hideSingleDebugDrawer={hideSingleDebugDrawer}
             showSingleDebugDrawer={showSingleDebugDrawer}

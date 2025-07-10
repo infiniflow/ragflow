@@ -25,6 +25,7 @@ interface IProps {
   singleDebugDrawerVisible: IModalProps<any>['visible'];
   hideSingleDebugDrawer: IModalProps<any>['hideModal'];
   showSingleDebugDrawer: IModalProps<any>['showModal'];
+  chatVisible: boolean;
 }
 
 const EmptyContent = () => <div></div>;
@@ -34,6 +35,7 @@ const FormSheet = ({
   hideModal,
   node,
   singleDebugDrawerVisible,
+  chatVisible,
   hideSingleDebugDrawer,
   showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
@@ -55,7 +57,9 @@ const FormSheet = ({
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className={cn('top-20 p-0 flex flex-col pb-20')}
+        className={cn('top-20 p-0 flex flex-col pb-20', {
+          'right-[620px]': chatVisible,
+        })}
         closeIcon={false}
       >
         <SheetHeader>
