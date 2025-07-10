@@ -155,6 +155,7 @@ export interface IAgentForm {
   exception_comment: any;
   exception_goto: any;
   tools: Array<{
+    name: string;
     component_name: string;
     params: Record<string, any>;
   }>;
