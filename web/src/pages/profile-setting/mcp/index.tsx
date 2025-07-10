@@ -10,7 +10,8 @@ import { useEditMcp } from './use-edit-mcp';
 
 export default function McpServer() {
   const { data } = useListMcpServer();
-  const { editVisible, showEditModal, hideEditModal, handleOk } = useEditMcp();
+  const { editVisible, showEditModal, hideEditModal, handleOk, id } =
+    useEditMcp();
   const { list, selectedList, handleSelectChange } = useBulkOperateMCP();
 
   return (
@@ -42,6 +43,7 @@ export default function McpServer() {
             data={item}
             selectedList={selectedList}
             handleSelectChange={handleSelectChange}
+            showEditModal={showEditModal}
           ></McpCard>
         ))}
       </section>
@@ -49,6 +51,7 @@ export default function McpServer() {
         <EditMcpDialog
           hideModal={hideEditModal}
           onOk={handleOk}
+          id={id}
         ></EditMcpDialog>
       )}
     </section>

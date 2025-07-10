@@ -7,15 +7,18 @@ import { isPlainObject } from 'lodash';
 import { useMemo } from 'react';
 import { McpDropdown } from './mcp-dropdown';
 import { UseBulkOperateMCPReturnType } from './use-bulk-operate-mcp';
+import { UseEditMcpReturnType } from './use-edit-mcp';
 
 export type DatasetCardProps = {
   data: IMcpServer;
-} & Pick<UseBulkOperateMCPReturnType, 'handleSelectChange' | 'selectedList'>;
+} & Pick<UseBulkOperateMCPReturnType, 'handleSelectChange' | 'selectedList'> &
+  Pick<UseEditMcpReturnType, 'showEditModal'>;
 
 export function McpCard({
   data,
   selectedList,
   handleSelectChange,
+  showEditModal,
 }: DatasetCardProps) {
   const toolLength = useMemo(() => {
     const tools = data.variables?.tools;
@@ -35,7 +38,7 @@ export function McpCard({
         <section className="flex justify-between pb-2">
           <h3 className="text-lg font-semibold line-clamp-1">{data.name}</h3>
           <div className="space-x-4">
-            <McpDropdown mcpId={data.id}>
+            <McpDropdown mcpId={data.id} showEditModal={showEditModal}>
               <MoreButton></MoreButton>
             </McpDropdown>
             <Checkbox

@@ -1,7 +1,6 @@
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 
 import {
@@ -16,12 +15,11 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const FormId = 'EditMcpForm';
 
-enum ServerType {
+export enum ServerType {
   SSE = 'sse',
   StreamableHttp = 'streamable-http',
 }
@@ -57,27 +55,15 @@ export function useBuildFormSchema() {
 }
 
 export function EditMcpForm({
-  initialName,
+  form,
   onOk,
-}: IModalProps<any> & { initialName?: string }) {
+}: IModalProps<any> & { form: UseFormReturn<any> }) {
   const { t } = useTranslation();
-
   const FormSchema = useBuildFormSchema();
-
-  const form = useForm<z.infer<typeof FormSchema>>({
-    resolver: zodResolver(FormSchema),
-    defaultValues: { name: '', server_type: ServerType.SSE, url: '' },
-  });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     onOk?.(data);
   }
-
-  useEffect(() => {
-    if (initialName) {
-      form.setValue('name', initialName);
-    }
-  }, [form, initialName]);
 
   return (
     <Form {...form}>
