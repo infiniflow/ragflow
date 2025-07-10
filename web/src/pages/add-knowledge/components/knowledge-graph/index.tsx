@@ -18,6 +18,14 @@ const KnowledgeGraph: React.FC = () => {
   const totalEdges = data?.graph?.total_edges || 0;
   const displayedNodes = data?.graph?.nodes?.length || 0;
   const displayedEdges = data?.graph?.edges?.length || 0;
+  
+  // Calculate community count from graph data
+  const communityCount = data?.graph?.nodes?.reduce((communities, node) => {
+    if (node.communities && Array.isArray(node.communities)) {
+      node.communities.forEach(community => communities.add(community));
+    }
+    return communities;
+  }, new Set()).size || 0;
 
   const handleResolveEntities = async () => {
     try {
@@ -89,6 +97,12 @@ const KnowledgeGraph: React.FC = () => {
             <span>{t('knowledgeGraph.edges', 'Edges')}:</span>
             <span className="font-mono">
               {displayedEdges.toLocaleString()} / {totalEdges.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span>{t('knowledgeGraph.communities', 'Communities')}:</span>
+            <span className="font-mono">
+              {communityCount.toLocaleString()}
             </span>
           </div>
           

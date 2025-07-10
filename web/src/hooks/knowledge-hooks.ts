@@ -603,12 +603,9 @@ export const useDetectCommunities = () => {
   useEffect(() => {
     const checkInitialProgress = async () => {
       try {
-        console.log('Checking initial progress for kb:', knowledgeBaseId);
         const { data: progressData } = await getCommunityDetectionProgress(knowledgeBaseId);
-        console.log('Progress data received:', progressData);
         
         if (progressData.code === 0 && progressData.data) {
-          console.log('Found ongoing operation, setting progress:', progressData.data);
           setProgress(progressData.data);
           
           // If status is completed, clear progress after a delay
@@ -620,8 +617,6 @@ export const useDetectCommunities = () => {
             // Start polling since operation is still ongoing
             startPolling();
           }
-        } else {
-          console.log('No ongoing operation found');
         }
       } catch (error) {
         console.error('Failed to check initial progress:', error);
