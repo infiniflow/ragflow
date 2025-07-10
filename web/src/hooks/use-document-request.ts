@@ -208,7 +208,7 @@ export const useSetDocumentStatus = () => {
     }) => {
       const ids = Array.isArray(documentId) ? documentId : [documentId];
       const { data } = await kbService.document_change_status({
-        doc_id: ids,
+        doc_ids: ids,
         status: Number(status),
       });
       if (data.code === 0) {
