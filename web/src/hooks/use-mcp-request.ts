@@ -106,8 +106,8 @@ export const useDeleteMcpServer = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [McpApiAction.DeleteMcpServer],
-    mutationFn: async (params: Record<string, any>) => {
-      const { data = {} } = await mcpServerService.delete(params);
+    mutationFn: async (ids: string[]) => {
+      const { data = {} } = await mcpServerService.delete({ mcp_ids: ids });
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
 

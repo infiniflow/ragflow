@@ -35,7 +35,7 @@ export function McpCard({
         <section className="flex justify-between pb-2">
           <h3 className="text-lg font-semibold line-clamp-1">{data.name}</h3>
           <div className="space-x-4">
-            <McpDropdown>
+            <McpDropdown mcpId={data.id}>
               <MoreButton></MoreButton>
             </McpDropdown>
             <Checkbox
