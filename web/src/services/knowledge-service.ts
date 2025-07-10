@@ -190,6 +190,10 @@ export function detectCommunities(knowledgeId: string) {
   return request.post(api.detectCommunities(knowledgeId));
 }
 
+export function getCommunityDetectionProgress(knowledgeId: string) {
+  return request.get(api.getCommunityDetectionProgress(knowledgeId));
+}
+
 export const listDataset = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchKnowledgeListRequestBody,

@@ -15,6 +15,7 @@ import kbService, {
   renameTag,
   resolveEntities,
   detectCommunities,
+  getCommunityDetectionProgress,
 } from '@/services/knowledge-service';
 import {
   useInfiniteQuery,
@@ -26,7 +27,7 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'umi';
 import { useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
@@ -526,6 +527,7 @@ export const useResolveEntities = () => {
 export const useDetectCommunities = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const [progress, setProgress] = useState(null);
+  const pollingRef = useRef(null);
 
   const queryClient = useQueryClient();
   const {
@@ -535,24 +537,12 @@ export const useDetectCommunities = () => {
   } = useMutation({
     mutationKey: ['detectCommunities'],
     mutationFn: async () => {
-      // Reset progress at start
-      setProgress({
-        total_communities: 0,
-        processed_communities: 0,
-        tokens_used: 0,
-        current_status: 'starting'
-      });
-      
+      // Start the community detection operation
       const { data } = await detectCommunities(knowledgeBaseId);
+      return data;
+    },
+    onSuccess: (data) => {
       if (data.code === 0) {
-        // Update progress with final results if available
-        if (data.data && data.data.progress) {
-          setProgress({
-            ...data.data.progress,
-            current_status: 'completed'
-          });
-        }
-        
         message.success(i18n.t(`knowledgeGraph.communityDetectionSuccess`, 'Community detection completed successfully'));
         queryClient.invalidateQueries({
           queryKey: ['fetchKnowledgeGraph'],
@@ -560,12 +550,117 @@ export const useDetectCommunities = () => {
         
         // Clear progress after a delay
         setTimeout(() => setProgress(null), 3000);
-      } else {
-        setProgress(null);
       }
-      return data;
+    },
+    onError: () => {
+      setProgress(null);
+      // Clear any ongoing polling
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
     },
   });
+
+  // Function to start polling
+  const startPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    
+    pollingRef.current = setInterval(async () => {
+      try {
+        const { data: progressData } = await getCommunityDetectionProgress(knowledgeBaseId);
+        if (progressData.code === 0 && progressData.data) {
+          setProgress(progressData.data);
+          
+          // If status is completed, clear progress after a delay
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 3000); // Clear after 3 seconds
+            
+            // Stop polling since operation is completed
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+          }
+        } else if (progressData.code === 0 && progressData.data === null) {
+          // Operation completed or not running, stop polling
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch progress:', error);
+      }
+    }, 1000); // Poll every second
+  };
+
+  // Check for ongoing operation on component mount
+  useEffect(() => {
+    const checkInitialProgress = async () => {
+      try {
+        console.log('Checking initial progress for kb:', knowledgeBaseId);
+        const { data: progressData } = await getCommunityDetectionProgress(knowledgeBaseId);
+        console.log('Progress data received:', progressData);
+        
+        if (progressData.code === 0 && progressData.data) {
+          console.log('Found ongoing operation, setting progress:', progressData.data);
+          setProgress(progressData.data);
+          
+          // If status is completed, clear progress after a delay
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 3000); // Clear after 3 seconds
+          } else {
+            // Start polling since operation is still ongoing
+            startPolling();
+          }
+        } else {
+          console.log('No ongoing operation found');
+        }
+      } catch (error) {
+        console.error('Failed to check initial progress:', error);
+      }
+    };
+    
+    if (knowledgeBaseId) {
+      checkInitialProgress();
+    }
+  }, [knowledgeBaseId]);
+
+  // Start polling when mutation starts
+  useEffect(() => {
+    if (loading) {
+      // Reset progress at start
+      setProgress({
+        total_communities: 0,
+        processed_communities: 0,
+        tokens_used: 0,
+        current_status: 'starting'
+      });
+
+      // Start polling for progress
+      startPolling();
+    } else {
+      // Stop polling when mutation completes
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [loading, knowledgeBaseId]);
 
   return { data, loading, detectCommunities: mutateAsync, progress };
 };

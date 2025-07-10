@@ -93,7 +93,7 @@ const KnowledgeGraph: React.FC = () => {
           </div>
           
           {/* Community Detection Progress */}
-          {detectingCommunities && communityProgress && (
+          {communityProgress && (
             <div className="mt-3 pt-2 border-t border-gray-200">
               <div className="text-sm font-medium text-blue-700 mb-1">
                 {t('knowledgeGraph.communityProgress', 'Community Detection')}

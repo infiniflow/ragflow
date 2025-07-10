@@ -43,6 +43,8 @@ from graphrag.general.index import resolve_entities, extract_community
 from api.db.services.llm_service import LLMBundle
 from api.db import LLMType
 
+# Global progress storage for community detection
+community_detection_progress = {}
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
@@ -594,32 +596,32 @@ def detect_communities(kb_id):
             "current_status": "initializing"
         }
         
+        # Initialize progress data in global storage
+        community_detection_progress[kb_id] = progress_data
+        
         # Run community detection using the existing GraphRAG functions
         def progress_callback(msg=""):
             import re
             logging.info(f"Community detection progress: {msg}")
             
             # Parse progress messages to extract metrics
+            # Actual format: "Communities: 3/4, used tokens: 12750"
             if "communities:" in msg.lower():
                 # Extract community progress (e.g., "Communities: 3/4")
-                match = re.search(r'communities?:\s*(\d+)/(\d+)', msg, re.IGNORECASE)
+                match = re.search(r'Communities:\s*(\d+)/(\d+)', msg, re.IGNORECASE)
                 if match:
                     progress_data["processed_communities"] = int(match.group(1))
                     progress_data["total_communities"] = int(match.group(2))
-            
-            if "tokens:" in msg.lower() or "token" in msg.lower():
-                # Extract token usage (e.g., "used tokens: 12750")
-                match = re.search(r'tokens?[^\d]*(\d+)', msg, re.IGNORECASE)
-                if match:
-                    progress_data["tokens_used"] = int(match.group(1))
+                    progress_data["current_status"] = "processing"
             
             # Update status based on message content
-            if "completed" in msg.lower():
+            if "done" in msg.lower():
                 progress_data["current_status"] = "completed"
-            elif "processing" in msg.lower() or "generating" in msg.lower():
+            elif "extracting" in msg.lower() or "extracted" in msg.lower():
                 progress_data["current_status"] = "processing"
-            elif "detecting" in msg.lower():
-                progress_data["current_status"] = "detecting"
+            
+            # Update the global progress storage
+            community_detection_progress[kb_id] = progress_data.copy()
         
         async def run_community_detection():
             chat_model = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
@@ -671,6 +673,21 @@ def detect_communities(kb_id):
             if "community" in node_data:
                 communities.add(node_data["community"])
         
+        # Mark operation as completed but don't delete immediately
+        # Frontend will handle cleanup after showing final status
+        progress_data["current_status"] = "completed"
+        community_detection_progress[kb_id] = progress_data.copy()
+        
+        # Schedule cleanup after 30 seconds to prevent memory buildup
+        def cleanup_progress():
+            import time
+            time.sleep(30)
+            if kb_id in community_detection_progress:
+                del community_detection_progress[kb_id]
+        
+        import threading
+        threading.Thread(target=cleanup_progress, daemon=True).start()
+        
         return get_json_result(
             data={
                 "success": True,
@@ -679,14 +696,44 @@ def detect_communities(kb_id):
                 "communities_count": len(communities),
                 "progress": progress_data
             },
-            message=f'Community detection completed successfully. Graph now has {len(updated_nodes)} nodes, {len(updated_edges)} edges, and {len(communities)} communities. Tokens used: {progress_data["tokens_used"]}',
+            message=f'Community detection completed successfully. Graph now has {len(updated_nodes)} nodes, {len(updated_edges)} edges, and {len(communities)} communities.',
             code=settings.RetCode.SUCCESS
         )
         
     except Exception as e:
         logging.error(f"Community detection failed: {str(e)}")
+        # Clean up progress data on error
+        if kb_id in community_detection_progress:
+            del community_detection_progress[kb_id]
         return get_json_result(
             data=False,
             message=f'Community detection failed: {str(e)}',
             code=settings.RetCode.SERVER_ERROR
         )
+
+
+@manager.route('/<kb_id>/knowledge_graph/progress', methods=['GET'])  # noqa: F821
+@login_required
+def get_community_detection_progress(kb_id):
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    
+    # Get progress data for this kb_id
+    progress_data = community_detection_progress.get(kb_id, None)
+    
+    if progress_data is None:
+        return get_json_result(
+            data=None,
+            message='No active community detection operation.',
+            code=settings.RetCode.SUCCESS
+        )
+    
+    return get_json_result(
+        data=progress_data,
+        message='Progress retrieved successfully.',
+        code=settings.RetCode.SUCCESS
+    )

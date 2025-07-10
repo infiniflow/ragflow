@@ -47,6 +47,8 @@ export default {
     `${api_host}/kb/${knowledgeId}/knowledge_graph/resolve_entities`,
   detectCommunities: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph/detect_communities`,
+  getCommunityDetectionProgress: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph/progress`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
