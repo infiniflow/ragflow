@@ -214,7 +214,10 @@ class QWenEmbed(Base):
                 resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
                 retry_max -= 1
             if retry_max == 0 and (resp["output"] is None or resp["output"].get("embeddings") is None):
-                log_exception(ValueError("Retry_max reached, calling embedding model failed"))
+                if resp.get("message"):
+                    log_exception(ValueError(f"Retry_max reached, calling embedding model failed: {resp['message']}"))
+                else:
+                    log_exception(ValueError("Retry_max reached, calling embedding model failed"))
                 raise
             try:
                 embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
