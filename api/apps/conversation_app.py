@@ -161,7 +161,7 @@ def rm():
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
-def list_convsersation():
+def list_conversation():
     dialog_id = request.args["dialog_id"]
     try:
         if not DialogService.query(tenant_id=current_user.id, id=dialog_id):
