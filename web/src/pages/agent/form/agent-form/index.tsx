@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo } from 'react';
@@ -39,6 +40,7 @@ const exceptionMethodOptions = buildOptions(AgentExceptionMethod);
 const FormSchema = z.object({
   sys_prompt: z.string(),
   description: z.string().optional(),
+  user_prompt: z.string().optional(),
   prompts: z.string().optional(),
   // prompts: z
   //   .array(
@@ -98,7 +100,23 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         }}
       >
         <FormContainer>
-          {isSubAgent && <DescriptionField></DescriptionField>}
+          {isSubAgent && (
+            <>
+              <DescriptionField></DescriptionField>
+              <FormField
+                control={form.control}
+                name={`user_prompt`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>Subagent Input</FormLabel>
+                    <FormControl>
+                      <Textarea {...field}></Textarea>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </>
+          )}
           <LargeModelFormField></LargeModelFormField>
           <FormField
             control={form.control}
