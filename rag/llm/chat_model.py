@@ -73,7 +73,7 @@ class Base(ABC):
 
     def _get_delay(self):
         """Calculate retry delay time"""
-        return self.base_delay + random.uniform(0, 0.5)
+        return self.base_delay + random.uniform(10, 150)
 
     def _classify_error(self, error):
         """Classify error based on error message content"""
