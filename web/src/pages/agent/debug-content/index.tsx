@@ -1,4 +1,3 @@
-import { FileUploader } from '@/components/file-uploader';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
@@ -19,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BeginQueryType } from '../constant';
 import { BeginQuery } from '../interface';
+import { FileUploadDirectUpload } from './uploader';
 
 export const BeginQueryComponentMap = {
   [BeginQueryType.Line]: 'string',
@@ -44,8 +44,6 @@ interface IProps {
   btnText?: ReactNode;
 }
 
-const values = {};
-
 const DebugContent = ({
   parameters,
   ok,
@@ -56,38 +54,46 @@ const DebugContent = ({
 }: IProps) => {
   const { t } = useTranslation();
 
-  const FormSchema = useMemo(() => {
-    const obj = parameters.reduce<Record<string, z.ZodType>>(
+  const formSchemaValues = useMemo(() => {
+    const obj = parameters.reduce<{
+      schema: Record<string, z.ZodType>;
+      values: Record<string, any>;
+    }>(
       (pre, cur, idx) => {
         const type = cur.type;
         let fieldSchema;
+        let value;
         if (StringFields.some((x) => x === type)) {
-          fieldSchema = z.string();
+          fieldSchema = z.string().trim().min(1);
         } else if (type === BeginQueryType.Boolean) {
           fieldSchema = z.boolean();
+          value = false;
         } else if (type === BeginQueryType.Integer) {
           fieldSchema = z.coerce.number();
         } else {
-          fieldSchema = z.instanceof(File);
+          fieldSchema = z.record(z.any());
         }
 
         if (cur.optional) {
-          fieldSchema.optional();
+          fieldSchema = fieldSchema.optional();
         }
 
-        pre[idx.toString()] = fieldSchema;
+        const index = idx.toString();
+
+        pre.schema[index] = fieldSchema;
+        pre.values[index] = value;
 
         return pre;
       },
-      {},
+      { schema: {}, values: {} },
     );
 
-    return z.object(obj);
+    return { schema: z.object(obj.schema), values: obj.values };
   }, [parameters]);
 
-  const form = useForm<z.infer<typeof FormSchema>>({
-    defaultValues: values,
-    resolver: zodResolver(FormSchema),
+  const form = useForm<z.infer<typeof formSchemaValues.schema>>({
+    defaultValues: formSchemaValues.values,
+    resolver: zodResolver(formSchemaValues.schema),
   });
 
   const submittable = true;
@@ -159,18 +165,16 @@ const DebugContent = ({
           <React.Fragment key={idx}>
             <FormField
               control={form.control}
-              name={'file'}
+              name={props.name}
               render={({ field }) => (
                 <div className="space-y-6">
                   <FormItem className="w-full">
                     <FormLabel>{t('assistantAvatar')}</FormLabel>
                     <FormControl>
-                      <FileUploader
+                      <FileUploadDirectUpload
                         value={field.value}
-                        onValueChange={field.onChange}
-                        maxFileCount={1}
-                        maxSize={4 * 1024 * 1024}
-                      />
+                        onChange={field.onChange}
+                      ></FileUploadDirectUpload>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -223,27 +227,15 @@ const DebugContent = ({
   );
 
   const onSubmit = useCallback(
-    (values: z.infer<typeof FormSchema>) => {
-      console.log('🚀 ~ values:', values);
+    (values: z.infer<typeof formSchemaValues.schema>) => {
       const nextValues = Object.entries(values).map(([key, value]) => {
         const item = parameters[Number(key)];
-        let nextValue = value;
-        if (Array.isArray(value)) {
-          nextValue = ``;
-
-          value.forEach((x) => {
-            nextValue +=
-              x?.originFileObj instanceof File
-                ? `${x.name}\n${x.response?.data}\n----\n`
-                : `${x.url}\n${x.result}\n----\n`;
-          });
-        }
-        return { ...item, value: nextValue };
+        return { ...item, value };
       });
 
       ok(nextValues);
     },
-    [ok, parameters],
+    [formSchemaValues, ok, parameters],
   );
 
   return (

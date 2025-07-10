@@ -34,6 +34,8 @@ export enum PromptRole {
 }
 
 import {
+  Circle,
+  CircleSlash2,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -378,8 +380,16 @@ export const SwitchOperatorOptions = [
   { value: 'not contains', label: 'notContains', icon: 'not-contains' },
   { value: 'start with', label: 'startWith', icon: 'list-start' },
   { value: 'end with', label: 'endWith', icon: 'list-end' },
-  { value: 'empty', label: 'empty', icon: 'circle' },
-  { value: 'not empty', label: 'notEmpty', icon: 'circle-slash-2' },
+  {
+    value: 'empty',
+    label: 'empty',
+    icon: <Circle className="size-4" />,
+  },
+  {
+    value: 'not empty',
+    label: 'notEmpty',
+    icon: <CircleSlash2 className="size-4" />,
+  },
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
@@ -455,7 +465,7 @@ export const initialCategorizeValues = {
 };
 
 export const initialMessageValues = {
-  messages: [],
+  content: [''],
 };
 
 export const initialKeywordExtractValues = {
@@ -667,6 +677,7 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
+  outputs: {},
 };
 
 export const initialWaitingDialogueValues = {};
@@ -674,6 +685,7 @@ export const initialWaitingDialogueValues = {};
 export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
+  user_prompt: '',
   sys_prompt: ``,
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,

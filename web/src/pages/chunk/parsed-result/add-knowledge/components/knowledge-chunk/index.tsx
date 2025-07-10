@@ -1,12 +1,13 @@
-import { useFetchNextChunkList, useSwitchChunk } from '@/hooks/chunk-hooks';
-import type { PaginationProps } from 'antd';
-import { Flex, Pagination, Space, Spin, message } from 'antd';
+import {
+  useFetchNextChunkList,
+  useSwitchChunk,
+} from '@/hooks/use-chunk-request';
 import classNames from 'classnames';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
-import DocumentPreview from './components/document-preview/preview';
+import DocumentPreview from './components/document-preview';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -19,6 +20,12 @@ import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
 import DocumentHeader from './components/document-preview/document-header';
 
+import message from '@/components/ui/message';
+import {
+  RAGFlowPagination,
+  RAGFlowPaginationType,
+} from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
 import styles from './index.less';
 
 const Chunk = () => {
@@ -39,6 +46,7 @@ const Chunk = () => {
   const { t } = useTranslation();
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
   const { switchChunk } = useSwitchChunk();
+  const [chunkList, setChunkList] = useState(data);
   const {
     chunkUpdatingLoading,
     onChunkUpdatingOk,
@@ -49,7 +57,10 @@ const Chunk = () => {
     documentId,
   } = useUpdateChunk();
 
-  const onPaginationChange: PaginationProps['onShowSizeChange'] = (
+  useEffect(() => {
+    setChunkList(data);
+  }, [data]);
+  const onPaginationChange: RAGFlowPaginationType['onChange'] = (
     page,
     size,
   ) => {
@@ -111,59 +122,74 @@ const Chunk = () => {
         available_int: available,
         doc_id: documentId,
       });
-      if (!chunkIds && resCode === 0) {
+      if (ids?.length && resCode === 0) {
+        chunkList.forEach((x: any) => {
+          if (ids.indexOf(x['chunk_id']) > -1) {
+            x['available_int'] = available;
+          }
+        });
+        setChunkList(chunkList);
       }
     },
-    [switchChunk, documentId, selectedChunkIds, showSelectedChunkWarning],
+    [
+      switchChunk,
+      documentId,
+      selectedChunkIds,
+      showSelectedChunkWarning,
+      chunkList,
+    ],
   );
 
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunkId);
 
+  const fileType = useMemo(() => {
+    switch (documentInfo?.type) {
+      case 'doc':
+        return documentInfo?.name.split('.').pop() || 'doc';
+      case 'visual':
+      case 'docx':
+      case 'txt':
+      case 'md':
+      case 'pdf':
+        return documentInfo?.type;
+    }
+    return 'unknown';
+  }, [documentInfo]);
+
   return (
     <>
       <div className={styles.chunkPage}>
-        {/* <ChunkToolBar
-          selectAllChunk={selectAllChunk}
-          createChunk={showChunkUpdatingModal}
-          removeChunk={handleRemoveChunk}
-          checked={selectedChunkIds.length === data.length}
-          switchChunk={handleSwitchChunk}
-          changeChunkTextMode={changeChunkTextMode}
-          searchString={searchString}
-          handleInputChange={handleInputChange}
-          available={available}
-          handleSetAvailable={handleSetAvailable}
-        ></ChunkToolBar> */}
-        {/* <Divider></Divider> */}
-        <Flex flex={1} gap={'middle'}>
-          <div className="w-[40%]">
+        <div className="flex flex-1 gap-8">
+          <div className="w-2/5">
             <div className="h-[100px] flex flex-col justify-end pb-[5px]">
               <DocumentHeader {...documentInfo} />
             </div>
-            {isPdf && (
-              <section className={styles.documentPreview}>
-                <DocumentPreview
-                  highlights={highlights}
-                  setWidthAndHeight={setWidthAndHeight}
-                ></DocumentPreview>
-              </section>
-            )}
+            <section className={styles.documentPreview}>
+              <DocumentPreview
+                className={styles.documentPreview}
+                fileType={fileType}
+                highlights={highlights}
+                setWidthAndHeight={setWidthAndHeight}
+              ></DocumentPreview>
+            </section>
           </div>
-          <Flex
-            vertical
-            className={isPdf ? styles.pagePdfWrapper : styles.pageWrapper}
+          <div
+            className={classNames(
+              { [styles.pagePdfWrapper]: isPdf },
+              'flex flex-col w-3/5',
+            )}
           >
             <Spin spinning={loading} className={styles.spin} size="large">
               <div className="h-[100px] flex flex-col justify-end pb-[5px]">
                 <div>
-                  <h2 className="text-[24px]">Chunk Result</h2>
+                  <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
                   <div className="text-[14px] text-[#979AAB]">
-                    View the chunked segments used for embedding and retrieval.
+                    {t('chunk.chunkResultTip')}
                   </div>
                 </div>
               </div>
-              <div className=" rounded-[16px] bg-[#FFF]/10 pl-[20px] pb-[20px] pt-[20px] box-border	">
+              <div className=" rounded-[16px] bg-[#FFF]/10 pl-[20px] pb-[20px] pt-[20px] box-border	mb-2">
                 <ChunkResultBar
                   handleInputChange={handleInputChange}
                   searchString={searchString}
@@ -176,18 +202,22 @@ const Chunk = () => {
                 <div className="pt-[5px] pb-[5px]">
                   <CheckboxSets
                     selectAllChunk={selectAllChunk}
+                    switchChunk={handleSwitchChunk}
+                    removeChunk={handleRemoveChunk}
                     checked={selectedChunkIds.length === data.length}
                   />
                 </div>
                 <div className={styles.pageContent}>
-                  <Space
-                    direction="vertical"
-                    size={'middle'}
-                    className={classNames(styles.chunkContainer, {
-                      [styles.chunkOtherContainer]: !isPdf,
-                    })}
+                  <div
+                    className={classNames(
+                      styles.chunkContainer,
+                      {
+                        [styles.chunkOtherContainer]: !isPdf,
+                      },
+                      'flex flex-col gap-4',
+                    )}
                   >
-                    {data.map((item) => (
+                    {chunkList.map((item) => (
                       <ChunkCard
                         item={item}
                         key={item.chunk_id}
@@ -202,20 +232,22 @@ const Chunk = () => {
                         textMode={textMode}
                       ></ChunkCard>
                     ))}
-                  </Space>
+                  </div>
+                </div>
+                <div className={styles.pageFooter}>
+                  <RAGFlowPagination
+                    pageSize={pagination.pageSize}
+                    current={pagination.current}
+                    total={total}
+                    onChange={(page, pageSize) => {
+                      onPaginationChange(page, pageSize);
+                    }}
+                  ></RAGFlowPagination>
                 </div>
               </div>
             </Spin>
-            <div className={styles.pageFooter}>
-              <Pagination
-                {...pagination}
-                total={total}
-                size={'small'}
-                onChange={onPaginationChange}
-              />
-            </div>
-          </Flex>
-        </Flex>
+          </div>
+        </div>
       </div>
       {chunkUpdatingVisible && (
         <CreatingModal

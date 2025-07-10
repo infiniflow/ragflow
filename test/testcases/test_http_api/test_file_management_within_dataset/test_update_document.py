@@ -229,7 +229,7 @@ class TestDocumentsUpdated:
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
             pytest.param(
-                {"process_duation": 1.0},
+                {"process_duration": 1.0},
                 102,
                 "The input parameters are invalid.",
                 marks=pytest.mark.skip(reason="issues/6104"),
@@ -309,7 +309,7 @@ class TestUpdateDocumentParserConfig:
             (
                 "naive",
                 {
-                    "chunk_token_num": 128,
+                    "chunk_token_num": 512,
                     "layout_recognize": "DeepDOC",
                     "html4excel": False,
                     "delimiter": r"\n",
@@ -535,7 +535,7 @@ class TestUpdateDocumentParserConfig:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             if parser_config == {}:
                 assert res["data"]["docs"][0]["parser_config"] == {
-                    "chunk_token_num": 128,
+                    "chunk_token_num": 512,
                     "delimiter": r"\n",
                     "html4excel": False,
                     "layout_recognize": "DeepDOC",

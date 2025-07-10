@@ -410,7 +410,7 @@ curl --request POST \
       - Minimum: `0`
       - Maximum: `10`
     - `"chunk_token_num"`: `int`
-      - Defaults to `128`
+      - Defaults to `512`
       - Minimum: `1`
       - Maximum: `2048`
     - `"delimiter"`: `string`
@@ -631,7 +631,7 @@ curl --request PUT \
       - Minimum: `0`
       - Maximum: `10`
     - `"chunk_token_num"`: `int`
-      - Defaults to `128`
+      - Defaults to `512`
       - Minimum: `1`
       - Maximum: `2048`
     - `"delimiter"`: `string`
@@ -1058,7 +1058,7 @@ Success:
                 },
                 "chunk_method": "naive",
                 "process_begin_at": null,
-                "process_duation": 0.0,
+                "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
                 "run": "0",
@@ -1417,7 +1417,7 @@ Success:
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
-            "process_duation": 0.54213,
+            "process_duration": 0.54213,
             "progress": 0.0,
             "progress_msg": "Task dispatched...",
             "run": "2",

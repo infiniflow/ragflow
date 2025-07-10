@@ -107,10 +107,10 @@ services:
     container_name: ragflow-sandbox-executor-manager
     profiles:
       - sandbox
-    image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE}
+    image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
     privileged: true
     ports:
-      - ${SANDBOX_EXECUTOR_MANAGER_PORT}:9385
+      - ${SANDBOX_EXECUTOR_MANAGER_PORT-9385}:9385
     env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -164,7 +164,7 @@ services:
     restart: on-failure
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
     container_name: ragflow-minio
     command: server --console-address ":9001" /data
     ports:
@@ -180,6 +180,11 @@ services:
     networks:
       - ragflow
     restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
   redis:
     # swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/valkey/valkey:8
@@ -194,6 +199,12 @@ services:
     networks:
       - ragflow
     restart: on-failure
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s    
 
 
 

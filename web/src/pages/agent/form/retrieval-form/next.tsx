@@ -49,7 +49,9 @@ export function EmptyResponseField() {
       name="empty_response"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>{t('chat.emptyResponse')}</FormLabel>
+          <FormLabel tooltip={t('chat.emptyResponseTip')}>
+            {t('chat.emptyResponse')}
+          </FormLabel>
           <FormControl>
             <Textarea
               placeholder={t('common.namePlaceholder')}

@@ -150,13 +150,22 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
 
     (params as IAgentForm).tools = (params as IAgentForm).tools.concat(
       bottomSubAgentEdges.map((x) => {
-        const formData = buildAgentTools(edges, nodes, x.target);
+        const {
+          params: formData,
+          id,
+          name,
+        } = buildAgentTools(edges, nodes, x.target);
 
-        return { component_name: Operator.Agent, params: { ...formData } };
+        return {
+          component_name: Operator.Agent,
+          id,
+          name,
+          params: { ...formData },
+        };
       }),
     );
   }
-  return params;
+  return { params, name: node?.data.name, id: node?.id };
 }
 
 function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
@@ -221,9 +230,11 @@ export const buildDslComponentsByGraph = (
       let params = x?.data.form ?? {};
 
       switch (operatorName) {
-        case Operator.Agent:
-          params = buildAgentTools(edges, nodes, id);
+        case Operator.Agent: {
+          const { params: formData } = buildAgentTools(edges, nodes, id);
+          params = formData;
           break;
+        }
         case Operator.Categorize:
           params = buildCategorizeTos(edges, nodes, id);
           break;
