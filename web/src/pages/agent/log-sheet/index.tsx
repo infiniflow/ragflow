@@ -149,7 +149,7 @@ export function LogSheet({
 
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
-      <SheetContent className="top-20 right-[440px]">
+      <SheetContent className="top-20 right-[620px]">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
             <NotebookText className="size-4" />
