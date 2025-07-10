@@ -28,10 +28,7 @@ enum ServerType {
 
 const ServerTypeOptions = buildOptions(ServerType);
 
-export function EditMcpForm({
-  initialName,
-  onOk,
-}: IModalProps<any> & { initialName?: string }) {
+export function useBuildFormSchema() {
   const { t } = useTranslation();
 
   const FormSchema = z.object({
@@ -53,7 +50,19 @@ export function EditMcpForm({
         message: t('common.namePlaceholder'),
       })
       .trim(),
+    variables: z.object({}).optional(),
   });
+
+  return FormSchema;
+}
+
+export function EditMcpForm({
+  initialName,
+  onOk,
+}: IModalProps<any> & { initialName?: string }) {
+  const { t } = useTranslation();
+
+  const FormSchema = useBuildFormSchema();
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
