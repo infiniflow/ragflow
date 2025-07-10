@@ -162,6 +162,63 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
+### `es`
+
+The Elasticsearch configuration for document storage and search functionality.
+
+- `hosts`: The Elasticsearch server endpoints. Defaults to `'http://localhost:1200'`.
+- `username`: The username for Elasticsearch authentication.
+- `password`: The password for Elasticsearch authentication.
+- `retry_attempts`: Configuration for retry attempts when Elasticsearch operations fail. This allows fine-tuning of retry behavior for different API operations.
+  - `global`: The default number of retry attempts for all Elasticsearch operations. Defaults to `2`.
+  - `connect`: Number of retry attempts for establishing connection to Elasticsearch.
+  - `exists`: Number of retry attempts for index existence checks.
+  - `search`: Number of retry attempts for document search operations.
+  - `get`: Number of retry attempts for single document retrieval.
+  - `insert`: Number of retry attempts for bulk document insertion.
+  - `update`: Number of retry attempts for document updates.
+  - `delete`: Number of retry attempts for document deletion.
+  - `sql`: Number of retry attempts for SQL query operations.
+- `timeouts`: Configuration for request timeout values (in seconds) when Elasticsearch operations may take longer than expected. This allows fine-tuning of timeout behavior for different API operations.
+  - `default`: Connection timeout. Defaults to `600` seconds if not configured.
+  - `exists`: Timeout for index existence checks.
+  - `get`: Timeout for single document retrieval.
+  - `search`: Timeout for document search operations. Defaults to `600` seconds if not configured.
+  - `bulk`: Timeout for bulk document operations. Defaults to `60` seconds if not configured.
+  - `update`: Timeout for document updates.
+  - `delete_by_query`: Timeout for bulk document deletion.
+  - `sql`: Timeout for SQL query operations. Defaults to `2` seconds if not configured.
+  - `health`: Timeout for cluster health checks.
+
+:::tip NOTE
+Both `retry_attempts` and `timeouts` configurations are optional.
+
+- For `retry_attempts`: If a specific API operation is not configured, it will use the `global` retry count. If `global` is not set, it defaults to `2` attempts.
+- For `timeouts`:
+  - Some operations have sensible defaults inherited from the previous hardcoded values: `search` (600s), `bulk` (60s), `sql` (2s), `exists` (5s), and connection `default` (600s).
+  - Other operations (`exists`, `get`, `update`, `delete_by_query`, `health`) will use the Elasticsearch client's default timeout if not configured.
+
+Example configuration:
+
+```yaml
+es:
+  hosts: 'http://elasticsearch:9200'
+  username: 'elastic'
+  password: 'your_password'
+  retry_attempts:
+    global: 2
+    connect: 5
+    search: 3
+    exists: 1
+  timeouts:
+    default: 300 # Custom connection timeout
+    exists: 10 # Custom index check timeout
+    search: 300 # Override default 600s search timeout
+    bulk: 60 # Keep default bulk timeout
+```
+
+:::
+
 ### `oauth`  
 
 The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
