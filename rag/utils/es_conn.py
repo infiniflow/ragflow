@@ -32,9 +32,12 @@ from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr,
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 
-ATTEMPT_TIME = 2
-
 logger = logging.getLogger('ragflow.es_conn')
+
+# API configuration constants
+RETRY_APIS = ['connect', 'exists', 'search', 'get', 'insert', 'update', 'delete', 'sql']
+TIMEOUT_APIS = ['exists', 'get', 'search', 'bulk', 'update', 'delete_by_query', 'sql', 'health']
+DEFAULT_TIMEOUTS = {'search': 600, 'bulk': 60, 'sql': 2, 'exists': 5}
 
 
 @singleton
@@ -42,7 +45,9 @@ class ESConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
         logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
-        for _ in range(ATTEMPT_TIME):
+        self._init_config()
+        
+        for _ in range(self.retry_attempts['connect']):
             try:
                 if self._connect():
                     break
@@ -68,13 +73,29 @@ class ESConnection(DocStoreConnection):
         self.mapping = json.load(open(fp_mapping, "r"))
         logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
+    def _init_config(self):
+        """Initialize retry and timeout configurations"""
+        # Retry configuration
+        retry_config = settings.ES.get('retry_attempts', {})
+        global_retry = retry_config.get('global', 2)
+        self.retry_attempts = {api: retry_config.get(api, global_retry) for api in RETRY_APIS}
+        
+        # Timeout configuration
+        timeout_config = settings.ES.get('timeouts', {})
+        self.connection_timeout = timeout_config.get('default', 600)
+        
+        self.timeout_kwargs = {}
+        for api in TIMEOUT_APIS:
+            timeout_value = timeout_config.get(api) or DEFAULT_TIMEOUTS.get(api)
+            self.timeout_kwargs[api] = {'request_timeout': timeout_value} if timeout_value else {}
+
     def _connect(self):
         self.es = Elasticsearch(
             settings.ES["hosts"].split(","),
             basic_auth=(settings.ES["username"], settings.ES[
                 "password"]) if "username" in settings.ES and "password" in settings.ES else None,
             verify_certs=False,
-            timeout=600
+            timeout=self.connection_timeout
         )
         if self.es:
             self.info = self.es.info()
@@ -89,7 +110,7 @@ class ESConnection(DocStoreConnection):
         return "elasticsearch"
 
     def health(self) -> dict:
-        health_dict = dict(self.es.cluster.health())
+        health_dict = dict(self.es.cluster.health(**self.timeout_kwargs['health']))
         health_dict["type"] = "elasticsearch"
         return health_dict
 
@@ -121,9 +142,9 @@ class ESConnection(DocStoreConnection):
 
     def indexExist(self, indexName: str, knowledgebaseId: str = None) -> bool:
         s = Index(indexName, self.es)
-        for i in range(ATTEMPT_TIME):
+        for i in range(self.retry_attempts['exists']):
             try:
-                return s.exists()
+                return s.exists(**self.timeout_kwargs['exists'])
             except ConnectionTimeout:
                 logger.exception("ES request timeout")
                 time.sleep(3)
@@ -245,15 +266,12 @@ class ESConnection(DocStoreConnection):
         q = s.to_dict()
         logger.debug(f"ESConnection.search {str(indexNames)} query: " + json.dumps(q))
 
-        for i in range(ATTEMPT_TIME):
+        for i in range(self.retry_attempts['search']):
             try:
                 #print(json.dumps(q, ensure_ascii=False))
-                res = self.es.search(index=indexNames,
-                                     body=q,
-                                     timeout="600s",
-                                     # search_type="dfs_query_then_fetch",
-                                     track_total_hits=True,
-                                     _source=True)
+                search_kwargs = {'index': indexNames, 'body': q, 'track_total_hits': True, '_source': True}
+                search_kwargs.update(self.timeout_kwargs['search'])
+                res = self.es.search(**search_kwargs)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 logger.debug(f"ESConnection.search {str(indexNames)} res: " + str(res))
@@ -266,14 +284,15 @@ class ESConnection(DocStoreConnection):
                 logger.exception(f"ESConnection.search {str(indexNames)} query: " + str(q) + str(e))
                 raise e
 
-        logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
+        logger.error(f"ESConnection.search timeout for {self.retry_attempts['search']} times!")
         raise Exception("ESConnection.search timeout.")
 
     def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | None:
-        for i in range(ATTEMPT_TIME):
+        for i in range(self.retry_attempts['get']):
             try:
-                res = self.es.get(index=(indexName),
-                                  id=chunkId, source=True, )
+                get_kwargs = {'index': indexName, 'id': chunkId, 'source': True}
+                get_kwargs.update(self.timeout_kwargs['get'])
+                res = self.es.get(**get_kwargs)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 chunk = res["_source"]
@@ -284,7 +303,7 @@ class ESConnection(DocStoreConnection):
             except Exception as e:
                 logger.exception(f"ESConnection.get({chunkId}) got exception")
                 raise e
-        logger.error(f"ESConnection.get timeout for {ATTEMPT_TIME} times!")
+        logger.error(f"ESConnection.get timeout for {self.retry_attempts['get']} times!")
         raise Exception("ESConnection.get timeout.")
 
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
@@ -301,11 +320,12 @@ class ESConnection(DocStoreConnection):
             operations.append(d_copy)
 
         res = []
-        for _ in range(ATTEMPT_TIME):
+        for _ in range(self.retry_attempts['insert']):
             try:
                 res = []
-                r = self.es.bulk(index=(indexName), operations=operations,
-                                 refresh=False, timeout="60s")
+                bulk_kwargs = {'index': indexName, 'operations': operations, 'refresh': False}
+                bulk_kwargs.update(self.timeout_kwargs['bulk'])
+                r = self.es.bulk(**bulk_kwargs)
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
@@ -330,18 +350,22 @@ class ESConnection(DocStoreConnection):
         doc.pop("id", None)
         condition["kb_id"] = knowledgebaseId
         if "id" in condition and isinstance(condition["id"], str):
-            # update specific single document
+                        # update specific single document
             chunkId = condition["id"]
-            for i in range(ATTEMPT_TIME):
+            for i in range(self.retry_attempts['update']):
                 for k in doc.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
-                    try:
-                        self.es.update(index=indexName, id=chunkId, script=f"ctx._source.remove(\"{k}\");")
-                    except Exception:
-                        logger.exception(f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
-                    self.es.update(index=indexName, id=chunkId, doc=doc)
+                    update_kwargs = {'index': indexName, 'id': chunkId, 'script': f"ctx._source.remove(\"{k}\");"}
+                    update_kwargs.update(self.timeout_kwargs['update'])
+                    self.es.update(**update_kwargs)
+                except Exception:
+                    logger.exception(f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
+                try:
+                    update_kwargs = {'index': indexName, 'id': chunkId, 'doc': doc}
+                    update_kwargs.update(self.timeout_kwargs['update'])
+                    self.es.update(**update_kwargs)
                     return True
                 except Exception as e:
                     logger.exception(
@@ -403,7 +427,7 @@ class ESConnection(DocStoreConnection):
         ubq = ubq.params(slices=5)
         ubq = ubq.params(conflicts="proceed")
 
-        for _ in range(ATTEMPT_TIME):
+        for _ in range(self.retry_attempts['update']):
             try:
                 _ = ubq.execute()
                 return True
@@ -448,12 +472,15 @@ class ESConnection(DocStoreConnection):
                 else:
                     raise Exception("Condition value must be int, str or list.")
         logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
-        for _ in range(ATTEMPT_TIME):
+        for _ in range(self.retry_attempts['delete']):
             try:
-                res = self.es.delete_by_query(
-                    index=indexName,
-                    body=Search().query(qry).to_dict(),
-                    refresh=True)
+                delete_kwargs = {
+                    'index': indexName,
+                    'body': Search().query(qry).to_dict(),
+                    'refresh': True
+                }
+                delete_kwargs.update(self.timeout_kwargs['delete_by_query'])
+                res = self.es.delete_by_query(**delete_kwargs)
                 return res["deleted"]
             except ConnectionTimeout:
                 logger.exception("ES request timeout")
@@ -564,10 +591,11 @@ class ESConnection(DocStoreConnection):
             sql = sql.replace(p, r, 1)
         logger.debug(f"ESConnection.sql to es: {sql}")
 
-        for i in range(ATTEMPT_TIME):
+        for i in range(self.retry_attempts['sql']):
             try:
-                res = self.es.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format,
-                                        request_timeout="2s")
+                sql_kwargs = {'body': {"query": sql, "fetch_size": fetch_size}, 'format': format}
+                sql_kwargs.update(self.timeout_kwargs['sql'])
+                res = self.es.sql.query(**sql_kwargs)
                 return res
             except ConnectionTimeout:
                 logger.exception("ES request timeout")
@@ -577,5 +605,5 @@ class ESConnection(DocStoreConnection):
             except Exception:
                 logger.exception("ESConnection.sql got exception")
                 break
-        logger.error(f"ESConnection.sql timeout for {ATTEMPT_TIME} times!")
+        logger.error(f"ESConnection.sql timeout for {self.retry_attempts['sql']} times!")
         return None
