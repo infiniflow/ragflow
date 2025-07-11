@@ -1,6 +1,7 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
-import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
+import { IFlowTemplate } from '@/interfaces/database/flow';
+// import { useFetchFlowTemplates } from '@/hooks/flow-hooks';
 import { useSelectItem } from '@/hooks/logic-hooks';
 import { Button, Card, Flex, List, Modal, Typography } from 'antd';
 import { useCallback, useState } from 'react';
@@ -15,11 +16,18 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
   onOk: (name: string, templateId: string) => void;
   showModal?(): void;
+  templateList: IFlowTemplate[];
 }
 
-const AgentTemplateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
+const AgentTemplateModal = ({
+  visible,
+  hideModal,
+  loading,
+  onOk,
+  templateList,
+}: IProps) => {
   const { t } = useTranslate('common');
-  const { data: list } = useFetchFlowTemplates();
+  // const { data: list } = useFetchFlowTemplates();
   const { selectedId, handleItemClick } = useSelectItem('');
   const [checkedId, setCheckedId] = useState<string>('');
 
@@ -62,7 +70,7 @@ const AgentTemplateModal = ({ visible, hideModal, loading, onOk }: IProps) => {
         </Title>
         <List
           grid={{ gutter: 16, column: 4 }}
-          dataSource={list}
+          dataSource={templateList}
           renderItem={(x) => (
             <List.Item>
               <Card
