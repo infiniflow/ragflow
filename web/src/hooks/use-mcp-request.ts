@@ -1,10 +1,15 @@
 import message from '@/components/ui/message';
+import { ResponseType } from '@/interfaces/database/base';
 import {
+  IExportedMcpServers,
   IMcpServer,
   IMcpServerListResponse,
   IMCPTool,
 } from '@/interfaces/database/mcp';
-import { ITestMcpRequestBody } from '@/interfaces/request/mcp';
+import {
+  IImportMcpServersRequestBody,
+  ITestMcpRequestBody,
+} from '@/interfaces/request/mcp';
 import i18n from '@/locales/config';
 import mcpServerService from '@/services/mcp-server-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -132,10 +137,10 @@ export const useImportMcpServer = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [McpApiAction.ImportMcpServer],
-    mutationFn: async (params: Record<string, any>) => {
+    mutationFn: async (params: IImportMcpServersRequestBody) => {
       const { data = {} } = await mcpServerService.import(params);
       if (data.code === 0) {
-        message.success(i18n.t(`message.created`));
+        message.success(i18n.t(`message.operated`));
 
         queryClient.invalidateQueries({
           queryKey: [McpApiAction.ListMcpServer],
@@ -146,6 +151,25 @@ export const useImportMcpServer = () => {
   });
 
   return { data, loading, importMcpServer: mutateAsync };
+};
+
+export const useExportMcpServer = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<ResponseType<IExportedMcpServers>, Error, string[]>({
+    mutationKey: [McpApiAction.ExportMcpServer],
+    mutationFn: async (ids) => {
+      const { data = {} } = await mcpServerService.export({ mcp_ids: ids });
+      if (data.code === 0) {
+        message.success(i18n.t(`message.operated`));
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, exportMcpServer: mutateAsync };
 };
 
 export const useListMcpServerTools = () => {
