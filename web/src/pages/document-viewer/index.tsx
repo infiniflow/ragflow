@@ -2,6 +2,8 @@ import { Images } from '@/constants/common';
 import { api_host } from '@/utils/api';
 import { Flex } from 'antd';
 import { useParams, useSearchParams } from 'umi';
+import Md from './md';
+import Text from './text';
 import Docx from './docx';
 import Excel from './excel';
 import Image from './image';
@@ -31,6 +33,9 @@ const DocumentViewer = () => {
           <Image src={api} preview={false}></Image>
         </Flex>
       )}
+      {ext === 'md' && <Md filePath={api}></Md>}
+      {ext === 'txt' && <Text filePath={api}></Text>}
+
       {ext === 'pdf' && <Pdf url={api}></Pdf>}
       {(ext === 'xlsx' || ext === 'xls') && <Excel filePath={api}></Excel>}
 
