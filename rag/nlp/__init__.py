@@ -589,17 +589,21 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
     dels = get_delimiters(delimiter)
     for text, image in zip(texts, images):
-        splited_sec = re.split(r"(%s)" % dels, text)
-        for sub_sec in splited_sec:
-            if re.match(f"^{dels}$", sub_sec):
-                continue
         # if text is tuple, unpack it
         if isinstance(text, tuple):
             text_str = text[0]
             text_pos = text[1] if len(text) > 1 else ""
-            add_chunk(text_str, image, text_pos)
+            splited_sec = re.split(r"(%s)" % dels, text_str)
+            for sub_sec in splited_sec:
+                if re.match(f"^{dels}$", sub_sec):
+                    continue
+                add_chunk(sub_sec, image, text_pos)
         else:
-            add_chunk(text, image)
+            splited_sec = re.split(r"(%s)" % dels, text)
+            for sub_sec in splited_sec:
+                if re.match(f"^{dels}$", sub_sec):
+                    continue
+                add_chunk(sub_sec, image)
 
     return cks, result_images
 
