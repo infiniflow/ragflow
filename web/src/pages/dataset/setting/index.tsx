@@ -131,22 +131,9 @@ export default function DatasetSettings() {
                 <ChunkMethodForm></ChunkMethodForm>
               </TabsContent>
             </Tabs>
-            {/* <div className="text-right">
-              <ButtonLoading type="submit">Submit</ButtonLoading>
-            </div> */}
           </form>
         </Form>
         <ChunkMethodLearnMore tab={currentTab} parserId={parserId} />
-        {/* <div
-          style={{
-            display: currentTab === 'chunkMethodForm' ? 'block' : 'none',
-          }}
-        >
-          <Button variant="outline">Learn More</Button>
-          <div className="bg-[#FFF]/10 p-[20px] rounded-[12px] mt-[10px]">
-            <CategoryPanel chunkMethod={parserId}></CategoryPanel>
-          </div>
-        </div> */}
       </div>
     </section>
   );

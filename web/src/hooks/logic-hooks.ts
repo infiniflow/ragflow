@@ -37,20 +37,6 @@ export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
   return { currentRecord, setRecord };
 };
 
-export const useHandleSearchChange = () => {
-  const [searchString, setSearchString] = useState('');
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const value = e.target.value;
-      setSearchString(value);
-    },
-    [],
-  );
-
-  return { handleInputChange, searchString };
-};
-
 export const useChangeLanguage = () => {
   const { i18n } = useTranslation();
   const { saveSetting } = useSaveSetting();
@@ -82,9 +68,12 @@ export const useGetPaginationWithRouter = () => {
 
   const setCurrentPagination = useCallback(
     (pagination: { page: number; pageSize?: number }) => {
+      if (pagination.pageSize !== pageSize) {
+        pagination.page = 1; // Reset to first page if pageSize changes
+      }
       setPaginationParams(pagination.page, pagination.pageSize);
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const pagination: PaginationProps = useMemo(() => {
@@ -104,6 +93,21 @@ export const useGetPaginationWithRouter = () => {
     pagination,
     setPagination: setCurrentPagination,
   };
+};
+
+export const useHandleSearchChange = () => {
+  const [searchString, setSearchString] = useState('');
+  const { setPagination } = useGetPaginationWithRouter();
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setSearchString(value);
+      setPagination({ page: 1 });
+    },
+    [setPagination],
+  );
+
+  return { handleInputChange, searchString };
 };
 
 export const useGetPagination = () => {

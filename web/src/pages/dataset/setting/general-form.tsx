@@ -22,7 +22,6 @@ export function GeneralForm() {
   const { t } = useTranslation();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
-  // const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
 
   const { saveKnowledgeConfiguration, loading: submitLoading } =
     useUpdateKnowledge();
@@ -94,7 +93,7 @@ export function GeneralForm() {
                         <div className="w-[64px] h-[64px] grid place-content-center border border-dashed	rounded-md">
                           <div className="flex flex-col items-center">
                             <Upload />
-                            <p>Upload</p>
+                            <p>{t('common.upload')}</p>
                           </div>
                         </div>
                       ) : (
