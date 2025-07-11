@@ -142,6 +142,61 @@
             ]
         },
         {
+            "name": "xAI",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "grok-4",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-3",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-3-fast",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-3-mini",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-3-mini-mini-fast",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-2-vision",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "image2text",
+                    "is_tools": true
+
+                }
+            ]
+        },
+        {
             "name": "Tongyi-Qianwen",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,TTS,SPEECH2TEXT,MODERATION",
