@@ -23,7 +23,7 @@ const methods = {
   },
   get: {
     url: getMcpServer,
-    method: 'post',
+    method: 'get',
   },
   create: {
     url: createMcpServer,
