@@ -18,6 +18,7 @@ import json
 import logging
 import re
 from copy import deepcopy
+from typing import Tuple
 
 import jinja2
 import json_repair
@@ -129,7 +130,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
 
     knowledges = []
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        cnt = "\nID: {}".format(i if not hash_id else hash(ck["chunk_id"]) % 1000)
+        cnt = "\nID: {}".format(i if not hash_id else hash(ck["chunk_id"]) % 100)
         cnt += draw_node("Title", ck["docnm_kwd"])
         cnt += draw_node("URL", ck['url'])  if "url" in ck else ""
         for k, v in docs.get(ck["doc_id"], {}).items():
@@ -155,7 +156,8 @@ ANALYZE_TASK_SYSTEM = load_prompt("analyze_task_system")
 ANALYZE_TASK_USER = load_prompt("analyze_task_user")
 NEXT_STEP = load_prompt("next_step")
 REFLECT = load_prompt("reflect")
-TOOL_CALL_SUMMARY = load_prompt("tool_call_summary")
+SUMMARY4MEMORY = load_prompt("summary4memory")
+RANK_MEMORY = load_prompt("rank_memory")
 
 PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
 
@@ -330,13 +332,13 @@ def form_history(history, limit=-6):
         role = "USER"
         if h["role"].upper()!= role:
             role = "AGENT"
-        context += f"\n{role}: {h['content'][:1024] + ('...' if len(h['content'])>1024 else '')}"
+        context += f"\n{role}: {h['content'][:2048] + ('...' if len(h['content'])>2048 else '')}"
     return context
 
 
-def analyze_task(chat_mdl, task_name, history:list, tools_description: list[dict]):
+def analyze_task(chat_mdl, task_name, tools_description: list[dict]):
     tools_desc = tool_schema(tools_description)
-    context = form_history(history)
+    context = ""
 
     template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_USER)
 
@@ -352,7 +354,6 @@ def analyze_task(chat_mdl, task_name, history:list, tools_description: list[dict
 def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc):
     if not tools_description:
         return ""
-    #task_analisys = analyze_task(chat_mdl, history, tools_description)
     desc = tool_schema(tools_description)
     template = PROMPT_JINJA_ENV.from_string(NEXT_STEP)
     user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
@@ -368,12 +369,50 @@ def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc):
     return json_str, tk_cnt
 
 
-def post_function_call_promt(function_name, result):
+def reflect(chat_mdl, history: list[dict], tool_call_res: list[Tuple]):
+    tool_calls = [{"name": p[0], "result": p[1]} for p in tool_call_res]
+    goal = history[1]["content"]
     template = PROMPT_JINJA_ENV.from_string(REFLECT)
-    return template.render(function_name=function_name, result=result)
+    user_prompt = template.render(goal=goal, tool_calls=tool_calls)
+    hist = deepcopy(history)
+    if hist[-1]["role"] == "user":
+        hist[-1]["content"] += user_prompt
+    else:
+        hist.append({"role": "user", "content": user_prompt})
+    _, msg = message_fit_in(hist, chat_mdl.max_length)
+    ans = chat_mdl.chat(msg[0]["content"], msg[1:])
+    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+    tk_cnt = num_tokens_from_string(ans)
+    return """
+**Observation**
+{}
+
+**Reflection**
+{}
+    """.format(json.dumps(tool_calls, ensure_ascii=False, indent=2), ans)
 
 
-def tool_call_summary(inputs, results):
-    results = re.sub(r"!\[[a-z]+\]\(data:image/png;base64[^()]+\)", "", str(results), flags=re.DOTALL)[:4096]
-    template = PROMPT_JINJA_ENV.from_string(TOOL_CALL_SUMMARY)
-    return template.render(inputs=inputs, results=results)
+def form_message(system_prompt, user_prompt):
+    return [{"role": "system", "content": system_prompt},{"role": "user", "content": user_prompt}]
+
+
+def tool_call_summary(chat_mdl, name: str, params: dict, result: str) -> str:
+    results = re.sub(r"!\[[a-z]+\]\(data:image/png;base64[^()]+\)", "", str(result), flags=re.DOTALL)[:4096]
+    template = PROMPT_JINJA_ENV.from_string(SUMMARY4MEMORY)
+    system_prompt = template.render(name=name,
+                           params=json.dumps(params, ensure_ascii=False, indent=2),
+                           result=result)
+    user_prompt = "→ Summary: "
+    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+    ans = chat_mdl.chat(msg[0]["content"], msg[1:])
+    return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+
+
+def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[str]):
+    template = PROMPT_JINJA_ENV.from_string(RANK_MEMORY)
+    system_prompt = template.render(goal=goal, sub_goal=sub_goal, results=[{"i": i, "content": s} for i,s in enumerate(tool_call_summaries)])
+    user_prompt = " → rank: "
+    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+    ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
+    return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+

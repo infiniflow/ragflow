@@ -31,6 +31,7 @@ from api.db.services.llm_service import LLMBundle
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in, citation_prompt
+from rag.prompts.prompts import tool_call_summary
 
 
 class LLMParam(ComponentParamBase):
@@ -243,3 +244,8 @@ class LLM(ComponentBase):
         u = kwargs.get("user")
         ans = chat_mdl.chat(prompt, [{"role": "user", "content": u if u else "Output: "}], self._param.gen_conf())
         return pd.DataFrame([ans])
+
+    def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str):
+        summ = tool_call_summary(self.chat_mdl, func_name, params, results)
+        logging.info(f"[MEMORY]: {summ}")
+        self._canvas.add_memory(user, assist, summ)

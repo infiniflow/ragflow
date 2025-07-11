@@ -36,8 +36,6 @@ from strenum import StrEnum
 from zhipuai import ZhipuAI
 
 from rag.nlp import is_chinese, is_english
-from rag.prompts import COMPLETE_TASK, post_function_call_promt, tool_call_summary, analyze_task, \
-    next_step
 from rag.utils import num_tokens_from_string
 
 # Error message constants
@@ -219,73 +217,6 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    def _react_with_tools(self, history: list[dict], gen_conf: dict|None):
-        hist = deepcopy(history)
-        response, token_count = next_step(self, hist, self.tools)
-        if response.find(LENGTH_NOTIFICATION_CN) > 0 or response.find(LENGTH_NOTIFICATION_EN) > 0:
-            return response, token_count, True
-        hist.append({"role": "assistant", "content": response})
-        name = response
-        try:
-            response = re.sub(r"```.*", "", response)
-            func = json_repair.loads(response)
-            name = func["name"]
-            args = func["arguments"]
-            if name == COMPLETE_TASK:
-                hist.append({"role": "user", "content": f"Respond with a formal answer please. FORGET(DO NOT mention) about `{COMPLETE_TASK}`."})
-                response, token_count = self._chat(hist, gen_conf, stop=["<|stop|>"])
-                return response, token_count, True
-
-            history.append({"role": "assistant", "content": response})
-            tool_response = self.toolcall_session.tool_call(name, args)
-
-            # Summarize of function calling
-            if len(str(tool_response)) > 1024:
-                tool_response, tk_count = self._chat([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}], gen_conf)
-                token_count += tk_count
-
-            history.append({"role": "user", "content": post_function_call_promt(name, tool_response)})
-            return self._verbose_tool_use(name, args, tool_response), token_count, False
-        except Exception as e:
-            logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
-            history.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
-            return self._verbose_tool_use(name, {}, str(e)), token_count, False
-
-    def _react_with_tools_streamly(self, history: list[dict], gen_conf: dict|None):
-        hist = deepcopy(history)
-        response, token_count = next_step(self, hist, self.tools)
-        hist.append({"role": "assistant", "content": response})
-        name = response
-        try:
-            response = re.sub(r"```.*", "", response)
-            func = json_repair.loads(response)
-            name = func["name"]
-            args = func["arguments"]
-            if name == COMPLETE_TASK:
-                hist.append({"role": "user", "content": f"Respond with a formal answer please. FORGET(DO NOT mention) about `{COMPLETE_TASK}`"})
-                yield "", token_count, False
-                for delta_ans, tol in self._chat_streamly(hist, gen_conf, with_reasoning=False):
-                    yield delta_ans, tol, False
-
-                yield "", 0, True
-                return
-
-            # Summarize of function calling
-            history.append({"role": "assistant", "content": response})
-            tool_response = self.toolcall_session.tool_call(name, args)
-            yield self._verbose_tool_use(name, args, tool_response), token_count, False
-
-            # Summarize of function calling
-            if len(str(tool_response)) > 1024:
-                tool_response, tk_count = self._chat([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}], gen_conf)
-                token_count += tk_count
-
-            history.append({"role": "user", "content": post_function_call_promt(name, tool_response)})
-        except Exception as e:
-            logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
-            history.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
-            return self._verbose_tool_use(name, {}, str(e)), token_count, False
-
     def chat_with_tools(self, system: str, history: list, gen_conf: dict={}):
         gen_conf = self._clean_conf(gen_conf)
         if system:
@@ -300,13 +231,6 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds+1):
                     print(f"{self.tools=}")
-                    if self.react_mode == ReActMode.REACT:
-                        response, tk_ct, fin = self._react_with_tools(history, gen_conf)
-                        tk_count += tk_ct
-                        ans += response
-                        if fin:
-                            return ans, tk_count
-                        continue
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
@@ -390,15 +314,6 @@ class Base(ABC):
             history = hist
             try:
                 for _ in range(self.max_rounds+1):
-                    if self.react_mode == ReActMode.REACT:
-                        for response, tk_ct, fin  in self._react_with_tools_streamly(history, gen_conf):
-                            total_tokens += tk_ct
-                            yield response
-                            if fin:
-                                yield total_tokens
-                                return
-                        continue
-
                     reasoning_start = False
                     print(f"{tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
@@ -746,6 +661,7 @@ class ZhipuChat(Base):
         ans = ""
         tk_count = 0
         try:
+            print(json.dumps(history, ensure_ascii=False, indent=2))
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
             for resp in response:
                 if not resp.choices[0].delta.content:

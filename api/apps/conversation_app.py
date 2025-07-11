@@ -33,6 +33,7 @@ from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.app.tag import label_question
+from rag.prompts.prompts import chunks_format
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
@@ -90,25 +91,10 @@ def get():
         else:
             return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
 
-        def get_value(d, k1, k2):
-            return d.get(k1, d.get(k2))
-
         for ref in conv.reference:
             if isinstance(ref, list):
                 continue
-            ref["chunks"] = [
-                {
-                    "id": get_value(ck, "chunk_id", "id"),
-                    "content": get_value(ck, "content", "content_with_weight"),
-                    "document_id": get_value(ck, "doc_id", "document_id"),
-                    "document_name": get_value(ck, "docnm_kwd", "document_name"),
-                    "dataset_id": get_value(ck, "kb_id", "dataset_id"),
-                    "image_id": get_value(ck, "image_id", "img_id"),
-                    "positions": get_value(ck, "positions", "position_int"),
-                    "doc_type": get_value(ck, "doc_type", "doc_type_kwd"),
-                }
-                for ck in ref.get("chunks", [])
-            ]
+            ref["chunks"] = chunks_format(ref)
 
         conv = conv.to_dict()
         conv["avatar"] = avatar
@@ -201,26 +187,10 @@ def completion():
         if not conv.reference:
             conv.reference = []
         else:
-
-            def get_value(d, k1, k2):
-                return d.get(k1, d.get(k2))
-
             for ref in conv.reference:
                 if isinstance(ref, list):
                     continue
-                ref["chunks"] = [
-                    {
-                        "id": get_value(ck, "chunk_id", "id"),
-                        "content": get_value(ck, "content", "content_with_weight"),
-                        "document_id": get_value(ck, "doc_id", "document_id"),
-                        "document_name": get_value(ck, "docnm_kwd", "document_name"),
-                        "dataset_id": get_value(ck, "kb_id", "dataset_id"),
-                        "image_id": get_value(ck, "image_id", "img_id"),
-                        "positions": get_value(ck, "positions", "position_int"),
-                        "doc_type": get_value(ck, "doc_type_kwd", "doc_type_kwd"),
-                    }
-                    for ck in ref.get("chunks", [])
-                ]
+                ref["chunks"] = chunks_format(ref)
 
         if not conv.reference:
             conv.reference = []

@@ -20,7 +20,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
-from typing import Any
+from typing import Any, Tuple
 
 import json_repair
 import pandas as pd
@@ -32,8 +32,8 @@ from api.db.services.llm_service import LLMBundle
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
-from rag.prompts.prompts import next_step, COMPLETE_TASK, post_function_call_promt, analyze_task, form_history, \
-    citation_prompt
+from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, form_history, \
+    citation_prompt, reflect, rank_memories
 from rag.utils import num_tokens_from_string
 
 
@@ -89,7 +89,8 @@ class Agent(LLM, ToolBase):
                                   react_mode=ReActMode.REACT
                                   )
         self.tool_metas = [v.get_meta() for _,v in self.tools.items()]
-        self.toolcall_session = LLMToolPluginCallSession(self.tools, partial(self._canvas.tool_use_callback, id.split("-->")[0]))
+        self.callback = partial(self._canvas.tool_use_callback, id.split("-->")[0])
+        self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
         #self.chat_mdl.bind_tools(self.toolcall_session, self.tool_metas)
 
     def get_meta(self) -> dict[str, Any]:
@@ -99,28 +100,7 @@ class Agent(LLM, ToolBase):
             m["function"]["parameters"]["properties"]["user_prompt"] = self._param.user_prompt
         return m
 
-    def _extract_tool_use(self, ans, use_tools, clean=False):
-        patt = r"<tool_call>(.*?)</tool_call>"
-        s = 0
-        txt = ""
-        for r in re.finditer(patt, ans, flags=re.DOTALL):
-            try:
-                res = json_repair.loads(r.group(1))
-                if isinstance(res["result"], dict):
-                    use_tools.append(deepcopy(res))
-                    res["result"] = "End"
-                txt += "<tool_call>{}</tool_call>".format(ans[s: r.start()] + json.dumps(res, ensure_ascii=False, indent=2))
-            except:
-                txt += "<tool_call>{}</tool_call>".format(r.group(1))
-
-            s = r.end()
-        if s < len(ans):
-            txt += ans[s:]
-        if clean:
-            return re.sub(patt, "", txt, flags=re.DOTALL)
-        return txt
-
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60))
     def _invoke(self, **kwargs):
         if kwargs.get("user_prompt"):
             self._param.prompts = [{"role": "user", "content": str(kwargs["user_prompt"])}]
@@ -182,8 +162,10 @@ class Agent(LLM, ToolBase):
         tool_metas = [v.get_meta() for _,v in self.tools.items()]
         hist = deepcopy(history)
         last_calling = ""
+        user_request = history[-1]["content"]
+
         def use_tool(name, args):
-            nonlocal hist, use_tools, token_count,last_calling
+            nonlocal hist, use_tools, token_count,last_calling,user_request
             print(f"{last_calling=} == {name=}", )
             # Summarize of function calling
             if all([
@@ -192,7 +174,7 @@ class Agent(LLM, ToolBase):
                 last_calling != name
             ]):
                 args["user_prompt"] = "\n".join([
-                        f"The chat history with other agents are as following: \n" + form_history(hist[:-1]),
+                        f"The chat history with other agents are as following: \n" + self.get_useful_memory(user_request, str(args["user_prompt"])),
                         "\nHere is my request:",
                         str(args["user_prompt"])
                 ])
@@ -203,22 +185,25 @@ class Agent(LLM, ToolBase):
                 "arguments": args,
                 "results": tool_response
             })
-
-            # Summarize of function calling
-            #if len(str(tool_response)) > 1024:
-            #    tool_response = self._generate([{"role": "system", "content": tool_call_summary(func, tool_response)},{"role": "user", "content": "Output:\n"}])
+            self.callback("add_memory", {}, "...")
+            self.add_memory(hist[-2]["content"], hist[-1]["content"], name, args, str(tool_response))
 
             return name, tool_response
 
-        task_desc = analyze_task(self.chat_mdl, history[-1]["content"], [], tool_metas)
+        self.callback("analyze_task", {}, "...")
+        task_desc = analyze_task(self.chat_mdl, user_request, tool_metas)
         for _ in range(self._param.max_rounds + 1):
             response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc)
+            self.callback("next_step", {}, str(response)[:256]+"...")
             token_count += tk
             hist.append({"role": "assistant", "content": response})
             try:
                 functions = json_repair.loads(re.sub(r"```.*", "", response))
                 if not isinstance(functions, list):
                     raise TypeError(f"List should be returned, but `{functions}`")
+                for f in functions:
+                    if not isinstance(f, dict):
+                        raise TypeError(f"An object type should be returned, but `{f}`")
                 with ThreadPoolExecutor(max_workers=5) as executor:
                     thr = []
                     for func in functions:
@@ -227,7 +212,7 @@ class Agent(LLM, ToolBase):
                         if name == COMPLETE_TASK:
                             if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"]:
                                 hist[0]["content"] += citation_prompt()
-                            hist.append({"role": "user", "content": f"Respond with a formal answer please. FORGET(DO NOT mention) about `{COMPLETE_TASK}`"})
+                            hist.append({"role": "user", "content": f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language used in the response MUST be as the same as `{user_request[:32]}`.\n"})
                             yield "", token_count
                             for delta_ans in self._generate_streamly(hist):
                                 yield delta_ans, 0
@@ -237,14 +222,29 @@ class Agent(LLM, ToolBase):
 
                         thr.append(executor.submit(use_tool, name, args))
 
-                    hist.append({"role": "user", "content": "\n\n".join([post_function_call_promt(*th.result()) for th in thr])})
+                    reflection = reflect(self.chat_mdl, hist, [th.result() for th in thr])
+                    hist.append({"role": "user", "content": reflection})
+                    self.callback("reflection", {}, str(reflection)[:256]+"...")
 
             except Exception as e:
                 logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
-                hist.append({"role": "user", "content": f"Tool call error, please correct it and call it again.\n *** Exception ***\n{e}"})
+                hist.append({"role": "user", "content": f"Tool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"})
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
         hist.append({"role": "user", "content": f"Exceed max rounds: {self._param.max_rounds}"})
         response = self._generate(hist)
         token_count += num_tokens_from_string(response)
         yield response, token_count
+
+    def get_useful_memory(self, goal: str, sub_goal:str, topn=3) -> str:
+        self.callback("get_useful_memory", {"topn": 3}, "...")
+        mems = self._canvas.get_memory()
+        rank = rank_memories(self.chat_mdl, goal, sub_goal, [summ for (user, assist, summ) in mems])
+        try:
+            rank = json_repair.loads(re.sub(r"```.*", "", rank))[:topn]
+            mems = [mems[r] for r in rank]
+            return "\n\n".join([f"User: {u}\nAgent: {a}" for u, a,_ in mems])
+        except Exception as e:
+            logging.exception(e)
+
+        return "Error occurred."

@@ -20,7 +20,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
-from typing import Any, Union
+from typing import Any, Union, Tuple
 
 from flask_login import current_user
 
@@ -28,6 +28,7 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
 from api.utils import get_uuid
+from rag.prompts.prompts import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -133,6 +134,7 @@ class Canvas:
         self.history = self.dsl["history"]
         self.globals = self.dsl["globals"]
         self.retrieval = self.dsl["retrieval"]
+        self.memory = self.dsl.get("memory", [])
 
     def __str__(self):
         self.dsl["path"] = self.path
@@ -140,6 +142,7 @@ class Canvas:
         self.dsl["globals"] = self.globals
         self.dsl["task_id"] = self.task_id
         self.dsl["retrieval"] = self.retrieval
+        self.dsl["memory"] = self.memory
         dsl = {
             "components": {}
         }
@@ -163,6 +166,7 @@ class Canvas:
         if not mem:
             self.history = []
             self.retrieval = []
+            self.memory = []
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
 
@@ -476,8 +480,8 @@ class Canvas:
             self.retrieval = [{"chunks": {}, "doc_aggs": {}}]
 
         r = self.retrieval[-1]
-        for ck in chunks:
-            cid = str(hash(ck["chunk_id"])%1000)
+        for ck in chunks_format({"chunks": chunks}):
+            cid = str(hash(ck["id"])%100)
             if cid not in r:
                 r["chunks"][cid] = ck
 
@@ -487,4 +491,10 @@ class Canvas:
 
     def get_reference(self):
         return self.retrieval[-1]
+
+    def add_memory(self, user:str, assist:str, summ: str):
+        self.memory.append((user, assist, summ))
+
+    def get_memory(self) -> list[Tuple]:
+        return self.memory
 
