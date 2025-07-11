@@ -250,7 +250,6 @@ def get_filter():
     else:
         return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
 
-
     keywords = req.get("keywords", "")
 
     suffix = req.get("suffix", [])
@@ -307,31 +306,42 @@ def thumbnails():
 
 @manager.route("/change_status", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("doc_id", "status")
+@validate_request("doc_ids", "status")
 def change_status():
-    req = request.json
-    if str(req["status"]) not in ["0", "1"]:
+    req = request.get_json()
+    doc_ids = req.get("doc_ids", [])
+    status = str(req.get("status", ""))
+
+    if status not in ["0", "1"]:
         return get_json_result(data=False, message='"Status" must be either 0 or 1!', code=settings.RetCode.ARGUMENT_ERROR)
 
-    if not DocumentService.accessible(req["doc_id"], current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
+    result = {}
+    for doc_id in doc_ids:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            result[doc_id] = {"error": "No authorization."}
+            continue
 
-    try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
-        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-        if not e:
-            return get_data_error_result(message="Can't find this knowledgebase!")
+        try:
+            e, doc = DocumentService.get_by_id(doc_id)
+            if not e:
+                result[doc_id] = {"error": "No authorization."}
+                continue
+            e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+            if not e:
+                result[doc_id] = {"error": "Can't find this knowledgebase!"}
+                continue
+            if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
+                result[doc_id] = {"error": "Database error (Document update)!"}
+                continue
 
-        if not DocumentService.update_by_id(req["doc_id"], {"status": str(req["status"])}):
-            return get_data_error_result(message="Database error (Document update)!")
+            status_int = int(status)
+            if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
+                result[doc_id] = {"error": "Database error (docStore update)!"}
+            result[doc_id] = {"status": status}
+        except Exception as e:
+            result[doc_id] = {"error": f"Internal server error: {str(e)}"}
 
-        status = int(req["status"])
-        settings.docStoreConn.update({"doc_id": req["doc_id"]}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
-        return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
+    return get_json_result(data=result)
 
 
 @manager.route("/rm", methods=["POST"])  # noqa: F821
