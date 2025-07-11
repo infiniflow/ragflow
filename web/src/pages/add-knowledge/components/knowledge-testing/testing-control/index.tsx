@@ -8,6 +8,7 @@ import { LabelWordCloud } from './label-word-cloud';
 
 import { CrossLanguageItem } from '@/components/cross-language-item';
 import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
+import { useSetPaginationParams } from '@/hooks/route-hook';
 import styles from './index.less';
 
 type FieldType = {
@@ -29,12 +30,14 @@ const TestingControl = ({
 }: IProps) => {
   const question = Form.useWatch('question', { form, preserve: true });
   const loading = useChunkIsTesting();
+  const { setPaginationParams } = useSetPaginationParams();
   const { t } = useTranslate('knowledgeDetails');
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
 
   const onClick = () => {
+    setPaginationParams(1, 10);
     handleTesting(selectedDocumentIds);
   };
 
