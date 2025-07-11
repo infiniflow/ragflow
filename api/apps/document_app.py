@@ -42,7 +42,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.file_utils import filename_type, get_project_base_directory, thumbnail
-from api.utils.web_utils import html2pdf, is_valid_url
+from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
 from rag.utils.storage_factory import STORAGE_IMPL
@@ -505,12 +505,14 @@ def get(doc_id):
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         response = flask.make_response(STORAGE_IMPL.get(b, n))
 
-        ext = re.search(r"\.([^.]+)$", doc.name)
+        ext = re.search(r"\.([^.]+)$", doc.name.lower())
+        ext = ext.group(1) if ext else None
         if ext:
             if doc.type == FileType.VISUAL.value:
-                response.headers.set("Content-Type", "image/%s" % ext.group(1))
+                content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
             else:
-                response.headers.set("Content-Type", "application/%s" % ext.group(1))
+                content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+            response.headers.set("Content-Type", content_type)
         return response
     except Exception as e:
         return server_error_response(e)
