@@ -39,3 +39,20 @@ interface ISymbol {
   title: string;
   type: string;
 }
+
+export interface IExportedMcpServers {
+  mcpServers: McpServers;
+}
+
+interface McpServers {
+  fetch_2: IExportedMcpServer;
+  github_1: IExportedMcpServer;
+}
+
+export interface IExportedMcpServer {
+  authorization_token: string;
+  name: string;
+  tool_configuration: Record<string, any>;
+  type: string;
+  url: string;
+}

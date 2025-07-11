@@ -62,7 +62,6 @@ export function EditMcpDialog({
       ? { name: '', server_type: ServerType.SSE, url: '' }
       : pick(data, ['name', 'server_type', 'url']),
   });
-  console.log('🚀 ~ form:', form.formState.dirtyFields);
 
   const handleTest: MouseEventHandler<HTMLButtonElement> = useCallback((e) => {
     e.stopPropagation();
