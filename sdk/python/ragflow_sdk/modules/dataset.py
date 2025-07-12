@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from copy import deepcopy
 
 from .base import Base
 from .document import Document
@@ -21,7 +22,25 @@ from .document import Document
 class DataSet(Base):
     class ParserConfig(Base):
         def __init__(self, rag, res_dict):
-            super().__init__(rag, res_dict)
+            default_dict = {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}
+            merged = self.__deep_merge(default_dict, res_dict)
+            super().__init__(rag, merged)
+
+        @staticmethod
+        def __deep_merge(default: dict, custom: dict) -> dict:
+            merged = deepcopy(default)
+            stack = [(merged, custom)]
+
+            while stack:
+                base_dict, override_dict = stack.pop()
+
+                for key, val in override_dict.items():
+                    if key in base_dict and isinstance(val, dict) and isinstance(base_dict[key], dict):
+                        stack.append((base_dict[key], val))
+                    else:
+                        base_dict[key] = val
+
+            return merged
 
     def __init__(self, rag, res_dict):
         self.id = ""

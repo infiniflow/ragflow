@@ -590,6 +590,7 @@ class TestDatasetCreate:
             {
                 "chunk_token_num": 512,
                 "delimiter": r"\n",
+                "graphrag": {"use_graphrag": False},
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
@@ -607,6 +608,7 @@ class TestDatasetCreate:
             {
                 "chunk_token_num": 512,
                 "delimiter": r"\n",
+                "graphrag": {"use_graphrag": False},
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
