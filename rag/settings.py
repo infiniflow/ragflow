@@ -15,6 +15,8 @@
 #
 import os
 import logging
+
+from agent.component import ExeSQL
 from api.utils import get_base_config, decrypt_database_config
 from api.utils.file_utils import get_project_base_directory
 
@@ -62,6 +64,7 @@ SVR_QUEUE_NAME = "rag_flow_svr_queue"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 PAGERANK_FLD = "pagerank_fea"
 TAG_FLD = "tag_feas"
+ES_HEALTH_CHECK_INTERVAL_SECONDS = 60
 
 PARALLEL_DEVICES = 0
 try:
