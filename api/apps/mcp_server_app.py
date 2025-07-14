@@ -237,8 +237,6 @@ def import_multiple() -> Response:
             tools = {tool["name"]: tool for tool in tools if isinstance(tool, dict) and "name" in tool}
             create_data["variables"]["tools"] = tools
 
-            print("***************************", create_data, "*************************")
-
             if MCPServerService.insert(**create_data):
                 result = {"server": server_name, "success": True, "action": "created", "id": create_data["id"], "new_name": new_name}
                 if new_name != base_name:
