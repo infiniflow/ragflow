@@ -66,7 +66,8 @@ class EntityResolution(Extractor):
     async def __call__(self, graph: nx.Graph,
                        subgraph_nodes: set[str],
                        prompt_variables: dict[str, Any] | None = None,
-                       callback: Callable | None = None) -> EntityResolutionResult:
+                       callback: Callable | None = None,
+                       kb_id: str = None) -> EntityResolutionResult:
         """Call method definition."""
         if prompt_variables is None:
             prompt_variables = {}
@@ -106,14 +107,9 @@ class EntityResolution(Extractor):
             nonlocal remain_candidates_to_resolve, callback
             async with semaphore:
                 try:
-                    with trio.move_on_after(180) as cancel_scope:
-                        await self._resolve_candidate(candidate_batch, result_set, result_lock)
-                        remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
-                        callback(msg=f"Resolved {len(candidate_batch[1])} pairs, {remain_candidates_to_resolve} are remained to resolve. ")
-                    if cancel_scope.cancelled_caught:
-                        logging.warning(f"Timeout resolving {candidate_batch}, skipping...")
-                        remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
-                        callback(msg=f"Fail to resolved {len(candidate_batch[1])} pairs due to timeout reason, skipped. {remain_candidates_to_resolve} are remained to resolve. ")
+                    await self._resolve_candidate(candidate_batch, result_set, result_lock)
+                    remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
+                    callback(msg=f"Resolved {len(candidate_batch[1])} pairs, {remain_candidates_to_resolve} are remained to resolve. ")
                 except Exception as e:
                     logging.error(f"Error resolving candidate batch: {e}")
 
@@ -170,11 +166,7 @@ class EntityResolution(Extractor):
         logging.info(f"Created resolution prompt {len(text)} bytes for {len(candidate_resolution_i[1])} entity pairs of type {candidate_resolution_i[0]}")
         async with chat_limiter:
             try:
-                with trio.move_on_after(120) as cancel_scope:
-                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
-                if cancel_scope.cancelled_caught:
-                    logging.warning("_resolve_candidate._chat timeout, skipping...")
-                    return
+                response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
             except Exception as e:
                 logging.error(f"_resolve_candidate._chat failed: {e}")
                 return

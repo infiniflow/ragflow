@@ -193,7 +193,7 @@ const KnowledgeGraph: React.FC = () => {
                 <div className="text-sm font-medium text-purple-700">
                   {t('knowledgeGraph.extractionProgress', 'Entity Extraction')}
                 </div>
-                {extractionProgress.current_status === 'completed' && (
+                {(extractionProgress.current_status === 'completed' || extractionProgress.current_status === 'error' || extractionProgress.current_status === 'failed') && (
                   <button
                     onClick={clearExtractionProgress}
                     className="text-gray-400 hover:text-gray-600 text-xs"
@@ -233,7 +233,7 @@ const KnowledgeGraph: React.FC = () => {
                 <div className="text-sm font-medium text-indigo-700">
                   {t('knowledgeGraph.buildProgress', 'Graph Building')}
                 </div>
-                {buildProgress.current_status === 'completed' && (
+                {(buildProgress.current_status === 'completed' || buildProgress.current_status === 'error' || buildProgress.current_status === 'failed') && (
                   <button
                     onClick={clearBuildProgress}
                     className="text-gray-400 hover:text-gray-600 text-xs"
@@ -273,7 +273,7 @@ const KnowledgeGraph: React.FC = () => {
                 <div className="text-sm font-medium text-orange-700">
                   {t('knowledgeGraph.entityProgress', 'Entity Resolution')}
                 </div>
-                {entityProgress.current_status === 'completed' && (
+                {(entityProgress.current_status === 'completed' || entityProgress.current_status === 'error' || entityProgress.current_status === 'failed') && (
                   <button
                     onClick={clearEntityProgress}
                     className="text-gray-400 hover:text-gray-600 text-xs"
@@ -317,7 +317,7 @@ const KnowledgeGraph: React.FC = () => {
                 <div className="text-sm font-medium text-blue-700">
                   {t('knowledgeGraph.communityProgress', 'Community Detection')}
                 </div>
-                {communityProgress.current_status === 'completed' && (
+                {(communityProgress.current_status === 'completed' || communityProgress.current_status === 'error' || communityProgress.current_status === 'failed') && (
                   <button
                     onClick={clearCommunityProgress}
                     className="text-gray-400 hover:text-gray-600 text-xs"

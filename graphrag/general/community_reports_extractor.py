@@ -48,7 +48,7 @@ class CommunityReportsExtractor(Extractor):
         self._extraction_prompt = COMMUNITY_REPORT_PROMPT
         self._max_report_length = max_report_length or 1500
 
-    async def __call__(self, graph: nx.Graph, callback: Callable | None = None):
+    async def __call__(self, graph: nx.Graph, callback: Callable | None = None, kb_id: str = None):
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
 
@@ -90,11 +90,7 @@ class CommunityReportsExtractor(Extractor):
             gen_conf = {"temperature": 0.3, "max_tokens": 8000}
             async with chat_limiter:
                 try:
-                    with trio.move_on_after(120) as cancel_scope:
-                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
-                    if cancel_scope.cancelled_caught:
-                        logging.warning("extract_community_report._chat timeout, skipping...")
-                        return
+                    response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
                 except Exception as e:
                     logging.error(f"extract_community_report._chat failed: {e}")
                     return

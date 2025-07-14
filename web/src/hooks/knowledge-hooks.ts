@@ -601,7 +601,7 @@ export const useResolveEntities = () => {
       } catch (error) {
         console.error('Failed to fetch entity resolution progress:', error);
       }
-    }, 1000); // Poll every second
+    }, 3000); // Poll every 3 seconds
   };
 
   // Check for ongoing operation on component mount
@@ -754,7 +754,7 @@ export const useDetectCommunities = () => {
       } catch (error) {
         console.error('Failed to fetch progress:', error);
       }
-    }, 1000); // Poll every second
+    }, 3000); // Poll every 3 seconds
   };
 
   // Check for ongoing operation on component mount
@@ -951,7 +951,7 @@ export const useExtractEntities = () => {
       } catch (error) {
         console.error('Failed to fetch entity extraction progress:', error);
       }
-    }, 1000);
+    }, 3000); // Poll every 3 seconds
   };
 
   useEffect(() => {
@@ -1092,7 +1092,7 @@ export const useBuildGraph = () => {
       } catch (error) {
         console.error('Failed to fetch graph build progress:', error);
       }
-    }, 1000);
+    }, 3000); // Poll every 3 seconds
   };
 
   useEffect(() => {

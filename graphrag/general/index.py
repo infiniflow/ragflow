@@ -239,10 +239,11 @@ async def resolve_entities(
     callback,
 ):
     start = trio.current_time()
+    
     er = EntityResolution(
         llm_bdl,
     )
-    reso = await er(graph, subgraph_nodes, callback=callback)
+    reso = await er(graph, subgraph_nodes, callback=callback, kb_id=kb_id)
     graph = reso.graph
     change = reso.change
     callback(msg=f"Graph resolution removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges.")
@@ -263,10 +264,11 @@ async def extract_community(
     callback,
 ):
     start = trio.current_time()
+    
     ext = CommunityReportsExtractor(
         llm_bdl,
     )
-    cr = await ext(graph, callback=callback)
+    cr = await ext(graph, callback=callback, kb_id=kb_id)
     community_structure = cr.structured_output
     community_reports = cr.output
     doc_ids = graph.graph["source_id"]
