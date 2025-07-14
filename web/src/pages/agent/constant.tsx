@@ -697,6 +697,7 @@ export const initialAgentValues = {
   exception_comment: '',
   exception_goto: '',
   tools: [],
+  mcp: [],
   outputs: {
     structured_output: {
       // topic: {
