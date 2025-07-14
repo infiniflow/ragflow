@@ -57,7 +57,16 @@ from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
     email, tag
 from rag.nlp import search, rag_tokenizer
-from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
+from rag.raptor import (
+    RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor,
+    RaptorError,
+    RaptorValidationError,
+    RaptorLLMError,
+    RaptorEmbeddingError,
+    RaptorClusteringError,
+    RaptorResourceError,
+    RaptorTimeoutError
+)
 from rag.settings import DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
 from rag.utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
@@ -109,6 +118,8 @@ stop_event = threading.Event()
 
 
 def signal_handler(sig, frame):
+    """Handle interrupt signals for graceful shutdown."""
+    _ = sig, frame  # Mark parameters as used
     logging.info("Received interrupt signal, shutting down...")
     stop_event.set()
     time.sleep(1)
@@ -117,6 +128,8 @@ def signal_handler(sig, frame):
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
 def start_tracemalloc_and_snapshot(signum, frame):
+    """Handle SIGUSR1 signal to start memory tracing."""
+    _ = signum, frame  # Mark parameters as used
     if not tracemalloc.is_tracing():
         logging.info("start tracemalloc")
         tracemalloc.start()
@@ -141,6 +154,8 @@ def start_tracemalloc_and_snapshot(signum, frame):
 
 # SIGUSR2 handler: stop tracemalloc
 def stop_tracemalloc(signum, frame):
+    """Handle SIGUSR2 signal to stop memory tracing."""
+    _ = signum, frame  # Mark parameters as used
     if tracemalloc.is_tracing():
         logging.info("stop tracemalloc")
         tracemalloc.stop()
@@ -462,44 +477,249 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
 
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
-    chunks = []
-    vctr_nm = "q_%d_vec"%vector_size
-    for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
-                                             fields=["content_with_weight", vctr_nm]):
-        chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+    """
+    Enhanced RAPTOR execution with comprehensive error handling and validation.
 
-    raptor = Raptor(
-        row["parser_config"]["raptor"].get("max_cluster", 64),
-        chat_mdl,
-        embd_mdl,
-        row["parser_config"]["raptor"]["prompt"],
-        row["parser_config"]["raptor"]["max_token"],
-        row["parser_config"]["raptor"]["threshold"]
-    )
-    original_length = len(chunks)
-    chunks = await raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
+    Args:
+        row: Task configuration row
+        chat_mdl: Chat model for summarization
+        embd_mdl: Embedding model
+        vector_size: Vector dimension size
+        callback: Progress callback function
+
+    Returns:
+        Tuple of (processed_chunks, token_count)
+
+    Raises:
+        Various RaptorError subclasses for specific failures
+    """
+    start_time = timer()
+
+    try:
+        # Validate required configuration
+        raptor_config = _validate_raptor_config(row)
+
+        # Retrieve and validate chunks
+        chunks = _retrieve_and_validate_chunks(row, vector_size)
+
+        if not chunks:
+            logging.warning(f"No valid chunks found for document {row['doc_id']}")
+            if callback:
+                callback(msg="No chunks available for RAPTOR processing")
+            return [], 0
+
+        logging.info(f"Starting RAPTOR processing for {len(chunks)} chunks")
+
+        # Create enhanced RAPTOR instance
+        raptor = Raptor(
+            max_cluster=raptor_config["max_cluster"],
+            llm_model=chat_mdl,
+            embd_model=embd_mdl,
+            prompt=raptor_config["prompt"],
+            max_token=raptor_config["max_token"],
+            threshold=raptor_config["threshold"],
+            max_retries=raptor_config.get("max_retries", 3),
+            timeout_seconds=raptor_config.get("timeout_seconds", 300.0),
+            enable_monitoring=True
+        )
+
+        # Execute RAPTOR processing
+        original_length = len(chunks)
+
+        try:
+            processed_chunks = await raptor(chunks, raptor_config["random_seed"], callback)
+        except RaptorError as e:
+            logging.error(f"RAPTOR processing failed: {e}")
+            if callback:
+                callback(prog=-1, msg=f"RAPTOR processing failed: {str(e)}")
+            raise
+
+        # Log performance statistics
+        stats = raptor.get_stats()
+        logging.info(f"RAPTOR completed: {stats}")
+
+        # Log detailed monitoring report
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            monitoring_report = raptor.get_monitoring_report()
+            logging.debug(f"RAPTOR Monitoring Report:\n{monitoring_report}")
+
+        # Process results
+        doc_template = _create_document_template(row)
+        results, token_count = _process_raptor_results(
+            processed_chunks, original_length, doc_template, vector_size
+        )
+
+        processing_time = timer() - start_time
+        logging.info(f"RAPTOR processing completed in {processing_time:.2f}s: "
+                    f"{len(results)} summaries generated, {token_count} tokens")
+
+        # Export monitoring data for analysis (optional)
+        try:
+            import os
+            if os.environ.get('RAPTOR_EXPORT_METRICS', '').lower() == 'true':
+                export_path = f"/tmp/raptor_metrics_{row['doc_id']}_{int(timer())}.json"
+                raptor.export_monitoring_data(export_path)
+                logging.info(f"RAPTOR metrics exported to {export_path}")
+        except Exception as e:
+            logging.warning(f"Failed to export RAPTOR metrics: {e}")
+
+        if callback:
+            callback(msg=f"RAPTOR completed: {len(results)} summaries in {processing_time:.2f}s")
+
+        return results, token_count
+
+    except RaptorError:
+        # Re-raise RAPTOR-specific errors
+        raise
+    except Exception as e:
+        # Wrap unexpected errors
+        error_msg = f"Unexpected error in RAPTOR processing: {e}"
+        logging.exception(error_msg)
+        if callback:
+            callback(prog=-1, msg=error_msg)
+        raise RaptorError(error_msg) from e
+
+
+def _validate_raptor_config(row):
+    """Validate and extract RAPTOR configuration from task row."""
+    try:
+        parser_config = row.get("parser_config", {})
+        raptor_config = parser_config.get("raptor", {})
+
+        if not raptor_config:
+            raise RaptorValidationError("Missing RAPTOR configuration")
+
+        # Extract and validate required parameters
+        config = {
+            "max_cluster": raptor_config.get("max_cluster", 64),
+            "prompt": raptor_config.get("prompt"),
+            "max_token": raptor_config.get("max_token", 256),
+            "threshold": raptor_config.get("threshold", 0.1),
+            "random_seed": raptor_config.get("random_seed", 0),
+            "max_retries": raptor_config.get("max_retries", 3),
+            "timeout_seconds": raptor_config.get("timeout_seconds", 300.0)
+        }
+
+        # Validate prompt
+        if not config["prompt"] or not isinstance(config["prompt"], str):
+            raise RaptorValidationError("RAPTOR prompt is required and must be a string")
+
+        if "{cluster_content}" not in config["prompt"]:
+            raise RaptorValidationError("RAPTOR prompt must contain '{cluster_content}' placeholder")
+
+        # Validate numeric parameters
+        if not isinstance(config["max_cluster"], int) or config["max_cluster"] < 1:
+            raise RaptorValidationError("max_cluster must be a positive integer")
+
+        if not isinstance(config["max_token"], int) or config["max_token"] < 1:
+            raise RaptorValidationError("max_token must be a positive integer")
+
+        if not isinstance(config["threshold"], (int, float)) or not (0.0 <= config["threshold"] <= 1.0):
+            raise RaptorValidationError("threshold must be a number between 0.0 and 1.0")
+
+        if not isinstance(config["random_seed"], int) or config["random_seed"] < 0:
+            raise RaptorValidationError("random_seed must be a non-negative integer")
+
+        return config
+
+    except KeyError as e:
+        raise RaptorValidationError(f"Missing required RAPTOR configuration: {e}")
+    except Exception as e:
+        raise RaptorValidationError(f"Invalid RAPTOR configuration: {e}")
+
+
+def _retrieve_and_validate_chunks(row, vector_size):
+    """Retrieve and validate chunks from the database."""
+    try:
+        chunks = []
+        vctr_nm = f"q_{vector_size}_vec"
+
+        # Retrieve chunks from database
+        chunk_data = settings.retrievaler.chunk_list(
+            row["doc_id"],
+            row["tenant_id"],
+            [str(row["kb_id"])],
+            fields=["content_with_weight", vctr_nm]
+        )
+
+        if not chunk_data:
+            logging.warning(f"No chunks found in database for document {row['doc_id']}")
+            return []
+
+        # Validate and convert chunks
+        for i, d in enumerate(chunk_data):
+            try:
+                content = d.get("content_with_weight")
+                vector = d.get(vctr_nm)
+
+                if not content or not isinstance(content, str):
+                    logging.warning(f"Skipping chunk {i}: invalid content")
+                    continue
+
+                if not vector or not isinstance(vector, (list, np.ndarray)):
+                    logging.warning(f"Skipping chunk {i}: invalid vector")
+                    continue
+
+                # Convert to numpy array and validate
+                vector_array = np.array(vector)
+                if vector_array.size == 0 or np.any(np.isnan(vector_array)):
+                    logging.warning(f"Skipping chunk {i}: invalid vector data")
+                    continue
+
+                chunks.append((content, vector_array))
+
+            except Exception as e:
+                logging.warning(f"Error processing chunk {i}: {e}")
+                continue
+
+        logging.info(f"Retrieved {len(chunks)} valid chunks from {len(chunk_data)} total")
+        return chunks
+
+    except Exception as e:
+        raise RaptorError(f"Failed to retrieve chunks: {e}")
+
+
+def _create_document_template(row):
+    """Create document template for RAPTOR results."""
     doc = {
         "doc_id": row["doc_id"],
         "kb_id": [str(row["kb_id"])],
         "docnm_kwd": row["name"],
         "title_tks": rag_tokenizer.tokenize(row["name"])
     }
-    if row["pagerank"]:
+
+    if row.get("pagerank"):
         doc[PAGERANK_FLD] = int(row["pagerank"])
-    res = []
-    tk_count = 0
-    for content, vctr in chunks[original_length:]:
-        d = copy.deepcopy(doc)
-        d["id"] = xxhash.xxh64((content + str(d["doc_id"])).encode("utf-8")).hexdigest()
-        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-        d["create_timestamp_flt"] = datetime.now().timestamp()
-        d[vctr_nm] = vctr.tolist()
-        d["content_with_weight"] = content
-        d["content_ltks"] = rag_tokenizer.tokenize(content)
-        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-        res.append(d)
-        tk_count += num_tokens_from_string(content)
-    return res, tk_count
+
+    return doc
+
+
+def _process_raptor_results(processed_chunks, original_length, doc_template, vector_size):
+    """Process RAPTOR results into final document format."""
+    vctr_nm = f"q_{vector_size}_vec"
+    results = []
+    token_count = 0
+
+    # Process only the new summaries (skip original chunks)
+    for content, vector in processed_chunks[original_length:]:
+        try:
+            d = copy.deepcopy(doc_template)
+            d["id"] = xxhash.xxh64((content + str(d["doc_id"])).encode("utf-8")).hexdigest()
+            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+            d["create_timestamp_flt"] = datetime.now().timestamp()
+            d[vctr_nm] = vector.tolist()
+            d["content_with_weight"] = content
+            d["content_ltks"] = rag_tokenizer.tokenize(content)
+            d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+
+            results.append(d)
+            token_count += num_tokens_from_string(content)
+
+        except Exception as e:
+            logging.warning(f"Error processing RAPTOR result: {e}")
+            continue
+
+    return results, token_count
 
 
 async def do_handle_task(task):
@@ -546,11 +766,73 @@ async def do_handle_task(task):
 
     # Either using RAPTOR or Standard chunking methods
     if task.get("task_type", "") == "raptor":
-        # bind LLM for raptor
-        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        # run RAPTOR
-        async with kg_limiter:
-            chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
+        try:
+            # Validate RAPTOR prerequisites
+            if not task.get("parser_config", {}).get("raptor", {}).get("use_raptor", False):
+                progress_callback(prog=-1.0, msg="RAPTOR is not enabled in parser configuration")
+                return
+
+            # bind LLM for raptor
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+
+            # Validate models
+            if not chat_model or not embedding_model:
+                progress_callback(prog=-1.0, msg="Required models not available for RAPTOR")
+                return
+
+            progress_callback(msg="Starting RAPTOR processing...")
+
+            # run RAPTOR with resource limiting
+            async with kg_limiter:
+                chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
+
+            if not chunks:
+                progress_callback(prog=1.0, msg="RAPTOR completed but no summaries were generated")
+                return
+
+            logging.info(f"RAPTOR processing successful: {len(chunks)} summaries, {token_count} tokens")
+
+        except RaptorValidationError as e:
+            error_msg = f"RAPTOR configuration error: {e}"
+            logging.error(error_msg)
+            progress_callback(prog=-1.0, msg=error_msg)
+            return
+
+        except RaptorResourceError as e:
+            error_msg = f"RAPTOR resource limit exceeded: {e}"
+            logging.error(error_msg)
+            progress_callback(prog=-1.0, msg=error_msg)
+            return
+
+        except RaptorTimeoutError as e:
+            error_msg = f"RAPTOR processing timed out: {e}"
+            logging.error(error_msg)
+            progress_callback(prog=-1.0, msg=error_msg)
+            return
+
+        except (RaptorLLMError, RaptorEmbeddingError) as e:
+            error_msg = f"RAPTOR model error: {e}"
+            logging.error(error_msg)
+            progress_callback(prog=-1.0, msg=error_msg)
+            return
+
+        except RaptorClusteringError as e:
+            error_msg = f"RAPTOR clustering error: {e}"
+            logging.error(error_msg)
+            progress_callback(prog=-1.0, msg=error_msg)
+            return
+
+        except RaptorError as e:
+            error_msg = f"RAPTOR processing error: {e}"
+            logging.error(error_msg)
+            progress_callback(prog=-1.0, msg=error_msg)
+            return
+
+        except Exception as e:
+            error_msg = f"Unexpected error during RAPTOR processing: {e}"
+            logging.exception(error_msg)
+            progress_callback(prog=-1.0, msg=error_msg)
+            return
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
         if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
