@@ -6,11 +6,12 @@ type InputProps = React.ComponentProps<'input'> & {
   iconPosition?: 'left' | 'right';
 };
 
-function Input({
+const Input = function ({
   className,
   type,
   icon,
   iconPosition = 'left',
+  ref,
   ...props
 }: InputProps) {
   return (
@@ -27,6 +28,7 @@ function Input({
         </div>
       )}
       <input
+        ref={ref}
         type={type}
         data-slot="input"
         className={cn(
@@ -45,6 +47,6 @@ function Input({
       />
     </div>
   );
-}
+};
 
 export { Input };

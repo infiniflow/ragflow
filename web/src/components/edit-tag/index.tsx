@@ -1,10 +1,11 @@
 import { PlusOutlined } from '@ant-design/icons';
-import type { InputRef } from 'antd';
-import { Input, Tag, theme, Tooltip } from 'antd';
+import { theme, Tooltip } from 'antd';
 import { TweenOneGroup } from 'rc-tween-one';
 import React, { useEffect, useRef, useState } from 'react';
 
-import styles from './index.less';
+import { X } from 'lucide-react';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 
 interface EditTagsProps {
   value?: string[];
@@ -15,7 +16,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
   const { token } = theme.useToken();
   const [inputVisible, setInputVisible] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const inputRef = useRef<InputRef>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (inputVisible) {
@@ -51,17 +52,21 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
   const forMap = (tag: string) => {
     return (
       <Tooltip title={tag}>
-        <Tag
+        <div
           key={tag}
-          className={styles.tag}
-          closable
-          onClose={(e) => {
-            e.preventDefault();
-            handleClose(tag);
-          }}
+          className="w-fit flex items-center justify-center gap-2 border-dashed border px-1 rounded-sm"
         >
-          {tag}
-        </Tag>
+          <div className="flex gap-2 items-center">
+            {tag}
+            <X
+              className="w-4 h-4 text-muted-foreground hover:text-primary"
+              onClick={(e) => {
+                e.preventDefault();
+                handleClose(tag);
+              }}
+            />
+          </div>
+        </div>
       </Tooltip>
     );
   };
@@ -75,9 +80,33 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
 
   return (
     <div>
+      {inputVisible ? (
+        <Input
+          ref={inputRef}
+          type="text"
+          className="h-8"
+          value={inputValue}
+          onChange={handleInputChange}
+          onBlur={handleInputConfirm}
+          onKeyDown={(e) => {
+            if (e?.key === 'Enter') {
+              handleInputConfirm();
+            }
+          }}
+        />
+      ) : (
+        <Button
+          variant="dashed"
+          className="w-fit flex items-center justify-center gap-2"
+          onClick={showInput}
+          style={tagPlusStyle}
+        >
+          <PlusOutlined />
+        </Button>
+      )}
       {Array.isArray(tagChild) && tagChild.length > 0 && (
         <TweenOneGroup
-          className={styles.tweenGroup}
+          className="flex gap-2 flex-wrap mt-2"
           enter={{
             scale: 0.8,
             opacity: 0,
@@ -94,21 +123,6 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
         >
           {tagChild}
         </TweenOneGroup>
-      )}
-      {inputVisible ? (
-        <Input
-          ref={inputRef}
-          type="text"
-          size="small"
-          value={inputValue}
-          onChange={handleInputChange}
-          onBlur={handleInputConfirm}
-          onPressEnter={handleInputConfirm}
-        />
-      ) : (
-        <Tag onClick={showInput} style={tagPlusStyle}>
-          <PlusOutlined />
-        </Tag>
       )}
     </div>
   );
