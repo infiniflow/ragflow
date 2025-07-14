@@ -11,6 +11,8 @@ export interface IMcpServer {
 
 export type IMCPToolObject = Record<string, Omit<IMCPTool, 'name'>>;
 
+export type IMCPToolRecord = Record<string, IMCPTool>;
+
 export interface IMcpServerListResponse {
   mcp_servers: IMcpServer[];
   total: number;

@@ -1,5 +1,6 @@
 import useGraphStore from '../../store';
 import { ToolFormConfigMap } from './constant';
+import MCPForm from './mcp-form';
 
 const EmptyContent = () => <div></div>;
 
@@ -8,6 +9,7 @@ const ToolForm = () => {
 
   const ToolForm =
     ToolFormConfigMap[clickedToolId as keyof typeof ToolFormConfigMap] ??
+    MCPForm ??
     EmptyContent;
 
   return (
