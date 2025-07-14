@@ -1335,6 +1335,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       documentsParsing: 'Documents are currently being parsed',
       waitForParsing: 'Please wait for document parsing to complete',
       operationBlocked: 'Operation temporarily unavailable during document parsing',
+      configuration: 'Configuration',
+      graphRagConfig: 'GraphRAG Configuration',
     },
   },
 };

@@ -3,7 +3,6 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import PageRankFormField from '@/components/page-rank-form-field';
-import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
 import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
 import { ConfigurationFormContainer } from '../configuration-form-container';
 import { TagItems } from '../tag-item';
@@ -24,7 +23,6 @@ export function EmailConfiguration() {
 
       <RaptorFormFields></RaptorFormFields>
 
-      <GraphRagItems marginBottom></GraphRagItems>
 
       <TagItems></TagItems>
     </ConfigurationFormContainer>

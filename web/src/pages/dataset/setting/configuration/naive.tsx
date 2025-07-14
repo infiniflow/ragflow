@@ -7,7 +7,6 @@ import { ExcelToHtmlFormField } from '@/components/excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '@/components/max-token-number-from-field';
 import PageRankFormField from '@/components/page-rank-form-field';
-import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
 import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
 import {
   ConfigurationFormContainer,
@@ -36,7 +35,6 @@ export function NaiveConfiguration() {
       <ConfigurationFormContainer>
         <RaptorFormFields></RaptorFormFields>
       </ConfigurationFormContainer>
-      <GraphRagItems></GraphRagItems>
     </MainContainer>
   );
 }

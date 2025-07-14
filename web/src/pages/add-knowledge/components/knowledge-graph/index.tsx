@@ -1,11 +1,12 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import { useFetchKnowledgeGraph, useFetchKnowledgeBaseConfiguration, useResolveEntities, useDetectCommunities, useCheckDocumentParsing, useExtractEntities, useBuildGraph } from '@/hooks/knowledge-hooks';
-import { Trash2, Network, Users, Zap, GitBranch } from 'lucide-react';
-import React from 'react';
+import { Trash2, Network, Users, Zap, GitBranch, Settings } from 'lucide-react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ForceGraph from './force-graph';
 import { useDeleteKnowledgeGraph } from './use-delete-graph';
+import GraphRagConfiguration from './graph-rag-configuration';
 
 const KnowledgeGraph: React.FC = () => {
   const { data } = useFetchKnowledgeGraph();
@@ -17,6 +18,7 @@ const KnowledgeGraph: React.FC = () => {
   const { extractEntities, loading: extractingEntities, progress: extractionProgress, clearProgress: clearExtractionProgress } = useExtractEntities();
   const { buildGraph, loading: buildingGraph, progress: buildProgress, clearProgress: clearBuildProgress } = useBuildGraph();
   const { isParsing } = useCheckDocumentParsing();
+  const [showConfiguration, setShowConfiguration] = useState(false);
 
   const totalNodes = data?.graph?.total_nodes || 0;
   const totalEdges = data?.graph?.total_edges || 0;
@@ -80,6 +82,15 @@ const KnowledgeGraph: React.FC = () => {
     <section className={'w-full h-full relative'}>
       {/* Action buttons */}
       <div className="absolute right-0 top-0 z-50 flex gap-2">
+        <Button
+          variant="outline"
+          size={'sm'}
+          onClick={() => setShowConfiguration(!showConfiguration)}
+          className="flex items-center gap-2"
+        >
+          <Settings className="w-4 h-4" />
+          {t('knowledgeGraph.configuration', 'Configuration')}
+        </Button>
         <Button
           variant="outline"
           size={'sm'}
@@ -356,6 +367,24 @@ const KnowledgeGraph: React.FC = () => {
           )}
         </div>
       </div>
+      
+      {/* Configuration Panel */}
+      {showConfiguration && (
+        <div className="absolute left-4 bottom-4 z-50 bg-white/95 backdrop-blur-sm rounded-lg p-4 shadow-lg border max-w-md">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-sm font-medium text-gray-700">
+              {t('knowledgeGraph.graphRagConfig', 'GraphRAG Configuration')}
+            </h3>
+            <button
+              onClick={() => setShowConfiguration(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ×
+            </button>
+          </div>
+          <GraphRagConfiguration />
+        </div>
+      )}
       
       <ForceGraph data={data?.graph} show></ForceGraph>
     </section>

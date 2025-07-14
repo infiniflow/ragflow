@@ -23,13 +23,6 @@ export function useDefaultParserValues() {
         max_cluster: 64,
         random_seed: 0,
       },
-      graphrag: {
-        use_graphrag: false,
-        entity_types: ['organization', 'person', 'geo', 'event', 'category'],
-        method: 'light',
-        community: false,
-        resolution: false,
-      },
       entity_types: [],
       pages: [],
     };
