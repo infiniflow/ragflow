@@ -79,7 +79,19 @@ def _detect_test_environment():
     # Check if pytest is in the command line or process name
     import sys
     if 'pytest' in ' '.join(sys.argv).lower():
+        logging.info("Test environment detected via pytest in command line")
         return True
+
+    # Check if we're in a Docker container and there are test-related processes
+    if os.path.exists('/.dockerenv'):
+        try:
+            # Check if there are any pytest processes running
+            with os.popen('ps aux | grep -i pytest | grep -v grep') as proc:
+                if proc.read().strip():
+                    logging.info("Test environment detected via pytest process in Docker")
+                    return True
+        except (OSError, IOError):
+            pass
 
     # Check for CI test environment indicators
     ci_test_indicators = [
@@ -109,12 +121,18 @@ def _detect_test_environment():
             if 'pytest' in parent_cmdline or 'uv run' in parent_cmdline:
                 return True
             parent = parent.parent()
-    except:
+    except (ImportError, AttributeError, OSError):
         pass
 
     # Check for test marker file (set by CI scripts)
     if os.path.exists('/tmp/ragflow_test_mode'):
         logging.info("Test environment detected via marker file")
+        return True
+
+    # Check current working directory for test patterns
+    cwd = os.getcwd()
+    if any(pattern in cwd.lower() for pattern in ['test', 'pytest', 'ci']):
+        logging.info(f"Test environment detected via working directory: {cwd}")
         return True
 
     # Check if we're in a Docker container running tests
@@ -124,7 +142,9 @@ def _detect_test_environment():
             '/app/test',
             '/ragflow/test',
             'test/testcases',
-            'test'
+            'test',
+            './test',
+            '../test'
         ]
         for test_file in test_files:
             if os.path.exists(test_file):
