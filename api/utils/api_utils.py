@@ -628,14 +628,27 @@ def timeout(seconds):
             if seconds is None or seconds <= 0:
                 return await func(*args, **kwargs)
             try:
-                return await asyncio.wait_for(
-                    func(*args, **kwargs),
-                    timeout=seconds
-                )
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                use_new_loop = True
+            else:
+                use_new_loop = False
+
+            try:
+                task = asyncio.create_task(func(*args, **kwargs))
+                return await asyncio.wait_for(task, timeout=seconds)
             except asyncio.TimeoutError:
+                if not task.done():
+                    task.cancel()
                 raise asyncio.TimeoutError(
                     f"Function '{func.__name__}' timed out after {seconds} seconds"
                 ) from None
+            finally:
+                if use_new_loop:
+                    loop.close()
+                    asyncio.set_event_loop(None)
 
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
