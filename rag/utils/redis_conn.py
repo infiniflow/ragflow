@@ -23,13 +23,11 @@ from rag import settings
 from rag.utils import singleton
 from valkey.lock import Lock
 import trio
-import asyncio
 import threading
 import time
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from rag.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-from rag.utils.timeout_manager import get_timeout_manager
 
 
 @dataclass

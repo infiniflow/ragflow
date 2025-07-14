@@ -21,7 +21,7 @@ import time
 from contextlib import contextmanager, asynccontextmanager
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Dict, Optional
 import os
 
 
@@ -155,7 +155,7 @@ class TimeoutManager:
         try:
             yield timeout
             self._track_operation_end(operation_id, timed_out=False, operation_type=operation_type)
-        except Exception as e:
+        except Exception:
             elapsed = time.time() - start_time
             if elapsed >= timeout:
                 self._track_operation_end(operation_id, timed_out=True, operation_type=operation_type)
@@ -191,7 +191,7 @@ class TimeoutManager:
             elapsed = time.time() - start_time
             self._track_operation_end(operation_id, timed_out=True, operation_type=operation_type)
             raise TimeoutError(operation_name, timeout, elapsed)
-        except Exception as e:
+        except Exception:
             elapsed = time.time() - start_time
             if elapsed >= timeout:
                 self._track_operation_end(operation_id, timed_out=True, operation_type=operation_type)

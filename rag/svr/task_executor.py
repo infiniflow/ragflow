@@ -36,7 +36,7 @@ import copy
 import re
 from functools import partial
 from io import BytesIO
-from multiprocessing.context import TimeoutError
+
 from timeit import default_timer as timer
 import tracemalloc
 import signal
@@ -66,17 +66,16 @@ from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 
 # Enhanced fault tolerance imports
-from rag.utils.circuit_breaker import get_circuit_breaker, CircuitBreakerConfig
 from rag.utils.resource_manager import ResourceManager, ResourceType, managed_resource_async
 from rag.utils.timeout_manager import get_timeout_manager, run_with_timeout
-from rag.utils.partial_failure_recovery import PartialFailureRecovery, BatchConfig, process_chunks_with_recovery
+from rag.utils.partial_failure_recovery import BatchConfig, process_chunks_with_recovery
 from rag.utils.memory_monitor import get_memory_monitor, register_limiter_for_adjustment, start_memory_monitoring
 from rag.utils.health_check import (
     get_health_manager, RedisHealthChecker, StorageHealthChecker,
     register_service_health_checker, start_health_monitoring
 )
 from rag.utils.graceful_degradation import (
-    get_degradation_manager, ServiceCapability, DegradationLevel,
+    get_degradation_manager, ServiceCapability,
     execute_with_graceful_degradation
 )
 
@@ -297,7 +296,7 @@ async def build_chunks(task, progress_callback):
         logging.info("From minio({}) {}/{}".format(timer() - st, task["location"], task["name"]))
 
         # Register binary data for cleanup
-        binary_resource_id = resource_manager.register_resource(
+        resource_manager.register_resource(
             binary, ResourceType.MEMORY_BUFFER,
             cleanup_priority=10,  # High priority cleanup
             metadata={"size": len(binary) if binary else 0}
@@ -339,7 +338,7 @@ async def build_chunks(task, progress_callback):
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
 
         # Register chunks for resource management
-        chunks_resource_id = resource_manager.register_resource(
+        resource_manager.register_resource(
             cks, ResourceType.CHUNK_DATA,
             cleanup_priority=5,
             metadata={"chunk_count": len(cks) if cks else 0, "task_id": task["id"]}
@@ -376,7 +375,7 @@ async def build_chunks(task, progress_callback):
             d["create_timestamp_flt"] = datetime.now().timestamp()
 
             # Register chunk for resource management
-            chunk_resource_id = resource_manager.register_resource(
+            resource_manager.register_resource(
                 d, ResourceType.CHUNK_DATA,
                 metadata={"chunk_id": d["id"], "task_id": task["id"]}
             )
@@ -810,7 +809,7 @@ async def handle_task():
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
 
         # Register task for resource management
-        task_resource_id = task_resource_manager.register_resource(
+        task_resource_manager.register_resource(
             task, ResourceType.CHUNK_DATA,
             metadata={"task_id": task_id, "start_time": time.time()}
         )

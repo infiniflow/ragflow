@@ -16,7 +16,6 @@
 import asyncio
 import gc
 import logging
-import os
 import psutil
 import threading
 import time

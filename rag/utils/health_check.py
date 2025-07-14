@@ -20,8 +20,7 @@ import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
-import weakref
+from typing import Any, Callable, Dict, List, Optional
 
 
 class HealthStatus(Enum):

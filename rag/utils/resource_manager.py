@@ -17,10 +17,9 @@ import asyncio
 import logging
 import threading
 import weakref
-from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Callable, Union
+from typing import Any, Dict, List, Optional, Set, Callable
 from enum import Enum
 import time
 import uuid
@@ -188,7 +187,7 @@ class ResourceManager:
                         loop = asyncio.get_event_loop()
                         if loop.is_running():
                             # Create a task for async cleanup
-                            task = loop.create_task(resource_info.cleanup_func(resource))
+                            loop.create_task(resource_info.cleanup_func(resource))
                             # Don't wait for completion to avoid blocking
                         else:
                             # Run in new event loop
@@ -340,17 +339,18 @@ def _register_manager(manager: ResourceManager):
 
 def cleanup_all_managers():
     """Clean up all registered resource managers."""
+    global _global_managers
     with _global_lock:
         managers_to_cleanup = []
         dead_refs = set()
-        
+
         for manager_ref in _global_managers:
             manager = manager_ref()
             if manager is not None:
                 managers_to_cleanup.append(manager)
             else:
                 dead_refs.add(manager_ref)
-        
+
         # Remove dead references
         _global_managers -= dead_refs
     
@@ -364,18 +364,19 @@ def cleanup_all_managers():
 
 def get_global_resource_stats() -> Dict[str, Dict[str, Any]]:
     """Get statistics for all registered resource managers."""
+    global _global_managers
     with _global_lock:
         stats = {}
         dead_refs = set()
-        
+
         for manager_ref in _global_managers:
             manager = manager_ref()
             if manager is not None:
                 stats[manager.name] = manager.get_stats()
             else:
                 dead_refs.add(manager_ref)
-        
+
         # Remove dead references
         _global_managers -= dead_refs
-        
+
         return stats

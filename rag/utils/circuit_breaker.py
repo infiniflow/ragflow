@@ -17,7 +17,7 @@ import asyncio
 import logging
 import time
 from enum import Enum
-from typing import Any, Callable, Optional, Dict, Union
+from typing import Any, Callable, Optional, Dict
 from dataclasses import dataclass
 from functools import wraps
 import threading
@@ -220,7 +220,7 @@ class CircuitBreaker:
             self._record_success()
             return result
             
-        except asyncio.TimeoutError as e:
+        except asyncio.TimeoutError:
             timeout_error = TimeoutError(f"Operation timed out after {self.config.timeout}s")
             self.stats.record_timeout()
             self._record_failure(timeout_error)
