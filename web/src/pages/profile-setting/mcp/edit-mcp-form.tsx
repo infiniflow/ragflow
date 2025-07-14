@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
+import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const FormId = 'EditMcpForm';
@@ -38,6 +39,7 @@ export function useBuildFormSchema() {
       .trim(),
     url: z
       .string()
+      .url()
       .min(1, {
         message: t('common.namePlaceholder'),
       })
@@ -48,7 +50,7 @@ export function useBuildFormSchema() {
         message: t('common.namePlaceholder'),
       })
       .trim(),
-    variables: z.object({}).optional(),
+    // variables: z.object({}).optional(),
   });
 
   return FormSchema;
@@ -57,7 +59,11 @@ export function useBuildFormSchema() {
 export function EditMcpForm({
   form,
   onOk,
-}: IModalProps<any> & { form: UseFormReturn<any> }) {
+  setFieldChanged,
+}: IModalProps<any> & {
+  form: UseFormReturn<any>;
+  setFieldChanged: Dispatch<SetStateAction<boolean>>;
+}) {
   const { t } = useTranslation();
   const FormSchema = useBuildFormSchema();
 
@@ -94,12 +100,16 @@ export function EditMcpForm({
           name="url"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('common.url')}</FormLabel>
+              <FormLabel>{t('mcp.url')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('common.namePlaceholder')}
                   {...field}
                   autoComplete="off"
+                  onChange={(e) => {
+                    field.onChange(e.target.value.trim());
+                    setFieldChanged(true);
+                  }}
                 />
               </FormControl>
               <FormMessage />
@@ -111,12 +121,16 @@ export function EditMcpForm({
           name="server_type"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('common.serverType')}</FormLabel>
+              <FormLabel>{t('mcp.serverType')}</FormLabel>
               <FormControl>
                 <RAGFlowSelect
                   {...field}
                   autoComplete="off"
                   options={ServerTypeOptions}
+                  onChange={(value) => {
+                    field.onChange(value);
+                    setFieldChanged(true);
+                  }}
                 />
               </FormControl>
               <FormMessage />

@@ -14,7 +14,7 @@ export const useEditMcp = () => {
   const { createMcpServer, loading } = useCreateMcpServer();
   const [id, setId] = useState('');
 
-  const { updateMcpServer } = useUpdateMcpServer();
+  const { updateMcpServer, loading: updateLoading } = useUpdateMcpServer();
 
   const handleShowModal = useCallback(
     (id: string) => () => {
@@ -28,7 +28,7 @@ export const useEditMcp = () => {
     async (values: any) => {
       let code;
       if (id) {
-        code = await updateMcpServer(values);
+        code = await updateMcpServer({ ...values, mcp_id: id });
       } else {
         code = await createMcpServer(values);
       }
@@ -43,7 +43,7 @@ export const useEditMcp = () => {
     editVisible,
     hideEditModal,
     showEditModal: handleShowModal,
-    loading,
+    loading: loading || updateLoading,
     createMcpServer,
     handleOk,
     id,

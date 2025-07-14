@@ -1307,6 +1307,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       export: 'Export',
       import: 'Import',
       addMcp: 'Add MCP',
+      url: 'URL',
+      serverType: 'Server Type',
     },
   },
 };
