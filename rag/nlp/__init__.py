@@ -189,7 +189,24 @@ BULLET_PATTERN = [[
     r"Chapter (I+V?|VI*|XI|IX|X)",
     r"Section [0-9]+",
     r"Article [0-9]+"
-]
+], [
+    # Level 0: Cấp 1 - La Mã (I., II., ...)
+    r"^\s*([IVXLCDM]+)\s*\.\s*(.+)$",
+
+    # Level 1: Cấp 2 - Số. (1., 2., 4., ...)
+    r"^[0-9]+\.?(?!\.[0-9])\s",
+
+    # Level 2: Cấp 2 biến thể - Số.Số (4.1., 4.2., ...)
+    r"^[0-9]+\.[0-9]+\.\s",
+
+    # Level 3: Cấp 3 - Chữ) (a), b), ...)
+    r"^[a-z][\)\.]\s*"
+
+    # Level 4: Cấp 4 - Gạch đầu dòng (-, *, ...)
+    # r"^\s*-\s*",
+
+    # Level 5: Cấp 5 - Dấu cộng đầu dòng
+    # r"^\s*\+\s*"
 ]
 
 
