@@ -13,18 +13,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import functools
 import json
 import logging
+import queue
 import random
+import threading
 import time
 from base64 import b64encode
 from copy import deepcopy
 from functools import wraps
 from hmac import HMAC
 from io import BytesIO
+from typing import Callable, Coroutine, Any
 from urllib.parse import quote, urlencode
 from uuid import uuid1
+from api.db.db_models import MCPServer
+from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
+
 
 import requests
 from flask import (
@@ -558,3 +565,93 @@ def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
         transformed_data[mapped_key] = value
 
     return transformed_data
+
+
+def get_mcp_tools(mcp_servers: list[MCPServer], timeout: float | int = 10) -> tuple[dict, str]:
+    results = {}
+    tool_call_sessions = []
+    try:
+        for mcp_server in mcp_servers:
+            server_key = mcp_server.id
+
+            cached_tools = mcp_server.variables.get("tools", {})
+
+            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+            tool_call_sessions.append(tool_call_session)
+
+            try:
+                tools = tool_call_session.get_tools(timeout)
+            except Exception:
+                tools = []
+
+            results[server_key] = []
+            for tool in tools:
+                tool_dict = tool.model_dump()
+                cached_tool = cached_tools.get(tool_dict["name"], {})
+
+                tool_dict["enabled"] = cached_tool.get("enabled", True)
+                results[server_key].append(tool_dict)
+
+        # PERF: blocking call to close sessions — consider moving to background thread or task queue
+        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
+        return results, ""
+    except Exception as e:
+        return {}, str(e)
+
+
+def timeout(seconds):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            result_queue = queue.Queue(maxsize=1)
+            def target():
+                try:
+                    result = func(*args, **kwargs)
+                    result_queue.put(result)
+                except Exception as e:
+                    result_queue.put(e)
+
+            thread = threading.Thread(target=target)
+            thread.daemon = True
+            thread.start()
+
+            try:
+                result = result_queue.get(timeout=seconds)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+            except queue.Empty:
+                raise TimeoutError(f"Function '{func.__name__}' timed out after {seconds} seconds")
+        return wrapper
+    return decorator
+
+
+def atimeout(seconds: float|int) -> Callable:
+    """
+    async function decorator
+
+    Examples:
+        @timeout(2.5)
+        async def my_async_function():
+            await asyncio.sleep(3)
+    """
+    def decorator(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs) -> Any:
+            # 如果seconds为None，则不设置超时
+            if seconds is None or seconds <= 0:
+                return await func(*args, **kwargs)
+
+            # 创建超时任务
+            try:
+                return await asyncio.wait_for(
+                    func(*args, **kwargs),
+                    timeout=seconds
+                )
+            except asyncio.TimeoutError:
+                raise asyncio.TimeoutError(
+                    f"Function '{func.__name__}' timed out after {seconds} seconds"
+                ) from None
+
+        return wrapper
+    return decorator
