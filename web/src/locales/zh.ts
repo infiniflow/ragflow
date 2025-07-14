@@ -414,6 +414,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mind: '思维导图',
       question: '问题',
       questionTip: `如果有给定的问题，则块的嵌入将基于它们。`,
+      chunkResult: '切片结果',
+      chunkResultTip: `查看用于嵌入和召回的切片段落。`,
+      enable: '启用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新会话',
@@ -543,7 +548,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       useKnowledgeGraphTip:
         '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
       keyword: '关键词分析',
-      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
+      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。对长查询效果较好，但会延长响应时间。`,
       reasoning: '推理',
       reasoningTip:
         '在问答过程中是否启用推理工作流，例如Deepseek-R1或OpenAI o1等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',

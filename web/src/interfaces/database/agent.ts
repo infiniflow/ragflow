@@ -155,6 +155,7 @@ export interface IAgentForm {
   exception_comment: any;
   exception_goto: any;
   tools: Array<{
+    name: string;
     component_name: string;
     params: Record<string, any>;
   }>;
@@ -216,4 +217,9 @@ export type RAGFlowNodeType =
 export interface IGraph {
   nodes: RAGFlowNodeType[];
   edges: Edge[];
+}
+
+export interface ITraceData {
+  component_id: string;
+  trace: Array<Record<string, any>>;
 }

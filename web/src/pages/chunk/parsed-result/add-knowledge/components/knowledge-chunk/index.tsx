@@ -3,11 +3,11 @@ import {
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
 import classNames from 'classnames';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
-import DocumentPreview from './components/document-preview/preview';
+import DocumentPreview from './components/document-preview';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -20,12 +20,17 @@ import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
 import DocumentHeader from './components/document-preview/document-header';
 
+import { PageHeader } from '@/components/page-header';
 import message from '@/components/ui/message';
 import {
   RAGFlowPagination,
   RAGFlowPaginationType,
 } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
+import {
+  QueryStringMap,
+  useNavigatePage,
+} from '@/hooks/logic-hooks/navigate-hooks';
 import styles from './index.less';
 
 const Chunk = () => {
@@ -56,7 +61,7 @@ const Chunk = () => {
     chunkUpdatingVisible,
     documentId,
   } = useUpdateChunk();
-
+  const { navigateToDataset, getQueryString } = useNavigatePage();
   useEffect(() => {
     setChunkList(data);
   }, [data]);
@@ -143,22 +148,40 @@ const Chunk = () => {
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunkId);
 
+  const fileType = useMemo(() => {
+    switch (documentInfo?.type) {
+      case 'doc':
+        return documentInfo?.name.split('.').pop() || 'doc';
+      case 'visual':
+      case 'docx':
+      case 'txt':
+      case 'md':
+      case 'pdf':
+        return documentInfo?.type;
+    }
+    return 'unknown';
+  }, [documentInfo]);
+
   return (
     <>
+      <PageHeader
+        title="Back"
+        back={navigateToDataset(getQueryString(QueryStringMap.id) as string)}
+      ></PageHeader>
       <div className={styles.chunkPage}>
         <div className="flex flex-1 gap-8">
           <div className="w-2/5">
             <div className="h-[100px] flex flex-col justify-end pb-[5px]">
               <DocumentHeader {...documentInfo} />
             </div>
-            {isPdf && (
-              <section className={styles.documentPreview}>
-                <DocumentPreview
-                  highlights={highlights}
-                  setWidthAndHeight={setWidthAndHeight}
-                ></DocumentPreview>
-              </section>
-            )}
+            <section className={styles.documentPreview}>
+              <DocumentPreview
+                className={styles.documentPreview}
+                fileType={fileType}
+                highlights={highlights}
+                setWidthAndHeight={setWidthAndHeight}
+              ></DocumentPreview>
+            </section>
           </div>
           <div
             className={classNames(
@@ -169,9 +192,9 @@ const Chunk = () => {
             <Spin spinning={loading} className={styles.spin} size="large">
               <div className="h-[100px] flex flex-col justify-end pb-[5px]">
                 <div>
-                  <h2 className="text-[24px]">Chunk Result</h2>
+                  <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
                   <div className="text-[14px] text-[#979AAB]">
-                    View the chunked segments used for embedding and retrieval.
+                    {t('chunk.chunkResultTip')}
                   </div>
                 </div>
               </div>

@@ -16,6 +16,7 @@
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from flask_login import current_user
 from peewee import fn
@@ -440,6 +441,7 @@ class FileService(CommonService):
                     "created_by": user_id,
                     "type": filetype,
                     "name": filename,
+                    "suffix": Path(filename).suffix.lstrip("."),
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,

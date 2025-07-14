@@ -152,7 +152,7 @@ The chunking method of the dataset to create. Available options:
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
+  `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
 - `chunk_method`=`"qa"`:  
   `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manuel"`:  

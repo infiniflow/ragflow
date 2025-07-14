@@ -104,10 +104,13 @@ class DefaultEmbedding(Base):
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
-        ress = []
+        ress = None
         for i in range(0, len(texts), batch_size):
-            ress.extend(self._model.encode(texts[i : i + batch_size]).tolist())
-        return np.array(ress), token_count
+            if ress is None:
+                ress = self._model.encode(texts[i : i + batch_size], convert_to_numpy=True)
+            else:
+                ress = np.concatenate((ress, self._model.encode(texts[i : i + batch_size], convert_to_numpy=True)), axis=0)
+        return ress, token_count
 
     def encode_queries(self, text: str):
         token_count = num_tokens_from_string(text)
@@ -209,12 +212,15 @@ class QWenEmbed(Base):
         for i in range(0, len(texts), batch_size):
             retry_max = 5
             resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
-            while resp["output"] is None and retry_max > 0:
+            while (resp["output"] is None or resp["output"].get("embeddings") is None) and retry_max > 0:
                 time.sleep(10)
                 resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
                 retry_max -= 1
-            if retry_max == 0 and resp["output"] is None:
-                log_exception(ValueError("Retry_max reached, calling embedding model failed"))
+            if retry_max == 0 and (resp["output"] is None or resp["output"].get("embeddings") is None):
+                if resp.get("message"):
+                    log_exception(ValueError(f"Retry_max reached, calling embedding model failed: {resp['message']}"))
+                else:
+                    log_exception(ValueError("Retry_max reached, calling embedding model failed"))
                 raise
             try:
                 embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
@@ -286,7 +292,7 @@ class OllamaEmbed(Base):
             # remove special tokens if they exist
             for token in OllamaEmbed._special_tokens:
                 txt = txt.replace(token, "")
-            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True})
+            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
             try:
                 arr.append(res["embedding"])
             except Exception as _e:
@@ -298,7 +304,7 @@ class OllamaEmbed(Base):
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
             text = text.replace(token, "")
-        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True})
+        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
         try:
             return np.array(res["embedding"]), 128
         except Exception as _e:

@@ -465,7 +465,7 @@ export const initialCategorizeValues = {
 };
 
 export const initialMessageValues = {
-  messages: [],
+  content: [''],
 };
 
 export const initialKeywordExtractValues = {
@@ -685,6 +685,7 @@ export const initialWaitingDialogueValues = {};
 export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
+  user_prompt: '',
   sys_prompt: ``,
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
