@@ -436,3 +436,54 @@ class KnowledgebaseService(CommonService):
             else:
                 raise e
 
+    @classmethod
+    @DB.connection_context()
+    def migrate_graphrag_config(cls):
+        """
+        Migrate existing knowledge bases from legacy boolean use_graphrag 
+        to new enum graphrag_mode format.
+        
+        Migration rules:
+        - use_graphrag: true -> graphrag_mode: "full_auto"
+        - use_graphrag: false -> graphrag_mode: "none"
+        - Missing use_graphrag -> graphrag_mode: "none"
+        - Already has graphrag_mode -> no change
+        """
+        migrated_count = 0
+        
+        # Get all knowledge bases
+        kbs = cls.model.select()
+        
+        for kb in kbs:
+            parser_config = kb.parser_config or {}
+            graphrag_config = parser_config.get("graphrag", {})
+            
+            # Skip if already has new enum format
+            if "graphrag_mode" in graphrag_config:
+                continue
+                
+            # Check for legacy boolean format
+            use_graphrag = graphrag_config.get("use_graphrag")
+            
+            if isinstance(use_graphrag, bool):
+                # Migrate from boolean to enum
+                new_mode = "full_auto" if use_graphrag else "none"
+                graphrag_config["graphrag_mode"] = new_mode
+                
+                # Remove old boolean field
+                graphrag_config.pop("use_graphrag", None)
+                
+                # Update the knowledge base
+                parser_config["graphrag"] = graphrag_config
+                cls.update_by_id(kb.id, {"parser_config": parser_config})
+                migrated_count += 1
+                
+            elif use_graphrag is None:
+                # No legacy config, set default
+                graphrag_config["graphrag_mode"] = "none"
+                parser_config["graphrag"] = graphrag_config
+                cls.update_by_id(kb.id, {"parser_config": parser_config})
+                migrated_count += 1
+        
+        return migrated_count
+

@@ -25,6 +25,10 @@ export function useDefaultParserValues() {
       },
       graphrag: {
         use_graphrag: false,
+        entity_types: ['organization', 'person', 'geo', 'event', 'category'],
+        method: 'light',
+        community: false,
+        resolution: false,
       },
       entity_types: [],
       pages: [],

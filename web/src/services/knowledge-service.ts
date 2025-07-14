@@ -202,6 +202,22 @@ export function checkDocumentParsing(knowledgeId: string) {
   return request.get(api.checkDocumentParsing(knowledgeId));
 }
 
+export function extractEntities(knowledgeId: string) {
+  return request.post(api.extractEntities(knowledgeId));
+}
+
+export function buildGraph(knowledgeId: string) {
+  return request.post(api.buildGraph(knowledgeId));
+}
+
+export function getExtractionProgress(knowledgeId: string) {
+  return request.get(api.getExtractionProgress(knowledgeId));
+}
+
+export function getBuildProgress(knowledgeId: string) {
+  return request.get(api.getBuildProgress(knowledgeId));
+}
+
 export const listDataset = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchKnowledgeListRequestBody,

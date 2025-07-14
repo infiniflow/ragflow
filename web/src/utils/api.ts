@@ -53,6 +53,14 @@ export default {
     `${api_host}/kb/${knowledgeId}/knowledge_graph/progress?operation=entity_resolution`,
   checkDocumentParsing: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/document_parsing_status`,
+  extractEntities: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph/extract_entities`,
+  buildGraph: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph/build_graph`,
+  getExtractionProgress: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph/extract_entities/progress`,
+  getBuildProgress: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph/build_graph/progress`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,

@@ -112,20 +112,6 @@ const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
                 >
                   <Select options={methodOptions} />
                 </Form.Item>
-                <Form.Item
-                  name={['parser_config', 'graphrag', 'resolution']}
-                  label={t('resolution')}
-                  tooltip={renderWideTooltip('resolutionTip')}
-                >
-                  <Switch />
-                </Form.Item>
-                <Form.Item
-                  name={['parser_config', 'graphrag', 'community']}
-                  label={t('community')}
-                  tooltip={renderWideTooltip('communityTip')}
-                >
-                  <Switch />
-                </Form.Item>
               </>
             )
           );

@@ -337,13 +337,16 @@ REDIS_CONN = RedisDB()
 
 
 class RedisDistributedLock:
-    def __init__(self, lock_key, lock_value=None, timeout=10, blocking_timeout=1):
+    def __init__(self, lock_key, lock_value=None, timeout=10, blocking_timeout=None):
         self.lock_key = lock_key
         if lock_value:
             self.lock_value = lock_value
         else:
             self.lock_value = str(uuid.uuid4())
         self.timeout = timeout
+        # If no blocking_timeout specified, use the same as lock timeout for proper waiting
+        if blocking_timeout is None:
+            blocking_timeout = timeout
         self.lock = Lock(REDIS_CONN.REDIS, lock_key, timeout=timeout, blocking_timeout=blocking_timeout)
 
     def acquire(self):
@@ -351,11 +354,13 @@ class RedisDistributedLock:
         return self.lock.acquire(token=self.lock_value)
 
     async def spin_acquire(self):
-        # Don't delete existing locks - just try to acquire properly
-        while True:
-            if self.lock.acquire(token=self.lock_value):
-                break
-            await trio.sleep(1)  # Reduced sleep time for faster acquisition
+        # Use blocking acquisition with configured timeout instead of manual spinning
+        acquired = await trio.to_thread.run_sync(
+            lambda: self.lock.acquire(blocking=True, token=self.lock_value)
+        )
+        if not acquired:
+            raise TimeoutError(f"Failed to acquire lock '{self.lock_key}' within {self.timeout} seconds")
+        return True
 
     def release(self):
         # Properly release the underlying Redis lock

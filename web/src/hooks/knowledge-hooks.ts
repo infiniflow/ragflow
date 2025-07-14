@@ -18,6 +18,10 @@ import kbService, {
   getCommunityDetectionProgress,
   getEntityResolutionProgress,
   checkDocumentParsing,
+  extractEntities,
+  buildGraph,
+  getExtractionProgress,
+  getBuildProgress,
 } from '@/services/knowledge-service';
 import {
   useInfiniteQuery,
@@ -524,9 +528,6 @@ export const useResolveEntities = () => {
         queryClient.invalidateQueries({
           queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
         });
-        
-        // Clear progress after a delay
-        setTimeout(() => setProgress(null), 3000);
       }
     },
     onError: () => {
@@ -551,13 +552,8 @@ export const useResolveEntities = () => {
         if (progressData.code === 0 && progressData.data) {
           setProgress(progressData.data);
           
-          // If status is completed, clear progress after a delay
+          // If status is completed, stop polling since operation is completed
           if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000); // Clear after 10 seconds
-            
-            // Stop polling since operation is completed
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
@@ -585,12 +581,8 @@ export const useResolveEntities = () => {
         if (progressData.code === 0 && progressData.data) {
           setProgress(progressData.data);
           
-          // If status is completed, clear progress after a delay
-          if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000); // Clear after 10 seconds
-          } else {
+          // If status is completed, don't start polling
+          if (progressData.data.current_status !== 'completed') {
             // Start polling since operation is still ongoing
             startPolling();
           }
@@ -634,7 +626,7 @@ export const useResolveEntities = () => {
     };
   }, [loading, knowledgeBaseId]);
 
-  return { data, loading, resolveEntities: mutateAsync, progress };
+  return { data, loading, resolveEntities: mutateAsync, progress, clearProgress: () => setProgress(null) };
 };
 
 export const useDetectCommunities = () => {
@@ -660,9 +652,6 @@ export const useDetectCommunities = () => {
         queryClient.invalidateQueries({
           queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
         });
-        
-        // Clear progress after a delay
-        setTimeout(() => setProgress(null), 3000);
       }
     },
     onError: () => {
@@ -687,13 +676,8 @@ export const useDetectCommunities = () => {
         if (progressData.code === 0 && progressData.data) {
           setProgress(progressData.data);
           
-          // If status is completed, clear progress after a delay
+          // If status is completed, stop polling since operation is completed
           if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000); // Clear after 10 seconds
-            
-            // Stop polling since operation is completed
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
@@ -721,12 +705,8 @@ export const useDetectCommunities = () => {
         if (progressData.code === 0 && progressData.data) {
           setProgress(progressData.data);
           
-          // If status is completed, clear progress after a delay
-          if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000); // Clear after 10 seconds
-          } else {
+          // If status is completed, don't start polling
+          if (progressData.data.current_status !== 'completed') {
             // Start polling since operation is still ongoing
             startPolling();
           }
@@ -770,7 +750,7 @@ export const useDetectCommunities = () => {
     };
   }, [loading, knowledgeBaseId]);
 
-  return { data, loading, detectCommunities: mutateAsync, progress };
+  return { data, loading, detectCommunities: mutateAsync, progress, clearProgress: () => setProgress(null) };
 };
 
 export const useCheckDocumentParsing = () => {
@@ -820,4 +800,244 @@ export const useCheckDocumentParsing = () => {
   }, [knowledgeBaseId]);
 
   return { isParsing, checkParsing, startPolling, stopPolling };
+};
+
+export const useExtractEntities = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const [progress, setProgress] = useState(null);
+  const pollingRef = useRef(null);
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['extractEntities'],
+    mutationFn: async () => {
+      const { data } = await extractEntities(knowledgeBaseId);
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data.code === 0) {
+        message.success(i18n.t(`knowledgeGraph.entityExtractionSuccess`, 'Entity extraction completed successfully'));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+        });
+      }
+    },
+    onError: () => {
+      setProgress(null);
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    },
+  });
+
+  const startPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    
+    pollingRef.current = setInterval(async () => {
+      try {
+        const { data: progressData } = await getExtractionProgress(knowledgeBaseId);
+        if (progressData.code === 0 && progressData.data) {
+          setProgress(progressData.data);
+          
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 10000);
+            
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+          }
+        } else if (progressData.code === 0 && progressData.data === null) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch entity extraction progress:', error);
+      }
+    }, 1000);
+  };
+
+  useEffect(() => {
+    const checkInitialProgress = async () => {
+      try {
+        const { data: progressData } = await getExtractionProgress(knowledgeBaseId);
+        
+        if (progressData.code === 0 && progressData.data) {
+          setProgress(progressData.data);
+          
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 10000);
+          } else {
+            startPolling();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check initial entity extraction progress:', error);
+      }
+    };
+    
+    if (knowledgeBaseId) {
+      checkInitialProgress();
+    }
+  }, [knowledgeBaseId]);
+
+  useEffect(() => {
+    if (loading) {
+      setProgress({
+        total_documents: 0,
+        processed_documents: 0,
+        entities_found: 0,
+        current_status: 'starting'
+      });
+
+      startPolling();
+    } else {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [loading, knowledgeBaseId]);
+
+  return { data, loading, extractEntities: mutateAsync, progress, clearProgress: () => setProgress(null) };
+};
+
+export const useBuildGraph = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const [progress, setProgress] = useState(null);
+  const pollingRef = useRef(null);
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['buildGraph'],
+    mutationFn: async () => {
+      const { data } = await buildGraph(knowledgeBaseId);
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data.code === 0) {
+        message.success(i18n.t(`knowledgeGraph.graphBuildSuccess`, 'Graph building completed successfully'));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+        });
+      }
+    },
+    onError: () => {
+      setProgress(null);
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    },
+  });
+
+  const startPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    
+    pollingRef.current = setInterval(async () => {
+      try {
+        const { data: progressData } = await getBuildProgress(knowledgeBaseId);
+        if (progressData.code === 0 && progressData.data) {
+          setProgress(progressData.data);
+          
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 10000);
+            
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+          }
+        } else if (progressData.code === 0 && progressData.data === null) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch graph build progress:', error);
+      }
+    }, 1000);
+  };
+
+  useEffect(() => {
+    const checkInitialProgress = async () => {
+      try {
+        const { data: progressData } = await getBuildProgress(knowledgeBaseId);
+        
+        if (progressData.code === 0 && progressData.data) {
+          setProgress(progressData.data);
+          
+          if (progressData.data.current_status === 'completed') {
+            setTimeout(() => {
+              setProgress(null);
+            }, 10000);
+          } else {
+            startPolling();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check initial graph build progress:', error);
+      }
+    };
+    
+    if (knowledgeBaseId) {
+      checkInitialProgress();
+    }
+  }, [knowledgeBaseId]);
+
+  useEffect(() => {
+    if (loading) {
+      setProgress({
+        total_entities: 0,
+        processed_entities: 0,
+        relationships_created: 0,
+        current_status: 'starting'
+      });
+
+      startPolling();
+    } else {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [loading, knowledgeBaseId]);
+
+  return { data, loading, buildGraph: mutateAsync, progress, clearProgress: () => setProgress(null) };
 };

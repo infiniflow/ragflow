@@ -553,9 +553,20 @@ async def do_handle_task(task):
             chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
-        if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
-            progress_callback(prog=-1.0, msg="Internal configuration error.")
-            return
+        graphrag_config = task_parser_config.get("graphrag", {})
+        
+        # Check new enum format first, then fall back to legacy boolean
+        graphrag_mode = graphrag_config.get("graphrag_mode")
+        if graphrag_mode is not None:
+            # New enum format: must be "extract_only" or "full_auto" to run GraphRAG
+            if graphrag_mode not in ["extract_only", "full_auto"]:
+                progress_callback(prog=-1.0, msg="GraphRAG not enabled for this knowledge base.")
+                return
+        else:
+            # Legacy boolean format for backward compatibility
+            if not graphrag_config.get("use_graphrag", False):
+                progress_callback(prog=-1.0, msg="Internal configuration error.")
+                return
         graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)

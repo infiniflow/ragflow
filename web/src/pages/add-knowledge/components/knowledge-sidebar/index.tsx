@@ -79,15 +79,14 @@ const KnowledgeSidebar = () => {
       ),
     ];
 
-    if (!isEmpty(data?.graph)) {
-      list.push(
-        getItem(
-          KnowledgeRouteKey.KnowledgeGraph,
-          KnowledgeRouteKey.KnowledgeGraph,
-          <GitGraph />,
-        ),
-      );
-    }
+    // Always show knowledge graph tab to enable two-step workflow
+    list.push(
+      getItem(
+        KnowledgeRouteKey.KnowledgeGraph,
+        KnowledgeRouteKey.KnowledgeGraph,
+        <GitGraph />,
+      ),
+    );
 
     return list;
   }, [data, getItem]);

@@ -33,6 +33,8 @@ from graphrag.utils import (
     does_graph_contains,
     tidy_graph,
     GraphChange,
+    graph_node_to_chunk,
+    graph_edge_to_chunk,
 )
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
@@ -319,3 +321,304 @@ async def extract_community(
         msg=f"Graph indexed {len(cr.structured_output)} communities in {now - start:.2f}s."
     )
     return community_structure, community_reports
+
+
+async def extract_entities_only(
+    tenant_id: str,
+    kb_id: str,
+    doc_ids: list[str],  # Process specific documents or all if empty
+    language: str,
+    entity_types: list[str],
+    method: str,  # "light" or "general"
+    llm_bdl,
+    embed_bdl,
+    callback
+) -> dict:
+    """
+    Extract entities and relations from documents without building the full graph.
+    Stores entities with knowledge_graph_kwd: "entity" and relations with "relation".
+    """
+    start = trio.current_time()
+    
+    # Select extractor based on method
+    extractor_class = LightKGExt if method == "light" else GeneralKGExt
+    
+    # Get document chunks to process
+    if doc_ids:
+        # Process specific documents
+        chunks_data = []
+        for doc_id in doc_ids:
+            for d in settings.retrievaler.chunk_list(
+                doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"]
+            ):
+                chunks_data.append((doc_id, d["content_with_weight"]))
+    else:
+        # Process all documents in knowledge base
+        chunks_data = []
+        # Get all doc_ids for this kb
+        doc_conds = {
+            "size": 10000,  # Large number to get all docs
+            "kb_id": kb_id
+        }
+        doc_res = await trio.to_thread.run_sync(
+            lambda: settings.retrievaler.search(doc_conds, search.index_name(tenant_id), [kb_id])
+        )
+        processed_docs = set()
+        for doc_id in doc_res.ids:
+            if doc_id not in processed_docs:
+                processed_docs.add(doc_id)
+                for d in settings.retrievaler.chunk_list(
+                    doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"]
+                ):
+                    chunks_data.append((doc_id, d["content_with_weight"]))
+    
+    if not chunks_data:
+        callback(msg="No documents found to process")
+        return {
+            "total_documents": 0,
+            "processed_documents": 0,
+            "entities_found": 0,
+            "relations_found": 0,
+            "status": "completed"
+        }
+    
+    # Group chunks by document
+    doc_chunks = {}
+    for doc_id, chunk_content in chunks_data:
+        if doc_id not in doc_chunks:
+            doc_chunks[doc_id] = []
+        doc_chunks[doc_id].append(chunk_content)
+    
+    total_documents = len(doc_chunks)
+    processed_documents = 0
+    total_entities = 0
+    total_relations = 0
+    
+    callback(msg=f"Starting entity extraction for {total_documents} documents")
+    
+    # Process each document
+    for doc_id, chunks in doc_chunks.items():
+        try:
+            # Check if entities already exist for this document
+            contains = await does_graph_contains(tenant_id, kb_id, doc_id)
+            if contains:
+                callback(msg=f"Entities already exist for document {doc_id}, skipping")
+                processed_documents += 1
+                continue
+            
+            callback(msg=f"Extracting entities from document {doc_id}")
+            
+            # Extract entities and relations
+            ext = extractor_class(
+                llm_bdl,
+                language=language,
+                entity_types=entity_types,
+            )
+            ents, rels = await ext(doc_id, chunks, callback)
+            
+            # Store entities
+            entity_chunks = []
+            for ent in ents:
+                assert "description" in ent, f"entity {ent} does not have description"
+                ent["source_id"] = [doc_id]
+                await graph_node_to_chunk(kb_id, embed_bdl, ent["entity_name"], ent, entity_chunks)
+            
+            # Store relations
+            relation_chunks = []
+            for rel in rels:
+                assert "description" in rel, f"relation {rel} does not have description"
+                rel["source_id"] = [doc_id]
+                await graph_edge_to_chunk(kb_id, embed_bdl, rel["src_id"], rel["tgt_id"], rel, relation_chunks)
+            
+            # Bulk insert entities
+            if entity_chunks:
+                await trio.to_thread.run_sync(
+                    lambda: settings.docStoreConn.insert(
+                        entity_chunks, search.index_name(tenant_id), kb_id
+                    )
+                )
+            
+            # Bulk insert relations
+            if relation_chunks:
+                await trio.to_thread.run_sync(
+                    lambda: settings.docStoreConn.insert(
+                        relation_chunks, search.index_name(tenant_id), kb_id
+                    )
+                )
+            
+            total_entities += len(ents)
+            total_relations += len(rels)
+            processed_documents += 1
+            
+            callback(msg=f"Document {doc_id}: extracted {len(ents)} entities, {len(rels)} relations")
+            
+        except Exception as e:
+            callback(msg=f"Error processing document {doc_id}: {str(e)}")
+            processed_documents += 1
+            continue
+    
+    now = trio.current_time()
+    callback(msg=f"Entity extraction completed in {now - start:.2f} seconds")
+    
+    return {
+        "total_documents": total_documents,
+        "processed_documents": processed_documents,
+        "entities_found": total_entities,
+        "relations_found": total_relations,
+        "status": "completed"
+    }
+
+
+async def build_graph_from_entities(
+    tenant_id: str,
+    kb_id: str,
+    embed_bdl,
+    callback
+) -> dict:
+    """
+    Build complete NetworkX graph from pre-extracted entities and relations.
+    Calculates PageRank and stores the final graph.
+    """
+    start = trio.current_time()
+    
+    callback(msg="Starting graph building from extracted entities")
+    
+    # Query all entities
+    entity_conds = {
+        "fields": ["entity_kwd", "content_with_weight", "source_id"],
+        "size": 10000,  # Large number to get all entities
+        "knowledge_graph_kwd": ["entity"],
+        "kb_id": kb_id
+    }
+    
+    entity_res = await trio.to_thread.run_sync(
+        lambda: settings.retrievaler.search(entity_conds, search.index_name(tenant_id), [kb_id])
+    )
+    
+    if entity_res.total == 0:
+        callback(msg="No entities found to build graph")
+        return {
+            "total_entities": 0,
+            "processed_entities": 0,
+            "relationships_created": 0,
+            "status": "failed",
+            "error": "No entities found"
+        }
+    
+    # Query all relations
+    relation_conds = {
+        "fields": ["from_entity_kwd", "to_entity_kwd", "content_with_weight", "source_id"],
+        "size": 10000,  # Large number to get all relations
+        "knowledge_graph_kwd": ["relation"],
+        "kb_id": kb_id
+    }
+    
+    relation_res = await trio.to_thread.run_sync(
+        lambda: settings.retrievaler.search(relation_conds, search.index_name(tenant_id), [kb_id])
+    )
+    
+    callback(msg=f"Found {entity_res.total} entities and {relation_res.total} relations")
+    
+    # Build NetworkX graph
+    graph = nx.Graph()
+    processed_entities = 0
+    relationships_created = 0
+    all_source_ids = set()
+    
+    # Add nodes from entities
+    for entity_id in entity_res.ids:
+        try:
+            entity_data = entity_res.field[entity_id]
+            entity_name = entity_data["entity_kwd"]
+            entity_meta = json.loads(entity_data["content_with_weight"])
+            
+            # Add source_ids to track document origins
+            if "source_id" in entity_data:
+                source_ids = entity_data["source_id"]
+                if isinstance(source_ids, str):
+                    source_ids = [source_ids]
+                entity_meta["source_id"] = source_ids
+                all_source_ids.update(source_ids)
+            
+            graph.add_node(entity_name, **entity_meta)
+            processed_entities += 1
+            
+        except Exception as e:
+            callback(msg=f"Error processing entity {entity_id}: {str(e)}")
+            continue
+    
+    # Add edges from relations
+    for relation_id in relation_res.ids:
+        try:
+            relation_data = relation_res.field[relation_id]
+            from_entity = relation_data["from_entity_kwd"]
+            to_entity = relation_data["to_entity_kwd"]
+            relation_meta = json.loads(relation_data["content_with_weight"])
+            
+            # Only add edge if both nodes exist
+            if graph.has_node(from_entity) and graph.has_node(to_entity):
+                # Add source_ids to track document origins
+                if "source_id" in relation_data:
+                    source_ids = relation_data["source_id"]
+                    if isinstance(source_ids, str):
+                        source_ids = [source_ids]
+                    relation_meta["source_id"] = source_ids
+                    all_source_ids.update(source_ids)
+                
+                graph.add_edge(from_entity, to_entity, **relation_meta)
+                relationships_created += 1
+            
+        except Exception as e:
+            callback(msg=f"Error processing relation {relation_id}: {str(e)}")
+            continue
+    
+    if len(graph.nodes) == 0:
+        callback(msg="No valid graph nodes created")
+        return {
+            "total_entities": entity_res.total,
+            "processed_entities": 0,
+            "relationships_created": 0,
+            "status": "failed",
+            "error": "No valid nodes created"
+        }
+    
+    # Set graph metadata
+    graph.graph["source_id"] = sorted(list(all_source_ids))
+    
+    callback(msg=f"Built graph with {len(graph.nodes)} nodes and {len(graph.edges)} edges")
+    
+    # Calculate PageRank on the complete graph
+    callback(msg="Calculating PageRank...")
+    pagerank_start = trio.current_time()
+    
+    pr = nx.pagerank(graph)
+    for node_name, pagerank in pr.items():
+        graph.nodes[node_name]["pagerank"] = pagerank
+    
+    pagerank_end = trio.current_time()
+    callback(msg=f"PageRank calculation completed in {pagerank_end - pagerank_start:.2f} seconds")
+    
+    # Store the complete graph
+    callback(msg="Storing complete graph...")
+    store_start = trio.current_time()
+    
+    change = GraphChange()
+    change.added_updated_nodes = set(graph.nodes())
+    change.added_updated_edges = set(graph.edges())
+    
+    await set_graph(tenant_id, kb_id, embed_bdl, graph, change, callback)
+    
+    store_end = trio.current_time()
+    callback(msg=f"Graph storage completed in {store_end - store_start:.2f} seconds")
+    
+    now = trio.current_time()
+    callback(msg=f"Graph building completed in {now - start:.2f} seconds")
+    
+    return {
+        "total_entities": entity_res.total,
+        "processed_entities": processed_entities,
+        "relationships_created": relationships_created,
+        "total_nodes": len(graph.nodes),
+        "total_edges": len(graph.edges),
+        "status": "completed"
+    }
