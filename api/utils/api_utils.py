@@ -605,7 +605,7 @@ def get_mcp_tools(mcp_servers: list[MCPServer], timeout: float | int = 10) -> tu
 TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
 def timeout(
-    seconds: Optional[float, int] = None,
+    seconds: float |int = None,
     *,
     exception: Optional[TimeoutException] = None,
     on_timeout: Optional[OnTimeoutCallback] = None
