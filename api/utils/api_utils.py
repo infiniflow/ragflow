@@ -26,9 +26,12 @@ from copy import deepcopy
 from functools import wraps
 from hmac import HMAC
 from io import BytesIO
-from typing import Any
+from typing import Any, Optional, Union, Callable, Coroutine, Type
 from urllib.parse import quote, urlencode
 from uuid import uuid1
+
+import trio
+
 from api.db.db_models import MCPServer
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
@@ -599,7 +602,14 @@ def get_mcp_tools(mcp_servers: list[MCPServer], timeout: float | int = 10) -> tu
         return {}, str(e)
 
 
-def timeout(seconds):
+TimeoutException = Union[Type[BaseException], BaseException]
+OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
+def timeout(
+    seconds: Optional[float] = None,
+    *,
+    exception: Optional[TimeoutException] = None,
+    on_timeout: Optional[OnTimeoutCallback] = None
+):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -625,30 +635,31 @@ def timeout(seconds):
 
         @wraps(func)
         async def async_wrapper(*args, **kwargs) -> Any:
-            if seconds is None or seconds <= 0:
+            if seconds is None:
                 return await func(*args, **kwargs)
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                use_new_loop = True
-            else:
-                use_new_loop = False
 
             try:
-                task = asyncio.create_task(func(*args, **kwargs))
-                return await asyncio.wait_for(task, timeout=seconds)
-            except asyncio.TimeoutError:
-                if not task.done():
-                    task.cancel()
-                raise asyncio.TimeoutError(
-                    f"Function '{func.__name__}' timed out after {seconds} seconds"
-                ) from None
-            finally:
-                if use_new_loop:
-                    loop.close()
-                    asyncio.set_event_loop(None)
+                with trio.fail_after(seconds):
+                    return await func(*args, **kwargs)
+            except trio.TooSlowError:
+                if on_timeout is not None:
+                    if callable(on_timeout):
+                        result = on_timeout()
+                        if isinstance(result, Coroutine):
+                            return await result
+                        return result
+                    return on_timeout
+
+                if exception is None:
+                    raise TimeoutError(f"Operation timed out after {seconds} seconds")
+
+                if isinstance(exception, BaseException):
+                    raise exception
+
+                if isinstance(exception, type) and issubclass(exception, BaseException):
+                    raise exception(f"Operation timed out after {seconds} seconds")
+
+                raise RuntimeError("Invalid exception type provided")
 
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
