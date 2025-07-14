@@ -185,6 +185,9 @@ class MCPToolCallSession(ToolCallSession):
             logging.exception(f"Error calling tool '{name}' on MCP server: {self._mcp_server.id}")
             return f"Error calling tool '{name}': {e}."
 
+    def invoke(self, name: str, arguments: dict[str, Any], timeout: float | int = 60*5):
+        return self.tool_call(name, arguments, timeout)
+
     async def close(self) -> None:
         if self._close:
             return
@@ -239,7 +242,17 @@ def shutdown_all_mcp_sessions():
     logging.info("All MCPToolCallSession instances have been closed.")
 
 
-def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool) -> dict[str, Any]:
+def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool|dict) -> dict[str, Any]:
+    if isinstance(mcp_tool, dict):
+        return {
+            "type": "function",
+            "function": {
+                "name": mcp_tool["name"],
+                "description": mcp_tool["description"],
+                "parameters": mcp_tool["inputSchema"],
+            },
+        }
+
     return {
         "type": "function",
         "function": {

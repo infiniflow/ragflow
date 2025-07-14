@@ -109,7 +109,7 @@ class TavilySearch(ToolBase, ABC):
             id = get_uuid()
             chunks.append({
                 "chunk_id": id,
-                "content": content,
+                "content": content[:10000],
                 "doc_id": id,
                 "docnm_kwd": r["title"],
                 "similarity": r["score"],

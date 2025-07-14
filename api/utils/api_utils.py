@@ -585,7 +585,6 @@ def timeout(seconds):
                     raise result
                 return result
             except queue.Empty:
-                # 超时处理
                 raise TimeoutError(f"Function '{func.__name__}' timed out after {seconds} seconds")
         return wrapper
     return decorator

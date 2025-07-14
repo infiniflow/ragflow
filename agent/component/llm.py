@@ -149,6 +149,7 @@ class LLM(ComponentBase):
                 last_idx -= len("</think>")
 
             if delta_ans.find("<think>") >= 0:
+                last_idx -= len(delta_ans) - (delta_ans.find("<think>") + len("<think>"))
                 return "<think>"
             if delta_ans.endswith("</think>"):
                 endswith_think = True

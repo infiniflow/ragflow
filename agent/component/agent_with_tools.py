@@ -29,12 +29,14 @@ from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.services.mcp_server_service import MCPServerService
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
 from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, form_history, \
     citation_prompt, reflect, rank_memories
 from rag.utils import num_tokens_from_string
+from rag.utils.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 
 
 class AgentParam(LLMParam, ToolParamBase):
@@ -58,6 +60,7 @@ class AgentParam(LLMParam, ToolParamBase):
         super().__init__()
         self.function_name = "agent"
         self.tools = []
+        self.mcp = []
         self.max_rounds = 50
         self.description = ""
 
@@ -81,6 +84,15 @@ class Agent(LLM, ToolBase):
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
+        self.tool_meta = []
+        for mcp in self._param.mcp:
+            mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
+            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+            for tnm, meta in mcp["tools"].items():
+                self.tool_metas.append(mcp_tool_metadata_to_openai_tool(meta))
+                self.tools[tnm] = tool_call_session
+
+
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id,
                                   max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error,
@@ -88,7 +100,7 @@ class Agent(LLM, ToolBase):
                                   verbose_tool_use=True,
                                   react_mode=ReActMode.REACT
                                   )
-        self.tool_metas = [v.get_meta() for _,v in self.tools.items()]
+        self.tool_metas.extend([v.get_meta() for _,v in self.tools.items()])
         self.callback = partial(self._canvas.tool_use_callback, id.split("-->")[0])
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
         #self.chat_mdl.bind_tools(self.toolcall_session, self.tool_metas)
