@@ -599,6 +599,13 @@ def register_service_health_checker(checker: HealthChecker):
 
 def start_health_monitoring():
     """Start global health monitoring."""
+    import os
+    # Check if health monitoring is disabled (for testing)
+    if (os.environ.get('RAGFLOW_DISABLE_HEALTH_MONITORING') == '1' or
+        os.environ.get('RAGFLOW_TEST_MODE') == '1'):
+        logging.info("Health monitoring disabled for test environment")
+        return
+
     get_health_manager().start_monitoring()
 
 

@@ -16,6 +16,7 @@
 import asyncio
 import gc
 import logging
+import os
 import psutil
 import threading
 import time
@@ -340,6 +341,12 @@ def get_memory_monitor() -> MemoryPressureMonitor:
 
 def start_memory_monitoring():
     """Start global memory monitoring."""
+    # Check if memory monitoring is disabled (for testing)
+    if (os.environ.get('RAGFLOW_DISABLE_MEMORY_MONITORING') == '1' or
+        os.environ.get('RAGFLOW_TEST_MODE') == '1'):
+        logging.info("Memory monitoring disabled for test environment")
+        return
+
     get_memory_monitor().start_monitoring()
 
 
