@@ -23,6 +23,124 @@ from rag import settings
 from rag.utils import singleton
 from valkey.lock import Lock
 import trio
+import asyncio
+import threading
+import time
+from typing import Optional, List, Dict, Any
+from dataclasses import dataclass
+from rag.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from rag.utils.timeout_manager import get_timeout_manager
+
+
+@dataclass
+class RedisConnectionConfig:
+    """Configuration for Redis connection resilience."""
+    max_retries: int = 3
+    retry_delay: float = 1.0
+    connection_timeout: float = 5.0
+    socket_timeout: float = 5.0
+    health_check_interval: float = 30.0
+    max_connections: int = 10
+    enable_circuit_breaker: bool = True
+    circuit_breaker_failure_threshold: int = 5
+    circuit_breaker_recovery_timeout: float = 60.0
+
+
+class RedisConnectionPool:
+    """Enhanced Redis connection pool with resilience features."""
+
+    def __init__(self, config: RedisConnectionConfig, redis_config: Dict[str, Any]):
+        self.config = config
+        self.redis_config = redis_config
+        self._pool: Optional[redis.ConnectionPool] = None
+        self._lock = threading.RLock()
+        self._last_health_check = 0
+        self._is_healthy = True
+
+        # Circuit breaker for Redis operations
+        if config.enable_circuit_breaker:
+            cb_config = CircuitBreakerConfig(
+                name="redis_operations",
+                failure_threshold=config.circuit_breaker_failure_threshold,
+                recovery_timeout=config.circuit_breaker_recovery_timeout,
+                timeout=config.connection_timeout
+            )
+            self._circuit_breaker = CircuitBreaker(cb_config)
+        else:
+            self._circuit_breaker = None
+
+        self._initialize_pool()
+
+    def _initialize_pool(self):
+        """Initialize the Redis connection pool."""
+        try:
+            pool_kwargs = {
+                'host': self.redis_config["host"].split(":")[0],
+                'port': int(self.redis_config.get("host", ":6379").split(":")[1]),
+                'db': int(self.redis_config.get("db", 1)),
+                'password': self.redis_config.get("password"),
+                'decode_responses': True,
+                'max_connections': self.config.max_connections,
+                'socket_timeout': self.config.socket_timeout,
+                'socket_connect_timeout': self.config.connection_timeout,
+                'retry_on_timeout': True,
+                'health_check_interval': self.config.health_check_interval
+            }
+
+            self._pool = redis.ConnectionPool(**pool_kwargs)
+            logging.info(f"Redis connection pool initialized with {self.config.max_connections} max connections")
+
+        except Exception as e:
+            logging.error(f"Failed to initialize Redis connection pool: {e}")
+            self._pool = None
+
+    def get_connection(self) -> Optional[redis.Redis]:
+        """Get a Redis connection from the pool."""
+        with self._lock:
+            if not self._pool:
+                self._initialize_pool()
+
+            if not self._pool:
+                return None
+
+            try:
+                connection = redis.Redis(connection_pool=self._pool)
+
+                # Perform health check if needed
+                if time.time() - self._last_health_check > self.config.health_check_interval:
+                    self._perform_health_check(connection)
+
+                return connection
+
+            except Exception as e:
+                logging.error(f"Failed to get Redis connection: {e}")
+                return None
+
+    def _perform_health_check(self, connection: redis.Redis):
+        """Perform health check on Redis connection."""
+        try:
+            connection.ping()
+            self._is_healthy = True
+            self._last_health_check = time.time()
+            logging.debug("Redis health check passed")
+        except Exception as e:
+            self._is_healthy = False
+            logging.warning(f"Redis health check failed: {e}")
+
+    def is_healthy(self) -> bool:
+        """Check if Redis connection pool is healthy."""
+        return self._is_healthy
+
+    def reset_pool(self):
+        """Reset the connection pool."""
+        with self._lock:
+            if self._pool:
+                try:
+                    self._pool.disconnect()
+                except Exception:
+                    pass
+            self._initialize_pool()
+
 
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
@@ -62,6 +180,25 @@ class RedisDB:
     def __init__(self):
         self.REDIS = None
         self.config = settings.REDIS
+
+        # Enhanced resilience configuration
+        self.resilience_config = RedisConnectionConfig()
+        self._connection_pool: Optional[RedisConnectionPool] = None
+        self._lock = threading.RLock()
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = 5
+        self._last_connection_attempt = 0
+        self._connection_backoff = 1.0
+
+        # Circuit breaker for Redis operations
+        cb_config = CircuitBreakerConfig(
+            name="redis_db_operations",
+            failure_threshold=5,
+            recovery_timeout=60.0,
+            timeout=30.0
+        )
+        self._circuit_breaker = CircuitBreaker(cb_config)
+
         self.__open__()
 
     def register_scripts(self) -> None:
@@ -70,17 +207,50 @@ class RedisDB:
         cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
 
     def __open__(self):
-        try:
-            self.REDIS = redis.StrictRedis(
-                host=self.config["host"].split(":")[0],
-                port=int(self.config.get("host", ":6379").split(":")[1]),
-                db=int(self.config.get("db", 1)),
-                password=self.config.get("password"),
-                decode_responses=True,
-            )
-            self.register_scripts()
-        except Exception:
-            logging.warning("Redis can't be connected.")
+        """Open Redis connection with enhanced resilience."""
+        with self._lock:
+            current_time = time.time()
+
+            # Implement connection backoff
+            if (self._last_connection_attempt > 0 and
+                current_time - self._last_connection_attempt < self._connection_backoff):
+                logging.debug(f"Connection backoff active, waiting {self._connection_backoff}s")
+                return self.REDIS
+
+            self._last_connection_attempt = current_time
+
+            try:
+                # Initialize connection pool if not exists
+                if not self._connection_pool:
+                    self._connection_pool = RedisConnectionPool(
+                        self.resilience_config,
+                        self.config
+                    )
+
+                # Get connection from pool
+                self.REDIS = self._connection_pool.get_connection()
+
+                if self.REDIS:
+                    self.register_scripts()
+                    self._reconnect_attempts = 0
+                    self._connection_backoff = 1.0
+                    logging.info("Redis connection established successfully")
+                else:
+                    raise Exception("Failed to get connection from pool")
+
+            except Exception as e:
+                self._reconnect_attempts += 1
+                self._connection_backoff = min(30.0, self._connection_backoff * 2)  # Exponential backoff
+
+                logging.warning(
+                    f"Redis connection failed (attempt {self._reconnect_attempts}): {e}. "
+                    f"Next attempt in {self._connection_backoff}s"
+                )
+
+                if self._reconnect_attempts >= self._max_reconnect_attempts:
+                    logging.error(f"Redis connection failed after {self._max_reconnect_attempts} attempts")
+                    self.REDIS = None
+
         return self.REDIS
 
     def health(self):
@@ -94,41 +264,68 @@ class RedisDB:
     def is_alive(self):
         return self.REDIS is not None
 
+    def _execute_with_resilience(self, operation_name: str, operation_func, *args, **kwargs):
+        """Execute Redis operation with resilience features."""
+        if not self.REDIS:
+            self.__open__()
+            if not self.REDIS:
+                logging.error(f"Redis operation '{operation_name}' failed: No connection available")
+                return None
+
+        try:
+            # Use circuit breaker for operation
+            return self._circuit_breaker.call(operation_func, *args, **kwargs)
+
+        except Exception as e:
+            logging.warning(f"RedisDB.{operation_name} got exception: {e}")
+
+            # Attempt reconnection on connection errors
+            if "connection" in str(e).lower() or "timeout" in str(e).lower():
+                logging.info(f"Attempting Redis reconnection due to: {e}")
+                self.__open__()
+
+                # Retry operation once after reconnection
+                if self.REDIS:
+                    try:
+                        return self._circuit_breaker.call(operation_func, *args, **kwargs)
+                    except Exception as retry_e:
+                        logging.error(f"RedisDB.{operation_name} retry failed: {retry_e}")
+
+            return None
+
     def exist(self, k):
         if not self.REDIS:
             return
-        try:
+
+        def _exist_operation():
             return self.REDIS.exists(k)
-        except Exception as e:
-            logging.warning("RedisDB.exist " + str(k) + " got exception: " + str(e))
-            self.__open__()
+
+        return self._execute_with_resilience("exist", _exist_operation)
 
     def get(self, k):
         if not self.REDIS:
             return
-        try:
+
+        def _get_operation():
             return self.REDIS.get(k)
-        except Exception as e:
-            logging.warning("RedisDB.get " + str(k) + " got exception: " + str(e))
-            self.__open__()
+
+        return self._execute_with_resilience("get", _get_operation)
 
     def set_obj(self, k, obj, exp=3600):
-        try:
+        def _set_obj_operation():
             self.REDIS.set(k, json.dumps(obj, ensure_ascii=False), exp)
             return True
-        except Exception as e:
-            logging.warning("RedisDB.set_obj " + str(k) + " got exception: " + str(e))
-            self.__open__()
-        return False
+
+        result = self._execute_with_resilience("set_obj", _set_obj_operation)
+        return result if result is not None else False
 
     def set(self, k, v, exp=3600):
-        try:
+        def _set_operation():
             self.REDIS.set(k, v, exp)
             return True
-        except Exception as e:
-            logging.warning("RedisDB.set " + str(k) + " got exception: " + str(e))
-            self.__open__()
-        return False
+
+        result = self._execute_with_resilience("set", _set_operation)
+        return result if result is not None else False
 
     def sadd(self, key: str, member: str):
         try:
@@ -211,15 +408,20 @@ class RedisDB:
         return False
 
     def queue_product(self, queue, message) -> bool:
-        for _ in range(3):
-            try:
-                payload = {"message": json.dumps(message)}
-                self.REDIS.xadd(queue, payload)
+        def _queue_product_operation():
+            payload = {"message": json.dumps(message)}
+            self.REDIS.xadd(queue, payload)
+            return True
+
+        # Retry with resilience
+        for attempt in range(self.resilience_config.max_retries):
+            result = self._execute_with_resilience("queue_product", _queue_product_operation)
+            if result:
                 return True
-            except Exception as e:
-                logging.exception(
-                    "RedisDB.queue_product " + str(queue) + " got exception: " + str(e)
-                )
+
+            if attempt < self.resilience_config.max_retries - 1:
+                time.sleep(self.resilience_config.retry_delay * (2 ** attempt))
+
         return False
 
     def queue_consumer(self, queue_name, group_name, consumer_name, msg_id=b">") -> RedisMsg:

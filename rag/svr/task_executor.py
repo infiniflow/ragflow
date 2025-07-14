@@ -16,6 +16,7 @@
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
+import asyncio
 import random
 import sys
 import threading
@@ -64,6 +65,21 @@ from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 
+# Enhanced fault tolerance imports
+from rag.utils.circuit_breaker import get_circuit_breaker, CircuitBreakerConfig
+from rag.utils.resource_manager import ResourceManager, ResourceType, managed_resource_async
+from rag.utils.timeout_manager import get_timeout_manager, run_with_timeout
+from rag.utils.partial_failure_recovery import PartialFailureRecovery, BatchConfig, process_chunks_with_recovery
+from rag.utils.memory_monitor import get_memory_monitor, register_limiter_for_adjustment, start_memory_monitoring
+from rag.utils.health_check import (
+    get_health_manager, RedisHealthChecker, StorageHealthChecker,
+    register_service_health_checker, start_health_monitoring
+)
+from rag.utils.graceful_degradation import (
+    get_degradation_manager, ServiceCapability, DegradationLevel,
+    execute_with_graceful_degradation
+)
+
 BATCH_SIZE = 64
 
 FACTORY = {
@@ -106,6 +122,19 @@ minio_limiter = trio.CapacityLimiter(MAX_CONCURRENT_MINIO)
 kg_limiter = trio.CapacityLimiter(2)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
+
+# Enhanced fault tolerance components
+resource_manager = ResourceManager("task_executor")
+timeout_manager = get_timeout_manager()
+memory_monitor = get_memory_monitor()
+health_manager = get_health_manager()
+degradation_manager = get_degradation_manager()
+
+# Register limiters for memory pressure adjustment
+register_limiter_for_adjustment(task_limiter)
+register_limiter_for_adjustment(chunk_limiter)
+register_limiter_for_adjustment(minio_limiter)
+register_limiter_for_adjustment(kg_limiter)
 
 
 def signal_handler(sig, frame):
@@ -225,45 +254,104 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
+    """Get storage binary with enhanced fault tolerance."""
+    async def _get_storage_operation():
+        return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
+
+    # Use timeout and circuit breaker for storage operations
+    return await run_with_timeout(
+        _get_storage_operation(),
+        "storage",
+        f"get_storage_{bucket}_{name}"
+    )
 
 
 async def build_chunks(task, progress_callback):
+    """Build chunks with enhanced fault tolerance and resource management."""
     if task["size"] > DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                                               (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
     chunker = FACTORY[task["parser_id"].lower()]
+
+    # Register task resources for cleanup
+    task_resource_id = resource_manager.register_resource(
+        task, ResourceType.CHUNK_DATA,
+        metadata={"task_id": task["id"], "doc_id": task["doc_id"]}
+    )
+
     try:
         st = timer()
         bucket, name = File2DocumentService.get_storage_address(doc_id=task["doc_id"])
-        binary = await get_storage_binary(bucket, name)
+
+        # Enhanced storage retrieval with fault tolerance
+        async with managed_resource_async(
+            resource_manager,
+            None,
+            ResourceType.STORAGE_OBJECT,
+            metadata={"bucket": bucket, "name": name}
+        ):
+            binary = await get_storage_binary(bucket, name)
+
         logging.info("From minio({}) {}/{}".format(timer() - st, task["location"], task["name"]))
-    except TimeoutError:
-        progress_callback(-1, "Internal server error: Fetch file from minio timeout. Could you try it again.")
-        logging.exception(
-            "Minio {}/{} got timeout: Fetch file from minio timeout.".format(task["location"], task["name"]))
-        raise
+
+        # Register binary data for cleanup
+        binary_resource_id = resource_manager.register_resource(
+            binary, ResourceType.MEMORY_BUFFER,
+            cleanup_priority=10,  # High priority cleanup
+            metadata={"size": len(binary) if binary else 0}
+        )
+
     except Exception as e:
-        if re.search("(No such file|not found)", str(e)):
-            progress_callback(-1, "Can not find file <%s> from minio. Could you try it again?" % task["name"])
+        # Enhanced error handling with specific error types
+        error_msg = str(e)
+        if "timeout" in error_msg.lower():
+            progress_callback(-1, "Internal server error: Fetch file from storage timeout. Could you try it again.")
+        elif re.search("(No such file|not found)", error_msg):
+            progress_callback(-1, "Can not find file <%s> from storage. Could you try it again?" % task["name"])
         else:
-            progress_callback(-1, "Get file from minio: %s" % str(e).replace("'", ""))
-        logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
+            progress_callback(-1, "Get file from storage: %s" % error_msg.replace("'", ""))
+
+        logging.exception("Storage retrieval {}/{} got exception".format(task["location"], task["name"]))
+        resource_manager.cleanup_resource(task_resource_id)
         raise
 
     try:
+        # Enhanced chunking with timeout and resource management
         async with chunk_limiter:
-            cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
-                                to_page=task["to_page"], lang=task["language"], callback=progress_callback,
-                                kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"]))
+            async def _chunking_operation():
+                return await trio.to_thread.run_sync(
+                    lambda: chunker.chunk(
+                        task["name"], binary=binary, from_page=task["from_page"],
+                        to_page=task["to_page"], lang=task["language"],
+                        callback=progress_callback, kb_id=task["kb_id"],
+                        parser_config=task["parser_config"], tenant_id=task["tenant_id"]
+                    )
+                )
+
+            cks = await run_with_timeout(
+                _chunking_operation(),
+                "chunk_processing",
+                f"chunk_{task['name']}"
+            )
+
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
+
+        # Register chunks for resource management
+        chunks_resource_id = resource_manager.register_resource(
+            cks, ResourceType.CHUNK_DATA,
+            cleanup_priority=5,
+            metadata={"chunk_count": len(cks) if cks else 0, "task_id": task["id"]}
+        )
+
     except TaskCanceledException:
+        resource_manager.cleanup_resource(task_resource_id)
         raise
     except Exception as e:
         progress_callback(-1, "Internal server error while chunking: %s" % str(e).replace("'", ""))
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
+        resource_manager.cleanup_resource(task_resource_id)
         raise
 
     docs = []
@@ -276,12 +364,23 @@ async def build_chunks(task, progress_callback):
     st = timer()
 
     async def upload_to_minio(document, chunk):
+        """Upload chunk to MinIO with enhanced fault tolerance."""
+        d = None
+        output_buffer = None
+
         try:
             d = copy.deepcopy(document)
             d.update(chunk)
             d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
+
+            # Register chunk for resource management
+            chunk_resource_id = resource_manager.register_resource(
+                d, ResourceType.CHUNK_DATA,
+                metadata={"chunk_id": d["id"], "task_id": task["id"]}
+            )
+
             if not d.get("image"):
                 _ = d.pop("image", None)
                 d["img_id"] = ""
@@ -289,6 +388,14 @@ async def build_chunks(task, progress_callback):
                 return
 
             output_buffer = BytesIO()
+
+            # Register buffer for cleanup
+            buffer_resource_id = resource_manager.register_resource(
+                output_buffer, ResourceType.MEMORY_BUFFER,
+                cleanup_func=lambda buf: buf.close() if buf and not buf.closed else None,
+                cleanup_priority=10
+            )
+
             try:
                 if isinstance(d["image"], bytes):
                     output_buffer.write(d["image"])
@@ -300,24 +407,69 @@ async def build_chunks(task, progress_callback):
                         d["image"].close()  # Close original image
                         d["image"] = converted_image
                     d["image"].save(output_buffer, format='JPEG')
-                
+
+                # Enhanced storage upload with timeout
                 async with minio_limiter:
-                    await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+                    async def _upload_operation():
+                        return await trio.to_thread.run_sync(
+                            lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue())
+                        )
+
+                    await run_with_timeout(
+                        _upload_operation(),
+                        "storage",
+                        f"upload_image_{d['id']}"
+                    )
+
                 d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
                 if not isinstance(d["image"], bytes):
                     d["image"].close()
                 del d["image"]  # Remove image reference
                 docs.append(d)
+
             finally:
-                output_buffer.close()  # Ensure BytesIO is always closed
-        except Exception:
+                if output_buffer and not output_buffer.closed:
+                    output_buffer.close()
+                resource_manager.cleanup_resource(buffer_resource_id)
+
+        except Exception as e:
+            chunk_id = d["id"] if d else "unknown"
             logging.exception(
-                "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
+                f"Saving image of chunk {task['location']}/{task['name']}/{chunk_id} got exception: {e}"
+            )
+
+            # Cleanup resources on failure
+            if output_buffer and not output_buffer.closed:
+                output_buffer.close()
+
+            # Re-raise for partial failure recovery to handle
             raise
 
-    async with trio.open_nursery() as nursery:
-        for ck in cks:
-            nursery.start_soon(upload_to_minio, doc, ck)
+    # Use partial failure recovery for image uploads
+    batch_config = BatchConfig(
+        max_retries=2,
+        continue_on_error=True,
+        max_concurrent=min(10, len(cks)),
+        timeout_per_item=30.0
+    )
+
+    async def process_chunk_upload(chunk_data):
+        await upload_to_minio(doc, chunk_data)
+        return chunk_data
+
+    upload_result = await process_chunks_with_recovery(
+        cks, process_chunk_upload, batch_config,
+        progress_callback=lambda completed, total: progress_callback(
+            prog=0.3 + 0.3 * completed / total,
+            msg=f"Uploading images {completed}/{total}"
+        )
+    )
+
+    if upload_result.failed_items > 0:
+        logging.warning(
+            f"Image upload partial failure: {upload_result.failed_items}/{upload_result.total_items} failed"
+        )
+        # Continue processing - partial failures are acceptable for images
 
     el = timer() - st
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
@@ -643,31 +795,72 @@ async def do_handle_task(task):
 
 
 async def handle_task():
+    """Enhanced task handling with comprehensive fault tolerance."""
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
         await trio.sleep(5)
         return
+
+    task_id = task.get("id", "unknown")
+    task_resource_manager = ResourceManager(f"task_{task_id}")
+
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
-        await do_handle_task(task)
+
+        # Register task for resource management
+        task_resource_id = task_resource_manager.register_resource(
+            task, ResourceType.CHUNK_DATA,
+            metadata={"task_id": task_id, "start_time": time.time()}
+        )
+
+        # Execute task with graceful degradation support
+        await execute_with_graceful_degradation(
+            "document_processing",
+            do_handle_task,
+            task
+        )
+
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task["id"], None)
         logging.info(f"handle_task done for task {json.dumps(task)}")
+
     except Exception as e:
         FAILED_TASKS += 1
         CURRENT_TASKS.pop(task["id"], None)
+
+        # Enhanced error handling and reporting
         try:
             err_msg = str(e)
             while isinstance(e, exceptiongroup.ExceptionGroup):
                 e = e.exceptions[0]
                 err_msg += ' -- ' + str(e)
+
+            # Check if this is a degradation-related error
+            if "circuit breaker" in err_msg.lower():
+                err_msg = f"Service temporarily unavailable: {err_msg}"
+            elif "timeout" in err_msg.lower():
+                err_msg = f"Operation timed out: {err_msg}"
+
             set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
         except Exception:
             pass
+
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
-    redis_msg.ack()
+
+    finally:
+        # Comprehensive cleanup
+        try:
+            task_resource_manager.cleanup_all()
+        except Exception as cleanup_error:
+            logging.error(f"Task cleanup failed for {task_id}: {cleanup_error}")
+
+        # Acknowledge message
+        try:
+            redis_msg.ack()
+        except Exception as ack_error:
+            logging.error(f"Failed to acknowledge Redis message for task {task_id}: {ack_error}")
 
 
 async def report_status():
@@ -727,6 +920,54 @@ async def task_manager():
         task_limiter.release()
 
 
+async def initialize_fault_tolerance_systems():
+    """Initialize all fault tolerance systems."""
+    try:
+        # Initialize health checkers
+        redis_health_checker = RedisHealthChecker(REDIS_CONN.REDIS, "redis")
+        storage_health_checker = StorageHealthChecker(STORAGE_IMPL, "storage")
+
+        register_service_health_checker(redis_health_checker)
+        register_service_health_checker(storage_health_checker)
+
+        # Register service capabilities for graceful degradation
+        degradation_manager.register_capability(ServiceCapability(
+            name="document_processing",
+            required_services=["redis", "storage"],
+            is_essential=True
+        ))
+
+        degradation_manager.register_capability(ServiceCapability(
+            name="embedding_generation",
+            required_services=["external_api"],
+            is_essential=False
+        ))
+
+        degradation_manager.register_capability(ServiceCapability(
+            name="keyword_extraction",
+            required_services=["external_api"],
+            is_essential=False
+        ))
+
+        # Start monitoring systems
+        start_memory_monitoring()
+        start_health_monitoring()
+
+        # Add health status callbacks
+        def on_service_health_change(service_name: str, result):
+            if not result.is_available:
+                asyncio.create_task(degradation_manager.handle_service_failure(service_name))
+            else:
+                asyncio.create_task(degradation_manager.handle_service_recovery(service_name))
+
+        health_manager.add_health_callback(on_service_health_change)
+
+        logging.info("Fault tolerance systems initialized successfully")
+
+    except Exception as e:
+        logging.error(f"Failed to initialize fault tolerance systems: {e}")
+
+
 async def main():
     logging.info(r"""
   ______           __      ______                     __
@@ -738,6 +979,10 @@ async def main():
     logging.info(f'TaskExecutor: RAGFlow version: {get_ragflow_version()}')
     settings.init_settings()
     print_rag_settings()
+
+    # Initialize enhanced fault tolerance systems
+    await initialize_fault_tolerance_systems()
+
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
         signal.signal(signal.SIGUSR2, stop_tracemalloc)
@@ -748,11 +993,24 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(report_status)
-        while not stop_event.is_set():
-            await task_limiter.acquire()
-            nursery.start_soon(task_manager)
+    try:
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(report_status)
+            while not stop_event.is_set():
+                await task_limiter.acquire()
+                nursery.start_soon(task_manager)
+    except Exception as e:
+        logging.error(f"Main execution loop failed: {e}")
+    finally:
+        # Cleanup all resources on shutdown
+        try:
+            resource_manager.cleanup_all()
+            memory_monitor.stop_monitoring()
+            health_manager.stop_monitoring()
+            logging.info("Fault tolerance systems shut down successfully")
+        except Exception as cleanup_error:
+            logging.error(f"Cleanup failed: {cleanup_error}")
+
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":
