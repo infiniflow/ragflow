@@ -443,9 +443,9 @@ class RAGFlowPdfParser:
                 bxs.pop(i)
                 continue
             concatting_feats = [
-                b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
+                b["text"].strip()[-1] in ",'\"，、‘“-",
                 len(b["text"].strip()) > 1 and b["text"].strip(
-                )[-2] in ",;:'\"，‘“、；：",
+                )[-2] in ",'\"，‘“、",
                 b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",
             ]
             # features for not concating
