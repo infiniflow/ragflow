@@ -62,7 +62,12 @@ class FulltextQueryer:
             (r"(^| )(what|who|how|which|where|why)('re|'s)? ", " "),
             (
                 r"(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) ",
-                " ")
+                " "),
+            # Thêm tiếng Việt
+            (
+            r"(^| )(ai|cái gì|gì|ở đâu|bao giờ|khi nào|như thế nào|làm sao|tại sao|vì sao|có không|phải không|có phải|là gì|là ai|bao nhiêu|mấy|những ai|những gì|thế nào|ra sao|chưa|đúng không|nào|vậy|à|hả|ạ|hử|nhỉ|nhé|chứ|phải không)( |$)",
+            " "
+            )
         ]
         otxt = txt
         for r, p in patts:
