@@ -26,7 +26,7 @@ from copy import deepcopy
 from functools import wraps
 from hmac import HMAC
 from io import BytesIO
-from typing import Callable, Coroutine, Any
+from typing import Any
 from urllib.parse import quote, urlencode
 from uuid import uuid1
 from api.db.db_models import MCPServer
