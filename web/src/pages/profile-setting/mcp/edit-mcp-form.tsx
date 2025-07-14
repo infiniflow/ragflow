@@ -15,8 +15,11 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
+import { Editor, loader } from '@monaco-editor/react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+
+loader.config({ paths: { vs: '/vs' } });
 
 export const FormId = 'EditMcpForm';
 
@@ -50,7 +53,7 @@ export function useBuildFormSchema() {
         message: t('common.namePlaceholder'),
       })
       .trim(),
-    // variables: z.object({}).optional(),
+    headers: z.record(z.string(), z.any()).optional(),
   });
 
   return FormSchema;
@@ -127,6 +130,28 @@ export function EditMcpForm({
                   {...field}
                   autoComplete="off"
                   options={ServerTypeOptions}
+                  onChange={(value) => {
+                    field.onChange(value);
+                    setFieldChanged(true);
+                  }}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="headers"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Headers</FormLabel>
+              <FormControl>
+                <Editor
+                  height={200}
+                  defaultLanguage="json"
+                  theme="vs-dark"
+                  {...field}
                   onChange={(value) => {
                     field.onChange(value);
                     setFieldChanged(true);
