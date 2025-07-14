@@ -35,6 +35,7 @@ from graphrag.utils import (
     GraphChange,
     graph_node_to_chunk,
     graph_edge_to_chunk,
+    chat_limiter,
 )
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
@@ -337,6 +338,7 @@ async def extract_entities_only(
     """
     Extract entities and relations from documents without building the full graph.
     Stores entities with knowledge_graph_kwd: "entity" and relations with "relation".
+    Uses trio nursery for parallel processing.
     """
     start = trio.current_time()
     
@@ -390,25 +392,28 @@ async def extract_entities_only(
         doc_chunks[doc_id].append(chunk_content)
     
     total_documents = len(doc_chunks)
+    callback(msg=f"Starting entity extraction for {total_documents} documents")
+    
+    # Shared state for results (safe with trio single-threading)
     processed_documents = 0
     total_entities = 0
     total_relations = 0
+    results_lock = trio.Lock()
     
-    callback(msg=f"Starting entity extraction for {total_documents} documents")
-    
-    # Process each document
-    for doc_id, chunks in doc_chunks.items():
+    async def extract_entities_for_document(doc_id, chunks):
+        nonlocal processed_documents, total_entities, total_relations
         try:
             # Check if entities already exist for this document
             contains = await does_graph_contains(tenant_id, kb_id, doc_id)
             if contains:
                 callback(msg=f"Entities already exist for document {doc_id}, skipping")
-                processed_documents += 1
-                continue
+                async with results_lock:
+                    processed_documents += 1
+                return
             
             callback(msg=f"Extracting entities from document {doc_id}")
             
-            # Extract entities and relations
+            # Extract entities and relations (uses chat_limiter internally)
             ext = extractor_class(
                 llm_bdl,
                 language=language,
@@ -446,16 +451,23 @@ async def extract_entities_only(
                     )
                 )
             
-            total_entities += len(ents)
-            total_relations += len(rels)
-            processed_documents += 1
+            # Update shared state thread-safely
+            async with results_lock:
+                total_entities += len(ents)
+                total_relations += len(rels)
+                processed_documents += 1
             
             callback(msg=f"Document {doc_id}: extracted {len(ents)} entities, {len(rels)} relations")
             
         except Exception as e:
             callback(msg=f"Error processing document {doc_id}: {str(e)}")
-            processed_documents += 1
-            continue
+            async with results_lock:
+                processed_documents += 1
+    
+    # Process all documents in parallel using trio nursery
+    async with trio.open_nursery() as nursery:
+        for doc_id, chunks in doc_chunks.items():
+            nursery.start_soon(extract_entities_for_document, doc_id, chunks)
     
     now = trio.current_time()
     callback(msg=f"Entity extraction completed in {now - start:.2f} seconds")

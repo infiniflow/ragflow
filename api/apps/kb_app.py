@@ -996,77 +996,35 @@ def extract_entities(kb_id):
                         entity_extraction_progress[kb_id]["current_status"] = "completed"
                         return
                     
-                    # Update progress
-                    entity_extraction_progress[kb_id]["total_documents"] = total_docs
-                    entity_extraction_progress[kb_id]["current_status"] = "processing"
+                    # Use parallel entity extraction function
+                    from graphrag.general.index import extract_entities_only
                     
-                    processed_docs = 0
-                    total_entities = 0
-                    total_relations = 0
+                    # Convert doc_chunks to doc_ids list for extract_entities_only function
+                    doc_ids = list(doc_chunks.keys())
                     
-                    # Process each document - extract entities only (no graph building)
-                    for doc_id, chunks in doc_chunks.items():
-                        logging.info(f"Processing document {doc_id} with {len(chunks)} chunks")
-                        progress_callback(f"Processing document {doc_id}")
-                        
-                        # Extract entities and relations using GraphRAG extractor
-                        ext = extractor_class(
-                            llm_bdl,
-                            language=kb.language,
-                            entity_types=entity_types,
-                        )
-                        ents, rels = await ext(doc_id, chunks, progress_callback)
-                        
-                        # Store entities and relations separately (no graph building yet)
-                        from graphrag.utils import graph_node_to_chunk, graph_edge_to_chunk
-                        
-                        entity_chunks = []
-                        for ent in ents:
-                            ent["source_id"] = [doc_id]
-                            await graph_node_to_chunk(kb_id, embed_bdl, ent["entity_name"], ent, entity_chunks)
-                        
-                        relation_chunks = []
-                        for rel in rels:
-                            rel["source_id"] = [doc_id]
-                            # Only add relation if both entities exist
-                            entity_names = {ent["entity_name"] for ent in ents}
-                            if rel["src_id"] in entity_names and rel["tgt_id"] in entity_names:
-                                await graph_edge_to_chunk(kb_id, embed_bdl, rel["src_id"], rel["tgt_id"], rel, relation_chunks)
-                        
-                        # Bulk insert entities and relations
-                        if entity_chunks:
-                            await trio.to_thread.run_sync(
-                                lambda: settings.docStoreConn.insert(
-                                    entity_chunks, search.index_name(kb.tenant_id), kb_id
-                                )
-                            )
-                        
-                        if relation_chunks:
-                            await trio.to_thread.run_sync(
-                                lambda: settings.docStoreConn.insert(
-                                    relation_chunks, search.index_name(kb.tenant_id), kb_id
-                                )
-                            )
-                        
-                        processed_docs += 1
-                        total_entities += len(ents)
-                        total_relations += len(relation_chunks)
-                        
-                        logging.info(f"Document {doc_id}: extracted {len(ents)} entities, {len(relation_chunks)} relations")
-                        
-                        # Update progress
-                        entity_extraction_progress[kb_id].update({
-                            "processed_documents": processed_docs,
-                            "entities_found": total_entities,
-                            "relations_found": total_relations
-                        })
-                        
-                        progress_callback(f"Document {doc_id}: extracted {len(ents)} entities, {len(relation_chunks)} relations")
+                    # Call parallel entity extraction function
+                    result = await extract_entities_only(
+                        tenant_id=kb.tenant_id,
+                        kb_id=kb_id,
+                        doc_ids=doc_ids,
+                        language=kb.language,
+                        entity_types=entity_types,
+                        method=method,
+                        llm_bdl=llm_bdl,
+                        embed_bdl=embed_bdl,
+                        callback=progress_callback
+                    )
                     
-                    # Final status
-                    entity_extraction_progress[kb_id]["current_status"] = "completed"
-                    progress_callback("Entity extraction completed")
-                    logging.info(f"Entity extraction completed for kb {kb_id}: {total_entities} entities, {total_relations} relations")
+                    # Update progress from result
+                    entity_extraction_progress[kb_id].update({
+                        "total_documents": result["total_documents"],
+                        "processed_documents": result["processed_documents"],
+                        "entities_found": result["entities_found"],
+                        "relations_found": result["relations_found"],
+                        "current_status": result["status"]
+                    })
+                    
+                    logging.info(f"Entity extraction completed for kb {kb_id}: {result['entities_found']} entities, {result['relations_found']} relations")
                     
                 finally:
                     extract_lock.release()
