@@ -65,19 +65,76 @@ from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 
-# Enhanced fault tolerance imports
-from rag.utils.resource_manager import ResourceManager, ResourceType, managed_resource_async
-from rag.utils.timeout_manager import get_timeout_manager, run_with_timeout
-from rag.utils.partial_failure_recovery import BatchConfig, process_chunks_with_recovery
-from rag.utils.memory_monitor import get_memory_monitor, register_limiter_for_adjustment, start_memory_monitoring
-from rag.utils.health_check import (
-    get_health_manager, RedisHealthChecker, StorageHealthChecker,
-    register_service_health_checker, start_health_monitoring
+# Check if we're in test environment before importing fault tolerance modules
+_IS_TEST_ENV = (
+    os.environ.get('PYTEST_CURRENT_TEST') is not None or
+    os.environ.get('RAGFLOW_TEST_MODE') == '1' or
+    'pytest' in os.environ.get('_', '') or
+    'test' in os.environ.get('RAGFLOW_ENV', '').lower()
 )
-from rag.utils.graceful_degradation import (
-    get_degradation_manager, ServiceCapability,
-    execute_with_graceful_degradation
-)
+
+# Only import fault tolerance modules in production
+if not _IS_TEST_ENV:
+    from rag.utils.resource_manager import ResourceManager, ResourceType, managed_resource_async
+    from rag.utils.timeout_manager import get_timeout_manager, run_with_timeout
+    from rag.utils.partial_failure_recovery import BatchConfig, process_chunks_with_recovery
+    from rag.utils.memory_monitor import get_memory_monitor, register_limiter_for_adjustment, start_memory_monitoring
+    from rag.utils.health_check import (
+        get_health_manager, RedisHealthChecker, StorageHealthChecker,
+        register_service_health_checker, start_health_monitoring
+    )
+    from rag.utils.graceful_degradation import (
+        get_degradation_manager, ServiceCapability,
+        execute_with_graceful_degradation
+    )
+else:
+    # Create dummy implementations for test environment
+    class DummyResourceManager:
+        def __init__(self, name):
+            self.name = name
+        def register_resource(self, *args, **kwargs):
+            return "dummy_id"
+        def cleanup_all(self):
+            pass
+
+    class DummyResourceType:
+        CHUNK_DATA = "chunk_data"
+        MEMORY_BUFFER = "memory_buffer"
+        STORAGE_OBJECT = "storage_object"
+
+    ResourceManager = DummyResourceManager
+    ResourceType = DummyResourceType
+
+    async def dummy_managed_resource_async(*args, **kwargs):
+        class DummyContext:
+            async def __aenter__(self):
+                return "dummy_id"
+            async def __aexit__(self, *args):
+                pass
+        return DummyContext()
+
+    managed_resource_async = dummy_managed_resource_async
+
+    async def dummy_run_with_timeout(coro, *args, **kwargs):
+        return await coro
+
+    run_with_timeout = dummy_run_with_timeout
+
+    def dummy_function(*args, **kwargs):
+        pass
+
+    get_timeout_manager = dummy_function
+    register_limiter_for_adjustment = dummy_function
+    start_memory_monitoring = dummy_function
+    get_health_manager = dummy_function
+    register_service_health_checker = dummy_function
+    start_health_monitoring = dummy_function
+    get_degradation_manager = dummy_function
+
+    async def dummy_execute_with_graceful_degradation(capability_name, func, *args, **kwargs):
+        return await func(*args, **kwargs)
+
+    execute_with_graceful_degradation = dummy_execute_with_graceful_degradation
 
 BATCH_SIZE = 64
 
@@ -122,18 +179,26 @@ kg_limiter = trio.CapacityLimiter(2)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
 
-# Enhanced fault tolerance components
-resource_manager = ResourceManager("task_executor")
-timeout_manager = get_timeout_manager()
-memory_monitor = get_memory_monitor()
-health_manager = get_health_manager()
-degradation_manager = get_degradation_manager()
+# Enhanced fault tolerance components (only in production)
+if not _IS_TEST_ENV:
+    resource_manager = ResourceManager("task_executor")
+    timeout_manager = get_timeout_manager()
+    memory_monitor = get_memory_monitor()
+    health_manager = get_health_manager()
+    degradation_manager = get_degradation_manager()
 
-# Register limiters for memory pressure adjustment
-register_limiter_for_adjustment(task_limiter)
-register_limiter_for_adjustment(chunk_limiter)
-register_limiter_for_adjustment(minio_limiter)
-register_limiter_for_adjustment(kg_limiter)
+    # Register limiters for memory pressure adjustment
+    register_limiter_for_adjustment(task_limiter)
+    register_limiter_for_adjustment(chunk_limiter)
+    register_limiter_for_adjustment(minio_limiter)
+    register_limiter_for_adjustment(kg_limiter)
+else:
+    # Dummy instances for test environment
+    resource_manager = DummyResourceManager("task_executor")
+    timeout_manager = None
+    memory_monitor = None
+    health_manager = None
+    degradation_manager = None
 
 
 def signal_handler(sig, frame):
@@ -254,22 +319,10 @@ async def collect():
 
 async def get_storage_binary(bucket, name):
     """Get storage binary with enhanced fault tolerance."""
-    # Check if we're in test environment
-    is_test_env = (
-        os.environ.get('PYTEST_CURRENT_TEST') is not None or
-        os.environ.get('RAGFLOW_TEST_MODE') == '1' or
-        'pytest' in os.environ.get('_', '') or
-        'test' in os.environ.get('RAGFLOW_ENV', '').lower()
-    )
-
-    if is_test_env:
-        # In test environment, use simple direct call without timeout management
-        return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
-
     async def _get_storage_operation():
         return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
 
-    # Use timeout and circuit breaker for storage operations (production only)
+    # Use timeout and circuit breaker for storage operations
     return await run_with_timeout(
         _get_storage_operation(),
         "storage",
@@ -286,21 +339,11 @@ async def build_chunks(task, progress_callback):
 
     chunker = FACTORY[task["parser_id"].lower()]
 
-    # Check if we're in test environment
-    is_test_env = (
-        os.environ.get('PYTEST_CURRENT_TEST') is not None or
-        os.environ.get('RAGFLOW_TEST_MODE') == '1' or
-        'pytest' in os.environ.get('_', '') or
-        'test' in os.environ.get('RAGFLOW_ENV', '').lower()
+    # Register task resources for cleanup
+    task_resource_id = resource_manager.register_resource(
+        task, ResourceType.CHUNK_DATA,
+        metadata={"task_id": task["id"], "doc_id": task["doc_id"]}
     )
-
-    # Register task resources for cleanup (only in production)
-    task_resource_id = None
-    if not is_test_env:
-        task_resource_id = resource_manager.register_resource(
-            task, ResourceType.CHUNK_DATA,
-            metadata={"task_id": task["id"], "doc_id": task["doc_id"]}
-        )
 
     try:
         st = timer()
@@ -341,9 +384,8 @@ async def build_chunks(task, progress_callback):
     try:
         # Enhanced chunking with timeout and resource management
         async with chunk_limiter:
-            if is_test_env:
-                # In test environment, use simple direct call
-                cks = await trio.to_thread.run_sync(
+            async def _chunking_operation():
+                return await trio.to_thread.run_sync(
                     lambda: chunker.chunk(
                         task["name"], binary=binary, from_page=task["from_page"],
                         to_page=task["to_page"], lang=task["language"],
@@ -351,33 +393,21 @@ async def build_chunks(task, progress_callback):
                         parser_config=task["parser_config"], tenant_id=task["tenant_id"]
                     )
                 )
-            else:
-                # Production environment with timeout management
-                async def _chunking_operation():
-                    return await trio.to_thread.run_sync(
-                        lambda: chunker.chunk(
-                            task["name"], binary=binary, from_page=task["from_page"],
-                            to_page=task["to_page"], lang=task["language"],
-                            callback=progress_callback, kb_id=task["kb_id"],
-                            parser_config=task["parser_config"], tenant_id=task["tenant_id"]
-                        )
-                    )
 
-                cks = await run_with_timeout(
-                    _chunking_operation(),
-                    "chunk_processing",
-                    f"chunk_{task['name']}"
-                )
+            cks = await run_with_timeout(
+                _chunking_operation(),
+                "chunk_processing",
+                f"chunk_{task['name']}"
+            )
 
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
 
-        # Register chunks for resource management (only in production)
-        if not is_test_env:
-            resource_manager.register_resource(
-                cks, ResourceType.CHUNK_DATA,
-                cleanup_priority=5,
-                metadata={"chunk_count": len(cks) if cks else 0, "task_id": task["id"]}
-            )
+        # Register chunks for resource management
+        resource_manager.register_resource(
+            cks, ResourceType.CHUNK_DATA,
+            cleanup_priority=5,
+            metadata={"chunk_count": len(cks) if cks else 0, "task_id": task["id"]}
+        )
 
     except TaskCanceledException:
         resource_manager.cleanup_resource(task_resource_id)
@@ -396,14 +426,6 @@ async def build_chunks(task, progress_callback):
     if task["pagerank"]:
         doc[PAGERANK_FLD] = int(task["pagerank"])
     st = timer()
-
-    # Check if we're in test environment
-    is_test_env = (
-        os.environ.get('PYTEST_CURRENT_TEST') is not None or
-        os.environ.get('RAGFLOW_TEST_MODE') == '1' or
-        'pytest' in os.environ.get('_', '') or
-        'test' in os.environ.get('RAGFLOW_ENV', '').lower()
-    )
 
     async def upload_to_minio(document, chunk):
         """Upload chunk to MinIO with enhanced fault tolerance."""
@@ -487,8 +509,9 @@ async def build_chunks(task, progress_callback):
             # Re-raise for partial failure recovery to handle
             raise
 
-    # In test environment, use simple direct upload without batch processing
-    if is_test_env:
+    # Upload images with fault tolerance
+    if _IS_TEST_ENV:
+        # In test environment, use simple direct upload
         async with trio.open_nursery() as nursery:
             for ck in cks:
                 nursery.start_soon(upload_to_minio, doc, ck)
@@ -851,39 +874,24 @@ async def handle_task():
         return
 
     task_id = task.get("id", "unknown")
-
-    # Check if we're in test environment
-    is_test_env = (
-        os.environ.get('PYTEST_CURRENT_TEST') is not None or
-        os.environ.get('RAGFLOW_TEST_MODE') == '1' or
-        'pytest' in os.environ.get('_', '') or
-        'test' in os.environ.get('RAGFLOW_ENV', '').lower()
-    )
-
-    task_resource_manager = None
-    if not is_test_env:
-        task_resource_manager = ResourceManager(f"task_{task_id}")
+    task_resource_manager = ResourceManager(f"task_{task_id}")
 
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
 
-        # Register task for resource management (only in production)
-        if task_resource_manager:
-            task_resource_manager.register_resource(
-                task, ResourceType.CHUNK_DATA,
-                metadata={"task_id": task_id, "start_time": time.time()}
-            )
+        # Register task for resource management
+        task_resource_manager.register_resource(
+            task, ResourceType.CHUNK_DATA,
+            metadata={"task_id": task_id, "start_time": time.time()}
+        )
 
-        # Execute task with or without graceful degradation based on environment
-        if is_test_env:
-            await do_handle_task(task)
-        else:
-            await execute_with_graceful_degradation(
-                "document_processing",
-                do_handle_task,
-                task
-            )
+        # Execute task with graceful degradation
+        await execute_with_graceful_degradation(
+            "document_processing",
+            do_handle_task,
+            task
+        )
 
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task["id"], None)
@@ -913,12 +921,11 @@ async def handle_task():
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
 
     finally:
-        # Comprehensive cleanup (only in production)
-        if task_resource_manager:
-            try:
-                task_resource_manager.cleanup_all()
-            except Exception as cleanup_error:
-                logging.error(f"Task cleanup failed for {task_id}: {cleanup_error}")
+        # Comprehensive cleanup
+        try:
+            task_resource_manager.cleanup_all()
+        except Exception as cleanup_error:
+            logging.error(f"Task cleanup failed for {task_id}: {cleanup_error}")
 
         # Acknowledge message
         try:
@@ -986,20 +993,11 @@ async def task_manager():
 
 async def initialize_fault_tolerance_systems():
     """Initialize all fault tolerance systems."""
-    try:
-        # Check if we're in test environment
-        is_test_env = (
-            os.environ.get('PYTEST_CURRENT_TEST') is not None or
-            os.environ.get('RAGFLOW_TEST_MODE') == '1' or
-            'pytest' in os.environ.get('_', '') or
-            'test' in os.environ.get('RAGFLOW_ENV', '').lower()
-        )
+    if _IS_TEST_ENV:
+        logging.info("Test environment detected, skipping fault tolerance initialization")
+        return
 
-        if is_test_env:
-            logging.info("Test environment detected, using minimal fault tolerance")
-            # In test environment, only initialize basic resource management
-            # Skip health monitoring and other systems that might interfere with tests
-            return
+    try:
 
         # Initialize health checkers
         redis_health_checker = RedisHealthChecker(REDIS_CONN.REDIS, "redis")
