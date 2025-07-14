@@ -40,8 +40,8 @@ const KnowledgeGraph: React.FC = () => {
   
   // Button enable/disable logic
   const canExtractEntities = !isParsing && hasDocuments && !extractingEntities;
-  // Always enable build graph when not building
-  const canBuildGraph = !buildingGraph;
+  // Enable build graph when entities exist (either from extraction or already in graph) and not currently building
+  const canBuildGraph = (hasExtractedEntities || (extractionProgress?.entities_found || 0) > 0) && !buildingGraph;
   const canResolveEntities = totalNodes > 0 && !resolvingEntities;
   const canDetectCommunities = totalNodes > 0 && !detectingCommunities;
   const canDelete = (hasExtractedEntities || totalNodes > 0);

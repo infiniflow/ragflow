@@ -38,6 +38,25 @@ import { useSearchParams } from 'umi';
 import { useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
 
+// Helper functions for progress dismissal storage
+const getDismissalKey = (knowledgeBaseId: string, progressType: string) => 
+  `progress_dismissed_${knowledgeBaseId}_${progressType}`;
+
+const isProgressDismissed = (knowledgeBaseId: string, progressType: string): boolean => {
+  const key = getDismissalKey(knowledgeBaseId, progressType);
+  return localStorage.getItem(key) === 'true';
+};
+
+const setProgressDismissed = (knowledgeBaseId: string, progressType: string): void => {
+  const key = getDismissalKey(knowledgeBaseId, progressType);
+  localStorage.setItem(key, 'true');
+};
+
+const clearProgressDismissal = (knowledgeBaseId: string, progressType: string): void => {
+  const key = getDismissalKey(knowledgeBaseId, progressType);
+  localStorage.removeItem(key);
+};
+
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();
   const knowledgeBaseId = searchParams.get('id');
@@ -550,6 +569,15 @@ export const useResolveEntities = () => {
       try {
         const { data: progressData } = await getEntityResolutionProgress(knowledgeBaseId);
         if (progressData.code === 0 && progressData.data) {
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'resolution')) {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+            return; // Don't show dismissed completed progress
+          }
+          
           setProgress(progressData.data);
           
           // If status is completed, stop polling since operation is completed
@@ -558,6 +586,10 @@ export const useResolveEntities = () => {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
+            // Refresh the page to update the knowledge graph data
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
           }
         } else if (progressData.code === 0 && progressData.data === null) {
           // Operation completed or not running, stop polling
@@ -579,6 +611,11 @@ export const useResolveEntities = () => {
         const { data: progressData } = await getEntityResolutionProgress(knowledgeBaseId);
         
         if (progressData.code === 0 && progressData.data) {
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'resolution')) {
+            return; // Don't show dismissed completed progress
+          }
+          
           setProgress(progressData.data);
           
           // If status is completed, don't start polling
@@ -600,6 +637,8 @@ export const useResolveEntities = () => {
   // Start polling when mutation starts
   useEffect(() => {
     if (loading) {
+      // Clear dismissal when starting new resolution
+      clearProgressDismissal(knowledgeBaseId, 'resolution');
       // Reset progress at start
       setProgress({
         total_pairs: 0,
@@ -626,7 +665,16 @@ export const useResolveEntities = () => {
     };
   }, [loading, knowledgeBaseId]);
 
-  return { data, loading, resolveEntities: mutateAsync, progress, clearProgress: () => setProgress(null) };
+  return { 
+    data, 
+    loading, 
+    resolveEntities: mutateAsync, 
+    progress, 
+    clearProgress: () => {
+      setProgress(null);
+      setProgressDismissed(knowledgeBaseId, 'resolution');
+    }
+  };
 };
 
 export const useDetectCommunities = () => {
@@ -674,6 +722,15 @@ export const useDetectCommunities = () => {
       try {
         const { data: progressData } = await getCommunityDetectionProgress(knowledgeBaseId);
         if (progressData.code === 0 && progressData.data) {
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'communities')) {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+            return; // Don't show dismissed completed progress
+          }
+          
           setProgress(progressData.data);
           
           // If status is completed, stop polling since operation is completed
@@ -682,6 +739,10 @@ export const useDetectCommunities = () => {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
+            // Refresh the page to update the knowledge graph data
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
           }
         } else if (progressData.code === 0 && progressData.data === null) {
           // Operation completed or not running, stop polling
@@ -703,6 +764,11 @@ export const useDetectCommunities = () => {
         const { data: progressData } = await getCommunityDetectionProgress(knowledgeBaseId);
         
         if (progressData.code === 0 && progressData.data) {
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'communities')) {
+            return; // Don't show dismissed completed progress
+          }
+          
           setProgress(progressData.data);
           
           // If status is completed, don't start polling
@@ -724,6 +790,8 @@ export const useDetectCommunities = () => {
   // Start polling when mutation starts
   useEffect(() => {
     if (loading) {
+      // Clear dismissal when starting new community detection
+      clearProgressDismissal(knowledgeBaseId, 'communities');
       // Reset progress at start
       setProgress({
         total_communities: 0,
@@ -750,7 +818,16 @@ export const useDetectCommunities = () => {
     };
   }, [loading, knowledgeBaseId]);
 
-  return { data, loading, detectCommunities: mutateAsync, progress, clearProgress: () => setProgress(null) };
+  return { 
+    data, 
+    loading, 
+    detectCommunities: mutateAsync, 
+    progress, 
+    clearProgress: () => {
+      setProgress(null);
+      setProgressDismissed(knowledgeBaseId, 'communities');
+    }
+  };
 };
 
 export const useCheckDocumentParsing = () => {
@@ -844,17 +921,26 @@ export const useExtractEntities = () => {
       try {
         const { data: progressData } = await getExtractionProgress(knowledgeBaseId);
         if (progressData.code === 0 && progressData.data) {
-          setProgress(progressData.data);
-          
-          if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000);
-            
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'extraction')) {
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
+            return; // Don't show dismissed completed progress
+          }
+          
+          setProgress(progressData.data);
+          
+          if (progressData.data.current_status === 'completed') {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+            // Refresh the page to update the knowledge graph data
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
           }
         } else if (progressData.code === 0 && progressData.data === null) {
           if (pollingRef.current) {
@@ -874,13 +960,14 @@ export const useExtractEntities = () => {
         const { data: progressData } = await getExtractionProgress(knowledgeBaseId);
         
         if (progressData.code === 0 && progressData.data) {
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'extraction')) {
+            return; // Don't show dismissed completed progress
+          }
+          
           setProgress(progressData.data);
           
-          if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000);
-          } else {
+          if (progressData.data.current_status !== 'completed') {
             startPolling();
           }
         }
@@ -896,6 +983,8 @@ export const useExtractEntities = () => {
 
   useEffect(() => {
     if (loading) {
+      // Clear dismissal when starting new extraction
+      clearProgressDismissal(knowledgeBaseId, 'extraction');
       setProgress({
         total_documents: 0,
         processed_documents: 0,
@@ -919,7 +1008,16 @@ export const useExtractEntities = () => {
     };
   }, [loading, knowledgeBaseId]);
 
-  return { data, loading, extractEntities: mutateAsync, progress, clearProgress: () => setProgress(null) };
+  return { 
+    data, 
+    loading, 
+    extractEntities: mutateAsync, 
+    progress, 
+    clearProgress: () => {
+      setProgress(null);
+      setProgressDismissed(knowledgeBaseId, 'extraction');
+    }
+  };
 };
 
 export const useBuildGraph = () => {
@@ -964,17 +1062,26 @@ export const useBuildGraph = () => {
       try {
         const { data: progressData } = await getBuildProgress(knowledgeBaseId);
         if (progressData.code === 0 && progressData.data) {
-          setProgress(progressData.data);
-          
-          if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000);
-            
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'build')) {
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
+            return; // Don't show dismissed completed progress
+          }
+          
+          setProgress(progressData.data);
+          
+          if (progressData.data.current_status === 'completed') {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+            // Refresh the page to update the knowledge graph data
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
           }
         } else if (progressData.code === 0 && progressData.data === null) {
           if (pollingRef.current) {
@@ -994,13 +1101,14 @@ export const useBuildGraph = () => {
         const { data: progressData } = await getBuildProgress(knowledgeBaseId);
         
         if (progressData.code === 0 && progressData.data) {
+          // Check if user has dismissed this completed progress
+          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'build')) {
+            return; // Don't show dismissed completed progress
+          }
+          
           setProgress(progressData.data);
           
-          if (progressData.data.current_status === 'completed') {
-            setTimeout(() => {
-              setProgress(null);
-            }, 10000);
-          } else {
+          if (progressData.data.current_status !== 'completed') {
             startPolling();
           }
         }
@@ -1016,6 +1124,8 @@ export const useBuildGraph = () => {
 
   useEffect(() => {
     if (loading) {
+      // Clear dismissal when starting new graph build
+      clearProgressDismissal(knowledgeBaseId, 'build');
       setProgress({
         total_entities: 0,
         processed_entities: 0,
@@ -1039,5 +1149,14 @@ export const useBuildGraph = () => {
     };
   }, [loading, knowledgeBaseId]);
 
-  return { data, loading, buildGraph: mutateAsync, progress, clearProgress: () => setProgress(null) };
+  return { 
+    data, 
+    loading, 
+    buildGraph: mutateAsync, 
+    progress, 
+    clearProgress: () => {
+      setProgress(null);
+      setProgressDismissed(knowledgeBaseId, 'build');
+    }
+  };
 };
