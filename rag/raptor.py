@@ -241,13 +241,12 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             raise RaptorValidationError("history must be a list")
 
         # Check cache first
-        cache_key = (self._llm_model.llm_name, system, str(history), str(gen_conf))
         response = get_llm_cache(self._llm_model.llm_name, system, history, gen_conf)
         if response:
             self._stats['cache_hits'] += 1
             if self._monitor:
                 self._monitor.end_operation("llm_cache_hit", success=True, cache_hit=True)
-            logging.debug(f"Cache hit for LLM request")
+            logging.debug("Cache hit for LLM request")
             return response
 
         # Attempt LLM call with retries
@@ -354,7 +353,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         response = get_embed_cache(self._embd_model.llm_name, txt)
         if response is not None:
             self._stats['cache_hits'] += 1
-            logging.debug(f"Cache hit for embedding request")
+            logging.debug("Cache hit for embedding request")
             # Validate cached response
             if isinstance(response, np.ndarray) and response.size > 0:
                 return response
@@ -791,7 +790,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                         lbls = list(range(min(n_clusters, len(reduced_embeddings))))
 
                 # Process clusters in parallel with error handling
-                successful_clusters = 0
                 cluster_tasks = []
 
                 async with trio.open_nursery() as nursery:

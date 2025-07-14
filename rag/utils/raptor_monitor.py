@@ -17,9 +17,9 @@
 import logging
 import time
 import threading
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 import psutil
 import json
 
