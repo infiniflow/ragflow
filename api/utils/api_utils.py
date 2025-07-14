@@ -622,27 +622,11 @@ def timeout(seconds):
                 return result
             except queue.Empty:
                 raise TimeoutError(f"Function '{func.__name__}' timed out after {seconds} seconds")
-        return wrapper
-    return decorator
 
-
-def atimeout(seconds: float|int) -> Callable:
-    """
-    async function decorator
-
-    Examples:
-        @timeout(2.5)
-        async def my_async_function():
-            await asyncio.sleep(3)
-    """
-    def decorator(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs) -> Any:
-            # 如果seconds为None，则不设置超时
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs) -> Any:
             if seconds is None or seconds <= 0:
                 return await func(*args, **kwargs)
-
-            # 创建超时任务
             try:
                 return await asyncio.wait_for(
                     func(*args, **kwargs),
@@ -653,5 +637,8 @@ def atimeout(seconds: float|int) -> Callable:
                     f"Function '{func.__name__}' timed out after {seconds} seconds"
                 ) from None
 
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
         return wrapper
     return decorator
+

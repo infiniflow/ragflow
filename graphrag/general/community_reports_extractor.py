@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
 
-from api.utils.api_utils import atimeout
+from api.utils.api_utils import timeout
 from graphrag.general import leiden
 from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from graphrag.general.extractor import Extractor
@@ -59,7 +59,7 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
-        @atimeout(120)
+        @timeout(120)
         async def extract_community_report(community):
             nonlocal res_str, res_dict, over, token_count
             cm_id, cm = community
