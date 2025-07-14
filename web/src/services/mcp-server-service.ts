@@ -1,3 +1,4 @@
+import { IPaginationRequestBody } from '@/interfaces/request/base';
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
@@ -66,3 +67,6 @@ const methods = {
 const mcpServerService = registerServer<keyof typeof methods>(methods, request);
 
 export default mcpServerService;
+
+export const listMcpServers = (params?: IPaginationRequestBody, body?: any) =>
+  request.post(api.listMcpServer, { data: body || {}, params });
