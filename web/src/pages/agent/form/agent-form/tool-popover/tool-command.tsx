@@ -8,9 +8,10 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
+import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { cn } from '@/lib/utils';
 import { Operator } from '@/pages/agent/constant';
-import { useCallback, useEffect, useState } from 'react';
+import { PropsWithChildren, useCallback, useEffect, useState } from 'react';
 
 const Menus = [
   {
@@ -52,7 +53,36 @@ type ToolCommandProps = {
   onChange?(values: string[]): void;
 };
 
-export function ToolCommand({ value, onChange }: ToolCommandProps) {
+type ToolCommandItemProps = {
+  toggleOption(id: string): void;
+  id: string;
+  isSelected: boolean;
+} & ToolCommandProps;
+
+function ToolCommandItem({
+  toggleOption,
+  id,
+  isSelected,
+  children,
+}: ToolCommandItemProps & PropsWithChildren) {
+  return (
+    <CommandItem className="cursor-pointer" onSelect={() => toggleOption(id)}>
+      <div
+        className={cn(
+          'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
+          isSelected
+            ? 'bg-primary text-primary-foreground'
+            : 'opacity-50 [&_svg]:invisible',
+        )}
+      >
+        <CheckIcon className="h-4 w-4" />
+      </div>
+      {children}
+    </CommandItem>
+  );
+}
+
+function useHandleSelectChange({ onChange, value }: ToolCommandProps) {
   const [currentValue, setCurrentValue] = useState<string[]>([]);
 
   const toggleOption = useCallback(
@@ -72,8 +102,20 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
     }
   }, [value]);
 
+  return {
+    toggleOption,
+    currentValue,
+  };
+}
+
+export function ToolCommand({ value, onChange }: ToolCommandProps) {
+  const { toggleOption, currentValue } = useHandleSelectChange({
+    onChange,
+    value,
+  });
+
   return (
-    <Command className="rounded-lg border shadow-md md:min-w-[450px]">
+    <Command>
       <CommandInput placeholder="Type a command or search..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
@@ -82,32 +124,52 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
             {x.list.map((y) => {
               const isSelected = currentValue.includes(y);
               return (
-                <CommandItem
+                <ToolCommandItem
                   key={y}
-                  className="cursor-pointer"
-                  onSelect={() => toggleOption(y)}
+                  id={y}
+                  toggleOption={toggleOption}
+                  isSelected={isSelected}
                 >
-                  <div
-                    className={cn(
-                      'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-                      isSelected
-                        ? 'bg-primary text-primary-foreground'
-                        : 'opacity-50 [&_svg]:invisible',
-                    )}
-                  >
-                    <CheckIcon className="h-4 w-4" />
-                  </div>
-                  {/* {option.icon && (
-                    <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
-                  )} */}
-                  {/* <span>{option.label}</span> */}
-                  <Calendar />
-                  <span>{y}</span>
-                </CommandItem>
+                  <>
+                    <Calendar />
+                    <span>{y}</span>
+                  </>
+                </ToolCommandItem>
               );
             })}
           </CommandGroup>
         ))}
+      </CommandList>
+    </Command>
+  );
+}
+
+export function MCPCommand({ onChange, value }: ToolCommandProps) {
+  const { data } = useListMcpServer();
+  const { toggleOption, currentValue } = useHandleSelectChange({
+    onChange,
+    value,
+  });
+
+  return (
+    <Command>
+      <CommandInput placeholder="Type a command or search..." />
+      <CommandList>
+        <CommandEmpty>No results found.</CommandEmpty>
+        {data.mcp_servers.map((item) => {
+          const isSelected = currentValue.includes(item.id);
+
+          return (
+            <ToolCommandItem
+              key={item.id}
+              id={item.id}
+              isSelected={isSelected}
+              toggleOption={toggleOption}
+            >
+              {item.name}
+            </ToolCommandItem>
+          );
+        })}
       </CommandList>
     </Command>
   );

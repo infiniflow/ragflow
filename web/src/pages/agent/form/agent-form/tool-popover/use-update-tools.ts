@@ -45,35 +45,22 @@ export function useUpdateAgentNodeTools() {
     [node?.id, tools, updateNodeForm],
   );
 
-  const deleteNodeTool = useCallback(
-    (value: string) => {
-      updateNodeTools([value]);
-    },
-    [updateNodeTools],
-  );
-
-  return { updateNodeTools, deleteNodeTool };
+  return { updateNodeTools };
 }
 
 export function useDeleteAgentNodeTools() {
   const { updateNodeForm } = useGraphStore((state) => state);
   const tools = useGetNodeTools();
   const node = useContext(AgentFormContext);
-  const deleteAgentToolNodeById = useGraphStore(
-    (state) => state.deleteAgentToolNodeById,
-  );
 
   const deleteNodeTool = useCallback(
     (value: string) => () => {
       const nextTools = tools.filter((x) => x.component_name !== value);
       if (node?.id) {
         updateNodeForm(node?.id, nextTools, ['tools']);
-        if (nextTools.length === 0) {
-          deleteAgentToolNodeById(node?.id);
-        }
       }
     },
-    [deleteAgentToolNodeById, node?.id, tools, updateNodeForm],
+    [node?.id, tools, updateNodeForm],
   );
 
   return { deleteNodeTool };
