@@ -13,3 +13,14 @@ export function useGetAgentToolNames() {
 
   return { toolNames };
 }
+
+export function useGetAgentMCPIds() {
+  const node = useContext(AgentFormContext);
+
+  const mcpIds = useMemo(() => {
+    const ids: IAgentForm['mcp'] = get(node, 'data.form.mcp', []);
+    return ids.map((x) => x.mcp_id);
+  }, [node]);
+
+  return { mcpIds };
+}
