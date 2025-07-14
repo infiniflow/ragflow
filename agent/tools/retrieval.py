@@ -40,7 +40,7 @@ class RetrievalParam(ToolParamBase):
             "parameters": {
                 "query": {
                     "type": "string",
-                    "description": "Query to search the dataset.",
+                    "description": "The keywords to search the dataset. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "",
                     "required": True
                 }

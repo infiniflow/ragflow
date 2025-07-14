@@ -43,7 +43,7 @@ When searching:
             "parameters": {
                 "query": {
                     "type": "string",
-                    "description": "The search query to execute with Tavily. Less keywords is recommanded.",
+                    "description": "The search keywords to execute with Tavily. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "{sys.query}",
                     "required": True
                 },
@@ -79,8 +79,8 @@ When searching:
         super().__init__()
         self.api_key = ""
         self.search_depth = "basic" # basic/advanced
-        self.max_results = 5
-        self.days = 7
+        self.max_results = 6
+        self.days = 14
         self.include_answer = False
         self.include_raw_content = True
         self.include_images = False
