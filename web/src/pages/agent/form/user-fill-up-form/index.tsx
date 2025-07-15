@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
+import { memo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -23,7 +24,7 @@ import { useEditQueryRecord } from '../begin-form/use-edit-query';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const UserFillUpForm = ({ node }: INextOperatorForm) => {
+function UserFillUpForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
@@ -150,6 +151,6 @@ const UserFillUpForm = ({ node }: INextOperatorForm) => {
       </Form>
     </section>
   );
-};
+}
 
-export default UserFillUpForm;
+export default memo(UserFillUpForm);

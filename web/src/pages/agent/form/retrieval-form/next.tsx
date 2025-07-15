@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -67,7 +67,7 @@ export function EmptyResponseField() {
   );
 }
 
-const RetrievalForm = ({ node }: INextOperatorForm) => {
+function RetrievalForm({ node }: INextOperatorForm) {
   const outputList = useMemo(() => {
     return [
       {
@@ -111,6 +111,6 @@ const RetrievalForm = ({ node }: INextOperatorForm) => {
       </form>
     </Form>
   );
-};
+}
 
-export default RetrievalForm;
+export default memo(RetrievalForm);

@@ -15,6 +15,7 @@ import { FormTooltip } from '@/components/ui/tooltip';
 import { buildSelectOptions } from '@/utils/component-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
+import { memo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -31,7 +32,7 @@ const ModeOptions = buildSelectOptions([
   AgentDialogueMode.Task,
 ]);
 
-const BeginForm = ({ node }: INextOperatorForm) => {
+function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
@@ -186,6 +187,6 @@ const BeginForm = ({ node }: INextOperatorForm) => {
       </Form>
     </section>
   );
-};
+}
 
-export default BeginForm;
+export default memo(BeginForm);

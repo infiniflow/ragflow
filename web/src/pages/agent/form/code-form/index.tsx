@@ -15,6 +15,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { buildOutputList } from '../../utils/build-output-list';
@@ -40,7 +41,7 @@ const options = [
 
 const DynamicFieldName = 'outputs';
 
-const CodeForm = ({ node }: INextOperatorForm) => {
+function CodeForm({ node }: INextOperatorForm) {
   const formData = node?.data.form as ICodeForm;
   const { t } = useTranslation();
   const values = useValues(node);
@@ -164,6 +165,6 @@ const CodeForm = ({ node }: INextOperatorForm) => {
       </div>
     </Form>
   );
-};
+}
 
-export default CodeForm;
+export default memo(CodeForm);
