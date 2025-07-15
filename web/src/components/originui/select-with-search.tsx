@@ -31,7 +31,7 @@ import { RAGFlowSelectOptionType } from '../ui/select';
 export type SelectWithSearchFlagOptionType = {
   label: string;
   value?: string;
-  options: RAGFlowSelectOptionType[];
+  options?: RAGFlowSelectOptionType[];
 };
 
 export type SelectWithSearchFlagProps = {
@@ -64,7 +64,9 @@ export const SelectWithSearch = forwardRef<
   const selectLabel = useMemo(() => {
     const optionTemp = options[0];
     if (optionTemp?.options) {
-      return optionTemp.options.find((opt) => opt.value === value)?.label || '';
+      return options
+        .map((group) => group?.options?.find((item) => item.value === value))
+        .filter(Boolean)[0]?.label;
     } else {
       return options.find((opt) => opt.value === value)?.label || '';
     }

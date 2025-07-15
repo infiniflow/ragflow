@@ -622,7 +622,7 @@ export const initialNoteValues = {
 
 export const initialCrawlerValues = {
   extract_type: 'markdown',
-  ...initialQueryBaseValues,
+  query: '',
 };
 
 export const initialInvokeValues = {
