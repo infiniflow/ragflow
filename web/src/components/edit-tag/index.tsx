@@ -1,19 +1,21 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { theme, Tooltip } from 'antd';
 import { TweenOneGroup } from 'rc-tween-one';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { X } from 'lucide-react';
 import { Button } from '../ui/button';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '../ui/hover-card';
 import { Input } from '../ui/input';
-
 interface EditTagsProps {
   value?: string[];
   onChange?: (tags: string[]) => void;
 }
 
 const EditTag = ({ value = [], onChange }: EditTagsProps) => {
-  const { token } = theme.useToken();
   const [inputVisible, setInputVisible] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -51,30 +53,34 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
 
   const forMap = (tag: string) => {
     return (
-      <Tooltip title={tag}>
-        <div
-          key={tag}
-          className="w-fit flex items-center justify-center gap-2 border-dashed border px-1 rounded-sm"
-        >
-          <div className="flex gap-2 items-center">
-            <div className="max-w-80 overflow-hidden text-ellipsis">{tag}</div>
-            <X
-              className="w-4 h-4 text-muted-foreground hover:text-primary"
-              onClick={(e) => {
-                e.preventDefault();
-                handleClose(tag);
-              }}
-            />
+      <HoverCard>
+        <HoverCardContent side="top">{tag}</HoverCardContent>
+        <HoverCardTrigger>
+          <div
+            key={tag}
+            className="w-fit flex items-center justify-center gap-2 border-dashed border px-1 rounded-sm bg-background-card"
+          >
+            <div className="flex gap-2 items-center">
+              <div className="max-w-80 overflow-hidden text-ellipsis">
+                {tag}
+              </div>
+              <X
+                className="w-4 h-4 text-muted-foreground hover:text-primary"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleClose(tag);
+                }}
+              />
+            </div>
           </div>
-        </div>
-      </Tooltip>
+        </HoverCardTrigger>
+      </HoverCard>
     );
   };
 
   const tagChild = value?.map(forMap);
 
   const tagPlusStyle: React.CSSProperties = {
-    background: token.colorBgContainer,
     borderStyle: 'dashed',
   };
 
@@ -84,7 +90,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
         <Input
           ref={inputRef}
           type="text"
-          className="h-8"
+          className="h-8 bg-background-card"
           value={inputValue}
           onChange={handleInputChange}
           onBlur={handleInputConfirm}
@@ -97,7 +103,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
       ) : (
         <Button
           variant="dashed"
-          className="w-fit flex items-center justify-center gap-2"
+          className="w-fit flex items-center justify-center gap-2 bg-background-card"
           onClick={showInput}
           style={tagPlusStyle}
         >

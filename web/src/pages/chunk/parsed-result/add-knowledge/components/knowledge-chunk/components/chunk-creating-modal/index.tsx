@@ -8,12 +8,12 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Modal } from '@/components/ui/modal';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card';
+import { Modal } from '@/components/ui/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -148,16 +148,16 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                 <FormLabel className="flex justify-start items-start">
                   <div className="flex items-center gap-0">
                     <span>{t('chunk.question')}</span>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <span className="text-xs mt-[-3px] text-center scale-[90%] font-thin text-white cursor-pointer rounded-full w-[16px] h-[16px] border-muted-foreground/50 border">
+                    <HoverCard>
+                      <HoverCardTrigger asChild>
+                        <span className="text-xs mt-[-3px] text-center scale-[90%] font-thin text-primary cursor-pointer rounded-full w-[16px] h-[16px] border-muted-foreground/50 border">
                           ?
                         </span>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-80">
+                      </HoverCardTrigger>
+                      <HoverCardContent className="w-80" side="top">
                         {t('chunk.questionTip')}
-                      </PopoverContent>
-                    </Popover>
+                      </HoverCardContent>
+                    </HoverCard>
                   </div>
                 </FormLabel>
                 <FormControl>

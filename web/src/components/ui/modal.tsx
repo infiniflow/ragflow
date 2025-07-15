@@ -117,11 +117,11 @@ export const Modal: FC<ModalProps> = ({
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
-          className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-colors-background-neutral-weak/50 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
-            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-background rounded-lg shadow-lg transition-all`}
+            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-colors-background-neutral-standard rounded-lg shadow-lg transition-all`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}
