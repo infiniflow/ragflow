@@ -17,14 +17,14 @@ const Md: React.FC<TxtProps> = ({ filePath }) => {
         return res.text();
       })
       .then((text) => setContent(text))
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(err.message));
   }, [filePath]);
 
-  if (error) return (<FileError>{error}</FileError>);
+  if (error) return <FileError>{error}</FileError>;
 
   return (
-    <div style={{ padding: 24, height: "100vh", overflow: "scroll" }}>
-        {content}
+    <div style={{ padding: 24, height: '100vh', overflow: 'scroll' }}>
+      {content}
     </div>
   );
 };
