@@ -1185,4 +1185,8 @@ export default {
       chat: '聊天',
     },
   },
+  modal: {
+    okText: '確認',
+    cancelText: '取消',
+  },
 };

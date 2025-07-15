@@ -1264,4 +1264,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
     },
   },
+  modal: {
+    okText: '确认',
+    cancelText: '取消',
+  },
 };

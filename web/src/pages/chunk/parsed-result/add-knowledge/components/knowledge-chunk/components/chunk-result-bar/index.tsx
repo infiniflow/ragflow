@@ -61,12 +61,12 @@ export default ({
   };
   return (
     <div className="flex pr-[25px]">
-      <div className="flex items-center gap-4 bg-card text-muted-foreground w-fit h-[35px] rounded-md px-4 py-2 text-base">
+      <div className="flex items-center gap-4 bg-background-card text-muted w-fit h-[35px] rounded-md px-4 py-2 text-base">
         {textSelectOptions.map((option) => (
           <div
             key={option.value}
             className={cn('flex items-center cursor-pointer', {
-              'text-white': option.value === textSelectValue,
+              'text-primary': option.value === textSelectValue,
             })}
             onClick={() => changeTextSelectValue(option.value)}
           >
@@ -76,7 +76,7 @@ export default ({
       </div>
       <div className="ml-auto"></div>
       <Input
-        className="bg-card text-muted-foreground"
+        className="bg-background-card text-muted-foreground"
         style={{ width: 200 }}
         placeholder={t('search')}
         icon={<SearchOutlined />}
@@ -86,7 +86,7 @@ export default ({
       <div className="w-[20px]"></div>
       <Popover>
         <PopoverTrigger asChild>
-          <Button className="bg-card text-muted-foreground hover:bg-card">
+          <Button className="bg-background-card text-muted-foreground hover:bg-card">
             <ListFilter />
           </Button>
         </PopoverTrigger>
@@ -95,7 +95,10 @@ export default ({
         </PopoverContent>
       </Popover>
       <div className="w-[20px]"></div>
-      <Button onClick={() => createChunk()}>
+      <Button
+        onClick={() => createChunk()}
+        className="bg-background-card text-primary"
+      >
         <Plus size={44} />
       </Button>
     </div>

@@ -2,12 +2,12 @@ import { Images } from '@/constants/common';
 import { api_host } from '@/utils/api';
 import { Flex } from 'antd';
 import { useParams, useSearchParams } from 'umi';
-import Md from './md';
-import Text from './text';
 import Docx from './docx';
 import Excel from './excel';
 import Image from './image';
+import Md from './md';
 import Pdf from './pdf';
+import Text from './text';
 
 import { previewHtmlFile } from '@/utils/file-util';
 import styles from './index.less';

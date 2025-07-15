@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'umi';
+import { useParams, useSearchParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -230,6 +230,8 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
 
 export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const knowledgeBaseId = searchParams.get('id') || id;
 
   let queryKey: (KnowledgeApiAction | number)[] = [
     KnowledgeApiAction.FetchKnowledgeDetail,
@@ -244,7 +246,7 @@ export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.get_kb_detail({
-        kb_id: id,
+        kb_id: knowledgeBaseId,
       });
       return data?.data ?? {};
     },

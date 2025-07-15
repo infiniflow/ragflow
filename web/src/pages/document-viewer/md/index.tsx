@@ -19,13 +19,13 @@ const Md: React.FC<MdProps> = ({ filePath }) => {
         return res.text();
       })
       .then((text) => setContent(text))
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(err.message));
   }, [filePath]);
 
-  if (error) return (<FileError>{error}</FileError>);
+  if (error) return <FileError>{error}</FileError>;
 
   return (
-    <div style={{ padding: 24, height: "100vh", overflow: "scroll" }}>
+    <div style={{ padding: 24, height: '100vh', overflow: 'scroll' }}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
     </div>
   );

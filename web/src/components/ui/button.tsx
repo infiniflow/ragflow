@@ -22,6 +22,7 @@ const buttonVariants = cva(
         tertiary:
           'bg-colors-background-sentiment-solid-primary text-colors-text-persist-light hover:bg-colors-background-sentiment-solid-primary/80',
         icon: 'bg-colors-background-inverse-standard text-foreground hover:bg-colors-background-inverse-standard/80',
+        dashed: 'border border-dashed border-input hover:bg-accent',
       },
       size: {
         default: 'h-8 px-2.5 py-1.5 ',
@@ -49,7 +50,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const Comp = asChild ? Slot : 'button';
     return (
       <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(
+          'bg-background-card',
+          buttonVariants({ variant, size, className }),
+        )}
         ref={ref}
         {...props}
       />

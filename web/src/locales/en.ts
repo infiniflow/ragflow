@@ -1303,6 +1303,10 @@ This delimiter is used to split the input text into several text pieces echo of 
         },
       },
     },
+    modal: {
+      okText: 'Confirm',
+      cancelText: 'Cancel',
+    },
     mcp: {
       export: 'Export',
       import: 'Import',
