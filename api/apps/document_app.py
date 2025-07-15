@@ -32,7 +32,7 @@ from api.db.services.document_service import DocumentService, doc_upload_and_par
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, queue_tasks
+from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
 from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
 from api.utils.api_utils import (
@@ -437,6 +437,9 @@ def run():
                 TaskService.filter_delete([Task.doc_id == id])
                 if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
+
+            if str(req["run"]) == TaskStatus.CANCEL.value:
+                cancel_all_task_of(id)
 
             if str(req["run"]) == TaskStatus.RUNNING.value:
                 e, doc = DocumentService.get_by_id(id)
