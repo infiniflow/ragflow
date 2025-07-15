@@ -214,7 +214,7 @@ async def collect():
     canceled = False
     task = TaskService.get_task(msg["id"])
     if task:
-        canceled = TaskService.do_cancel(task["id"])
+        canceled = DocumentService.do_cancel(task["doc_id"])
     if not task or canceled:
         state = "is unknown" if not task else "has been cancelled"
         FAILED_TASKS += 1
@@ -382,7 +382,7 @@ async def build_chunks(task, progress_callback):
 
         docs_to_tag = []
         for d in docs:
-            task_canceled = TaskService.do_cancel(task["id"])
+            task_canceled = DocumentService.do_cancel(task["doc_id"])
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
                 return
@@ -531,7 +531,7 @@ async def do_handle_task(task):
         progress_callback(-1, msg=error_message)
         raise Exception(error_message)
 
-    task_canceled = TaskService.do_cancel(task_id)
+    task_canceled = DocumentService.do_cancel(task_doc_id)
     if task_canceled:
         progress_callback(-1, msg="Task has been canceled.")
         return
@@ -609,7 +609,7 @@ async def do_handle_task(task):
 
     for b in range(0, len(chunks), DOC_BULK_SIZE):
         doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
-        task_canceled = TaskService.do_cancel(task_id)
+        task_canceled = DocumentService.do_cancel(task_doc_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
             return

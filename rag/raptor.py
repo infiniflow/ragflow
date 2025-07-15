@@ -42,6 +42,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         self._prompt = prompt
         self._max_token = max_token
 
+    @timeout(60)
     async def _chat(self, system, history, gen_conf):
         response = get_llm_cache(self._llm_model.llm_name, system, history, gen_conf)
         if response:
