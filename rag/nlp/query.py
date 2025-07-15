@@ -65,7 +65,7 @@ class FulltextQueryer:
                 " "),
             # Thêm tiếng Việt
             (
-            r"(^| )(ai|cái gì|gì|ở đâu|bao giờ|khi nào|như thế nào|làm sao|tại sao|vì sao|có không|phải không|có phải|là gì|là ai|bao nhiêu|mấy|những ai|những gì|thế nào|ra sao|chưa|đúng không|nào|vậy|à|hả|ạ|hử|nhỉ|nhé|chứ|phải không)( |$)",
+            r"(^| )(ai|cái gì|gì|ở đâu|bao giờ|khi nào|như thế nào|làm sao|tại sao|vì sao|có không|phải không|có phải|là gì|là ai|bao nhiêu|mấy|những ai|những gì|thế nào|ra sao|chưa|đúng không|nào|vậy|à|hả|ạ|hử|nhỉ|nhé|chứ)( |$)",
             " "
             )
         ]
