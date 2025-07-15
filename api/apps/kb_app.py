@@ -925,15 +925,12 @@ def extract_entities(kb_id):
             # else: New style: callback(progress_float, msg="text") - use msg parameter
             
             # Parse progress messages to update tracking
-            logging.info(f"Progress callback received: '{msg}'")
-            
             if "Starting entity extraction for" in msg:
                 match = re.search(r"(\d+) documents", msg)
                 if match:
                     with progress_lock:
                         entity_extraction_progress[kb_id]["total_documents"] = int(match.group(1))
                         entity_extraction_progress[kb_id]["current_status"] = "processing"
-                        logging.info(f"Set status to processing for {match.group(1)} documents")
             elif "Document" in msg and "extracted" in msg:
                 # Parse: "Document doc_id: extracted X entities, Y relations"
                 match = re.search(r"extracted (\d+) entities", msg)
@@ -942,11 +939,9 @@ def extract_entities(kb_id):
                         current_entities = entity_extraction_progress[kb_id].get("entities_found", 0)
                         entity_extraction_progress[kb_id]["entities_found"] = current_entities + int(match.group(1))
                         entity_extraction_progress[kb_id]["processed_documents"] += 1
-                        logging.info(f"Updated progress: {entity_extraction_progress[kb_id]['processed_documents']}/{entity_extraction_progress[kb_id]['total_documents']} documents")
             elif "Entity extraction completed" in msg:
                 with progress_lock:
                     entity_extraction_progress[kb_id]["current_status"] = "completed"
-                    logging.info(f"Callback set status to completed via message: '{msg}'")
         
         # Create LLM bundle
         llm_bdl = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
@@ -1026,7 +1021,6 @@ def extract_entities(kb_id):
                     )
                     
                     # Update progress from result
-                    logging.info(f"Entity extraction result status: {result['status']}")
                     with progress_lock:
                         entity_extraction_progress[kb_id].update({
                             "total_documents": result["total_documents"],
@@ -1035,10 +1029,8 @@ def extract_entities(kb_id):
                             "relations_found": result["relations_found"],
                             "current_status": result["status"]
                         })
-                        final_status = entity_extraction_progress[kb_id]['current_status']
                     
                     logging.info(f"Entity extraction completed for kb {kb_id}: {result['entities_found']} entities, {result['relations_found']} relations")
-                    logging.info(f"Progress dictionary updated with status: {final_status}")
                     
                 finally:
                     extract_lock.release()
@@ -1055,9 +1047,7 @@ def extract_entities(kb_id):
         
         def run_extraction_thread():
             try:
-                logging.info(f"Background thread started for kb {kb_id}")
                 trio.run(run_extraction)
-                logging.info(f"Background thread completed successfully for kb {kb_id}")
             except Exception as e:
                 logging.exception(f"Background thread failed for kb {kb_id}: {str(e)}")
                 with progress_lock:
@@ -1066,7 +1056,6 @@ def extract_entities(kb_id):
         extraction_thread = threading.Thread(target=run_extraction_thread)
         extraction_thread.daemon = True
         extraction_thread.start()
-        logging.info(f"Started background extraction thread for kb {kb_id}")
         
         return get_json_result(
             data=True,
