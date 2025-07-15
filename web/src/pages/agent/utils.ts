@@ -569,6 +569,11 @@ export function getAgentNodeTools(agentNode?: RAGFlowNodeType) {
   return tools;
 }
 
+export function getAgentNodeMCP(agentNode?: RAGFlowNodeType) {
+  const tools: IAgentForm['mcp'] = get(agentNode, 'data.form.mcp', []);
+  return tools;
+}
+
 export function mapEdgeMouseEvent(
   edges: Edge[],
   edgeId: string,

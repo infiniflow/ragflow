@@ -11,11 +11,13 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { lowerFirst } from 'lodash';
 import { Play, X } from 'lucide-react';
+import { useMemo } from 'react';
 import { BeginId, Operator } from '../constant';
 import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import OperatorIcon from '../operator-icon';
+import useGraphStore from '../store';
 import { needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 import { useFormConfigMap } from './use-form-config-map';
@@ -40,6 +42,7 @@ const FormSheet = ({
   showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
+  const clickedToolId = useGraphStore((state) => state.clickedToolId);
 
   const FormConfigMap = useFormConfigMap();
 
@@ -51,6 +54,13 @@ const FormSheet = ({
     id: node?.id,
     data: node?.data,
   });
+
+  const isMcp = useMemo(() => {
+    return (
+      operatorName === Operator.Tool &&
+      Object.values(Operator).every((x) => x !== clickedToolId)
+    );
+  }, [clickedToolId, operatorName]);
 
   const { t } = useTranslate('flow');
 
@@ -67,18 +77,23 @@ const FormSheet = ({
           <section className="flex-col border-b py-2 px-5">
             <div className="flex items-center gap-2 pb-3">
               <OperatorIcon name={operatorName}></OperatorIcon>
-              <div className="flex items-center gap-1 flex-1">
-                <label htmlFor="">{t('title')}</label>
-                {node?.id === BeginId ? (
-                  <span>{t(BeginId)}</span>
-                ) : (
-                  <Input
-                    value={name}
-                    onBlur={handleNameBlur}
-                    onChange={handleNameChange}
-                  ></Input>
-                )}
-              </div>
+
+              {isMcp ? (
+                <div className="flex-1">MCP Config</div>
+              ) : (
+                <div className="flex items-center gap-1 flex-1">
+                  <label htmlFor="">{t('title')}</label>
+                  {node?.id === BeginId ? (
+                    <span>{t(BeginId)}</span>
+                  ) : (
+                    <Input
+                      value={name}
+                      onBlur={handleNameBlur}
+                      onChange={handleNameChange}
+                    ></Input>
+                  )}
+                </div>
+              )}
 
               {needsSingleStepDebugging(operatorName) && (
                 <RunTooltip>
