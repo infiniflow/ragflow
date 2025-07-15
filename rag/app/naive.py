@@ -22,7 +22,7 @@ from timeit import default_timer as timer
 
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
-from markdown import markdown 
+from markdown import markdown
 from PIL import Image
 from tika import parser
 
@@ -76,15 +76,15 @@ class Docx(DocxParser):
         """Get the hierarchical title structure before the table"""
         import re
         from docx.text.paragraph import Paragraph
-        
+
         titles = []
         blocks = []
-        
+
         # Get document name from filename parameter
         doc_name = re.sub(r"\.[a-zA-Z]+$", "", filename)
         if not doc_name:
             doc_name = "Untitled Document"
-            
+
         # Collect all document blocks while maintaining document order
         try:
             # Iterate through all paragraphs and tables in document order
@@ -97,7 +97,7 @@ class Docx(DocxParser):
         except Exception as e:
             logging.error(f"Error collecting blocks: {e}")
             return ""
-            
+
         # Find the target table position
         target_table_pos = -1
         table_count = 0
@@ -107,20 +107,20 @@ class Docx(DocxParser):
                     target_table_pos = pos
                     break
                 table_count += 1
-                
+
         if target_table_pos == -1:
             return ""  # Target table not found
-            
+
         # Find the nearest heading paragraph in reverse order
         nearest_title = None
         for i in range(len(blocks)-1, -1, -1):
             block_type, pos, block = blocks[i]
             if pos >= target_table_pos:  # Skip blocks after the table
                 continue
-                
+
             if block_type != 'p':
                 continue
-                
+
             if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
                 try:
                     level_match = re.search(r"(\d+)", block.style.name)
@@ -133,12 +133,12 @@ class Docx(DocxParser):
                                 break
                 except Exception as e:
                     logging.error(f"Error parsing heading level: {e}")
-        
+
         if nearest_title:
             # Add current title
             titles.append(nearest_title)
             current_level = nearest_title[0]
-            
+
             # Find all parent headings, allowing cross-level search
             while current_level > 1:
                 found = False
@@ -146,17 +146,17 @@ class Docx(DocxParser):
                     block_type, pos, block = blocks[i]
                     if pos >= target_table_pos:  # Skip blocks after the table
                         continue
-                        
+
                     if block_type != 'p':
                         continue
-                        
+
                     if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
                         try:
                             level_match = re.search(r"(\d+)", block.style.name)
                             if level_match:
                                 level = int(level_match.group(1))
                                 # Find any heading with a higher level
-                                if level < current_level:  
+                                if level < current_level:
                                     title_text = block.text.strip()
                                     if title_text:  # Avoid empty titles
                                         titles.append((level, title_text))
@@ -165,16 +165,16 @@ class Docx(DocxParser):
                                         break
                         except Exception as e:
                             logging.error(f"Error parsing parent heading: {e}")
-                            
+
                 if not found:  # Break if no parent heading is found
                     break
-            
+
             # Sort by level (ascending, from highest to lowest)
             titles.sort(key=lambda x: x[0])
             # Organize titles (from highest to lowest)
             hierarchy = [doc_name] + [t[1] for t in titles]
             return " > ".join(hierarchy)
-            
+
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
@@ -298,13 +298,13 @@ class Markdown(MarkdownParser):
             text = sections[0]
         else:
             return []
-        
+
         from bs4 import BeautifulSoup
         html_content = markdown(text)
         soup = BeautifulSoup(html_content, 'html.parser')
         html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
         return html_images
-    
+
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
         import requests
@@ -320,17 +320,17 @@ class Markdown(MarkdownParser):
             except Exception as e:
                 logging.error(f"Failed to download/open image from {url}: {e}")
                 continue
-                    
+
         return images if images else None
 
-    def __call__(self, filename, binary=None):
+    def __call__(self, filename, binary=None, separate_tables=True):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 txt = f.read()
-        remainder, tables = self.extract_tables_and_remainder(f'{txt}\n')
+        remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
         sections = []
         tbls = []
         for sec in remainder.split("\n"):
@@ -465,8 +465,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables = markdown_parser(filename, binary)
-        
+        sections, tables = markdown_parser(filename, binary, separate_tables=False)
+
         # Process images for each section
         section_images = []
         for section_text, _ in sections:
@@ -477,7 +477,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 section_images.append(combined_image)
             else:
                 section_images.append(None)
-                
+
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
@@ -524,7 +524,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                             "delimiter", "\n!?。；！？"))
         if kwargs.get("section_only", False):
             return chunks
-        
+
         res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
     else:
         chunks = naive_merge(
@@ -535,7 +535,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             return chunks
 
         res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
-    
+
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
     return res
 
