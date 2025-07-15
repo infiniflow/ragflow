@@ -579,60 +579,57 @@ def resolve_entities(kb_id):
             finally:
                 graphrag_task_lock.release()
         
-        # Execute the async function using trio
-        updated_graph = trio.run(run_entity_resolution)
-        
-        # Convert updated graph back to JSON format
-        updated_nodes = []
-        for node_id, node_data in updated_graph.nodes(data=True):
-            node_dict = {"id": node_id, **node_data}
-            updated_nodes.append(node_dict)
-        
-        updated_edges = []
-        for source, target, edge_data in updated_graph.edges(data=True):
-            edge_dict = {"source": source, "target": target, **edge_data}
-            updated_edges.append(edge_dict)
-        
-        updated_graph_data = {
-            "nodes": updated_nodes,
-            "edges": updated_edges
-        }
-        
-        # Update stored knowledge graph
-        settings.docStoreConn.update(
-            {"knowledge_graph_kwd": ["graph"], "kb_id": [kb_id]},
-            {"content_with_weight": json.dumps(updated_graph_data)},
-            search.index_name(kb.tenant_id),
-            kb_id
-        )
-        
-        # Mark operation as completed but don't delete immediately
-        # Frontend will handle cleanup after showing final status
-        progress_data["current_status"] = "completed"
-        entity_resolution_progress[kb_id] = progress_data.copy()
-        
-        # Schedule cleanup after 30 seconds to prevent memory buildup
-        def cleanup_progress():
-            import time
-            time.sleep(30)
-            if kb_id in entity_resolution_progress:
-                del entity_resolution_progress[kb_id]
-        
+        # Execute the async function in a background thread
         import threading
-        threading.Thread(target=cleanup_progress, daemon=True).start()
         
-        # Extract merge information from final progress data
-        total_pairs = progress_data.get("total_pairs", 0)
+        def background_entity_resolution():
+            nonlocal kb_id, kb, progress_data
+            try:
+                # Execute the async function using trio
+                updated_graph = trio.run(run_entity_resolution)
+                
+                # Convert updated graph back to JSON format
+                updated_nodes = []
+                for node_id, node_data in updated_graph.nodes(data=True):
+                    node_dict = {"id": node_id, **node_data}
+                    updated_nodes.append(node_dict)
+                
+                updated_edges = []
+                for source, target, edge_data in updated_graph.edges(data=True):
+                    edge_dict = {"source": source, "target": target, **edge_data}
+                    updated_edges.append(edge_dict)
+                
+                updated_graph_data = {
+                    "nodes": updated_nodes,
+                    "edges": updated_edges
+                }
+                
+                # Update stored knowledge graph
+                settings.docStoreConn.update(
+                    {"knowledge_graph_kwd": ["graph"], "kb_id": [kb_id]},
+                    {"content_with_weight": json.dumps(updated_graph_data)},
+                    search.index_name(kb.tenant_id),
+                    kb_id
+                )
+                
+                # Mark operation as completed but don't delete immediately
+                # Frontend will handle cleanup after showing final status
+                progress_data["current_status"] = "completed"
+                entity_resolution_progress[kb_id] = progress_data.copy()
+                
+                # Don't auto-cleanup - let progress persist for user to see results
+            except Exception as e:
+                logging.exception(f"Entity resolution failed for kb {kb_id}: {str(e)}")
+                entity_resolution_progress[kb_id]["current_status"] = "failed"
+        
+        # Start the background thread
+        resolution_thread = threading.Thread(target=background_entity_resolution)
+        resolution_thread.daemon = True
+        resolution_thread.start()
         
         return get_json_result(
-            data={
-                "success": True,
-                "nodes_count": len(updated_nodes),
-                "edges_count": len(updated_edges),
-                "total_pairs_analyzed": total_pairs,
-                "progress": progress_data
-            },
-            message=f'Entity resolution completed successfully. Analyzed {total_pairs} candidate pairs. Graph now has {len(updated_nodes)} nodes and {len(updated_edges)} edges.',
+            data=True,
+            message='Entity resolution started successfully.',
             code=settings.RetCode.SUCCESS
         )
         
@@ -791,63 +788,64 @@ def detect_communities(kb_id):
             finally:
                 graphrag_task_lock.release()
         
-        # Execute the async function using trio
-        updated_graph = trio.run(run_community_detection)
-        
-        # Convert updated graph back to JSON format
-        updated_nodes = []
-        for node_id, node_data in updated_graph.nodes(data=True):
-            node_dict = {"id": node_id, **node_data}
-            updated_nodes.append(node_dict)
-        
-        updated_edges = []
-        for source, target, edge_data in updated_graph.edges(data=True):
-            edge_dict = {"source": source, "target": target, **edge_data}
-            updated_edges.append(edge_dict)
-        
-        updated_graph_data = {
-            "nodes": updated_nodes,
-            "edges": updated_edges
-        }
-        
-        # Update stored knowledge graph
-        settings.docStoreConn.update(
-            {"knowledge_graph_kwd": ["graph"], "kb_id": [kb_id]},
-            {"content_with_weight": json.dumps(updated_graph_data)},
-            search.index_name(kb.tenant_id),
-            kb_id
-        )
-        
-        # Count communities in the updated graph
-        communities = set()
-        for node_data in updated_nodes:
-            if "community" in node_data:
-                communities.add(node_data["community"])
-        
-        # Mark operation as completed but don't delete immediately
-        # Frontend will handle cleanup after showing final status
-        progress_data["current_status"] = "completed"
-        community_detection_progress[kb_id] = progress_data.copy()
-        
-        # Schedule cleanup after 30 seconds to prevent memory buildup
-        def cleanup_progress():
-            import time
-            time.sleep(30)
-            if kb_id in community_detection_progress:
-                del community_detection_progress[kb_id]
-        
+        # Execute the async function in a background thread
         import threading
-        threading.Thread(target=cleanup_progress, daemon=True).start()
+        
+        def background_community_detection():
+            nonlocal kb_id, kb, progress_data
+            try:
+                # Execute the async function using trio
+                updated_graph = trio.run(run_community_detection)
+                
+                # Convert updated graph back to JSON format
+                updated_nodes = []
+                for node_id, node_data in updated_graph.nodes(data=True):
+                    node_dict = {"id": node_id, **node_data}
+                    updated_nodes.append(node_dict)
+                
+                updated_edges = []
+                for source, target, edge_data in updated_graph.edges(data=True):
+                    edge_dict = {"source": source, "target": target, **edge_data}
+                    updated_edges.append(edge_dict)
+                
+                updated_graph_data = {
+                    "nodes": updated_nodes,
+                    "edges": updated_edges
+                }
+                
+                # Update stored knowledge graph
+                settings.docStoreConn.update(
+                    {"knowledge_graph_kwd": ["graph"], "kb_id": [kb_id]},
+                    {"content_with_weight": json.dumps(updated_graph_data)},
+                    search.index_name(kb.tenant_id),
+                    kb_id
+                )
+                
+                # Count communities in the updated graph
+                communities = set()
+                for node_data in updated_nodes:
+                    if "community" in node_data:
+                        communities.add(node_data["community"])
+                
+                # Mark operation as completed but don't delete immediately
+                # Frontend will handle cleanup after showing final status
+                progress_data["current_status"] = "completed"
+                community_detection_progress[kb_id] = progress_data.copy()
+                
+                # Don't auto-cleanup - let progress persist for user to see results
+                
+            except Exception as e:
+                logging.exception(f"Community detection failed for kb {kb_id}: {str(e)}")
+                community_detection_progress[kb_id]["current_status"] = "failed"
+        
+        # Start the background thread  
+        community_thread = threading.Thread(target=background_community_detection)
+        community_thread.daemon = True
+        community_thread.start()
         
         return get_json_result(
-            data={
-                "success": True,
-                "nodes_count": len(updated_nodes),
-                "edges_count": len(updated_edges),
-                "communities_count": len(communities),
-                "progress": progress_data
-            },
-            message=f'Community detection completed successfully. Graph now has {len(updated_nodes)} nodes, {len(updated_edges)} edges, and {len(communities)} communities.',
+            data=True,
+            message='Community detection started successfully.',
             code=settings.RetCode.SUCCESS
         )
         
@@ -903,12 +901,16 @@ def extract_entities(kb_id):
             )
         
         # Initialize progress tracking
-        entity_extraction_progress[kb_id] = {
-            "total_documents": 0,
-            "processed_documents": 0,
-            "entities_found": 0,
-            "current_status": "starting"
-        }
+        import threading
+        progress_lock = threading.Lock()
+        
+        with progress_lock:
+            entity_extraction_progress[kb_id] = {
+                "total_documents": 0,
+                "processed_documents": 0,
+                "entities_found": 0,
+                "current_status": "starting"
+            }
         
         # Set up callback for progress tracking
         def progress_callback(progress=None, msg=""):
@@ -923,20 +925,28 @@ def extract_entities(kb_id):
             # else: New style: callback(progress_float, msg="text") - use msg parameter
             
             # Parse progress messages to update tracking
+            logging.info(f"Progress callback received: '{msg}'")
+            
             if "Starting entity extraction for" in msg:
                 match = re.search(r"(\d+) documents", msg)
                 if match:
-                    entity_extraction_progress[kb_id]["total_documents"] = int(match.group(1))
-                    entity_extraction_progress[kb_id]["current_status"] = "processing"
+                    with progress_lock:
+                        entity_extraction_progress[kb_id]["total_documents"] = int(match.group(1))
+                        entity_extraction_progress[kb_id]["current_status"] = "processing"
+                        logging.info(f"Set status to processing for {match.group(1)} documents")
             elif "Document" in msg and "extracted" in msg:
                 # Parse: "Document doc_id: extracted X entities, Y relations"
                 match = re.search(r"extracted (\d+) entities", msg)
                 if match:
-                    current_entities = entity_extraction_progress[kb_id].get("entities_found", 0)
-                    entity_extraction_progress[kb_id]["entities_found"] = current_entities + int(match.group(1))
-                    entity_extraction_progress[kb_id]["processed_documents"] += 1
+                    with progress_lock:
+                        current_entities = entity_extraction_progress[kb_id].get("entities_found", 0)
+                        entity_extraction_progress[kb_id]["entities_found"] = current_entities + int(match.group(1))
+                        entity_extraction_progress[kb_id]["processed_documents"] += 1
+                        logging.info(f"Updated progress: {entity_extraction_progress[kb_id]['processed_documents']}/{entity_extraction_progress[kb_id]['total_documents']} documents")
             elif "Entity extraction completed" in msg:
-                entity_extraction_progress[kb_id]["current_status"] = "completed"
+                with progress_lock:
+                    entity_extraction_progress[kb_id]["current_status"] = "completed"
+                    logging.info(f"Callback set status to completed via message: '{msg}'")
         
         # Create LLM bundle
         llm_bdl = LLMBundle(kb.tenant_id, LLMType.CHAT, llm_name=None, lang=kb.language)
@@ -1016,15 +1026,19 @@ def extract_entities(kb_id):
                     )
                     
                     # Update progress from result
-                    entity_extraction_progress[kb_id].update({
-                        "total_documents": result["total_documents"],
-                        "processed_documents": result["processed_documents"],
-                        "entities_found": result["entities_found"],
-                        "relations_found": result["relations_found"],
-                        "current_status": result["status"]
-                    })
+                    logging.info(f"Entity extraction result status: {result['status']}")
+                    with progress_lock:
+                        entity_extraction_progress[kb_id].update({
+                            "total_documents": result["total_documents"],
+                            "processed_documents": result["processed_documents"],
+                            "entities_found": result["entities_found"],
+                            "relations_found": result["relations_found"],
+                            "current_status": result["status"]
+                        })
+                        final_status = entity_extraction_progress[kb_id]['current_status']
                     
                     logging.info(f"Entity extraction completed for kb {kb_id}: {result['entities_found']} entities, {result['relations_found']} relations")
+                    logging.info(f"Progress dictionary updated with status: {final_status}")
                     
                 finally:
                     extract_lock.release()
@@ -1032,15 +1046,31 @@ def extract_entities(kb_id):
                 
             except Exception as e:
                 logging.exception(f"Entity extraction failed for kb {kb_id}: {str(e)}")
-                entity_extraction_progress[kb_id]["current_status"] = "failed"
+                with progress_lock:
+                    entity_extraction_progress[kb_id]["current_status"] = "failed"
                 raise
         
-        # Start the extraction process
-        trio.run(run_extraction)
+        # Start the extraction process in a background thread
+        import threading
+        
+        def run_extraction_thread():
+            try:
+                logging.info(f"Background thread started for kb {kb_id}")
+                trio.run(run_extraction)
+                logging.info(f"Background thread completed successfully for kb {kb_id}")
+            except Exception as e:
+                logging.exception(f"Background thread failed for kb {kb_id}: {str(e)}")
+                with progress_lock:
+                    entity_extraction_progress[kb_id]["current_status"] = "failed"
+        
+        extraction_thread = threading.Thread(target=run_extraction_thread)
+        extraction_thread.daemon = True
+        extraction_thread.start()
+        logging.info(f"Started background extraction thread for kb {kb_id}")
         
         return get_json_result(
             data=True,
-            message='Entity extraction completed successfully.'
+            message='Entity extraction started successfully.'
         )
         
     except Exception as e:
@@ -1161,12 +1191,15 @@ def build_graph(kb_id):
                 graph_building_progress[kb_id]["current_status"] = "failed"
                 raise
         
-        # Start the graph building process
-        trio.run(run_build)
+        # Start the graph building process in a background thread
+        import threading
+        build_thread = threading.Thread(target=lambda: trio.run(run_build))
+        build_thread.daemon = True
+        build_thread.start()
         
         return get_json_result(
             data=True,
-            message='Graph building completed successfully.'
+            message='Graph building started successfully.'
         )
         
     except Exception as e:

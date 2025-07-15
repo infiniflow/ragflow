@@ -36,14 +36,13 @@ const KnowledgeGraph: React.FC = () => {
   // Workflow state logic for two-step process
   const hasDocuments = (knowledgeDetails?.chunk_num || 0) > 0;
   // Check if entity extraction completed with entities found
-  const hasExtractedEntities = extractionProgress?.status === "completed" && (extractionProgress?.entities_found || 0) > 0;
+  const hasExtractedEntities = extractionProgress?.current_status === "completed" && (extractionProgress?.entities_found || 0) > 0;
   
   // Button enable/disable logic
   const canExtractEntities = !isParsing && hasDocuments && !extractingEntities;
-  // Enable build graph when entities exist (either from extraction or already in graph) and not currently building
-  const canBuildGraph = (hasExtractedEntities || (extractionProgress?.entities_found || 0) > 0) && !buildingGraph;
-  const canResolveEntities = totalNodes > 0 && !resolvingEntities;
-  const canDetectCommunities = totalNodes > 0 && !detectingCommunities;
+  const canBuildGraph = !isParsing && hasDocuments && !buildingGraph;
+  const canResolveEntities = !isParsing && hasDocuments && !resolvingEntities;
+  const canDetectCommunities = !isParsing && hasDocuments && !detectingCommunities;
   const canDelete = (hasExtractedEntities || totalNodes > 0);
 
   const handleResolveEntities = async () => {

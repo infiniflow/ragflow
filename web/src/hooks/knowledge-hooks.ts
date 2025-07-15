@@ -586,10 +586,10 @@ export const useResolveEntities = () => {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
-            // Refresh the page to update the knowledge graph data
-            setTimeout(() => {
-              window.location.reload();
-            }, 2000);
+            // Invalidate the knowledge graph query to refresh data
+            queryClient.invalidateQueries({
+              queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+            });
           }
         } else if (progressData.code === 0 && progressData.data === null) {
           // Operation completed or not running, stop polling
@@ -609,13 +609,19 @@ export const useResolveEntities = () => {
     const checkInitialProgress = async () => {
       try {
         const { data: progressData } = await getEntityResolutionProgress(knowledgeBaseId);
+        console.log('Entity resolution initial progress check:', progressData);
         
         if (progressData.code === 0 && progressData.data) {
+          const isDismissed = isProgressDismissed(knowledgeBaseId, 'resolution');
+          console.log('Entity resolution progress status:', progressData.data.current_status, 'isDismissed:', isDismissed);
+          
           // Check if user has dismissed this completed progress
-          if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'resolution')) {
+          if (progressData.data.current_status === 'completed' && isDismissed) {
+            console.log('Entity resolution progress dismissed, not showing');
             return; // Don't show dismissed completed progress
           }
           
+          console.log('Setting entity resolution progress:', progressData.data);
           setProgress(progressData.data);
           
           // If status is completed, don't start polling
@@ -623,6 +629,8 @@ export const useResolveEntities = () => {
             // Start polling since operation is still ongoing
             startPolling();
           }
+        } else {
+          console.log('No entity resolution progress data available');
         }
       } catch (error) {
         console.error('Failed to check initial entity resolution progress:', error);
@@ -647,23 +655,23 @@ export const useResolveEntities = () => {
         current_status: 'starting'
       });
 
+      console.log('Starting entity resolution - beginning polling...');
       // Start polling for progress
       startPolling();
-    } else {
-      // Stop polling when mutation completes
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
     }
-
+    // Don't clear polling when loading becomes false - let the polling continue until completion
+  }, [loading]);
+  
+  // Cleanup polling when component unmounts or knowledgeBaseId changes
+  useEffect(() => {
     return () => {
+      console.log('useEffect cleanup (knowledgeBaseId) - clearing entity resolution polling');
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
     };
-  }, [loading, knowledgeBaseId]);
+  }, [knowledgeBaseId]);
 
   return { 
     data, 
@@ -739,10 +747,10 @@ export const useDetectCommunities = () => {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
-            // Refresh the page to update the knowledge graph data
-            setTimeout(() => {
-              window.location.reload();
-            }, 2000);
+            // Invalidate the knowledge graph query to refresh data
+            queryClient.invalidateQueries({
+              queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+            });
           }
         } else if (progressData.code === 0 && progressData.data === null) {
           // Operation completed or not running, stop polling
@@ -800,23 +808,23 @@ export const useDetectCommunities = () => {
         current_status: 'starting'
       });
 
+      console.log('Starting community detection - beginning polling...');
       // Start polling for progress
       startPolling();
-    } else {
-      // Stop polling when mutation completes
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
     }
-
+    // Don't clear polling when loading becomes false - let the polling continue until completion
+  }, [loading]);
+  
+  // Cleanup polling when component unmounts or knowledgeBaseId changes
+  useEffect(() => {
     return () => {
+      console.log('useEffect cleanup (knowledgeBaseId) - clearing community detection polling');
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
     };
-  }, [loading, knowledgeBaseId]);
+  }, [knowledgeBaseId]);
 
   return { 
     data, 
@@ -904,6 +912,7 @@ export const useExtractEntities = () => {
       }
     },
     onError: () => {
+      console.log('Mutation error - clearing polling');
       setProgress(null);
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
@@ -914,15 +923,21 @@ export const useExtractEntities = () => {
 
   const startPolling = () => {
     if (pollingRef.current) {
+      console.log('Clearing existing polling interval');
       clearInterval(pollingRef.current);
     }
     
+    console.log('Starting entity extraction polling...');
     pollingRef.current = setInterval(async () => {
       try {
+        console.log('Polling entity extraction progress...');
         const { data: progressData } = await getExtractionProgress(knowledgeBaseId);
+        console.log('Progress data received:', progressData);
+        
         if (progressData.code === 0 && progressData.data) {
           // Check if user has dismissed this completed progress
           if (progressData.data.current_status === 'completed' && isProgressDismissed(knowledgeBaseId, 'extraction')) {
+            console.log('Progress completed but dismissed, stopping polling');
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
@@ -930,19 +945,22 @@ export const useExtractEntities = () => {
             return; // Don't show dismissed completed progress
           }
           
+          console.log('Setting progress:', progressData.data);
           setProgress(progressData.data);
           
           if (progressData.data.current_status === 'completed') {
+            console.log('Extraction completed, stopping polling');
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
-            // Refresh the page to update the knowledge graph data
-            setTimeout(() => {
-              window.location.reload();
-            }, 2000);
+            // Invalidate the knowledge graph query to refresh data
+            queryClient.invalidateQueries({
+              queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+            });
           }
         } else if (progressData.code === 0 && progressData.data === null) {
+          console.log('No progress data, stopping polling');
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
             pollingRef.current = null;
@@ -982,6 +1000,7 @@ export const useExtractEntities = () => {
   }, [knowledgeBaseId]);
 
   useEffect(() => {
+    console.log('useEffect [loading] - loading:', loading, 'knowledgeBaseId:', knowledgeBaseId);
     if (loading) {
       // Clear dismissal when starting new extraction
       clearProgressDismissal(knowledgeBaseId, 'extraction');
@@ -992,21 +1011,22 @@ export const useExtractEntities = () => {
         current_status: 'starting'
       });
 
+      console.log('Starting extraction - beginning polling...');
       startPolling();
-    } else {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
     }
-
+    // Don't clear polling when loading becomes false - let the polling continue until completion
+  }, [loading]);
+  
+  // Cleanup polling when component unmounts or knowledgeBaseId changes
+  useEffect(() => {
     return () => {
+      console.log('useEffect cleanup (knowledgeBaseId) - clearing polling');
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
     };
-  }, [loading, knowledgeBaseId]);
+  }, [knowledgeBaseId]);
 
   return { 
     data, 
@@ -1078,10 +1098,10 @@ export const useBuildGraph = () => {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
-            // Refresh the page to update the knowledge graph data
-            setTimeout(() => {
-              window.location.reload();
-            }, 2000);
+            // Invalidate the knowledge graph query to refresh data
+            queryClient.invalidateQueries({
+              queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+            });
           }
         } else if (progressData.code === 0 && progressData.data === null) {
           if (pollingRef.current) {
@@ -1133,21 +1153,22 @@ export const useBuildGraph = () => {
         current_status: 'starting'
       });
 
+      console.log('Starting graph building - beginning polling...');
       startPolling();
-    } else {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
     }
-
+    // Don't clear polling when loading becomes false - let the polling continue until completion
+  }, [loading]);
+  
+  // Cleanup polling when component unmounts or knowledgeBaseId changes
+  useEffect(() => {
     return () => {
+      console.log('useEffect cleanup (knowledgeBaseId) - clearing graph building polling');
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
     };
-  }, [loading, knowledgeBaseId]);
+  }, [knowledgeBaseId]);
 
   return { 
     data, 
