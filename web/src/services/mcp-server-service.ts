@@ -48,7 +48,7 @@ const methods = {
   },
   listTools: {
     url: listMcpServerTools,
-    method: 'get',
+    method: 'post',
   },
   testTool: {
     url: testMcpServerTool,

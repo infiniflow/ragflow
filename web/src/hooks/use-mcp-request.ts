@@ -5,6 +5,7 @@ import {
   IMcpServer,
   IMcpServerListResponse,
   IMCPTool,
+  IMCPToolRecord,
 } from '@/interfaces/database/mcp';
 import {
   IImportMcpServersRequestBody,
@@ -16,6 +17,7 @@ import mcpServerService, {
 } from '@/services/mcp-server-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
+import { useState } from 'react';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -201,17 +203,19 @@ export const useExportMcpServer = () => {
 };
 
 export const useListMcpServerTools = () => {
-  const { data, isFetching: loading } = useQuery({
+  const [ids, setIds] = useState<string[]>([]);
+  const { data, isFetching: loading } = useQuery<IMCPToolRecord>({
     queryKey: [McpApiAction.ListMcpServerTools],
-    initialData: [],
+    initialData: {} as IMCPToolRecord,
     gcTime: 0,
+    enabled: ids.length > 0,
     queryFn: async () => {
-      const { data } = await mcpServerService.listTools();
-      return data?.data ?? [];
+      const { data } = await mcpServerService.listTools({ mcp_ids: ids });
+      return data?.data ?? {};
     },
   });
 
-  return { data, loading };
+  return { data, loading, setIds };
 };
 
 export const useTestMcpServer = () => {
