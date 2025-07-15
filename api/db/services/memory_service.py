@@ -29,8 +29,6 @@ import os
 
 
 
-os.environ["OPENAI_API_KEY"] = ""  # Set your OpenAI API key here
-
 class MemoryService(CommonService):
     model = ConversationMemory
     
