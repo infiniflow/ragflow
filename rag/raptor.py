@@ -20,6 +20,7 @@ import numpy as np
 from sklearn.mixture import GaussianMixture
 import trio
 
+from api.utils.api_utils import timeout
 from graphrag.utils import (
     get_llm_cache,
     get_embed_cache,
@@ -54,6 +55,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         set_llm_cache(self._llm_model.llm_name, system, response, history, gen_conf)
         return response
 
+    @timeout(2)
     async def _embedding_encode(self, txt):
         response = get_embed_cache(self._embd_model.llm_name, txt)
         if response is not None:
@@ -83,6 +85,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
 
+        @timeout(60)
         async def summarize(ck_idx: list[int]):
             nonlocal chunks
             texts = [chunks[i][0] for i in ck_idx]

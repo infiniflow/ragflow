@@ -21,6 +21,7 @@ from typing import Callable
 import trio
 import networkx as nx
 
+from api.utils.api_utils import timeout
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
     handle_single_relationship_extraction, split_string_by_multi_markers, flat_uniq_list, chat_limiter, get_from_to, GraphChange
@@ -46,6 +47,7 @@ class Extractor:
         self._language = language
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
 
+    @timeout(60)
     def _chat(self, system, history, gen_conf):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)

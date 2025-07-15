@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 
+from api.utils.api_utils import timeout
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
@@ -275,6 +276,7 @@ async def build_chunks(task, progress_callback):
         doc[PAGERANK_FLD] = int(task["pagerank"])
     st = timer()
 
+    @timeout(60)
     async def upload_to_minio(document, chunk):
         try:
             d = copy.deepcopy(document)
@@ -415,6 +417,7 @@ def init_kb(row, vector_size: int):
     return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
 
 
+@timeout(60*20)
 async def embedding(docs, mdl, parser_config=None, callback=None):
     if parser_config is None:
         parser_config = {}
@@ -461,6 +464,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     return tk_count, vector_size
 
 
+@timeout(3600)
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
@@ -502,6 +506,7 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     return res, tk_count
 
 
+@timeout(60*60*1.5)
 async def do_handle_task(task):
     task_id = task["id"]
     task_from_page = task["from_page"]

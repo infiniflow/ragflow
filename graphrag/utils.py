@@ -157,6 +157,7 @@ def set_tags_to_cache(kb_ids, tags):
     k = hasher.hexdigest()
     REDIS_CONN.set(k, json.dumps(tags).encode("utf-8"), 600)
 
+
 def tidy_graph(graph: nx.Graph, callback, check_attribute: bool = True):
     """
     Ensure all nodes and edges in the graph have some essential attribute.
@@ -190,11 +191,13 @@ def tidy_graph(graph: nx.Graph, callback, check_attribute: bool = True):
     if purged_edges and callback:
         callback(msg=f"Purged {len(purged_edges)} edges from graph due to missing essential attributes.")
 
+
 def get_from_to(node1, node2):
     if node1 < node2:
         return (node1, node2)
     else:
         return (node2, node1)
+
 
 def graph_merge(g1: nx.Graph, g2: nx.Graph, change: GraphChange):
     """Merge graph g2 into g1 in place."""
@@ -227,6 +230,7 @@ def graph_merge(g1: nx.Graph, g2: nx.Graph, change: GraphChange):
         g1.graph["source_id"] = []
     g1.graph["source_id"] += g2.graph.get("source_id", [])
     return g1
+
 
 def compute_args_hash(*args):
     return md5(str(args).encode()).hexdigest()
@@ -378,6 +382,7 @@ async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta,
     chunk["q_%d_vec" % len(ebd)] = ebd
     chunks.append(chunk)
 
+
 async def does_graph_contains(tenant_id, kb_id, doc_id):
     # Get doc_ids of graph
     fields = ["source_id"]
@@ -391,6 +396,7 @@ async def does_graph_contains(tenant_id, kb_id, doc_id):
     for chunk_id in fields2.keys():
         graph_doc_ids = set(fields2[chunk_id]["source_id"])
     return doc_id in graph_doc_ids
+
 
 async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
     conds = {
