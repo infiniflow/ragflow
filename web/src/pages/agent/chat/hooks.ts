@@ -8,6 +8,8 @@ import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
   IInputEvent,
+  IMessageEndData,
+  IMessageEndEvent,
   IMessageEvent,
   MessageEventType,
   useSendMessageBySSE,
@@ -17,7 +19,7 @@ import i18n from '@/locales/config';
 import api from '@/utils/api';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useContext, useEffect, useMemo } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
@@ -114,6 +116,9 @@ export const useSendNextMessage = () => {
   const { refetch } = useFetchAgent();
   const { addEventList } = useContext(AgentChatLogContext);
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const [messageEndEventList, setMessageEndEventList] = useState<
+    IMessageEndEvent[]
+  >([]);
 
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     api.runCanvas,
@@ -126,13 +131,16 @@ export const useSendNextMessage = () => {
       const params: Record<string, unknown> = {
         id: agentId,
       };
+
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
       if (message.content) {
+        const query = getBeginNodeDataQuery();
+
         params.query = message.content;
         // params.message_id = message.id;
-        params.inputs = {}; // begin operator inputs
+        params.inputs = transferInputsArrayToObject(query); // begin operator inputs
       }
       const res = await send(params);
 
@@ -146,7 +154,14 @@ export const useSendNextMessage = () => {
         refetch(); // pull the message list after sending the message successfully
       }
     },
-    [agentId, send, setValue, removeLatestMessage, refetch],
+    [
+      agentId,
+      send,
+      getBeginNodeDataQuery,
+      setValue,
+      removeLatestMessage,
+      refetch,
+    ],
   );
 
   const handleSendMessage = useCallback(
@@ -155,6 +170,23 @@ export const useSendNextMessage = () => {
     },
     [sendMessage],
   );
+
+  useEffect(() => {
+    const messageEndEvent = answerList.find(
+      (x) => x.event === MessageEventType.MessageEnd,
+    );
+    if (messageEndEvent) {
+      setMessageEndEventList((list) => {
+        const nextList = [...list];
+        if (
+          nextList.every((x) => x.message_id !== messageEndEvent.message_id)
+        ) {
+          nextList.push(messageEndEvent as IMessageEndEvent);
+        }
+        return nextList;
+      });
+    }
+  }, [addEventList.length, answerList]);
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
@@ -195,11 +227,20 @@ export const useSendNextMessage = () => {
     [addNewestOneQuestion, send],
   );
 
+  const findReferenceByMessageId = useCallback(
+    (messageId: string) => {
+      const event = messageEndEventList.find(
+        (item) => item.message_id === messageId,
+      );
+      if (event) {
+        return (event?.data as IMessageEndData)?.reference;
+      }
+    },
+    [messageEndEventList],
+  );
+
   useEffect(() => {
-    const query = getBeginNodeDataQuery();
-    if (query.length > 0) {
-      send({ id: agentId, inputs: transferInputsArrayToObject(query) });
-    } else if (prologue) {
+    if (prologue) {
       addNewestOneAnswer({
         answer: prologue,
       });
@@ -230,5 +271,6 @@ export const useSendNextMessage = () => {
     stopOutputMessage,
     send,
     sendFormMessage,
+    findReferenceByMessageId,
   };
 };

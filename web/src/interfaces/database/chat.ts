@@ -96,6 +96,11 @@ export interface IReference {
   total: number;
 }
 
+export interface IReferenceObject {
+  chunks: Record<string, IReferenceChunk>;
+  doc_aggs: Record<string, Docagg>;
+}
+
 export interface IAnswer {
   answer: string;
   reference?: IReference;

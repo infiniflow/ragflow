@@ -1,7 +1,7 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
+import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import {
   PropsWithChildren,
@@ -17,16 +17,19 @@ import {
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
+import { cn } from '@/lib/utils';
 import { IMessage } from '@/pages/chat/interface';
-import MarkdownContent from '@/pages/chat/markdown-content';
 import { getExtension, isImage } from '@/utils/document-util';
 import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
+import { isEmpty } from 'lodash';
 import FileIcon from '../file-icon';
 import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
+import MarkdownContent from '../next-markdown-content';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
+import { ReferenceDocumentList } from './reference-document-list';
 
 const { Text } = Typography;
 
@@ -35,7 +38,7 @@ interface IProps
     IRegenerateMessage,
     PropsWithChildren {
   item: IMessage;
-  reference: IReference;
+  reference?: IReferenceObject;
   loading?: boolean;
   sendLoading?: boolean;
   visibleAvatar?: boolean;
@@ -48,7 +51,7 @@ interface IProps
   showLoudspeaker?: boolean;
 }
 
-const MessageItem = ({
+function MessageItem({
   item,
   reference,
   loading = false,
@@ -56,14 +59,13 @@ const MessageItem = ({
   avatarDialog,
   sendLoading = false,
   clickDocumentButton,
-  index,
   removeMessageById,
   regenerateMessage,
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
   children,
-}: IProps) => {
+}: IProps) {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -73,8 +75,10 @@ const MessageItem = ({
   const { visible, hideModal, showModal } = useSetModalState();
   const [clickedDocumentId, setClickedDocumentId] = useState('');
 
-  const referenceDocumentList = useMemo(() => {
-    return reference?.doc_aggs ?? [];
+  const referenceDocuments = useMemo(() => {
+    const docs = reference?.doc_aggs ?? {};
+
+    return Object.values(docs);
   }, [reference?.doc_aggs]);
 
   const handleUserDocumentClick = useCallback(
@@ -153,16 +157,18 @@ const MessageItem = ({
               {/* <b>{isAssistant ? '' : nickname}</b> */}
             </Space>
             <div
-              className={
-                isAssistant
-                  ? theme === 'dark'
-                    ? styles.messageTextDark
-                    : styles.messageText
-                  : styles.messageUserText
-              }
+              className={cn({
+                [theme === 'dark'
+                  ? styles.messageTextDark
+                  : styles.messageText]: isAssistant,
+                [styles.messageUserText]: !isAssistant,
+                'bg-background-card': !isAssistant,
+              })}
             >
               {item.data ? (
                 children
+              ) : sendLoading && isEmpty(item.content) ? (
+                'searching...'
               ) : (
                 <MarkdownContent
                   loading={loading}
@@ -172,32 +178,10 @@ const MessageItem = ({
                 ></MarkdownContent>
               )}
             </div>
-            {isAssistant && referenceDocumentList.length > 0 && (
-              <List
-                bordered
-                dataSource={referenceDocumentList}
-                renderItem={(item) => {
-                  return (
-                    <List.Item>
-                      <Flex gap={'small'} align="center">
-                        <FileIcon
-                          id={item.doc_id}
-                          name={item.doc_name}
-                        ></FileIcon>
-
-                        <NewDocumentLink
-                          documentId={item.doc_id}
-                          documentName={item.doc_name}
-                          prefix="document"
-                          link={item.url}
-                        >
-                          {item.doc_name}
-                        </NewDocumentLink>
-                      </Flex>
-                    </List.Item>
-                  );
-                }}
-              />
+            {isAssistant && referenceDocuments.length > 0 && (
+              <ReferenceDocumentList
+                list={referenceDocuments}
+              ></ReferenceDocumentList>
             )}
             {isUser && documentList.length > 0 && (
               <List
@@ -252,6 +236,6 @@ const MessageItem = ({
       )}
     </div>
   );
-};
+}
 
 export default memo(MessageItem);
