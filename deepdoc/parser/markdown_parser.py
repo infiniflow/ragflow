@@ -28,9 +28,9 @@ class RAGFlowMarkdownParser:
             # Standard Markdown table
             border_table_pattern = re.compile(
                 r'''
-                (?:\n|^)                     
-                (?:\|.*?\|.*?\|.*?\n)        
-                (?:\|(?:\s*[:-]+[-| :]*\s*)\|.*?\n) 
+                (?:\n|^)
+                (?:\|.*?\|.*?\|.*?\n)
+                (?:\|(?:\s*[:-]+[-| :]*\s*)\|.*?\n)
                 (?:\|.*?\|.*?\|.*?\n)+
             ''', re.VERBOSE)
             border_tables = border_table_pattern.findall(markdown_text)
@@ -40,7 +40,7 @@ class RAGFlowMarkdownParser:
             # Borderless Markdown table
             no_border_table_pattern = re.compile(
                 r'''
-                (?:\n|^)                 
+                (?:\n|^)
                 (?:\S.*?\|.*?\n)
                 (?:(?:\s*[:-]+[-| :]*\s*).*?\n)
                 (?:\S.*?\|.*?\n)+
