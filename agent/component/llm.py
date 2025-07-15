@@ -98,6 +98,9 @@ class LLM(ComponentBase):
             res.update(d)
         return res
 
+    def add2system_prompt(self, txt):
+        self._param.sys_prompt += txt
+
     def _prepare_prompt_variables(self):
         def replace_ids(cnt, start_idx, prefix):
             patt = []

@@ -82,7 +82,7 @@ When searching:
         self.max_results = 6
         self.days = 14
         self.include_answer = False
-        self.include_raw_content = True
+        self.include_raw_content = False
         self.include_images = False
         self.include_image_descriptions = False
 

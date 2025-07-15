@@ -183,11 +183,7 @@ class Agent(LLM, ToolBase):
                 last_calling,
                 last_calling != name
             ]):
-                args["user_prompt"] = "\n".join([
-                        f"The chat history with other agents are as following: \n" + self.get_useful_memory(user_request, str(args["user_prompt"])),
-                        "\nHere is my request:",
-                        str(args["user_prompt"])
-                ])
+                self.toolcall_session.get_tool_obj(name).add2system_prompt(f"The chat history with other agents are as following: \n" + self.get_useful_memory(user_request, str(args["user_prompt"])))
             last_calling = name
             tool_response = self.toolcall_session.tool_call(name, args)
             use_tools.append({
