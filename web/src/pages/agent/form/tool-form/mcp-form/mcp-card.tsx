@@ -1,4 +1,4 @@
-import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { IMCPTool } from '@/interfaces/database/mcp';
 import { PropsWithChildren } from 'react';
 
@@ -11,8 +11,8 @@ export function MCPCard({
       <CardContent className="p-0 flex gap-3">
         {children}
         <section>
-          <CardTitle className="pb-3">{data.name}</CardTitle>
-          <p>{data.description}</p>
+          <div className="pb-3 text-sm">{data.name}</div>
+          <p className="text-text-sub-title text-xs">{data.description}</p>
         </section>
       </CardContent>
     </Card>

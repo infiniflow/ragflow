@@ -110,7 +110,7 @@ export function EditMcpDialog({
     <Dialog open onOpenChange={hideModal}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('common.edit')}</DialogTitle>
+          <DialogTitle>{id ? t('mcp.editMCP') : t('mcp.addMCP')}</DialogTitle>
         </DialogHeader>
         <EditMcpForm
           onOk={handleOk}

@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Form,
@@ -42,9 +42,9 @@ function MCPForm() {
       >
         <Card className="bg-background-highlight p-5">
           <CardHeader className="p-0 pb-3">
-            <CardTitle>{data.name}</CardTitle>
+            <div>{data.name}</div>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="p-0 text-sm">
             <span className="pr-2"> URL:</span>
             <a href={data.url} className="text-background-checked">
               {data.url}
@@ -71,7 +71,7 @@ function MCPForm() {
                           <FormControl>
                             <MCPCard key={name} data={{ ...mcp, name }}>
                               <Checkbox
-                                className="translate-y-1"
+                                className="translate-y-0.5"
                                 checked={field.value?.includes(name)}
                                 onCheckedChange={(checked) => {
                                   return checked
