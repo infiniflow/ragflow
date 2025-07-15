@@ -10,8 +10,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { memo, useMemo } from 'react';
+import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { initialCrawlerValues } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
@@ -19,13 +19,65 @@ import { INextOperatorForm } from '../../interface';
 import { CrawlerResultOptions } from '../../options';
 import { QueryVariable } from '../components/query-variable';
 
-const FormSchema = z.object({
-  query: z.string().optional(),
+export function CrawlerProxyFormField() {
+  const { t } = useTranslate('flow');
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name="proxy"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('proxy')}</FormLabel>
+          <FormControl>
+            <Input placeholder="like: http://127.0.0.1:8888" {...field} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+export function CrawlerExtractTypeFormField() {
+  const { t } = useTranslate('flow');
+  const form = useFormContext();
+  const crawlerResultOptions = useMemo(() => {
+    return CrawlerResultOptions.map((x) => ({
+      value: x,
+      label: t(`crawlerResultOptions.${x}`),
+    }));
+  }, [t]);
+
+  return (
+    <FormField
+      control={form.control}
+      name="extract_type"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('extractType')}</FormLabel>
+          <FormControl>
+            <SelectWithSearch {...field} options={crawlerResultOptions} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+export const CrawlerFormSchema = {
   proxy: z.string().url(),
   extract_type: z.string(),
+};
+
+const FormSchema = z.object({
+  query: z.string().optional(),
+  ...CrawlerFormSchema,
 });
+
 function CrawlerForm({ node }: INextOperatorForm) {
-  const { t } = useTranslate('flow');
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: initialCrawlerValues,
@@ -33,13 +85,6 @@ function CrawlerForm({ node }: INextOperatorForm) {
   });
 
   useWatchFormChange(node?.id, form);
-
-  const crawlerResultOptions = useMemo(() => {
-    return CrawlerResultOptions.map((x) => ({
-      value: x,
-      label: t(`crawlerResultOptions.${x}`),
-    }));
-  }, [t]);
 
   return (
     <Form {...form}>
@@ -50,35 +95,11 @@ function CrawlerForm({ node }: INextOperatorForm) {
         }}
       >
         <QueryVariable></QueryVariable>
-        <FormField
-          control={form.control}
-          name="proxy"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('proxy')}</FormLabel>
-              <FormControl>
-                <Input placeholder="like: http://127.0.0.1:8888" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="extract_type"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('extractType')}</FormLabel>
-              <FormControl>
-                <SelectWithSearch {...field} options={crawlerResultOptions} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <CrawlerProxyFormField></CrawlerProxyFormField>
+        <CrawlerExtractTypeFormField></CrawlerExtractTypeFormField>
       </form>
     </Form>
   );
 }
 
-export default CrawlerForm;
+export default memo(CrawlerForm);
