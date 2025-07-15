@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
+import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -18,7 +19,7 @@ import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const MessageForm = ({ node }: INextOperatorForm) => {
+function MessageForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
@@ -100,6 +101,6 @@ const MessageForm = ({ node }: INextOperatorForm) => {
       </form>
     </Form>
   );
-};
+}
 
-export default MessageForm;
+export default memo(MessageForm);

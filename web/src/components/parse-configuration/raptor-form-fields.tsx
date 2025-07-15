@@ -64,10 +64,10 @@ const RaptorFormFields = () => {
         control={form.control}
         name={UseRaptorField}
         render={({ field }) => {
-          if (typeof field.value === 'undefined') {
-            // default value set
-            form.setValue('parser_config.raptor.use_raptor', false);
-          }
+          // if (typeof field.value === 'undefined') {
+          //   // default value set
+          //   form.setValue('parser_config.raptor.use_raptor', false);
+          // }
           return (
             <FormItem
               defaultChecked={false}
@@ -102,27 +102,33 @@ const RaptorFormFields = () => {
           <FormField
             control={form.control}
             name={'parser_config.raptor.prompt'}
-            render={({ field }) => (
-              <FormItem className=" items-center space-y-0 ">
-                <div className="flex items-start">
-                  <FormLabel
-                    tooltip={t('promptTip')}
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
-                  >
-                    {t('prompt')}
-                  </FormLabel>
-                  <div className="w-3/4">
-                    <FormControl>
-                      <Textarea {...field} rows={8} />
-                    </FormControl>
+            render={({ field }) => {
+              return (
+                <FormItem className=" items-center space-y-0 ">
+                  <div className="flex items-start">
+                    <FormLabel
+                      tooltip={t('promptTip')}
+                      className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    >
+                      {t('prompt')}
+                    </FormLabel>
+                    <div className="w-3/4">
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          rows={8}
+                          defaultValue={t('promptText')}
+                        />
+                      </FormControl>
+                    </div>
                   </div>
-                </div>
-                <div className="flex pt-1">
-                  <div className="w-1/4"></div>
-                  <FormMessage />
-                </div>
-              </FormItem>
-            )}
+                  <div className="flex pt-1">
+                    <div className="w-1/4"></div>
+                    <FormMessage />
+                  </div>
+                </FormItem>
+              );
+            }}
           />
           <SliderInputFormField
             name={'parser_config.raptor.max_token'}
@@ -164,7 +170,7 @@ const RaptorFormFields = () => {
                   <div className="w-3/4">
                     <FormControl defaultValue={0}>
                       <div className="flex gap-4">
-                        <Input {...field} />
+                        <Input {...field} defaultValue={0} />
                         <Button
                           size={'sm'}
                           onClick={handleGenerate}
