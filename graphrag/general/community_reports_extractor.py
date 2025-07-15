@@ -12,6 +12,8 @@ from typing import Callable
 from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
+
+from api.utils.api_utils import timeout
 from graphrag.general import leiden
 from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from graphrag.general.extractor import Extractor
@@ -57,6 +59,7 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
+        @timeout(120)
         async def extract_community_report(community):
             nonlocal res_str, res_dict, over, token_count
             cm_id, cm = community
@@ -90,7 +93,7 @@ class CommunityReportsExtractor(Extractor):
             gen_conf = {"temperature": 0.3}
             async with chat_limiter:
                 try:
-                    with trio.move_on_after(120) as cancel_scope:
+                    with trio.move_on_after(80) as cancel_scope:
                         response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
                     if cancel_scope.cancelled_caught:
                         logging.warning("extract_community_report._chat timeout, skipping...")
