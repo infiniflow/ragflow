@@ -57,7 +57,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
           className="w-fit flex items-center justify-center gap-2 border-dashed border px-1 rounded-sm"
         >
           <div className="flex gap-2 items-center">
-            {tag}
+            <div className="max-w-80 overflow-hidden text-ellipsis">{tag}</div>
             <X
               className="w-4 h-4 text-muted-foreground hover:text-primary"
               onClick={(e) => {

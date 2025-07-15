@@ -1,30 +1,30 @@
 // src/components/ui/modal.tsx
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Loader, X } from 'lucide-react';
-import * as React from 'react';
+import { FC, ReactNode, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface ModalProps {
   open: boolean;
   onOpenChange?: (open: boolean) => void;
-  title?: React.ReactNode;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
+  title?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
   className?: string;
   size?: 'small' | 'default' | 'large';
   closable?: boolean;
-  closeIcon?: React.ReactNode;
+  closeIcon?: ReactNode;
   maskClosable?: boolean;
   destroyOnClose?: boolean;
   full?: boolean;
   confirmLoading?: boolean;
-  cancelText?: React.ReactNode | string;
-  okText?: React.ReactNode | string;
+  cancelText?: ReactNode | string;
+  okText?: ReactNode | string;
   onOk?: () => void;
   onCancel?: () => void;
 }
 
-export const Modal: React.FC<ModalProps> = ({
+export const Modal: FC<ModalProps> = ({
   open,
   onOpenChange,
   title,
@@ -51,7 +51,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   const { t } = useTranslation();
   // Handle ESC key close
-  React.useEffect(() => {
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && maskClosable) {
         onOpenChange?.(false);
@@ -61,14 +61,15 @@ export const Modal: React.FC<ModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [maskClosable, onOpenChange]);
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     onOpenChange?.(false);
     onCancel?.();
-  };
-  const handleOk = () => {
+  }, [onOpenChange, onCancel]);
+
+  const handleOk = useCallback(() => {
     onOpenChange?.(true);
     onOk?.();
-  };
+  }, [onOpenChange, onOk]);
   const handleChange = (open: boolean) => {
     onOpenChange?.(open);
     if (open) {
@@ -78,7 +79,7 @@ export const Modal: React.FC<ModalProps> = ({
       handleCancel();
     }
   };
-  const footEl = React.useMemo(() => {
+  const footEl = useMemo(() => {
     let footerTemp;
     if (footer) {
       footerTemp = footer;
@@ -111,7 +112,7 @@ export const Modal: React.FC<ModalProps> = ({
         </div>
       );
     }
-  }, [footer, confirmLoading, onOpenChange, onCancel, onOk]);
+  }, [footer, cancelText, t, confirmLoading, okText, handleCancel, handleOk]);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
       <DialogPrimitive.Portal>
@@ -120,7 +121,7 @@ export const Modal: React.FC<ModalProps> = ({
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
-            className={`relative w-[500px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-background rounded-lg shadow-lg transition-all`}
+            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-background rounded-lg shadow-lg transition-all`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}
@@ -181,6 +182,14 @@ function Demo() {
             </button>
           </div>
         }
+      >
+        <div className="py-4">弹窗内容区域</div>
+      </Modal>
+      <Modal
+        title={'modal-title'}
+        onOk={handleOk}
+        confirmLoading={loading}
+        destroyOnClose
       >
         <div className="py-4">弹窗内容区域</div>
       </Modal>

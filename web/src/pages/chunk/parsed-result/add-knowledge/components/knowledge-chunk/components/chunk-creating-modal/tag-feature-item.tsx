@@ -1,3 +1,4 @@
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Button } from '@/components/ui/button';
 import {
   FormControl,
@@ -7,7 +8,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { NumberInput } from '@/components/ui/input';
-import { SearchableSelect } from '@/components/ui/search-select';
 import { useFetchTagListByKnowledgeIds } from '@/hooks/knowledge-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { CircleMinus, Plus } from 'lucide-react';
@@ -78,7 +78,7 @@ export const TagFeatureItem = () => {
                         <FormItem className="w-2/3">
                           <FormControl className="w-full">
                             <div>
-                              <SearchableSelect
+                              <SelectWithSearch
                                 options={filterOptions(name)}
                                 placeholder={t(
                                   'knowledgeConfiguration.tagName',
