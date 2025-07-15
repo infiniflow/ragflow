@@ -114,7 +114,7 @@ class DefaultEmbedding(Base):
 
     def encode_queries(self, text: str):
         token_count = num_tokens_from_string(text)
-        return self._model.encode_queries([text]).tolist()[0], token_count
+        return self._model.encode_queries([text], convert_to_numpy=False)[0][0].cpu().numpy(), token_count
 
 
 class OpenAIEmbed(Base):
