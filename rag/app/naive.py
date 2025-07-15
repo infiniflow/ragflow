@@ -323,14 +323,14 @@ class Markdown(MarkdownParser):
 
         return images if images else None
 
-    def __call__(self, filename, binary=None):
+    def __call__(self, filename, binary=None, separate_tables=True):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 txt = f.read()
-        remainder, tables = self.extract_tables_and_remainder(f'{txt}\n')
+        remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
         sections = []
         tbls = []
         for sec in remainder.split("\n"):
@@ -465,7 +465,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables = markdown_parser(filename, binary)
+        sections, tables = markdown_parser(filename, binary, separate_tables=False)
 
         # Process images for each section
         section_images = []
