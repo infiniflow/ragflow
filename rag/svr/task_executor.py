@@ -302,7 +302,7 @@ async def build_chunks(task, progress_callback):
                         d["image"].close()  # Close original image
                         d["image"] = converted_image
                     d["image"].save(output_buffer, format='JPEG')
-                
+
                 async with minio_limiter:
                     await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
                 d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
@@ -631,7 +631,7 @@ async def do_handle_task(task):
                     nursery.start_soon(delete_image, task_dataset_id, chunk_id)
             progress_callback(-1, msg=f"Chunk updates failed since task {task['id']} is unknown.")
             return
-        
+
     logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
                                                                                      task_to_page, len(chunks),
                                                                                      timer() - start_ts))
@@ -723,8 +723,8 @@ async def report_status():
         finally:
             redis_lock.release()
         await trio.sleep(30)
-        
-        
+
+
 async def task_manager():
     try:
         await handle_task()
