@@ -1,0 +1,67 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - team-2
+  workflow_dispatch: # Allow manual triggering
+
+env:
+  DOCKER_IMAGE: untadee/ragflow
+  # Remove static DOCKER_TAG - will be generated dynamically
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Generate Docker tag
+      id: tag
+      run: |
+        # Option 1: Use git commit SHA (short)
+        SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-8)
+        
+        # Option 2: Use current date and time
+        DATE_TAG=$(date +'%Y%m%d-%H%M%S')
+        
+        # Option 3: Use branch name and date
+        BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | sed 's/[^a-zA-Z0-9]/-/g')
+        BRANCH_DATE_TAG="${BRANCH_NAME}-$(date +'%Y%m%d')"
+        
+        # Option 4: Combine multiple elements
+        COMBO_TAG="${BRANCH_NAME}-${DATE_TAG}-${SHORT_SHA}"
+        
+        # Choose which tag to use (uncomment one):
+        # echo "docker_tag=1.5-${SHORT_SHA}" >> $GITHUB_OUTPUT
+        # echo "docker_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
+        # echo "docker_tag=${BRANCH_DATE_TAG}" >> $GITHUB_OUTPUT
+        echo "docker_tag=${COMBO_TAG}" >> $GITHUB_OUTPUT
+        
+        echo "Generated tag: ${COMBO_TAG}"
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        platforms: linux/amd64
+        push: true
+        tags: ${{ env.DOCKER_IMAGE }}:${{ steps.tag.outputs.docker_tag }}
+        build-args: |
+          LIGHTEN=1
+        no-cache: true
+        
+    - name: Image digest
+      run: echo "Image pushed successfully to ${{ env.DOCKER_IMAGE }}:${{ steps.tag.outputs.docker_tag }}"
