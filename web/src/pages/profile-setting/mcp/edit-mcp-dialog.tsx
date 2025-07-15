@@ -12,7 +12,7 @@ import { IModalProps } from '@/interfaces/common';
 import { IMCPTool, IMCPToolObject } from '@/interfaces/database/mcp';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { isEmpty, pick } from 'lodash';
+import { isEmpty, omit, pick } from 'lodash';
 import { RefreshCw } from 'lucide-react';
 import {
   MouseEventHandler,
@@ -82,10 +82,14 @@ export function EditMcpDialog({
   }, []);
 
   const handleOk = async (values: z.infer<typeof FormSchema>) => {
+    const nextValues = {
+      ...omit(values, 'authorization_token'),
+      headers: { authorization_token: values.authorization_token },
+    };
     if (isTriggeredBySaving) {
-      onOk?.(values);
+      onOk?.(nextValues);
     } else {
-      const ret = await testMcpServer(values);
+      const ret = await testMcpServer(nextValues);
       if (ret.code === 0) {
         setFieldChanged(false);
       }
