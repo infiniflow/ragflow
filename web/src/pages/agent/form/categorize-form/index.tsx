@@ -4,6 +4,7 @@ import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -13,7 +14,7 @@ import DynamicCategorize from './dynamic-categorize';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const CategorizeForm = ({ node }: INextOperatorForm) => {
+function CategorizeForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
@@ -64,6 +65,6 @@ const CategorizeForm = ({ node }: INextOperatorForm) => {
       </form>
     </Form>
   );
-};
+}
 
-export default CategorizeForm;
+export default memo(CategorizeForm);
