@@ -18,6 +18,23 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
+    - name: Free up disk space
+      run: |
+        echo "Before cleanup:"
+        df -h
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/share/swift
+        sudo apt-get autoremove -y
+        sudo apt-get autoclean -y
+        docker system prune -af --volumes
+        echo "After cleanup:"
+        df -h
+      
     - name: Generate Docker tag
       id: tag
       run: |
@@ -44,6 +61,10 @@ jobs:
       
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          image=moby/buildkit:buildx-stable-1
+          network=host
       
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
@@ -61,7 +82,9 @@ jobs:
         tags: ${{ env.DOCKER_IMAGE }}:${{ steps.tag.outputs.docker_tag }}
         build-args: |
           LIGHTEN=1
-        no-cache: true
+        no-cache: false
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
         
     - name: Image digest
       run: echo "Image pushed successfully to ${{ env.DOCKER_IMAGE }}:${{ steps.tag.outputs.docker_tag }}"
