@@ -43,8 +43,9 @@ class Ppt(PptParser):
                     with BytesIO() as buffered:
                         slide.get_thumbnail(
                             0.5, 0.5).save(
-                            buffered, drawing.imaging.ImageFormat.jpeg, quality=80)
-                        imgs.append(Image.open(buffered))
+                            buffered, drawing.imaging.ImageFormat.jpeg)
+                        buffered.seek(0)
+                        imgs.append(Image.open(buffered).copy())
                 except RuntimeError as e:
                     raise RuntimeError(f'ppt parse error at page {i+1}, original error: {str(e)}') from e
         assert len(imgs) == len(
