@@ -312,21 +312,62 @@ def delete_factory():
 @login_required
 def my_llms():
     try:
-        res = {}
-        for o in TenantLLMService.get_my_llms(current_user.id):
-            if o["llm_factory"] not in res:
-                res[o["llm_factory"]] = {
-                    "tags": o["tags"],
-                    "llm": []
-                }
-            res[o["llm_factory"]]["llm"].append({
-                "type": o["model_type"],
-                "name": o["llm_name"],
-                "used_token": o["used_tokens"]
-            })
+        include_details = request.args.get('include_details', 'false').lower() == 'true'
+        
+        if include_details:
+            res = {}
+            objs = TenantLLMService.query(tenant_id=current_user.id)
+            factories = LLMService.query(status=StatusEnum.VALID.value)
+            
+            for o in objs:
+                o_dict = o.to_dict()
+                factory_tags = None
+                for f in factories:
+                    if f.fid == o_dict["llm_factory"]:
+                        factory_tags = f.tags
+                        break
+                        
+                if o_dict["llm_factory"] not in res:
+                    res[o_dict["llm_factory"]] = {
+                        "tags": factory_tags,
+                        "llm": []
+                    }
+                
+                api_key = o_dict["api_key"] or ""
+                masked_api_key = ""
+                if api_key:
+                    if len(api_key) > 12:
+                        masked_api_key = api_key[:8] + "***" + api_key[-4:]
+                    else:
+                        masked_api_key = api_key[:3] + "***" + api_key[-2:] if len(api_key) > 5 else "***"
+                        
+                res[o_dict["llm_factory"]]["llm"].append({
+                    "type": o_dict["model_type"],
+                    "name": o_dict["llm_name"],
+                    "used_token": o_dict["used_tokens"],
+                    "api_key": masked_api_key,
+                    "api_base": o_dict["api_base"] or "",
+                    "max_tokens": o_dict["max_tokens"] or 8192
+                })
+        else:
+            res = {}
+            for o in TenantLLMService.get_my_llms(current_user.id):
+                if o["llm_factory"] not in res:
+                    res[o["llm_factory"]] = {
+                        "tags": o["tags"],
+                        "llm": []
+                    }
+                res[o["llm_factory"]]["llm"].append({
+                    "type": o["model_type"],
+                    "name": o["llm_name"],
+                    "used_token": o["used_tokens"]
+                })
+        
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
+
+
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
