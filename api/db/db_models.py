@@ -984,3 +984,7 @@ def migrate_db():
         migrate(migrator.add_column("dialog", "memory_config", JSONField(null=False, default={"enabled": True, "max_memories": 5, "threshold": 0.7, "store_interval": 3})))
     except Exception:
         pass
+    try:
+        migrate(migrator.add_column("conversation", "summary", TextField(null=True, help_text="conversation summary")))
+    except Exception:
+        pass
