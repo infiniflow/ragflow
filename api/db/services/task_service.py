@@ -453,3 +453,20 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())
+
+
+def cancel_all_task_of(doc_id):
+    for t in TaskService.query(doc_id=doc_id):
+        try:
+            REDIS_CONN.set(f"{t.id}-cancel", "x")
+        except Exception as e:
+            logging.exception(e)
+
+
+def has_canceled(task_id):
+    try:
+        if REDIS_CONN.get(f"{task_id}-cancel"):
+            return True
+    except Exception as e:
+        logging.exception(e)
+    return False

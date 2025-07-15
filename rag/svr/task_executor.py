@@ -50,7 +50,7 @@ from peewee import DoesNotExist
 from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import TaskService
+from api.db.services.task_service import TaskService, has_canceled
 from api.db.services.file2document_service import File2DocumentService
 from api import settings
 from api.versions import get_ragflow_version
@@ -157,7 +157,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     try:
         if prog is not None and prog < 0:
             msg = "[ERROR]" + msg
-        cancel = TaskService.do_cancel(task_id)
+        cancel = has_canceled(task_id)
 
         if cancel:
             msg += " [Canceled]"
@@ -214,7 +214,7 @@ async def collect():
     canceled = False
     task = TaskService.get_task(msg["id"])
     if task:
-        canceled = DocumentService.do_cancel(task["doc_id"])
+        canceled = has_canceled(task["id"])
     if not task or canceled:
         state = "is unknown" if not task else "has been cancelled"
         FAILED_TASKS += 1
@@ -382,7 +382,7 @@ async def build_chunks(task, progress_callback):
 
         docs_to_tag = []
         for d in docs:
-            task_canceled = DocumentService.do_cancel(task["doc_id"])
+            task_canceled = has_canceled(task["id"])
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
                 return
@@ -531,7 +531,7 @@ async def do_handle_task(task):
         progress_callback(-1, msg=error_message)
         raise Exception(error_message)
 
-    task_canceled = DocumentService.do_cancel(task_doc_id)
+    task_canceled = has_canceled(task_id)
     if task_canceled:
         progress_callback(-1, msg="Task has been canceled.")
         return
@@ -609,7 +609,7 @@ async def do_handle_task(task):
 
     for b in range(0, len(chunks), DOC_BULK_SIZE):
         doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
-        task_canceled = DocumentService.do_cancel(task_doc_id)
+        task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
             return
