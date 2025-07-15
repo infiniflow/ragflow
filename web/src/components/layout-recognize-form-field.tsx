@@ -16,6 +16,7 @@ import { RAGFlowSelect } from './ui/select';
 export const enum DocumentType {
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
+  Tesseract = 'Tesseract',
 }
 
 export function LayoutRecognizeFormField() {
@@ -25,7 +26,11 @@ export function LayoutRecognizeFormField() {
   const allOptions = useSelectLlmOptionsByModelType();
 
   const options = useMemo(() => {
-    const list = [DocumentType.DeepDOC, DocumentType.PlainText].map((x) => ({
+    const list = [
+      DocumentType.DeepDOC,
+      DocumentType.PlainText,
+      DocumentType.Tesseract,
+    ].map((x) => ({
       label: x === DocumentType.PlainText ? t(camelCase(x)) : 'DeepDoc',
       value: x,
     }));

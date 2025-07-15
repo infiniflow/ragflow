@@ -159,4 +159,14 @@ export default {
   testMcpServerTool: `${api_host}/mcp_server/test_tool`,
   cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
+
+  // memory management
+  getMemories: (chatId: string) => `${api_host}/chats/${chatId}/memories`,
+  deleteMemory: (chatId: string, memoryId: string) =>
+    `${api_host}/chats/${chatId}/memories/${memoryId}`,
+  clearMemories: (chatId: string) => `${api_host}/chats/${chatId}/memories`,
+  searchMemories: (chatId: string) =>
+    `${api_host}/chats/${chatId}/memories/search`,
+  getMemoryStats: (chatId: string) =>
+    `${api_host}/chats/${chatId}/memories/stats`,
 };

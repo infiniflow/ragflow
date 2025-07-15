@@ -32,6 +32,7 @@ from ollama import Client
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
+from vertexai.generative_models import SafetySetting, HarmCategory, HarmBlockThreshold
 
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
@@ -1621,7 +1622,16 @@ class GoogleChat(Base):
                     }
                 ]
 
-        response = self.client.generate_content(hist, generation_config=gen_conf)
+        if "max_tokens" not in gen_conf:
+            gen_conf["max_output_tokens"] = 4096
+
+        response = self.client.generate_content(hist, safety_settings=[
+                SafetySetting(category=HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                SafetySetting(category=HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=HarmBlockThreshold.BLOCK_NONE),
+                SafetySetting(category=HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=HarmBlockThreshold.BLOCK_NONE),
+                SafetySetting(category=HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=HarmBlockThreshold.BLOCK_NONE),
+            ],
+            generation_config=gen_conf)
         ans = response.text
         return ans, response.usage_metadata.total_token_count
 

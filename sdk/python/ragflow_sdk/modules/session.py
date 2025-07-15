@@ -24,6 +24,8 @@ class Session(Base):
         self.id = None
         self.name = "New session"
         self.messages = [{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]
+        self.memory_enabled = False
+        self.memory_stats = {}
         for key, value in res_dict.items():
             if key == "chat_id" and value is not None:
                 self.chat_id = None
@@ -31,6 +33,9 @@ class Session(Base):
             if key == "agent_id" and value is not None:
                 self.agent_id = None
                 self.__session_type = "agent"
+            if key == "memory_stats" and value is not None:
+                self.memory_stats = value
+                self.memory_enabled = value.get("enabled", False)
         super().__init__(rag, res_dict)
 
     def ask(self, question="", stream=True, **kwargs):
@@ -51,14 +56,58 @@ class Session(Base):
                 if json_data["data"] is True or json_data["data"].get("running_status"):
                     continue
                 message = self._structure_answer(json_data)
+                # Update memory stats if available
+                if json_data["data"].get("memory_stats"):
+                    self.memory_stats = json_data["data"]["memory_stats"]
+                    self.memory_enabled = self.memory_stats.get("enabled", False)
                 yield message
         else:
             try:
                 json_data = json.loads(res.text)
             except ValueError:
                 raise Exception(f"Invalid response {res}")
+            # Update memory stats if available
+            if json_data.get("data", {}).get("memory_stats"):
+                self.memory_stats = json_data["data"]["memory_stats"]
+                self.memory_enabled = self.memory_stats.get("enabled", False)
             return self._structure_answer(json_data)
+
+    def get_memories(self):
+        """Get all memories for this session"""
+        if self.__session_type == "chat":
+            res = self.get(f"/chats/{self.chat_id}/memories")
+        else:
+            raise Exception("Memory management is only available for chat sessions")
         
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
+        return res.get("data", [])
+
+    def clear_memories(self):
+        """Clear all memories for this session"""
+        if self.__session_type == "chat":
+            res = self.delete(f"/chats/{self.chat_id}/memories")
+        else:
+            raise Exception("Memory management is only available for chat sessions")
+        
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
+        return True
+
+    def search_memories(self, query, limit=10):
+        """Search memories by query"""
+        if self.__session_type == "chat":
+            res = self.post(f"/chats/{self.chat_id}/memories/search", 
+                          {"query": query, "limit": limit})
+        else:
+            raise Exception("Memory management is only available for chat sessions")
+        
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
+        return res.get("data", [])
 
     def _structure_answer(self, json_data):
         answer = json_data["data"]["answer"]

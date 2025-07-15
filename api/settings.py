@@ -74,6 +74,10 @@ SANDBOX_HOST = None
 
 BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
 
+# Memory configuration
+MEM0_CONFIG = None
+MEMORY_ENABLED = True
+
 def get_or_create_secret_key():
     secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
     if secret_key and len(secret_key) >= 32:
@@ -174,6 +178,11 @@ def init_settings():
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
         global SANDBOX_HOST
         SANDBOX_HOST = os.environ.get("SANDBOX_HOST", "sandbox-executor-manager")
+
+    # Initialize memory configuration
+    global MEM0_CONFIG, MEMORY_ENABLED
+    MEM0_CONFIG = get_base_config("mem0", {})
+    MEMORY_ENABLED = MEM0_CONFIG.get("enabled", False)
 
 
 class CustomEnum(Enum):

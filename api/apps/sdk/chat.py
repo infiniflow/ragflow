@@ -25,6 +25,7 @@ from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required
+from api.utils.memory_utils import validate_memory_config
 
 
 @manager.route("/chats", methods=["POST"])  # noqa: F821
@@ -72,6 +73,10 @@ def create(tenant_id):
             if key in prompt:
                 req[key] = prompt.pop(key)
         req["prompt_config"] = req.pop("prompt")
+    # Handle memory configuration
+    memory_config = req.get("memory_config")
+    if memory_config:
+        req["memory_config"] = validate_memory_config(memory_config)
     # init
     req["id"] = get_uuid()
     req["description"] = req.get("description", "A helpful Assistant")
@@ -220,6 +225,10 @@ def update(tenant_id, chat_id):
         req["icon"] = req.pop("avatar")
     if "dataset_ids" in req:
         req.pop("dataset_ids")
+    # Handle memory configuration updates
+    memory_config = req.get("memory_config")
+    if memory_config:
+        req["memory_config"] = validate_memory_config(memory_config)
     if not DialogService.update_by_id(chat_id, req):
         return get_error_data_result(message="Chat not found!")
     return get_result()

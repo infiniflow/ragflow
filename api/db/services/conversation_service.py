@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import time
 from uuid import uuid4
 from api.db import StatusEnum
@@ -24,6 +25,7 @@ from api.utils import get_uuid
 import json
 
 from rag.prompts import chunks_format
+from api.db.services.memory_service import memory_service
 
 
 class ConversationService(CommonService):
@@ -61,6 +63,17 @@ def structure_answer(conv, ans, message_id, session_id):
     ans["id"] = message_id
     ans["session_id"] = session_id
 
+    # Add memory statistics to response if available
+    if conv:
+        try:
+            memory_stats = memory_service.get_memory_stats(
+                user_id=conv.user_id or "default_user",
+                dialog_id=conv.dialog_id
+            )
+            ans["memory_stats"] = memory_stats
+        except Exception as e:
+            logging.debug(f"Failed to get memory stats: {str(e)}")
+
     if not conv:
         return ans
 
@@ -80,12 +93,17 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     dia = DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
     assert dia, "You do not own the chat."
 
+    # Pass user_id to chat function for memory
+    if not kwargs.get("user_id"):
+        kwargs["user_id"] = kwargs.get("user_id", "default_user")
+
     if not session_id:
         session_id = get_uuid()
         conv = {
             "id": session_id,
             "dialog_id": chat_id,
             "name": name,
+            "summary": kwargs.get("summary", ""),
             "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue"), "created_at": time.time()}],
             "user_id": kwargs.get("user_id", "")
         }
@@ -131,6 +149,8 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     conv.message.append({"role": "assistant", "content": "", "id": message_id})
     conv.reference.append({"chunks": [], "doc_aggs": []})
 
+    # add summary
+    conv.summary = kwargs.get("summary", "")
     if stream:
         try:
             for ans in chat(dia, msg, True, **kwargs):

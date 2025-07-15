@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import json
 import os
 import re
@@ -430,6 +431,50 @@ def upload():
             location += "_"
         blob = request.files['file'].read()
         STORAGE_IMPL.put(kb_id, location, blob)
+
+        # Extract document content for metadata analysis
+        document_text = ""
+        try:
+            # Reset file pointer before parsing
+            file.seek(0)
+            # Parse document content for metadata extraction
+            parsed_content = FileService.parse_docs([file], tenant_id)
+            document_text = parsed_content[:10000]  # Limit text for LLM processing
+        except Exception as e:
+            logging.warning(f"Failed to parse document content for metadata: {str(e)}")
+
+        # Reset file pointer again before reading blob
+        file.seek(0)
+        blob = request.files['file'].read()
+        STORAGE_IMPL.put(kb_id, location, blob)
+
+        # Extract metadata using LLM
+        metadata = {}
+        if document_text.strip():
+            try:
+                # Get LLM bundle for metadata extraction
+                llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
+                metadata = FileService.extract_metadata_with_llm(document_text, llm_bundle)
+            except Exception as e:
+                logging.warning(f"Failed to extract metadata: {str(e)}")
+                metadata = {
+                    "domain": "Tổng quát",
+                    "industry": "Không xác định",
+                    "knowledge_type": "Tài liệu nội bộ",
+                    "role_target": ["Người dùng chung"],
+                    "tone": "Chuyên nghiệp, trang trọng",
+                    "context_user": {
+                        "intent": "Tham khảo thông tin",
+                        "behavior": "Tìm kiếm thông tin cần thiết",
+                        "channel": "Hệ thống nội bộ"
+                    },
+                    "keywords": [],
+                    "version": "v1.0",
+                    "suggested_tags": ["Tài liệu", "Tham khảo"],
+                    "summary": "Tài liệu tham khảo chung cho hệ thống nội bộ",
+                    "language": "vi"
+                }
+
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -442,6 +487,7 @@ def upload():
             "size": len(blob),
             "thumbnail": thumbnail(filename, blob),
             "suffix": Path(filename).suffix.lstrip("."),
+            "meta_fields": metadata  # Store extracted metadata
         }
 
         form_data = request.form

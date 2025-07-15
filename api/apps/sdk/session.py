@@ -159,6 +159,11 @@ def chat_completion(tenant_id, chat_id):
     if req.get("session_id"):
         if not ConversationService.query(id=req["session_id"], dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+    
+    # Add user_id for memory functionality
+    if not req.get("user_id"):
+        req["user_id"] = tenant_id
+    
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")

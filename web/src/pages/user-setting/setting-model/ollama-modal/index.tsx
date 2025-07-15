@@ -73,7 +73,7 @@ const OllamaModal = ({
       await handleOk();
     }
   };
-  
+
   const url =
     llmFactoryToUrlMap[llmFactory as LlmFactory] ||
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';

@@ -20,6 +20,7 @@ import random
 import re
 import sys
 import threading
+import time
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
@@ -31,6 +32,7 @@ import xgboost as xgb
 from huggingface_hub import snapshot_download
 from PIL import Image
 from pypdf import PdfReader as pdf2_read
+from pdf2image import convert_from_path, convert_from_bytes
 
 from api import settings
 from api.utils.file_utils import get_project_base_directory
@@ -39,6 +41,8 @@ from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.nlp import rag_tokenizer
 from rag.prompts import vision_llm_describe_prompt
 from rag.settings import PARALLEL_DEVICES
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import pytesseract
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -1283,11 +1287,14 @@ class VisionParser(RAGFlowPdfParser):
 
     def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
         try:
+            start = time.time()
             with sys.modules[LOCK_KEY_pdfplumber]:
                 self.pdf = pdfplumber.open(fnm) if isinstance(
                     fnm, str) else pdfplumber.open(BytesIO(fnm))
                 self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
                                     enumerate(self.pdf.pages[page_from:page_to])]
+                logging.info(f"Rendered {len(self.page_images)} pages in {time.time() - start:.2f} seconds")
+
                 self.total_page = len(self.pdf.pages)
         except Exception:
             self.page_images = None
@@ -1300,28 +1307,140 @@ class VisionParser(RAGFlowPdfParser):
         self.__images__(fnm=filename, zoomin=3, page_from=from_page, page_to=to_page, **kwargs)
 
         total_pdf_pages = self.total_page
-
         start_page = max(0, from_page)
         end_page = min(to_page, total_pdf_pages)
 
         all_docs = []
 
-        for idx, img_binary in enumerate(self.page_images or []):
-            pdf_page_num = idx  # 0-based
-            if pdf_page_num < start_page or pdf_page_num >= end_page:
-                continue
+        def process_page(idx_img_tuple):
+            idx, img_binary = idx_img_tuple
+            page_num = idx
+            if page_num < start_page or page_num >= end_page:
+                return None
 
-            docs = picture_vision_llm_chunk(
-                binary=img_binary,
-                vision_model=self.vision_model,
-                prompt=vision_llm_describe_prompt(page=pdf_page_num+1),
-                callback=callback,
-            )
+            start_time = time.time()
+            logging.info(f"Starting to process page {page_num + 1}")
+            
+            try:
+                doc = picture_vision_llm_chunk(
+                    binary=img_binary,
+                    vision_model=self.vision_model,
+                    prompt=vision_llm_describe_prompt(page=page_num + 1),
+                    callback=callback,
+                )
+                end_time = time.time()
+                processing_time = end_time - start_time
+                logging.info(f"Completed processing page {page_num + 1} in {processing_time:.2f} seconds")
+                return doc
+            except Exception as e:
+                end_time = time.time()
+                processing_time = end_time - start_time
+                logging.exception(f"Error processing page {page_num + 1} after {processing_time:.2f} seconds")
+                return None
 
-            if docs:
-                all_docs.append(docs)
+        max_workers = kwargs.get("max_workers", 6)  
+        start_total = time.time()
+        logging.info(f"Starting parallel processing of {len(self.page_images or [])} pages with {max_workers} workers")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(process_page, (idx, img))
+                    for idx, img in enumerate(self.page_images or [])]
+
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    all_docs.append(result)
+
+        end_total = time.time()
+        total_time = end_total - start_total
+        logging.info(f"Completed processing all pages in {total_time:.2f} seconds. Successfully processed {len(all_docs)} pages.")
+
         return [(doc, "") for doc in all_docs], []
 
+class SimpleOcrPdfParser:
+    def __init__(self, lang="vie", dpi=200, max_pages=100):
+        self.lang = lang
+        self.dpi = dpi
+        self.max_pages = max_pages
+        self.outlines = []
 
+    def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
+        lines = []
+        logging.info(f"SimpleOcrPdfParser: Processing file type: {type(filename)}")
+
+        # Step 1: Lấy outlines
+        try:
+            pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
+            outlines = pdf.outline
+
+            def dfs(arr, depth):
+                for a in arr:
+                    if isinstance(a, dict):
+                        self.outlines.append((a["/Title"], depth))
+                    else:
+                        dfs(a, depth + 1)
+
+            dfs(outlines, 0)
+            logging.info(f"SimpleOcrPdfParser: Extracted {len(self.outlines)} outlines")
+        except Exception:
+            logging.exception("Outlines exception")
+            self.outlines = []
+
+        if not self.outlines:
+            logging.warning("Miss outlines")
+
+        # Step 2: OCR từng trang
+        try:
+            page_limit = min(to_page, from_page + self.max_pages)
+            logging.info(f"SimpleOcrPdfParser: Processing pages {from_page + 1} to {page_limit}")
+            
+            if isinstance(filename, str):
+                # Use convert_from_path for file paths
+                logging.info("SimpleOcrPdfParser: Using convert_from_path for file path")
+                images = convert_from_path(
+                    filename,
+                    dpi=self.dpi,
+                    first_page=from_page + 1,
+                    last_page=page_limit
+                )
+            else:
+                # Use convert_from_bytes for BytesIO objects or bytes
+                logging.info(f"SimpleOcrPdfParser: Using convert_from_bytes for {type(filename)}")
+                if isinstance(filename, BytesIO):
+                    pdf_bytes = filename.getvalue()
+                else:
+                    # filename is already bytes
+                    pdf_bytes = filename
+                
+                images = convert_from_bytes(
+                    pdf_bytes,
+                    dpi=self.dpi,
+                    first_page=from_page + 1,
+                    last_page=page_limit
+                )
+
+            logging.info(f"SimpleOcrPdfParser: Converted {len(images)} pages to images")
+
+            for idx, img in enumerate(images):
+                logging.debug(f"SimpleOcrPdfParser: OCR processing page {idx + 1}")
+                text = pytesseract.image_to_string(img, lang=self.lang)
+                for line in text.splitlines():
+                    line = line.strip()
+                    if line:
+                        lines.append((line, ""))  # Không tag layout
+                        
+            logging.info(f"SimpleOcrPdfParser: Extracted {len(lines)} text lines")
+        except Exception:
+            logging.exception("OCR failed")
+
+        return lines, []
+
+    def crop(self, ck, need_position=False):
+        raise NotImplementedError("Simple parser doesn't support crop.")
+
+    @staticmethod
+    def remove_tag(txt):
+        return txt  # Không sử dụng tag
+    
 if __name__ == "__main__":
     pass

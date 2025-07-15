@@ -31,6 +31,7 @@ class Document(Base):
         self.thumbnail = None
         self.dataset_id = None
         self.chunk_method = "naive"
+        self.meta_fields = {}
         self.parser_config = {"pages": [[1, 1000000]]}
         self.source_type = "local"
         self.type = ""

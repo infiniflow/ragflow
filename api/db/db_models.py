@@ -561,7 +561,7 @@ class TenantLLM(DataBaseModel):
     llm_factory = CharField(max_length=128, null=False, help_text="LLM factory name", index=True)
     model_type = CharField(max_length=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
     llm_name = CharField(max_length=128, null=True, help_text="LLM name", default="", index=True)
-    api_key = CharField(max_length=2048, null=True, help_text="API KEY", index=True)
+    api_key = CharField(max_length=8192, null=True, help_text="API KEY", index=True)
     api_base = CharField(max_length=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
@@ -713,6 +713,7 @@ class Dialog(DataBaseModel):
     rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID")
 
     kb_ids = JSONField(null=False, default=[])
+    memory_config = JSONField(null=False, default={"enabled": True, "max_memories": 5, "threshold": 0.7, "store_interval": 3})
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     class Meta:
@@ -723,12 +724,26 @@ class Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=255, null=True, help_text="converastion name", index=True)
+    summary = TextField(null=True, help_text="conversation summary")
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)
 
     class Meta:
         db_table = "conversation"
+
+
+class ConversationMemory(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    dialog_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    memory_id = CharField(max_length=255, null=False, help_text="mem0 memory ID", index=True)
+    content = TextField(null=False, help_text="memory content")
+    metadata = JSONField(null=True, default={})
+    relevance_score = FloatField(default=0.0, index=True)
+    
+    class Meta:
+        db_table = "conversation_memory"
 
 
 class APIToken(DataBaseModel):
@@ -877,7 +892,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
+        migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=8192, null=True, help_text="API KEY", index=True)))
     except Exception:
         pass
     try:
@@ -963,5 +978,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("dialog", "memory_config", JSONField(null=False, default={"enabled": True, "max_memories": 5, "threshold": 0.7, "store_interval": 3})))
     except Exception:
         pass

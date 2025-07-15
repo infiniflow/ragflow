@@ -31,3 +31,33 @@ export interface IMessage extends Message {
 export interface IClientConversation extends IConversation {
   message: IMessage[];
 }
+
+export interface IDialog {
+  avatar?: string;
+  create_date?: string;
+  create_time?: number;
+  description?: string;
+  id?: string;
+  kb_ids?: string[];
+  llm_id?: string;
+  llm_setting?: ILlmSetting;
+  name?: string;
+  prompt_config?: IPromptConfigParameters;
+  prompt_type?: string;
+  similarity_threshold?: number;
+  status?: string;
+  top_k?: number;
+  top_n?: number;
+  update_date?: string;
+  update_time?: number;
+  vector_similarity_weight?: number;
+  memory_config?: IMemoryConfig;
+}
+
+export interface IMemoryConfig {
+  enabled: boolean;
+  max_memories: number;
+  threshold: number;
+  store_interval: number;
+  min_message_length?: number;
+}

@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
-from rag.prompts import vision_llm_figure_describe_prompt
+from rag.prompts import vision_llm_figure_describe_prompt, vision_llm_figure_describe_prompt_vietnamese
 
 
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
@@ -84,7 +84,7 @@ class VisionFigureParser:
             description_text = picture_vision_llm_chunk(
                 binary=figure_binary,
                 vision_model=self.vision_model,
-                prompt=vision_llm_figure_describe_prompt(),
+                prompt=vision_llm_figure_describe_prompt_vietnamese(),
                 callback=callback,
             )
             return figure_idx, description_text

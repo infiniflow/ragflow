@@ -1,0 +1,75 @@
+.memoryModal {
+  .ant-modal-body {
+    padding: 16px;
+  }
+}
+
+.memoryHeader {
+  margin-bottom: 16px;
+
+  .statsCard {
+    margin-bottom: 12px;
+
+    .ant-card-body {
+      padding: 8px 12px;
+    }
+  }
+
+  .memoryControls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+.memoryList {
+  max-height: 500px;
+  overflow-y: auto;
+
+  .ant-list-item {
+    padding: 12px 0;
+    border-bottom: 1px solid #f0f0f0;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .ant-list-item-meta {
+      .ant-list-item-meta-title {
+        margin-bottom: 4px;
+      }
+
+      .ant-list-item-meta-description {
+        color: rgba(0, 0, 0, 0.65);
+      }
+    }
+
+    .ant-list-item-action {
+      margin-left: 16px;
+    }
+  }
+
+  .ant-empty {
+    padding: 40px 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .memoryModal {
+    .ant-modal {
+      width: 90% !important;
+      max-width: none;
+    }
+  }
+
+  .memoryControls {
+    flex-direction: column;
+    align-items: stretch;
+
+    .ant-input-search {
+      width: 100% !important;
+    }
+  }
+}

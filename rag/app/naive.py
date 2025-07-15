@@ -30,9 +30,8 @@ from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
-from deepdoc.parser.pdf_parser import PlainParser, VisionParser
+from deepdoc.parser.pdf_parser import PlainParser, VisionParser, SimpleOcrPdfParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
-
 
 class Docx(DocxParser):
     def __init__(self):
@@ -434,7 +433,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
-
+        elif layout_recognizer == "Tesseract":
+            parser = SimpleOcrPdfParser(lang="vie")
+            sections, _ = parser(filename if not binary else binary, from_page=0, to_page=5)
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()

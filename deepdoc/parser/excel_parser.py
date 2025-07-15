@@ -19,6 +19,7 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 
 from rag.nlp import find_codec
+from concurrent.futures import ThreadPoolExecutor
 
 
 class RAGFlowExcelParser:
@@ -104,18 +105,19 @@ class RAGFlowExcelParser:
 
         return tb_chunks
 
-    def __call__(self, fnm):
+    def __call__(self, fnm, max_workers=6):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
         wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
 
-        res = []
-        for sheetname in wb.sheetnames:
+        def process_sheet(sheetname):
             ws = wb[sheetname]
             rows = list(ws.rows)
             if not rows:
-                continue
+                return []
+
             ti = list(rows[0])
-            for r in list(rows[1:]):
+            lines = []
+            for r in rows[1:]:
                 fields = []
                 for i, c in enumerate(r):
                     if not c.value:
@@ -124,10 +126,19 @@ class RAGFlowExcelParser:
                     t += ("：" if t else "") + str(c.value)
                     fields.append(t)
                 line = "; ".join(fields)
-                if sheetname.lower().find("sheet") < 0:
+                if "sheet" not in sheetname.lower():
                     line += " ——" + sheetname
-                res.append(line)
-        return res
+                lines.append(line)
+            return lines
+
+        results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(process_sheet, sheet) for sheet in wb.sheetnames]
+            for future in futures:
+                lines = future.result()
+                results.extend(lines)
+
+        return results
 
     @staticmethod
     def row_number(fnm, binary):

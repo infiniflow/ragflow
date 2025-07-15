@@ -27,6 +27,7 @@ class Chat(Base):
         self.dataset_ids = ["kb1"]
         self.llm = Chat.LLM(rag, {})
         self.prompt = Chat.Prompt(rag, {})
+        self.memory_config = {"enabled": True, "max_memories": 5, "threshold": 0.7, "store_interval": 3}
         super().__init__(rag, res_dict)
 
     class LLM(Base):
@@ -59,6 +60,18 @@ class Chat(Base):
             super().__init__(rag, res_dict)
 
     def update(self, update_message: dict):
+        # Validate memory_config if provided
+        if "memory_config" in update_message:
+            memory_config = update_message["memory_config"]
+            if not isinstance(memory_config, dict):
+                raise ValueError("memory_config must be a dictionary")
+            
+            # Validate memory configuration fields
+            valid_keys = {"enabled", "max_memories", "threshold", "store_interval"}
+            for key in memory_config:
+                if key not in valid_keys:
+                    raise ValueError(f"Invalid memory config key: {key}")
+        
         res = self.put(f"/chats/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:

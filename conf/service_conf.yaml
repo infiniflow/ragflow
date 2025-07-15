@@ -29,6 +29,24 @@ redis:
   db: 1
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+mem0:
+  enabled: true
+  vector_store:
+    provider: 'qdrant'
+    config:
+      host: 'localhost'
+      port: 6333
+      collection_name: 'ragflow_memories'
+  llm:
+    provider: 'openai'
+    config:
+      model: 'gpt-4o-mini'
+      temperature: 0.1
+  embedder:
+    provider: 'openai'
+    config:
+      model: 'text-embedding-3-small'
+  version: 'v1.1'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'

@@ -39,6 +39,8 @@ from rag.nlp.search import index_name
 from rag.prompts import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, llm_id2llm_type, message_fit_in
 from rag.utils import num_tokens_from_string, rmSpace
 from rag.utils.tavily_conn import Tavily
+from api.db.services.memory_service import memory_service
+from api.utils.memory_utils import format_memory_context, should_store_memory, extract_memory_content
 
 
 class DialogService(CommonService):
@@ -191,6 +193,10 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
+    
+    # Get user ID for memory
+    user_id = kwargs.get("user_id", "default_user")
+    
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
         for ans in chat_solo(dialog, messages, stream):
             yield ans
@@ -258,6 +264,19 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     refine_question_ts = timer()
 
+    # Get memory context if enabled
+    memory_context = ""
+    if dialog.memory_config.get("enabled", True):
+        user_question = messages[-1]["content"]
+        relevant_memories = memory_service.get_relevant_memories(
+            tenant_id=dialog.tenant_id,
+            user_id=user_id,
+            dialog_id=dialog.id,
+            query=user_question,
+            limit=dialog.memory_config.get("max_memories", 5)
+        )
+        memory_context = format_memory_context(relevant_memories)
+
     thought = ""
     kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
 
@@ -280,7 +299,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                 elif stream:
                     yield think
         else:
-            if embd_mdl:
+            if embd_mdl and kwargs.get("use_kb", True):
                 kbinfos = retriever.retrieval(
                     " ".join(questions),
                     embd_mdl,
@@ -317,6 +336,13 @@ def chat(dialog, messages, stream=True, **kwargs):
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
+    
+    # Add memory context to system prompt if available
+    if memory_context:
+        kwargs["memory_context"] = memory_context
+        original_system = prompt_config["system"]
+        prompt_config["system"] = f"{original_system}\n\n{memory_context}"
+
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
@@ -407,6 +433,24 @@ def chat(dialog, messages, stream=True, **kwargs):
         if langfuse_tracer and "langfuse_generation" in locals():
             langfuse_generation.end(output=langfuse_output)
 
+        # Store memory if enabled and conditions are met
+        if dialog.memory_config.get("enabled", True):
+            user_message = messages[-1]["content"]
+
+            if should_store_memory(user_message, answer, dialog.memory_config):
+                memory_content = extract_memory_content(user_message, answer)
+                memory_service.add_memory(
+                    tenant_id=dialog.tenant_id,
+                    user_id=user_id,
+                    dialog_id=dialog.id,
+                    message=memory_content,
+                    metadata={
+                        "timestamp": time.time(),
+                        "dialog_name": dialog.name,
+                        "session_id": kwargs.get("session_id")
+                    }
+                )
+
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
@@ -420,8 +464,9 @@ def chat(dialog, messages, stream=True, **kwargs):
                 ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
             delta_ans = ans[len(last_ans) :]
-            if num_tokens_from_string(delta_ans) < 16:
-                continue
+            # Note:  We skip the first few tokens to avoid too short responses.
+            # if num_tokens_from_string(delta_ans) < 16:
+            #     continue
             last_ans = answer
             yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
         delta_ans = answer[len(last_ans) :]

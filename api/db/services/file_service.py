@@ -402,6 +402,18 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def upload_document(self, kb, file_objs, user_id):
+        # Upload documents and extract metadata
+        # Args:
+        #     kb: Knowledge base object
+        #     file_objs: List of file objects to upload
+        #     user_id: User ID of the uploader
+        # Returns:
+        #     Tuple of (error_list, uploaded_files)
+
+        # Import LLM services for metadata extraction
+        from api.db.services.llm_service import LLMBundle
+        from api.db import LLMType
+
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -439,6 +451,21 @@ class FileService(CommonService):
                     thumbnail_location = f"thumbnail_{doc_id}.png"
                     STORAGE_IMPL.put(kb.id, thumbnail_location, img)
 
+                # Extract document content for metadata analysis
+                document_text = ""
+                try:
+                    # Parse document content for metadata extraction
+                    parsed_content = self.parse_docs([file], user_id)
+                    document_text = parsed_content[:4000]  # Limit text for LLM processing
+                except Exception as e:
+                    print(f"Failed to parse document content for metadata: {str(e)}")
+
+                # Extract metadata using LLM
+                metadata = {}
+                if document_text.strip():
+                    llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
+                    metadata = self.extract_metadata_with_llm(document_text, llm_bundle)
+
                 doc = {
                     "id": doc_id,
                     "kb_id": kb.id,
@@ -451,6 +478,7 @@ class FileService(CommonService):
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
+                    "meta_fields": metadata  # Store extracted metadata
                 }
                 DocumentService.insert(doc)
 
@@ -464,6 +492,8 @@ class FileService(CommonService):
     @staticmethod
     def parse_docs(file_objs, user_id):
         from rag.app import audio, email, naive, picture, presentation
+        import tempfile
+        import os
 
         def dummy(prog=None, msg=""):
             pass
@@ -472,15 +502,37 @@ class FileService(CommonService):
         parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
         exe = ThreadPoolExecutor(max_workers=12)
         threads = []
+        
         for file in file_objs:
             kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": user_id}
             filetype = filename_type(file.filename)
+            
+            # Reset file pointer to beginning
+            file.seek(0)
             blob = file.read()
-            threads.append(exe.submit(FACTORY.get(FileService.get_parser(filetype, file.filename, ""), naive).chunk, file.filename, blob, **kwargs))
+            
+            # Create temporary file for parsers that need file path
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:
+                tmp_file.write(blob)
+                tmp_file_path = tmp_file.name
+            
+            try:
+                threads.append(exe.submit(FACTORY.get(FileService.get_parser(filetype, file.filename, ""), naive).chunk, tmp_file_path, blob, **kwargs))
+            except Exception as e:
+                # Clean up temp file if thread creation fails
+                if os.path.exists(tmp_file_path):
+                    os.unlink(tmp_file_path)
+                raise e
 
         res = []
-        for th in threads:
-            res.append("\n".join([ck["content_with_weight"] for ck in th.result()]))
+        temp_files = []
+        for i, th in enumerate(threads):
+            try:
+                result = th.result()
+                res.append("\n".join([ck["content_with_weight"] for ck in result]))
+            except Exception as e:
+                logging.warning(f"Failed to parse file: {str(e)}")
+                res.append("")  # Add empty string for failed parsing
 
         return "\n\n".join(res)
 
@@ -495,3 +547,96 @@ class FileService(CommonService):
         if re.search(r"\.(eml)$", filename):
             return ParserType.EMAIL.value
         return default
+
+    @classmethod
+    def extract_metadata_with_llm(cls, document_text, llm_bundle):
+        """Extract metadata from document content using LLM"""
+        
+        # Escape the document text to prevent formatting issues
+        import json
+        escaped_document_text = json.dumps(document_text[:4000])[1:-1]  # Remove outer quotes from json.dumps result
+        
+        metadata_prompt = f"""You are an intelligent assistant responsible for analyzing and standardizing internal knowledge documents for an enterprise RAG (Retrieval-Augmented Generation) system.
+
+Your task is to extract structured metadata from the following document content.
+
+[DOCUMENT_START]  
+{escaped_document_text}  
+[DOCUMENT_END]
+
+Return a valid JSON object with the exact structure below. All values must be written in **English**, except where otherwise specified.
+
+Expected JSON format:
+
+{{
+  "id": "auto_generated_or_unique_identifier",
+  "domain": "General field, e.g., E-commerce, Healthcare, Education, Finance",
+  "industry": "Specific industry, e.g., Imported food & retail distribution",
+  "knowledge_type": "Type of knowledge, e.g., Product Knowledge / Customer Handling Script / FAQ / Training Material",
+  "role_target": ["Role 1", "Role 2", "..."],
+  "tone": "Writing tone, e.g., Natural, inspiring, professional, avoid buzzwords",
+  "context_user": {{
+    "intent": "What the user is trying to achieve when using this document",
+    "behavior": "Typical behavior of the user group",
+    "channel": "Where this knowledge is used, e.g., Email, Zalo chat, Phone"
+  }},
+  "keywords": ["keyword_1", "keyword_2", "..."],
+  "version": "e.g., v1.0, v2.1",
+  "suggested_tags": ["tag_1", "tag_2", "..."],
+  "summary": "Detailed summary including: (1) Purpose and user group, (2) Main topics and core knowledge, (3) Document structure and format, (4) Value and benefits for users, (5) Specific usage context",
+  "language": "en"
+}}
+
+Rules:
+1. Do not skip any field — if unsure, use "" or [].
+2. Do not invent new keys or values.
+3. Keep proper JSON syntax, including commas and brackets.
+4. Output must be a single JSON block, without explanation or extra notes.
+5. All values must be written in English except the `"language"` field which must be `"en"`.
+"""
+
+        try:
+            response_text = llm_bundle.chat("", [{"role": "user", "content": metadata_prompt}], {})
+            import json
+            import re
+            
+            # Try to extract JSON from markdown code blocks first
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Fallback: look for JSON without markdown formatting
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_str = response_text[json_start:json_end]
+                else:
+                    raise ValueError("No JSON found in response")
+            
+            # Clean up the JSON string
+            json_str = json_str.strip()
+            metadata = json.loads(json_str)
+            print(f"Successfully parsed metadata: {metadata}")
+            return metadata
+                
+        except Exception as e:
+            logging.warning(f"Failed to extract metadata with LLM: {str(e)}")
+        
+        # Return default metadata if extraction fails (following exact format)
+        return {
+            "domain": "General",
+            "industry": "Unspecified",
+            "knowledge_type": "Internal document",
+            "role_target": ["General user"],
+            "tone": "Professional, formal",
+            "context_user": {
+                "intent": "Information reference",
+                "behavior": "Seeking necessary information",
+                "channel": "Internal system"
+            },
+            "keywords": [],
+            "version": "v1.0",
+            "suggested_tags": ["Document", "Reference"],
+            "summary": "General reference document for internal system",
+            "language": "en"
+        }

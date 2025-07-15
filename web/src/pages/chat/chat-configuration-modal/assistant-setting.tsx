@@ -54,6 +54,23 @@ const AssistantSetting = ({
     [data, form],
   );
 
+  const handleMemoryChange = useCallback(
+    (checked: boolean) => {
+      if (!checked) {
+        // Reset memory config to defaults when disabled
+        form.setFieldsValue({
+          memory_config: {
+            enabled: false,
+            max_memories: 5,
+            threshold: 0.7,
+            store_interval: 3,
+          },
+        });
+      }
+    },
+    [form],
+  );
+
   const uploadButton = (
     <button style={{ border: 0, background: 'none' }} type="button">
       <PlusOutlined />
@@ -147,6 +164,81 @@ const AssistantSetting = ({
         initialValue={false}
       >
         <Switch onChange={handleTtsChange} />
+      </Form.Item>
+      <Form.Item
+        label={t('memory')}
+        valuePropName="checked"
+        name={['memory_config', 'enabled']}
+        tooltip={t('memoryTip')}
+        initialValue={true}
+      >
+        <Switch onChange={handleMemoryChange} />
+      </Form.Item>
+      <Form.Item
+        noStyle
+        shouldUpdate={(prevValues, currentValues) =>
+          prevValues.memory_config?.enabled !==
+          currentValues.memory_config?.enabled
+        }
+      >
+        {({ getFieldValue }) => {
+          const memoryEnabled = getFieldValue(['memory_config', 'enabled']);
+          return memoryEnabled ? (
+            <>
+              <Form.Item
+                name={['memory_config', 'max_memories']}
+                label={t('maxMemories')}
+                tooltip={t('maxMemoriesTooltip')}
+                initialValue={5}
+                rules={[
+                  { required: true, message: t('maxMemoriesRequired') },
+                  {
+                    type: 'number',
+                    min: 1,
+                    max: 50,
+                    message: t('maxMemoriesRange'),
+                  },
+                ]}
+              >
+                <Input type="number" min={1} max={50} />
+              </Form.Item>
+              <Form.Item
+                name={['memory_config', 'threshold']}
+                label={t('memoryThreshold')}
+                tooltip={t('memoryThresholdTooltip')}
+                initialValue={0.7}
+                rules={[
+                  { required: true, message: t('thresholdRequired') },
+                  {
+                    type: 'number',
+                    min: 0,
+                    max: 1,
+                    message: t('thresholdRange'),
+                  },
+                ]}
+              >
+                <Input type="number" step={0.1} min={0} max={1} />
+              </Form.Item>
+              <Form.Item
+                name={['memory_config', 'store_interval']}
+                label={t('storeInterval')}
+                tooltip={t('storeIntervalTooltip')}
+                initialValue={3}
+                rules={[
+                  { required: true, message: t('storeIntervalRequired') },
+                  {
+                    type: 'number',
+                    min: 1,
+                    max: 100,
+                    message: t('storeIntervalRange'),
+                  },
+                ]}
+              >
+                <Input type="number" min={1} max={100} />
+              </Form.Item>
+            </>
+          ) : null;
+        }}
       </Form.Item>
       <TavilyItem></TavilyItem>
       <KnowledgeBaseItem
