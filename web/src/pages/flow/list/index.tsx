@@ -24,6 +24,7 @@ const FlowList = () => {
     hideFlowSettingModal,
     flowSettingVisible,
     flowSettingLoading,
+    templateList,
     onFlowOk,
   } = useSaveFlow();
   const { t } = useTranslate('flow');
@@ -110,6 +111,7 @@ const FlowList = () => {
           onOk={onFlowOk}
           loading={flowSettingLoading}
           hideModal={hideFlowSettingModal}
+          templateList={templateList}
         ></AgentTemplateModal>
       )}
     </Flex>
