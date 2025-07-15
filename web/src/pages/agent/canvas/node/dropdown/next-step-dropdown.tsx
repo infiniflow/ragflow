@@ -98,7 +98,7 @@ function AccordionOperators() {
         <AccordionTrigger className="text-xl">Tools</AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
-            operators={[Operator.TavilySearch]}
+            operators={[Operator.TavilySearch, Operator.Crawler]}
           ></OperatorItemList>
         </AccordionContent>
       </AccordionItem>
