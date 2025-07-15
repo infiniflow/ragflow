@@ -185,9 +185,6 @@ class MCPToolCallSession(ToolCallSession):
             logging.exception(f"Error calling tool '{name}' on MCP server: {self._mcp_server.id}")
             return f"Error calling tool '{name}': {e}."
 
-    def invoke(self, name: str, arguments: dict[str, Any], timeout: float | int = 60*5):
-        return self.tool_call(name, arguments, timeout)
-
     async def close(self) -> None:
         if self._close:
             return

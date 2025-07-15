@@ -84,15 +84,6 @@ class Agent(LLM, ToolBase):
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
-        self.tool_meta = []
-        for mcp in self._param.mcp:
-            mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
-            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
-            for tnm, meta in mcp["tools"].items():
-                self.tool_metas.append(mcp_tool_metadata_to_openai_tool(meta))
-                self.tools[tnm] = tool_call_session
-
-
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id,
                                   max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error,
@@ -100,7 +91,14 @@ class Agent(LLM, ToolBase):
                                   verbose_tool_use=True,
                                   react_mode=ReActMode.REACT
                                   )
-        self.tool_metas.extend([v.get_meta() for _,v in self.tools.items()])
+        self.tool_meta = [v.get_meta() for _,v in self.tools.items()]
+
+        for mcp in self._param.mcp:
+            _, mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
+            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+            for tnm, meta in mcp["tools"].items():
+                self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta))
+                self.tools[tnm] = tool_call_session
         self.callback = partial(self._canvas.tool_use_callback, id.split("-->")[0])
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
         #self.chat_mdl.bind_tools(self.toolcall_session, self.tool_metas)
@@ -171,7 +169,7 @@ class Agent(LLM, ToolBase):
 
     def _react_with_tools_streamly(self, history: list[dict], use_tools):
         token_count = 0
-        tool_metas = [v.get_meta() for _,v in self.tools.items()]
+        tool_metas = self.tool_meta
         hist = deepcopy(history)
         last_calling = ""
         user_request = history[-1]["content"]
