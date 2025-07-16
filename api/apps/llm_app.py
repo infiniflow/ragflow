@@ -317,7 +317,7 @@ def my_llms():
         if include_details:
             res = {}
             objs = TenantLLMService.query(tenant_id=current_user.id)
-            factories = LLMService.query(status=StatusEnum.VALID.value)
+            factories = LLMFactoriesService.query(status=StatusEnum.VALID.value)
             
             for o in objs:
                 o_dict = o.to_dict()
