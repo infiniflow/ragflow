@@ -200,7 +200,7 @@ export default {
       deleteDocumentConfirmContent:
         'The document is associated with the knowledge graph. After deletion, the related node and relationship information will be deleted, but the graph will not be updated immediately. The update graph action is performed during the process of parsing the new document that carries the knowledge graph extraction task.',
       plainText: 'Naive',
-      reRankModelWaring: 'Re-rank model is very time consuming.',
+      reRankModelWaring: 'The reranking model will consume a lot of tokens.',
     },
     knowledgeConfiguration: {
       titleDescription:
