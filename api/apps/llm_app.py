@@ -323,7 +323,7 @@ def my_llms():
                 o_dict = o.to_dict()
                 factory_tags = None
                 for f in factories:
-                    if f.fid == o_dict["llm_factory"]:
+                    if f.name == o_dict["llm_factory"]:
                         factory_tags = f.tags
                         break
                         
