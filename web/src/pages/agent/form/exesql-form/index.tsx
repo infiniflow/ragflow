@@ -1,86 +1,158 @@
-import LLMSelect from '@/components/llm-select';
-import TopNItem from '@/components/top-n-item';
+import { LargeModelFormField } from '@/components/large-model-form-field';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { TopNFormField } from '@/components/top-n-item';
+import { ButtonLoading } from '@/components/ui/button';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input, NumberInput } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useTestDbConnect } from '@/hooks/flow-hooks';
-import { Button, Flex, Form, Input, InputNumber, Select } from 'antd';
-import { useCallback } from 'react';
-import { IOperatorForm } from '../../interface';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm, useFormContext } from 'react-hook-form';
+import { z } from 'zod';
+import { initialExeSqlValues } from '../../constant';
+import { useFormValues } from '../../hooks/use-form-values';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
+import { INextOperatorForm } from '../../interface';
 import { ExeSQLOptions } from '../../options';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { FormWrapper } from '../components/form-wrapper';
+import { QueryVariable } from '../components/query-variable';
+import { FormSchema, useSubmitForm } from './use-submit-form';
 
-const ExeSQLForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+export function ExeSQLFormWidgets({ loading }: { loading: boolean }) {
+  const form = useFormContext();
   const { t } = useTranslate('flow');
-  const { testDbConnect, loading } = useTestDbConnect();
-
-  const handleTest = useCallback(async () => {
-    const ret = await form?.validateFields();
-    testDbConnect(ret);
-  }, [form, testDbConnect]);
 
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <Form.Item
-        name={'llm_id'}
-        label={t('model', { keyPrefix: 'chat' })}
-        tooltip={t('modelTip', { keyPrefix: 'chat' })}
-      >
-        <LLMSelect></LLMSelect>
-      </Form.Item>
-      <Form.Item
-        label={t('dbType')}
-        name={'db_type'}
-        rules={[{ required: true }]}
-      >
-        <Select options={ExeSQLOptions}></Select>
-      </Form.Item>
-      <Form.Item
-        label={t('database')}
-        name={'database'}
-        rules={[{ required: true }]}
-      >
-        <Input></Input>
-      </Form.Item>
-      <Form.Item
-        label={t('username')}
-        name={'username'}
-        rules={[{ required: true }]}
-      >
-        <Input></Input>
-      </Form.Item>
-      <Form.Item label={t('host')} name={'host'} rules={[{ required: true }]}>
-        <Input></Input>
-      </Form.Item>
-      <Form.Item label={t('port')} name={'port'} rules={[{ required: true }]}>
-        <InputNumber></InputNumber>
-      </Form.Item>
-      <Form.Item
-        label={t('password')}
-        name={'password'}
-        rules={[{ required: true }]}
-      >
-        <Input.Password></Input.Password>
-      </Form.Item>
-      <Form.Item
-        label={t('loop')}
-        name={'loop'}
-        tooltip={t('loopTip')}
-        rules={[{ required: true }]}
-      >
-        <InputNumber></InputNumber>
-      </Form.Item>
-      <TopNItem initialValue={30} max={1000}></TopNItem>
-      <Flex justify={'end'}>
-        <Button type={'primary'} loading={loading} onClick={handleTest}>
+    <>
+      <LargeModelFormField></LargeModelFormField>
+      <FormField
+        control={form.control}
+        name="db_type"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('dbType')}</FormLabel>
+            <FormControl>
+              <SelectWithSearch
+                {...field}
+                options={ExeSQLOptions}
+              ></SelectWithSearch>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="database"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('database')}</FormLabel>
+            <FormControl>
+              <Input {...field}></Input>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="username"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('username')}</FormLabel>
+            <FormControl>
+              <Input {...field}></Input>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="host"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('host')}</FormLabel>
+            <FormControl>
+              <Input {...field}></Input>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="port"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('port')}</FormLabel>
+            <FormControl>
+              <NumberInput {...field}></NumberInput>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="password"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('password')}</FormLabel>
+            <FormControl>
+              <Input {...field} type="password"></Input>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="loop"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel tooltip={t('loopTip')}>{t('loop')}</FormLabel>
+            <FormControl>
+              <NumberInput {...field}></NumberInput>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <TopNFormField max={1000}></TopNFormField>
+      <div className="flex justify-end">
+        <ButtonLoading loading={loading} type="submit">
           Test
-        </Button>
-      </Flex>
+        </ButtonLoading>
+      </div>
+    </>
+  );
+}
+
+const ExeSQLForm = ({ node }: INextOperatorForm) => {
+  const defaultValues = useFormValues(initialExeSqlValues, node);
+
+  const { onSubmit, loading } = useSubmitForm();
+
+  const form = useForm<z.infer<typeof FormSchema>>({
+    resolver: zodResolver(FormSchema),
+    defaultValues,
+  });
+
+  useWatchFormChange(node?.id, form);
+
+  return (
+    <Form {...form}>
+      <FormWrapper onSubmit={form.handleSubmit(onSubmit)}>
+        <QueryVariable></QueryVariable>
+        <ExeSQLFormWidgets loading={loading}></ExeSQLFormWidgets>
+      </FormWrapper>
     </Form>
   );
 };

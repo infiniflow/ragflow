@@ -2,6 +2,7 @@ import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { FormWrapper } from '../../components/form-wrapper';
 import {
   CrawlerExtractTypeFormField,
   CrawlerFormSchema,
@@ -27,15 +28,10 @@ const CrawlerForm = () => {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <CrawlerProxyFormField></CrawlerProxyFormField>
         <CrawlerExtractTypeFormField></CrawlerExtractTypeFormField>
-      </form>
+      </FormWrapper>
     </Form>
   );
 };

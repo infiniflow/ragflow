@@ -20,7 +20,6 @@ import {
 import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { omit } from 'lodash';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -562,7 +561,7 @@ export const initialExeSqlValues = {
   password: '',
   loop: 3,
   top_n: 30,
-  ...initialQueryBaseValues,
+  query: '',
 };
 
 export const initialSwitchValues = {
@@ -959,16 +958,6 @@ export enum VariableType {
   Array = 'array',
   File = 'file',
 }
-
-export const DefaultAgentToolValuesMap = {
-  [Operator.Retrieval]: {
-    ...omit(initialRetrievalValues, 'query'),
-    description: '',
-  },
-  [Operator.TavilySearch]: {
-    api_key: '',
-  },
-};
 
 export enum AgentExceptionMethod {
   Comment = 'comment',
