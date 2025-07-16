@@ -171,7 +171,7 @@ class Agent(LLM, ToolBase):
         retrievals = self._canvas.get_reference()
         retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
         formated_refer = kb_prompt(retrievals, self.chat_mdl.max_length, True)
-        for delta_ans in self._generate_streamly([{"role": "system", "content": citation_plus(formated_refer)},
+        for delta_ans in self._generate_streamly([{"role": "system", "content": citation_plus("\n\n".join(formated_refer))},
                                                   {"role": "user", "content": text}
                                                   ]):
             yield delta_ans, 0
@@ -226,7 +226,7 @@ class Agent(LLM, ToolBase):
                         args = func["arguments"]
                         if name == COMPLETE_TASK:
                             cited = True
-                            hist.append({"role": "user", "content": f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language used in the response MUST be as the same as `{user_request[:32]}`.\n"})
+                            hist.append({"role": "user", "content": f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language for the response MUST be as the same as the first user request.\n"})
                             if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"]:
                                 if len(hist) < 7:
                                     hist[0]["content"] += citation_prompt()
