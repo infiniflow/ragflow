@@ -143,6 +143,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
 
 
 CITATION_PROMPT_TEMPLATE = load_prompt("citation_prompt")
+CITATION_PLUS_TEMPLATE = load_prompt("citation_plus")
 CONTENT_TAGGING_PROMPT_TEMPLATE = load_prompt("content_tagging_prompt")
 CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE = load_prompt("cross_languages_sys_prompt")
 CROSS_LANGUAGES_USER_PROMPT_TEMPLATE = load_prompt("cross_languages_user_prompt")
@@ -165,6 +166,11 @@ PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip
 def citation_prompt() -> str:
     template = PROMPT_JINJA_ENV.from_string(CITATION_PROMPT_TEMPLATE)
     return template.render()
+
+
+def citation_plus(sources: str) -> str:
+    template = PROMPT_JINJA_ENV.from_string(CITATION_PLUS_TEMPLATE)
+    return template.render(example=citation_prompt(), sources=sources)
 
 
 def keyword_extraction(chat_mdl, content, topn=3):

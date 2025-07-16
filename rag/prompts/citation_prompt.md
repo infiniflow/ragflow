@@ -4,7 +4,7 @@ Based on the provided document or chat history, add citations to the input text 
 # Citation requirements:
 
 **Rules:**
-- Use a uniform citation format such as [ID:i] [ID:j], where "i" and "j" are document IDs enclosed in square brackets. Separate multiple IDs with spaces (e.g., [ID:30] [ID:11]).
+- Use a uniform citation format such as [ID:i] [ID:j], where "i" and "j" are document ID enclosed in square brackets. Separate multiple IDs with spaces (e.g., [ID:30] [ID:11]).
 - Citation markers must be placed at the end of a sentence, separated by a space from the final punctuation (e.g., period, question mark). A maximum of 4 citations are allowed per sentence.
 - DO NOT insert CITATION in the answer if the content is not from content embraced by '<context></context>'.
 - Pay careful attention to whitespace: DO NOT add or remove any whitespace
@@ -22,8 +22,8 @@ Based on the provided document or chat history, add citations to the input text 
 
 
 --- Example START ---
-SYSTEM: 
 <context>
+
 ID: 23
 ├── Title: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
 ├── URL: https://blockworks.co/news/elon-musk-crypto-dogecoin

@@ -34,7 +34,7 @@ from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
 from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, form_history, \
-    citation_prompt, reflect, rank_memories
+    citation_prompt, reflect, rank_memories, kb_prompt, citation_plus
 from rag.utils import num_tokens_from_string
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 
@@ -167,6 +167,15 @@ class Agent(LLM, ToolBase):
         ans = chat_mdl.chat(prompt, [{"role": "user", "content": u if u else "Output: "}], self._param.gen_conf())
         return pd.DataFrame([ans])
 
+    def _gen_citations(self, text):
+        retrievals = self._canvas.get_reference()
+        retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
+        formated_refer = kb_prompt(retrievals, self.chat_mdl.max_length, True)
+        for delta_ans in self._generate_streamly([{"role": "system", "content": citation_plus(formated_refer)},
+                                                  {"role": "user", "content": text}
+                                                  ]):
+            yield delta_ans, 0
+
     def _react_with_tools_streamly(self, history: list[dict], use_tools):
         token_count = 0
         tool_metas = self.tool_meta
@@ -216,11 +225,21 @@ class Agent(LLM, ToolBase):
                         name = func["name"]
                         args = func["arguments"]
                         if name == COMPLETE_TASK:
-                            if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"]:
-                                hist[0]["content"] += citation_prompt()
+                            cited = True
                             hist.append({"role": "user", "content": f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language used in the response MUST be as the same as `{user_request[:32]}`.\n"})
+                            if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"]:
+                                if len(hist) < 7:
+                                    hist[0]["content"] += citation_prompt()
+                                else:
+                                    cited = False
                             yield "", token_count
+                            entire_txt = ""
                             for delta_ans in self._generate_streamly(hist):
+                                if cited:
+                                    yield delta_ans, 0
+                                entire_txt += delta_ans
+
+                            for delta_ans in self._gen_citations(entire_txt):
                                 yield delta_ans, 0
 
                             yield "", 0
@@ -237,7 +256,10 @@ class Agent(LLM, ToolBase):
                 hist.append({"role": "user", "content": f"Tool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"})
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
-        hist.append({"role": "user", "content": f"Exceed max rounds: {self._param.max_rounds}"})
+        if hist[-1]["role"] == "user":
+            hist[-1]["content"] += f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"
+        else:
+            hist.append({"role": "user", "content": f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"})
         response = self._generate(hist)
         token_count += num_tokens_from_string(response)
         yield response, token_count
