@@ -43,15 +43,11 @@ from graphrag.general.index import resolve_entities as graphrag_resolve_entities
 from api.db.services.llm_service import LLMBundle
 from api.db import LLMType
 
-# Global progress storage for community detection and entity resolution
 community_detection_progress = {}
 entity_resolution_progress = {}
-
-# Global progress storage for two-step graph creation
 entity_extraction_progress = {}
 graph_building_progress = {}
 
-# Create manager blueprint if not already defined
 manager = Blueprint('kb', __name__)
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -136,20 +132,16 @@ def update():
             return get_data_error_result(
                 message="Duplicated knowledgebase name.")
 
-        # Validate GraphRAG configuration if present
         if "parser_config" in req and "graphrag" in req.get("parser_config", {}):
             graphrag_config = req["parser_config"]["graphrag"]
             
-            # Validate graphrag_mode enum
             if "graphrag_mode" in graphrag_config:
                 valid_modes = ["none", "extract_only", "full_auto"]
                 if graphrag_config["graphrag_mode"] not in valid_modes:
                     return get_data_error_result(
                         message=f"Invalid graphrag_mode. Must be one of: {', '.join(valid_modes)}")
             
-            # Warn about deprecated use_graphrag
             if "use_graphrag" in graphrag_config:
-                # Convert legacy boolean to new enum format
                 use_graphrag = graphrag_config["use_graphrag"]
                 if isinstance(use_graphrag, bool):
                     new_mode = "full_auto" if use_graphrag else "none"
@@ -425,7 +417,6 @@ def resolve_entities(kb_id):
     try:
         _, kb = KnowledgebaseService.get_by_id(kb_id)
         
-        # Check if documents are currently being parsed
         if DocumentService.has_documents_parsing(kb_id):
             return get_json_result(
                 data=False,
@@ -579,13 +570,11 @@ def resolve_entities(kb_id):
             finally:
                 graphrag_task_lock.release()
         
-        # Execute the async function in a background thread
         import threading
         
         def background_entity_resolution():
             nonlocal kb_id, kb, progress_data
             try:
-                # Execute the async function using trio
                 updated_graph = trio.run(run_entity_resolution)
                 
                 # Convert updated graph back to JSON format
@@ -612,17 +601,12 @@ def resolve_entities(kb_id):
                     kb_id
                 )
                 
-                # Mark operation as completed but don't delete immediately
-                # Frontend will handle cleanup after showing final status
                 progress_data["current_status"] = "completed"
                 entity_resolution_progress[kb_id] = progress_data.copy()
-                
-                # Don't auto-cleanup - let progress persist for user to see results
             except Exception as e:
                 logging.exception(f"Entity resolution failed for kb {kb_id}: {str(e)}")
                 entity_resolution_progress[kb_id]["current_status"] = "failed"
         
-        # Start the background thread
         resolution_thread = threading.Thread(target=background_entity_resolution)
         resolution_thread.daemon = True
         resolution_thread.start()
@@ -635,7 +619,6 @@ def resolve_entities(kb_id):
         
     except Exception as e:
         logging.error(f"Entity resolution failed: {str(e)}")
-        # Clean up progress data on error
         if kb_id in entity_resolution_progress:
             del entity_resolution_progress[kb_id]
         return get_json_result(
@@ -788,13 +771,11 @@ def detect_communities(kb_id):
             finally:
                 graphrag_task_lock.release()
         
-        # Execute the async function in a background thread
         import threading
         
         def background_community_detection():
             nonlocal kb_id, kb, progress_data
             try:
-                # Execute the async function using trio
                 updated_graph = trio.run(run_community_detection)
                 
                 # Convert updated graph back to JSON format
@@ -827,18 +808,13 @@ def detect_communities(kb_id):
                     if "community" in node_data:
                         communities.add(node_data["community"])
                 
-                # Mark operation as completed but don't delete immediately
-                # Frontend will handle cleanup after showing final status
                 progress_data["current_status"] = "completed"
                 community_detection_progress[kb_id] = progress_data.copy()
-                
-                # Don't auto-cleanup - let progress persist for user to see results
                 
             except Exception as e:
                 logging.exception(f"Community detection failed for kb {kb_id}: {str(e)}")
                 community_detection_progress[kb_id]["current_status"] = "failed"
         
-        # Start the background thread  
         community_thread = threading.Thread(target=background_community_detection)
         community_thread.daemon = True
         community_thread.start()
@@ -851,7 +827,6 @@ def detect_communities(kb_id):
         
     except Exception as e:
         logging.error(f"Community detection failed: {str(e)}")
-        # Clean up progress data on error
         if kb_id in community_detection_progress:
             del community_detection_progress[kb_id]
         return get_json_result(
@@ -1042,7 +1017,6 @@ def extract_entities(kb_id):
                     entity_extraction_progress[kb_id]["current_status"] = "failed"
                 raise
         
-        # Start the extraction process in a background thread
         import threading
         
         def run_extraction_thread():
@@ -1064,7 +1038,6 @@ def extract_entities(kb_id):
         
     except Exception as e:
         logging.exception(f"Extract entities failed for kb {kb_id}: {str(e)}")
-        # Clean up progress on failure
         if kb_id in entity_extraction_progress:
             del entity_extraction_progress[kb_id]
         
