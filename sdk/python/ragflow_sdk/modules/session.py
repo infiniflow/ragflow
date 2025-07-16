@@ -23,6 +23,7 @@ class Session(Base):
     def __init__(self, rag, res_dict):
         self.id = None
         self.name = "New session"
+        self.summary = ""
         self.messages = [{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]
         self.memory_enabled = False
         self.memory_stats = {}
