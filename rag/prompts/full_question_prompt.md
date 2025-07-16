@@ -23,26 +23,22 @@ input_format:
   Intent: [INTENT_NAME] | Metadata: [key: value, key: value] | Câu hỏi: [user_question]
 
 output_format:
-  query: [optimized search query]
-  keyword: [keyword1, keyword2, keyword3, ...]
+  product_name
 
 example:
   input: "Intent: FIND_MEAT_PRODUCT | Metadata: meat_type: cá hồi | Câu hỏi: Cho tôi danh sách cá hồi đi"
   expected_output:
-    query: "Danh sách sản phẩm cá hồi"
-    keyword: cá hồi, sản phẩm, danh sách
+    cá hồi
 
 example:
   input: "Intent: FIND_COMBO | Metadata: meat_type: bò, number_of_people: 4, cooking_style: nướng | Câu hỏi: Tìm combo bò nướng cho 4 người"
   expected_output:
-    query: "Combo bò nướng 4 người"
-    keyword: combo, bò, nướng, 4 người
+    combo bò nướng
 
 example:
   input: "Intent: ASK_MEAT_DETAIL | Metadata: product_name: Thăn bò Úc | Câu hỏi: Thăn bò Úc có tính chất gì"
   expected_output:
-    query: "Thông tin chi tiết thăn bò Úc"
-    keyword: thăn bò Úc, tính chất, thông tin, chi tiết
+    Thăn bò Úc
 
 ---
 
