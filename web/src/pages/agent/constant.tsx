@@ -516,7 +516,7 @@ export const initialBingValues = {
     'YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
   country: 'CH',
   language: 'en',
-  ...initialQueryBaseValues,
+  query: '',
 };
 
 export const initialGoogleScholarValues = {
