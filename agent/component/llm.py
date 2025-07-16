@@ -225,13 +225,13 @@ class LLM(ComponentBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
         if self.imgs:
-            for ans in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), image=self.imgs[0]):
-                yield ans[len(answer):]
-                answer = ans
+            for ans in self._generate_streamly(msg, image=self.imgs[0]):
+                yield ans
+                answer += ans
         else:
-            for ans in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
-                yield ans[len(answer):]
-                answer = ans
+            for ans in self._generate_streamly(msg):
+                yield ans
+                answer += ans
 
         self.set_output("content", answer)
 
