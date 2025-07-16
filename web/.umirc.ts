@@ -39,7 +39,7 @@ export default defineConfig({
   proxy: [
     {
       context: ['/api', '/v1'],
-      target: 'http://127.0.0.1:9381/',
+      target: 'http://127.0.0.11:9381/',
       changeOrigin: true,
       ws: true,
       logger: console,
