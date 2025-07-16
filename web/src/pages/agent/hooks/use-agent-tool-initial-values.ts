@@ -22,6 +22,8 @@ export function useAgentToolInitialValues() {
           };
         case Operator.ExeSQL:
           return omit(initialValues, 'query');
+        case Operator.Bing:
+          return omit(initialValues, 'query');
 
         default:
           return initialValues;
