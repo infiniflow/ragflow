@@ -233,6 +233,8 @@ class Agent(LLM, ToolBase):
                                 else:
                                     cited = False
                             yield "", token_count
+                            if not cited:
+                                self.callback("gen_citations", {}, "...")
                             entire_txt = ""
                             for delta_ans in self._generate_streamly(hist):
                                 if cited:
