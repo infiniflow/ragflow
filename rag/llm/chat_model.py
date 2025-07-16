@@ -124,7 +124,7 @@ class Base(ABC):
         return ans + LENGTH_NOTIFICATION_EN
 
     def _exceptions(self, e, attempt):
-        logging.exception("OpenAI cat_with_tools")
+        logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
 
