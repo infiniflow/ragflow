@@ -88,6 +88,8 @@ example:
 
 ---
 
+Note: the input you need to process is in the last message (role=user) in the conversation below.
+
 ## Real Data
 
 **Conversation:**
