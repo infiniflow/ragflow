@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
 import { ITraceData } from '@/interfaces/database/agent';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
@@ -8,7 +9,6 @@ import flowService from '@/services/flow-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { message } from 'antd';
 import { get, set } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,6 +29,7 @@ export const enum AgentApiAction {
   FetchAgentTemplates = 'fetchAgentTemplates',
   UploadCanvasFile = 'uploadCanvasFile',
   Trace = 'trace',
+  TestDbConnect = 'testDbConnect',
 }
 
 export const EmptyDsl = {
@@ -127,7 +128,7 @@ export const useFetchAgentListByPage = () => {
 
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
-      // setPagination({ page: 1 }); // TODO: 这里导致重复请求
+      // setPagination({ page: 1 });
       handleInputChange(e);
     },
     [handleInputChange],
@@ -330,4 +331,25 @@ export const useFetchMessageTrace = () => {
   });
 
   return { data, loading, refetch, setMessageId };
+};
+
+export const useTestDbConnect = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.TestDbConnect],
+    mutationFn: async (params: any) => {
+      const ret = await flowService.testDbConnect(params);
+      if (ret?.data?.code === 0) {
+        message.success(ret?.data?.data);
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret;
+    },
+  });
+
+  return { data, loading, testDbConnect: mutateAsync };
 };
