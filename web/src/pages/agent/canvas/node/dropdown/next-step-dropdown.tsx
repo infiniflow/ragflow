@@ -102,6 +102,7 @@ function AccordionOperators() {
               Operator.TavilySearch,
               Operator.Crawler,
               Operator.ExeSQL,
+              Operator.Bing,
             ]}
           ></OperatorItemList>
         </AccordionContent>

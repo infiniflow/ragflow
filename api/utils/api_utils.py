@@ -31,8 +31,6 @@ from urllib.parse import quote, urlencode
 from uuid import uuid1
 
 import trio
-
-from api.db.db_models import MCPServer
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
 
@@ -570,7 +568,7 @@ def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
     return transformed_data
 
 
-def get_mcp_tools(mcp_servers: list[MCPServer], timeout: float | int = 10) -> tuple[dict, str]:
+def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, str]:
     results = {}
     tool_call_sessions = []
     try:

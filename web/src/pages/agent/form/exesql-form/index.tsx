@@ -13,6 +13,7 @@ import {
 import { Input, NumberInput } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { memo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { initialExeSqlValues } from '../../constant';
@@ -135,7 +136,7 @@ export function ExeSQLFormWidgets({ loading }: { loading: boolean }) {
   );
 }
 
-const ExeSQLForm = ({ node }: INextOperatorForm) => {
+function ExeSQLForm({ node }: INextOperatorForm) {
   const defaultValues = useFormValues(initialExeSqlValues, node);
 
   const { onSubmit, loading } = useSubmitForm();
@@ -155,6 +156,6 @@ const ExeSQLForm = ({ node }: INextOperatorForm) => {
       </FormWrapper>
     </Form>
   );
-};
+}
 
-export default ExeSQLForm;
+export default memo(ExeSQLForm);
