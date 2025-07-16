@@ -399,6 +399,9 @@ See the [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
+- [![ReadmeX](https://raw.githubusercontent.com/CodePhiliaX/resource-trusteeship/main/readmex.svg)](https://readmex.com/infiniflow/ragflow)
+
+
 ## 🙌 Contributing
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community.
