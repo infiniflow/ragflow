@@ -566,25 +566,14 @@ def resolve_entities(kb_id):
                     progress_callback
                 )
                 
-                return graph
-            finally:
-                graphrag_task_lock.release()
-        
-        import threading
-        
-        def background_entity_resolution():
-            nonlocal kb_id, kb, progress_data
-            try:
-                updated_graph = trio.run(run_entity_resolution)
-                
                 # Convert updated graph back to JSON format
                 updated_nodes = []
-                for node_id, node_data in updated_graph.nodes(data=True):
+                for node_id, node_data in graph.nodes(data=True):
                     node_dict = {"id": node_id, **node_data}
                     updated_nodes.append(node_dict)
                 
                 updated_edges = []
-                for source, target, edge_data in updated_graph.edges(data=True):
+                for source, target, edge_data in graph.edges(data=True):
                     edge_dict = {"source": source, "target": target, **edge_data}
                     updated_edges.append(edge_dict)
                 
@@ -606,10 +595,12 @@ def resolve_entities(kb_id):
             except Exception as e:
                 logging.exception(f"Entity resolution failed for kb {kb_id}: {str(e)}")
                 entity_resolution_progress[kb_id]["current_status"] = "failed"
+                raise
+            finally:
+                graphrag_task_lock.release()
         
-        resolution_thread = threading.Thread(target=background_entity_resolution)
-        resolution_thread.daemon = True
-        resolution_thread.start()
+        # Run entity resolution directly with trio
+        trio.run(run_entity_resolution)
         
         return get_json_result(
             data=True,
@@ -767,25 +758,14 @@ def detect_communities(kb_id):
                     callback=progress_callback
                 )
                 
-                return graph
-            finally:
-                graphrag_task_lock.release()
-        
-        import threading
-        
-        def background_community_detection():
-            nonlocal kb_id, kb, progress_data
-            try:
-                updated_graph = trio.run(run_community_detection)
-                
                 # Convert updated graph back to JSON format
                 updated_nodes = []
-                for node_id, node_data in updated_graph.nodes(data=True):
+                for node_id, node_data in graph.nodes(data=True):
                     node_dict = {"id": node_id, **node_data}
                     updated_nodes.append(node_dict)
                 
                 updated_edges = []
-                for source, target, edge_data in updated_graph.edges(data=True):
+                for source, target, edge_data in graph.edges(data=True):
                     edge_dict = {"source": source, "target": target, **edge_data}
                     updated_edges.append(edge_dict)
                 
@@ -814,10 +794,12 @@ def detect_communities(kb_id):
             except Exception as e:
                 logging.exception(f"Community detection failed for kb {kb_id}: {str(e)}")
                 community_detection_progress[kb_id]["current_status"] = "failed"
+                raise
+            finally:
+                graphrag_task_lock.release()
         
-        community_thread = threading.Thread(target=background_community_detection)
-        community_thread.daemon = True
-        community_thread.start()
+        # Run community detection directly with trio
+        trio.run(run_community_detection)
         
         return get_json_result(
             data=True,
@@ -1017,19 +999,8 @@ def extract_entities(kb_id):
                     entity_extraction_progress[kb_id]["current_status"] = "failed"
                 raise
         
-        import threading
-        
-        def run_extraction_thread():
-            try:
-                trio.run(run_extraction)
-            except Exception as e:
-                logging.exception(f"Background thread failed for kb {kb_id}: {str(e)}")
-                with progress_lock:
-                    entity_extraction_progress[kb_id]["current_status"] = "failed"
-        
-        extraction_thread = threading.Thread(target=run_extraction_thread)
-        extraction_thread.daemon = True
-        extraction_thread.start()
+        # Run entity extraction directly with trio
+        trio.run(run_extraction)
         
         return get_json_result(
             data=True,
@@ -1153,11 +1124,8 @@ def build_graph(kb_id):
                 graph_building_progress[kb_id]["current_status"] = "failed"
                 raise
         
-        # Start the graph building process in a background thread
-        import threading
-        build_thread = threading.Thread(target=lambda: trio.run(run_build))
-        build_thread.daemon = True
-        build_thread.start()
+        # Run graph building directly with trio
+        trio.run(run_build)
         
         return get_json_result(
             data=True,
