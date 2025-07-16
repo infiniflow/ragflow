@@ -35,7 +35,7 @@ GRAPH_FIELD_SEP = "<SEP>"
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
 chat_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
-
+graph_processing_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_GRAPH_TASKS', 5)))
 @dataclasses.dataclass
 class GraphChange:
     removed_nodes: Set[str] = dataclasses.field(default_factory=set)
@@ -483,13 +483,15 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     async with trio.open_nursery() as nursery:
         for node in change.added_updated_nodes:
             node_attrs = graph.nodes[node]
-            nursery.start_soon(graph_node_to_chunk, kb_id, embd_mdl, node, node_attrs, chunks)
+            async with graph_processing_limiter:
+                nursery.start_soon(graph_node_to_chunk, kb_id, embd_mdl, node, node_attrs, chunks)
         for from_node, to_node in change.added_updated_edges:
             edge_attrs = graph.get_edge_data(from_node, to_node)
             if not edge_attrs:
                 # added_updated_edges could record a non-existing edge if both from_node and to_node participate in nodes merging.
                 continue
-            nursery.start_soon(graph_edge_to_chunk, kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
+            async with graph_processing_limiter:
+                nursery.start_soon(graph_edge_to_chunk, kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
     now = trio.current_time()
     if callback:
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
