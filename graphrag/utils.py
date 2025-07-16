@@ -17,13 +17,12 @@ from typing import Any, Callable
 import os
 import trio
 from typing import Set, Tuple
-
 import networkx as nx
 import numpy as np
 import xxhash
 from networkx.readwrite import json_graph
 import dataclasses
-
+from api.utils.api_utils import timeout
 from api import settings
 from api.utils import get_uuid
 from rag.nlp import search, rag_tokenizer
@@ -305,6 +304,7 @@ def chunk_id(chunk):
     return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
 
 
+@timeout(1, 3)
 async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     chunk = {
         "id": get_uuid(),
@@ -357,6 +357,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     return res
 
 
+@timeout(1, 3)
 async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
     chunk = {
         "id": get_uuid(),
