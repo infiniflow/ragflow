@@ -1,7 +1,6 @@
 import { Operator } from '../../constant';
 import AkShareForm from '../akshare-form';
 import ArXivForm from '../arxiv-form';
-import BingForm from '../bing-form';
 import DeepLForm from '../deepl-form';
 import DuckDuckGoForm from '../duckduckgo-form';
 import EmailForm from '../email-form';
@@ -11,6 +10,7 @@ import GoogleScholarForm from '../google-scholar-form';
 import PubMedForm from '../pubmed-form';
 import WikipediaForm from '../wikipedia-form';
 import YahooFinanceForm from '../yahoo-finance-form';
+import BingForm from './bing-form';
 import CrawlerForm from './crawler-form';
 import ExeSQLForm from './exesql-form';
 import RetrievalForm from './retrieval-form';
