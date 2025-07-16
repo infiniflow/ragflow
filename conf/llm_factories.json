@@ -3245,6 +3245,30 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "voyage-3-large",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3.5",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3.5-lite",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-code-3",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
                     "llm_name": "voyage-multimodal-3",
                     "tags": "TEXT EMBEDDING,Chat,IMAGE2TEXT,32000",
                     "max_tokens": 32000,
