@@ -1,6 +1,7 @@
 import { IAgentForm } from '@/interfaces/database/agent';
-import { DefaultAgentToolValuesMap } from '@/pages/agent/constant';
+import { Operator } from '@/pages/agent/constant';
 import { AgentFormContext } from '@/pages/agent/context';
+import { useAgentToolInitialValues } from '@/pages/agent/hooks/use-agent-tool-initial-values';
 import useGraphStore from '@/pages/agent/store';
 import { get } from 'lodash';
 import { useCallback, useContext, useMemo } from 'react';
@@ -18,6 +19,7 @@ export function useUpdateAgentNodeTools() {
   const { updateNodeForm } = useGraphStore((state) => state);
   const node = useContext(AgentFormContext);
   const tools = useGetNodeTools();
+  const { initializeAgentToolValues } = useAgentToolInitialValues();
 
   const updateNodeTools = useCallback(
     (value: string[]) => {
@@ -30,10 +32,7 @@ export function useUpdateAgentNodeTools() {
               : {
                   component_name: cur,
                   name: cur,
-                  params:
-                    DefaultAgentToolValuesMap[
-                      cur as keyof typeof DefaultAgentToolValuesMap
-                    ] || {},
+                  params: initializeAgentToolValues(cur as Operator),
                 },
           );
           return pre;
@@ -42,7 +41,7 @@ export function useUpdateAgentNodeTools() {
         updateNodeForm(node?.id, nextValue, ['tools']);
       }
     },
-    [node?.id, tools, updateNodeForm],
+    [initializeAgentToolValues, node?.id, tools, updateNodeForm],
   );
 
   return { updateNodeTools };

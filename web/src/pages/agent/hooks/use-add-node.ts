@@ -135,7 +135,7 @@ export const useInitializeOperatorParams = () => {
     [initialFormValuesMap],
   );
 
-  return initializeOperatorParams;
+  return { initializeOperatorParams, initialFormValuesMap };
 };
 
 export const useGetNodeName = () => {
@@ -287,7 +287,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     (state) => state,
   );
   const getNodeName = useGetNodeName();
-  const initializeOperatorParams = useInitializeOperatorParams();
+  const { initializeOperatorParams } = useInitializeOperatorParams();
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
   const { addChildEdge } = useAddChildEdge();
   const { addToolNode } = useAddToolNode();
