@@ -59,7 +59,7 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
-        @timeout(120)
+        @timeout(300)
         async def extract_community_report(community):
             nonlocal res_str, res_dict, over, token_count
             cm_id, cm = community
@@ -93,7 +93,7 @@ class CommunityReportsExtractor(Extractor):
             gen_conf = {"temperature": 0.3}
             async with chat_limiter:
                 try:
-                    with trio.move_on_after(80) as cancel_scope:
+                    with trio.move_on_after(240) as cancel_scope:
                         response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
                     if cancel_scope.cancelled_caught:
                         logging.warning("extract_community_report._chat timeout, skipping...")

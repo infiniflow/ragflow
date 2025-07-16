@@ -55,7 +55,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         set_llm_cache(self._llm_model.llm_name, system, response, history, gen_conf)
         return response
 
-    @timeout(2)
+    @timeout(30)
     async def _embedding_encode(self, txt):
         response = get_embed_cache(self._embd_model.llm_name, txt)
         if response is not None:
