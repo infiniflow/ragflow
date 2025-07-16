@@ -204,6 +204,7 @@ def full_question(tenant_id, llm_id, messages, language=None):
     tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
     template = PROMPT_JINJA_ENV.from_string(FULL_QUESTION_PROMPT_TEMPLATE)
+    print("Full question prompt template:", template)
     rendered_prompt = template.render(
         today=today,
         yesterday=yesterday,
@@ -211,8 +212,10 @@ def full_question(tenant_id, llm_id, messages, language=None):
         conversation=conversation,
         language=language,
     )
+    print("Full question prompt:", rendered_prompt)
 
     ans = chat_mdl.chat(rendered_prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
+    print("Full question answer:", ans)
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
