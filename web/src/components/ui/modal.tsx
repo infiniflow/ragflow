@@ -106,12 +106,12 @@ export const Modal: FC<ModalProps> = ({
           </button>
         </div>
       );
-      return (
-        <div className="flex items-center justify-end border-t border-border px-6 py-4">
-          {footerTemp}
-        </div>
-      );
     }
+    return (
+      <div className="flex items-center justify-end border-t border-border px-6 py-4">
+        {footerTemp}
+      </div>
+    );
   }, [footer, cancelText, t, confirmLoading, okText, handleCancel, handleOk]);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
