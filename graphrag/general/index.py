@@ -42,7 +42,7 @@ from rag.utils.redis_conn import RedisDistributedLock
 @timeout(30, 2)
 async def _is_strong_enough(chat_model, embedding_model):
     _ = await trio.to_thread.run_sync(lambda: embedding_model.encode(["Are you strong enough!?"]))
-    res =  await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role":"user", "content": "Are you strong enough!?"}]))
+    res =  await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role":"user", "content": "Are you strong enough!?"}], {}))
     if res.find("**ERROR**") >= 0:
         raise Exception(res)
 
