@@ -174,7 +174,7 @@ class Agent(LLM, ToolBase):
         for delta_ans in self._generate_streamly([{"role": "system", "content": citation_plus("\n\n".join(formated_refer))},
                                                   {"role": "user", "content": text}
                                                   ]):
-            yield delta_ans, 0
+            yield delta_ans
 
     def _react_with_tools_streamly(self, history: list[dict], use_tools):
         token_count = 0
@@ -258,8 +258,10 @@ class Agent(LLM, ToolBase):
                 hist.append({"role": "user", "content": f"Tool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"})
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
-        if hist[-1]["role"] != "user":
-            hist.append({"role": "user", "content": user_request})
+        if hist[-1]["role"] == "user":
+            hist[-1]["content"] += f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"
+        else:
+            hist.append({"role": "user", "content": f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"})
 
         entire_txt = self._generate(hist)
         token_count += num_tokens_from_string(entire_txt)

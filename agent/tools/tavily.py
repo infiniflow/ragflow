@@ -37,6 +37,7 @@ class TavilySearchParam(ToolParamBase):
 Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results. 
 When searching:
    - Start with specific query which should focus on just a single aspect.
+   - Number of keywords in query should be less than 5.
    - Broaden search terms if needed
    - Cross-reference information from multiple sources
              """,
@@ -189,6 +190,7 @@ class TavilyExtractParam(ToolParamBase):
         self.extract_depth = "basic" # basic/advanced
         self.urls = []
         self.format = "markdown"
+        self.include_images = False
 
     def check(self):
         self.check_valid_value(self.extract_depth, "Tavily extract depth should be in 'basic/advanced'", ["basic", "advanced"])
@@ -222,7 +224,7 @@ class TavilyExtract(ToolBase, ABC):
     def _invoke(self, **kwargs):
         self.tavily_client = TavilyClient(api_key=self._param.api_key)
         last_e = None
-        for fld in ["urls", "extract_depth", "format", "include_images"]:
+        for fld in ["urls", "extract_depth", "format"]:
             if fld not in kwargs:
                 kwargs[fld] = getattr(self._param, fld)
         if kwargs.get("urls") and isinstance(kwargs["urls"], str):

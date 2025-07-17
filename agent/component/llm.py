@@ -145,7 +145,6 @@ class LLM(ComponentBase):
         endswith_think = False
         def delta(txt):
             nonlocal ans, last_idx, endswith_think
-            print(txt)
             delta_ans = txt[last_idx:]
             ans = txt
 

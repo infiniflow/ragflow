@@ -122,7 +122,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
             logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
             break
 
-    docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
+    docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
     docs = {d.id: d.meta_fields for d in docs}
 
     def draw_node(k, line):
@@ -130,10 +130,10 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
 
     knowledges = []
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        cnt = "\nID: {}".format(i if not hash_id else hash(ck["chunk_id"]) % 100)
-        cnt += draw_node("Title", ck["docnm_kwd"])
+        cnt = "\nID: {}".format(i if not hash_id else hash(get_value(ck, "id", "chunk_id")) % 100)
+        cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
         cnt += draw_node("URL", ck['url'])  if "url" in ck else ""
-        for k, v in docs.get(ck["doc_id"], {}).items():
+        for k, v in docs.get(get_value(ck, "doc_id", "document_id"), {}).items():
             cnt += draw_node(k, v)
         cnt += "\n└── Content:\n"
         cnt += get_value(ck, "content", "content_with_weight")
