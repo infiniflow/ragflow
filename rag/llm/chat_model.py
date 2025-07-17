@@ -73,7 +73,7 @@ class Base(ABC):
 
     def _get_delay(self):
         """Calculate retry delay time"""
-        return self.base_delay + random.uniform(0, 0.5)
+        return self.base_delay + random.uniform(10, 150)
 
     def _classify_error(self, error):
         """Classify error based on error message content"""
@@ -124,7 +124,7 @@ class Base(ABC):
         return ans + LENGTH_NOTIFICATION_EN
 
     def _exceptions(self, e, attempt):
-        logging.exception("OpenAI cat_with_tools")
+        logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
 
@@ -566,6 +566,16 @@ class BaiChuanChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
+
+
+class xAIChat(Base):
+    _FACTORY_NAME = "xAI"
+
+    def __init__(self, key, model_name="grok-3", base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://api.x.ai/v1"
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
+        return
 
 
 class QWenChat(Base):

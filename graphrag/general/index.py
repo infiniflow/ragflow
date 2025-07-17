@@ -20,6 +20,7 @@ import trio
 
 from api import settings
 from api.utils import get_uuid
+from api.utils.api_utils import timeout
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
 from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from graphrag.general.community_reports_extractor import CommunityReportsExtractor
@@ -41,6 +42,14 @@ from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 
 
+@timeout(30, 2)
+async def _is_strong_enough(chat_model, embedding_model):
+    _ = await trio.to_thread.run_sync(lambda: embedding_model.encode(["Are you strong enough!?"]))
+    res =  await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role":"user", "content": "Are you strong enough!?"}]))
+    if res.find("**ERROR**") >= 0:
+        raise Exception(res)
+
+
 async def run_graphrag(
     row: dict,
     language,
@@ -50,6 +59,11 @@ async def run_graphrag(
     embedding_model,
     callback,
 ):
+    # Pressure test for GraphRAG task
+    async with trio.open_nursery() as nursery:
+        for _ in range(12):
+            nursery.start_soon(_is_strong_enough, chat_model, embedding_model)
+
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
@@ -67,7 +81,7 @@ async def run_graphrag(
         doc_id,
         chunks,
         language,
-        row["kb_parser_config"]["graphrag"]["entity_types"],
+        row["kb_parser_config"]["graphrag"].get("entity_types", []),
         chat_model,
         embedding_model,
         callback,
@@ -126,6 +140,7 @@ async def run_graphrag(
     return
 
 
+@timeout(60*60, 1)
 async def generate_subgraph(
     extractor: Extractor,
     tenant_id: str,
@@ -197,6 +212,8 @@ async def generate_subgraph(
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph
 
+
+@timeout(60*3)
 async def merge_subgraph(
     tenant_id: str,
     kb_id: str,
@@ -228,6 +245,7 @@ async def merge_subgraph(
     return new_graph
 
 
+@timeout(60*30, 1)
 async def resolve_entities(
     graph,
     subgraph_nodes: set[str],
@@ -254,6 +272,7 @@ async def resolve_entities(
     callback(msg=f"Graph resolution done in {now - start:.2f}s.")
 
 
+@timeout(60*30, 1)
 async def extract_community(
     graph,
     tenant_id: str,

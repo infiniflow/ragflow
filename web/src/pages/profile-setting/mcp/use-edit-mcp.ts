@@ -1,10 +1,9 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateMcpServer,
-  useGetMcpServer,
   useUpdateMcpServer,
 } from '@/hooks/use-mcp-request';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
 export const useEditMcp = () => {
   const {
@@ -13,14 +12,13 @@ export const useEditMcp = () => {
     showModal: showEditModal,
   } = useSetModalState();
   const { createMcpServer, loading } = useCreateMcpServer();
-  const { data, setId, id } = useGetMcpServer();
-  const { updateMcpServer } = useUpdateMcpServer();
+  const [id, setId] = useState('');
+
+  const { updateMcpServer, loading: updateLoading } = useUpdateMcpServer();
 
   const handleShowModal = useCallback(
-    (id?: string) => () => {
-      if (id) {
-        setId(id);
-      }
+    (id: string) => () => {
+      setId(id);
       showEditModal();
     },
     [setId, showEditModal],
@@ -30,7 +28,7 @@ export const useEditMcp = () => {
     async (values: any) => {
       let code;
       if (id) {
-        code = await updateMcpServer(values);
+        code = await updateMcpServer({ ...values, mcp_id: id });
       } else {
         code = await createMcpServer(values);
       }
@@ -45,9 +43,11 @@ export const useEditMcp = () => {
     editVisible,
     hideEditModal,
     showEditModal: handleShowModal,
-    loading,
+    loading: loading || updateLoading,
     createMcpServer,
-    detail: data,
     handleOk,
+    id,
   };
 };
+
+export type UseEditMcpReturnType = ReturnType<typeof useEditMcp>;

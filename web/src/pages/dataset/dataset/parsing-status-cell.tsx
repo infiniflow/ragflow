@@ -61,7 +61,7 @@ export function ParsingStatusCell({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant={'ghost'} size={'sm'}>
-              {parser_id}
+              {parser_id === 'naive' ? 'general' : parser_id}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>

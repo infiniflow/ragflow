@@ -17,13 +17,12 @@ from typing import Any, Callable
 import os
 import trio
 from typing import Set, Tuple
-
 import networkx as nx
 import numpy as np
 import xxhash
 from networkx.readwrite import json_graph
 import dataclasses
-
+from api.utils.api_utils import timeout
 from api import settings
 from api.utils import get_uuid
 from rag.nlp import search, rag_tokenizer
@@ -157,6 +156,7 @@ def set_tags_to_cache(kb_ids, tags):
     k = hasher.hexdigest()
     REDIS_CONN.set(k, json.dumps(tags).encode("utf-8"), 600)
 
+
 def tidy_graph(graph: nx.Graph, callback, check_attribute: bool = True):
     """
     Ensure all nodes and edges in the graph have some essential attribute.
@@ -190,11 +190,13 @@ def tidy_graph(graph: nx.Graph, callback, check_attribute: bool = True):
     if purged_edges and callback:
         callback(msg=f"Purged {len(purged_edges)} edges from graph due to missing essential attributes.")
 
+
 def get_from_to(node1, node2):
     if node1 < node2:
         return (node1, node2)
     else:
         return (node2, node1)
+
 
 def graph_merge(g1: nx.Graph, g2: nx.Graph, change: GraphChange):
     """Merge graph g2 into g1 in place."""
@@ -227,6 +229,7 @@ def graph_merge(g1: nx.Graph, g2: nx.Graph, change: GraphChange):
         g1.graph["source_id"] = []
     g1.graph["source_id"] += g2.graph.get("source_id", [])
     return g1
+
 
 def compute_args_hash(*args):
     return md5(str(args).encode()).hexdigest()
@@ -301,6 +304,7 @@ def chunk_id(chunk):
     return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
 
 
+@timeout(3, 3)
 async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     chunk = {
         "id": get_uuid(),
@@ -326,6 +330,7 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     chunks.append(chunk)
 
 
+@timeout(3, 3)
 def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     ents = from_ent_name
     if isinstance(ents, str):
@@ -353,6 +358,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     return res
 
 
+@timeout(3, 3)
 async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
     # Handle missing fields with defaults
     description = meta.get("description", f"Relationship between {from_ent_name} and {to_ent_name}")
@@ -383,6 +389,7 @@ async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta,
     chunk["q_%d_vec" % len(ebd)] = ebd
     chunks.append(chunk)
 
+
 async def does_graph_contains(tenant_id, kb_id, doc_id):
     # Get doc_ids of graph
     fields = ["source_id"]
@@ -396,6 +403,7 @@ async def does_graph_contains(tenant_id, kb_id, doc_id):
     for chunk_id in fields2.keys():
         graph_doc_ids = set(fields2[chunk_id]["source_id"])
     return doc_id in graph_doc_ids
+
 
 async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
     conds = {
@@ -478,17 +486,24 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             "available_int": 0,
             "removed_kwd": "N"
         })
-    
+
+    semaphore = trio.Semaphore(5)
     async with trio.open_nursery() as nursery:
-        for node in change.added_updated_nodes:
+        for ii, node in enumerate(change.added_updated_nodes):
             node_attrs = graph.nodes[node]
-            nursery.start_soon(graph_node_to_chunk, kb_id, embd_mdl, node, node_attrs, chunks)
-        for from_node, to_node in change.added_updated_edges:
+            async with semaphore:
+                if ii%100 == 9 and callback:
+                    callback(msg=f"Get embedding of nodes: {ii}/{len(change.added_updated_nodes)}")
+                nursery.start_soon(graph_node_to_chunk, kb_id, embd_mdl, node, node_attrs, chunks)
+        for ii, (from_node, to_node) in enumerate(change.added_updated_edges):
             edge_attrs = graph.get_edge_data(from_node, to_node)
             if not edge_attrs:
                 # added_updated_edges could record a non-existing edge if both from_node and to_node participate in nodes merging.
                 continue
-            nursery.start_soon(graph_edge_to_chunk, kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
+            async with semaphore:
+                if ii%100 == 9 and callback:
+                    callback(msg=f"Get embedding of edges: {ii}/{len(change.added_updated_edges)}")
+                nursery.start_soon(graph_edge_to_chunk, kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
     now = trio.current_time()
     if callback:
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
@@ -496,6 +511,9 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
 
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
+        async with semaphore:
+            if b % 100 == es_bulk_size and callback:
+                callback(msg=f"Insert chunks: {b}/{len(chunks)}")
         doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(tenant_id), kb_id))
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"

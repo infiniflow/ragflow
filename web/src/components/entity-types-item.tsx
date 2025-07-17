@@ -25,7 +25,7 @@ const EntityTypesItem = ({
       rules={[{ required: true }]}
       initialValue={initialEntityTypes}
     >
-      <EditTag></EditTag>
+      <EditTag value={field}></EditTag>
     </Form.Item>
   );
 };

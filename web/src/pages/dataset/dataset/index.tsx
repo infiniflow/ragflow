@@ -90,7 +90,7 @@ export default function Dataset() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={showCreateModal}>
-              {t('fileManager.newFolder')}
+              {t('knowledgeDetails.emptyFiles')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

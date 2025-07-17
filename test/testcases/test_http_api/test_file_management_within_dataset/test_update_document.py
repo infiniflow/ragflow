@@ -309,7 +309,7 @@ class TestUpdateDocumentParserConfig:
             (
                 "naive",
                 {
-                    "chunk_token_num": 128,
+                    "chunk_token_num": 512,
                     "layout_recognize": "DeepDOC",
                     "html4excel": False,
                     "delimiter": r"\n",
@@ -535,7 +535,7 @@ class TestUpdateDocumentParserConfig:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             if parser_config == {}:
                 assert res["data"]["docs"][0]["parser_config"] == {
-                    "chunk_token_num": 128,
+                    "chunk_token_num": 512,
                     "delimiter": r"\n",
                     "html4excel": False,
                     "layout_recognize": "DeepDOC",

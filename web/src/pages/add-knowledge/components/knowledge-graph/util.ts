@@ -86,7 +86,9 @@ export const buildNodesAndCombos = (nodes: any[]) => {
   const nextNodes = nodes.map((x) => {
     return {
       ...x,
-      combo: combos.find((y) => y.data.label === findCombo(x?.communities))?.id,
+      combo:
+        combos.find((y) => y.data.label === findCombo(x?.communities))?.id ??
+        null,
     };
   });
 
