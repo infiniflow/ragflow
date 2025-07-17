@@ -185,7 +185,7 @@ def question_proposal(chat_mdl, content, topn=3):
     return kwd
 
 
-def full_question(tenant_id, llm_id, messages, language=None):
+def full_question(tenant_id, llm_id, messages, language=None, full_question_prompt=None):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
 
@@ -203,7 +203,9 @@ def full_question(tenant_id, llm_id, messages, language=None):
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
-    template = PROMPT_JINJA_ENV.from_string(FULL_QUESTION_PROMPT_TEMPLATE)
+    # Use custom prompt if provided, otherwise use default template
+    prompt_template = full_question_prompt if full_question_prompt else FULL_QUESTION_PROMPT_TEMPLATE
+    template = PROMPT_JINJA_ENV.from_string(prompt_template)
     print("Full question prompt template:", template)
     rendered_prompt = template.render(
         today=today,

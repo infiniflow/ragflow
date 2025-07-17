@@ -77,6 +77,10 @@ def create(tenant_id):
     memory_config = req.get("memory_config")
     if memory_config:
         req["memory_config"] = validate_memory_config(memory_config)
+    # Handle full_question_prompt
+    full_question_prompt = req.get("full_question_prompt")
+    if full_question_prompt:
+        req["full_question_prompt"] = full_question_prompt
     # init
     req["id"] = get_uuid()
     req["description"] = req.get("description", "A helpful Assistant")
@@ -146,6 +150,9 @@ def create(tenant_id):
     del res["kb_ids"]
     res["dataset_ids"] = req["dataset_ids"]
     res["avatar"] = res.pop("icon")
+    # Include full_question_prompt in response if it exists
+    if "full_question_prompt" in res:
+        res["full_question_prompt"] = res.get("full_question_prompt")
     return get_result(data=res)
 
 
@@ -229,6 +236,10 @@ def update(tenant_id, chat_id):
     memory_config = req.get("memory_config")
     if memory_config:
         req["memory_config"] = validate_memory_config(memory_config)
+    # Handle full_question_prompt updates
+    full_question_prompt = req.get("full_question_prompt")
+    if full_question_prompt is not None:  # Allow empty string to clear the prompt
+        req["full_question_prompt"] = full_question_prompt
     if not DialogService.update_by_id(chat_id, req):
         return get_error_data_result(message="Chat not found!")
     return get_result()
@@ -330,5 +341,8 @@ def list_chat(tenant_id):
         del res["kb_ids"]
         res["datasets"] = kb_list
         res["avatar"] = res.pop("icon")
+        # Include full_question_prompt in response if it exists
+        if "full_question_prompt" in res:
+            res["full_question_prompt"] = res.get("full_question_prompt")
         list_assts.append(res)
     return get_result(data=list_assts)

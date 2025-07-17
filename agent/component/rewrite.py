@@ -43,7 +43,7 @@ class RewriteQuestion(Generate, ABC):
         messages = [h for h in hist if h["role"]!="system"]
         if messages[-1]["role"] != "user":
             messages.append({"role": "user", "content": query})
-        ans = full_question(self._canvas.get_tenant_id(), self._param.llm_id, messages, self.gen_lang(self._param.language))
+        ans = full_question(self._canvas.get_tenant_id(), self._param.llm_id, messages, self.gen_lang(self._param.language), full_question_prompt=None)
         self._canvas.history.pop()
         self._canvas.history.append(("user", ans))
         return RewriteQuestion.be_output(ans)

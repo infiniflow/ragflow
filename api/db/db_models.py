@@ -714,6 +714,7 @@ class Dialog(DataBaseModel):
 
     kb_ids = JSONField(null=False, default=[])
     memory_config = JSONField(null=False, default={"enabled": True, "max_memories": 5, "threshold": 0.7, "store_interval": 3})
+    full_question_prompt = TextField(null=True, help_text="custom prompt template for full question generation")
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     class Meta:
@@ -986,5 +987,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("conversation", "summary", TextField(null=True, help_text="conversation summary")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("dialog", "full_question_prompt", TextField(null=True, help_text="custom prompt template for full question generation")))
     except Exception:
         pass
