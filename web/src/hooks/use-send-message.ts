@@ -42,6 +42,8 @@ export interface IInputData {
 
 export interface IMessageData {
   content: string;
+  start_to_think?: boolean;
+  end_to_think?: boolean;
 }
 
 export interface IMessageEndData {

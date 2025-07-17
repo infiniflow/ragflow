@@ -64,9 +64,40 @@ function findMessageFromList(eventList: IEventList) {
   const messageEventList = eventList.filter(
     (x) => x.event === MessageEventType.Message,
   ) as IMessageEvent[];
+
+  let nextContent = '';
+
+  let startIndex = -1;
+  let endIndex = -1;
+
+  messageEventList.forEach((x, idx) => {
+    const { data } = x;
+    const { content, start_to_think, end_to_think } = data;
+    if (start_to_think === true) {
+      nextContent += '<think>' + content;
+      startIndex = idx;
+      return;
+    }
+
+    if (end_to_think === true) {
+      endIndex = idx;
+      nextContent += content + '</think>';
+      return;
+    }
+
+    nextContent += content;
+  });
+
+  const currentIdx = messageEventList.length - 1;
+
+  // Make sure that after start_to_think === true and before end_to_think === true, add a </think> tag at the end.
+  if (startIndex >= 0 && startIndex <= currentIdx && endIndex === -1) {
+    nextContent += '</think>';
+  }
+
   return {
     id: eventList[0]?.message_id,
-    content: messageEventList.map((x) => x.data.content).join(''),
+    content: nextContent,
   };
 }
 
