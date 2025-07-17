@@ -65,7 +65,7 @@ async def run_graphrag(
         doc_id,
         chunks,
         language,
-        row["kb_parser_config"]["graphrag"]["entity_types"],
+        row["kb_parser_config"]["graphrag"].get("entity_ytpes", []),
         chat_model,
         embedding_model,
         callback,
