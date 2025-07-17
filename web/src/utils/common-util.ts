@@ -43,6 +43,7 @@ const orderFactoryList = [
   LLMFactory.ZhipuAI,
   LLMFactory.Ollama,
   LLMFactory.Xinference,
+  LLMFactory.Ai302,
 ];
 
 export const sortLLmFactoryListBySpecifiedOrder = (list: IFactory[]) => {
