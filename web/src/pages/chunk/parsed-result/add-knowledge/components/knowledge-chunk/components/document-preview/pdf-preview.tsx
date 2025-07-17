@@ -1,4 +1,3 @@
-import { Skeleton } from 'antd';
 import { memo, useEffect, useRef } from 'react';
 import {
   AreaHighlight,
@@ -11,10 +10,11 @@ import {
 import { useGetDocumentUrl } from './hooks';
 
 import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
+import { Spin } from '@/components/ui/spin';
 import FileError from '@/pages/document-viewer/file-error';
 import styles from './index.less';
 
-interface IProps {
+export interface IProps {
   highlights: IHighlight[];
   setWidthAndHeight: (width: number, height: number) => void;
 }
@@ -30,7 +30,7 @@ const HighlightPopup = ({
   ) : null;
 
 // TODO: merge with DocumentPreviewer
-const Preview = ({ highlights: state, setWidthAndHeight }: IProps) => {
+const PdfPreview = ({ highlights: state, setWidthAndHeight }: IProps) => {
   const url = useGetDocumentUrl();
 
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
@@ -50,7 +50,11 @@ const Preview = ({ highlights: state, setWidthAndHeight }: IProps) => {
     >
       <PdfLoader
         url={url}
-        beforeLoad={<Skeleton active />}
+        beforeLoad={
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Spin />
+          </div>
+        }
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
         errorMessage={<FileError>{error}</FileError>}
       >
@@ -120,4 +124,4 @@ const Preview = ({ highlights: state, setWidthAndHeight }: IProps) => {
   );
 };
 
-export default memo(Preview);
+export default memo(PdfPreview);

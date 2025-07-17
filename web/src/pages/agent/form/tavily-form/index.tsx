@@ -12,7 +12,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -27,7 +27,7 @@ import { DynamicDomain } from './dynamic-domain';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const TavilyForm = ({ node }: INextOperatorForm) => {
+function TavilyForm({ node }: INextOperatorForm) {
   const values = useValues(node);
 
   const FormSchema = z.object({
@@ -227,6 +227,6 @@ const TavilyForm = ({ node }: INextOperatorForm) => {
       </div>
     </Form>
   );
-};
+}
 
-export default TavilyForm;
+export default memo(TavilyForm);

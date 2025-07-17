@@ -18,7 +18,6 @@ import { useParams } from 'umi';
 import DebugContent from '../debug-content';
 import { BeginQuery } from '../interface';
 import { buildBeginQueryWithObject } from '../utils';
-import { buildAgentMessageItemReference } from '../utils/chat';
 
 const AgentChatBox = () => {
   const {
@@ -29,9 +28,9 @@ const AgentChatBox = () => {
     loading,
     ref,
     derivedMessages,
-    reference,
     stopOutputMessage,
     sendFormMessage,
+    findReferenceByMessageId,
   } = useSendNextMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -71,7 +70,7 @@ const AgentChatBox = () => {
 
   return (
     <>
-      <section className="flex flex-1 flex-col pl-5 h-[90vh]">
+      <section className="flex flex-1 flex-col px-5 h-[90vh]">
         <div className="flex-1 overflow-auto">
           <div>
             <Spin spinning={loading}>
@@ -88,10 +87,7 @@ const AgentChatBox = () => {
                     avatar={userInfo.avatar}
                     avatarDialog={canvasInfo.avatar}
                     item={message}
-                    reference={buildAgentMessageItemReference(
-                      { message: derivedMessages, reference },
-                      message,
-                    )}
+                    reference={findReferenceByMessageId(message.id)}
                     clickDocumentButton={clickDocumentButton}
                     index={i}
                     showLikeButton={false}
