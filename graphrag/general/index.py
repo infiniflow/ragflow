@@ -39,6 +39,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 
 
+
 async def run_graphrag(
     row: dict,
     language,
