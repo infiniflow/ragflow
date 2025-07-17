@@ -684,4 +684,4 @@ async def is_strong_enough(chat_model, embedding_model):
     # Pressure test for GraphRAG task
     async with trio.open_nursery() as nursery:
         for _ in range(12):
-            nursery.start_soon(_is_strong_enough, chat_model, embedding_model)
+            nursery.start_soon(_is_strong_enough)
