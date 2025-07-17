@@ -766,7 +766,132 @@ Failure:
     "message": "The dataset doesn't exist"
 }
 ```
+ ---
 
+## Get dataset's knowledge graph
+
+**GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
+
+Gets the knowledge graph of a specific datasets.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "graph": {
+            "directed": false,
+            "edges": [
+                {
+                    "description": "The notice is a document issued to convey risk warnings and operational alerts.<SEP>The notice is a specific instance of a notification document issued under the risk warning framework.",
+                    "keywords": ["9", "8"],
+                    "source": "notice",
+                    "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c"],
+                    "src_id": "xxx",
+                    "target": "xxx",
+                    "tgt_id": "xxx",
+                    "weight": 17.0
+                }
+            ],
+            "graph": {
+                "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c", "8a7eb6424b5c11f0a5281a58e595aa1c"]
+            },
+            "multigraph": false,
+            "nodes": [
+                {
+                    "description": "xxx",
+                    "entity_name": "xxx",
+                    "entity_type": "ORGANIZATION",
+                    "id": "xxx",
+                    "pagerank": 0.10804906590624092,
+                    "rank": 3,
+                    "source_id": ["8a7eb6424b5c11f0a5281a58e595aa1c"]
+                }
+            ]
+        },
+        "mind_map": {}
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The dataset doesn't exist"
+}
+```
+---
+
+## Delete dataset's knowledge graph
+
+**DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
+
+Deletes the knowledge graph of a specific datasets.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The dataset doesn't exist"
+}
+```
 ---
 
 ## FILE MANAGEMENT WITHIN DATASET
