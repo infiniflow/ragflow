@@ -333,19 +333,10 @@ def my_llms():
                         "llm": []
                     }
                 
-                api_key = o_dict["api_key"] or ""
-                masked_api_key = ""
-                if api_key:
-                    if len(api_key) > 12:
-                        masked_api_key = api_key[:8] + "***" + api_key[-4:]
-                    else:
-                        masked_api_key = api_key[:3] + "***" + api_key[-2:] if len(api_key) > 5 else "***"
-                        
                 res[o_dict["llm_factory"]]["llm"].append({
                     "type": o_dict["model_type"],
                     "name": o_dict["llm_name"],
                     "used_token": o_dict["used_tokens"],
-                    "api_key": masked_api_key,
                     "api_base": o_dict["api_base"] or "",
                     "max_tokens": o_dict["max_tokens"] or 8192
                 })
