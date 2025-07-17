@@ -304,7 +304,7 @@ def chunk_id(chunk):
     return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
 
 
-@timeout(1, 3)
+@timeout(3, 3)
 async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     chunk = {
         "id": get_uuid(),
@@ -330,6 +330,7 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     chunks.append(chunk)
 
 
+@timeout(3, 3)
 def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     ents = from_ent_name
     if isinstance(ents, str):
@@ -357,7 +358,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     return res
 
 
-@timeout(1, 3)
+@timeout(3, 3)
 async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
     chunk = {
         "id": get_uuid(),
@@ -480,17 +481,20 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             "available_int": 0,
             "removed_kwd": "N"
         })
-    
+
+    semaphore = trio.Semaphore(5)
     async with trio.open_nursery() as nursery:
         for node in change.added_updated_nodes:
             node_attrs = graph.nodes[node]
-            nursery.start_soon(graph_node_to_chunk, kb_id, embd_mdl, node, node_attrs, chunks)
+            async with semaphore:
+                nursery.start_soon(graph_node_to_chunk, kb_id, embd_mdl, node, node_attrs, chunks)
         for from_node, to_node in change.added_updated_edges:
             edge_attrs = graph.get_edge_data(from_node, to_node)
             if not edge_attrs:
                 # added_updated_edges could record a non-existing edge if both from_node and to_node participate in nodes merging.
                 continue
-            nursery.start_soon(graph_edge_to_chunk, kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
+            async with semaphore:
+                nursery.start_soon(graph_edge_to_chunk, kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
     now = trio.current_time()
     if callback:
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
