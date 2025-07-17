@@ -258,13 +258,13 @@ class Agent(LLM, ToolBase):
                 hist.append({"role": "user", "content": f"Tool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"})
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
-        if hist[-1]["role"] == "user":
-            hist[-1]["content"] += f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"
-        else:
-            hist.append({"role": "user", "content": f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"})
-        response = self._generate(hist)
-        token_count += num_tokens_from_string(response)
-        yield response, token_count
+        if hist[-1]["role"] != "user":
+            hist.append({"role": "user", "content": user_request})
+
+        entire_txt = self._generate(hist)
+        token_count += num_tokens_from_string(entire_txt)
+        for delta_ans in self._gen_citations(entire_txt):
+            yield delta_ans, 0
 
     def get_useful_memory(self, goal: str, sub_goal:str, topn=3) -> str:
         self.callback("get_useful_memory", {"topn": 3}, "...")

@@ -191,7 +191,6 @@ class TavilyExtractParam(ToolParamBase):
         self.format = "markdown"
 
     def check(self):
-        self.check_empty(self.urls, "URLs")
         self.check_valid_value(self.extract_depth, "Tavily extract depth should be in 'basic/advanced'", ["basic", "advanced"])
         self.check_valid_value(self.format, "Tavily extract format should be in 'markdown/text'", ["markdown", "text"])
 
