@@ -56,7 +56,6 @@ class ExeSQLParam(ToolParamBase):
         self.max_records = 1024
 
     def check(self):
-        super().check()
         self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgresql', 'mariadb', 'mssql'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
