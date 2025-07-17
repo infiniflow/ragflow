@@ -55,12 +55,18 @@ class Extractor:
         if response:
             return response
         _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
-        response = self._llm.chat(system_msg[0]["content"], hist, conf)
-        response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
-        if response.find("**ERROR**") >= 0:
-            logging.warning(f"Extractor._chat got error. response: {response}")
-            return ""
-        set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
+        for attempt in range(3):
+            try:
+                response = self._llm.chat(system_msg[0]["content"], hist, conf)
+                response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
+                if response.find("**ERROR**") >= 0:
+                    raise Exception(response)
+                set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
+            except Exception as e:
+                logging.exception(e)
+                if attempt == 2:
+                    raise
+
         return response
 
     def _entities_and_relations(self, chunk_key: str, records: list, tuple_delimiter: str):
