@@ -113,15 +113,7 @@ class TavilySearch(ToolBase, ABC):
                 "doc_id": id,
                 "docnm_kwd": r["title"],
                 "similarity": r["score"],
-                "url": r["url"],
-                #"content_ltks": rag_tokenizer.tokenize(r["content"]),
-                #"kb_id": [],
-                #"important_kwd": [],
-                #"image_id": "",
-                #"vector_similarity": 1.,
-                #"term_similarity": 0,
-                #"vector": [],
-                #"positions": [],
+                "url": r["url"]
             })
             aggs.append({
                 "doc_name": r["title"],
@@ -131,7 +123,6 @@ class TavilySearch(ToolBase, ABC):
             })
         self._canvas.add_refernce(chunks, aggs)
         self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, True)))
-        self.set_output("json", response)
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
@@ -145,7 +136,99 @@ class TavilySearch(ToolBase, ABC):
                 kwargs["include_images"] = False
                 res = self.tavily_client.search(**kwargs)
                 self._retrieve_chunks(res)
+                self.set_output("json", res["results"])
                 return self.output("formalized_content")
+            except Exception as e:
+                last_e = e
+                logging.exception(f"Tavily error: {e}")
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return f"Tavily error: {last_e}"
+
+        assert False, self.output()
+
+
+class TavilyExtractParam(ToolParamBase):
+    """
+    Define the Retrieval component parameters.
+    """
+
+    def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "tavily_extract",
+            "description": "Extract web page content from one or more specified URLs using Tavily Extract.",
+            "parameters": {
+                "urls": {
+                    "type": "array",
+                    "description": "The URL to extract content from.",
+                    "default": "",
+                    "required": True
+                },
+                "extract_depth": {
+                    "type": "string",
+                    "description": "The depth of the extraction process. advanced extraction retrieves more data, including tables and embedded content, with higher success but may increase latency.basic extraction costs 1 credit per 5 successful URL extractions, while advanced extraction costs 2 credits per 5 successful URL extractions.",
+                    "enum": ["basic", "advanced"],
+                    "default": "basic",
+                    "required": False,
+                },
+                "format": {
+                    "type": "string",
+                    "description": "The format of the extracted web page content. markdown returns content in markdown format. text returns plain text and may increase latency.",
+                    "enum": ["markdown", "text"],
+                    "default": "markdown",
+                    "required": False,
+                }
+            }
+        }
+        super().__init__()
+        self.api_key = ""
+        self.extract_depth = "basic" # basic/advanced
+        self.urls = []
+        self.format = "markdown"
+
+    def check(self):
+        self.check_empty(self.urls, "URLs")
+        self.check_valid_value(self.extract_depth, "Tavily extract depth should be in 'basic/advanced'", ["basic", "advanced"])
+        self.check_valid_value(self.format, "Tavily extract format should be in 'markdown/text'", ["markdown", "text"])
+
+
+class TavilyExtract(ToolBase, ABC):
+    component_name = "TavilyExtract"
+
+    def _retrieve_chunks(self, response):
+        chunks = []
+        for r in response["results"]:
+            if not r["raw_content"] and not r["content"]:
+                continue
+            content = r["raw_content"] if r["raw_content"] else r["content"]
+            content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+-]+\)", "", content)
+            if not content:
+                continue
+            id = get_uuid()
+            chunks.append({
+                "chunk_id": id,
+                "content": content[:10000],
+                "doc_id": id,
+                "docnm_kwd": "",
+                "similarity": 1,
+                "url": r["url"]
+            })
+        self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": []}, 2000000)))
+
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
+        self.tavily_client = TavilyClient(api_key=self._param.api_key)
+        last_e = None
+        for fld in ["urls", "extract_depth", "format", "include_images"]:
+            if fld not in kwargs:
+                kwargs[fld] = getattr(self._param, fld)
+        if kwargs.get("urls") and isinstance(kwargs["urls"], str):
+            kwargs["urls"] = kwargs["urls"].split(",")
+        for _ in range(self._param.max_retries+1):
+            try:
+                kwargs["include_images"] = False
+                res = self.tavily_client.extract(**kwargs)
+                return self.output("json", res["results"])
             except Exception as e:
                 last_e = e
                 logging.exception(f"Tavily error: {e}")

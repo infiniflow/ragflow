@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from abc import ABC
 import re
 from copy import deepcopy
@@ -20,17 +21,31 @@ from copy import deepcopy
 import pandas as pd
 import pymysql
 import psycopg2
-from agent.component import GenerateParam, Generate
 import pyodbc
 import logging
 
+from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
+from api.utils.api_utils import timeout
 
-class ExeSQLParam(GenerateParam):
+
+class ExeSQLParam(ToolParamBase):
     """
     Define the ExeSQL component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "execute_sql",
+            "description": "This is a tool that can execute SQL.",
+            "parameters": {
+                "sql": {
+                    "type": "string",
+                    "description": "The SQL needs to be executed.",
+                    "default": "{sys.query}",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.db_type = "mysql"
         self.database = ""
@@ -38,8 +53,7 @@ class ExeSQLParam(GenerateParam):
         self.host = ""
         self.port = 3306
         self.password = ""
-        self.loop = 3
-        self.top_n = 30
+        self.max_records = 1024
 
     def check(self):
         super().check()
@@ -49,7 +63,7 @@ class ExeSQLParam(GenerateParam):
         self.check_empty(self.host, "IP Address")
         self.check_positive_integer(self.port, "IP Port")
         self.check_empty(self.password, "Database password")
-        self.check_positive_integer(self.top_n, "Number of records")
+        self.check_positive_integer(self.max_records, "Maximum number of records")
         if self.database == "rag_flow":
             if self.host == "ragflow-mysql":
                 raise ValueError("For the security reason, it dose not support database named rag_flow.")
@@ -57,28 +71,16 @@ class ExeSQLParam(GenerateParam):
                 raise ValueError("For the security reason, it dose not support database named rag_flow.")
 
 
-class ExeSQL(Generate, ABC):
+class ExeSQL(ToolBase, ABC):
     component_name = "ExeSQL"
 
-    def _refactor(self, ans):
-        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-        match = re.search(r"```sql\s*(.*?)\s*```", ans, re.DOTALL)
-        if match:
-            ans = match.group(1)  # Query content
-            return ans
-        else:
-            print("no markdown")
-        ans = re.sub(r'^.*?SELECT ', 'SELECT ', (ans), flags=re.IGNORECASE)
-        ans = re.sub(r';.*?SELECT ', '; SELECT ', ans, flags=re.IGNORECASE)
-        ans = re.sub(r';[^;]*$', r';', ans)
-        if not ans:
-            raise Exception("SQL statement not found!")
-        return ans
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+    def _invoke(self, **kwargs):
+        sql = kwargs.get("sql")
+        if not sql:
+            raise Exception("SQL for `ExeSQL` MUST not be empty.")
+        sqls = sql.split(";")
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
-        ans = self._refactor(ans)
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
@@ -98,58 +100,30 @@ class ExeSQL(Generate, ABC):
             cursor = db.cursor()
         except Exception as e:
             raise Exception("Database Connection Failed! \n" + str(e))
-        if not hasattr(self, "_loop"):
-            setattr(self, "_loop", 0)
-            self._loop += 1
-        input_list = re.split(r';', ans.replace(r"\n", " "))
-        sql_res = []
-        for i in range(len(input_list)):
-            single_sql = input_list[i]
-            single_sql = single_sql.replace('```','')
-            while self._loop <= self._param.loop:
-                self._loop += 1
-                if not single_sql:
-                    break
-                try:
-                    cursor.execute(single_sql)
-                    if cursor.rowcount == 0:
-                        sql_res.append({"content": "No record in the database!"})
-                        break
-                    if self._param.db_type == 'mssql':
-                        single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.top_n),
-                                                               columns=[desc[0] for desc in cursor.description])
-                    else:
-                        single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
-                        single_res.columns = [i[0] for i in cursor.description]
-                    sql_res.append({"content": single_res.to_markdown(index=False, floatfmt=".6f")})
-                    break
-                except Exception as e:
-                    single_sql = self._regenerate_sql(single_sql, str(e), **kwargs)
-                    single_sql = self._refactor(single_sql)
-                    if self._loop > self._param.loop:
-                        sql_res.append({"content": "Can't query the correct data via SQL statement."})
-        db.close()
-        if not sql_res:
-            return ExeSQL.be_output("")
-        return pd.DataFrame(sql_res)
 
-    def _regenerate_sql(self, failed_sql, error_message, **kwargs):
-        prompt = f'''
-        ## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.
-        ## The original SQL statement is as follows:{failed_sql}.
-        ## The contents of the SQL query error report is as follows:{error_message}.
-        ## Answer only the modified SQL statement. Please do not give any explanation, just answer the code.
-'''
-        self._param.prompt = prompt
-        kwargs_ = deepcopy(kwargs)
-        kwargs_["stream"] = False
-        response = Generate._run(self, [], **kwargs_)
-        try:
-            regenerated_sql = response.loc[0, "content"]
-            return regenerated_sql
-        except Exception as e:
-            logging.error(f"Failed to regenerate SQL: {e}")
-            return None
+        sql_res = []
+        formalized_content = []
+        for single_sql in sqls:
+            single_sql = single_sql.replace('```','')
+
+            cursor.execute(single_sql)
+            if cursor.rowcount == 0:
+                sql_res.append({"content": "No record in the database!"})
+                break
+            if self._param.db_type == 'mssql':
+                single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.max_records),
+                                                       columns=[desc[0] for desc in cursor.description])
+            else:
+                single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
+                single_res.columns = [i[0] for i in cursor.description]
+
+            sql_res.append(single_res.to_dict(orient='records'))
+            formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
+
+        self.set_output("json", sql_res)
+        self.set_output("formalized_content", "\n\n".join(formalized_content))
+        return self.output("formalized_content")
+
 
     def debug(self, **kwargs):
         return self._run([], **kwargs)

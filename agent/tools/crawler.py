@@ -16,11 +16,12 @@
 from abc import ABC
 import asyncio
 from crawl4ai import AsyncWebCrawler
-from agent.component.base import ComponentBase, ComponentParamBase
+
+from agent.tools.base import ToolParamBase, ToolBase
 from api.utils.web_utils import is_valid_url
 
 
-class CrawlerParam(ComponentParamBase):
+class CrawlerParam(ToolParamBase):
     """
     Define the Crawler component parameters.
     """
@@ -34,7 +35,7 @@ class CrawlerParam(ComponentParamBase):
         self.check_valid_value(self.extract_type, "Type of content from the crawler", ['html', 'markdown', 'content'])
 
 
-class Crawler(ComponentBase, ABC):
+class Crawler(ToolBase, ABC):
     component_name = "Crawler"
 
     def _run(self, history, **kwargs):
