@@ -145,20 +145,26 @@ class LLM(ComponentBase):
         endswith_think = False
         def delta(txt):
             nonlocal ans, last_idx, endswith_think
+            print(txt)
             delta_ans = txt[last_idx:]
             ans = txt
-            last_idx = len(ans)
-            if ans.endswith("</think>"):
-                last_idx -= len("</think>")
 
-            if delta_ans.find("<think>") >= 0:
-                last_idx -= len(delta_ans) - (delta_ans.find("<think>") + len("<think>"))
+            if delta_ans.find("<think>") == 0:
+                last_idx += len("<think>")
                 return "<think>"
-            if delta_ans.endswith("</think>"):
+            elif delta_ans.find("<think>") > 0:
+                delta_ans = txt[last_idx:last_idx+delta_ans.find("<think>")]
+                last_idx += delta_ans.find("<think>")
+                return delta_ans
+            elif delta_ans.endswith("</think>"):
                 endswith_think = True
             elif endswith_think:
                 endswith_think = False
                 return "</think>"
+
+            last_idx = len(ans)
+            if ans.endswith("</think>"):
+                last_idx -= len("</think>")
             return re.sub(r"(<think>|</think>)", "", delta_ans)
 
         if not self.imgs:
@@ -200,7 +206,6 @@ class LLM(ComponentBase):
                 self.set_output("_ERROR", error)
             return
 
-        print(prompt, "\n####################################")
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
             self.set_output("content", partial(self._stream_output, prompt, msg))
