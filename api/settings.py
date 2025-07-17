@@ -163,7 +163,7 @@ def init_settings():
     elif lower_case_doc_engine == "infinity":
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
-        docStoreConn = rag.utils.opensearch_coon.OSConnection()
+        docStoreConn = rag.utils.opensearch_conn.OSConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
