@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 
-from api.utils.api_utils import timeout
+from api.utils.api_utils import timeout, is_strong_enough
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
@@ -466,6 +466,8 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
 @timeout(3600)
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
+    # Pressure test for GraphRAG task
+    await is_strong_enough(chat_mdl, embd_mdl)
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
     for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
