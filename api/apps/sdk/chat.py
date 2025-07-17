@@ -66,6 +66,9 @@ def create(tenant_id):
     key_mapping = {"parameters": "variables", "prologue": "opener", "quote": "show_quote", "system": "prompt", "rerank_id": "rerank_model", "vector_similarity_weight": "keywords_similarity_weight"}
     key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id", "top_k"]
     if prompt:
+        # Handle full_question_prompt from prompt object
+        if "full_question_prompt" in prompt:
+            req["full_question_prompt"] = prompt.pop("full_question_prompt")
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
                 prompt[new_key] = prompt.pop(old_key)
@@ -77,10 +80,6 @@ def create(tenant_id):
     memory_config = req.get("memory_config")
     if memory_config:
         req["memory_config"] = validate_memory_config(memory_config)
-    # Handle full_question_prompt
-    full_question_prompt = req.get("full_question_prompt")
-    if full_question_prompt:
-        req["full_question_prompt"] = full_question_prompt
     # init
     req["id"] = get_uuid()
     req["description"] = req.get("description", "A helpful Assistant")
@@ -143,6 +142,9 @@ def create(tenant_id):
     del res["prompt_config"]
     new_dict = {"similarity_threshold": res["similarity_threshold"], "keywords_similarity_weight": 1 - res["vector_similarity_weight"], "top_n": res["top_n"], "rerank_model": res["rerank_id"]}
     res["prompt"].update(new_dict)
+    # Include full_question_prompt in prompt object if it exists
+    if "full_question_prompt" in res:
+        res["prompt"]["full_question_prompt"] = res.get("full_question_prompt")
     for key in key_list:
         del res[key]
     res["llm"] = res.pop("llm_setting")
@@ -150,9 +152,6 @@ def create(tenant_id):
     del res["kb_ids"]
     res["dataset_ids"] = req["dataset_ids"]
     res["avatar"] = res.pop("icon")
-    # Include full_question_prompt in response if it exists
-    if "full_question_prompt" in res:
-        res["full_question_prompt"] = res.get("full_question_prompt")
     return get_result(data=res)
 
 
@@ -201,6 +200,9 @@ def update(tenant_id, chat_id):
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
                 prompt[new_key] = prompt.pop(old_key)
+        # Handle full_question_prompt from prompt object
+        if "full_question_prompt" in prompt:
+            req["full_question_prompt"] = prompt.pop("full_question_prompt")
         for key in key_list:
             if key in prompt:
                 req[key] = prompt.pop(key)
@@ -236,10 +238,6 @@ def update(tenant_id, chat_id):
     memory_config = req.get("memory_config")
     if memory_config:
         req["memory_config"] = validate_memory_config(memory_config)
-    # Handle full_question_prompt updates
-    full_question_prompt = req.get("full_question_prompt")
-    if full_question_prompt is not None:  # Allow empty string to clear the prompt
-        req["full_question_prompt"] = full_question_prompt
     if not DialogService.update_by_id(chat_id, req):
         return get_error_data_result(message="Chat not found!")
     return get_result()
@@ -327,6 +325,9 @@ def list_chat(tenant_id):
         del res["prompt_config"]
         new_dict = {"similarity_threshold": res["similarity_threshold"], "keywords_similarity_weight": 1 - res["vector_similarity_weight"], "top_n": res["top_n"], "rerank_model": res["rerank_id"]}
         res["prompt"].update(new_dict)
+        # Include full_question_prompt in prompt object if it exists
+        if "full_question_prompt" in res:
+            res["prompt"]["full_question_prompt"] = res.get("full_question_prompt")
         for key in key_list:
             del res[key]
         res["llm"] = res.pop("llm_setting")
@@ -341,8 +342,5 @@ def list_chat(tenant_id):
         del res["kb_ids"]
         res["datasets"] = kb_list
         res["avatar"] = res.pop("icon")
-        # Include full_question_prompt in response if it exists
-        if "full_question_prompt" in res:
-            res["full_question_prompt"] = res.get("full_question_prompt")
         list_assts.append(res)
     return get_result(data=list_assts)
