@@ -17,6 +17,7 @@
 
 import logging
 import os
+import json
 
 from flask import request
 from peewee import OperationalError
@@ -473,3 +474,56 @@ def list_datasets(tenant_id):
     except OperationalError as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
+
+@manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['GET'])  # noqa: F821
+@token_required
+def knowledge_graph(tenant_id,dataset_id):
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+    req = {
+        "kb_id": [dataset_id],
+        "knowledge_graph_kwd": ["graph"]
+    }
+
+    obj = {"graph": {}, "mind_map": {}}
+    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), dataset_id):
+        return get_result(data=obj)
+    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [dataset_id])
+    if not len(sres.ids):
+        return get_result(data=obj)
+
+    for id in sres.ids[:1]:
+        ty = sres.field[id]["knowledge_graph_kwd"]
+        try:
+            content_json = json.loads(sres.field[id]["content_with_weight"])
+        except Exception:
+            continue
+
+        obj[ty] = content_json
+
+    if "nodes" in obj["graph"]:
+        obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
+        if "edges" in obj["graph"]:
+            node_id_set = { o["id"] for o in obj["graph"]["nodes"] }
+            filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
+            obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
+    return get_result(data=obj)
+
+@manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
+@token_required
+def delete_knowledge_graph(tenant_id,dataset_id):
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return get_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), dataset_id)
+
+    return get_result(data=True)
