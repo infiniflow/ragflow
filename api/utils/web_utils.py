@@ -31,6 +31,51 @@ from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 
+CONTENT_TYPE_MAP = {
+    # Office
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "doc": "application/msword",
+    "pdf": "application/pdf",
+    "csv": "text/csv",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # Text/code
+    "txt": "text/plain",
+    "py": "text/plain",
+    "js": "text/plain",
+    "java": "text/plain",
+    "c": "text/plain",
+    "cpp": "text/plain",
+    "h": "text/plain",
+    "php": "text/plain",
+    "go": "text/plain",
+    "ts": "text/plain",
+    "sh": "text/plain",
+    "cs": "text/plain",
+    "kt": "text/plain",
+    "sql": "text/plain",
+    # Web
+    "md": "text/markdown",
+    "markdown": "text/markdown",
+    "htm": "text/html",
+    "html": "text/html",
+    "json": "application/json",
+    # Image formats
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+    "tiff": "image/tiff",
+    "tif": "image/tiff",
+    "webp": "image/webp",
+    "svg": "image/svg+xml",
+    "ico": "image/x-icon",
+    "avif": "image/avif",
+    "heic": "image/heic",
+}
+
+
 def html2pdf(
     source: str,
     timeout: int = 2,

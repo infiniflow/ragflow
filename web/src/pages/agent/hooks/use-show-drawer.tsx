@@ -119,7 +119,7 @@ export function useShowDrawer({
     (e, node) => {
       if (!ExcludedNodes.some((x) => x === node.data.label)) {
         hideSingleDebugDrawer();
-        hideRunOrChatDrawer();
+        // hideRunOrChatDrawer();
         showFormDrawer(e, node);
       }
       // handle single debug icon click
@@ -130,12 +130,7 @@ export function useShowDrawer({
         showSingleDebugDrawer();
       }
     },
-    [
-      hideRunOrChatDrawer,
-      hideSingleDebugDrawer,
-      showFormDrawer,
-      showSingleDebugDrawer,
-    ],
+    [hideSingleDebugDrawer, showFormDrawer, showSingleDebugDrawer],
   );
 
   return {

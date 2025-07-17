@@ -1,4 +1,5 @@
 import { Authorization } from '@/constants/authorization';
+import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -41,6 +42,12 @@ export interface IInputData {
 
 export interface IMessageData {
   content: string;
+  start_to_think?: boolean;
+  end_to_think?: boolean;
+}
+
+export interface IMessageEndData {
+  reference: IReferenceObject;
 }
 
 export interface ILogData extends INodeData {
@@ -58,11 +65,13 @@ export type INodeEvent = IAnswerEvent<INodeData>;
 
 export type IMessageEvent = IAnswerEvent<IMessageData>;
 
+export type IMessageEndEvent = IAnswerEvent<IMessageEndData>;
+
 export type IInputEvent = IAnswerEvent<IInputData>;
 
 export type ILogEvent = IAnswerEvent<ILogData>;
 
-export type IChatEvent = INodeEvent | IMessageEvent;
+export type IChatEvent = INodeEvent | IMessageEvent | IMessageEndEvent;
 
 export type IEventList = Array<IChatEvent>;
 

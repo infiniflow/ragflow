@@ -1,6 +1,6 @@
 import message from '@/components/ui/message';
+import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
-import { Spin } from 'antd';
 import classNames from 'classnames';
 import { useEffect, useState } from 'react';
 import { useGetDocumentUrl } from './hooks';

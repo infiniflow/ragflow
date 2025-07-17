@@ -155,8 +155,13 @@ export interface IAgentForm {
   exception_comment: any;
   exception_goto: any;
   tools: Array<{
+    name: string;
     component_name: string;
     params: Record<string, any>;
+  }>;
+  mcp: Array<{
+    mcp_id: string;
+    tools: Record<string, Record<string, any>>;
   }>;
   outputs: {
     structured_output: Record<string, Record<string, any>>;

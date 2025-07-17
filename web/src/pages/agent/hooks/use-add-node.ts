@@ -41,6 +41,7 @@ import {
   initialRewriteQuestionValues,
   initialStringTransformValues,
   initialSwitchValues,
+  initialTavilyExtractValues,
   initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
@@ -56,6 +57,12 @@ import {
   getNodeDragHandle,
 } from '../utils';
 
+function isBottomSubAgent(type: string, position: Position) {
+  return (
+    (type === Operator.Agent && position === Position.Bottom) ||
+    type === Operator.Tool
+  );
+}
 export const useInitializeOperatorParams = () => {
   const llmId = useFetchModelId();
 
@@ -88,7 +95,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
-      [Operator.ExeSQL]: { ...initialExeSqlValues, llm_id: llmId },
+      [Operator.ExeSQL]: initialExeSqlValues,
       [Operator.Switch]: initialSwitchValues,
       [Operator.WenCai]: initialWenCaiValues,
       [Operator.AkShare]: initialAkShareValues,
@@ -110,17 +117,27 @@ export const useInitializeOperatorParams = () => {
       [Operator.TavilySearch]: initialTavilyValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
+      [Operator.TavilyExtract]: initialTavilyExtractValues,
     };
   }, [llmId]);
 
   const initializeOperatorParams = useCallback(
-    (operatorName: Operator) => {
-      return initialFormValuesMap[operatorName];
+    (operatorName: Operator, position: Position) => {
+      const initialValues = initialFormValuesMap[operatorName];
+      if (isBottomSubAgent(operatorName, position)) {
+        return {
+          ...initialValues,
+          description: 'This is an agent for a specific task.',
+          user_prompt: 'This is the order you need to send to the agent.',
+        };
+      }
+
+      return initialValues;
     },
     [initialFormValuesMap],
   );
 
-  return initializeOperatorParams;
+  return { initializeOperatorParams, initialFormValuesMap };
 };
 
 export const useGetNodeName = () => {
@@ -235,13 +252,6 @@ function useAddToolNode() {
   return { addToolNode };
 }
 
-function isBottomSubAgent(type: string, position: Position) {
-  return (
-    (type === Operator.Agent && position === Position.Bottom) ||
-    type === Operator.Tool
-  );
-}
-
 function useResizeIterationNode() {
   const { getNode, nodes, updateNode } = useGraphStore((state) => state);
 
@@ -279,7 +289,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     (state) => state,
   );
   const getNodeName = useGetNodeName();
-  const initializeOperatorParams = useInitializeOperatorParams();
+  const { initializeOperatorParams } = useInitializeOperatorParams();
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
   const { addChildEdge } = useAddChildEdge();
   const { addToolNode } = useAddToolNode();
@@ -324,7 +334,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               getNodeName(type),
               nodes,
             ),
-            form: initializeOperatorParams(type as Operator),
+            form: initializeOperatorParams(type as Operator, params.position),
           },
           sourcePosition: Position.Right,
           targetPosition: Position.Left,
