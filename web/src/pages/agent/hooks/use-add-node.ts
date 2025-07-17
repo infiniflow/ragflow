@@ -41,6 +41,7 @@ import {
   initialRewriteQuestionValues,
   initialStringTransformValues,
   initialSwitchValues,
+  initialTavilyExtractValues,
   initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
@@ -94,7 +95,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
-      [Operator.ExeSQL]: { ...initialExeSqlValues, llm_id: llmId },
+      [Operator.ExeSQL]: initialExeSqlValues,
       [Operator.Switch]: initialSwitchValues,
       [Operator.WenCai]: initialWenCaiValues,
       [Operator.AkShare]: initialAkShareValues,
@@ -116,6 +117,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.TavilySearch]: initialTavilyValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
+      [Operator.TavilyExtract]: initialTavilyExtractValues,
     };
   }, [llmId]);
 

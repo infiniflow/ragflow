@@ -100,7 +100,7 @@ function AccordionOperators() {
           <OperatorItemList
             operators={[
               Operator.TavilySearch,
-              Operator.Crawler,
+              Operator.TavilyExtract,
               Operator.ExeSQL,
               Operator.Bing,
             ]}

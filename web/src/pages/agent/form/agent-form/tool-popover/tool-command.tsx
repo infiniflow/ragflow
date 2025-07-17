@@ -18,6 +18,7 @@ const Menus = [
     label: 'Search',
     list: [
       Operator.TavilySearch,
+      Operator.TavilyExtract,
       Operator.Google,
       Operator.Bing,
       Operator.DuckDuckGo,
@@ -41,7 +42,6 @@ const Menus = [
       Operator.GitHub,
       Operator.ExeSQL,
       Operator.Invoke,
-      Operator.Crawler,
       Operator.Code,
       Operator.Retrieval,
     ],
