@@ -160,8 +160,12 @@ class TavilyExtractParam(ToolParamBase):
             "parameters": {
                 "urls": {
                     "type": "array",
-                    "description": "The URL to extract content from.",
+                    "description": "The URLs to extract content from.",
                     "default": "",
+                    "items": {
+                        "type": "string",
+                        "description": "The URL to extract content from, e.g. www.yahoo.com"
+                    },
                     "required": True
                 },
                 "extract_depth": {
