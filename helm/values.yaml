@@ -4,14 +4,20 @@ env:
   # Available options:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
+  # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
   # DOC_ENGINE: elasticsearch
   DOC_ENGINE: infinity
+  # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
 
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
+
+  # The password for OpenSearch.
+  # At least one uppercase letter, one lowercase letter, one digit, and one special character
+  OPENSEARCH_PASSWORD: infini_rag_flow_OS_01
 
   # The password for MySQL
   MYSQL_PASSWORD: infini_rag_flow_helm
@@ -118,6 +124,22 @@ infinity:
     type: ClusterIP
 
 elasticsearch:
+  storage:
+    className:
+    capacity: 20Gi
+  deployment:
+    strategy:
+    resources:
+      requests:
+        cpu: "4"
+        memory: "16Gi"
+  service:
+    type: ClusterIP
+
+opensearch:
+  image:
+    repository: opensearchproject/opensearch
+    tag: 2.19.1
   storage:
     className:
     capacity: 20Gi
