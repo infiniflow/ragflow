@@ -146,6 +146,8 @@ export default {
   debug: `${api_host}/canvas/debug`,
   uploadCanvasFile: `${api_host}/canvas/upload`,
   trace: `${api_host}/canvas/trace`,
+  // agent
+  inputForm: `${api_host}/canvas/input_form`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,

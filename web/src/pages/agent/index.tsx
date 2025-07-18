@@ -17,6 +17,7 @@ import {
   Download,
   History,
   Key,
+  LaptopMinimalCheck,
   Logs,
   ScreenShare,
   Upload,
@@ -91,7 +92,7 @@ export default function Agent() {
             onClick={() => saveGraph()}
             loading={loading}
           >
-            Save
+            <LaptopMinimalCheck /> Save
           </ButtonLoading>
           <Button variant={'secondary'} onClick={handleRunAgent}>
             <CirclePlay />
