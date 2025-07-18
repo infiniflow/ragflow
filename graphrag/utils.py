@@ -455,7 +455,6 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
 
     if change.removed_edges:
         async def del_edges(from_node, to_node):
-            nonlocal chat_limiter, tenant_id, kb_id
             async with chat_limiter:
                 await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id))
         async with trio.open_nursery() as nursery:
