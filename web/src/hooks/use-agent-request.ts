@@ -2,6 +2,7 @@ import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
 import { ITraceData } from '@/interfaces/database/agent';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
+import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
@@ -30,6 +31,8 @@ export const enum AgentApiAction {
   UploadCanvasFile = 'uploadCanvasFile',
   Trace = 'trace',
   TestDbConnect = 'testDbConnect',
+  DebugSingle = 'debugSingle',
+  FetchInputForm = 'fetchInputForm',
 }
 
 export const EmptyDsl = {
@@ -352,4 +355,44 @@ export const useTestDbConnect = () => {
   });
 
   return { data, loading, testDbConnect: mutateAsync };
+};
+
+export const useDebugSingle = () => {
+  const { id } = useParams();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.FetchInputForm],
+    mutationFn: async (params: IDebugSingleRequestBody) => {
+      const ret = await flowService.debugSingle({ id, ...params });
+      if (ret?.data?.code !== 0) {
+        message.error(ret?.data?.message);
+      }
+      return ret?.data?.data;
+    },
+  });
+
+  return { data, loading, debugSingle: mutateAsync };
+};
+
+export const useFetchInputForm = (componentId?: string) => {
+  const { id } = useParams();
+
+  const { data } = useQuery<Record<string, any>>({
+    queryKey: [AgentApiAction.FetchInputForm],
+    initialData: {},
+    enabled: !!id && !!componentId,
+    queryFn: async () => {
+      const { data } = await flowService.inputForm({
+        id,
+        component_id: componentId,
+      });
+
+      return data.data;
+    },
+  });
+
+  return data;
 };

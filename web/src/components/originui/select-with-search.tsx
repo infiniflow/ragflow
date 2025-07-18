@@ -32,6 +32,7 @@ import { RAGFlowSelectOptionType } from '../ui/select';
 export type SelectWithSearchFlagOptionType = {
   label: ReactNode;
   value?: string;
+  disabled?: boolean;
   options?: RAGFlowSelectOptionType[];
 };
 
@@ -119,6 +120,7 @@ export const SelectWithSearch = forwardRef<
                         <CommandItem
                           key={option.value}
                           value={option.value}
+                          disabled={option.disabled}
                           onSelect={handleSelect}
                         >
                           <span className="text-lg leading-none">
@@ -138,6 +140,7 @@ export const SelectWithSearch = forwardRef<
                   <CommandItem
                     key={group.value}
                     value={group.value}
+                    disabled={group.disabled}
                     onSelect={handleSelect}
                   >
                     <span className="text-lg leading-none">{group.label}</span>
