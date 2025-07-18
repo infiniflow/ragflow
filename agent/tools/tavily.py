@@ -93,6 +93,13 @@ When searching:
         self.check_positive_integer(self.max_results, "Tavily max result number should be within [1， 20]")
         self.check_positive_integer(self.days, "Tavily days should be greater than 1")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "name": "Query",
+                "type": "line"
+            }
+        }
 
 class TavilySearch(ToolBase, ABC):
     component_name = "TavilySearch"
@@ -196,6 +203,13 @@ class TavilyExtractParam(ToolParamBase):
         self.check_valid_value(self.extract_depth, "Tavily extract depth should be in 'basic/advanced'", ["basic", "advanced"])
         self.check_valid_value(self.format, "Tavily extract format should be in 'markdown/text'", ["markdown", "text"])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "urls": {
+                "name": "URLs",
+                "type": "line"
+            }
+        }
 
 class TavilyExtract(ToolBase, ABC):
     component_name = "TavilyExtract"

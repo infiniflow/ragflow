@@ -48,6 +48,20 @@ class StringTransformParam(ComponentParamBase):
         self.check_valid_value(self.method, "Support method", ["split", "merge"])
         self.check_empty(self.delimiters, "delimiters")
 
+    def get_input_form(self) -> dict[str, dict]:
+        if self._param.method == "split":
+            return {
+                "line": {
+                    "name": "String",
+                    "type": "line"
+                }
+            }
+        return {
+            "script": {
+                "name": "Script",
+                "type": "paragraph"
+            }
+        }
 
 class StringTransform(ComponentBase, ABC):
     component_name = "StringTransform"
@@ -55,12 +69,12 @@ class StringTransform(ComponentBase, ABC):
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
         if self._param.method == "split":
-            self._split()
+            self._split(kwargs.get("line"))
         else:
-            self._merge()
+            self._merge(kwargs.get("script"))
 
-    def _split(self):
-        var = self._canvas.get_variable_value(self._param.split_ref)
+    def _split(self, line:str=None):
+        var = self._canvas.get_variable_value(self._param.split_ref) if not line else line
         if not var:
             var = ""
         assert isinstance(var, str), "The input variable is not a string: {}".format(type(var))
@@ -72,12 +86,13 @@ class StringTransform(ComponentBase, ABC):
             res.append(s)
         self.set_output("result", res)
 
-    def _merge(self):
+    def _merge(self, script:str=None):
         s = 0
         all_content = ""
         cache = {}
-        for r in re.finditer(self.variable_ref_patt, self._param.script, flags=re.DOTALL):
-            all_content += self._param.script[s: r.start()]
+        script = self._param.script if not script else script
+        for r in re.finditer(self.variable_ref_patt, script, flags=re.DOTALL):
+            all_content += script[s: r.start()]
             s = r.end()
             exp = r.group(1)
             if exp in cache:
@@ -103,8 +118,8 @@ class StringTransform(ComponentBase, ABC):
                 all_content += v
                 cache[exp] = v
 
-        if s < len(self._param.script):
-            all_content += self._param.script[s: ]
+        if s < len(script):
+            all_content += script[s: ]
 
         for k, v in cache.items():
             self.set_input_value(k ,v)

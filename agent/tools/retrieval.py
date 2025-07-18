@@ -64,6 +64,13 @@ class RetrievalParam(ToolParamBase):
         self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "name": "Query",
+                "type": "line"
+            }
+        }
 
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"

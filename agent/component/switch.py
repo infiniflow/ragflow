@@ -47,6 +47,13 @@ class SwitchParam(ComponentParamBase):
                 raise ValueError("[Switch] 'To' can not be empty!")
         self.check_empty(self.end_cpn_ids, "[Switch] the ELSE/Other destination can not be empty.")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "urls": {
+                "name": "URLs",
+                "type": "line"
+            }
+        }
 
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
