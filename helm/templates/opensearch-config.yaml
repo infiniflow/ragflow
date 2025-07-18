@@ -1,0 +1,18 @@
+{{- if eq .Values.env.DOC_ENGINE "opensearch" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ragflow.fullname" . }}-opensearch-config
+data:
+  node.name: opensearch01
+  bootstrap.memory_lock: "false"
+  discovery.type: single-node
+  plugins.security.disabled: "false"
+  plugins.security.ssl.http.enabled: "false"
+  plugins.security.ssl.transport.enabled: "true"
+  cluster.routing.allocation.disk.watermark.low: 5gb
+  cluster.routing.allocation.disk.watermark.high: 3gb
+  cluster.routing.allocation.disk.watermark.flood_stage: 2gb
+  TZ: {{ .Values.env.TIMEZONE }}
+  http.port: "9201"
+{{- end -}}
