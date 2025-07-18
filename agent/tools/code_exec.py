@@ -115,7 +115,7 @@ module.exports = { main };
         res = {}
         for k, v in self._param.arguments.items():
             res[k] = {
-                "type": "string",
+                "type": "line",
                 "name": k
             }
         return res

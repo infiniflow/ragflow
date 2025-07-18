@@ -49,7 +49,7 @@ class CategorizeParam(LLMParam):
     def get_input_form(self) -> dict[str, dict]:
         return {
             "query": {
-                "type": "string",
+                "type": "line",
                 "name": "Query"
             }
         }

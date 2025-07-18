@@ -117,7 +117,7 @@ class Agent(LLM, ToolBase):
         res = {}
         for k, v in self.get_input_elements().items():
             res[k] = {
-                "type": "string",
+                "type": "line",
                 "name": v["name"]
             }
         for cpn in self._param.tools:

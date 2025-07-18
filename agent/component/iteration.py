@@ -29,7 +29,8 @@ class IterationParam(ComponentParamBase):
     def get_input_form(self) -> dict[str, dict]:
         return {
             "items": {
-                "type": "json"
+                "type": "json",
+                "name": "Items"
             }
         }
 

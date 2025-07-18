@@ -73,7 +73,7 @@ class ExeSQLParam(ToolParamBase):
         return {
             "sql": {
                 "name": "SQL",
-                "type": "string"
+                "type": "line"
             }
         }
 

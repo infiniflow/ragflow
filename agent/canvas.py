@@ -362,7 +362,7 @@ class Canvas:
     def get_component_obj(self, cpn_id) -> ComponentBase:
         return self.components.get(cpn_id)["obj"]
 
-    def get_component_input_form(self, cpn_id) -> ComponentBase:
+    def get_component_input_form(self, cpn_id) -> dict:
         return self.components.get(cpn_id)["obj"].get_input_form()
 
     def is_reff(self, exp):
@@ -493,6 +493,8 @@ class Canvas:
                 r["doc_aggs"][doc["doc_name"]] = doc
 
     def get_reference(self):
+        if not self.retrieval:
+            return {"chunks": {}, "doc_aggs": {}}
         return self.retrieval[-1]
 
     def add_memory(self, user:str, assist:str, summ: str):

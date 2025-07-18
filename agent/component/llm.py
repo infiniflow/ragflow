@@ -95,7 +95,7 @@ class LLM(ComponentBase):
         res = {}
         for k, v in self.get_input_elements().items():
             res[k] = {
-                "type": "string",
+                "type": "line",
                 "name": v["name"]
             }
         return res
@@ -182,7 +182,7 @@ class LLM(ComponentBase):
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
-        prompt, msg = self._prepare_prompt_variables(kwargs.get("debug_inputs"))
+        prompt, msg = self._prepare_prompt_variables()
         error = ""
 
         if self._param.output_structure:

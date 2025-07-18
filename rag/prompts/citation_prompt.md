@@ -3,100 +3,106 @@ Based on the provided document or chat history, add citations to the input text 
 # Citation Requirements:
 
 ## Technical Rules:
-- Use a uniform citation format: [ID:i] where "i" is the document ID
-- Multiple citations: [ID:i] [ID:j] (space-separated)
-- **Citation placement**: ALWAYS at the end of a complete sentence, before the punctuation
+- Use format: [ID:i] or [ID:i] [ID:j] for multiple sources
+- Place citations at the end of sentences, before punctuation
 - Maximum 4 citations per sentence
-- DO NOT insert citations for content not from <context></context>
-- DO NOT modify any whitespace in the original text
-- DO NOT use standalone Document IDs (e.g., '#ID#')
-- STRICTLY prohibit strikethrough symbols (~~) or non-standard formatting
+- DO NOT cite content not from <context></context>
+- DO NOT modify whitespace or original text
+- STRICTLY prohibit non-standard formatting (~~, etc.)
 
-## Citation Guidelines:
-- **Sentence-level citations**: Each citation should support the entire sentence or a complete claim
-- **Avoid over-citation**: Not every sentence needs a citation. Focus on:
-  - Key facts and statistics
-  - Specific claims or findings
-  - Direct quotes or paraphrases
-  - Controversial or verifiable statements
-- **Skip citations for**:
-  - Common knowledge
-  - Transitional phrases
-  - General introductions
-- **One citation per source per sentence**: If multiple claims in one sentence come from the same source, use only one citation at the end
+## What MUST Be Cited:
+1. **Quantitative data**: Numbers, percentages, statistics, measurements
+2. **Temporal claims**: Dates, timeframes, sequences of events  
+3. **Causal relationships**: Claims about cause and effect
+4. **Comparative statements**: Rankings, comparisons, superlatives
+5. **Technical definitions**: Specialized terms, concepts, methodologies
+6. **Direct attributions**: What someone said, did, or believes
+7. **Predictions/forecasts**: Future projections, trend analyses
+8. **Controversial claims**: Disputed facts, minority opinions
 
-# Examples:
+## What Should NOT Be Cited:
+- Common knowledge (e.g., "The sun rises in the east")
+- Transitional phrases
+- General introductions
+- Your own analysis or synthesis (unless directly from source)
 
-## Example 1: Single source citation
+# Comprehensive Examples:
+
+## Example 1: Data and Statistics
 <context>
-ID: 15
-├── Title: Climate Change Impact Report 2024
-└── Content: Global temperatures have risen by 1.1°C since pre-industrial times. This warming is primarily caused by human activities, particularly the burning of fossil fuels.
+ID: 45
+└── Content: The global smartphone market grew by 7.8% in Q3 2024, with Samsung holding 20.6% market share and Apple at 15.8%.
+
+ID: 46  
+└── Content: 5G adoption reached 1.5 billion users worldwide by October 2024.
 </context>
 
-USER: Explain climate change.
+USER: How is the smartphone market performing?
 
 ASSISTANT: 
-❌ WRONG: Global temperatures [ID:15] have risen by 1.1°C since pre-industrial times.
-✅ CORRECT: Global temperatures have risen by 1.1°C since pre-industrial times [ID:15].
+The smartphone industry is showing strong recovery. The global smartphone market grew by 7.8% in Q3 2024 [ID:45]. Samsung leads with 20.6% market share, followed by Apple at 15.8% [ID:45]. This growth is partly driven by 5G technology, which reached 1.5 billion users worldwide by October 2024 [ID:46].
 
-## Example 2: Multiple source citation
+## Example 2: Causal Relationships and Predictions
 <context>
-ID: 8
-└── Content: Tesla reported Q4 revenue of $24.3 billion in 2023.
+ID: 78
+└── Content: Rising interest rates have led to a 15% decline in housing starts. Economists predict this trend will continue through 2025.
 
-ID: 12
-└── Content: BYD became the world's largest EV manufacturer by volume in Q4 2023.
+ID: 79
+└── Content: The Federal Reserve's aggressive monetary policy is the primary driver behind the real estate slowdown.
 </context>
 
-USER: How is the EV market doing?
+USER: What's happening in the real estate market?
 
 ASSISTANT:
-The EV market showed strong growth in 2023. Tesla reported Q4 revenue of $24.3 billion [ID:8]. Meanwhile, BYD became the world's largest EV manufacturer by volume in Q4 2023 [ID:12].
+The real estate market is experiencing significant challenges. Rising interest rates have led to a 15% decline in housing starts [ID:78]. The Federal Reserve's aggressive monetary policy is the primary driver behind this real estate slowdown [ID:79]. Economists predict this trend will continue through 2025 [ID:78]. These factors suggest a prolonged period of market adjustment ahead.
 
-## Example 3: No citation needed
+## Example 3: Technical Concepts and Comparisons
 <context>
-ID: 5
-└── Content: Water consists of two hydrogen atoms and one oxygen atom.
+ID: 101
+└── Content: Quantum computing uses quantum bits (qubits) that can exist in superposition, unlike classical bits which are either 0 or 1.
+
+ID: 102
+└── Content: Current quantum computers can solve certain problems 158 million times faster than classical supercomputers.
 </context>
 
-USER: What is water?
+USER: Explain quantum computing advantages.
 
 ASSISTANT:
-Water is essential for life. It consists of two hydrogen atoms and one oxygen atom [ID:5]. People need water to survive. ← (No citation for common knowledge)
+Quantum computing represents a fundamental shift in computational capability. Unlike classical computers, quantum computing uses quantum bits (qubits) that can exist in superposition, rather than being limited to just 0 or 1 [ID:101]. This unique property enables extraordinary performance gains. Current quantum computers can solve certain problems 158 million times faster than classical supercomputers [ID:102]. This technology promises to revolutionize fields requiring complex calculations.
 
-## Example 4: Complex paragraph
-// ...existing code...
+## Example 4: Mixed Citation Needs
 <context>
+ID: 201
+└── Content: CEO Jane Smith announced: "We're pivoting to AI-first strategy, expecting 40% revenue growth by 2026."
 
-ID: 23
-├── Title: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
-├── URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
-└── Content:
-The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it's still his favorite crypto...
+ID: 202
+└── Content: Industry analysts remain skeptical, with Morgan Stanley rating the stock as "underperform."
 
-ID: 11
-├── Title: Elon Musk's Dogecoin tweet sparks social media frenzy
-└── Content:
-Musk said he is 'willing to serve' D.O.G.E. – shorthand for Dogecoin.
-
-ID: 2
-├── Title: Causal effect of Elon Musk tweets on Dogecoin price
-└── Content:
-If you think of Dogecoin — the cryptocurrency based on a meme — you can't help but also think of Elon Musk...
-
-ID: 31
-├── Title: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
-└── Content:
-The market is heating up after Elon Musk's announcement about Dogecoin. Is this a new era for crypto?...
-
+ID: 203
+└── Content: The company's AI division currently represents only 5% of total revenue.
 </context>
 
-USER: What's the Elon's view on dogecoin?
+USER: What's the company's new strategy?
 
-ASSISTANT: 
-Elon Musk has a complex relationship with Dogecoin. He has referred to it as his favorite cryptocurrency [ID:23]. He has also expressed willingness to serve in a role related to D.O.G.E., which is shorthand for Dogecoin [ID:11]. His tweets about Dogecoin have significant market impact and have sparked speculation about its potential integration into public services [ID:31]. However, despite his enthusiasm, Musk advises against going all-in on Dogecoin [ID:23].
+ASSISTANT:
+The company is undergoing a major strategic transformation. CEO Jane Smith announced: "We're pivoting to AI-first strategy, expecting 40% revenue growth by 2026" [ID:201]. However, this ambitious goal faces skepticism, as industry analysts remain doubtful, with Morgan Stanley rating the stock as "underperform" [ID:202]. The challenge is significant given that the company's AI division currently represents only 5% of total revenue [ID:203]. Success will depend on execution of this bold vision.
+
+## Example 5: When NOT to Cite
+<context>
+ID: 301
+└── Content: Paris is the capital of France. The Eiffel Tower was completed in 1889.
+</context>
+
+USER: Tell me about Paris.
+
+ASSISTANT:
+Paris is the capital of France. It's known for its rich history, culture, and architecture. The Eiffel Tower was completed in 1889 [ID:301]. The city attracts millions of tourists annually. Paris remains one of the world's most visited destinations.
+(Note: Only the specific date needs citation, not common knowledge about Paris)
 
 --- Examples END ---
 
-REMEMBER: Each citation should support the ENTIRE sentence where it appears. Place citations at the end of sentences, not in the middle.
+REMEMBER: 
+- Cite FACTS, not opinions or transitions
+- Each citation supports the ENTIRE sentence
+- When in doubt, ask: "Would a fact-checker need to verify this?"
+- Place citations at sentence end, before punctuation
