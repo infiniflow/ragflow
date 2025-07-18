@@ -3,6 +3,7 @@
 import { CheckIcon, ChevronDownIcon } from 'lucide-react';
 import {
   Fragment,
+  ReactNode,
   forwardRef,
   useCallback,
   useEffect,
@@ -29,8 +30,9 @@ import { cn } from '@/lib/utils';
 import { RAGFlowSelectOptionType } from '../ui/select';
 
 export type SelectWithSearchFlagOptionType = {
-  label: string;
+  label: ReactNode;
   value?: string;
+  disabled?: boolean;
   options?: RAGFlowSelectOptionType[];
 };
 
@@ -109,15 +111,16 @@ export const SelectWithSearch = forwardRef<
           <CommandInput placeholder="Search ..." />
           <CommandList>
             <CommandEmpty>No data found.</CommandEmpty>
-            {options.map((group) => {
+            {options.map((group, idx) => {
               if (group.options) {
                 return (
-                  <Fragment key={group.label}>
+                  <Fragment key={idx}>
                     <CommandGroup heading={group.label}>
                       {group.options.map((option) => (
                         <CommandItem
                           key={option.value}
                           value={option.value}
+                          disabled={option.disabled}
                           onSelect={handleSelect}
                         >
                           <span className="text-lg leading-none">
@@ -137,6 +140,7 @@ export const SelectWithSearch = forwardRef<
                   <CommandItem
                     key={group.value}
                     value={group.value}
+                    disabled={group.disabled}
                     onSelect={handleSelect}
                   >
                     <span className="text-lg leading-none">{group.label}</span>

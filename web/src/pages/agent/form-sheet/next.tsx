@@ -19,8 +19,8 @@ import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
 import { needsSingleStepDebugging } from '../utils';
-import SingleDebugDrawer from './single-debug-drawer';
-import { useFormConfigMap } from './use-form-config-map';
+import { FormConfigMap } from './form-config-map';
+import SingleDebugSheet from './single-debug-sheet';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -43,8 +43,6 @@ const FormSheet = ({
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
   const clickedToolId = useGraphStore((state) => state.clickedToolId);
-
-  const FormConfigMap = useFormConfigMap();
 
   const currentFormMap = FormConfigMap[operatorName];
 
@@ -117,11 +115,11 @@ const FormSheet = ({
         </section>
       </SheetContent>
       {singleDebugDrawerVisible && (
-        <SingleDebugDrawer
+        <SingleDebugSheet
           visible={singleDebugDrawerVisible}
           hideModal={hideSingleDebugDrawer}
           componentId={node?.id}
-        ></SingleDebugDrawer>
+        ></SingleDebugSheet>
       )}
     </Sheet>
   );

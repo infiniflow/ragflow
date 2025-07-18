@@ -5,6 +5,7 @@ import { camelCase } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
+import { SelectWithSearch } from '../originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -15,9 +16,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
@@ -49,8 +48,6 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
     LlmModelType.Image2text,
   ]);
 
-  // useWatchFreedomChange();
-
   const handleChange = useHandleFreedomChange();
 
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
@@ -74,7 +71,11 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           <FormItem>
             <FormLabel>{t('model')}</FormLabel>
             <FormControl>
-              <Select onValueChange={field.onChange} {...field}>
+              <SelectWithSearch
+                options={modelOptions}
+                {...field}
+              ></SelectWithSearch>
+              {/* <Select onValueChange={field.onChange} {...field}>
                 <SelectTrigger value={field.value}>
                   <SelectValue />
                 </SelectTrigger>
@@ -94,7 +95,7 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
                     </SelectGroup>
                   ))}
                 </SelectContent>
-              </Select>
+              </Select> */}
             </FormControl>
             <FormMessage />
           </FormItem>

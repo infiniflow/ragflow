@@ -34,4 +34,5 @@ export const ToolFormConfigMap = {
   [Operator.Crawler]: CrawlerForm,
   [Operator.Email]: EmailForm,
   [Operator.TavilySearch]: TavilyForm,
+  [Operator.TavilyExtract]: TavilyForm,
 };
