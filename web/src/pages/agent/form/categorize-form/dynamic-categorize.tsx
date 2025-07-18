@@ -28,8 +28,6 @@ import {
   useState,
 } from 'react';
 import { UseFormReturn, useFieldArray, useFormContext } from 'react-hook-form';
-import { Operator } from '../../constant';
-import { useBuildFormSelectOptions } from '../../form-hooks';
 import DynamicExample from './dynamic-example';
 
 interface IProps {
@@ -107,13 +105,9 @@ const InnerNameInput = ({
 
 const NameInput = memo(InnerNameInput);
 
-const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
+const InnerFormSet = ({ index }: IProps & { index: number }) => {
   const form = useFormContext();
   const { t } = useTranslate('flow');
-  const buildCategorizeToOptions = useBuildFormSelectOptions(
-    Operator.Categorize,
-    nodeId,
-  );
 
   const buildFieldName = useCallback(
     (name: string) => {

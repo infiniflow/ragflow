@@ -27,9 +27,16 @@ type ToolBarProps = {
   selected?: boolean | undefined;
   label: string;
   id: string;
+  showRun?: boolean;
 } & PropsWithChildren;
 
-export function ToolBar({ selected, children, label, id }: ToolBarProps) {
+export function ToolBar({
+  selected,
+  children,
+  label,
+  id,
+  showRun = true,
+}: ToolBarProps) {
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
   const deleteIterationNodeById = useGraphStore(
     (store) => store.deleteIterationNodeById,
@@ -63,9 +70,11 @@ export function ToolBar({ selected, children, label, id }: ToolBarProps) {
 
       <TooltipContent position={Position.Top}>
         <section className="flex gap-2 items-center">
-          <IconWrapper>
-            <Play className="size-3.5" />
-          </IconWrapper>
+          {showRun && (
+            <IconWrapper>
+              <Play className="size-3.5" data-play />
+            </IconWrapper>
+          )}{' '}
           <IconWrapper onClick={handleDuplicate}>
             <Copy className="size-3.5" />
           </IconWrapper>

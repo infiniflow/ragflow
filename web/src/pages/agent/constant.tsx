@@ -320,6 +320,11 @@ export const initialCategorizeValues = {
   parameter: ModelVariableType.Precise,
   message_history_window_size: 1,
   category_description: {},
+  outputs: {
+    category_name: {
+      type: 'string',
+    },
+  },
 };
 
 export const initialMessageValues = {

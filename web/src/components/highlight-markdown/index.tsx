@@ -1,7 +1,10 @@
 import classNames from 'classnames';
 import Markdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import {
+  oneDark,
+  oneLight,
+} from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
@@ -34,7 +37,7 @@ const HightLightMarkdown = ({
                 {...rest}
                 PreTag="div"
                 language={match[1]}
-                style={dark && oneDark}
+                style={dark ? oneDark : oneLight}
               >
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>

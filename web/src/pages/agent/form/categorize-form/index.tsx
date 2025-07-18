@@ -8,11 +8,16 @@ import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { initialCategorizeValues } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { buildOutputList } from '../../utils/build-output-list';
+import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import DynamicCategorize from './dynamic-categorize';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
+
+const outputList = buildOutputList(initialCategorizeValues.outputs);
 
 function CategorizeForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
@@ -62,6 +67,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
         </FormContainer>
         <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
         <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
+        <Output list={outputList}></Output>
       </form>
     </Form>
   );

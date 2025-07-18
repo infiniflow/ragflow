@@ -20,6 +20,7 @@ const {
   settingCanvas,
   uploadCanvasFile,
   trace,
+  inputForm,
 } = api;
 
 const methods = {
@@ -89,6 +90,10 @@ const methods = {
   },
   trace: {
     url: trace,
+    method: 'get',
+  },
+  inputForm: {
+    url: inputForm,
     method: 'get',
   },
 } as const;
