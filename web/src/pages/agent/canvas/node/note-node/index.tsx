@@ -24,7 +24,7 @@ const FormSchema = z.object({
   text: z.string(),
 });
 
-function NoteNode({ data, id }: NodeProps<INoteNode>) {
+function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
   const { t } = useTranslation();
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -37,7 +37,10 @@ function NoteNode({ data, id }: NodeProps<INoteNode>) {
   useWatchFormChange(id, form);
 
   return (
-    <NodeWrapper className="p-0  w-full h-full flex flex-col rounded-md ">
+    <NodeWrapper
+      className="p-0  w-full h-full flex flex-col rounded-md "
+      selected={selected}
+    >
       <NodeResizeControl minWidth={190} minHeight={128} style={controlStyle}>
         <ResizeIcon />
       </NodeResizeControl>

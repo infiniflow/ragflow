@@ -16,7 +16,7 @@ function InnerRagNode({
 }: NodeProps<IRagNode>) {
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper>
+      <NodeWrapper selected={selected}>
         <CommonHandle
           id={NodeHandleId.End}
           type="target"

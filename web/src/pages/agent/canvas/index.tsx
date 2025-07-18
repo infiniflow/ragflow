@@ -202,8 +202,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
             type: 'buttonEdge',
             markerEnd: 'logo',
             style: {
-              strokeWidth: 2,
-              stroke: 'rgb(202 197 245)',
+              strokeWidth: 1,
+              stroke: 'rgba(91, 93, 106, 1)',
             },
             zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}

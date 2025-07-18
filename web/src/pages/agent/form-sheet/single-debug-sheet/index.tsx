@@ -1,8 +1,8 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet';
-import { useDebugSingle } from '@/hooks/flow-hooks';
-import { useFetchInputForm } from '@/hooks/use-agent-request';
+import { useDebugSingle, useFetchInputForm } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
+import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { X } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
 import DebugContent from '../../debug-content';
+import { transferInputsArrayToObject } from '../../form/begin-form/use-watch-change';
 import { buildBeginInputListFromObject } from '../../form/begin-form/utils';
 
 interface IProps {
@@ -32,7 +33,10 @@ const SingleDebugSheet = ({
   const onOk = useCallback(
     (nextValues: any[]) => {
       if (componentId) {
-        debugSingle({ component_id: componentId, params: nextValues });
+        debugSingle({
+          component_id: componentId,
+          params: transferInputsArrayToObject(nextValues),
+        });
       }
     },
     [componentId, debugSingle],
@@ -58,7 +62,11 @@ const SingleDebugSheet = ({
             submitButtonDisabled={list.length === 0}
           ></DebugContent>
           {!isEmpty(data) ? (
-            <div className="mt-4 rounded-md bg-slate-200 border border-neutral-200">
+            <div
+              className={cn('mt-4 rounded-md border', {
+                [`border-text-delete-red`]: !isEmpty(data._ERROR),
+              })}
+            >
               <div className="flex justify-between p-2">
                 <span>JSON</span>
                 <CopyToClipboard text={content}></CopyToClipboard>
@@ -67,7 +75,8 @@ const SingleDebugSheet = ({
                 src={data}
                 displaySize
                 collapseStringsAfterLength={100000000000}
-                className="w-full h-[800px] break-words overflow-auto p-2 bg-slate-100"
+                className="w-full h-[800px] break-words overflow-auto p-2"
+                dark
               />
             </div>
           ) : null}

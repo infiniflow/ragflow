@@ -8,7 +8,11 @@ import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
 import useGraphStore from '../../store';
 import { NodeWrapper } from './node-wrapper';
 
-function InnerToolNode({ id, isConnectable = true }: NodeProps<IToolNode>) {
+function InnerToolNode({
+  id,
+  isConnectable = true,
+  selected,
+}: NodeProps<IToolNode>) {
   const { edges, getNode } = useGraphStore((state) => state);
   const upstreamAgentNodeId = edges.find((x) => x.target === id)?.source;
   const upstreamAgentNode = getNode(upstreamAgentNodeId);
@@ -29,7 +33,7 @@ function InnerToolNode({ id, isConnectable = true }: NodeProps<IToolNode>) {
   );
 
   return (
-    <NodeWrapper>
+    <NodeWrapper selected={selected}>
       <Handle
         id={NodeHandleId.End}
         type="target"

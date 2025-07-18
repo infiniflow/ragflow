@@ -19,7 +19,7 @@ export function InnerCategorizeNode({
   const { positions } = useBuildCategorizeHandlePositions({ data, id });
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper>
+      <NodeWrapper selected={selected}>
         <CommonHandle
           type="target"
           position={Position.Left}

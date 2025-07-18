@@ -67,9 +67,10 @@ export function InnerIterationNode({
 function InnerIterationStartNode({
   isConnectable = true,
   id,
+  selected,
 }: NodeProps<IIterationStartNode>) {
   return (
-    <NodeWrapper className="w-20">
+    <NodeWrapper className="w-20" selected={selected}>
       <CommonHandle
         type="source"
         position={Position.Right}
