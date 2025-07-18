@@ -66,7 +66,9 @@ export const SelectWithSearch = forwardRef<
   const selectLabel = useMemo(() => {
     const optionTemp = options[0];
     if (optionTemp?.options) {
-      return optionTemp.options.find((opt) => opt.value === value)?.label || '';
+      return options
+        .map((group) => group?.options?.find((item) => item.value === value))
+        .filter(Boolean)[0]?.label;
     } else {
       return options.find((opt) => opt.value === value)?.label || '';
     }
@@ -109,10 +111,10 @@ export const SelectWithSearch = forwardRef<
           <CommandInput placeholder="Search ..." />
           <CommandList>
             <CommandEmpty>No data found.</CommandEmpty>
-            {options.map((group) => {
+            {options.map((group, idx) => {
               if (group.options) {
                 return (
-                  <Fragment key={group.label}>
+                  <Fragment key={idx}>
                     <CommandGroup heading={group.label}>
                       {group.options.map((option) => (
                         <CommandItem
