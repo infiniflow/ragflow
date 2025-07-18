@@ -237,7 +237,10 @@ class EntityResolution(Extractor):
                 return True
             return False
 
-        if len(set(a) & set(b)) > 1:
-            return True
+        a, b = set(a), set(b)
+        max_l = max(len(a), len(b))
+        if max_l < 4:
+            return len(a & b) > 1
 
-        return False
+        return len(a & b)*1./max_l >= 0.8
+
