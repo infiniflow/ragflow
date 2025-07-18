@@ -66,6 +66,7 @@ class RAGFlowS3:
 
         try:
             s3_params = {}
+            config_kwargs = {}
             # if not set ak/sk, boto3 s3 client would try several ways to do the authentication
             # see doc: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#configuring-credentials
             if self.access_key and self.secret_key:
@@ -78,9 +79,12 @@ class RAGFlowS3:
             if 'endpoint_url' in self.s3_config:
                 s3_params['endpoint_url'] = self.endpoint_url
             if 'signature_version' in self.s3_config:
-                s3_params['config'] = Config(s3={"signature_version": self.signature_version})
+                config_kwargs['signature_version'] = self.signature_version
             if 'addressing_style' in self.s3_config:
-                s3_params['config'] = Config(s3={"addressing_style": self.addressing_style})
+                config_kwargs['addressing_style'] = self.addressing_style
+            if config_kwargs:
+                s3_params['config'] = Config(**config_kwargs)
+            
             self.conn = boto3.client('s3', **s3_params)
         except Exception:
             logging.exception(f"Fail to connect at region {self.region} or endpoint {self.endpoint_url}")

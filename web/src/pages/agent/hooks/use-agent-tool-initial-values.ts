@@ -16,12 +16,12 @@ export function useAgentToolInitialValues() {
             ...omit(initialValues, 'query'),
             description: '',
           };
-        case Operator.TavilySearch:
+        case (Operator.TavilySearch, Operator.TavilyExtract):
           return {
             api_key: '',
           };
         case Operator.ExeSQL:
-          return omit(initialValues, 'query');
+          return omit(initialValues, 'sql');
         case Operator.Bing:
           return omit(initialValues, 'query');
 
