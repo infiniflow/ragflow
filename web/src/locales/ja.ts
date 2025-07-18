@@ -504,6 +504,7 @@ export default {
       apiKeyTip:
         'APIキーは、対応するLLMサプライヤーに登録することで取得できます。',
       showMoreModels: 'さらにモデルを表示',
+      hideModels: 'モデルを隠す',
       baseUrl: 'ベースURL',
       baseUrlTip:
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
@@ -529,6 +530,8 @@ export default {
       workspace: 'ワークスペース',
       upgrade: 'アップグレード',
       addLlmTitle: 'LLMを追加',
+      editLlmTitle: '{{name}}モデルを編集',
+      editModel: 'モデルを編集',
       modelName: 'モデル名',
       modelID: 'モデルID',
       modelUid: 'モデルUID',

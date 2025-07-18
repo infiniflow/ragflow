@@ -508,6 +508,7 @@ export default {
       apiKeyTip:
         'Kunci API dapat diperoleh dengan mendaftar ke penyedia LLM yang sesuai.',
       showMoreModels: 'Tampilkan lebih banyak model',
+      hideModels: 'Sembunyikan model',
       baseUrl: 'Base-Url',
       baseUrlTip:
         'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
