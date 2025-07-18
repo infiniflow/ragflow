@@ -20,15 +20,6 @@ import { BeginQueryType } from '../constant';
 import { BeginQuery } from '../interface';
 import { FileUploadDirectUpload } from './uploader';
 
-export const BeginQueryComponentMap = {
-  [BeginQueryType.Line]: 'string',
-  [BeginQueryType.Paragraph]: 'string',
-  [BeginQueryType.Options]: 'string',
-  [BeginQueryType.File]: 'file',
-  [BeginQueryType.Integer]: 'number',
-  [BeginQueryType.Boolean]: 'boolean',
-};
-
 const StringFields = [
   BeginQueryType.Line,
   BeginQueryType.Paragraph,
@@ -68,7 +59,7 @@ const DebugContent = ({
         } else if (type === BeginQueryType.Boolean) {
           fieldSchema = z.boolean();
           value = false;
-        } else if (type === BeginQueryType.Integer) {
+        } else if (type === BeginQueryType.Integer || type === 'float') {
           fieldSchema = z.coerce.number();
         } else {
           fieldSchema = z.record(z.any());

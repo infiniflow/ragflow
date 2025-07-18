@@ -7,12 +7,10 @@ import {
 } from '@xyflow/react';
 import useGraphStore from '../../store';
 
-import { useTheme } from '@/components/theme-provider';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
-import styles from './index.less';
 
 export function ButtonEdge({
   id,
@@ -39,9 +37,8 @@ export function ButtonEdge({
     targetY,
     targetPosition,
   });
-  const { theme } = useTheme();
   const selectedStyle = useMemo(() => {
-    return selected ? { strokeWidth: 2, stroke: '#1677ff' } : {};
+    return selected ? { strokeWidth: 1, stroke: 'rgba(76, 164, 231, 1)' } : {};
   }, [selected]);
 
   const onEdgeClick = () => {
@@ -71,7 +68,7 @@ export function ButtonEdge({
       // The set of elements following source
       const slicedGraphPath = graphPath.slice(idx + 1);
       if (slicedGraphPath.some((x) => x === target)) {
-        return { strokeWidth: 2, stroke: 'red' };
+        return { strokeWidth: 1, stroke: 'red' };
       }
     }
     return {};
@@ -91,6 +88,7 @@ export function ButtonEdge({
         path={edgePath}
         markerEnd={markerEnd}
         style={{ ...style, ...selectedStyle, ...highlightStyle }}
+        className="text-text-sub-title"
       />
 
       <EdgeLabelRenderer>
@@ -108,7 +106,7 @@ export function ButtonEdge({
         >
           <button
             className={cn(
-              theme === 'dark' ? styles.edgeButtonDark : styles.edgeButton,
+              'size-3.5 border border-text-delete-red text-text-delete-red rounded-full leading-none',
               'invisible',
               { visible },
             )}
