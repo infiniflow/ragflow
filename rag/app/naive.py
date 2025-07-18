@@ -313,9 +313,21 @@ class Markdown(MarkdownParser):
         # Find all image URLs in text
         for url in image_urls:
             try:
-                response = requests.get(url, stream=True, timeout=30)
-                if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
-                    img = Image.open(BytesIO(response.content)).convert('RGB')
+                # check if the url is a local file or a remote URL
+                if url.startswith(('http://', 'https://')):
+                    # For remote URLs, download the image
+                    response = requests.get(url, stream=True, timeout=30)
+                    if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
+                        img = Image.open(BytesIO(response.content)).convert('RGB')
+                        images.append(img)
+                else:
+                    # For local file paths, open the image directly
+                    from pathlib import Path
+                    local_path = Path(url)
+                    if not local_path.exists():
+                        logging.warning(f"Local image file not found: {url}")
+                        continue
+                    img = Image.open(url).convert('RGB')
                     images.append(img)
             except Exception as e:
                 logging.error(f"Failed to download/open image from {url}: {e}")
