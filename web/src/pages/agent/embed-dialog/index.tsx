@@ -1,17 +1,21 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import HightLightMarkdown from '@/components/highlight-markdown';
-import {
-  UnderlineTabs,
-  UnderlineTabsContent,
-  UnderlineTabsList,
-  UnderlineTabsTrigger,
-} from '@/components/originui/underline-tabs';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Switch } from '@/components/ui/switch';
 import { SharedFrom } from '@/constants/chat';
 import {
   LanguageAbbreviation,
@@ -19,11 +23,19 @@ import {
 } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { memo, useMemo, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { memo, useCallback, useMemo } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { z } from 'zod';
+
+const FormSchema = z.object({
+  visibleAvatar: z.boolean(),
+  locale: z.string(),
+});
 
 type IProps = IModalProps<any> & {
   token: string;
-  form: SharedFrom;
+  from: SharedFrom;
   beta: string;
   isAgent: boolean;
 };
@@ -31,14 +43,21 @@ type IProps = IModalProps<any> & {
 function EmbedDialog({
   hideModal,
   token = '',
-  form,
+  from,
   beta = '',
   isAgent,
 }: IProps) {
   const { t } = useTranslate('chat');
 
-  const [visibleAvatar, setVisibleAvatar] = useState(false);
-  const [locale, setLocale] = useState('');
+  const form = useForm<z.infer<typeof FormSchema>>({
+    resolver: zodResolver(FormSchema),
+    defaultValues: {
+      visibleAvatar: false,
+      locale: '',
+    },
+  });
+
+  const values = useWatch({ control: form.control });
 
   const languageOptions = useMemo(() => {
     return Object.values(LanguageAbbreviation).map((x) => ({
@@ -47,8 +66,9 @@ function EmbedDialog({
     }));
   }, []);
 
-  const generateIframeSrc = () => {
-    let src = `${location.origin}/chat/share?shared_id=${token}&from=${form}&auth=${beta}`;
+  const generateIframeSrc = useCallback(() => {
+    const { visibleAvatar, locale } = values;
+    let src = `${location.origin}/chat/share?shared_id=${token}&from=${from}&auth=${beta}`;
     if (visibleAvatar) {
       src += '&visible_avatar=1';
     }
@@ -56,11 +76,11 @@ function EmbedDialog({
       src += `&locale=${locale}`;
     }
     return src;
-  };
+  }, [beta, from, token, values]);
 
-  const iframeSrc = generateIframeSrc();
-
-  const text = `
+  const text = useMemo(() => {
+    const iframeSrc = generateIframeSrc();
+    return `
   ~~~ html
   <iframe
   src="${iframeSrc}"
@@ -70,6 +90,7 @@ function EmbedDialog({
 </iframe>
 ~~~
   `;
+  }, [generateIframeSrc]);
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -79,40 +100,57 @@ function EmbedDialog({
             {t('embedIntoSite', { keyPrefix: 'common' })}
           </DialogTitle>
         </DialogHeader>
-        <section className="w-full overflow-auto">
-          <UnderlineTabs defaultValue="1" className="w-full">
-            <UnderlineTabsList>
-              <UnderlineTabsTrigger value="1">
-                {t('fullScreenTitle')}
-              </UnderlineTabsTrigger>
-              <UnderlineTabsTrigger value="2">
-                {t('partialTitle')}
-              </UnderlineTabsTrigger>
-              <UnderlineTabsTrigger value="3">
-                {t('extensionTitle')}
-              </UnderlineTabsTrigger>
-            </UnderlineTabsList>
-            <UnderlineTabsContent value="1">
-              <section>
-                <HightLightMarkdown>{text}</HightLightMarkdown>
-              </section>
-            </UnderlineTabsContent>
-            <UnderlineTabsContent value="2">
-              {t('comingSoon')}
-            </UnderlineTabsContent>
-            <UnderlineTabsContent value="3">
-              {t('comingSoon')}
-            </UnderlineTabsContent>
-          </UnderlineTabs>
-          <div className="text-base font-medium mt-4 mb-1">
+        <section className="w-full overflow-auto space-y-5 text-sm text-text-sub-title">
+          <Form {...form}>
+            <form className="space-y-5">
+              <FormField
+                control={form.control}
+                name="visibleAvatar"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('avatarHidden')}</FormLabel>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="locale"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('locale')}</FormLabel>
+                    <FormControl>
+                      <SelectWithSearch
+                        {...field}
+                        options={languageOptions}
+                      ></SelectWithSearch>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </form>
+          </Form>
+          <div>
+            <span>Embed code</span>
+            <HightLightMarkdown dark>{text}</HightLightMarkdown>
+          </div>
+          <div className=" font-medium mt-4 mb-1">
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
             <span className="ml-1 inline-block">ID</span>
           </div>
-          <div className="bg-background-card rounded-md p-2 ">
-            {token} <CopyToClipboard text={token}></CopyToClipboard>
+          <div className="bg-background-card rounded-lg flex justify-between p-2">
+            <span>{token} </span>
+            <CopyToClipboard text={token}></CopyToClipboard>
           </div>
           <a
-            className="pt-3 cursor-pointer text-background-checked inline-block"
+            className="cursor-pointer text-background-checked inline-block"
             href={
               isAgent
                 ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-agent'

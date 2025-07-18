@@ -153,7 +153,7 @@ export default function Agent() {
           visible={embedVisible}
           hideModal={hideEmbedModal}
           token={id!}
-          form={SharedFrom.Agent}
+          from={SharedFrom.Agent}
           beta={beta}
           isAgent
         ></EmbedDialog>
