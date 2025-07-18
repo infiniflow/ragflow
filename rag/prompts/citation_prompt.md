@@ -1,34 +1,79 @@
-
 Based on the provided document or chat history, add citations to the input text using the format specified later. 
 
-# Citation requirements:
+# Citation Requirements:
 
-**Rules:**
-- Use a uniform citation format such as [ID:i] [ID:j], where "i" and "j" are document ID enclosed in square brackets. Separate multiple IDs with spaces (e.g., [ID:30] [ID:11]).
-- Citation markers must be placed at the end of a sentence, separated by a space from the final punctuation (e.g., period, question mark). A maximum of 4 citations are allowed per sentence.
-- DO NOT insert CITATION in the answer if the content is not from content embraced by '<context></context>'.
-- Pay careful attention to whitespace: DO NOT add or remove any whitespace
-- DO NOT use standalone Document IDs (e.g., '#ID#').
-- Citations ALWAYS in the "[ID:i]" format.
-- STRICTLY prohibit the use of strikethrough symbols (e.g., ~~) or any other non-standard formatting syntax.
-- Any failure to adhere to the above rules, including but not limited to incorrect formatting, use of prohibited styles, or unsupported citations, will be considered an error, and no citation will be added for that sentence.
+## Technical Rules:
+- Use a uniform citation format: [ID:i] where "i" is the document ID
+- Multiple citations: [ID:i] [ID:j] (space-separated)
+- **Citation placement**: ALWAYS at the end of a complete sentence, before the punctuation
+- Maximum 4 citations per sentence
+- DO NOT insert citations for content not from <context></context>
+- DO NOT modify any whitespace in the original text
+- DO NOT use standalone Document IDs (e.g., '#ID#')
+- STRICTLY prohibit strikethrough symbols (~~) or non-standard formatting
 
+## Citation Guidelines:
+- **Sentence-level citations**: Each citation should support the entire sentence or a complete claim
+- **Avoid over-citation**: Not every sentence needs a citation. Focus on:
+  - Key facts and statistics
+  - Specific claims or findings
+  - Direct quotes or paraphrases
+  - Controversial or verifiable statements
+- **Skip citations for**:
+  - Common knowledge
+  - Transitional phrases
+  - General introductions
+- **One citation per source per sentence**: If multiple claims in one sentence come from the same source, use only one citation at the end
 
-**Citation guidelines:**
-- **Avoid citing unnecessarily**: Not every statement needs a citation. Focus on citing key facts, conclusions, and substantive claims that are linked to sources rather than common knowledge. Prioritize citing claims that readers would want to verify, that add credibility to the argument, or where a claim is clearly related to a specific source
-- **Cite meaningful semantic units**: Citations should span complete thoughts, findings, or claims that make sense as standalone assertions. Avoid citing individual words or small phrase fragments that lose meaning out of context; prefer adding citations at the end of sentences
-- **Minimize sentence fragmentation**: Avoid multiple citations within a single sentence that break up the flow of the sentence. Only add citations between phrases within a sentence when it is necessary to attribute specific claims within the sentence to specific sources
-- **No redundant citations close to each other**: Do not place multiple citations to the same source in the same sentence, because this is redundant and unnecessary. If a sentence contains multiple citable claims from the *same* source, use only a single citation at the end of the sentence after the period
+# Examples:
 
+## Example 1: Single source citation
+<context>
+ID: 15
+├── Title: Climate Change Impact Report 2024
+└── Content: Global temperatures have risen by 1.1°C since pre-industrial times. This warming is primarily caused by human activities, particularly the burning of fossil fuels.
+</context>
 
---- Example START ---
+USER: Explain climate change.
+
+ASSISTANT: 
+❌ WRONG: Global temperatures [ID:15] have risen by 1.1°C since pre-industrial times.
+✅ CORRECT: Global temperatures have risen by 1.1°C since pre-industrial times [ID:15].
+
+## Example 2: Multiple source citation
+<context>
+ID: 8
+└── Content: Tesla reported Q4 revenue of $24.3 billion in 2023.
+
+ID: 12
+└── Content: BYD became the world's largest EV manufacturer by volume in Q4 2023.
+</context>
+
+USER: How is the EV market doing?
+
+ASSISTANT:
+The EV market showed strong growth in 2023. Tesla reported Q4 revenue of $24.3 billion [ID:8]. Meanwhile, BYD became the world's largest EV manufacturer by volume in Q4 2023 [ID:12].
+
+## Example 3: No citation needed
+<context>
+ID: 5
+└── Content: Water consists of two hydrogen atoms and one oxygen atom.
+</context>
+
+USER: What is water?
+
+ASSISTANT:
+Water is essential for life. It consists of two hydrogen atoms and one oxygen atom [ID:5]. People need water to survive. ← (No citation for common knowledge)
+
+## Example 4: Complex paragraph
+// ...existing code...
 <context>
 
 ID: 23
 ├── Title: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
 ├── URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
 └── Content:
-The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it’s still his favorite crypto...
+The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it's still his favorite crypto...
 
 ID: 11
 ├── Title: Elon Musk's Dogecoin tweet sparks social media frenzy
@@ -38,7 +83,7 @@ Musk said he is 'willing to serve' D.O.G.E. – shorthand for Dogecoin.
 ID: 2
 ├── Title: Causal effect of Elon Musk tweets on Dogecoin price
 └── Content:
-If you think of Dogecoin — the cryptocurrency based on a meme — you can’t help but also think of Elon Musk...
+If you think of Dogecoin — the cryptocurrency based on a meme — you can't help but also think of Elon Musk...
 
 ID: 31
 ├── Title: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
@@ -49,9 +94,9 @@ The market is heating up after Elon Musk's announcement about Dogecoin. Is this 
 
 USER: What's the Elon's view on dogecoin?
 
-ASSISTANT: Musk has consistently expressed his fondness for Dogecoin, often citing its humor and the inclusion of dogs in its branding. He has referred to it as his favorite cryptocurrency [ID:23] [ID:11].
-Recently, <A href='https://blockworks.co/news/elon-musk-crypto-dogecoin'>Musk has hinted at potential future roles for Dogecoin.</A> His tweets have sparked speculation about Dogecoin's potential integration into public services [ID:31].
-Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against over-investing in it, reflecting both his personal amusement and caution regarding its speculative nature.
---- Example END ---
+ASSISTANT: 
+Elon Musk has a complex relationship with Dogecoin. He has referred to it as his favorite cryptocurrency [ID:23]. He has also expressed willingness to serve in a role related to D.O.G.E., which is shorthand for Dogecoin [ID:11]. His tweets about Dogecoin have significant market impact and have sparked speculation about its potential integration into public services [ID:31]. However, despite his enthusiasm, Musk advises against going all-in on Dogecoin [ID:23].
 
-DO NOT FORGET TO ADD CITATIONS.
+--- Examples END ---
+
+REMEMBER: Each citation should support the ENTIRE sentence where it appears. Place citations at the end of sentences, not in the middle.

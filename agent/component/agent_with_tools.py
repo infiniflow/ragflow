@@ -72,16 +72,7 @@ class Agent(LLM, ToolBase):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
         for cpn in self._param.tools:
-            from agent.component import component_class
-            param = component_class(cpn["component_name"] + "Param")()
-            param.update(cpn["params"])
-            try:
-                param.check()
-            except Exception as e:
-                self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
-                return
-            cpn_id = f"{id}-->" + cpn.get("name", "").replace(" ", "_")
-            cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
+            cpn = self._load_tool_obj(cpn)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id,
@@ -103,12 +94,37 @@ class Agent(LLM, ToolBase):
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
         #self.chat_mdl.bind_tools(self.toolcall_session, self.tool_metas)
 
+    def _load_tool_obj(self, cpn: dict) -> object:
+        from agent.component import component_class
+        param = component_class(cpn["component_name"] + "Param")()
+        param.update(cpn["params"])
+        try:
+            param.check()
+        except Exception as e:
+            self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
+            return
+        cpn_id = f"{id}-->" + cpn.get("name", "").replace(" ", "_")
+        return component_class(cpn["component_name"])(self._canvas, cpn_id, param)
+
     def get_meta(self) -> dict[str, Any]:
         self._param.function_name= self._id.split("-->")[-1]
         m = super().get_meta()
         if hasattr(self._param, "user_prompt") and self._param.user_prompt:
             m["function"]["parameters"]["properties"]["user_prompt"] = self._param.user_prompt
         return m
+
+    def get_input_form(self) -> dict[str, dict]:
+        res = {}
+        for k, v in self.get_input_elements().items():
+            res[k] = {
+                "type": "string",
+                "name": v["name"]
+            }
+        for cpn in self._param.tools:
+            if not isinstance(cpn, LLM):
+                continue
+            res.update(cpn.get_input_form())
+        return res
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60))
     def _invoke(self, **kwargs):
@@ -153,20 +169,6 @@ class Agent(LLM, ToolBase):
         if use_tools:
             self.set_output("use_tools", use_tools)
 
-    def debug(self, **kwargs):
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        prompt = self._param.prompt
-
-        for para in self._param.debug_inputs:
-            kwargs[para["key"]] = para.get("value", "")
-
-        for n, v in kwargs.items():
-            prompt = re.sub(r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), prompt)
-
-        u = kwargs.get("user")
-        ans = chat_mdl.chat(prompt, [{"role": "user", "content": u if u else "Output: "}], self._param.gen_conf())
-        return pd.DataFrame([ans])
-
     def _gen_citations(self, text):
         retrievals = self._canvas.get_reference()
         retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
@@ -205,6 +207,33 @@ class Agent(LLM, ToolBase):
 
             return name, tool_response
 
+        def complete():
+            nonlocal hist
+            cited = True
+            if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0:
+                if len(hist) < 7:
+                    hist[0]["content"] += citation_prompt()
+                else:
+                    cited = False
+            yield "", token_count
+
+            if not cited:
+                self.callback("gen_citations", {}, "...")
+
+            _hist = hist
+            if len(hist) > 12:
+                _hist = [hist[0], hist[1], *hist[-10:]]
+            entire_txt = ""
+            for delta_ans in self._generate_streamly(_hist):
+                if cited:
+                    yield delta_ans, 0
+                entire_txt += delta_ans
+
+            for delta_ans in self._gen_citations(entire_txt):
+                yield delta_ans, 0
+
+            yield "", 0
+
         self.callback("analyze_task", {}, "...")
         task_desc = analyze_task(self.chat_mdl, user_request, tool_metas)
         for _ in range(self._param.max_rounds + 1):
@@ -225,26 +254,9 @@ class Agent(LLM, ToolBase):
                         name = func["name"]
                         args = func["arguments"]
                         if name == COMPLETE_TASK:
-                            cited = True
                             hist.append({"role": "user", "content": f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language for the response MUST be as the same as the first user request.\n"})
-                            if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"]:
-                                if len(hist) < 7:
-                                    hist[0]["content"] += citation_prompt()
-                                else:
-                                    cited = False
-                            yield "", token_count
-                            if not cited:
-                                self.callback("gen_citations", {}, "...")
-                            entire_txt = ""
-                            for delta_ans in self._generate_streamly(hist):
-                                if cited:
-                                    yield delta_ans, 0
-                                entire_txt += delta_ans
-
-                            for delta_ans in self._gen_citations(entire_txt):
-                                yield delta_ans, 0
-
-                            yield "", 0
+                            for txt, tkcnt in complete():
+                                yield txt, tkcnt
                             return
 
                         thr.append(executor.submit(use_tool, name, args))
@@ -259,14 +271,12 @@ class Agent(LLM, ToolBase):
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
         if hist[-1]["role"] == "user":
-            hist[-1]["content"] += f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"
+            hist[-1]["content"] += f"\n{user_request}\nPlease respond to the above request directly."
         else:
-            hist.append({"role": "user", "content": f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}"})
+            hist.append({"role": "user", "content": f"\n{user_request}\nPlease respond to the above request directly."})
 
-        entire_txt = self._generate(hist)
-        token_count += num_tokens_from_string(entire_txt)
-        for delta_ans in self._gen_citations(entire_txt):
-            yield delta_ans, 0
+        for txt, tkcnt in complete():
+            yield txt, tkcnt
 
     def get_useful_memory(self, goal: str, sub_goal:str, topn=3) -> str:
         self.callback("get_useful_memory", {"topn": 3}, "...")

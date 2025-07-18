@@ -111,6 +111,15 @@ module.exports = { main };
         self.check_valid_value(self.lang, "Support languages", ["python", "python3", "nodejs", "javascript"])
         self.check_empty(self.script, "Script")
 
+    def get_input_form(self) -> dict[str, dict]:
+        res = {}
+        for k, v in self._param.arguments.items():
+            res[k] = {
+                "type": "string",
+                "name": k
+            }
+        return res
+
 
 class CodeExec(ToolBase, ABC):
     component_name = "CodeExec"

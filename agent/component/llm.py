@@ -91,6 +91,15 @@ class LLM(ComponentBase):
         if self._param.visual_files_var:
             self.imgs = self._canvas.get_variable_value(self._param.visual_files_var)
 
+    def get_input_form(self) -> dict[str, dict]:
+        res = {}
+        for k, v in self.get_input_elements().items():
+            res[k] = {
+                "type": "string",
+                "name": v["name"]
+            }
+        return res
+
     def get_input_elements(self) -> dict[str, Any]:
         res = self.get_input_elements_from_text(self._param.sys_prompt)
         for prompt in self._param.prompts:
@@ -98,22 +107,15 @@ class LLM(ComponentBase):
             res.update(d)
         return res
 
+    def set_debug_inputs(self, inputs: dict[str, dict]):
+        self._param.debug_inputs = inputs
+
     def add2system_prompt(self, txt):
         self._param.sys_prompt += txt
 
     def _prepare_prompt_variables(self):
-        def replace_ids(cnt, start_idx, prefix):
-            patt = []
-            for r in re.finditer(r"ID: %s_([0-9]+)\n"%prefix, cnt, flags=re.DOTALL):
-                idx = int(r.group(1))
-                patt.append((f"ID: {prefix}_{idx}", f"ID: {prefix}_{idx+start_idx}"))
-            for p, r in patt:
-                cnt = cnt.replace(p, r)
-                cnt = re.sub(r, p, cnt, flags=re.DOTALL)
-            return cnt
-
         args = {}
-        vars = self.get_input_elements()
+        vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
         prompt = self._param.sys_prompt
         for k, o in vars.items():
             args[k] = o["value"]
@@ -180,7 +182,7 @@ class LLM(ComponentBase):
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
-        prompt, msg = self._prepare_prompt_variables()
+        prompt, msg = self._prepare_prompt_variables(kwargs.get("debug_inputs"))
         error = ""
 
         if self._param.output_structure:

@@ -23,6 +23,7 @@ import trio
 from flask import request, Response
 from flask_login import login_required, current_user
 
+from agent.component import LLM
 from api import settings
 from api.db import FileType, ParserType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
@@ -262,9 +263,9 @@ def upload():
         return  server_error_response(e)
 
 
-@manager.route('/input_elements', methods=['GET'])  # noqa: F821
+@manager.route('/input_form', methods=['GET'])  # noqa: F821
 @login_required
-def input_elements():
+def input_form():
     cvs_id = request.args.get("id")
     cpn_id = request.args.get("component_id")
     try:
@@ -277,7 +278,7 @@ def input_elements():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        return get_json_result(data=canvas.get_component_input_elements(cpn_id))
+        return get_json_result(data=canvas.get_component_input_form(cpn_id))
     except Exception as e:
         return server_error_response(e)
 
@@ -287,8 +288,6 @@ def input_elements():
 @login_required
 def debug():
     req = request.json
-    for p in req["params"]:
-        assert p.get("key")
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
@@ -299,11 +298,13 @@ def debug():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        componant = canvas.get_component(req["component_id"])["obj"]
-        componant.reset()
-        componant._param.debug_inputs = req["params"]
-        df = canvas.get_component(req["component_id"])["obj"].debug()
-        return get_json_result(data=df.to_dict(orient="records"))
+        component = canvas.get_component(req["component_id"])["obj"]
+        component.reset()
+        if isinstance(component, LLM):
+            component.set_debug_inputs(req["params"])
+            req["params"] = {}
+        component.invoke(**req["params"])
+        return get_json_result(data=component.output())
     except Exception as e:
         return server_error_response(e)
 

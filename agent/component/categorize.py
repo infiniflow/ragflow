@@ -17,6 +17,7 @@ import logging
 import os
 import re
 from abc import ABC
+
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import LLMParam, LLM
@@ -32,16 +33,26 @@ class CategorizeParam(LLMParam):
     def __init__(self):
         super().__init__()
         self.category_description = {}
+        self.query = "sys.query"
+        self.message_history_window_size = 1
         self.update_prompt()
 
     def check(self):
-        super().check()
+        self.check_positive_integer(self.message_history_window_size, "[Categorize] Message window size > 0")
         self.check_empty(self.category_description, "[Categorize] Category examples")
         for k, v in self.category_description.items():
             if not k:
                 raise ValueError("[Categorize] Category name can not be empty!")
             if not v.get("to"):
                 raise ValueError(f"[Categorize] 'To' of category {k} can not be empty!")
+
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "type": "string",
+                "name": "Query"
+            }
+        }
 
     def update_prompt(self):
         cate_lines = []
@@ -88,6 +99,10 @@ class Categorize(LLM, ABC):
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
         msg = self._canvas.get_history(self._param.message_history_window_size)
+        if kwargs.get("query"):
+            msg[-1]["content"] = kwargs["query"]
+        else:
+            msg[-1]["content"] = self._canvas.get_variable_value(self._param.query)
         self._param.update_prompt()
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
 
@@ -106,11 +121,12 @@ class Categorize(LLM, ABC):
             category_counts[c] = count
 
         cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
+        max_category = self._param.category_description.keys()[0]
         if any(category_counts.values()):
             max_category = max(category_counts.items(), key=lambda x: x[1])
             cpn_ids = self._param.category_description[max_category[0]]["to"]
 
-        self.set_output("next", [self._canvas.get_component_name(cid) for cid in cpn_ids])
+        self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
 
     def debug(self, **kwargs):

@@ -69,6 +69,14 @@ class ExeSQLParam(ToolParamBase):
             if self.password == "infini_rag_flow":
                 raise ValueError("For the security reason, it dose not support database named rag_flow.")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "sql": {
+                "name": "SQL",
+                "type": "string"
+            }
+        }
+
 
 class ExeSQL(ToolBase, ABC):
     component_name = "ExeSQL"

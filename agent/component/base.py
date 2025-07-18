@@ -447,11 +447,6 @@ class ComponentBase(ABC):
         self._param.debug_inputs = {}
 
     def get_input(self, key: str=None) -> Union[Any, dict[str, Any]]:
-        if self._param.debug_inputs:
-            if key:
-                return self._param.debug_inputs.get(key, {}).get("value")
-            return self._param.debug_inputs
-
         if key:
             return self._param.inputs.get(key, {}).get("value")
 
@@ -488,6 +483,9 @@ class ComponentBase(ABC):
 
     def get_input_elements(self) -> dict[str, Any]:
         return self._param.inputs
+
+    def get_input_form(self) -> dict[str, dict]:
+        return self._param.get_input_form()
 
     def set_input_value(self, key: str, value: Any) -> None:
         if key not in self._param.inputs:
