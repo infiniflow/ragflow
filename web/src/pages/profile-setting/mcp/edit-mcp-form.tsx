@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
-import { Editor, loader } from '@monaco-editor/react';
+import { loader } from '@monaco-editor/react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -53,7 +53,7 @@ export function useBuildFormSchema() {
         message: t('common.namePlaceholder'),
       })
       .trim(),
-    headers: z.record(z.string(), z.any()).optional(),
+    authorization_token: z.string().optional(),
   });
 
   return FormSchema;
@@ -142,18 +142,18 @@ export function EditMcpForm({
         />
         <FormField
           control={form.control}
-          name="headers"
+          name="authorization_token"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Headers</FormLabel>
+              <FormLabel>Authorization Token</FormLabel>
               <FormControl>
-                <Editor
-                  height={200}
-                  defaultLanguage="json"
-                  theme="vs-dark"
+                <Input
+                  placeholder={t('common.namePlaceholder')}
                   {...field}
-                  onChange={(value) => {
-                    field.onChange(value);
+                  autoComplete="off"
+                  type="password"
+                  onChange={(e) => {
+                    field.onChange(e.target.value.trim());
                     setFieldChanged(true);
                   }}
                 />

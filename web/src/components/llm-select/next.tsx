@@ -10,7 +10,7 @@ interface IProps {
   id?: string;
   value?: string;
   onInitialValue?: (value: string, option: any) => void;
-  onChange?: (value: string, option: any) => void;
+  onChange?: (value: string) => void;
   disabled?: boolean;
 }
 

@@ -8,6 +8,8 @@ import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
   IInputEvent,
+  IMessageEndData,
+  IMessageEndEvent,
   IMessageEvent,
   MessageEventType,
   useSendMessageBySSE,
@@ -17,7 +19,7 @@ import i18n from '@/locales/config';
 import api from '@/utils/api';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useContext, useEffect, useMemo } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
@@ -62,9 +64,40 @@ function findMessageFromList(eventList: IEventList) {
   const messageEventList = eventList.filter(
     (x) => x.event === MessageEventType.Message,
   ) as IMessageEvent[];
+
+  let nextContent = '';
+
+  let startIndex = -1;
+  let endIndex = -1;
+
+  messageEventList.forEach((x, idx) => {
+    const { data } = x;
+    const { content, start_to_think, end_to_think } = data;
+    if (start_to_think === true) {
+      nextContent += '<think>' + content;
+      startIndex = idx;
+      return;
+    }
+
+    if (end_to_think === true) {
+      endIndex = idx;
+      nextContent += content + '</think>';
+      return;
+    }
+
+    nextContent += content;
+  });
+
+  const currentIdx = messageEventList.length - 1;
+
+  // Make sure that after start_to_think === true and before end_to_think === true, add a </think> tag at the end.
+  if (startIndex >= 0 && startIndex <= currentIdx && endIndex === -1) {
+    nextContent += '</think>';
+  }
+
   return {
     id: eventList[0]?.message_id,
-    content: messageEventList.map((x) => x.data.content).join(''),
+    content: nextContent,
   };
 }
 
@@ -114,6 +147,9 @@ export const useSendNextMessage = () => {
   const { refetch } = useFetchAgent();
   const { addEventList } = useContext(AgentChatLogContext);
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const [messageEndEventList, setMessageEndEventList] = useState<
+    IMessageEndEvent[]
+  >([]);
 
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     api.runCanvas,
@@ -126,13 +162,16 @@ export const useSendNextMessage = () => {
       const params: Record<string, unknown> = {
         id: agentId,
       };
+
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
       if (message.content) {
+        const query = getBeginNodeDataQuery();
+
         params.query = message.content;
         // params.message_id = message.id;
-        params.inputs = {}; // begin operator inputs
+        params.inputs = transferInputsArrayToObject(query); // begin operator inputs
       }
       const res = await send(params);
 
@@ -146,7 +185,14 @@ export const useSendNextMessage = () => {
         refetch(); // pull the message list after sending the message successfully
       }
     },
-    [agentId, send, setValue, removeLatestMessage, refetch],
+    [
+      agentId,
+      send,
+      getBeginNodeDataQuery,
+      setValue,
+      removeLatestMessage,
+      refetch,
+    ],
   );
 
   const handleSendMessage = useCallback(
@@ -155,6 +201,23 @@ export const useSendNextMessage = () => {
     },
     [sendMessage],
   );
+
+  useEffect(() => {
+    const messageEndEvent = answerList.find(
+      (x) => x.event === MessageEventType.MessageEnd,
+    );
+    if (messageEndEvent) {
+      setMessageEndEventList((list) => {
+        const nextList = [...list];
+        if (
+          nextList.every((x) => x.message_id !== messageEndEvent.message_id)
+        ) {
+          nextList.push(messageEndEvent as IMessageEndEvent);
+        }
+        return nextList;
+      });
+    }
+  }, [addEventList.length, answerList]);
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
@@ -195,11 +258,20 @@ export const useSendNextMessage = () => {
     [addNewestOneQuestion, send],
   );
 
+  const findReferenceByMessageId = useCallback(
+    (messageId: string) => {
+      const event = messageEndEventList.find(
+        (item) => item.message_id === messageId,
+      );
+      if (event) {
+        return (event?.data as IMessageEndData)?.reference;
+      }
+    },
+    [messageEndEventList],
+  );
+
   useEffect(() => {
-    const query = getBeginNodeDataQuery();
-    if (query.length > 0) {
-      send({ id: agentId, inputs: transferInputsArrayToObject(query) });
-    } else if (prologue) {
+    if (prologue) {
       addNewestOneAnswer({
         answer: prologue,
       });
@@ -230,5 +302,6 @@ export const useSendNextMessage = () => {
     stopOutputMessage,
     send,
     sendFormMessage,
+    findReferenceByMessageId,
   };
 };

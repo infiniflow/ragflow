@@ -582,6 +582,34 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "kimi-k2-0711-preview",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-latest-8k",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-latest-32k",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-latest-128k",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "moonshot-v1-8k",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 7900,
@@ -3244,6 +3272,30 @@
             "tags": "TEXT EMBEDDING, TEXT RE-RANK",
             "status": "1",
             "llm": [
+                {
+                    "llm_name": "voyage-3-large",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3.5",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3.5-lite",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-code-3",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
                 {
                     "llm_name": "voyage-multimodal-3",
                     "tags": "TEXT EMBEDDING,Chat,IMAGE2TEXT,32000",

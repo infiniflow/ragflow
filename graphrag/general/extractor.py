@@ -21,6 +21,7 @@ from typing import Callable
 import trio
 import networkx as nx
 
+from api.utils.api_utils import timeout
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
     handle_single_relationship_extraction, split_string_by_multi_markers, flat_uniq_list, chat_limiter, get_from_to, GraphChange
@@ -46,6 +47,7 @@ class Extractor:
         self._language = language
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
 
+    @timeout(60*3)
     def _chat(self, system, history, gen_conf):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
@@ -53,12 +55,18 @@ class Extractor:
         if response:
             return response
         _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
-        response = self._llm.chat(system_msg[0]["content"], hist, conf)
-        response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
-        if response.find("**ERROR**") >= 0:
-            logging.warning(f"Extractor._chat got error. response: {response}")
-            return ""
-        set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
+        for attempt in range(3):
+            try:
+                response = self._llm.chat(system_msg[0]["content"], hist, conf)
+                response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
+                if response.find("**ERROR**") >= 0:
+                    raise Exception(response)
+                set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
+            except Exception as e:
+                logging.exception(e)
+                if attempt == 2:
+                    raise
+
         return response
 
     def _entities_and_relations(self, chunk_key: str, records: list, tuple_delimiter: str):

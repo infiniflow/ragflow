@@ -12,8 +12,8 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { memo, useMemo } from 'react';
+import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import {
   TavilySearchDepth,
@@ -21,17 +21,41 @@ import {
   initialTavilyValues,
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output, OutputType } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { DynamicDomain } from './dynamic-domain';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const TavilyForm = ({ node }: INextOperatorForm) => {
+export function TavilyApiKeyField() {
+  const form = useFormContext();
+  return (
+    <FormField
+      control={form.control}
+      name="api_key"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Api Key</FormLabel>
+          <FormControl>
+            <Input type="password" {...field}></Input>
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+export const TavilyFormSchema = {
+  api_key: z.string(),
+};
+
+function TavilyForm({ node }: INextOperatorForm) {
   const values = useValues(node);
 
   const FormSchema = z.object({
-    api_key: z.string(),
+    ...TavilyFormSchema,
     query: z.string(),
     search_depth: z.enum([TavilySearchDepth.Advanced, TavilySearchDepth.Basic]),
     topic: z.enum([TavilyTopic.News, TavilyTopic.General]),
@@ -64,27 +88,9 @@ const TavilyForm = ({ node }: INextOperatorForm) => {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-5 px-5 "
-        autoComplete="off"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
-          <FormField
-            control={form.control}
-            name="api_key"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Api Key</FormLabel>
-                <FormControl>
-                  <Input type="password" {...field}></Input>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <TavilyApiKeyField></TavilyApiKeyField>
         </FormContainer>
         <FormContainer>
           <QueryVariable></QueryVariable>
@@ -221,12 +227,12 @@ const TavilyForm = ({ node }: INextOperatorForm) => {
             label={'Exclude Domains'}
           ></DynamicDomain>
         </FormContainer>
-      </form>
+      </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>
       </div>
     </Form>
   );
-};
+}
 
-export default TavilyForm;
+export default memo(TavilyForm);
