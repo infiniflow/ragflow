@@ -222,7 +222,11 @@ The embedding models included in `v0.19.1` and `nightly` are:
 - BAAI/bge-large-zh-v1.5
 - maidalun1020/bce-embedding-base_v1
 
-These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
+These two embedding models are optimized specifically for English and Chinese, so performance will be compromised if you use them to embed documents in other languages.
+:::
+
+:::tip NOTE
+The image size shown refers to the size of the *downloaded* Docker image, which is compressed. When Docker runs the image, it unpacks it, resulting in significantly greater disk usage. For example, a slim edition image will expand to around 7 GB once unpacked.
 :::
 
 4. Check the server status after having the server up and running:
