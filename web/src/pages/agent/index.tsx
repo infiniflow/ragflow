@@ -7,13 +7,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
-import { CodeXml, EllipsisVertical, Forward, Import, Key } from 'lucide-react';
+import {
+  ChevronDown,
+  CirclePlay,
+  Download,
+  History,
+  Key,
+  Logs,
+  ScreenShare,
+  Upload,
+} from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'umi';
 import AgentCanvas from './canvas';
+import EmbedDialog from './embed-dialog';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useGetBeginNodeDataQuery } from './hooks/use-get-begin-query';
@@ -22,6 +34,7 @@ import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
 } from './hooks/use-save-graph';
+import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { BeginQuery } from './interface';
 import { UploadAgentDialog } from './upload-agent-dialog';
 
@@ -30,13 +43,14 @@ function AgentDropdownMenuItem({
   ...props
 }: ComponentPropsWithoutRef<typeof DropdownMenuItem>) {
   return (
-    <DropdownMenuItem className="flex justify-between items-center" {...props}>
+    <DropdownMenuItem className="justify-start" {...props}>
       {children}
     </DropdownMenuItem>
   );
 }
 
 export default function Agent() {
+  const { id } = useParams();
   const { navigateToAgentList } = useNavigatePage();
   const {
     visible: chatDrawerVisible,
@@ -53,12 +67,9 @@ export default function Agent() {
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-
   const { flowDetail } = useFetchDataOnMount();
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
-
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
-
   const handleRunAgent = useCallback(() => {
     const query: BeginQuery[] = getBeginNodeDataQuery();
     if (query.length > 0) {
@@ -68,47 +79,58 @@ export default function Agent() {
     }
   }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
 
+  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
+    useShowEmbedModal();
+
   return (
     <section className="h-full">
       <PageHeader back={navigateToAgentList} title={flowDetail.title}>
         <div className="flex items-center gap-2">
           <ButtonLoading
-            variant={'outline'}
+            variant={'secondary'}
             onClick={() => saveGraph()}
             loading={loading}
           >
             Save
           </ButtonLoading>
-          <Button variant={'outline'} onClick={handleRunAgent}>
+          <Button variant={'secondary'} onClick={handleRunAgent}>
+            <CirclePlay />
             Run app
           </Button>
-          <Button variant={'outline'}>Publish</Button>
+          <Button variant={'secondary'}>
+            <History />
+            History version
+          </Button>
+          <Button variant={'secondary'}>
+            <Logs />
+            Log
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant={'icon'} size={'icon'}>
-                <EllipsisVertical />
+              <Button variant={'secondary'}>
+                <ChevronDown /> Management
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <AgentDropdownMenuItem onClick={openDocument}>
-                API
                 <Key />
+                API
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleImportJson}>
+                <Download />
                 Import
-                <Import />
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
+                <Upload />
                 Export
-                <Forward />
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              <AgentDropdownMenuItem>
+              <AgentDropdownMenuItem onClick={showEmbedModal}>
+                <ScreenShare />
                 {t('common.embedIntoSite')}
-                <CodeXml />
               </AgentDropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -125,6 +147,16 @@ export default function Agent() {
           hideModal={hideFileUploadModal}
           onOk={onFileUploadOk}
         ></UploadAgentDialog>
+      )}
+      {embedVisible && (
+        <EmbedDialog
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={id!}
+          form={SharedFrom.Agent}
+          beta={beta}
+          isAgent
+        ></EmbedDialog>
       )}
     </section>
   );
