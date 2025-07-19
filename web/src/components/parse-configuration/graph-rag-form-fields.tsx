@@ -152,64 +152,6 @@ const GraphRagItems = ({
               </FormItem>
             )}
           />
-
-          <FormField
-            control={form.control}
-            name="parser_config.graphrag.resolution"
-            render={({ field }) => (
-              <FormItem className=" items-center space-y-0 ">
-                <div className="flex items-center">
-                  <FormLabel
-                    tooltip={renderWideTooltip('resolutionTip')}
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
-                  >
-                    {t('resolution')}
-                  </FormLabel>
-                  <div className="w-3/4">
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                  </div>
-                </div>
-                <div className="flex pt-1">
-                  <div className="w-1/4"></div>
-                  <FormMessage />
-                </div>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="parser_config.graphrag.community"
-            render={({ field }) => (
-              <FormItem className=" items-center space-y-0 ">
-                <div className="flex items-center">
-                  <FormLabel
-                    tooltip={renderWideTooltip('communityTip')}
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
-                  >
-                    {t('community')}
-                  </FormLabel>
-                  <div className="w-3/4">
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                  </div>
-                </div>
-                <div className="flex pt-1">
-                  <div className="w-1/4"></div>
-                  <FormMessage />
-                </div>
-              </FormItem>
-            )}
-          />
         </>
       )}
     </FormContainer>

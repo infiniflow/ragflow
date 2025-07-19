@@ -36,10 +36,6 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
-import {
-  UseGraphRagFormField,
-  showGraphRagItems,
-} from '../parse-configuration/graph-rag-form-fields';
 import RaptorFormFields, {
   showRaptorParseConfiguration,
 } from '../parse-configuration/raptor-form-fields';
@@ -92,9 +88,6 @@ export function ChunkMethodDialog({
 
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
-  const useGraphRag = useMemo(() => {
-    return knowledgeDetails.parser_config?.graphrag?.use_graphrag;
-  }, [knowledgeDetails.parser_config?.graphrag?.use_graphrag]);
 
   const defaultParserValues = useDefaultParserValues();
 
@@ -125,9 +118,6 @@ export function ChunkMethodDialog({
           random_seed: z.coerce.number().optional(),
         })
         .optional(),
-      graphrag: z.object({
-        use_graphrag: z.boolean().optional(),
-      }),
       entity_types: z.array(z.string()).optional(),
       pages: z
         .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
@@ -205,13 +195,6 @@ export function ChunkMethodDialog({
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
           ...omit(parserConfig, 'pages'),
-          graphrag: {
-            use_graphrag: get(
-              parserConfig,
-              'graphrag.use_graphrag',
-              useGraphRag,
-            ),
-          },
         }),
       });
     }
@@ -221,7 +204,6 @@ export function ChunkMethodDialog({
     knowledgeDetails.parser_config,
     parserConfig,
     parserId,
-    useGraphRag,
     visible,
   ]);
 
@@ -317,8 +299,6 @@ export function ChunkMethodDialog({
                 <RaptorFormFields></RaptorFormFields>
               </FormContainer>
             )}
-            {showGraphRagItems(selectedTag as DocumentParserType) &&
-              useGraphRag && <UseGraphRagFormField></UseGraphRagFormField>}
             {showEntityTypes && <EntityTypesFormField></EntityTypesFormField>}
           </form>
         </Form>

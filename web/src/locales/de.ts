@@ -1240,5 +1240,16 @@ export default {
       knowledge: 'Wissen',
       chat: 'Chat',
     },
+    knowledgeGraph: {
+      statistics: 'Graphstatistiken',
+      nodes: 'Knoten',
+      edges: 'Kanten',
+      resolveEntities: 'Entitäten auflösen',
+      detectCommunities: 'Gemeinschaften erkennen',
+      resolving: 'Auflösung läuft...',
+      detecting: 'Erkennung läuft...',
+      entityResolutionSuccess: 'Entitätsauflösung erfolgreich abgeschlossen',
+      communityDetectionSuccess: 'Gemeinschaftserkennung erfolgreich abgeschlossen',
+    },
   },
 };

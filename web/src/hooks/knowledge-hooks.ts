@@ -7,12 +7,21 @@ import {
 } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  buildGraph,
+  checkDocumentParsing,
   deleteKnowledgeGraph,
+  detectCommunities,
+  extractEntities,
+  getBuildProgress,
+  getCommunityDetectionProgress,
+  getEntityResolutionProgress,
+  getExtractionProgress,
   getKnowledgeGraph,
   listDataset,
   listTag,
   removeTag,
   renameTag,
+  resolveEntities,
 } from '@/services/knowledge-service';
 import {
   useInfiniteQuery,
@@ -24,10 +33,11 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'umi';
 import { useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
+import { useProgressPolling } from './useProgressPolling';
 
 export const useKnowledgeBaseId = (): string => {
   const [searchParams] = useSearchParams();
@@ -458,7 +468,11 @@ export const useFetchTagListByKnowledgeIds = () => {
 export function useFetchKnowledgeGraph() {
   const knowledgeBaseId = useKnowledgeBaseId();
 
-  const { data, isFetching: loading } = useQuery<IKnowledgeGraph>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IKnowledgeGraph>({
     queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
     initialData: { graph: {}, mind_map: {} } as IKnowledgeGraph,
     enabled: !!knowledgeBaseId,
@@ -469,7 +483,7 @@ export function useFetchKnowledgeGraph() {
     },
   });
 
-  return { data, loading };
+  return { data, loading, refetch };
 }
 
 export const useRemoveKnowledgeGraph = () => {
@@ -487,7 +501,7 @@ export const useRemoveKnowledgeGraph = () => {
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
         queryClient.invalidateQueries({
-          queryKey: ['fetchKnowledgeGraph'],
+          queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
         });
       }
       return data?.code;
@@ -495,4 +509,195 @@ export const useRemoveKnowledgeGraph = () => {
   });
 
   return { data, loading, removeKnowledgeGraph: mutateAsync };
+};
+
+export const useResolveEntities = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const mutation = useMutation({
+    mutationKey: ['resolveEntities'],
+    mutationFn: async () => {
+      const { data } = await resolveEntities(knowledgeBaseId);
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data.code === 0) {
+        message.success(
+          i18n.t(
+            `knowledgeGraph.entityResolutionSuccess`,
+            'Entity resolution completed successfully',
+          ),
+        );
+      }
+    },
+  });
+
+  const { runOperation, ...remaning } = useProgressPolling({
+    knowledgeBaseId,
+    operationName: 'resolution',
+    progressEndpoint: getEntityResolutionProgress,
+    mutation,
+    initialProgressState: {
+      total_pairs: 0,
+      processed_pairs: 0,
+      remaining_pairs: 0,
+      current_status: 'starting',
+    },
+    onSuccessMessage: i18n.t(
+      `knowledgeGraph.entityResolutionSuccess`,
+      'Entity resolution completed successfully',
+    ),
+  });
+
+  return {
+    ...remaning,
+    resolveEntities: runOperation,
+  };
+};
+
+export const useDetectCommunities = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const mutation = useMutation({
+    mutationKey: ['detectCommunities'],
+    mutationFn: async () => {
+      const { data } = await detectCommunities(knowledgeBaseId);
+      return data;
+    },
+  });
+
+  const { runOperation, ...remaining } = useProgressPolling({
+    knowledgeBaseId,
+    operationName: 'communities',
+    progressEndpoint: getCommunityDetectionProgress,
+    mutation,
+    initialProgressState: {
+      total_communities: 0,
+      processed_communities: 0,
+      tokens_used: 0,
+      current_status: 'starting',
+    },
+    onSuccessMessage: i18n.t(
+      `knowledgeGraph.communityDetectionSuccess`,
+      'Community detection completed successfully',
+    ),
+  });
+
+  return {
+    ...remaining,
+    detectCommunities: runOperation,
+  };
+};
+
+export const useCheckDocumentParsing = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const [isParsing, setIsParsing] = useState(false);
+  const pollingRef = useRef(null);
+
+  // Function to check parsing status
+  const checkParsing = async () => {
+    try {
+      const { data } = await checkDocumentParsing(knowledgeBaseId);
+      if (data.code === 0) {
+        setIsParsing(data.data.is_parsing);
+      }
+    } catch (error) {
+      console.error('Failed to check document parsing status:', error);
+    }
+  };
+
+  // Start polling
+  const startPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+
+    pollingRef.current = setInterval(checkParsing, 5000); // Poll every 5 seconds
+  };
+
+  // Stop polling
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
+  // Effect to start polling when knowledge base ID changes
+  useEffect(() => {
+    if (knowledgeBaseId) {
+      checkParsing(); // Check immediately
+      startPolling(); // Start polling
+    }
+
+    return () => {
+      stopPolling();
+    };
+  }, [knowledgeBaseId]);
+
+  return { isParsing, checkParsing, startPolling, stopPolling };
+};
+
+export const useExtractEntities = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const mutation = useMutation({
+    mutationKey: ['extractEntities'],
+    mutationFn: async () => {
+      const { data } = await extractEntities(knowledgeBaseId);
+      return data;
+    },
+  });
+
+  const { runOperation, ...remaining } = useProgressPolling({
+    knowledgeBaseId,
+    operationName: 'extraction',
+    progressEndpoint: getExtractionProgress,
+    mutation,
+    initialProgressState: {
+      total_documents: 0,
+      processed_documents: 0,
+      entities_found: 0,
+      current_status: 'starting',
+    },
+    onSuccessMessage: i18n.t(
+      `knowledgeGraph.entityExtractionSuccess`,
+      'Entity extraction completed successfully',
+    ),
+  });
+
+  return {
+    ...remaining,
+    extractEntities: runOperation,
+  };
+};
+
+export const useBuildGraph = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const mutation = useMutation({
+    mutationKey: ['buildGraph'],
+    mutationFn: async () => {
+      const { data } = await buildGraph(knowledgeBaseId);
+      return data;
+    },
+  });
+
+  const { runOperation, ...remaining } = useProgressPolling({
+    knowledgeBaseId,
+    operationName: 'build',
+    progressEndpoint: getBuildProgress,
+    mutation,
+    initialProgressState: {
+      total_entities: 0,
+      processed_entities: 0,
+      relationships_created: 0,
+      current_status: 'starting',
+    },
+    onSuccessMessage: i18n.t(
+      `knowledgeGraph.graphBuildSuccess`,
+      'Graph building completed successfully',
+    ),
+  });
+
+  return {
+    ...remaining,
+    buildGraph: runOperation,
+  };
 };

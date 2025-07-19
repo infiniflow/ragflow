@@ -4,7 +4,6 @@ import {
 } from '@/components/auto-keywords-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import PageRankFormField from '@/components/page-rank-form-field';
-import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
 import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
 import {
   ConfigurationFormContainer,
@@ -33,7 +32,6 @@ export function BookConfiguration() {
         <RaptorFormFields></RaptorFormFields>
       </ConfigurationFormContainer>
 
-      <GraphRagItems marginBottom className="p-10"></GraphRagItems>
 
       <ConfigurationFormContainer>
         <TagItems></TagItems>

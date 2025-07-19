@@ -567,7 +567,7 @@ class DocumentService(CommonService):
                     if (d["parser_config"].get("raptor") or {}).get("use_raptor") and not has_raptor:
                         queue_raptor_o_graphrag_tasks(d, "raptor", priority)
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif (d["parser_config"].get("graphrag") or {}).get("use_graphrag") and not has_graphrag:
+                    elif _should_auto_queue_graphrag(d["parser_config"]) and not has_graphrag:
                         queue_raptor_o_graphrag_tasks(d, "graphrag", priority)
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                     else:
@@ -607,6 +607,40 @@ class DocumentService(CommonService):
         except Exception:
             pass
         return False
+
+    @classmethod
+    @DB.connection_context()
+    def has_documents_parsing(cls, kb_id):
+        """Check if any documents in the knowledge base are currently being parsed."""
+        docs = cls.model.select().where(
+            cls.model.kb_id == kb_id,
+            cls.model.run == TaskStatus.RUNNING.value,
+            cls.model.progress < 1
+        )
+        return docs.count() > 0
+
+
+def _should_auto_queue_graphrag(parser_config):
+    """
+    Determine if GraphRAG tasks should be automatically queued after parsing.
+    
+    With the new UI, GraphRAG is now manual-only (extract_only mode):
+    - New enum graphrag_mode="full_auto" -> auto queue  
+    - New enum graphrag_mode="extract_only" -> no auto queue
+    - New enum graphrag_mode="none" -> no auto queue
+    - Legacy boolean use_graphrag=true -> no auto queue (changed behavior)
+    - Default -> no auto queue
+    """
+    graphrag_config = parser_config.get("graphrag", {})
+    
+    # Check for new enum format first
+    graphrag_mode = graphrag_config.get("graphrag_mode")
+    if graphrag_mode is not None:
+        return graphrag_mode == "full_auto"
+    
+    # Legacy format no longer triggers auto-queuing since toggle was removed
+    # This allows existing configs to work but use manual GraphRAG workflow
+    return False
 
 
 def queue_raptor_o_graphrag_tasks(doc, ty, priority):

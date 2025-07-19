@@ -34,10 +34,6 @@ import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
 } from '../parse-configuration';
-import {
-  UseGraphRagItem,
-  showGraphRagItems,
-} from '../parse-configuration/graph-rag-items';
 import styles from './index.less';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
@@ -82,9 +78,6 @@ const ChunkMethodModal: React.FC<IProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
-  const useGraphRag = useMemo(() => {
-    return knowledgeDetails.parser_config?.graphrag?.use_graphrag;
-  }, [knowledgeDetails.parser_config?.graphrag?.use_graphrag]);
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -133,13 +126,6 @@ const ChunkMethodModal: React.FC<IProps> = ({
         pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
         parser_config: {
           ...omit(parserConfig, 'pages'),
-          graphrag: {
-            use_graphrag: get(
-              parserConfig,
-              'graphrag.use_graphrag',
-              useGraphRag,
-            ),
-          },
         },
       });
     }
@@ -147,7 +133,6 @@ const ChunkMethodModal: React.FC<IProps> = ({
     form,
     knowledgeDetails.parser_config,
     parserConfig,
-    useGraphRag,
     visible,
   ]);
 
@@ -338,9 +323,6 @@ const ChunkMethodModal: React.FC<IProps> = ({
           <DatasetConfigurationContainer>
             <ParseConfiguration></ParseConfiguration>
           </DatasetConfigurationContainer>
-        )}
-        {showGraphRagItems(selectedTag) && useGraphRag && (
-          <UseGraphRagItem></UseGraphRagItem>
         )}
         {showEntityTypes && <EntityTypesItem></EntityTypesItem>}
       </Form>

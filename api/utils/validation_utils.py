@@ -353,11 +353,11 @@ class RaptorConfig(Base):
 
 
 class GraphragConfig(Base):
-    use_graphrag: bool = Field(default=False)
+    use_graphrag: bool = Field(default=False)  # Default off - GraphRAG is manual-only via Knowledge Graph UI
     entity_types: list[str] = Field(default_factory=lambda: ["organization", "person", "geo", "event", "category"])
     method: GraphragMethodEnum = Field(default=GraphragMethodEnum.light)
-    community: bool = Field(default=False)
-    resolution: bool = Field(default=False)
+    community: bool = Field(default=False)  # Will be handled via Knowledge Graph UI
+    resolution: bool = Field(default=False)  # Will be handled via Knowledge Graph UI
 
 
 class ParserConfig(Base):

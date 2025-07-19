@@ -50,7 +50,7 @@ class CommunityReportsExtractor(Extractor):
         self._extraction_prompt = COMMUNITY_REPORT_PROMPT
         self._max_report_length = max_report_length or 1500
 
-    async def __call__(self, graph: nx.Graph, callback: Callable | None = None):
+    async def __call__(self, graph: nx.Graph, callback: Callable | None = None, kb_id: str = None):
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
 
@@ -90,7 +90,7 @@ class CommunityReportsExtractor(Extractor):
                 "relation_df": rela_df.to_csv(index_label="id")
             }
             text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
-            gen_conf = {"temperature": 0.3}
+            gen_conf = {"temperature": 0.3, "max_tokens": 8000}
             async with chat_limiter:
                 try:
                     with trio.move_on_after(80) as cancel_scope:

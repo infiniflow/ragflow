@@ -867,5 +867,16 @@ export default {
       knowledge: 'Conocimiento',
       chat: 'Chat',
     },
+    knowledgeGraph: {
+      statistics: 'Estadísticas del Grafo',
+      nodes: 'Nodos',
+      edges: 'Aristas',
+      resolveEntities: 'Resolver Entidades',
+      detectCommunities: 'Detectar Comunidades',
+      resolving: 'Resolviendo...',
+      detecting: 'Detectando...',
+      entityResolutionSuccess: 'Resolución de entidades completada exitosamente',
+      communityDetectionSuccess: 'Detección de comunidades completada exitosamente',
+    },
   },
 };

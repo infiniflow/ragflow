@@ -23,9 +23,6 @@ export function useDefaultParserValues() {
         max_cluster: 64,
         random_seed: 0,
       },
-      graphrag: {
-        use_graphrag: false,
-      },
       entity_types: [],
       pages: [],
     };

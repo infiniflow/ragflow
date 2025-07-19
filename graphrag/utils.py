@@ -362,16 +362,21 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
 
 
 async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
+    # Handle missing fields with defaults
+    description = meta.get("description", f"Relationship between {from_ent_name} and {to_ent_name}")
+    keywords = meta.get("keywords", [])
+    weight = meta.get("weight", 1.0)
+    
     chunk = {
         "id": get_uuid(),
         "from_entity_kwd": from_ent_name,
         "to_entity_kwd": to_ent_name,
         "knowledge_graph_kwd": "relation",
         "content_with_weight": json.dumps(meta, ensure_ascii=False),
-        "content_ltks": rag_tokenizer.tokenize(meta["description"]),
-        "important_kwd": meta["keywords"],
+        "content_ltks": rag_tokenizer.tokenize(description),
+        "important_kwd": keywords,
         "source_id": meta["source_id"],
-        "weight_int": int(meta["weight"]),
+        "weight_int": int(weight),
         "kb_id": kb_id,
         "available_int": 0
     }
