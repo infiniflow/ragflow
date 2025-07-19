@@ -15,6 +15,8 @@
 #
 import time
 from uuid import uuid4
+from flask import g
+
 from api.db import StatusEnum
 from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
@@ -31,7 +33,11 @@ class ConversationService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_list(cls, dialog_id, page_number, items_per_page, orderby, desc, id, name, user_id=None):
+    def get_list(cls, dialog_id, page_number, items_per_page, orderby, desc, id, name, user_id=None, tenant_id=None):
+        # Use tenant context from middleware if not explicitly provided
+        if tenant_id is None and hasattr(g, 'tenant_id') and g.tenant_id:
+            tenant_id = g.tenant_id
+            
         sessions = cls.model.select().where(cls.model.dialog_id == dialog_id)
         if id:
             sessions = sessions.where(cls.model.id == id)
@@ -39,6 +45,8 @@ class ConversationService(CommonService):
             sessions = sessions.where(cls.model.name == name)
         if user_id:
             sessions = sessions.where(cls.model.user_id == user_id)
+        if tenant_id:
+            sessions = sessions.where(cls.model.tenant_id == tenant_id)
         if desc:
             sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
         else:

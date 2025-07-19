@@ -618,6 +618,8 @@ class Knowledgebase(DataBaseModel):
 class Document(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     thumbnail = TextField(null=True, help_text="thumbnail base64 string")
+    tenant_id = CharField(max_length=32, null=False, help_text="tenant id", index=True)
+    #Multitenant新增字段
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
@@ -720,6 +722,7 @@ class Dialog(DataBaseModel):
 
 class Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, help_text="tenant id", index=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=255, null=True, help_text="converastion name", index=True)
     message = JSONField(null=True)

@@ -25,6 +25,7 @@ from io import BytesIO
 import trio
 import xxhash
 from peewee import fn
+from flask import g
 
 from api import settings
 from api.constants import IMG_BASE64_PREFIX
@@ -47,7 +48,11 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, kb_id, page_number, items_per_page,
-                 orderby, desc, keywords, id, name):
+                 orderby, desc, keywords, id, name, tenant_id=None):
+        # Use tenant context from middleware if not explicitly provided
+        if tenant_id is None and hasattr(g, 'tenant_id') and g.tenant_id:
+            tenant_id = g.tenant_id
+            
         docs = cls.model.select().where(cls.model.kb_id == kb_id)
         if id:
             docs = docs.where(
@@ -60,6 +65,8 @@ class DocumentService(CommonService):
             docs = docs.where(
                 fn.LOWER(cls.model.name).contains(keywords.lower())
             )
+        if tenant_id:
+            docs = docs.where(cls.model.tenant_id == tenant_id)
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -72,7 +79,11 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page,
-                     orderby, desc, keywords, run_status, types):
+                     orderby, desc, keywords, run_status, types, tenant_id=None):
+        # Use tenant context from middleware if not explicitly provided
+        if tenant_id is None and hasattr(g, 'tenant_id') and g.tenant_id:
+            tenant_id = g.tenant_id
+            
         if keywords:
             docs = cls.model.select().where(
                 (cls.model.kb_id == kb_id),
@@ -85,6 +96,8 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.run.in_(run_status))
         if types:
             docs = docs.where(cls.model.type.in_(types))
+        if tenant_id:
+            docs = docs.where(cls.model.tenant_id == tenant_id)
 
         count = docs.count()
         if desc:

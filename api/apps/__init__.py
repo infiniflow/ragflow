@@ -34,6 +34,7 @@ from flask_login import LoginManager
 from api import settings
 from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
+from api.middleware.tenant_middleware import TenantMiddleware
 
 __all__ = ["app"]
 
@@ -89,6 +90,9 @@ app.config["MAX_CONTENT_LENGTH"] = int(
 Session(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
+
+# Initialize tenant middleware
+TenantMiddleware.init_app(app)
 
 commands.register_commands(app)
 

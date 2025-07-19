@@ -193,3 +193,6 @@ dist
 # SvelteKit build / generate output
 .svelte-kit
 
+# MyProject test tool
+myproject/
+
