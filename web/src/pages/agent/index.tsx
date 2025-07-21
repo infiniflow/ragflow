@@ -38,6 +38,7 @@ import {
 import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { BeginQuery } from './interface';
 import { UploadAgentDialog } from './upload-agent-dialog';
+import { VersionDialog } from './version-dialog';
 
 function AgentDropdownMenuItem({
   children,
@@ -79,6 +80,11 @@ export default function Agent() {
       handleRun();
     }
   }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
+  const {
+    visible: versionDialogVisible,
+    hideModal: hideVersionDialog,
+    showModal: showVersionDialog,
+  } = useSetModalState();
 
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
@@ -98,7 +104,7 @@ export default function Agent() {
             <CirclePlay />
             Run app
           </Button>
-          <Button variant={'secondary'}>
+          <Button variant={'secondary'} onClick={showVersionDialog}>
             <History />
             History version
           </Button>
@@ -158,6 +164,9 @@ export default function Agent() {
           beta={beta}
           isAgent
         ></EmbedDialog>
+      )}
+      {versionDialogVisible && (
+        <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
       )}
     </section>
   );

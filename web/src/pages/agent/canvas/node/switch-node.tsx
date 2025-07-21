@@ -64,7 +64,7 @@ const ConditionBlock = ({
 function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
   return (
-    <ToolBar selected={selected} id={id} label={data.label}>
+    <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
       <NodeWrapper selected={selected}>
         <CommonHandle
           type="target"
