@@ -500,6 +500,7 @@ export default {
       apiKeyTip:
         'A chave da API pode ser obtida registrando-se no fornecedor correspondente do LLM.',
       showMoreModels: 'Mostrar mais modelos',
+      hideModels: 'Ocultar modelos',
       baseUrl: 'URL Base',
       baseUrlTip:
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',

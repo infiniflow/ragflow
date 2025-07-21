@@ -602,13 +602,14 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cancel: 'Cancel',
       addedModels: 'Added models',
       modelsToBeAdded: 'Models to be added',
-      addTheModel: 'Add the model',
+      addTheModel: 'Add Model',
       apiKey: 'API-Key',
       apiKeyMessage:
         'Please enter the API key (for locally deployed model,ignore this).',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
-      showMoreModels: 'Show more models',
+      showMoreModels: 'View Models',
+      hideModels: 'Hide Models',
       baseUrl: 'Base-Url',
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
@@ -634,6 +635,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       workspace: 'Workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
+      editLlmTitle: 'Edit {{name}} Model',
+      editModel: 'Edit Model',
       modelName: 'Model name',
       modelID: 'Model ID',
       modelUid: 'Model UID',

@@ -194,6 +194,24 @@ export const useFetchMyLlmList = (): ResponseGetType<
   return { data, loading };
 };
 
+export const useFetchMyLlmListDetailed = (): ResponseGetType<
+  Record<string, any>
+> => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['myLlmListDetailed'],
+    initialData: {},
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await userService.my_llm({ include_details: true });
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
+};
+
+
 export const useSelectLlmList = () => {
   const { data: myLlmList, loading: myLlmListLoading } = useFetchMyLlmList();
   const { data: factoryList, loading: factoryListLoading } =
@@ -244,6 +262,7 @@ export const useSaveApiKey = () => {
       if (data.code === 0) {
         message.success(t('message.modified'));
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
       }
       return data.code;
@@ -295,6 +314,7 @@ export const useAddLlm = () => {
       const { data } = await userService.add_llm(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.modified'));
       }
@@ -318,6 +338,7 @@ export const useDeleteLlm = () => {
       const { data } = await userService.delete_llm(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }
@@ -341,6 +362,7 @@ export const useDeleteFactory = () => {
       const { data } = await userService.deleteFactory(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }

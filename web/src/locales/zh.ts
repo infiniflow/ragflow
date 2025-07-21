@@ -609,6 +609,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       apiKeyMessage: '请输入api key（如果是本地部署的模型，请忽略它）',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隐藏模型',
       baseUrl: 'Base-Url',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
@@ -633,6 +634,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
+      editLlmTitle: '编辑 {{name}} 模型',
+      editModel: '编辑模型',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',
