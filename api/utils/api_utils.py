@@ -676,12 +676,14 @@ async def is_strong_enough(chat_model, embedding_model):
     @timeout(30, 2)
     async def _is_strong_enough():
         nonlocal chat_model, embedding_model
-        with trio.fail_after(3):
-            _ = await trio.to_thread.run_sync(lambda: embedding_model.encode(["Are you strong enough!?"]))
-        with trio.fail_after(30):
-            res =  await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role":"user", "content": "Are you strong enough!?"}], {}))
-        if res.find("**ERROR**") >= 0:
-            raise Exception(res)
+        if embedding_model:
+            with trio.fail_after(3):
+                _ = await trio.to_thread.run_sync(lambda: embedding_model.encode(["Are you strong enough!?"]))
+        if chat_model:
+            with trio.fail_after(30):
+                res =  await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role":"user", "content": "Are you strong enough!?"}], {}))
+            if res.find("**ERROR**") >= 0:
+                raise Exception(res)
 
     # Pressure test for GraphRAG task
     async with trio.open_nursery() as nursery:
