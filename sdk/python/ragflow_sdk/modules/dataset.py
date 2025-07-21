@@ -50,10 +50,10 @@ class DataSet(Base):
         self._update_from_dict(self.rag, res.get("data", {}))
         return self
 
-    def upload_documents(self, document_list: list[dict]):
+    def upload_documents(self, document_list: list[dict], user_type: str):
         url = f"/datasets/{self.id}/documents"
         files = [("file", (ele["display_name"], ele["blob"])) for ele in document_list]
-        res = self.post(path=url, json=None, files=files)
+        res = self.post(path=url, json={"user_type": user_type}, files=files)
         res = res.json()
         if res.get("code") == 0:
             doc_list = []

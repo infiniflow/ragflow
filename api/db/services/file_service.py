@@ -464,7 +464,7 @@ class FileService(CommonService):
                 metadata = {}
                 if document_text.strip():
                     llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
-                    metadata = self.extract_metadata_with_llm(document_text, llm_bundle)
+                    metadata = self.extract_metadata_with_llm(document_text, llm_bundle, user_type=kb.user_type)
 
                 doc = {
                     "id": doc_id,
@@ -549,14 +549,56 @@ class FileService(CommonService):
         return default
 
     @classmethod
-    def extract_metadata_with_llm(cls, document_text, llm_bundle):
+    def extract_metadata_with_llm(cls, document_text, llm_bundle, user_type="homefarm"):
         """Extract metadata from document content using LLM"""
         
         # Escape the document text to prevent formatting issues
         import json
         escaped_document_text = json.dumps(document_text[:4000])[1:-1]  # Remove outer quotes from json.dumps result
         
-        metadata_prompt = f"""You are an intelligent assistant responsible for analyzing and standardizing internal knowledge documents for an enterprise RAG (Retrieval-Augmented Generation) system.
+        if user_type == "alaska":
+            metadata_prompt = f"""You are an intelligent assistant responsible for analyzing and standardizing internal knowledge documents for a refrigeration and household appliances enterprise RAG (Retrieval-Augmented Generation) system.
+
+Your task is to extract structured metadata from the following document content related to refrigeration and household appliances business.
+
+[DOCUMENT_START]  
+{escaped_document_text}  
+[DOCUMENT_END]
+
+Return a valid JSON object with the exact structure below. All values must be written in **English**, except where otherwise specified.
+
+Expected JSON format:
+
+{{
+  "id": "auto_generated_or_unique_identifier",
+  "domain": "Refrigeration & Household Appliances",
+  "industry": "Specific industry, e.g., Air conditioning systems, Refrigeration equipment, Home appliances retail",
+  "knowledge_type": "Type of knowledge, e.g., Product Specifications / Installation Guide / Maintenance Manual / Customer Service Script / Technical FAQ / Sales Training",
+  "role_target": ["Sales Representative", "Technical Support", "Installation Technician", "Customer Service", "Maintenance Staff"],
+  "tone": "Writing tone, e.g., Technical and professional, Customer-friendly, Clear and instructional",
+  "context_user": {{
+    "intent": "What the user is trying to achieve, e.g., Product consultation, Technical troubleshooting, Installation guidance, Maintenance support",
+    "behavior": "Typical behavior, e.g., Seeking product information, Requesting technical support, Learning installation procedures",
+    "channel": "Where this knowledge is used, e.g., In-store consultation, Phone support, Field service, Online chat"
+  }},
+  "keywords": ["keyword_1", "keyword_2", "..."],
+  "version": "e.g., v1.0, v2.1",
+  "suggested_tags": ["Air Conditioning", "Refrigeration", "Home Appliances", "Installation", "Maintenance", "Technical Support", "Sales"],
+  "summary": "Detailed summary including: (1) Purpose and target users in refrigeration/appliances context, (2) Main technical topics and product knowledge, (3) Document structure and practical applications, (4) Value for sales/service staff, (5) Specific usage in appliance business operations",
+  "language": "en"
+}}
+
+Rules:
+1. Do not skip any field — if unsure, use "" or [].
+2. Do not invent new keys or values.
+3. Keep proper JSON syntax, including commas and brackets.
+4. Output must be a single JSON block, without explanation or extra notes.
+5. All values must be written in English except the `"language"` field which must be `"en"`.
+6. Focus on refrigeration and household appliances business context.
+"""
+        else:
+            # Default prompt for homefarm and other user types
+            metadata_prompt = f"""You are an intelligent assistant responsible for analyzing and standardizing internal knowledge documents for an enterprise RAG (Retrieval-Augmented Generation) system.
 
 Your task is to extract structured metadata from the following document content.
 
@@ -622,21 +664,40 @@ Rules:
         except Exception as e:
             logging.warning(f"Failed to extract metadata with LLM: {str(e)}")
         
-        # Return default metadata if extraction fails (following exact format)
-        return {
-            "domain": "General",
-            "industry": "Unspecified",
-            "knowledge_type": "Internal document",
-            "role_target": ["General user"],
-            "tone": "Professional, formal",
-            "context_user": {
-                "intent": "Information reference",
-                "behavior": "Seeking necessary information",
-                "channel": "Internal system"
-            },
-            "keywords": [],
-            "version": "v1.0",
-            "suggested_tags": ["Document", "Reference"],
-            "summary": "General reference document for internal system",
-            "language": "en"
-        }
+        # Return default metadata based on user type if extraction fails
+        if user_type == "alaska":
+            return {
+                "domain": "Refrigeration & Household Appliances",
+                "industry": "Air conditioning & home appliances",
+                "knowledge_type": "Technical documentation",
+                "role_target": ["Technical Support", "Sales Representative"],
+                "tone": "Technical and professional",
+                "context_user": {
+                    "intent": "Technical reference and customer support",
+                    "behavior": "Seeking product or technical information",
+                    "channel": "In-store consultation, Phone support"
+                },
+                "keywords": [],
+                "version": "v1.0",
+                "suggested_tags": ["Air Conditioning", "Home Appliances", "Technical"],
+                "summary": "Technical reference document for refrigeration and household appliances business",
+                "language": "en"
+            }
+        else:
+            return {
+                "domain": "General",
+                "industry": "Unspecified",
+                "knowledge_type": "Internal document",
+                "role_target": ["General user"],
+                "tone": "Professional, formal",
+                "context_user": {
+                    "intent": "Information reference",
+                    "behavior": "Seeking necessary information",
+                    "channel": "Internal system"
+                },
+                "keywords": [],
+                "version": "v1.0",
+                "suggested_tags": ["Document", "Reference"],
+                "summary": "General reference document for internal system",
+                "language": "en"
+            }
