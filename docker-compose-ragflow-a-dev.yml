@@ -10,9 +10,9 @@ services:
     image: ragflow-a:multitenant
     container_name: ragflow-a-dev
     ports:
-      - "9380:9380"
+      - "9381:9380"
       - "5180:80"
-      - "443:443"
+      - "5444:443"
     environment:
       - RAGFLOW_VERSION=multitenant-dev
       - MYSQL_PASSWORD=infini_rag_flow

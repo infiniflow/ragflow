@@ -95,7 +95,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 ### RAGFlow
 
 - `SVR_HTTP_PORT`  
-  The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
+  The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9381`.
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
@@ -145,7 +145,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### `ragflow`
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-- `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+- `port`: The API server's serving port inside the Docker container. Defaults to `9381`.
 
 ### `mysql`
   

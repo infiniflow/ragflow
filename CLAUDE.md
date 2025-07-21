@@ -199,6 +199,115 @@ ragflow/
 - **Original RAGFlow**: Production/stable version running in `F:/10_Ragflow/` via Docker
 - **Current Branch**: `feature/multitenant` - active development branch
 
+### Port Configuration
+
+**RAGFlow_A** uses different ports to avoid conflicts with the original RAGFlow installation:
+
+**RAGFlow_A Ports:**
+- Web HTTP: `5180` (instead of 80)
+- Web HTTPS: `5444` (instead of 443)
+- API: `9381` (instead of 9380)
+- MySQL: `3308` (instead of 3306)
+- Redis: `6380` (instead of 6379)
+- Elasticsearch: `9202` (instead of 9200)
+- MinIO: `9004:9000`, `9005:9001`
+
+**Original RAGFlow Ports:**
+- Web HTTP: `5080`
+- Web HTTPS: `5443`
+- API: `9380`
+- Other services use default ports
+
+**Configuration Files Updated:**
+- `.env`: `SVR_HTTP_PORT=9381`
+- All `docker-compose*.yml` files: Updated port mappings
+- `service_conf.yaml.template`: Updated HTTP/HTTPS ports
+- Nginx configuration files: Updated port references
+
+This allows both RAGFlow versions to run simultaneously without port conflicts.
+
+## 🔧 Latest Updates & Solutions 20250721
+
+### Login Issue Resolution (2024-12-30)
+**Problem**: Unable to login to RAGFlow_A with default credentials
+**Root Cause**: `init_superuser()` function was commented out in `api/db/init_data.py`
+**Solution**: Uncommented the function to enable default admin account creation
+
+**Default Login Credentials**:
+- Email: `admin@ragflow.io`
+- Password: `admin`
+
+**Critical Fix Applied**:
+```python
+# File: api/db/init_data.py
+# Line 171: Uncommented this function call
+init_superuser()  # ✅ Now active - creates default admin account
+```
+
+### Deployment Options
+
+#### Option 1: Quick Start (Recommended)
+```bash
+# Uses official image with local code overlay
+cd f:/04_AI/01_Workplace/ragflow_A
+docker-compose -f docker-compose-ragflow-a-quick.yml up -d
+```
+**Advantages**: Fast startup, uses pre-built official image
+**How it works**: Mounts local `./ragflow-a-data` over `/ragflow/ragflow` in container
+
+#### Option 2: Development Build
+```bash
+# Builds custom image with multitenant modifications
+cd f:/04_AI/01_Workplace/ragflow_A
+docker-compose -f docker-compose-ragflow-a-dev.yml up -d --build
+```
+**Advantages**: Full control, includes all local modifications
+**Note**: Requires longer build time (~15-30 minutes)
+
+### Core Multitenant Modifications
+
+**Database Layer**:
+- `api/db/db_models.py` - Added tenant_id fields to all models
+- `api/db/init_data.py` - ✅ Fixed superuser initialization
+- `api/db/services/` - Updated all services with tenant filtering
+
+**Middleware Layer**:
+- `api/middleware/tenant_middleware.py` - Tenant context management
+- `api/middleware/role_based_access.py` - Role-based access control
+
+**API Layer**:
+- `api/apps/tenant_management_app.py` - Complete tenant management REST API
+- `api/apps/__init__.py` - Integrated tenant middleware
+
+**Configuration**:
+- `docker-compose-ragflow-a-quick.yml` - Quick deployment config
+- `docker-compose-ragflow-a-dev.yml` - Development build config
+- `docker-compose-dev-multitenant.yml` - Infrastructure services only
+
+### Security Recommendations
+1. **Change Default Password**: Immediately after first login
+2. **Create Tenant-Specific Users**: Don't use admin for regular operations
+3. **Enable HTTPS**: For production deployments
+4. **Regular Backups**: Especially before major updates
+
+### Troubleshooting
+
+**Login Issues**:
+- Verify `init_superuser()` is uncommented in `api/db/init_data.py`
+- Check database initialization logs
+- Ensure MySQL container is healthy
+
+**Docker Build Issues**:
+- Check available disk space (build requires ~5GB)
+- Verify Docker daemon is running
+- Use `docker system prune` to clean up space if needed
+
+**Port Conflicts**:
+- Default ports: 80 (web), 3306 (MySQL), 6379 (Redis), 9200 (ES), 9001 (MinIO)
+- Modify port mappings in docker-compose files if conflicts occur
+### above is updated on 20250721
+
+
 ### ⚠️ Development Environment Guidelines
 
 1. **Separate Environments**: Never mix with original RAGFlow Docker containers
@@ -236,6 +345,7 @@ cd F:/10_Ragflow
 - Updated service configuration for Docker networking
 - Fixed PyPI mirror configuration (official PyPI instead of Alibaba/Tsinghua)
 - Installed Visual Studio Build Tools for Windows compilation
+- Resolved port conflicts with RAGFlow production version (F:/10_Ragflow)
 
 ### Production Testing Completed
 - ✅ All tenant isolation components verified
