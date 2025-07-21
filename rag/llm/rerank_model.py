@@ -32,11 +32,6 @@ from api.utils.file_utils import get_home_cache_dir
 from api.utils.log_utils import log_exception
 from rag.utils import num_tokens_from_string, truncate
 
-
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
-
-
 class Base(ABC):
     def __init__(self, key, model_name):
         pass
