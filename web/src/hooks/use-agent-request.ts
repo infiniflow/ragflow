@@ -33,6 +33,8 @@ export const enum AgentApiAction {
   TestDbConnect = 'testDbConnect',
   DebugSingle = 'debugSingle',
   FetchInputForm = 'fetchInputForm',
+  FetchVersionList = 'fetchVersionList',
+  FetchVersion = 'fetchVersion',
 }
 
 export const EmptyDsl = {
@@ -395,4 +397,45 @@ export const useFetchInputForm = (componentId?: string) => {
   });
 
   return data;
+};
+
+export const useFetchVersionList = () => {
+  const { id } = useParams();
+  const { data, isFetching: loading } = useQuery<
+    Array<{ created_at: string; title: string; id: string }>
+  >({
+    queryKey: [AgentApiAction.FetchVersionList],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await flowService.getListVersion({}, id);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchVersion = (
+  version_id?: string,
+): {
+  data?: IFlow;
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: [AgentApiAction.FetchVersion, version_id],
+    initialData: undefined,
+    gcTime: 0,
+    enabled: !!version_id, // Only call API when both values are provided
+    queryFn: async () => {
+      if (!version_id) return undefined;
+
+      const { data } = await flowService.getVersion({}, version_id);
+
+      return data?.data ?? undefined;
+    },
+  });
+
+  return { data, loading };
 };
