@@ -18,12 +18,12 @@ import styles from './index.less';
 import { NodeWrapper } from './node-wrapper';
 
 // TODO: do not allow other nodes to connect to this node
-function InnerBeginNode({ data, id }: NodeProps<IBeginNode>) {
+function InnerBeginNode({ data, id, selected }: NodeProps<IBeginNode>) {
   const { t } = useTranslation();
   const inputs: Record<string, BeginQuery> = get(data, 'form.inputs', {});
 
   return (
-    <NodeWrapper>
+    <NodeWrapper selected={selected}>
       <CommonHandle
         type="source"
         position={Position.Right}
