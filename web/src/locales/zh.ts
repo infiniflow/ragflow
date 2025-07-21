@@ -1248,6 +1248,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       agent: 'Agent',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
       maxRecords: '最大记录数',
+      stringTransform: '文本处理',
+      userFillUp: '等待输入',
+      codeExec: '代码',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -269,14 +269,7 @@ export const useSendNextMessage = () => {
         answer: prologue,
       });
     }
-  }, [
-    addNewestOneAnswer,
-    agentId,
-    getBeginNodeDataQuery,
-    prologue,
-    send,
-    sendFormMessage,
-  ]);
+  }, [addNewestOneAnswer, agentId, prologue, send, sendFormMessage]);
 
   useEffect(() => {
     addEventList(answerList);
