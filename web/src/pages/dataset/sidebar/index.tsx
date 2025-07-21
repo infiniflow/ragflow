@@ -1,11 +1,15 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import {
+  useFetchKnowledgeBaseConfiguration,
+  useFetchKnowledgeGraph,
+} from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
-import { Banknote, Database, FileSearch2 } from 'lucide-react';
+import { isEmpty } from 'lodash';
+import { Banknote, Database, FileSearch2, GitGraph } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -19,10 +23,11 @@ export function SideBar({ refreshCount }: PropType) {
   const { handleMenuClick } = useHandleMenuClick();
   // refreshCount: be for avatar img sync update on top left
   const { data } = useFetchKnowledgeBaseConfiguration(refreshCount);
+  const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
-    return [
+    const list = [
       {
         icon: Database,
         label: t(`knowledgeDetails.dataset`),
@@ -39,7 +44,15 @@ export function SideBar({ refreshCount }: PropType) {
         key: Routes.DatasetSetting,
       },
     ];
-  }, [t]);
+    if (!isEmpty(routerData?.graph)) {
+      list.push({
+        icon: GitGraph,
+        label: t(`knowledgeDetails.knowledgeGraph`),
+        key: Routes.KnowledgeGraph,
+      });
+    }
+    return list;
+  }, [t, routerData]);
 
   return (
     <aside className="relative p-5 space-y-8">
