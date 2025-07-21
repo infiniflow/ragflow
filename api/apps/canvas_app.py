@@ -18,6 +18,7 @@ import logging
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 import trio
 from flask import request, Response
@@ -298,13 +299,22 @@ def debug():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
+        canvas.reset()
+        canvas.message_id = get_uuid()
         component = canvas.get_component(req["component_id"])["obj"]
         component.reset()
+
         if isinstance(component, LLM):
             component.set_debug_inputs(req["params"])
-            req["params"] = {}
-        component.invoke(**req["params"])
-        return get_json_result(data=component.output())
+        component.invoke(**{k: o["value"] for k,o in req["params"].items()})
+        outputs = component.output()
+        for k in outputs.keys():
+            if isinstance(outputs[k], partial):
+                txt = ""
+                for c in outputs[k]():
+                    txt += c
+                outputs[k] = txt
+        return get_json_result(data=outputs)
     except Exception as e:
         return server_error_response(e)
 

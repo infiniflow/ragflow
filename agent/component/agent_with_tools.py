@@ -103,7 +103,7 @@ class Agent(LLM, ToolBase):
         except Exception as e:
             self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
             return
-        cpn_id = f"{id}-->" + cpn.get("name", "").replace(" ", "_")
+        cpn_id = f"{self._id}-->" + cpn.get("name", "").replace(" ", "_")
         return component_class(cpn["component_name"])(self._canvas, cpn_id, param)
 
     def get_meta(self) -> dict[str, Any]:
@@ -271,9 +271,9 @@ class Agent(LLM, ToolBase):
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
         if hist[-1]["role"] == "user":
-            hist[-1]["content"] += f"\n{user_request}\nPlease respond to the above request directly."
+            hist[-1]["content"] += f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}. DO NOT MENTION MAX ROUNDS IN YOUR RESPONSE."
         else:
-            hist.append({"role": "user", "content": f"\n{user_request}\nPlease respond to the above request directly."})
+            hist.append({"role": "user", "content": f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}. DO NOT MENTION MAX ROUNDS IN YOUR RESPONSE."})
 
         for txt, tkcnt in complete():
             yield txt, tkcnt

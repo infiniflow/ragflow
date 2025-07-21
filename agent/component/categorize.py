@@ -101,8 +101,8 @@ class Categorize(LLM, ABC):
         msg = self._canvas.get_history(self._param.message_history_window_size)
         if not msg:
             msg = [{"role": "user", "content": ""}]
-        if kwargs.get("query"):
-            msg[-1]["content"] = kwargs["query"]
+        if kwargs.get("sys.query"):
+            msg[-1]["content"] = kwargs["sys.query"]
         else:
             msg[-1]["content"] = self._canvas.get_variable_value(self._param.query)
         self._param.update_prompt()
@@ -125,8 +125,8 @@ class Categorize(LLM, ABC):
         cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
         max_category = list(self._param.category_description.keys())[0]
         if any(category_counts.values()):
-            max_category = max(category_counts.items(), key=lambda x: x[1])
-            cpn_ids = self._param.category_description[max_category[0]]["to"]
+            max_category = max(category_counts.items(), key=lambda x: x[1])[0]
+            cpn_ids = self._param.category_description[max_category]["to"]
 
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)

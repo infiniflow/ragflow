@@ -411,14 +411,13 @@ class ComponentBase(ABC):
         self._param.check()
 
     def invoke(self, **kwargs) -> dict[str, Any]:
-        self._param.debug_inputs = []
         self.set_output("_created_time", time.perf_counter())
         try:
             self._invoke(**kwargs)
         except Exception as e:
             self._param.outputs["_ERROR"] = {"value": str(e)}
             logging.exception(e)
-
+        self._param.debug_inputs = {}
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 

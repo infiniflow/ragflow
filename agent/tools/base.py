@@ -119,7 +119,6 @@ class ToolBase(ComponentBase):
         return self._param.get_meta()
 
     def invoke(self, **kwargs):
-        self._param.debug_inputs = []
         print(kwargs, "#############################")
 
         self.set_output("_created_time", time.perf_counter())
@@ -129,6 +128,7 @@ class ToolBase(ComponentBase):
             self._param.outputs["_ERROR"] = {"value": str(e)}
             logging.exception(e)
             res = str(e)
+        self._param.debug_inputs = []
 
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return res
