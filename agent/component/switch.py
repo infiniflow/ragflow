@@ -13,8 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import numbers
 import os
 from abc import ABC
+from typing import Any
+
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
@@ -65,7 +68,11 @@ class Switch(ComponentBase, ABC):
             for item in cond["items"]:
                 if not item["cpn_id"]:
                     continue
-                res.append(self.process_operator(self._canvas.get_variable_value(item["cpn_id"]), item["operator"], item.get("value", "")))
+                cpn_v = self._canvas.get_variable_value(item["cpn_id"])
+                operatee = item.get("value", "")
+                if isinstance(cpn_v, numbers.Number):
+                    operatee = float(operatee)
+                res.append(self.process_operator(cpn_v, item["operator"], operatee))
                 if cond["logical_operator"] != "and" and any(res):
                     self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
                     self.set_output("_next", cond["to"])
@@ -79,10 +86,7 @@ class Switch(ComponentBase, ABC):
         self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in self.end_cpn_ids])
         self.set_output("_next", self.end_cpn_ids)
 
-    def process_operator(self, input: str, operator: str, value: str) -> bool:
-        if not isinstance(input, str) or not isinstance(value, str):
-            raise ValueError('Invalid input or value type: string')
-
+    def process_operator(self, input: Any, operator: str, value: Any) -> bool:
         if operator == "contains":
             return True if value.lower() in input.lower() else False
         elif operator == "not contains":
