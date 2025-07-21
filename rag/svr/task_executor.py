@@ -184,6 +184,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     except Exception:
         logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
 
+
 async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
@@ -229,6 +230,7 @@ async def get_storage_binary(bucket, name):
     return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
 
 
+@timeout(60*40, 1)
 async def build_chunks(task, progress_callback):
     if task["size"] > DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
@@ -541,6 +543,7 @@ async def do_handle_task(task):
     try:
         # bind embedding model
         embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
+        await is_strong_enough(None, embedding_model)
         vts, _ = embedding_model.encode(["ok"])
         vector_size = len(vts[0])
     except Exception as e:
@@ -555,6 +558,7 @@ async def do_handle_task(task):
     if task.get("task_type", "") == "raptor":
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+        await is_strong_enough(chat_model, None)
         # run RAPTOR
         async with kg_limiter:
             chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
@@ -566,6 +570,7 @@ async def do_handle_task(task):
         graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+        await is_strong_enough(chat_model, None)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:
