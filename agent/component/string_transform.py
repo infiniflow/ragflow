@@ -48,6 +48,10 @@ class StringTransformParam(ComponentParamBase):
         self.check_valid_value(self.method, "Support method", ["split", "merge"])
         self.check_empty(self.delimiters, "delimiters")
 
+
+class StringTransform(ComponentBase, ABC):
+    component_name = "StringTransform"
+
     def get_input_form(self) -> dict[str, dict]:
         if self._param.method == "split":
             return {
@@ -56,22 +60,17 @@ class StringTransformParam(ComponentParamBase):
                     "type": "line"
                 }
             }
-        return {
-            "script": {
-                "name": "Script",
-                "type": "paragraph"
-            }
-        }
-
-class StringTransform(ComponentBase, ABC):
-    component_name = "StringTransform"
+        return {k: {
+            "name": o["name"],
+            "type": "line"
+        } for k, o in self.get_input_elements_from_text(self._param.script).items()}
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
         if self._param.method == "split":
             self._split(kwargs.get("line"))
         else:
-            self._merge(kwargs.get("script"))
+            self._merge(kwargs)
 
     def _split(self, line:str=None):
         var = self._canvas.get_variable_value(self._param.split_ref) if not line else line
@@ -86,11 +85,10 @@ class StringTransform(ComponentBase, ABC):
             res.append(s)
         self.set_output("result", res)
 
-    def _merge(self, script:str=None):
+    def _merge(self, cache:dict[str, str] = {}):
         s = 0
         all_content = ""
-        cache = {}
-        script = self._param.script if not script else script
+        script = self._param.script
         for r in re.finditer(self.variable_ref_patt, script, flags=re.DOTALL):
             all_content += script[s: r.start()]
             s = r.end()

@@ -69,6 +69,7 @@ class Switch(ComponentBase, ABC):
                 if not item["cpn_id"]:
                     continue
                 cpn_v = self._canvas.get_variable_value(item["cpn_id"])
+                self.set_input_value(item["cpn_id"], cpn_v)
                 operatee = item.get("value", "")
                 if isinstance(cpn_v, numbers.Number):
                     operatee = float(operatee)
