@@ -953,6 +953,10 @@ Specifies whether to enable highlighting of matched terms in the results:
 - `True`: Enable highlighting of matched terms.
 - `False`: Disable highlighting of matched terms (default).
 
+##### cross_languages:  `list[string]`  
+
+The languages that should be translated into, in order to achieve keywords retrievals in different languages.
+
 #### Returns
 
 - Success: A list of `Chunk` objects representing the document chunks.

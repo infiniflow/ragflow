@@ -128,7 +128,7 @@ class GraphExtractor(Extractor):
             history.append({"role": "assistant", "content": response})
             history.append({"role": "user", "content": LOOP_PROMPT})
             async with chat_limiter:
-                continuation = await trio.to_thread.run_sync(lambda: self._chat("", history, {"temperature": 0.8}))
+                continuation = await trio.to_thread.run_sync(lambda: self._chat("", history))
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
             if continuation != "Y":
                 break
