@@ -149,10 +149,10 @@ def upload(dataset_id, tenant_id):
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     print(f"request.json: {request.json}")
     print(f"request.form: {request.form}")
-    kb["user_type"] = (request.json or {}).get("user_type", "homefarm")
+    # kb["user_type"] = (request.json or {}).get("user_type", "homefarm")
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
-    err, files = FileService.upload_document(kb, file_objs, tenant_id)
+    err, files = FileService.upload_document(kb, file_objs, tenant_id, user_type="alaska")
     if err:
         return get_result(message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
     # rename key's name

@@ -454,7 +454,7 @@ def upload():
             try:
                 # Get LLM bundle for metadata extraction
                 llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
-                metadata = FileService.extract_metadata_with_llm(document_text, llm_bundle)
+                metadata = FileService.extract_metadata_with_llm(document_text, llm_bundle, user_type= kb.user_type if hasattr(kb, 'user_type') else "alaska")
             except Exception as e:
                 logging.warning(f"Failed to extract metadata: {str(e)}")
                 metadata = {

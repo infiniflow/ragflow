@@ -401,7 +401,7 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id):
+    def upload_document(self, kb, file_objs, user_id, user_type="alaska"):
         # Upload documents and extract metadata
         # Args:
         #     kb: Knowledge base object
@@ -464,7 +464,7 @@ class FileService(CommonService):
                 metadata = {}
                 if document_text.strip():
                     llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
-                    metadata = self.extract_metadata_with_llm(document_text, llm_bundle, user_type=kb.user_type)
+                    metadata = self.extract_metadata_with_llm(document_text, llm_bundle, user_type=user_type)
 
                 doc = {
                     "id": doc_id,
