@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe scripts/migrate_existing_tenant_data.py --dry-run)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(py:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(grep:*)",
+      "Bash(..venvScriptsactivate)",
+      "Bash(.venv/Scripts/python scripts/migrate_existing_tenant_data.py --dry-run)",
+      "Bash(git checkout:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker exec:*)",
+      "Bash(.venv/Scripts/python test_migration_simple.py)",
+      "Bash(.venv/Scripts/python test_migration_ascii.py)",
+      "Bash(C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe:*)",
+      "Bash(\"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\":*)",
+      "Bash(uv run python:*)",
+      "Bash(C:\\Users\\Administrator\\.local\\bin\\uv run python:*)",
+      "Bash(C:\\Users\\Administrator\\.local\\bin\\uv.exe run:*)",
+      "Bash(\"/mnt/c/Users/Administrator/.local/bin/uv.exe\" run:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(pip install:*)",
+      "Bash(docker ps:*)",
+      "Bash(source:*)",
+      "Bash(uv:*)",
+      "Bash(pip config:*)",
+      "Bash(\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64)",
+      "Bash(call:*)",
+      "Bash(. \"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64)",
+      "Bash(bash:*)",
+      "Bash(chmod:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(timeout:*)"
+    ],
+    "deny": []
+  }
+}

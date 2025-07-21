@@ -1,0 +1,95 @@
+services:
+  mysql-dev:
+    image: mysql:8.0
+    container_name: ragflow-mysql-dev
+    environment:
+      - MYSQL_ROOT_PASSWORD=infini_rag_flow
+      - MYSQL_DATABASE=rag_flow
+      - MYSQL_USER=rag_flow
+      - MYSQL_PASSWORD=infini_rag_flow
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+    networks:
+      - ragflow-dev
+    restart: on-failure
+
+  redis-dev:
+    image: redis:7.2
+    container_name: ragflow-redis-dev
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - ragflow-dev
+    restart: on-failure
+
+  minio-dev:
+    image: minio/minio:latest
+    container_name: ragflow-minio-dev
+    ports:
+      - "9001:9000"
+      - "9002:9001"
+    environment:
+      - MINIO_ROOT_USER=rag_flow
+      - MINIO_ROOT_PASSWORD=infini_rag_flow
+    volumes:
+      - minio_dev_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - ragflow-dev
+    restart: on-failure
+
+  es01-dev:
+    image: elasticsearch:8.11.3
+    container_name: ragflow-es-01-dev
+    volumes:
+      - esdata01_dev:/usr/share/elasticsearch/data
+    ports:
+      - "9201:9200"
+    environment:
+      - node.name=es01-dev
+      - ELASTIC_PASSWORD=infini_rag_flow
+      - bootstrap.memory_lock=false
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - TZ=Asia/Shanghai
+    mem_limit: 2g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow-dev
+    restart: on-failure
+
+  infinity-dev:
+    image: infiniflow/infinity:v0.5.0
+    container_name: ragflow-infinity-dev
+    ports:
+      - "23818:23817"
+    volumes:
+      - infinity_dev_data:/var/infinity
+    networks:
+      - ragflow-dev
+    restart: on-failure
+
+volumes:
+  mysql_dev_data:
+  redis_dev_data:
+  minio_dev_data:
+  esdata01_dev:
+  infinity_dev_data:
+
+networks:
+  ragflow-dev:
+    driver: bridge

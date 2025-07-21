@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  ragflow-a-server:
+    image: infiniflow/ragflow:v0.19.1-slim
+    container_name: ragflow-a-dev
+    ports:
+      - "9381:9380"
+      - "5180:80"
+      - "5444:443"
+    environment:
+      - MYSQL_PASSWORD=infini_rag_flow
+      - REDIS_PASSWORD=infini_rag_flow
+      - MINIO_PASSWORD=infini_rag_flow
+    volumes:
+      - ./ragflow-a-data:/ragflow/ragflow
+      - ./logs:/ragflow/logs
+    depends_on:
+      - mysql-a
+      - redis-a
+      - elasticsearch-a
+      - minio-a
+    networks:
+      - ragflow-a-net
+
+  mysql-a:
+    image: mysql:8.0
+    container_name: ragflow-mysql-a-dev
+    environment:
+      - MYSQL_ROOT_PASSWORD=infini_rag_flow
+      - MYSQL_DATABASE=ragflow_a_dev
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql-a-data:/var/lib/mysql
+    networks:
+      - ragflow-a-net
+
+  redis-a:
+    image: redis:7.2
+    container_name: ragflow-redis-a-dev
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-a-data:/data
+    networks:
+      - ragflow-a-net
+
+  elasticsearch-a:
+    image: elasticsearch:8.11.3
+    container_name: ragflow-es-a-dev
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ports:
+      - "9202:9200"
+    volumes:
+      - es-a-data:/usr/share/elasticsearch/data
+    networks:
+      - ragflow-a-net
+
+  minio-a:
+    image: minio/minio:latest
+    container_name: ragflow-minio-a-dev
+    ports:
+      - "9004:9000"
+      - "9005:9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=infini_rag_flow
+    volumes:
+      - minio-a-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - ragflow-a-net
+
+volumes:
+  mysql-a-data:
+  redis-a-data:
+  es-a-data:
+  minio-a-data:
+
+networks:
+  ragflow-a-net:
+    driver: bridge

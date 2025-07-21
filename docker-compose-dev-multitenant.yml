@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  mysql-dev:
+    image: mysql:8.0
+    container_name: ragflow-mysql-dev
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=infini_rag_flow
+      - MYSQL_DATABASE=rag_flow
+      - TZ=Asia/Shanghai
+    volumes:
+      - mysql_data_dev:/var/lib/mysql
+    networks:
+      - ragflow_dev
+
+  redis-dev:
+    image: redis:7.2
+    container_name: ragflow-redis-dev
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data_dev:/data
+    networks:
+      - ragflow_dev
+
+  minio-dev:
+    image: minio/minio:latest
+    container_name: ragflow-minio-dev
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      - MINIO_ROOT_USER=rag_flow
+      - MINIO_ROOT_PASSWORD=infini_rag_flow
+    volumes:
+      - minio_data_dev:/data
+    networks:
+      - ragflow_dev
+    command: server /data --console-address ":9001"
+
+  es01-dev:
+    image: elasticsearch:8.11.3
+    container_name: ragflow-es-01-dev
+    ports:
+      - "9201:9200"
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - TZ=Asia/Shanghai
+      - xpack.security.enabled=false
+    volumes:
+      - esdata_dev:/usr/share/elasticsearch/data
+    networks:
+      - ragflow_dev
+
+  infinity-dev:
+    image: infiniflow/infinity:v0.19.1
+    container_name: ragflow-infinity-dev
+    ports:
+      - "23818:23817"
+    volumes:
+      - infinity_data_dev:/var/infinity
+    networks:
+      - ragflow_dev
+
+volumes:
+  mysql_data_dev:
+  redis_data_dev:
+  minio_data_dev:
+  esdata_dev:
+  infinity_data_dev:
+
+networks:
+  ragflow_dev:
