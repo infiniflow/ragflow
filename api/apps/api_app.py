@@ -452,6 +452,8 @@ def upload():
         metadata = {}
         if document_text.strip():
             try:
+                logging.info(f"request.json: {request.json}")  # noqa: T201
+                logging.info(f"request.form: {request.form}")  # noqa: T201
                 user_type = request.form.get("user_type", "alaska")
                 # Get LLM bundle for metadata extraction
                 llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)

@@ -147,6 +147,9 @@ def upload(dataset_id, tenant_id):
         )
     """
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    logging.info(f"request.json: {request.json}")  # noqa: T201
+    logging.info(f"request.form: {request.form}")  # noqa: T201
     user_type = request.form.get("user_type", "alaska")
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
