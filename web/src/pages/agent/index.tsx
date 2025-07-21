@@ -29,14 +29,13 @@ import AgentCanvas from './canvas';
 import EmbedDialog from './embed-dialog';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
-import { useGetBeginNodeDataQuery } from './hooks/use-get-begin-query';
+import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import { useOpenDocument } from './hooks/use-open-document';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
-import { BeginQuery } from './interface';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { VersionDialog } from './version-dialog';
 
@@ -70,16 +69,15 @@ export default function Agent() {
   } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
   const { flowDetail } = useFetchDataOnMount();
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const inputs = useGetBeginNodeDataInputs();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const handleRunAgent = useCallback(() => {
-    const query: BeginQuery[] = getBeginNodeDataQuery();
-    if (query.length > 0) {
+    if (inputs.length > 0) {
       showChatDrawer();
     } else {
       handleRun();
     }
-  }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
+  }, [handleRun, inputs, showChatDrawer]);
   const {
     visible: versionDialogVisible,
     hideModal: hideVersionDialog,

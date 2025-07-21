@@ -25,7 +25,7 @@ import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
 import { transferInputsArrayToObject } from '../form/begin-form/use-watch-change';
-import { useGetBeginNodeDataQuery } from '../hooks/use-get-begin-query';
+import { useSelectBeginNodeDataInputs } from '../hooks/use-get-begin-query';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
@@ -146,7 +146,7 @@ export const useSendNextMessage = () => {
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { refetch } = useFetchAgent();
   const { addEventList } = useContext(AgentChatLogContext);
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const inputs = useSelectBeginNodeDataInputs();
   const [messageEndEventList, setMessageEndEventList] = useState<
     IMessageEndEvent[]
   >([]);
@@ -167,7 +167,7 @@ export const useSendNextMessage = () => {
         defaultValue: 'is running...🕞',
       });
       if (message.content) {
-        const query = getBeginNodeDataQuery();
+        const query = inputs;
 
         params.query = message.content;
         // params.message_id = message.id;
@@ -185,14 +185,7 @@ export const useSendNextMessage = () => {
         refetch(); // pull the message list after sending the message successfully
       }
     },
-    [
-      agentId,
-      send,
-      getBeginNodeDataQuery,
-      setValue,
-      removeLatestMessage,
-      refetch,
-    ],
+    [agentId, send, inputs, setValue, removeLatestMessage, refetch],
   );
 
   const handleSendMessage = useCallback(
