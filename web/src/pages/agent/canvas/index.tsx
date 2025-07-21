@@ -56,7 +56,7 @@ import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 import { ToolNode } from './node/tool-node';
 
-const nodeTypes: NodeTypes = {
+export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
