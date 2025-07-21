@@ -6,7 +6,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
+import { useClientPagination } from '@/hooks/logic-hooks/use-pagination';
 import {
   useFetchVersion,
   useFetchVersionList,
@@ -34,6 +36,9 @@ export function VersionDialog({
   const [selectedId, setSelectedId] = useState<string>('');
   const { data: agent, loading: versionLoading } = useFetchVersion(selectedId);
 
+  const { page, pageSize, onPaginationChange, pagedList } =
+    useClientPagination(data);
+
   const handleClick = useCallback(
     (id: string) => () => {
       setSelectedId(id);
@@ -58,19 +63,21 @@ export function VersionDialog({
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[60vw]">
         <DialogHeader>
-          <DialogTitle>{t('flow.historyversion')}</DialogTitle>
+          <DialogTitle className="text-base">
+            {t('flow.historyversion')}
+          </DialogTitle>
         </DialogHeader>
-        <section className="flex gap-2 relative">
+        <section className="flex gap-8 relative">
           <div className="w-1/3 max-h-[60vh] overflow-auto min-h-[40vh]">
             {loading ? (
               <Spin className="top-1/2"></Spin>
             ) : (
-              <ul className="space-y-2">
-                {data.map((x) => (
+              <ul className="space-y-4 text-sm">
+                {pagedList.map((x) => (
                   <li
                     key={x.id}
-                    className={cn('cursor-pointer', {
-                      'bg-card rounded p-1': x.id === selectedId,
+                    className={cn('cursor-pointer p-2', {
+                      'bg-card rounded-md ': x.id === selectedId,
                     })}
                     onClick={handleClick(x.id)}
                   >
@@ -80,51 +87,59 @@ export function VersionDialog({
               </ul>
             )}
           </div>
-
           <div className="relative flex-1 ">
             {versionLoading ? (
               <Spin className="top-1/2" />
             ) : (
               <Card className="h-full">
-                <CardContent className="h-full p-5">
+                <CardContent className="h-full p-5 flex flex-col">
                   <section className="flex justify-between">
                     <div>
-                      <div className="pb-1">{agent?.title}</div>
+                      <div className="pb-1 truncate">{agent?.title}</div>
                       <p className="text-text-sub-title text-xs">
-                        {formatDate(agent?.create_date)}
+                        Created: {formatDate(agent?.create_date)}
                       </p>
                     </div>
                     <Button variant={'ghost'} onClick={downloadFile}>
                       <ArrowDownToLine />
                     </Button>
                   </section>
-                  <ReactFlowProvider key={`flow-${selectedId}`}>
-                    <ReactFlow
-                      connectionMode={ConnectionMode.Loose}
-                      nodes={agent?.dsl.graph?.nodes || []}
-                      edges={
-                        agent?.dsl.graph?.edges.flatMap((x) => ({
-                          ...x,
-                          type: 'default',
-                        })) || []
-                      }
-                      fitView
-                      nodeTypes={nodeTypes}
-                      edgeTypes={{}}
-                      zoomOnScroll={true}
-                      panOnDrag={true}
-                      zoomOnDoubleClick={false}
-                      preventScrolling={true}
-                      minZoom={0.1}
-                    >
-                      <Background />
-                    </ReactFlow>
-                  </ReactFlowProvider>
+                  <section className="relative flex-1">
+                    <ReactFlowProvider key={`flow-${selectedId}`}>
+                      <ReactFlow
+                        connectionMode={ConnectionMode.Loose}
+                        nodes={agent?.dsl.graph?.nodes || []}
+                        edges={
+                          agent?.dsl.graph?.edges.flatMap((x) => ({
+                            ...x,
+                            type: 'default',
+                          })) || []
+                        }
+                        fitView
+                        nodeTypes={nodeTypes}
+                        edgeTypes={{}}
+                        zoomOnScroll={true}
+                        panOnDrag={true}
+                        zoomOnDoubleClick={false}
+                        preventScrolling={true}
+                        minZoom={0.1}
+                        className="!bg-background-agent"
+                      >
+                        <Background />
+                      </ReactFlow>
+                    </ReactFlowProvider>
+                  </section>
                 </CardContent>
               </Card>
             )}
           </div>
         </section>
+        <RAGFlowPagination
+          total={data.length}
+          current={page}
+          pageSize={pageSize}
+          onChange={onPaginationChange}
+        ></RAGFlowPagination>
       </DialogContent>
     </Dialog>
   );
