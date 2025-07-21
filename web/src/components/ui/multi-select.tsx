@@ -215,23 +215,26 @@ export const MultiSelect = React.forwardRef<
                     return (
                       <Badge
                         key={value}
+                        variant="secondary"
                         className={cn(
                           isAnimating ? 'animate-bounce' : '',
                           multiSelectVariants({ variant }),
                         )}
                         style={{ animationDuration: `${animation}s` }}
                       >
-                        {IconComponent && (
-                          <IconComponent className="h-4 w-4 mr-2" />
-                        )}
-                        {option?.label}
-                        <XCircle
-                          className="ml-2 h-4 w-4 cursor-pointer"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleOption(value);
-                          }}
-                        />
+                        <div className="flex items-center gap-1">
+                          {IconComponent && (
+                            <IconComponent className="h-4 w-4" />
+                          )}
+                          <div>{option?.label}</div>
+                          <XCircle
+                            className="h-4 w-4 cursor-pointer"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleOption(value);
+                            }}
+                          />
+                        </div>
                       </Badge>
                     );
                   })}

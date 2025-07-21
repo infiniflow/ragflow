@@ -25,7 +25,7 @@ function InnerAgentNode({
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper>
+      <NodeWrapper selected={selected}>
         {isHeadAgent && (
           <>
             <CommonHandle

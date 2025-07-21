@@ -34,6 +34,7 @@ export enum Routes {
   ParsedResult = `${Chunk}${Parsed}`,
   Result = '/result',
   ResultView = `${Chunk}${Result}`,
+  KnowledgeGraph = '/knowledge-graph',
 }
 
 const routes = [
@@ -272,6 +273,10 @@ const routes = [
       {
         path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.KnowledgeGraph}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.KnowledgeGraph}`,
       },
     ],
   },

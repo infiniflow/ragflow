@@ -2,6 +2,7 @@ import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
 import { ITraceData } from '@/interfaces/database/agent';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
+import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
@@ -30,6 +31,10 @@ export const enum AgentApiAction {
   UploadCanvasFile = 'uploadCanvasFile',
   Trace = 'trace',
   TestDbConnect = 'testDbConnect',
+  DebugSingle = 'debugSingle',
+  FetchInputForm = 'fetchInputForm',
+  FetchVersionList = 'fetchVersionList',
+  FetchVersion = 'fetchVersion',
 }
 
 export const EmptyDsl = {
@@ -352,4 +357,85 @@ export const useTestDbConnect = () => {
   });
 
   return { data, loading, testDbConnect: mutateAsync };
+};
+
+export const useDebugSingle = () => {
+  const { id } = useParams();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.FetchInputForm],
+    mutationFn: async (params: IDebugSingleRequestBody) => {
+      const ret = await flowService.debugSingle({ id, ...params });
+      if (ret?.data?.code !== 0) {
+        message.error(ret?.data?.message);
+      }
+      return ret?.data?.data;
+    },
+  });
+
+  return { data, loading, debugSingle: mutateAsync };
+};
+
+export const useFetchInputForm = (componentId?: string) => {
+  const { id } = useParams();
+
+  const { data } = useQuery<Record<string, any>>({
+    queryKey: [AgentApiAction.FetchInputForm],
+    initialData: {},
+    enabled: !!id && !!componentId,
+    queryFn: async () => {
+      const { data } = await flowService.inputForm({
+        id,
+        component_id: componentId,
+      });
+
+      return data.data;
+    },
+  });
+
+  return data;
+};
+
+export const useFetchVersionList = () => {
+  const { id } = useParams();
+  const { data, isFetching: loading } = useQuery<
+    Array<{ created_at: string; title: string; id: string }>
+  >({
+    queryKey: [AgentApiAction.FetchVersionList],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await flowService.getListVersion({}, id);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchVersion = (
+  version_id?: string,
+): {
+  data?: IFlow;
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: [AgentApiAction.FetchVersion, version_id],
+    initialData: undefined,
+    gcTime: 0,
+    enabled: !!version_id, // Only call API when both values are provided
+    queryFn: async () => {
+      if (!version_id) return undefined;
+
+      const { data } = await flowService.getVersion({}, version_id);
+
+      return data?.data ?? undefined;
+    },
+  });
+
+  return { data, loading };
 };

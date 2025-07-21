@@ -772,7 +772,7 @@ Failure:
 
 **GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
-Gets the knowledge graph of a specific datasets.
+Retrieves the knowledge graph of a specified dataset.
 
 #### Request
 
@@ -792,7 +792,7 @@ curl --request GET \
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)  
-  The ID of the dataset.
+  The ID of the target dataset.
 
 #### Response
 
@@ -851,7 +851,7 @@ Failure:
 
 **DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
-Deletes the knowledge graph of a specific datasets.
+Removes the knowledge graph of a specified dataset.
 
 #### Request
 
@@ -871,7 +871,7 @@ curl --request DELETE \
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)  
-  The ID of the dataset.
+  The ID of the target dataset.
 
 #### Response
 
@@ -1776,6 +1776,7 @@ Retrieves chunks from specified datasets.
   - `"rerank_id"`: `string`  
   - `"keyword"`: `boolean`  
   - `"highlight"`: `boolean`
+  - `"cross_languages"`: `list[string]`  
 
 ##### Request example
 
@@ -1820,6 +1821,8 @@ curl --request POST \
   Specifies whether to enable highlighting of matched terms in the results:  
   - `true`: Enable highlighting of matched terms.
   - `false`: Disable highlighting of matched terms (default).
+- `"cross_languages"`: (*Body parameter*) `list[string]`  
+  The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 
 #### Response
 

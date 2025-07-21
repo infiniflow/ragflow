@@ -20,7 +20,7 @@ import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
 import { needsSingleStepDebugging } from '../utils';
 import { FormConfigMap } from './form-config-map';
-import SingleDebugDrawer from './single-debug-drawer';
+import SingleDebugSheet from './single-debug-sheet';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -115,11 +115,11 @@ const FormSheet = ({
         </section>
       </SheetContent>
       {singleDebugDrawerVisible && (
-        <SingleDebugDrawer
+        <SingleDebugSheet
           visible={singleDebugDrawerVisible}
           hideModal={hideSingleDebugDrawer}
           componentId={node?.id}
-        ></SingleDebugDrawer>
+        ></SingleDebugSheet>
       )}
     </Sheet>
   );

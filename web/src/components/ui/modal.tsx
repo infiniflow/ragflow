@@ -10,6 +10,7 @@ interface ModalProps {
   title?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  showfooter?: boolean;
   className?: string;
   size?: 'small' | 'default' | 'large';
   closable?: boolean;
@@ -30,6 +31,7 @@ export const Modal: FC<ModalProps> = ({
   title,
   children,
   footer,
+  showfooter = true,
   className = '',
   size = 'default',
   closable = true,
@@ -80,6 +82,9 @@ export const Modal: FC<ModalProps> = ({
     }
   };
   const footEl = useMemo(() => {
+    if (showfooter === false) {
+      return <></>;
+    }
     let footerTemp;
     if (footer) {
       footerTemp = footer;
@@ -112,7 +117,16 @@ export const Modal: FC<ModalProps> = ({
         {footerTemp}
       </div>
     );
-  }, [footer, cancelText, t, confirmLoading, okText, handleCancel, handleOk]);
+  }, [
+    footer,
+    cancelText,
+    t,
+    confirmLoading,
+    okText,
+    handleCancel,
+    handleOk,
+    showfooter,
+  ]);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
       <DialogPrimitive.Portal>
@@ -121,7 +135,7 @@ export const Modal: FC<ModalProps> = ({
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
-            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-colors-background-neutral-standard rounded-lg shadow-lg transition-all`}
+            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-colors-background-neutral-standard rounded-lg shadow-lg transition-all focus-visible:!outline-none`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}
@@ -142,9 +156,13 @@ export const Modal: FC<ModalProps> = ({
                 )}
               </div>
             )}
+            {/* title */}
+            {!title && (
+              <DialogPrimitive.Title className="text-lg font-medium text-foreground"></DialogPrimitive.Title>
+            )}
 
             {/* content */}
-            <div className="p-6 overflow-y-auto max-h-[80vh]">
+            <div className="p-6 overflow-y-auto max-h-[80vh] focus-visible:!outline-none">
               {destroyOnClose && !open ? null : children}
             </div>
 
