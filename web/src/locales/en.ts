@@ -1302,6 +1302,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       tavilySearchDescription: 'Search results via Tavily service.',
       tavilyExtract: 'Tavily Extract',
       tavilyExtractDescription: 'Tavily Extract',
+      log: 'Log',
+      management: 'Management',
+      import: 'Import',
+      export: 'Export',
     },
     llmTools: {
       bad_calculator: {
