@@ -1255,6 +1255,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tavilySearchDescription: '通过 Tavily 服务搜索结果',
       tavilyExtract: 'Tavily Extract',
       tavilyExtractDescription: 'Tavily Extract',
+      log: '日志',
+      management: '管理',
+      import: '导入',
+      export: '导出',
     },
     footer: {
       profile: 'All rights reserved @ React',
