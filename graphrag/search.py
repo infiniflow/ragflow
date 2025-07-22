@@ -45,7 +45,7 @@ class KGSearch(Dealer):
         ty2ents = trio.run(lambda: get_entity_type2sampels(idxnms, kb_ids))
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
-        result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {"temperature": .5})
+        result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})
         try:
             keywords_data = json_repair.loads(result)
             type_keywords = keywords_data.get("answer_type_keywords", [])
