@@ -588,26 +588,12 @@ class TestDatasetCreate:
         excepted_value = DataSet.ParserConfig(
             client,
             {
-                "auto_keywords": 0,
-                "auto_questions": 0,
                 "chunk_token_num": 512,
-                "delimiter": "\\n",
-                "filename_embd_weight": 0.1,
-                "graphrag": {"community": False, "entity_types": ["organization", "person", "geo", "event", "category"], "method": "light", "resolution": False, "use_graphrag": False},
+                "delimiter": r"\n",
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
-                "pages": None,
-                "raptor": {
-                    "max_cluster": 64,
-                    "max_token": 256,
-                    "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                    "random_seed": 0,
-                    "threshold": 0.1,
-                    "use_raptor": False,
-                },
-                "tag_kb_ids": [],
-                "task_page_size": None,
-                "topn_tags": 1,
+                "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         parser_config_o = DataSet.ParserConfig(client, {})

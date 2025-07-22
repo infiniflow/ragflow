@@ -406,6 +406,7 @@ class TestUpdateDocumentParserConfig:
                         "html4excel": False,
                         "layout_recognize": "DeepDOC",
                         "raptor": {"use_raptor": False},
+                        "graphrag": {"use_graphrag": False},
                     },
                 )
                 assert str(updated_doc.parser_config) == str(expected_config), str(updated_doc)
