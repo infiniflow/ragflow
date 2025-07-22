@@ -1,3 +1,4 @@
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { RerankFormFields } from '@/components/rerank';
@@ -12,6 +13,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
+import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
@@ -32,6 +34,8 @@ export const RetrievalPartialSchema = {
   kb_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
+  cross_languages: z.array(z.string()),
+  use_kg: z.boolean(),
 };
 
 export const FormSchema = z.object({
@@ -106,6 +110,8 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <TopNFormField></TopNFormField>
           <RerankFormFields></RerankFormFields>
           <EmptyResponseField></EmptyResponseField>
+          <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+          <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
         </FormContainer>
         <Output list={outputList}></Output>
       </form>
