@@ -1251,6 +1251,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       stringTransform: '文本处理',
       userFillUp: '等待输入',
       codeExec: '代码',
+      tavilySearch: 'Tavily Search',
+      tavilySearchDescription: '通过 Tavily 服务搜索结果',
+      tavilyExtract: 'Tavily Extract',
+      tavilyExtractDescription: 'Tavily Extract',
     },
     footer: {
       profile: 'All rights reserved @ React',
