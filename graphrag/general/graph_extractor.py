@@ -107,7 +107,7 @@ class GraphExtractor(Extractor):
         }
         hint_prompt = perform_variable_replacements(self._extraction_prompt, variables=variables)
         async with chat_limiter:
-            response = await trio.to_thread.run_sync(lambda: self._chat(hint_prompt, [{"role": "user", "content": "Output:"}], gen_conf))
+            response = await trio.to_thread.run_sync(lambda: self._chat(hint_prompt, [{"role": "user", "content": "Output:"}], {}))
         token_count += num_tokens_from_string(hint_prompt + response)
 
         results = response or ""
