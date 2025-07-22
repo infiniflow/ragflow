@@ -1,7 +1,7 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useCallback, useMemo, useState } from 'react';
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import { BeginQuery, INextOperatorForm } from '../../interface';
 
 export const useEditQueryRecord = ({
@@ -10,11 +10,14 @@ export const useEditQueryRecord = ({
   const { setRecord, currentRecord } = useSetSelectedRecord<BeginQuery>();
   const { visible, hideModal, showModal } = useSetModalState();
   const [index, setIndex] = useState(-1);
+  const inputs: BeginQuery[] = useWatch({
+    control: form.control,
+    name: 'inputs',
+  });
 
   const otherThanCurrentQuery = useMemo(() => {
-    const inputs: BeginQuery[] = form?.getValues('inputs') || [];
     return inputs.filter((item, idx) => idx !== index);
-  }, [form, index]);
+  }, [index, inputs]);
 
   const handleEditRecord = useCallback(
     (record: BeginQuery) => {
