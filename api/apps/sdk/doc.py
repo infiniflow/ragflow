@@ -150,10 +150,10 @@ def upload(dataset_id, tenant_id):
 
     logging.info(f"request.json: {request.json}")  # noqa: T201
     logging.info(f"request.form: {request.form}")  # noqa: T201
-    user_type = request.form.get("user_type", "alaska")
+    logging.info(f"file_objs: {file_objs}")  # noqa: T201
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
-    err, files = FileService.upload_document(kb, file_objs, tenant_id, user_type=user_type)
+    err, files = FileService.upload_document(kb, file_objs, tenant_id)
     if err:
         return get_result(message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
     # rename key's name

@@ -422,6 +422,7 @@ class FileService(CommonService):
 
         err, files = [], []
         for file in file_objs:
+            print(f"Processing file: {file}")  # Debug log
             try:
                 MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
                 if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
@@ -460,9 +461,23 @@ class FileService(CommonService):
                 except Exception as e:
                     print(f"Failed to parse document content for metadata: {str(e)}")
 
+                # Extract user_type from file representation or use default
+                user_type = "alaska"  # default
+                try:
+                    # Try to extract user_type from file string representation
+                    file_str = str(file)
+                    if "('homefarm')" in file_str:
+                        user_type = "homefarm"
+                    elif "('alaska')" in file_str:
+                        user_type = "alaska"
+                    # You can add more user types as needed
+                except Exception as e:
+                    print(f"Failed to extract user_type from file: {str(e)}")
+
                 # Extract metadata using LLM
                 metadata = {}
                 if document_text.strip():
+                    logging.info(f"Extracting metadata with user_type: {user_type}")
                     llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
                     metadata = self.extract_metadata_with_llm(document_text, llm_bundle, user_type=user_type)
 
