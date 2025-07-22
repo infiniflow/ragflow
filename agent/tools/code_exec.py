@@ -17,7 +17,7 @@ import base64
 import logging
 import os
 from abc import ABC
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Optional
 
 import json_repair
@@ -28,14 +28,14 @@ from api import settings
 from api.utils.api_utils import timeout
 
 
-class Language(str, Enum):
+class Language(StrEnum):
     PYTHON = "python"
     NODEJS = "nodejs"
 
 
 class CodeExecutionRequest(BaseModel):
     code_b64: str = Field(..., description="Base64 encoded code string")
-    language: Language = Field(default=Language.PYTHON, description="Programming language")
+    language: str = Field(default=Language.PYTHON.value, description="Programming language")
     arguments: Optional[dict] = Field(default={}, description="Arguments")
 
     @field_validator("code_b64")
@@ -102,7 +102,7 @@ module.exports = { main };
             }
         }
         super().__init__()
-        self.lang = "python"
+        self.lang = Language.PYTHON.value
         self.script = "def main(arg1: str, arg2: str) -> dict: return {\"result\": arg1 + arg2}"
         self.arguments = {}
         self.outputs = {"result": {"value": "", "type": "string"}}
@@ -130,6 +130,9 @@ class CodeExec(ToolBase, ABC):
         script = kwargs.get("script", self._param.script)
         arguments = {}
         for k, v in self._param.arguments.items():
+            if kwargs.get(k):
+                arguments[k] = kwargs[k]
+                continue
             arguments[k] = self._canvas.get_variable_value(v) if v else None
 
         self._execute_code(
@@ -149,6 +152,9 @@ class CodeExec(ToolBase, ABC):
 
         try:
             resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=10)
+            logging.info(f"http://{settings.SANDBOX_HOST}:9385/run", code_req, resp.status_code)
+            if resp.status_code != 200:
+                resp.raise_for_status()
             body = resp.json()
             if body:
                 stderr = body.get("stderr")

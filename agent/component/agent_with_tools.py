@@ -13,17 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
 import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
-from typing import Any, Tuple
+from typing import Any
 
 import json_repair
-import pandas as pd
 
 from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
@@ -33,9 +31,8 @@ from api.db.services.mcp_server_service import MCPServerService
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
-from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, form_history, \
+from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, \
     citation_prompt, reflect, rank_memories, kb_prompt, citation_plus
-from rag.utils import num_tokens_from_string
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 
 
@@ -54,14 +51,31 @@ class AgentParam(LLMParam, ToolParamBase):
                         "description": "This is the order you need to send to the agent.",
                         "default": "",
                         "required": True
-                    }
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": (
+                            f"Supervisor's reasoning for choosing the this agent. "
+                            "Explain why this agent is being invoked and what is expected of it."
+                        ),
+                        "required": True
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": (
+                                "All relevant background information, prior facts, decisions, "
+                                "and state needed by the agent to solve the current query. "
+                                "Should be as detailed and self-contained as possible."
+                            ),
+                        "required": True
+                    },
                 }
             }
         super().__init__()
         self.function_name = "agent"
         self.tools = []
         self.mcp = []
-        self.max_rounds = 50
+        self.max_rounds = 5
         self.description = ""
 
 
@@ -129,7 +143,16 @@ class Agent(LLM, ToolBase):
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60))
     def _invoke(self, **kwargs):
         if kwargs.get("user_prompt"):
-            self._param.prompts = [{"role": "user", "content": str(kwargs["user_prompt"])}]
+            usr_pmt = ""
+            if kwargs.get("reasoning"):
+                usr_pmt += "\nREASONING:\n{}\n".format(kwargs["reasoning"])
+            if kwargs.get("context"):
+                usr_pmt += "\nCONTEXT:\n{}\n".format(kwargs["context"])
+            if usr_pmt:
+                usr_pmt += "\nQUERY:\n{}\n".format(str(kwargs["user_prompt"]))
+            else:
+                usr_pmt = str(kwargs["user_prompt"])
+            self._param.prompts = [{"role": "user", "content": usr_pmt}]
 
         if not self.tools:
             return LLM._invoke(self, **kwargs)
@@ -189,12 +212,12 @@ class Agent(LLM, ToolBase):
             nonlocal hist, use_tools, token_count,last_calling,user_request
             print(f"{last_calling=} == {name=}", )
             # Summarize of function calling
-            if all([
-                isinstance(self.toolcall_session.get_tool_obj(name), Agent),
-                last_calling,
-                last_calling != name
-            ]):
-                self.toolcall_session.get_tool_obj(name).add2system_prompt(f"The chat history with other agents are as following: \n" + self.get_useful_memory(user_request, str(args["user_prompt"])))
+            #if all([
+            #    isinstance(self.toolcall_session.get_tool_obj(name), Agent),
+            #    last_calling,
+            #    last_calling != name
+            #]):
+            #    self.toolcall_session.get_tool_obj(name).add2system_prompt(f"The chat history with other agents are as following: \n" + self.get_useful_memory(user_request, str(args["user_prompt"])))
             last_calling = name
             tool_response = self.toolcall_session.tool_call(name, args)
             use_tools.append({
@@ -203,7 +226,7 @@ class Agent(LLM, ToolBase):
                 "results": tool_response
             })
             self.callback("add_memory", {}, "...")
-            self.add_memory(hist[-2]["content"], hist[-1]["content"], name, args, str(tool_response))
+            #self.add_memory(hist[-2]["content"], hist[-1]["content"], name, args, str(tool_response))
 
             return name, tool_response
 
@@ -267,7 +290,11 @@ class Agent(LLM, ToolBase):
 
             except Exception as e:
                 logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
-                hist.append({"role": "user", "content": f"Tool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"})
+                e = f"\nTool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"
+                if hist[-1]["role"] == "user":
+                    hist[-1]["content"] += e
+                else:
+                    hist.append({"role": "user", "content": e})
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
         final_instruction = f"""
