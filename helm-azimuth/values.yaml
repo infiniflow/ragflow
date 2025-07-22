@@ -11,4 +11,4 @@ zenithClient:
 ragflow:
   env:
     RAGFLOW_IMAGE: infiniflow/ragflow:v0.19.1
-    DOC_ENGINE: infinity
+    DOC_ENGINE: opensearch

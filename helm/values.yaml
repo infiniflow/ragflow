@@ -192,8 +192,6 @@ redis:
     resources:
   service:
     type: ClusterIP
-  persistence:
-    enabled: false
 
 
 # This block is for setting up web service ingress. For more information, see:
