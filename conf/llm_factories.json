@@ -1093,9 +1093,10 @@
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
-                    "tags": "LLM,IMAGE2TEXT,1024K",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "image2text"
+                    "model_type": "image2text",
+                    "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash-preview-05-20",
