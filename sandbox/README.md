@@ -223,7 +223,7 @@ def main(arg1: str, arg2: str) -> str:
     return f"result: {arg1 + arg2}"
 ```
 
-### 🟨 Node.js
+### 🟨 JavaScript examples
 
 A simple sync function
 
