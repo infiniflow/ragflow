@@ -214,7 +214,7 @@ To add Node.js dependencies:
 ---
 
 
-## Usage example
+## Usage
 
 ### 🐍 Python
 
