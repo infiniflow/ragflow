@@ -26,6 +26,7 @@ from api import settings
 from api.utils.api_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts import kb_prompt
+from rag.prompts.prompts import cross_languages
 
 
 class RetrievalParam(ToolParamBase):
@@ -58,6 +59,7 @@ class RetrievalParam(ToolParamBase):
         self.rerank_id = ""
         self.empty_response = ""
         self.use_kg = False
+        self.cross_languages = []
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -110,6 +112,9 @@ class Retrieval(ToolBase, ABC):
             rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
 
         query = kwargs["query"]
+        if self._param.cross_languages:
+            query = cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
+
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
             kbinfos = settings.retrievaler.retrieval(
@@ -125,6 +130,14 @@ class Retrieval(ToolBase, ABC):
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
             )
+            if self._param.use_kg:
+                ck = settings.kg_retrievaler.retrieval(query,
+                                                       [kb.tenant_id for kb in kbs],
+                                                       kb_ids,
+                                                       embd_mdl,
+                                                       LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT))
+                if ck["content_with_weight"]:
+                    kbinfos["chunks"].insert(0, ck)
         else:
             kbinfos = {"chunks": [], "doc_aggs": []}
 

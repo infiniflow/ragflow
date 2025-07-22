@@ -270,10 +270,22 @@ class Agent(LLM, ToolBase):
                 hist.append({"role": "user", "content": f"Tool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"})
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
+        final_instruction = f"""
+{user_request}
+IMPORTANT: You have reached the conversation limit. Based on ALL the information and research you have gathered so far, please provide a DIRECT and COMPREHENSIVE final answer to the original request.
+Instructions:
+1. SYNTHESIZE all information collected during this conversation
+2. Provide a COMPLETE response using existing data - do not suggest additional research
+3. Structure your response as a FINAL DELIVERABLE, not a plan
+4. If information is incomplete, state what you found and provide the best analysis possible with available data
+5. DO NOT mention conversation limits or suggest further steps
+6. Focus on delivering VALUE with the information already gathered
+Respond immediately with your final comprehensive answer.
+        """
         if hist[-1]["role"] == "user":
-            hist[-1]["content"] += f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}. DO NOT MENTION MAX ROUNDS IN YOUR RESPONSE."
+            hist[-1]["content"] += final_instruction
         else:
-            hist.append({"role": "user", "content": f"\n{user_request}\nBut, Exceed max rounds: {self._param.max_rounds}. DO NOT MENTION MAX ROUNDS IN YOUR RESPONSE."})
+            hist.append({"role": "user", "content": final_instruction})
 
         for txt, tkcnt in complete():
             yield txt, tkcnt

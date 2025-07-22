@@ -142,6 +142,7 @@ class TavilySearch(ToolBase, ABC):
         for _ in range(self._param.max_retries+1):
             try:
                 kwargs["include_images"] = False
+                kwargs["include_raw_content"] = False
                 res = self.tavily_client.search(**kwargs)
                 self._retrieve_chunks(res)
                 self.set_output("json", res["results"])
@@ -247,7 +248,8 @@ class TavilyExtract(ToolBase, ABC):
             try:
                 kwargs["include_images"] = False
                 res = self.tavily_client.extract(**kwargs)
-                return self.output("json", res["results"])
+                self.set_output("json", res["results"])
+                return self.output("json")
             except Exception as e:
                 last_e = e
                 logging.exception(f"Tavily error: {e}")

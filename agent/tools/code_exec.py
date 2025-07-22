@@ -113,7 +113,7 @@ module.exports = { main };
 
     def get_input_form(self) -> dict[str, dict]:
         res = {}
-        for k, v in self._param.arguments.items():
+        for k, v in self.arguments.items():
             res[k] = {
                 "type": "line",
                 "name": k

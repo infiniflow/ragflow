@@ -112,6 +112,8 @@ class ExeSQL(ToolBase, ABC):
         formalized_content = []
         for single_sql in sqls:
             single_sql = single_sql.replace('```','')
+            if not single_sql:
+                continue
 
             cursor.execute(single_sql)
             if cursor.rowcount == 0:

@@ -84,8 +84,8 @@ class Switch(ComponentBase, ABC):
                 self.set_output("_next", cond["to"])
                 return
 
-        self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in self.end_cpn_ids])
-        self.set_output("_next", self.end_cpn_ids)
+        self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in self._param.end_cpn_ids])
+        self.set_output("_next", self._param.end_cpn_ids)
 
     def process_operator(self, input: Any, operator: str, value: Any) -> bool:
         if operator == "contains":
