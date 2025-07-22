@@ -1298,6 +1298,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       stringTransform: 'String transform',
       userFillUp: 'Input',
       codeExec: 'Code',
+      tavilySearch: 'Tavily Search',
+      tavilySearchDescription: 'Search results via Tavily service.',
+      tavilyExtract: 'Tavily Extract',
+      tavilyExtractDescription: 'Tavily Extract',
     },
     llmTools: {
       bad_calculator: {
