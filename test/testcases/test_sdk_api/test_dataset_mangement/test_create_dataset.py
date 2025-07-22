@@ -588,11 +588,26 @@ class TestDatasetCreate:
         excepted_value = DataSet.ParserConfig(
             client,
             {
+                "auto_keywords": 0,
+                "auto_questions": 0,
                 "chunk_token_num": 512,
-                "delimiter": r"\n",
+                "delimiter": "\\n",
+                "filename_embd_weight": 0.1,
+                "graphrag": {"community": False, "entity_types": ["organization", "person", "geo", "event", "category"], "method": "light", "resolution": False, "use_graphrag": False},
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
+                "pages": None,
+                "raptor": {
+                    "max_cluster": 64,
+                    "max_token": 256,
+                    "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                    "random_seed": 0,
+                    "threshold": 0.1,
+                    "use_raptor": False,
+                },
+                "tag_kb_ids": [],
+                "task_page_size": None,
+                "topn_tags": 1,
             },
         )
         parser_config_o = DataSet.ParserConfig(client, {})
@@ -610,6 +625,7 @@ class TestDatasetCreate:
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         payload = {"name": "parser_config_unset"}
@@ -626,6 +642,7 @@ class TestDatasetCreate:
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         payload = {"name": "parser_config_empty", "parser_config": None}
@@ -655,3 +672,64 @@ class TestDatasetCreate:
         with pytest.raises(Exception) as excinfo:
             client.create_dataset(**payload)
         assert "got an unexpected keyword argument" in str(excinfo.value), str(excinfo.value)
+
+
+@pytest.mark.usefixtures("clear_datasets")
+class TestParserConfigBugFix:
+    @pytest.mark.p1
+    def test_parser_config_missing_raptor_and_graphrag(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024})
+        payload = {"name": "test_parser_config_missing_fields_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert hasattr(config, "raptor"), "raptor field should be present"
+        assert hasattr(config, "graphrag"), "graphrag field should be present"
+        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
+        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+        assert config.chunk_token_num == 1024, "User-provided chunk_token_num should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_raptor(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024, "raptor": {"use_raptor": True}})
+        payload = {"name": "test_parser_config_only_raptor_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
+        assert hasattr(config, "graphrag"), "graphrag field should be present"
+        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_graphrag(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}})
+        payload = {"name": "test_parser_config_only_graphrag_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert hasattr(config, "raptor"), "raptor field should be present"
+        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
+        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_both_fields(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}})
+        payload = {"name": "test_parser_config_both_fields_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
+        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
+    def test_parser_config_different_chunk_methods(self, client, chunk_method):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 512})
+        payload = {"name": f"test_parser_config_{chunk_method}_sdk", "chunk_method": chunk_method, "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert hasattr(config, "raptor"), f"raptor field should be present for {chunk_method}"
+        assert hasattr(config, "graphrag"), f"graphrag field should be present for {chunk_method}"
+        assert config.raptor.use_raptor is False, f"raptor.use_raptor should default to False for {chunk_method}"
+        assert config.graphrag.use_graphrag is False, f"graphrag.use_graphrag should default to False for {chunk_method}"
