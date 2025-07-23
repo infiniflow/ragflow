@@ -422,6 +422,7 @@ class FileService(CommonService):
 
         err, files = [], []
         for file in file_objs:
+            print(f"Processing file: {file}")  # Debug log
             try:
                 MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
                 if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
@@ -460,9 +461,23 @@ class FileService(CommonService):
                 except Exception as e:
                     print(f"Failed to parse document content for metadata: {str(e)}")
 
+                # Extract user_type from file representation or use default
+                user_type = "alaska"  # default
+                try:
+                    # Try to extract user_type from file string representation
+                    file_str = str(file)
+                    if "('homefarm')" in file_str:
+                        user_type = "homefarm"
+                    elif "('alaska')" in file_str:
+                        user_type = "alaska"
+                    # You can add more user types as needed
+                except Exception as e:
+                    print(f"Failed to extract user_type from file: {str(e)}")
+
                 # Extract metadata using LLM
                 metadata = {}
                 if document_text.strip():
+                    logging.info(f"Extracting metadata with user_type: {user_type}")
                     llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
                     metadata = self.extract_metadata_with_llm(document_text, llm_bundle, user_type=user_type)
 
@@ -596,6 +611,46 @@ Rules:
 5. All values must be written in English except the `"language"` field which must be `"en"`.
 6. Focus on refrigeration and household appliances business context.
 """
+        elif user_type == "kafi":
+            metadata_prompt = f"""You are an intelligent assistant responsible for analyzing and standardizing internal knowledge documents for a Vietnamese securities and financial services company RAG (Retrieval-Augmented Generation) system.
+
+Your task is to extract structured metadata from the following document content related to securities trading, investment services, and financial consulting business.
+
+[DOCUMENT_START]  
+{escaped_document_text}  
+[DOCUMENT_END]
+
+Return a valid JSON object with the exact structure below. All values must be written in **English**, except where otherwise specified.
+
+Expected JSON format:
+
+{{
+  "id": "auto_generated_or_unique_identifier",
+  "domain": "Securities & Financial Services",
+  "industry": "Specific industry, e.g., Stock trading platform, Investment advisory, Margin lending, Financial consulting",
+  "knowledge_type": "Type of knowledge, e.g., Trading Guide / Market Analysis / Customer Service Script / Investment Strategy / Margin Loan Documentation / Compliance Manual / Product Training",
+  "role_target": ["Financial Advisor", "Trading Support", "Customer Service", "Investment Analyst", "Compliance Officer", "Sales Representative"],
+  "tone": "Writing tone, e.g., Professional financial communication, Client-focused, Analytical and data-driven, Regulatory compliant",
+  "context_user": {{
+    "intent": "What the user is trying to achieve, e.g., Investment guidance, Trading support, Market analysis, Loan consultation, Compliance verification",
+    "behavior": "Typical behavior, e.g., Seeking market insights, Requesting trading assistance, Learning investment strategies, Applying for margin loans",
+    "channel": "Where this knowledge is used, e.g., Trading platform, Phone consultation, Investment advisory meeting, Online support chat"
+  }},
+  "keywords": ["keyword_1", "keyword_2", "..."],
+  "version": "e.g., v1.0, v2.1",
+  "suggested_tags": ["Securities Trading", "Investment", "Margin Loans", "Market Analysis", "Financial Advisory", "Vietnamese Market", "Kafi Trade"],
+  "summary": "Detailed summary including: (1) Purpose and target users in securities/financial context, (2) Main financial topics and investment knowledge, (3) Document structure and trading applications, (4) Value for financial advisors/traders, (5) Specific usage in securities business operations",
+  "language": "en"
+}}
+
+Rules:
+1. Do not skip any field — if unsure, use "" or [].
+2. Do not invent new keys or values.
+3. Keep proper JSON syntax, including commas and brackets.
+4. Output must be a single JSON block, without explanation or extra notes.
+5. All values must be written in English except the `"language"` field which must be `"en"`.
+6. Focus on Vietnamese securities and financial services business context.
+"""
         else:
             # Default prompt for homefarm and other user types
             metadata_prompt = f"""You are an intelligent assistant responsible for analyzing and standardizing internal knowledge documents for an enterprise RAG (Retrieval-Augmented Generation) system.
@@ -681,6 +736,24 @@ Rules:
                 "version": "v1.0",
                 "suggested_tags": ["Air Conditioning", "Home Appliances", "Technical"],
                 "summary": "Technical reference document for refrigeration and household appliances business",
+                "language": "en"
+            }
+        elif user_type == "kafi":
+            return {
+                "domain": "Securities & Financial Services",
+                "industry": "Stock trading & investment advisory",
+                "knowledge_type": "Financial documentation",
+                "role_target": ["Financial Advisor", "Trading Support", "Customer Service"],
+                "tone": "Professional financial communication",
+                "context_user": {
+                    "intent": "Investment guidance and trading support",
+                    "behavior": "Seeking financial advice or trading assistance",
+                    "channel": "Trading platform, Phone consultation"
+                },
+                "keywords": [],
+                "version": "v1.0",
+                "suggested_tags": ["Securities Trading", "Investment", "Financial Advisory"],
+                "summary": "Financial reference document for Vietnamese securities and investment services",
                 "language": "en"
             }
         else:
