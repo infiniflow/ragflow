@@ -1,4 +1,12 @@
 import { PageHeader } from '@/components/page-header';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -10,6 +18,7 @@ import {
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -29,7 +38,10 @@ import AgentCanvas from './canvas';
 import EmbedDialog from './embed-dialog';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
-import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
+import {
+  useGetBeginNodeDataInputs,
+  useGetBeginNodeDataQueryIsSafe,
+} from './hooks/use-get-begin-query';
 import { useOpenDocument } from './hooks/use-open-document';
 import {
   useSaveGraph,
@@ -59,6 +71,8 @@ export default function Agent() {
     showModal: showChatDrawer,
   } = useSetModalState();
   const { t } = useTranslation();
+  const { data: userInfo } = useFetchUserInfo();
+
   const openDocument = useOpenDocument();
   const {
     handleExportJson,
@@ -68,7 +82,7 @@ export default function Agent() {
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-  const { flowDetail } = useFetchDataOnMount();
+  const { flowDetail: agentDetail } = useFetchDataOnMount();
   const inputs = useGetBeginNodeDataInputs();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const handleRunAgent = useCallback(() => {
@@ -87,34 +101,49 @@ export default function Agent() {
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
 
+  const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
+
   return (
     <section className="h-full">
-      <PageHeader back={navigateToAgentList} title={flowDetail.title}>
-        <div className="flex items-center gap-2">
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink onClick={navigateToAgentList}>
+                Agent
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{agentDetail.title}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div className="flex items-center gap-5">
           <ButtonLoading
             variant={'secondary'}
             onClick={() => saveGraph()}
             loading={loading}
           >
-            <LaptopMinimalCheck /> Save
+            <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
           <Button variant={'secondary'} onClick={handleRunAgent}>
             <CirclePlay />
-            Run app
+            {t('flow.run')}
           </Button>
           <Button variant={'secondary'} onClick={showVersionDialog}>
             <History />
-            History version
+            {t('flow.historyversion')}
           </Button>
           <Button variant={'secondary'}>
             <Logs />
-            Log
+            {t('flow.log')}
           </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
-                <ChevronDown /> Management
+                <ChevronDown /> {t('flow.management')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -125,15 +154,21 @@ export default function Agent() {
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleImportJson}>
                 <Download />
-                Import
+                {t('flow.import')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
-                Export
+                {t('flow.export')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              <AgentDropdownMenuItem onClick={showEmbedModal}>
+              <AgentDropdownMenuItem
+                onClick={showEmbedModal}
+                disabled={
+                  !isBeginNodeDataQuerySafe ||
+                  userInfo.nickname !== agentDetail.nickname
+                }
+              >
                 <ScreenShare />
                 {t('common.embedIntoSite')}
               </AgentDropdownMenuItem>

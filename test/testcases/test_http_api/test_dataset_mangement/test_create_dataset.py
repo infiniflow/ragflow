@@ -644,6 +644,7 @@ class TestDatasetCreate:
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p2
@@ -657,6 +658,7 @@ class TestDatasetCreate:
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p3
@@ -670,6 +672,7 @@ class TestDatasetCreate:
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p2
@@ -695,3 +698,64 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res
+
+
+@pytest.mark.usefixtures("clear_datasets")
+class TestParserConfigBugFix:
+    @pytest.mark.p1
+    def test_parser_config_missing_raptor_and_graphrag(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_missing_fields", "parser_config": {"chunk_token_num": 1024}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, "raptor field should be present"
+        assert "graphrag" in parser_config, "graphrag field should be present"
+        assert parser_config["raptor"]["use_raptor"] is False, "raptor.use_raptor should default to False"
+        assert parser_config["graphrag"]["use_graphrag"] is False, "graphrag.use_graphrag should default to False"
+        assert parser_config["chunk_token_num"] == 1024, "User-provided chunk_token_num should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_raptor(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_only_raptor", "parser_config": {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert parser_config["raptor"]["use_raptor"] is True, "User-provided raptor.use_raptor should be preserved"
+        assert "graphrag" in parser_config, "graphrag field should be present"
+        assert parser_config["graphrag"]["use_graphrag"] is False, "graphrag.use_graphrag should default to False"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_graphrag(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_only_graphrag", "parser_config": {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, "raptor field should be present"
+        assert parser_config["raptor"]["use_raptor"] is False, "raptor.use_raptor should default to False"
+        assert parser_config["graphrag"]["use_graphrag"] is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_both_fields(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_both_fields", "parser_config": {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert parser_config["raptor"]["use_raptor"] is True, "User-provided raptor.use_raptor should be preserved"
+        assert parser_config["graphrag"]["use_graphrag"] is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
+    def test_parser_config_different_chunk_methods(self, HttpApiAuth, chunk_method):
+        payload = {"name": f"test_parser_config_{chunk_method}", "chunk_method": chunk_method, "parser_config": {"chunk_token_num": 512}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, f"raptor field should be present for {chunk_method}"
+        assert "graphrag" in parser_config, f"graphrag field should be present for {chunk_method}"
+        assert parser_config["raptor"]["use_raptor"] is False, f"raptor.use_raptor should default to False for {chunk_method}"
+        assert parser_config["graphrag"]["use_graphrag"] is False, f"graphrag.use_graphrag should default to False for {chunk_method}"

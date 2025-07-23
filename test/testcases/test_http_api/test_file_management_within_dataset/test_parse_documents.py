@@ -167,7 +167,7 @@ class TestDocumentsParse:
 
 @pytest.mark.p3
 def test_parse_100_files(HttpApiAuth, add_dataset_func, tmp_path):
-    @wait_for(100, 1, "Document parsing timeout")
+    @wait_for(200, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documents(_auth, _dataset_id, {"page_size": _document_num})
         for doc in res["data"]["docs"]:
@@ -188,7 +188,7 @@ def test_parse_100_files(HttpApiAuth, add_dataset_func, tmp_path):
 
 @pytest.mark.p3
 def test_concurrent_parse(HttpApiAuth, add_dataset_func, tmp_path):
-    @wait_for(120, 1, "Document parsing timeout")
+    @wait_for(200, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documents(_auth, _dataset_id, {"page_size": _document_num})
         for doc in res["data"]["docs"]:

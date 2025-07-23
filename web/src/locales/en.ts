@@ -732,6 +732,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       view: 'View',
       modelsToBeAddedTooltip:
         'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
+      mcp: 'MCP',
     },
     message: {
       registered: 'Registered!',
@@ -1302,6 +1303,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       tavilySearchDescription: 'Search results via Tavily service.',
       tavilyExtract: 'Tavily Extract',
       tavilyExtractDescription: 'Tavily Extract',
+      log: 'Log',
+      management: 'Management',
+      import: 'Import',
+      export: 'Export',
     },
     llmTools: {
       bad_calculator: {
