@@ -151,6 +151,7 @@ export default {
   fetchVersionList: (id: string) => `${api_host}/canvas/getlistversion/${id}`,
   fetchVersion: (id: string) => `${api_host}/canvas/getversion/${id}`,
   fetchCanvas: (id: string) => `${api_host}/canvas/get/${id}`,
+  fetchAgentAvatar: (id: string) => `${api_host}/canvas/getsse/${id}`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
