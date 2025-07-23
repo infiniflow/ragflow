@@ -470,6 +470,8 @@ class FileService(CommonService):
                         user_type = "homefarm"
                     elif "('alaska')" in file_str:
                         user_type = "alaska"
+                    elif "('kafi')" in file_str:
+                        user_type = "kafi"
                     # You can add more user types as needed
                 except Exception as e:
                     print(f"Failed to extract user_type from file: {str(e)}")
