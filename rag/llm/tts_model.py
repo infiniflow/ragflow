@@ -382,3 +382,46 @@ class SILICONFLOWTTS(Base):
         for chunk in response.iter_content():
             if chunk:
                 yield chunk
+
+
+class Ai302TTS(Base):
+    _FACTORY_NAME = "302.AI"
+
+    def __init__(self, key, model_name="elevenlabs-tts", base_url="https://api.302.ai"):
+        if not base_url:
+            base_url = "https://api.302.ai"
+        self.api_key = key
+        self.model_name = model_name
+        self.base_url = base_url
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def tts(self, text, voice="alloy", response_format="mp3", speed=1.0):
+        text = self.normalize_text(text)
+        payload = {
+            "model": self.model_name,
+            "input": text,
+            "voice": voice,
+            "response_format": response_format,
+            "speed": speed
+        }
+
+        response = requests.post(
+            f"{self.base_url}/v1/audio/speech", 
+            headers=self.headers, 
+            json=payload, 
+            stream=True
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+        
+        for chunk in response.iter_content(chunk_size=1024):
+            if chunk:
+                yield chunk
+        
+        yield num_tokens_from_string(text)
+
+
