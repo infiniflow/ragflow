@@ -60,23 +60,17 @@ The following command launches the 'base' services (MinIO, Elasticsearch, Redis,
 docker compose -f docker/docker-compose-base.yml up -d
 ```
 
-### Update `host` and `port` Settings for Third-party Services
+### Update `hosts` file to resolve third-party services' addresses
 
-1. Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml.template** to `127.0.0.1`:
+Add the following line to `/etc/hosts` to resolve all hosts specified in **conf/service_conf.yaml** to `127.0.0.1`:
 
-   ```
-   127.0.0.1       es01 infinity mysql minio redis
-   ```
-
-2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+```
+127.0.0.1       es01 infinity mysql minio redis
+```
 
 ### Launch the RAGFlow backend service
 
-1. Comment out the `nginx` line in **docker/entrypoint.sh**.
 
-   ```
-   # /usr/sbin/nginx
-   ```
 
 2. Activate the Python virtual environment:
 
@@ -93,7 +87,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
    
-5. Run the **entrypoint.sh** script to launch the backend service:
+5. Run the RAGFlow backend service:
 
    ```shell
    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
