@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -100,23 +99,7 @@ function AgentForm({ node }: INextOperatorForm) {
         }}
       >
         <FormContainer>
-          {isSubAgent && (
-            <>
-              <DescriptionField></DescriptionField>
-              <FormField
-                control={form.control}
-                name={`user_prompt`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel>Subagent Input</FormLabel>
-                    <FormControl>
-                      <Textarea {...field}></Textarea>
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </>
-          )}
+          {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
           <FormField
             control={form.control}

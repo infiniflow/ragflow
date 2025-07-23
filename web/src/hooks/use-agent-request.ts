@@ -6,7 +6,7 @@ import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
-import flowService from '@/services/flow-service';
+import agentService from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -85,7 +85,7 @@ export const useFetchAgentTemplates = () => {
     queryKey: [AgentApiAction.FetchAgentTemplates],
     initialData: [],
     queryFn: async () => {
-      const { data } = await flowService.listTemplates();
+      const { data } = await agentService.listTemplates();
       if (Array.isArray(data?.data)) {
         data.data.unshift({
           id: uuid(),
@@ -121,11 +121,16 @@ export const useFetchAgentListByPage = () => {
     initialData: { kbs: [], total: 0 },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await flowService.listCanvasTeam({
-        keywords: debouncedSearchString,
-        page_size: pagination.pageSize,
-        page: pagination.current,
-      });
+      const { data } = await agentService.listCanvasTeam(
+        {
+          params: {
+            keywords: debouncedSearchString,
+            page_size: pagination.pageSize,
+            page: pagination.current,
+          },
+        },
+        true,
+      );
 
       return data?.data ?? [];
     },
@@ -159,7 +164,7 @@ export const useUpdateAgentSetting = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.UpdateAgentSetting],
     mutationFn: async (params: any) => {
-      const ret = await flowService.settingCanvas(params);
+      const ret = await agentService.settingCanvas(params);
       if (ret?.data?.code === 0) {
         message.success('success');
         queryClient.invalidateQueries({
@@ -184,7 +189,7 @@ export const useDeleteAgent = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.DeleteAgent],
     mutationFn: async (canvasIds: string[]) => {
-      const { data } = await flowService.removeCanvas({ canvasIds });
+      const { data } = await agentService.removeCanvas({ canvasIds });
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentList],
@@ -217,7 +222,7 @@ export const useFetchAgent = (): {
     refetchOnWindowFocus: false,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await flowService.getCanvas({}, sharedId || id);
+      const { data } = await agentService.fetchCanvas(sharedId || id);
 
       const messageList = buildMessageListWithUuid(
         get(data, 'data.dsl.messages', []),
@@ -240,7 +245,7 @@ export const useResetAgent = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.ResetAgent],
     mutationFn: async () => {
-      const { data } = await flowService.resetCanvas({ id });
+      const { data } = await agentService.resetCanvas({ id });
       return data;
     },
   });
@@ -262,7 +267,7 @@ export const useSetAgent = () => {
       dsl?: DSL;
       avatar?: string;
     }) => {
-      const { data = {} } = await flowService.setCanvas(params);
+      const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
@@ -295,7 +300,7 @@ export const useUploadCanvasFile = () => {
           });
         }
 
-        const { data } = await flowService.uploadCanvasFile(nextBody);
+        const { data } = await agentService.uploadCanvasFile(nextBody);
         if (data?.code === 0) {
           message.success(i18n.t('message.uploaded'));
         }
@@ -326,7 +331,7 @@ export const useFetchMessageTrace = () => {
     enabled: !!id && !!messageId,
     refetchInterval: 3000,
     queryFn: async () => {
-      const { data } = await flowService.trace({
+      const { data } = await agentService.trace({
         canvas_id: id,
         message_id: messageId,
       });
@@ -346,7 +351,7 @@ export const useTestDbConnect = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.TestDbConnect],
     mutationFn: async (params: any) => {
-      const ret = await flowService.testDbConnect(params);
+      const ret = await agentService.testDbConnect(params);
       if (ret?.data?.code === 0) {
         message.success(ret?.data?.data);
       } else {
@@ -368,7 +373,7 @@ export const useDebugSingle = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.FetchInputForm],
     mutationFn: async (params: IDebugSingleRequestBody) => {
-      const ret = await flowService.debugSingle({ id, ...params });
+      const ret = await agentService.debugSingle({ id, ...params });
       if (ret?.data?.code !== 0) {
         message.error(ret?.data?.message);
       }
@@ -387,7 +392,7 @@ export const useFetchInputForm = (componentId?: string) => {
     initialData: {},
     enabled: !!id && !!componentId,
     queryFn: async () => {
-      const { data } = await flowService.inputForm({
+      const { data } = await agentService.inputForm({
         id,
         component_id: componentId,
       });
@@ -408,7 +413,7 @@ export const useFetchVersionList = () => {
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await flowService.getListVersion({}, id);
+      const { data } = await agentService.fetchVersionList(id);
 
       return data?.data ?? [];
     },
@@ -431,7 +436,7 @@ export const useFetchVersion = (
     queryFn: async () => {
       if (!version_id) return undefined;
 
-      const { data } = await flowService.getVersion({}, version_id);
+      const { data } = await agentService.fetchVersion(version_id);
 
       return data?.data ?? undefined;
     },
