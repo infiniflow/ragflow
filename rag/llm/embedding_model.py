@@ -202,8 +202,9 @@ class QWenEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
-        import dashscope
         import time
+
+        import dashscope
 
         batch_size = 4
         res = []
@@ -282,7 +283,7 @@ class OllamaEmbed(Base):
     _special_tokens = ["<|endoftext|>"]
 
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
 
     def encode(self, texts: list):

@@ -314,7 +314,7 @@ class OllamaTTS(Base):
         self.base_url = base_url
         self.headers = {"Content-Type": "application/json"}
         if key and key != "x":
-            self.headers["Authorization"] = f"Bear {key}"
+            self.headers["Authorization"] = f"Bearer {key}"
 
     def tts(self, text, voice="standard-voice"):
         payload = {"model": self.model_name, "voice": voice, "input": text}
