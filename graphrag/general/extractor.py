@@ -48,7 +48,7 @@ class Extractor:
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
 
     @timeout(60*3)
-    def _chat(self, system, history, gen_conf):
+    def _chat(self, system, history, gen_conf={}):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
         response = get_llm_cache(self._llm.llm_name, system, hist, conf)
