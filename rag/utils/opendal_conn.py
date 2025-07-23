@@ -1,6 +1,7 @@
 import opendal
 import logging
 import pymysql
+from urllib.parse import quote_plus
 
 from api.utils import get_base_config
 from rag.utils import singleton
@@ -35,7 +36,7 @@ def get_opendal_config():
                 "table": opendal_config.get("config").get("oss_table", "opendal_storage"),
                 "max_allowed_packet": str(max_packet)
             }
-            kwargs["connection_string"] = f"mysql://{kwargs['user']}:{kwargs['password']}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
+            kwargs["connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
         else:
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
