@@ -65,7 +65,13 @@ class DocumentService(CommonService):
             cls.model.process_begin_at,
             cls.model.process_duration,
             cls.model.meta_fields,
-            cls.model.suffix
+            cls.model.suffix,
+            cls.model.run,
+            cls.model.status,
+            cls.model.create_time,
+            cls.model.create_date,
+            cls.model.update_time,
+            cls.model.update_date,
         ]
 
     @classmethod
