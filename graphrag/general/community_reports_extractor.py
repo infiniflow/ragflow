@@ -90,11 +90,10 @@ class CommunityReportsExtractor(Extractor):
                 "relation_df": rela_df.to_csv(index_label="id")
             }
             text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
-            gen_conf = {"temperature": 0.3}
             async with chat_limiter:
                 try:
                     with trio.move_on_after(80) as cancel_scope:
-                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
+                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], {})
                     if cancel_scope.cancelled_caught:
                         logging.warning("extract_community_report._chat timeout, skipping...")
                         return
