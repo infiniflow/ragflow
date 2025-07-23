@@ -15,17 +15,19 @@
 #
 import base64
 
+from core.container import _CONTAINER_EXECUTION_SEMAPHORES
 from core.logger import logger
 from fastapi import Request
-from models.enums import ResultStatus
+from models.enums import ResultStatus, SupportLanguage
 from models.schemas import CodeExecutionRequest, CodeExecutionResult
 from services.execution import execute_code
 from services.limiter import limiter
 from services.security import analyze_code_security
-from core.container import _CONTAINER_EXECUTION_SEMAPHORES
+
 
 async def healthz_handler():
     return {"status": "ok"}
+
 
 @limiter.limit("5/second")
 async def run_code_handler(req: CodeExecutionRequest, request: Request):
@@ -33,6 +35,9 @@ async def run_code_handler(req: CodeExecutionRequest, request: Request):
 
     async with _CONTAINER_EXECUTION_SEMAPHORES[req.language]:
         code = base64.b64decode(req.code_b64).decode("utf-8")
+        if req.language == SupportLanguage.NODEJS:
+            code += "\n\nmodule.exports = { main };"
+            req.code_b64 = base64.b64encode(code.encode("utf-8")).decode("utf-8")
         is_safe, issues = analyze_code_security(code, language=req.language)
         if not is_safe:
             issue_details = "\n".join([f"Line {lineno}: {issue}" for issue, lineno in issues])

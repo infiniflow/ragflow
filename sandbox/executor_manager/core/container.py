@@ -26,7 +26,7 @@ from core.logger import logger
 
 _CONTAINER_QUEUES: dict[SupportLanguage, Queue] = {}
 _CONTAINER_LOCK: asyncio.Lock = asyncio.Lock()
-_CONTAINER_EXECUTION_SEMAPHORES:dict[SupportLanguage,asyncio.Semaphore] = {}
+_CONTAINER_EXECUTION_SEMAPHORES: dict[SupportLanguage, asyncio.Semaphore] = {}
 
 
 async def init_containers(size: int) -> tuple[int, int]:
@@ -38,7 +38,7 @@ async def init_containers(size: int) -> tuple[int, int]:
             _CONTAINER_QUEUES[SupportLanguage.PYTHON].get_nowait()
         while not _CONTAINER_QUEUES[SupportLanguage.NODEJS].empty():
             _CONTAINER_QUEUES[SupportLanguage.NODEJS].get_nowait()
-    
+
     for language in SupportLanguage:
         _CONTAINER_EXECUTION_SEMAPHORES[language] = asyncio.Semaphore(size)
 
