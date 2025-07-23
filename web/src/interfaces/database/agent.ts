@@ -3,6 +3,7 @@ export interface ICategorizeItem {
   description?: string;
   examples?: { value: string }[];
   index: number;
+  to: string[];
 }
 
 export type ICategorizeItemResult = Record<
@@ -134,9 +135,10 @@ export interface IRetrievalForm {
 }
 
 export interface ICodeForm {
-  inputs?: Array<{ name?: string; component_id?: string }>;
+  arguments: Record<string, string>;
   lang: string;
   script?: string;
+  outputs: Record<string, { value: string; type: string }>;
 }
 
 export interface IAgentForm {
@@ -153,8 +155,13 @@ export interface IAgentForm {
   exception_comment: any;
   exception_goto: any;
   tools: Array<{
+    name: string;
     component_name: string;
     params: Record<string, any>;
+  }>;
+  mcp: Array<{
+    mcp_id: string;
+    tools: Record<string, Record<string, any>>;
   }>;
   outputs: {
     structured_output: Record<string, Record<string, any>>;
@@ -214,4 +221,9 @@ export type RAGFlowNodeType =
 export interface IGraph {
   nodes: RAGFlowNodeType[];
   edges: Edge[];
+}
+
+export interface ITraceData {
+  component_id: string;
+  trace: Array<Record<string, any>>;
 }

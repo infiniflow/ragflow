@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'umi';
 
 export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',
+  id = 'id',
 }
 
 export const useNavigatePage = () => {
@@ -38,8 +39,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Chat);
   }, [navigate]);
 
-  const navigateToAgentList = useCallback(() => {
+  const navigateToAgents = useCallback(() => {
     navigate(Routes.Agents);
+  }, [navigate]);
+
+  const navigateToAgentList = useCallback(() => {
+    navigate(Routes.AgentList);
   }, [navigate]);
 
   const navigateToAgent = useCallback(
@@ -77,6 +82,7 @@ export const useNavigatePage = () => {
         [QueryStringMap.KnowledgeId]: searchParams.get(
           QueryStringMap.KnowledgeId,
         ),
+        [QueryStringMap.id]: searchParams.get(QueryStringMap.id),
       };
       if (queryStringKey) {
         return allQueryString[queryStringKey];
@@ -112,11 +118,12 @@ export const useNavigatePage = () => {
     navigateToChunkParsedResult,
     getQueryString,
     navigateToChunk,
-    navigateToAgentList,
+    navigateToAgents,
     navigateToAgent,
     navigateToAgentTemplates,
     navigateToSearchList,
     navigateToSearch,
     navigateToFiles,
+    navigateToAgentList,
   };
 };

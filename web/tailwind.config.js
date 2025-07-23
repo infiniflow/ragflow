@@ -52,6 +52,7 @@ module.exports = {
         'background-card': 'var(--background-card)',
         'background-checked': 'var(--background-checked)',
         'background-highlight': 'var(--background-highlight)',
+        'background-agent': 'var(--background-agent)',
 
         'input-border': 'var(--input-border)',
         'dot-green': 'var(--dot-green)',
@@ -219,5 +220,9 @@ module.exports = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate'), require('@tailwindcss/line-clamp')],
+  plugins: [
+    require('tailwindcss-animate'),
+    require('@tailwindcss/line-clamp'),
+    require('tailwind-scrollbar'),
+  ],
 };

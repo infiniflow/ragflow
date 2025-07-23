@@ -3,10 +3,12 @@
 import { CheckIcon, ChevronDownIcon } from 'lucide-react';
 import {
   Fragment,
+  ReactNode,
   forwardRef,
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useState,
 } from 'react';
 
@@ -24,65 +26,27 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import { RAGFlowSelectOptionType } from '../ui/select';
 
-const countries = [
-  {
-    label: 'America',
-    options: [
-      { value: 'United States', label: '🇺🇸' },
-      { value: 'Canada', label: '🇨🇦' },
-      { value: 'Mexico', label: '🇲🇽' },
-    ],
-  },
-  {
-    label: 'Africa',
-    options: [
-      { value: 'South Africa', label: '🇿🇦' },
-      { value: 'Nigeria', label: '🇳🇬' },
-      { value: 'Morocco', label: '🇲🇦' },
-    ],
-  },
-  {
-    label: 'Asia',
-    options: [
-      { value: 'China', label: '🇨🇳' },
-      { value: 'Japan', label: '🇯🇵' },
-      { value: 'India', label: '🇮🇳' },
-    ],
-  },
-  {
-    label: 'Europe',
-    options: [
-      { value: 'United Kingdom', label: '🇬🇧' },
-      { value: 'France', label: '🇫🇷' },
-      { value: 'Germany', label: '🇩🇪' },
-    ],
-  },
-  {
-    label: 'Oceania',
-    options: [
-      { value: 'Australia', label: '🇦🇺' },
-      { value: 'New Zealand', label: '🇳🇿' },
-    ],
-  },
-];
-
 export type SelectWithSearchFlagOptionType = {
-  label: string;
-  options: RAGFlowSelectOptionType[];
+  label: ReactNode;
+  value?: string;
+  disabled?: boolean;
+  options?: RAGFlowSelectOptionType[];
 };
 
 export type SelectWithSearchFlagProps = {
   options?: SelectWithSearchFlagOptionType[];
   value?: string;
   onChange?(value: string): void;
+  triggerClassName?: string;
 };
 
 export const SelectWithSearch = forwardRef<
   React.ElementRef<typeof Button>,
   SelectWithSearchFlagProps
->(({ value: val = '', onChange, options = countries }, ref) => {
+>(({ value: val = '', onChange, options = [], triggerClassName }, ref) => {
   const id = useId();
   const [open, setOpen] = useState<boolean>(false);
   const [value, setValue] = useState<string>('');
@@ -99,7 +63,16 @@ export const SelectWithSearch = forwardRef<
   useEffect(() => {
     setValue(val);
   }, [val]);
-
+  const selectLabel = useMemo(() => {
+    const optionTemp = options[0];
+    if (optionTemp?.options) {
+      return options
+        .map((group) => group?.options?.find((item) => item.value === value))
+        .filter(Boolean)[0]?.label;
+    } else {
+      return options.find((opt) => opt.value === value)?.label || '';
+    }
+  }, [options, value]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -109,18 +82,15 @@ export const SelectWithSearch = forwardRef<
           role="combobox"
           aria-expanded={open}
           ref={ref}
-          className="bg-background hover:bg-background border-input w-full justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px]"
+          className={cn(
+            'bg-background hover:bg-background border-input w-full justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px]',
+            triggerClassName,
+          )}
         >
           {value ? (
             <span className="flex min-w-0 options-center gap-2">
               <span className="text-lg leading-none truncate">
-                {
-                  options
-                    .map((group) =>
-                      group.options.find((item) => item.value === value),
-                    )
-                    .filter(Boolean)[0]?.label
-                }
+                {selectLabel}
               </span>
             </span>
           ) : (
@@ -141,30 +111,52 @@ export const SelectWithSearch = forwardRef<
           <CommandInput placeholder="Search ..." />
           <CommandList>
             <CommandEmpty>No data found.</CommandEmpty>
-            {options.map((group) => (
-              <Fragment key={group.label}>
-                <CommandGroup heading={group.label}>
-                  {group.options.map((option) => (
-                    <CommandItem
-                      key={option.value}
-                      value={option.value}
-                      onSelect={handleSelect}
-                    >
-                      <span className="text-lg leading-none">
-                        {option.label}
-                      </span>
+            {options.map((group, idx) => {
+              if (group.options) {
+                return (
+                  <Fragment key={idx}>
+                    <CommandGroup heading={group.label}>
+                      {group.options.map((option) => (
+                        <CommandItem
+                          key={option.value}
+                          value={option.value}
+                          disabled={option.disabled}
+                          onSelect={handleSelect}
+                        >
+                          <span className="text-lg leading-none">
+                            {option.label}
+                          </span>
 
-                      {value === option.value && (
-                        <CheckIcon size={16} className="ml-auto" />
-                      )}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </Fragment>
-            ))}
+                          {value === option.value && (
+                            <CheckIcon size={16} className="ml-auto" />
+                          )}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Fragment>
+                );
+              } else {
+                return (
+                  <CommandItem
+                    key={group.value}
+                    value={group.value}
+                    disabled={group.disabled}
+                    onSelect={handleSelect}
+                  >
+                    <span className="text-lg leading-none">{group.label}</span>
+
+                    {value === group.value && (
+                      <CheckIcon size={16} className="ml-auto" />
+                    )}
+                  </CommandItem>
+                );
+              }
+            })}
           </CommandList>
         </Command>
       </PopoverContent>
     </Popover>
   );
 });
+
+SelectWithSearch.displayName = 'SelectWithSearch';

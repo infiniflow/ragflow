@@ -69,21 +69,31 @@ from openai import OpenAI
 model = "model"
 client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
 
+stream = True
+reference = True
+
 completion = client.chat.completions.create(
     model=model,
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Who are you?"},
+        {"role": "assistant", "content": "I am an AI assistant named..."},
+        {"role": "user", "content": "Can you tell me how to install neovim"},
     ],
-    stream=True
+    stream=stream,
+    extra_body={"reference": reference}
 )
 
-stream = True
 if stream:
-    for chunk in completion:
-        print(chunk)
+for chunk in completion:
+    print(chunk)
+    if reference and chunk.choices[0].finish_reason == "stop":
+        print(f"Reference:\n{chunk.choices[0].delta.reference}")
+        print(f"Final content:\n{chunk.choices[0].delta.final_content}")
 else:
     print(completion.choices[0].message.content)
+    if reference:
+        print(completion.choices[0].message.reference)
 ```
 
 ## DATASET MANAGEMENT
@@ -152,7 +162,7 @@ The chunking method of the dataset to create. Available options:
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
+  `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
 - `chunk_method`=`"qa"`:  
   `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manuel"`:  
@@ -461,7 +471,7 @@ dataset = rag_object.list_datasets(id='id')
 dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
-doc.update([{"parser_config": {"chunk_token_count": 256}}, {"chunk_method": "manual"}])
+doc.update([{"parser_config": {"chunk_token_num": 256}}, {"chunk_method": "manual"}])
 ```
 
 ---
@@ -552,7 +562,7 @@ A `Document` object contains the following attributes:
 - `progress`: `float` The current processing progress as a percentage. Defaults to `0.0`.
 - `progress_msg`: `str` A message indicating the current progress status. Defaults to `""`.
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
-- `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
+- `process_duration`: `float` Duration of the processing in seconds. Defaults to `0.0`.
 - `run`: `str` The document's processing status:
   - `"UNSTART"`  (default)
   - `"RUNNING"`
@@ -952,6 +962,10 @@ Specifies whether to enable highlighting of matched terms in the results:
 
 - `True`: Enable highlighting of matched terms.
 - `False`: Disable highlighting of matched terms (default).
+
+##### cross_languages:  `list[string]`  
+
+The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 
 #### Returns
 

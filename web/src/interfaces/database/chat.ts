@@ -73,6 +73,7 @@ export interface Message {
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
 }
 
 export interface IReferenceChunk {
@@ -95,13 +96,19 @@ export interface IReference {
   total: number;
 }
 
+export interface IReferenceObject {
+  chunks: Record<string, IReferenceChunk>;
+  doc_aggs: Record<string, Docagg>;
+}
+
 export interface IAnswer {
   answer: string;
-  reference: IReference;
+  reference?: IReference;
   conversationId?: string;
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
 }
 
 export interface Docagg {

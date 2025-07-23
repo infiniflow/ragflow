@@ -217,19 +217,21 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
+            ("empty", ""),
+            ("space", " "),
             ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
             ("missing_model_name", "@BAAI"),
             ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
             ("whitespace_only_model_name", " @BAAI"),
             ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
         ],
-        ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+        ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
     def test_embedding_model_format(self, client, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         with pytest.raises(Exception) as excinfo:
             client.create_dataset(**payload)
-        if name == "missing_at":
+        if name in ["empty", "space", "missing_at"]:
             assert "Embedding model identifier must follow <model_name>@<provider> format" in str(excinfo.value), str(excinfo.value)
         else:
             assert "Both model_name and provider must be non-empty strings" in str(excinfo.value), str(excinfo.value)
@@ -243,9 +245,8 @@ class TestDatasetCreate:
     @pytest.mark.p2
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert "Input should be a valid string" in str(excinfo.value), str(excinfo.value)
+        dataset = client.create_dataset(**payload)
+        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -587,11 +588,12 @@ class TestDatasetCreate:
         excepted_value = DataSet.ParserConfig(
             client,
             {
-                "chunk_token_num": 128,
+                "chunk_token_num": 512,
                 "delimiter": r"\n",
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         parser_config_o = DataSet.ParserConfig(client, {})
@@ -604,11 +606,12 @@ class TestDatasetCreate:
         excepted_value = DataSet.ParserConfig(
             client,
             {
-                "chunk_token_num": 128,
+                "chunk_token_num": 512,
                 "delimiter": r"\n",
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         payload = {"name": "parser_config_unset"}
@@ -620,11 +623,12 @@ class TestDatasetCreate:
         excepted_value = DataSet.ParserConfig(
             client,
             {
-                "chunk_token_num": 128,
+                "chunk_token_num": 512,
                 "delimiter": r"\n",
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         payload = {"name": "parser_config_empty", "parser_config": None}
@@ -654,3 +658,64 @@ class TestDatasetCreate:
         with pytest.raises(Exception) as excinfo:
             client.create_dataset(**payload)
         assert "got an unexpected keyword argument" in str(excinfo.value), str(excinfo.value)
+
+
+@pytest.mark.usefixtures("clear_datasets")
+class TestParserConfigBugFix:
+    @pytest.mark.p1
+    def test_parser_config_missing_raptor_and_graphrag(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024})
+        payload = {"name": "test_parser_config_missing_fields_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert hasattr(config, "raptor"), "raptor field should be present"
+        assert hasattr(config, "graphrag"), "graphrag field should be present"
+        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
+        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+        assert config.chunk_token_num == 1024, "User-provided chunk_token_num should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_raptor(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024, "raptor": {"use_raptor": True}})
+        payload = {"name": "test_parser_config_only_raptor_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
+        assert hasattr(config, "graphrag"), "graphrag field should be present"
+        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_graphrag(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}})
+        payload = {"name": "test_parser_config_only_graphrag_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert hasattr(config, "raptor"), "raptor field should be present"
+        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
+        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_both_fields(self, client):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}})
+        payload = {"name": "test_parser_config_both_fields_sdk", "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
+        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
+    def test_parser_config_different_chunk_methods(self, client, chunk_method):
+        parser_config = DataSet.ParserConfig(client, {"chunk_token_num": 512})
+        payload = {"name": f"test_parser_config_{chunk_method}_sdk", "chunk_method": chunk_method, "parser_config": parser_config}
+        dataset = client.create_dataset(**payload)
+
+        config = dataset.parser_config
+        assert hasattr(config, "raptor"), f"raptor field should be present for {chunk_method}"
+        assert hasattr(config, "graphrag"), f"graphrag field should be present for {chunk_method}"
+        assert config.raptor.use_raptor is False, f"raptor.use_raptor should default to False for {chunk_method}"
+        assert config.graphrag.use_graphrag is False, f"graphrag.use_graphrag should default to False for {chunk_method}"

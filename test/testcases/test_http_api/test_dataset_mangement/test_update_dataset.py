@@ -300,20 +300,22 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
+            ("empty", ""),
+            ("space", " "),
             ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
             ("missing_model_name", "@BAAI"),
             ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
             ("whitespace_only_model_name", " @BAAI"),
             ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
         ],
-        ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+        ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
     def test_embedding_model_format(self, HttpApiAuth, add_dataset_func, name, embedding_model):
         dataset_id = add_dataset_func
         payload = {"name": name, "embedding_model": embedding_model}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        if name == "missing_at":
+        if name in ["empty", "space", "missing_at"]:
             assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
             assert "Both model_name and provider must be non-empty strings" in res["message"], res
@@ -323,8 +325,11 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         payload = {"embedding_model": None}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid string" in res["message"], res
+        assert res["code"] == 0, res
+
+        res = list_datasets(HttpApiAuth)
+        assert res["code"] == 0, res
+        assert res["data"][0]["embedding_model"] == "BAAI/bge-large-zh-v1.5@BAAI", res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -745,11 +750,12 @@ class TestDatasetUpdate:
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
         assert res["data"][0]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p3
@@ -762,11 +768,12 @@ class TestDatasetUpdate:
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
         assert res["data"][0]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p3
@@ -778,7 +785,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
 
     @pytest.mark.p3
     def test_parser_config_unset_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -789,7 +796,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
 
     @pytest.mark.p3
     def test_parser_config_none_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -800,7 +807,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

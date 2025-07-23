@@ -25,7 +25,7 @@ const DynamicExample = ({ name }: DynamicExampleProps) => {
 
   return (
     <FormItem>
-      <FormLabel tooltip={t('flow.msgTip')}>{t('flow.msg')}</FormLabel>
+      <FormLabel tooltip={t('flow.msgTip')}>{t('flow.examples')}</FormLabel>
       <div className="space-y-4">
         {fields.map((field, index) => (
           <div key={field.id} className="flex items-start gap-2">
