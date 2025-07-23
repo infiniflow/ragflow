@@ -265,6 +265,8 @@ export const initialRetrievalValues = {
   empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
+  use_kg: false,
+  cross_languages: [],
   outputs: {
     formalized_content: {
       type: 'string',

@@ -213,6 +213,42 @@ To add Node.js dependencies:
 
 ---
 
+
+## Usage
+
+### 🐍 A Python example
+
+```python
+def main(arg1: str, arg2: str) -> str:
+    return f"result: {arg1 + arg2}"
+```
+
+### 🟨 JavaScript examples
+
+A simple sync function
+
+```javascript
+function main({arg1, arg2}) {
+  return arg1+arg2
+}
+```
+
+Async funcion with aioxs
+
+```javascript
+const axios = require('axios');
+async function main() {
+  try {
+    const response = await axios.get('https://github.com/infiniflow/ragflow');
+    return 'Body:' + response.data;
+  } catch (error) {
+    return 'Error:' + error.message;
+  }
+}
+```
+
+---
+
 ## 📋 FAQ
 
 ### ❓Sandbox Not Working?

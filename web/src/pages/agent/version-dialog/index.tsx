@@ -17,16 +17,12 @@ import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { downloadJsonFile } from '@/utils/file-util';
-import {
-  Background,
-  ConnectionMode,
-  ReactFlow,
-  ReactFlowProvider,
-} from '@xyflow/react';
+import { ConnectionMode, ReactFlow, ReactFlowProvider } from '@xyflow/react';
 import { ArrowDownToLine } from 'lucide-react';
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { nodeTypes } from '../canvas';
+import { AgentBackground } from '../components/background';
 
 export function VersionDialog({
   hideModal,
@@ -123,9 +119,8 @@ export function VersionDialog({
                         zoomOnDoubleClick={false}
                         preventScrolling={true}
                         minZoom={0.1}
-                        className="!bg-background-agent"
                       >
-                        <Background />
+                        <AgentBackground></AgentBackground>
                       </ReactFlow>
                     </ReactFlowProvider>
                   </section>
