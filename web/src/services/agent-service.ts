@@ -20,6 +20,7 @@ const {
   fetchVersionList,
   fetchVersion,
   fetchCanvas,
+  fetchAgentAvatar,
 } = api;
 
 const methods = {
@@ -93,6 +94,10 @@ const methods = {
   },
   inputForm: {
     url: inputForm,
+    method: 'get',
+  },
+  fetchAgentAvatar: {
+    url: fetchAgentAvatar,
     method: 'get',
   },
 } as const;

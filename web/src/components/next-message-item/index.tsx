@@ -49,6 +49,7 @@ interface IProps
   index: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
+  showLog?: boolean;
 }
 
 function MessageItem({
@@ -65,6 +66,7 @@ function MessageItem({
   showLoudspeaker = true,
   visibleAvatar = true,
   children,
+  showLog,
 }: IProps) {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -141,6 +143,7 @@ function MessageItem({
                   showLikeButton={showLikeButton}
                   audioBinary={item.audio_binary}
                   showLoudspeaker={showLoudspeaker}
+                  showLog={showLog}
                 ></AssistantGroupButton>
               ) : (
                 <UserGroupButton

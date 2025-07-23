@@ -1,8 +1,7 @@
 import { MessageType } from '@/constants/chat';
 import { useGetFileIcon } from '@/pages/chat/hooks';
-import { Spin } from 'antd';
 
-import { useSendNextMessage } from './hooks';
+import { useSendAgentMessage } from './use-send-agent-message';
 
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/next-message-item';
@@ -25,13 +24,12 @@ const AgentChatBox = () => {
     handleInputChange,
     handlePressEnter,
     value,
-    loading,
     ref,
     derivedMessages,
     stopOutputMessage,
     sendFormMessage,
     findReferenceByMessageId,
-  } = useSendNextMessage();
+  } = useSendAgentMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -73,36 +71,36 @@ const AgentChatBox = () => {
       <section className="flex flex-1 flex-col px-5 h-[90vh]">
         <div className="flex-1 overflow-auto">
           <div>
-            <Spin spinning={loading}>
-              {derivedMessages?.map((message, i) => {
-                return (
-                  <MessageItem
-                    loading={
-                      message.role === MessageType.Assistant &&
-                      sendLoading &&
-                      derivedMessages.length - 1 === i
-                    }
-                    key={buildMessageUuidWithRole(message)}
-                    nickname={userInfo.nickname}
-                    avatar={userInfo.avatar}
-                    avatarDialog={canvasInfo.avatar}
-                    item={message}
-                    reference={findReferenceByMessageId(message.id)}
-                    clickDocumentButton={clickDocumentButton}
-                    index={i}
-                    showLikeButton={false}
-                    sendLoading={sendLoading}
-                  >
-                    <DebugContent
-                      parameters={buildInputList(message)}
-                      ok={handleOk(message)}
-                      isNext={false}
-                      btnText={'Submit'}
-                    ></DebugContent>
-                  </MessageItem>
-                );
-              })}
-            </Spin>
+            {/* <Spin spinning={sendLoading}> */}
+            {derivedMessages?.map((message, i) => {
+              return (
+                <MessageItem
+                  loading={
+                    message.role === MessageType.Assistant &&
+                    sendLoading &&
+                    derivedMessages.length - 1 === i
+                  }
+                  key={buildMessageUuidWithRole(message)}
+                  nickname={userInfo.nickname}
+                  avatar={userInfo.avatar}
+                  avatarDialog={canvasInfo.avatar}
+                  item={message}
+                  reference={findReferenceByMessageId(message.id)}
+                  clickDocumentButton={clickDocumentButton}
+                  index={i}
+                  showLikeButton={false}
+                  sendLoading={sendLoading}
+                >
+                  <DebugContent
+                    parameters={buildInputList(message)}
+                    ok={handleOk(message)}
+                    isNext={false}
+                    btnText={'Submit'}
+                  ></DebugContent>
+                </MessageItem>
+              );
+            })}
+            {/* </Spin> */}
           </div>
           <div ref={ref} />
         </div>
