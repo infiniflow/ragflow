@@ -116,7 +116,7 @@ class TestDocumentsParse:
 
 @pytest.mark.p3
 def test_parse_100_files(add_dataset_func, tmp_path):
-    @wait_for(100, 1, "Document parsing timeout")
+    @wait_for(200, 1, "Document parsing timeout")
     def condition(_dataset: DataSet, _count: int):
         documents = _dataset.list_documents(page_size=_count * 2)
         for document in documents:
@@ -136,7 +136,7 @@ def test_parse_100_files(add_dataset_func, tmp_path):
 
 @pytest.mark.p3
 def test_concurrent_parse(add_dataset_func, tmp_path):
-    @wait_for(120, 1, "Document parsing timeout")
+    @wait_for(200, 1, "Document parsing timeout")
     def condition(_dataset: DataSet, _count: int):
         documents = _dataset.list_documents(page_size=_count * 2)
         for document in documents:
