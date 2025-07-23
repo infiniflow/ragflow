@@ -106,13 +106,7 @@ Add the following line to `/etc/hosts` to resolve all hosts specified in **conf/
    npm install
    ```
 
-2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
-
-   ```bash
-   vim .umirc.ts
-   ```
-
-3. Start up the RAGFlow frontend service:
+2. Start up the RAGFlow frontend service:
 
    ```bash
    npm run dev 
