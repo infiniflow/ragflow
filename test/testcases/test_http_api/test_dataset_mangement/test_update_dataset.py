@@ -755,6 +755,7 @@ class TestDatasetUpdate:
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p3
@@ -772,6 +773,7 @@ class TestDatasetUpdate:
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p3
@@ -783,7 +785,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
 
     @pytest.mark.p3
     def test_parser_config_unset_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -794,7 +796,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
 
     @pytest.mark.p3
     def test_parser_config_none_with_chunk_method_change(self, HttpApiAuth, add_dataset_func):
@@ -805,7 +807,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}}, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

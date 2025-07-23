@@ -540,6 +540,7 @@ class TestUpdateDocumentParserConfig:
                     "html4excel": False,
                     "layout_recognize": "DeepDOC",
                     "raptor": {"use_raptor": False},
+                    "graphrag": {"use_graphrag": False},
                 }
             else:
                 for k, v in parser_config.items():

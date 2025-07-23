@@ -365,10 +365,10 @@ class ParserConfig(Base):
     auto_questions: int = Field(default=0, ge=0, le=10)
     chunk_token_num: int = Field(default=512, ge=1, le=2048)
     delimiter: str = Field(default=r"\n", min_length=1)
-    graphrag: GraphragConfig | None = None
+    graphrag: GraphragConfig = Field(default_factory=lambda: GraphragConfig(use_graphrag=False))
     html4excel: bool = False
     layout_recognize: str = "DeepDOC"
-    raptor: RaptorConfig | None = None
+    raptor: RaptorConfig = Field(default_factory=lambda: RaptorConfig(use_raptor=False))
     tag_kb_ids: list[str] = Field(default_factory=list)
     topn_tags: int = Field(default=1, ge=1, le=10)
     filename_embd_weight: float | None = Field(default=0.1, ge=0.0, le=1.0)
