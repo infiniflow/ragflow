@@ -35,21 +35,21 @@ cd ragflow/
 
 ### Install Python dependencies
 
-1. Install uv:
+1. Install uv, if your system does not have it already:
    
    ```bash
    pipx install uv
    ```
 
-2. Install Python dependencies:
+2. Install RAGFlow dependencies:
    - slim:
-   ```bash
-   uv sync --python 3.10 # install RAGFlow dependent python modules
-   ```
+      ```bash
+      uv sync --python 3.10
+      ```
    - full:
-   ```bash
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
-   ```
+      ```bash
+      uv sync --python 3.10 --all-extras
+      ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
 ### Launch third-party services
@@ -79,7 +79,7 @@ Add the following line to `/etc/hosts` to resolve all hosts specified in **conf/
    export PYTHONPATH=$(pwd)
    ```
 
-3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
+3. **Optional:** If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
