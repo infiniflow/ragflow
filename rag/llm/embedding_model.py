@@ -352,8 +352,7 @@ class FastEmbed(DefaultEmbedding):
         # Using the internal tokenizer to encode the texts and get the total
         # number of tokens
         encoding = self._model.model.tokenizer.encode(text)
-        embedding = next(self._model.query_embed(text)).tolist()
-
+        embedding = next(self._model.query_embed(text))
         return np.array(embedding), len(encoding.ids)
 
 
