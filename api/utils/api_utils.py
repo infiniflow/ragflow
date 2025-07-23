@@ -351,28 +351,47 @@ def generate_confirmation_token(tenant_id):
 
 
 def get_parser_config(chunk_method, parser_config):
-    if parser_config:
-        return parser_config
     if not chunk_method:
         chunk_method = "naive"
+
+    # Define default configurations for each chunk method
     key_mapping = {
-        "naive": {"chunk_token_num": 512, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}},
-        "qa": {"raptor": {"use_raptor": False}},
+        "naive": {"chunk_token_num": 512, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "tag": None,
         "resume": None,
-        "manual": {"raptor": {"use_raptor": False}},
+        "manual": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "table": None,
-        "paper": {"raptor": {"use_raptor": False}},
-        "book": {"raptor": {"use_raptor": False}},
-        "laws": {"raptor": {"use_raptor": False}},
-        "presentation": {"raptor": {"use_raptor": False}},
+        "paper": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "book": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "laws": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "presentation": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "one": None,
-        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": r"\n", "entity_types": ["organization", "person", "location", "event", "time"]},
+        "knowledge_graph": {
+            "chunk_token_num": 8192,
+            "delimiter": r"\n",
+            "entity_types": ["organization", "person", "location", "event", "time"],
+            "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
+        },
         "email": None,
         "picture": None,
     }
-    parser_config = key_mapping[chunk_method]
-    return parser_config
+
+    default_config = key_mapping[chunk_method]
+
+    # If no parser_config provided, return default
+    if not parser_config:
+        return default_config
+
+    # If parser_config is provided, merge with defaults to ensure required fields exist
+    if default_config is None:
+        return parser_config
+
+    # Ensure raptor and graphrag fields have default values if not provided
+    merged_config = deep_merge(default_config, parser_config)
+
+    return merged_config
 
 
 def get_data_openai(
@@ -602,17 +621,14 @@ def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, s
 
 TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
-def timeout(
-    seconds: float |int = None,
-    attempts: int = 2,
-    *,
-    exception: Optional[TimeoutException] = None,
-    on_timeout: Optional[OnTimeoutCallback] = None
-):
+
+
+def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             result_queue = queue.Queue(maxsize=1)
+
             def target():
                 try:
                     result = func(*args, **kwargs)
@@ -644,7 +660,7 @@ def timeout(
                     with trio.fail_after(seconds):
                         return await func(*args, **kwargs)
                 except trio.TooSlowError:
-                    if a < attempts -1:
+                    if a < attempts - 1:
                         continue
                     if on_timeout is not None:
                         if callable(on_timeout):
@@ -668,11 +684,11 @@ def timeout(
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         return wrapper
+
     return decorator
 
 
 async def is_strong_enough(chat_model, embedding_model):
-
     @timeout(30, 2)
     async def _is_strong_enough():
         nonlocal chat_model, embedding_model
@@ -681,7 +697,7 @@ async def is_strong_enough(chat_model, embedding_model):
                 _ = await trio.to_thread.run_sync(lambda: embedding_model.encode(["Are you strong enough!?"]))
         if chat_model:
             with trio.fail_after(30):
-                res =  await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role":"user", "content": "Are you strong enough!?"}], {}))
+                res = await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}], {}))
             if res.find("**ERROR**") >= 0:
                 raise Exception(res)
 
