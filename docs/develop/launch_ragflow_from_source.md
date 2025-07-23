@@ -70,7 +70,18 @@ Add the following line to `/etc/hosts` to resolve all hosts specified in **conf/
 
 ### Launch the RAGFlow backend service
 
+1. Install jemalloc, if your system does not have it already:
 
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+
+   # centos
+   sudo yum install jemalloc
+
+   # homebrew (macos)
+   brew install jemalloc
+   ```
 
 2. Activate the Python virtual environment:
 
