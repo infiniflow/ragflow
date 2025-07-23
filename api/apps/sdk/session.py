@@ -34,6 +34,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_result, token_required, validate_request
+from rag.prompts import chunks_format
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
@@ -185,6 +186,12 @@ def chat_completion_openai_like(tenant_id, chat_id):
     This function allows users to interact with a model and receive responses based on a series of historical messages.
     If `stream` is set to True (by default), the response will be streamed in chunks, mimicking the OpenAI-style API.
     Set `stream` to False explicitly, the response will be returned in a single complete answer.
+
+    Reference:
+
+    - If `stream` is True, the final answer and reference information will appear in the **last chunk** of the stream.
+    - If `stream` is False, the reference will be included in `choices[0].message.reference`.
+
     Example usage:
 
     curl -X POST https://ragflow_address.com/api/v1/chats_openai/<chat_id>/chat/completions \
@@ -204,6 +211,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
     client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
 
     stream = True
+    reference = True
 
     completion = client.chat.completions.create(
         model=model,
@@ -213,16 +221,24 @@ def chat_completion_openai_like(tenant_id, chat_id):
             {"role": "assistant", "content": "I am an AI assistant named..."},
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
-        stream=stream
+        stream=stream,
+        extra_body={"reference": reference}
     )
 
     if stream:
-        for chunk in completion:
-            print(chunk)
+    for chunk in completion:
+        print(chunk)
+        if reference and chunk.choices[0].finish_reason == "stop":
+            print(f"Reference:\n{chunk.choices[0].delta.reference}")
+            print(f"Final content:\n{chunk.choices[0].delta.final_content}")
     else:
         print(completion.choices[0].message.content)
+        if reference:
+            print(completion.choices[0].message.reference)
     """
-    req = request.json
+    req = request.get_json()
+
+    need_reference = bool(req.get("reference", False))
 
     messages = req.get("messages", [])
     # To prevent empty [] input
@@ -262,6 +278,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
             token_used = 0
             answer_cache = ""
             reasoning_cache = ""
+            last_ans = {}
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [
@@ -286,7 +303,8 @@ def chat_completion_openai_like(tenant_id, chat_id):
             }
 
             try:
-                for ans in chat(dia, msg, True, toolcall_session=toolcall_session, tools=tools):
+                for ans in chat(dia, msg, True, toolcall_session=toolcall_session, tools=tools, quote=need_reference):
+                    last_ans = ans
                     answer = ans["answer"]
 
                     reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
@@ -338,6 +356,9 @@ def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
             response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
+            if need_reference:
+                response["choices"][0]["delta"]["reference"] = chunks_format(last_ans.get("reference", []))
+                response["choices"][0]["delta"]["final_content"] = last_ans.get("answer", "")
             yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data:[DONE]\n\n"
 
@@ -349,7 +370,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         return resp
     else:
         answer = None
-        for ans in chat(dia, msg, False, toolcall_session=toolcall_session, tools=tools):
+        for ans in chat(dia, msg, False, toolcall_session=toolcall_session, tools=tools, quote=need_reference):
             # focus answer content only
             answer = ans
             break
@@ -370,8 +391,21 @@ def chat_completion_openai_like(tenant_id, chat_id):
                     "rejected_prediction_tokens": 0,  # 0 for simplicity
                 },
             },
-            "choices": [{"message": {"role": "assistant", "content": content}, "logprobs": None, "finish_reason": "stop", "index": 0}],
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                    },
+                    "logprobs": None,
+                    "finish_reason": "stop",
+                    "index": 0,
+                }
+            ],
         }
+        if need_reference:
+            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", []))
+
         return jsonify(response)
 
 
