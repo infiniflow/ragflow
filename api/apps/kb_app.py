@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from asyncio import Task
 import json
 import os
 
@@ -23,10 +24,11 @@ from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.task_service import TaskService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
-from api.db import StatusEnum, FileSource
+from api.db import StatusEnum, FileSource, TaskStatus
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
@@ -235,6 +237,8 @@ def rm():
             File2DocumentService.delete_by_document_id(doc.id)
         FileService.filter_delete(
             [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
+        if doc.run == TaskStatus.RUNNING.value:
+            TaskService.filter_delete(Task.doc_id == doc.id)
         if not KnowledgebaseService.delete_by_id(req["kb_id"]):
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")

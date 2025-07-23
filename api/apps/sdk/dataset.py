@@ -21,14 +21,16 @@ import json
 
 from flask import request
 from peewee import OperationalError
+from trio import TaskStatus
 
 from api import settings
 from api.db import FileSource, StatusEnum
-from api.db.db_models import File
+from api.db.db_models import File, Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import TaskService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
 from api.utils.api_utils import (
@@ -234,6 +236,8 @@ def delete(tenant_id):
                     ]
                 )
                 File2DocumentService.delete_by_document_id(doc.id)
+                if doc.run == TaskStatus.RUNNING.value:
+                  TaskService.filter_delete(Task.doc_id == doc.id)
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
             if not KnowledgebaseService.delete_by_id(kb_id):
                 errors.append(f"Delete dataset error for {kb_id}")
