@@ -202,8 +202,9 @@ class QWenEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
-        import dashscope
         import time
+
+        import dashscope
 
         batch_size = 4
         res = []
@@ -899,4 +900,13 @@ class GiteeEmbed(SILICONFLOWEmbed):
     def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/embeddings"):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/embeddings"
+        super().__init__(key, model_name, base_url)
+
+
+class DeepInfraEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "DeepInfra"
+
+    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai"):
+        if not base_url:
+            base_url = "https://api.deepinfra.com/v1/openai"
         super().__init__(key, model_name, base_url)

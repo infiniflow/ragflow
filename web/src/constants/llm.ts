@@ -50,6 +50,7 @@ export enum LLMFactory {
   GPUStack = 'GPUStack',
   VLLM = 'VLLM',
   GiteeAI = 'GiteeAI',
+  DeepInfra = 'DeepInfra',
 }
 
 // Please lowercase the file name
@@ -105,4 +106,5 @@ export const IconMap = {
   [LLMFactory.GPUStack]: 'gpustack',
   [LLMFactory.VLLM]: 'vllm',
   [LLMFactory.GiteeAI]: 'gitee-ai',
+  [LLMFactory.DeepInfra]: 'deepinfra',
 };
