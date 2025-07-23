@@ -1,8 +1,7 @@
-import { MessageType } from '@/constants/chat';
+import { EmptyConversationId, MessageType } from '@/constants/chat';
 import { IConversation, IReference } from '@/interfaces/database/chat';
 import { isEmpty } from 'lodash';
-import { EmptyConversationId } from './constants';
-import { IMessage } from './interface';
+import { IMessage } from '../chat/interface';
 
 export const isConversationIdExist = (conversationId: string) => {
   return conversationId !== EmptyConversationId && conversationId !== '';

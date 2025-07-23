@@ -1,4 +1,12 @@
 import { PageHeader } from '@/components/page-header';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentTemplates, useSetAgent } from '@/hooks/use-agent-request';
@@ -7,7 +15,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
-import { SideBar } from './template-sidebar';
 
 export default function AgentTemplates() {
   const { navigateToAgentList } = useNavigatePage();
@@ -69,36 +76,40 @@ export default function AgentTemplates() {
   };
   return (
     <section>
-      <PageHeader
-        back={navigateToAgentList}
-        title={t('flow.createGraph')}
-      ></PageHeader>
-      <div className="flex flex-1 h-dvh">
-        <SideBar change={handleSiderBarChange}></SideBar>
-
-        <main className="flex-1 bg-muted/50 h-dvh">
-          <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[94vh] overflow-auto px-8 pt-8">
-            {templateList?.map((x, index) => {
-              return (
-                <TemplateCard
-                  isCreate={index === 0}
-                  key={x.id}
-                  data={x}
-                  showModal={showModal}
-                ></TemplateCard>
-              );
-            })}
-          </div>
-          {creatingVisible && (
-            <CreateAgentDialog
-              loading={loading}
-              visible={creatingVisible}
-              hideModal={hideCreatingModal}
-              onOk={handleOk}
-            ></CreateAgentDialog>
-          )}
-        </main>
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink onClick={navigateToAgentList}>
+                Agent
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{t('flow.createGraph')}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </PageHeader>
+      <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 max-h-[94vh] overflow-auto px-8">
+        {list?.map((x) => {
+          return (
+            <TemplateCard
+              key={x.id}
+              data={x}
+              showModal={showModal}
+            ></TemplateCard>
+          );
+        })}
       </div>
+      {creatingVisible && (
+        <CreateAgentDialog
+          loading={loading}
+          visible={creatingVisible}
+          hideModal={hideCreatingModal}
+          onOk={handleOk}
+        ></CreateAgentDialog>
+      )}
     </section>
   );
 }

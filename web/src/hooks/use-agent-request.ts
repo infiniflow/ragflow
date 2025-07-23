@@ -35,6 +35,7 @@ export const enum AgentApiAction {
   FetchInputForm = 'fetchInputForm',
   FetchVersionList = 'fetchVersionList',
   FetchVersion = 'fetchVersion',
+  FetchAgentAvatar = 'fetchAgentAvatar',
 }
 
 export const EmptyDsl = {
@@ -443,4 +444,33 @@ export const useFetchVersion = (
   });
 
   return { data, loading };
+};
+
+export const useFetchAgentAvatar = (): {
+  data: IFlow;
+  loading: boolean;
+  refetch: () => void;
+} => {
+  const { sharedId } = useGetSharedChatSearchParams();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    queryKey: [AgentApiAction.FetchAgentAvatar],
+    initialData: {} as IFlow,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+    queryFn: async () => {
+      if (!sharedId) return {};
+      const { data } = await agentService.fetchAgentAvatar(sharedId);
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, refetch };
 };
