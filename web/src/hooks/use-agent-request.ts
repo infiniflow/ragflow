@@ -382,7 +382,7 @@ export const useUploadCanvasFileWithProgress = (
         files.forEach((file) => {
           onError(file, error as Error);
         });
-        message.error('error', error.message);
+        message.error('error', error?.message);
       }
     },
   });
@@ -468,10 +468,15 @@ export const useFetchInputForm = (componentId?: string) => {
     initialData: {},
     enabled: !!id && !!componentId,
     queryFn: async () => {
-      const { data } = await agentService.inputForm({
-        id,
-        component_id: componentId,
-      });
+      const { data } = await agentService.inputForm(
+        {
+          params: {
+            id,
+            component_id: componentId,
+          },
+        },
+        true,
+      );
 
       return data.data;
     },
