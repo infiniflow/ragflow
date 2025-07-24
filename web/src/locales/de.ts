@@ -717,7 +717,7 @@ export default {
       addGoogleRegion: 'Google Cloud Region',
       GoogleRegionMessage: 'Bitte geben Sie die Google Cloud Region ein',
       modelProvidersWarn:
-        'Bitte fügen Sie zuerst sowohl das Embedding-Modell als auch das LLM in <b>Einstellungen > Modellanbieter</b> hinzu. Legen Sie sie dann in "Systemmodelleinstellungen" fest.',
+        'Bitte fügen Sie zuerst sowohl das Embedding-Modell als auch das LLM in <b>Einstellungen > Modellanbieter</b> hinzu. Legen Sie sie dann in "Standardmodelle festlegen" fest.',
       apiVersion: 'API-Version',
       apiVersionMessage: 'Bitte geben Sie die API-Version ein',
       add: 'Hinzufügen',

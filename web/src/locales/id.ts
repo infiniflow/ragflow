@@ -603,7 +603,7 @@ export default {
       addGoogleRegion: 'Wilayah Google Cloud',
       GoogleRegionMessage: 'Silakan masukkan Wilayah Google Cloud',
       modelProvidersWarn:
-        'Silakan tambahkan model embedding dan LLM di <b>Pengaturan > Penyedia Model</b> terlebih dahulu.',
+        'Silakan tambahkan model embedding dan LLM di <b>Pengaturan > Penyedia Model</b> terlebih dahulu. Kemudian, atur keduanya di "Atur model default".',
       apiVersion: 'Versi API',
       apiVersionMessage: 'Silakan masukkan versi API',
       modelsToBeAddedTooltip:
