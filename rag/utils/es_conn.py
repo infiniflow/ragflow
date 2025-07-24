@@ -19,13 +19,14 @@ import re
 import json
 import time
 import os
+import threading
 
 import copy
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
-from rag.settings import TAG_FLD, PAGERANK_FLD
+from rag.settings import TAG_FLD, PAGERANK_FLD, ES_HEALTH_CHECK_INTERVAL_SECONDS
 from rag.utils import singleton, get_float
 from api.utils.file_utils import get_project_base_directory
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
@@ -68,6 +69,8 @@ class ESConnection(DocStoreConnection):
         self.mapping = json.load(open(fp_mapping, "r"))
         logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
+        self._start_health_check_thread()
+
     def _connect(self):
         self.es = Elasticsearch(
             settings.ES["hosts"].split(","),
@@ -80,6 +83,29 @@ class ESConnection(DocStoreConnection):
             self.info = self.es.info()
             return True
         return False
+
+    """
+    keep the connection active
+    """
+    def _health_check_loop(self):
+
+        while True:
+            try:
+                if not self.es.ping():
+                    logger.warning("Elasticsearch connection lost during health check.")
+                else:
+                    logger.debug("Elasticsearch health check succeeded.")
+            except Exception as e:
+                logger.warning(f"Elasticsearch health check failed: {str(e)}")
+            time.sleep(ES_HEALTH_CHECK_INTERVAL_SECONDS)
+
+    """
+    Start the background health check thread
+    """
+    def _start_health_check_thread(self):
+        thread = threading.Thread(target=self._health_check_loop, daemon=True)
+        thread.start()
+        logger.info("Elasticsearch background health check thread started.")
 
     """
     Database operations
