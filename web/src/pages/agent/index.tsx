@@ -18,6 +18,7 @@ import {
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -37,7 +38,10 @@ import AgentCanvas from './canvas';
 import EmbedDialog from './embed-dialog';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
-import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
+import {
+  useGetBeginNodeDataInputs,
+  useGetBeginNodeDataQueryIsSafe,
+} from './hooks/use-get-begin-query';
 import { useOpenDocument } from './hooks/use-open-document';
 import {
   useSaveGraph,
@@ -67,6 +71,8 @@ export default function Agent() {
     showModal: showChatDrawer,
   } = useSetModalState();
   const { t } = useTranslation();
+  const { data: userInfo } = useFetchUserInfo();
+
   const openDocument = useOpenDocument();
   const {
     handleExportJson,
@@ -76,7 +82,7 @@ export default function Agent() {
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-  const { flowDetail } = useFetchDataOnMount();
+  const { flowDetail: agentDetail } = useFetchDataOnMount();
   const inputs = useGetBeginNodeDataInputs();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const handleRunAgent = useCallback(() => {
@@ -95,6 +101,8 @@ export default function Agent() {
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
 
+  const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
+
   return (
     <section className="h-full">
       <PageHeader>
@@ -107,7 +115,7 @@ export default function Agent() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{flowDetail.title}</BreadcrumbPage>
+              <BreadcrumbPage>{agentDetail.title}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -154,7 +162,13 @@ export default function Agent() {
                 {t('flow.export')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              <AgentDropdownMenuItem onClick={showEmbedModal}>
+              <AgentDropdownMenuItem
+                onClick={showEmbedModal}
+                disabled={
+                  !isBeginNodeDataQuerySafe ||
+                  userInfo.nickname !== agentDetail.nickname
+                }
+              >
                 <ScreenShare />
                 {t('common.embedIntoSite')}
               </AgentDropdownMenuItem>

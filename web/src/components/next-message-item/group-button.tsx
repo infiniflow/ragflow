@@ -27,6 +27,7 @@ interface IProps {
   showLikeButton: boolean;
   audioBinary?: string;
   showLoudspeaker?: boolean;
+  showLog?: boolean;
 }
 
 export const AssistantGroupButton = ({
@@ -36,6 +37,7 @@ export const AssistantGroupButton = ({
   audioBinary,
   showLikeButton,
   showLoudspeaker = true,
+  showLog = true,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
@@ -91,9 +93,11 @@ export const AssistantGroupButton = ({
             <PromptIcon style={{ fontSize: '16px' }} />
           </Radio.Button>
         )}
-        <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
-          <NotebookText className="size-4" />
-        </ToggleGroupItem>
+        {showLog && (
+          <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
+            <NotebookText className="size-4" />
+          </ToggleGroupItem>
+        )}
       </ToggleGroup>
       {visible && (
         <FeedbackModal

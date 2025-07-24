@@ -19,7 +19,7 @@ spec:
       storage: {{ .Values.opensearch.storage.capacity }}
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "ragflow.fullname" . }}-opensearch
   labels:
@@ -85,13 +85,14 @@ spec:
           runAsUser: 1000
           allowPrivilegeEscalation: false
         livenessProbe:
-          httpGet:
-            path: /
-            port: 9201
+          exec:
+            command:
+              - sh
+              - -c
+              - curl -u admin:$OPENSEARCH_PASSWORD localhost:9201
           initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 10
-          failureThreshold: 120
+          failureThreshold: 6
       volumes:
         - name: opensearch-data
           persistentVolumeClaim:
