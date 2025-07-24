@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { initialRetrievalValues } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { useValues } from './use-values';
@@ -92,12 +93,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <QueryVariable></QueryVariable>
           <KnowledgeBaseFormField></KnowledgeBaseFormField>
@@ -114,7 +110,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
         </FormContainer>
         <Output list={outputList}></Output>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }
