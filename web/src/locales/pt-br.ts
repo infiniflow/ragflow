@@ -587,7 +587,7 @@ export default {
       addFishAudioRefID: 'ID de referência do FishAudio',
       addFishAudioRefIDMessage:
         'Por favor, insira o ID de referência (deixe em branco para usar o modelo padrão).',
-       `Por favor, adicione tanto o modelo de incorporação quanto o LLM em <b>Configurações > Provedores de Modelo</b> primeiro. Depois, defina-os nas 'Configurações do modelo do sistema'.`,
+      modelProvidersWarn: `Por favor, adicione tanto o modelo de incorporação quanto o LLM em <b>Configurações > Provedores de Modelo</b> primeiro. Depois, defina-os nas 'Configurações do modelo do sistema'.`,
       apiVersion: 'Versão da API',
       apiVersionMessage: 'Por favor, insira a versão da API',
       add: 'Adicionar',

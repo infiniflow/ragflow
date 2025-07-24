@@ -103,7 +103,7 @@ export function NextMessageInput({
       </FileUploadDropzone>
       <form
         onSubmit={onSubmit}
-        className="relative flex w-full max-w-md flex-col gap-2.5 rounded-md border border-input px-3 py-2 outline-none focus-within:ring-1 focus-within:ring-ring/50"
+        className="relative flex w-full flex-col gap-2.5 rounded-md border border-input px-3 py-2 outline-none focus-within:ring-1 focus-within:ring-ring/50"
       >
         <FileUploadList
           orientation="horizontal"
