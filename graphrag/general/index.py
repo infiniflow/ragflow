@@ -20,7 +20,7 @@ import trio
 
 from api import settings
 from api.utils import get_uuid
-from api.utils.api_utils import timeout, is_strong_enough
+from api.utils.api_utils import timeout
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
 from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from graphrag.general.community_reports_extractor import CommunityReportsExtractor
@@ -49,9 +49,6 @@ async def run_graphrag(
     embedding_model,
     callback,
 ):
-    # Pressure test for GraphRAG task
-    await is_strong_enough(chat_model, embedding_model)
-
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []

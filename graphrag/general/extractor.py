@@ -48,7 +48,7 @@ class Extractor:
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
 
     @timeout(60*3)
-    def _chat(self, system, history, gen_conf):
+    def _chat(self, system, history, gen_conf={}):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
         response = get_llm_cache(self._llm.llm_name, system, hist, conf)
@@ -250,5 +250,5 @@ class Extractor:
         use_prompt = prompt_template.format(**context_base)
         logging.info(f"Trigger summary: {entity_or_relation_name}")
         async with chat_limiter:
-            summary = await trio.to_thread.run_sync(lambda: self._chat(use_prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.8}))
+            summary = await trio.to_thread.run_sync(lambda: self._chat(use_prompt, [{"role": "user", "content": "Output: "}]))
         return summary

@@ -641,6 +641,7 @@ class TestDatasetUpdate:
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         dataset.update({"parser_config": {}})
@@ -660,6 +661,7 @@ class TestDatasetUpdate:
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         dataset.update({"parser_config": None})
@@ -675,6 +677,7 @@ class TestDatasetUpdate:
             client,
             {
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": {}})

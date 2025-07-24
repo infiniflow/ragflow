@@ -1,3 +1,4 @@
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { RerankFormFields } from '@/components/rerank';
@@ -12,6 +13,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
+import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
@@ -20,6 +22,7 @@ import { z } from 'zod';
 import { initialRetrievalValues } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { useValues } from './use-values';
@@ -32,6 +35,8 @@ export const RetrievalPartialSchema = {
   kb_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
+  cross_languages: z.array(z.string()),
+  use_kg: z.boolean(),
 };
 
 export const FormSchema = z.object({
@@ -88,12 +93,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <QueryVariable></QueryVariable>
           <KnowledgeBaseFormField></KnowledgeBaseFormField>
@@ -106,9 +106,11 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <TopNFormField></TopNFormField>
           <RerankFormFields></RerankFormFields>
           <EmptyResponseField></EmptyResponseField>
+          <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+          <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
         </FormContainer>
         <Output list={outputList}></Output>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }

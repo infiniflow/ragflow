@@ -19,7 +19,7 @@ spec:
       storage: {{ .Values.elasticsearch.storage.capacity }}
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "ragflow.fullname" . }}-es
   labels:

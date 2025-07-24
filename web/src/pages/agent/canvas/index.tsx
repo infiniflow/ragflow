@@ -5,7 +5,6 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
-  Background,
   ConnectionMode,
   ControlButton,
   Controls,
@@ -17,6 +16,7 @@ import { NotebookPen } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
+import { AgentBackground } from '../components/background';
 import {
   AgentChatContext,
   AgentChatLogContext,
@@ -56,7 +56,7 @@ import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 import { ToolNode } from './node/tool-node';
 
-const nodeTypes: NodeTypes = {
+export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
@@ -210,7 +210,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           deleteKeyCode={['Delete', 'Backspace']}
           onBeforeDelete={handleBeforeDelete}
         >
-          <Background />
+          <AgentBackground></AgentBackground>
           <Controls position={'bottom-center'} orientation="horizontal">
             <ControlButton>
               <Tooltip>

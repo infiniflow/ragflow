@@ -69,21 +69,31 @@ from openai import OpenAI
 model = "model"
 client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
 
+stream = True
+reference = True
+
 completion = client.chat.completions.create(
     model=model,
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Who are you?"},
+        {"role": "assistant", "content": "I am an AI assistant named..."},
+        {"role": "user", "content": "Can you tell me how to install neovim"},
     ],
-    stream=True
+    stream=stream,
+    extra_body={"reference": reference}
 )
 
-stream = True
 if stream:
-    for chunk in completion:
-        print(chunk)
+for chunk in completion:
+    print(chunk)
+    if reference and chunk.choices[0].finish_reason == "stop":
+        print(f"Reference:\n{chunk.choices[0].delta.reference}")
+        print(f"Final content:\n{chunk.choices[0].delta.final_content}")
 else:
     print(completion.choices[0].message.content)
+    if reference:
+        print(completion.choices[0].message.reference)
 ```
 
 ## DATASET MANAGEMENT
@@ -952,6 +962,10 @@ Specifies whether to enable highlighting of matched terms in the results:
 
 - `True`: Enable highlighting of matched terms.
 - `False`: Disable highlighting of matched terms (default).
+
+##### cross_languages:  `list[string]`  
+
+The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 
 #### Returns
 
