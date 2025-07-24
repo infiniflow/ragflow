@@ -68,7 +68,7 @@ spec:
     - metadata:
         name: redis-data
         labels:
-          {{- include "ragflow.labels" . | nindent 10 }}
+          {{- include "ragflow.selectorLabels" . | nindent 10 }}
           app.kubernetes.io/component: redis
       spec:
         accessModes:
