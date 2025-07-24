@@ -105,7 +105,6 @@ const AgentChatBox = () => {
           <div ref={ref} />
         </div>
         <MessageInput
-          showUploadIcon={false}
           value={value}
           sendLoading={sendLoading}
           disabled={false}

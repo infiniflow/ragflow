@@ -3,9 +3,17 @@ import { LlmIcon } from '@/components/svg-icon';
 import { useTheme } from '@/components/theme-provider';
 import { LLMFactory } from '@/constants/llm';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
-import { LlmItem, useSelectLlmList, useFetchMyLlmListDetailed } from '@/hooks/llm-hooks';
+import {
+  LlmItem,
+  useFetchMyLlmListDetailed,
+  useSelectLlmList,
+} from '@/hooks/llm-hooks';
 import { getRealModelName } from '@/utils/llm-util';
-import { CloseCircleOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
+import {
+  CloseCircleOutlined,
+  EditOutlined,
+  SettingOutlined,
+} from '@ant-design/icons';
 import {
   Button,
   Card,
@@ -137,7 +145,10 @@ const ModelCard = ({ item, clickApiKey, handleEditModel }: IModelCardProps) => {
                   <Tag color="#b8b8b8">{model.type}</Tag>
                   {isLocalLlmFactory(item.name) && (
                     <Tooltip title={t('edit', { keyPrefix: 'common' })}>
-                      <Button type={'text'} onClick={() => handleEditModel(model, item)}>
+                      <Button
+                        type={'text'}
+                        onClick={() => handleEditModel(model, item)}
+                      >
                         <EditOutlined style={{ color: '#1890ff' }} />
                       </Button>
                     </Tooltip>
@@ -304,14 +315,16 @@ const UserSettingModel = () => {
     (model: any, factory: LlmItem) => {
       if (factory) {
         const detailedFactory = detailedLlmList[factory.name];
-        const detailedModel = detailedFactory?.llm?.find((m: any) => m.name === model.name);
-        
+        const detailedModel = detailedFactory?.llm?.find(
+          (m: any) => m.name === model.name,
+        );
+
         const editData = {
           llm_factory: factory.name,
           llm_name: model.name,
-          model_type: model.type
+          model_type: model.type,
         };
-        
+
         if (isLocalLlmFactory(factory.name)) {
           showLlmAddingModal(factory.name, true, editData, detailedModel);
         } else if (factory.name in ModalMap) {
@@ -333,7 +346,11 @@ const UserSettingModel = () => {
           grid={{ gutter: 16, column: 1 }}
           dataSource={llmList}
           renderItem={(item) => (
-            <ModelCard item={item} clickApiKey={handleAddModel} handleEditModel={handleEditModel}></ModelCard>
+            <ModelCard
+              item={item}
+              clickApiKey={handleAddModel}
+              handleEditModel={handleEditModel}
+            ></ModelCard>
           )}
         />
       ),
