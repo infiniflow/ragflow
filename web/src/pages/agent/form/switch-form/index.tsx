@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toLower } from 'lodash';
 import { X } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -118,13 +118,13 @@ function ConditionCards({
   );
 
   return (
-    <section className="flex-1 space-y-2.5">
+    <section className="flex-1 space-y-2.5 min-w-0">
       {fields.map((field, index) => {
         return (
           <div key={field.id} className="flex">
             <Card
               className={cn(
-                'relative bg-transparent border-input-border border flex-1 ',
+                'relative bg-transparent border-input-border border flex-1 min-w-0',
                 {
                   'before:w-10 before:absolute before:h-[1px] before:bg-input-border before:top-1/2 before:-left-10':
                     index === 0 || index === fields.length - 1,
@@ -136,12 +136,12 @@ function ConditionCards({
                   control={form.control}
                   name={`${name}.${index}.cpn_id`}
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex-1 min-w-0">
                       <FormControl>
                         <SelectWithSearch
                           {...field}
                           options={finalOptions}
-                          triggerClassName="w-30 text-background-checked bg-transparent border-none text-ellipsis"
+                          triggerClassName="text-background-checked bg-transparent border-none truncate"
                         ></SelectWithSearch>
                       </FormControl>
                       <FormMessage />
@@ -202,7 +202,7 @@ function ConditionCards({
   );
 }
 
-const SwitchForm = ({ node }: IOperatorForm) => {
+function SwitchForm({ node }: IOperatorForm) {
   const { t } = useTranslation();
   const values = useValues(node);
   const switchOperatorOptions = useBuildSwitchOperatorOptions();
@@ -257,9 +257,23 @@ const SwitchForm = ({ node }: IOperatorForm) => {
         {fields.map((field, index) => {
           return (
             <FormContainer key={field.id} className="">
-              <div>{index === 0 ? 'IF' : 'ELSEIF'}</div>
+              <div className="flex justify-between items-center">
+                <section>
+                  <span>{index === 0 ? 'IF' : 'ELSEIF'}</span>
+                  <div className="text-text-sub-title">Case {index + 1}</div>
+                </section>
+                {index !== 0 && (
+                  <Button
+                    variant={'secondary'}
+                    className="-translate-y-1"
+                    onClick={() => remove(index)}
+                  >
+                    Remove <X />
+                  </Button>
+                )}
+              </div>
               <section className="flex  gap-2 !mt-2 relative">
-                <section className="flex flex-col">
+                <section className="flex flex-col w-[72px]">
                   <div className="relative  w-1 flex-1 before:absolute before:w-[1px]  before:bg-input-border before:top-20 before:bottom-0 before:left-10"></div>
                   <FormField
                     control={form.control}
@@ -270,7 +284,6 @@ const SwitchForm = ({ node }: IOperatorForm) => {
                           <RAGFlowSelect
                             {...field}
                             options={switchLogicOperatorOptions}
-                            triggerClassName="w-18"
                           />
                         </FormControl>
                         <FormMessage />
@@ -307,6 +320,6 @@ const SwitchForm = ({ node }: IOperatorForm) => {
       </form>
     </Form>
   );
-};
+}
 
-export default SwitchForm;
+export default memo(SwitchForm);

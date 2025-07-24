@@ -11,7 +11,7 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -30,14 +30,14 @@ const DelimiterOptions = Object.entries(StringTransformDelimiter).map(
   ([key, val]) => ({ label: key, value: val }),
 );
 
-export const StringTransformForm = ({ node }: INextOperatorForm) => {
+function StringTransformForm({ node }: INextOperatorForm) {
   const values = useValues(node);
 
   const FormSchema = z.object({
     method: z.string(),
     split_ref: z.string().optional(),
     script: z.string().optional(),
-    delimiters: z.array(z.string()),
+    delimiters: z.array(z.string()).or(z.string()),
     outputs: z.object({ result: z.object({ type: z.string() }) }).optional(),
   });
 
@@ -56,14 +56,18 @@ export const StringTransformForm = ({ node }: INextOperatorForm) => {
 
   const handleMethodChange = useCallback(
     (value: StringTransformMethod) => {
+      const isMerge = value === StringTransformMethod.Merge;
       const outputs = {
         ...initialStringTransformValues.outputs,
         result: {
-          type:
-            value === StringTransformMethod.Merge ? 'string' : 'Array<string>',
+          type: isMerge ? 'string' : 'Array<string>',
         },
       };
       form.setValue('outputs', outputs);
+      form.setValue(
+        'delimiters',
+        isMerge ? StringTransformDelimiter.Comma : [],
+      );
     },
     [form],
   );
@@ -132,8 +136,9 @@ export const StringTransformForm = ({ node }: INextOperatorForm) => {
                     <MultiSelect
                       options={DelimiterOptions}
                       onValueChange={field.onChange}
+                      defaultValue={field.value as string[]}
                       variant="inverted"
-                      {...field}
+                      // {...field}
                     />
                   ) : (
                     <RAGFlowSelect
@@ -158,4 +163,6 @@ export const StringTransformForm = ({ node }: INextOperatorForm) => {
       </div>
     </Form>
   );
-};
+}
+
+export default memo(StringTransformForm);

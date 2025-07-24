@@ -78,14 +78,17 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
           {positions.map((position, idx) => {
             return (
               <div key={idx}>
-                <section className="flex flex-col">
-                  <div className="flex justify-between">
-                    <span className="text-text-sub-title text-xs translate-y-2">
-                      {idx < positions.length - 1 &&
-                        position.condition?.logical_operator?.toUpperCase()}
-                    </span>
+                <section className="flex flex-col text-xs">
+                  <div className="text-right">
                     <span>{getConditionKey(idx, positions.length)}</span>
+                    <div className="text-text-sub-title">
+                      {idx < positions.length - 1 && position.text}
+                    </div>
                   </div>
+                  <span className="text-background-checked">
+                    {idx < positions.length - 1 &&
+                      position.condition?.logical_operator?.toUpperCase()}
+                  </span>
                   {position.condition && (
                     <ConditionBlock
                       condition={position.condition}
