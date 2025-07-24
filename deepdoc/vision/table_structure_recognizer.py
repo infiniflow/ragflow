@@ -97,7 +97,7 @@ class TableStructureRecognizer(Recognizer):
             r"[图表]+[ 0-9:：]{2,}"
         ]
         if any([re.match(p, bx["text"].strip()) for p in patt]) \
-                or bx["layout_type"].find("caption") >= 0:
+                or bx.get("layout_type", "").find("caption") >= 0:
             return True
         return False
 
