@@ -4,7 +4,6 @@ import {
   useHandleMessageInputChange,
   useSelectDerivedMessages,
 } from '@/hooks/logic-hooks';
-import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
   IInputEvent,
@@ -30,37 +29,7 @@ import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
 
-export const useSelectNextMessages = () => {
-  const { data: flowDetail, loading } = useFetchAgent();
-  const reference = flowDetail.dsl.retrieval;
-  const {
-    derivedMessages,
-    ref,
-    addNewestQuestion,
-    addNewestAnswer,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-    addNewestOneQuestion,
-    addNewestOneAnswer,
-  } = useSelectDerivedMessages();
-
-  return {
-    reference,
-    loading,
-    derivedMessages,
-    ref,
-    addNewestQuestion,
-    addNewestAnswer,
-    removeLatestMessage,
-    removeMessageById,
-    addNewestOneQuestion,
-    addNewestOneAnswer,
-    removeMessagesAfterCurrentMessage,
-  };
-};
-
-function findMessageFromList(eventList: IEventList) {
+export function findMessageFromList(eventList: IEventList) {
   const messageEventList = eventList.filter(
     (x) => x.event === MessageEventType.Message,
   ) as IMessageEvent[];
@@ -101,7 +70,7 @@ function findMessageFromList(eventList: IEventList) {
   };
 }
 
-function findInputFromList(eventList: IEventList) {
+export function findInputFromList(eventList: IEventList) {
   const inputEvent = eventList.find(
     (x) => x.event === MessageEventType.UserInputs,
   ) as IInputEvent;
@@ -120,7 +89,7 @@ export function getLatestError(eventList: IEventList) {
   return get(eventList.at(-1), 'data.outputs._ERROR');
 }
 
-const useGetBeginNodePrologue = () => {
+export const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
   return useMemo(() => {
@@ -131,31 +100,61 @@ const useGetBeginNodePrologue = () => {
   }, [getNode]);
 };
 
-export const useSendNextMessage = () => {
+export function useFindMessageReference(answerList: IEventList) {
+  const [messageEndEventList, setMessageEndEventList] = useState<
+    IMessageEndEvent[]
+  >([]);
+
+  const findReferenceByMessageId = useCallback(
+    (messageId: string) => {
+      const event = messageEndEventList.find(
+        (item) => item.message_id === messageId,
+      );
+      if (event) {
+        return (event?.data as IMessageEndData)?.reference;
+      }
+    },
+    [messageEndEventList],
+  );
+
+  useEffect(() => {
+    const messageEndEvent = answerList.find(
+      (x) => x.event === MessageEventType.MessageEnd,
+    );
+    if (messageEndEvent) {
+      setMessageEndEventList((list) => {
+        const nextList = [...list];
+        if (
+          nextList.every((x) => x.message_id !== messageEndEvent.message_id)
+        ) {
+          nextList.push(messageEndEvent as IMessageEndEvent);
+        }
+        return nextList;
+      });
+    }
+  }, [answerList]);
+
+  return { findReferenceByMessageId };
+}
+
+export const useSendAgentMessage = (url?: string) => {
+  const { id: agentId } = useParams();
+  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  const inputs = useSelectBeginNodeDataInputs();
+  const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
+    url || api.runCanvas,
+  );
+  const { findReferenceByMessageId } = useFindMessageReference(answerList);
+  const prologue = useGetBeginNodePrologue();
   const {
-    reference,
-    loading,
     derivedMessages,
     ref,
     removeLatestMessage,
     removeMessageById,
     addNewestOneQuestion,
     addNewestOneAnswer,
-  } = useSelectNextMessages();
-  const { id: agentId } = useParams();
-  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  const { refetch } = useFetchAgent();
+  } = useSelectDerivedMessages();
   const { addEventList } = useContext(AgentChatLogContext);
-  const inputs = useSelectBeginNodeDataInputs();
-  const [messageEndEventList, setMessageEndEventList] = useState<
-    IMessageEndEvent[]
-  >([]);
-
-  const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
-    api.runCanvas,
-  );
-
-  const prologue = useGetBeginNodePrologue();
 
   const sendMessage = useCallback(
     async ({ message }: { message: Message; messages?: Message[] }) => {
@@ -182,61 +181,11 @@ export const useSendNextMessage = () => {
         setValue(message.content);
         removeLatestMessage();
       } else {
-        refetch(); // pull the message list after sending the message successfully
+        // refetch(); // pull the message list after sending the message successfully
       }
     },
-    [agentId, send, inputs, setValue, removeLatestMessage, refetch],
+    [agentId, send, inputs, setValue, removeLatestMessage],
   );
-
-  const handleSendMessage = useCallback(
-    async (message: Message) => {
-      sendMessage({ message });
-    },
-    [sendMessage],
-  );
-
-  useEffect(() => {
-    const messageEndEvent = answerList.find(
-      (x) => x.event === MessageEventType.MessageEnd,
-    );
-    if (messageEndEvent) {
-      setMessageEndEventList((list) => {
-        const nextList = [...list];
-        if (
-          nextList.every((x) => x.message_id !== messageEndEvent.message_id)
-        ) {
-          nextList.push(messageEndEvent as IMessageEndEvent);
-        }
-        return nextList;
-      });
-    }
-  }, [addEventList.length, answerList]);
-
-  useEffect(() => {
-    const { content, id } = findMessageFromList(answerList);
-    const inputAnswer = findInputFromList(answerList);
-    if (answerList.length > 0) {
-      addNewestOneAnswer({
-        answer: content || getLatestError(answerList),
-        id: id,
-        ...inputAnswer,
-      });
-    }
-  }, [answerList, addNewestOneAnswer]);
-
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const id = uuid();
-    if (done) {
-      setValue('');
-      handleSendMessage({ id, content: value.trim(), role: MessageType.User });
-    }
-    addNewestOneQuestion({
-      content: value,
-      id,
-      role: MessageType.User,
-    });
-  }, [value, done, addNewestOneQuestion, setValue, handleSendMessage]);
 
   const sendFormMessage = useCallback(
     (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
@@ -251,17 +200,33 @@ export const useSendNextMessage = () => {
     [addNewestOneQuestion, send],
   );
 
-  const findReferenceByMessageId = useCallback(
-    (messageId: string) => {
-      const event = messageEndEventList.find(
-        (item) => item.message_id === messageId,
-      );
-      if (event) {
-        return (event?.data as IMessageEndData)?.reference;
-      }
-    },
-    [messageEndEventList],
-  );
+  const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+    const id = uuid();
+    if (done) {
+      setValue('');
+      sendMessage({
+        message: { id, content: value.trim(), role: MessageType.User },
+      });
+    }
+    addNewestOneQuestion({
+      content: value,
+      id,
+      role: MessageType.User,
+    });
+  }, [value, done, addNewestOneQuestion, setValue, sendMessage]);
+
+  useEffect(() => {
+    const { content, id } = findMessageFromList(answerList);
+    const inputAnswer = findInputFromList(answerList);
+    if (answerList.length > 0) {
+      addNewestOneAnswer({
+        answer: content || getLatestError(answerList),
+        id: id,
+        ...inputAnswer,
+      });
+    }
+  }, [answerList, addNewestOneAnswer]);
 
   useEffect(() => {
     if (prologue) {
@@ -272,7 +237,9 @@ export const useSendNextMessage = () => {
   }, [addNewestOneAnswer, agentId, prologue, send, sendFormMessage]);
 
   useEffect(() => {
-    addEventList(answerList);
+    if (typeof addEventList === 'function') {
+      addEventList(answerList);
+    }
   }, [addEventList, answerList]);
 
   return {
@@ -280,8 +247,6 @@ export const useSendNextMessage = () => {
     handleInputChange,
     value,
     sendLoading: !done,
-    reference,
-    loading,
     derivedMessages,
     ref,
     removeMessageById,

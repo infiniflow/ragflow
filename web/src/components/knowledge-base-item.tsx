@@ -3,9 +3,8 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { UserOutlined } from '@ant-design/icons';
 import { Avatar as AntAvatar, Form, Select, Space } from 'antd';
-import { Book } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { RAGFlowAvatar } from './ragflow-avatar';
 import { FormControl, FormField, FormItem, FormLabel } from './ui/form';
 import { MultiSelect } from './ui/multi-select';
 
@@ -81,12 +80,7 @@ export function KnowledgeBaseFormField() {
     label: x.name,
     value: x.id,
     icon: () => (
-      <Avatar className="size-4 mr-2">
-        <AvatarImage src={x.avatar} />
-        <AvatarFallback>
-          <Book />
-        </AvatarFallback>
-      </Avatar>
+      <RAGFlowAvatar className="size-4 mr-2" avatar={x.avatar} name={x.name} />
     ),
   }));
 

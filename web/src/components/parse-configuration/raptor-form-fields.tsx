@@ -3,7 +3,7 @@ import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import random from 'lodash/random';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { SliderInputFormField } from '../slider-input-form-field';
 import { Button } from '../ui/button';
@@ -46,6 +46,10 @@ export const showTagItems = (parserId: DocumentParserType) => {
 
 const UseRaptorField = 'parser_config.raptor.use_raptor';
 const RandomSeedField = 'parser_config.raptor.random_seed';
+const MaxTokenField = 'parser_config.raptor.max_token';
+const ThresholdField = 'parser_config.raptor.threshold';
+const MaxCluster = 'parser_config.raptor.max_cluster';
+const Prompt = 'parser_config.raptor.prompt';
 
 // The three types "table", "resume" and "one" do not display this configuration.
 
@@ -53,6 +57,15 @@ const RaptorFormFields = () => {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
+  useEffect(() => {
+    if (useRaptor) {
+      form.setValue(MaxTokenField, 256);
+      form.setValue(ThresholdField, 0.1);
+      form.setValue(MaxCluster, 64);
+      form.setValue(RandomSeedField, 0);
+      form.setValue(Prompt, t('promptText'));
+    }
+  }, [form, useRaptor, t]);
 
   const handleGenerate = useCallback(() => {
     form.setValue(RandomSeedField, random(10000));
@@ -114,11 +127,7 @@ const RaptorFormFields = () => {
                     </FormLabel>
                     <div className="w-3/4">
                       <FormControl>
-                        <Textarea
-                          {...field}
-                          rows={8}
-                          defaultValue={t('promptText')}
-                        />
+                        <Textarea {...field} rows={8} />
                       </FormControl>
                     </div>
                   </div>
@@ -134,7 +143,6 @@ const RaptorFormFields = () => {
             name={'parser_config.raptor.max_token'}
             label={t('maxToken')}
             tooltip={t('maxTokenTip')}
-            defaultValue={256}
             max={2048}
             min={0}
             layout={FormLayout.Horizontal}
@@ -143,7 +151,6 @@ const RaptorFormFields = () => {
             name={'parser_config.raptor.threshold'}
             label={t('threshold')}
             tooltip={t('thresholdTip')}
-            defaultValue={0.1}
             step={0.01}
             max={1}
             min={0}
@@ -153,7 +160,6 @@ const RaptorFormFields = () => {
             name={'parser_config.raptor.max_cluster'}
             label={t('maxCluster')}
             tooltip={t('maxClusterTip')}
-            defaultValue={64}
             max={1024}
             min={1}
             layout={FormLayout.Horizontal}
