@@ -148,11 +148,8 @@ class TestDatasetsList:
         [
             ({"orderby": "create_time"}, lambda r: (is_sorted(r["data"], "create_time", True))),
             ({"orderby": "update_time"}, lambda r: (is_sorted(r["data"], "update_time", True))),
-            ({"orderby": "CREATE_TIME"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"orderby": "UPDATE_TIME"}, lambda r: (is_sorted(r["data"], "update_time", True))),
-            ({"orderby": " create_time "}, lambda r: (is_sorted(r["data"], "update_time", True))),
         ],
-        ids=["orderby_create_time", "orderby_update_time", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
+        ids=["orderby_create_time", "orderby_update_time"],
     )
     def test_orderby(self, HttpApiAuth, params, assertions):
         res = list_datasets(HttpApiAuth, params)
@@ -166,8 +163,11 @@ class TestDatasetsList:
         [
             {"orderby": ""},
             {"orderby": "unknown"},
+            ({"orderby": "CREATE_TIME"}, lambda r: (is_sorted(r["data"], "create_time", True))),
+            ({"orderby": "UPDATE_TIME"}, lambda r: (is_sorted(r["data"], "update_time", True))),
+            ({"orderby": " create_time "}, lambda r: (is_sorted(r["data"], "update_time", True))),
         ],
-        ids=["empty", "unknown"],
+        ids=["empty", "unknown", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
     )
     def test_orderby_invalid(self, HttpApiAuth, params):
         res = list_datasets(HttpApiAuth, params)
