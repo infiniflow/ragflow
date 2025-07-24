@@ -44,6 +44,7 @@ class ComponentParamBase(ABC):
         self.max_retries = 0
         self.delay_after_error = 2.0
         self.exception_method = None
+        self.exception_default_value = None
         self.exception_comment = None
         self.exception_goto = None
         self.debug_inputs = {}
@@ -529,6 +530,10 @@ class ComponentBase(ABC):
             return
         return {
             "goto": self._param.exception_goto,
-            "comment": self._param.exception_comment
+            "comment": self._param.exception_comment,
+            "default_value": self._param.exception_default_value
         }
+
+    def get_exception_default_value(self):
+        return self._param.exception_default_value
 

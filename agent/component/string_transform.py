@@ -72,7 +72,7 @@ class StringTransform(ComponentBase, ABC):
         else:
             self._merge(kwargs)
 
-    def _split(self, line:str=None):
+    def _split(self, line:str|None = None):
         var = self._canvas.get_variable_value(self._param.split_ref) if not line else line
         if not var:
             var = ""

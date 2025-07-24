@@ -132,15 +132,15 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
         assert e, "Session not found!"
         if not conv.message:
             conv.message = []
-        canvas = Canvas(json.dumps(conv.dsl), tenant_id)
+        canvas = Canvas(json.dumps(conv.dsl), tenant_id, session_id)
     else:
         e, cvs = UserCanvasService.get_by_id(agent_id)
         assert e, "Agent not found."
         assert cvs.user_id == tenant_id, "You do not own the agent."
         if not isinstance(cvs.dsl, str):
             cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
-        canvas = Canvas(cvs.dsl, tenant_id)
         session_id=get_uuid()
+        canvas = Canvas(cvs.dsl, tenant_id, session_id)
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
@@ -159,9 +159,7 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
         "id": message_id
     })
     txt = ""
-    for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
-        if ans["event"] not in ["user_inputs", "message", "message_end"]:
-            continue
+    for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs, **kwargs):
         if ans["event"] == "message":
             txt += ans["data"]["content"]
         yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"

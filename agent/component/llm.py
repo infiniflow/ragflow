@@ -90,6 +90,9 @@ class LLM(ComponentBase):
         self.imgs = []
         if self._param.visual_files_var:
             self.imgs = self._canvas.get_variable_value(self._param.visual_files_var)
+            if not self.imgs:
+                self.imgs = []
+            self.imgs = [img for img in self.imgs if img[:len("data:image/")] == "data:image/"]
 
     def get_input_form(self) -> dict[str, dict]:
         res = {}
@@ -139,7 +142,7 @@ class LLM(ComponentBase):
     def _generate(self, msg:list[dict], **kwargs) -> str:
         if not self.imgs:
             return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
-        return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), image=self.imgs[0], **kwargs)
+        return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
     def _generate_streamly(self, msg:list[dict], **kwargs) -> str:
         ans = ""
@@ -172,7 +175,7 @@ class LLM(ComponentBase):
             for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs):
                 yield delta(txt)
         else:
-            for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), image=self.imgs[0], **kwargs):
+            for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs):
                 yield delta(txt)
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
@@ -226,34 +229,16 @@ class LLM(ComponentBase):
 
         if error:
             self.set_output("_ERROR", error)
+            if self.get_exception_default_value():
+                self.set_output("content", self.get_exception_default_value())
 
     def _stream_output(self, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
-        if self.imgs:
-            for ans in self._generate_streamly(msg, image=self.imgs[0]):
-                yield ans
-                answer += ans
-        else:
-            for ans in self._generate_streamly(msg):
-                yield ans
-                answer += ans
-
+        for ans in self._generate_streamly(msg):
+            yield ans
+            answer += ans
         self.set_output("content", answer)
-
-    def debug(self, **kwargs):
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        prompt = self._param.prompt
-
-        for para in self._param.debug_inputs:
-            kwargs[para["key"]] = para.get("value", "")
-
-        for n, v in kwargs.items():
-            prompt = re.sub(r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), prompt)
-
-        u = kwargs.get("user")
-        ans = chat_mdl.chat(prompt, [{"role": "user", "content": u if u else "Output: "}], self._param.gen_conf())
-        return pd.DataFrame([ans])
 
     def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str):
         summ = tool_call_summary(self.chat_mdl, func_name, params, results)

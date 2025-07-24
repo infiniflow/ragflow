@@ -232,15 +232,15 @@ class Agent(LLM, ToolBase):
 
         def complete():
             nonlocal hist
-            cited = True
-            if hist[0]["role"] == "system" and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0:
+            need2cite = self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
+            cited = False
+            if hist[0]["role"] == "system" and need2cite:
                 if len(hist) < 7:
                     hist[0]["content"] += citation_prompt()
-                else:
-                    cited = False
+                    cited = True
             yield "", token_count
 
-            if not cited:
+            if not cited and need2cite:
                 self.callback("gen_citations", {}, "...")
 
             _hist = hist
@@ -248,14 +248,14 @@ class Agent(LLM, ToolBase):
                 _hist = [hist[0], hist[1], *hist[-10:]]
             entire_txt = ""
             for delta_ans in self._generate_streamly(_hist):
-                if cited:
+                if not need2cite or cited:
                     yield delta_ans, 0
                 entire_txt += delta_ans
+            if not need2cite or cited:
+                return
 
             for delta_ans in self._gen_citations(entire_txt):
                 yield delta_ans, 0
-
-            yield "", 0
 
         self.callback("analyze_task", {}, "...")
         task_desc = analyze_task(self.chat_mdl, user_request, tool_metas)

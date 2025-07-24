@@ -498,9 +498,11 @@ class FileService(CommonService):
 
     @staticmethod
     def get_blob(user_id, location):
-        return  STORAGE_IMPL.get(user_id + "-downloads", location)
+        bname = f"{user_id}-downloads"
+        return  STORAGE_IMPL.get(bname, location)
 
     @staticmethod
     def put_blob(user_id, location, blob):
-        return  STORAGE_IMPL.put(user_id + "-downloads", location, blob)
+        bname = f"{user_id}-downloads"
+        return  STORAGE_IMPL.put(bname, location, blob)
 

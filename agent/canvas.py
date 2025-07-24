@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import json
 import logging
 import re
@@ -299,7 +300,7 @@ class Canvas:
                         yield decorate("message_end", {})
                     if ex and ex["goto"]:
                         self.path.append(ex["goto"])
-                    else:
+                    elif not ex or not ex["default_value"]:
                         error = cpn["obj"].error()
 
                 if cpn["obj"].component_name.lower() != "iteration":
@@ -448,9 +449,15 @@ class Canvas:
     def get_files(self, files: Union[None, list[dict]]) -> list[str]:
         if not files:
             return  []
+        def image_to_base64(file):
+            return "data:{};base64,{}".format(file["mime_type"],
+                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
         exe = ThreadPoolExecutor(max_workers=5)
         threads = []
         for file in files:
+            if file["mime_type"].find("image") >=0:
+                threads.append(exe.submit(image_to_base64, file))
+                continue
             threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
         return [th.result() for th in threads]
 

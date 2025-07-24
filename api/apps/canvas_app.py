@@ -192,10 +192,13 @@ def reset():
         return server_error_response(e)
 
 
-@manager.route("/upload", methods=["POST"])  # noqa: F821
-@login_required
-def upload():
-    user_id = request.args.get("user_id", current_user.id)
+@manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
+def upload(canvas_id):
+    e, cvs = UserCanvasService.get_by_tenant_id(canvas_id)
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+
+    user_id = cvs["user_id"]
     def structured(filename, filetype, blob, content_type):
         nonlocal user_id
         if filetype == FileType.PDF.value:
@@ -258,7 +261,7 @@ def upload():
 
     file = request.files['file']
     try:
-        DocumentService.check_doc_health(current_user.id, file.filename)
+        DocumentService.check_doc_health(user_id, file.filename)
         return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
     except Exception as e:
         return  server_error_response(e)

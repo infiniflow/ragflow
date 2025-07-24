@@ -40,6 +40,10 @@ class IterationItem(ComponentBase, ABC):
             self._idx = -1
             raise Exception(parent._param.items_ref + " must be an array, but its type is "+str(type(arr)))
 
+        if self._idx >= len(arr):
+            self._idx = -1
+            return
+
         self.set_output("item", arr[self._idx])
         self.set_output("index", self._idx)
 
