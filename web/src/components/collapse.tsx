@@ -17,7 +17,7 @@ export function Collapse({
   children,
   rightContent,
   open,
-  defaultOpen = true,
+  defaultOpen = false,
   onOpenChange,
   disabled,
 }: CollapseProps) {

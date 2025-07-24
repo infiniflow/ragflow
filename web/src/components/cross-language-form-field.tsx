@@ -57,6 +57,7 @@ export const CrossLanguageFormField = ({
               maxCount={100}
               {...field}
               onValueChange={field.onChange}
+              defaultValue={field.value}
               modalPopover
             />
           </FormControl>
