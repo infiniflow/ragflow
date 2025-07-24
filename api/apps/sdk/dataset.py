@@ -236,8 +236,6 @@ def delete(tenant_id):
                     ]
                 )
                 File2DocumentService.delete_by_document_id(doc.id)
-                if doc.run == TaskStatus.RUNNING.value:
-                  TaskService.filter_delete(Task.doc_id == doc.id)
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
             if not KnowledgebaseService.delete_by_id(kb_id):
                 errors.append(f"Delete dataset error for {kb_id}")

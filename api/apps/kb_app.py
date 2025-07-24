@@ -237,8 +237,6 @@ def rm():
             File2DocumentService.delete_by_document_id(doc.id)
         FileService.filter_delete(
             [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
-        if doc.run == TaskStatus.RUNNING.value:
-            TaskService.filter_delete(Task.doc_id == doc.id)
         if not KnowledgebaseService.delete_by_id(req["kb_id"]):
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")

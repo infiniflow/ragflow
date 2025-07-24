@@ -33,6 +33,7 @@ from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTena
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import TaskService
 from api.utils import current_timestamp, get_format_time, get_uuid
 from rag.nlp import rag_tokenizer, search
 from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
@@ -198,6 +199,8 @@ class DocumentService(CommonService):
     def remove_document(cls, doc, tenant_id):
         cls.clear_chunk_num(doc.id)
         try:
+            if doc.run == TaskStatus.RUNNING.value:
+                  TaskService.filter_delete(Task.doc_id == doc.id)
             page = 0
             page_size = 1000
             all_chunk_ids = []
