@@ -1,3 +1,4 @@
+import { FileUploadProps } from '@/components/file-upload';
 import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
 import { ITraceData } from '@/interfaces/database/agent';
@@ -7,6 +8,7 @@ import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import agentService from '@/services/agent-service';
+import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -29,6 +31,7 @@ export const enum AgentApiAction {
   SetAgent = 'setAgent',
   FetchAgentTemplates = 'fetchAgentTemplates',
   UploadCanvasFile = 'uploadCanvasFile',
+  UploadCanvasFileWithProgress = 'uploadCanvasFileWithProgress',
   Trace = 'trace',
   TestDbConnect = 'testDbConnect',
   DebugSingle = 'debugSingle',
@@ -284,7 +287,9 @@ export const useSetAgent = () => {
   return { data, loading, setAgent: mutateAsync };
 };
 
+// Only one file can be uploaded at a time
 export const useUploadCanvasFile = () => {
+  const { id } = useParams();
   const {
     data,
     isPending: loading,
@@ -301,13 +306,83 @@ export const useUploadCanvasFile = () => {
           });
         }
 
-        const { data } = await agentService.uploadCanvasFile(nextBody);
+        const { data } = await agentService.uploadCanvasFile(
+          { url: api.uploadAgentFile(id), data: nextBody },
+          true,
+        );
         if (data?.code === 0) {
           message.success(i18n.t('message.uploaded'));
         }
         return data;
       } catch (error) {
         message.error('error');
+      }
+    },
+  });
+
+  return { data, loading, uploadCanvasFile: mutateAsync };
+};
+
+export const useUploadCanvasFileWithProgress = (
+  identifier?: Nullable<string>,
+) => {
+  const { id } = useParams();
+
+  type UploadParameters = Parameters<NonNullable<FileUploadProps['onUpload']>>;
+
+  type X = { files: UploadParameters[0]; options: UploadParameters[1] };
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.UploadCanvasFileWithProgress],
+    mutationFn: async ({
+      files,
+      options: { onError, onSuccess, onProgress },
+    }: X) => {
+      const formData = new FormData();
+      try {
+        if (Array.isArray(files)) {
+          files.forEach((file: File) => {
+            formData.append('file', file);
+          });
+        }
+
+        const { data } = await agentService.uploadCanvasFile(
+          {
+            url: api.uploadAgentFile(identifier || id),
+            data: formData,
+            onUploadProgress: ({
+              loaded,
+              total,
+              progress,
+              bytes,
+              estimated,
+              rate,
+              upload,
+              lengthComputable,
+            }) => {
+              files.forEach((file) => {
+                onProgress(file, (progress || 0) * 100);
+              });
+            },
+          },
+          true,
+        );
+        if (data?.code === 0) {
+          files.forEach((file) => {
+            onSuccess(file);
+          });
+          message.success(i18n.t('message.uploaded'));
+        }
+        return data;
+      } catch (error) {
+        files.forEach((file) => {
+          onError(file, error as Error);
+        });
+        message.error('error', error.message);
       }
     },
   });
