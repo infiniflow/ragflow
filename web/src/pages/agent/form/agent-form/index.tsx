@@ -150,7 +150,8 @@ function AgentForm({ node }: INextOperatorForm) {
           <FormContainer>
             <QueryVariable
               name="visual_files_var"
-              label="Visual files var"
+              label="Visual Input File"
+              type={VariableType.File}
             ></QueryVariable>
             <FormField
               control={form.control}

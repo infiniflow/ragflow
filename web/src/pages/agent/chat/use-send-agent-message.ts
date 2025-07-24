@@ -137,6 +137,38 @@ export function useFindMessageReference(answerList: IEventList) {
   return { findReferenceByMessageId };
 }
 
+interface UploadResponseDataType {
+  created_at: number;
+  created_by: string;
+  extension: string;
+  id: string;
+  mime_type: string;
+  name: string;
+  preview_url: null;
+  size: number;
+}
+
+export function useSetUploadResponseData() {
+  const [uploadResponseList, setUploadResponseList] = useState<
+    UploadResponseDataType[]
+  >([]);
+
+  const append = useCallback((data: UploadResponseDataType) => {
+    setUploadResponseList((prev) => [...prev, data]);
+  }, []);
+
+  const clear = useCallback(() => {
+    setUploadResponseList([]);
+  }, []);
+
+  return {
+    uploadResponseList,
+    setUploadResponseList,
+    appendUploadResponseList: append,
+    clearUploadResponseList: clear,
+  };
+}
+
 export const useSendAgentMessage = (url?: string) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -155,6 +187,11 @@ export const useSendAgentMessage = (url?: string) => {
     addNewestOneAnswer,
   } = useSelectDerivedMessages();
   const { addEventList } = useContext(AgentChatLogContext);
+  const {
+    appendUploadResponseList,
+    clearUploadResponseList,
+    uploadResponseList,
+  } = useSetUploadResponseData();
 
   const sendMessage = useCallback(
     async ({ message }: { message: Message; messages?: Message[] }) => {
@@ -171,8 +208,12 @@ export const useSendAgentMessage = (url?: string) => {
         params.query = message.content;
         // params.message_id = message.id;
         params.inputs = transferInputsArrayToObject(query); // begin operator inputs
+
+        params.files = uploadResponseList;
       }
       const res = await send(params);
+
+      clearUploadResponseList();
 
       if (receiveMessageError(res)) {
         sonnerMessage.error(res?.data?.message);
@@ -184,7 +225,15 @@ export const useSendAgentMessage = (url?: string) => {
         // refetch(); // pull the message list after sending the message successfully
       }
     },
-    [agentId, send, inputs, setValue, removeLatestMessage],
+    [
+      agentId,
+      send,
+      inputs,
+      uploadResponseList,
+      setValue,
+      removeLatestMessage,
+      clearUploadResponseList,
+    ],
   );
 
   const sendFormMessage = useCallback(
@@ -243,16 +292,17 @@ export const useSendAgentMessage = (url?: string) => {
   }, [addEventList, answerList]);
 
   return {
-    handlePressEnter,
-    handleInputChange,
     value,
     sendLoading: !done,
     derivedMessages,
     ref,
+    handlePressEnter,
+    handleInputChange,
     removeMessageById,
     stopOutputMessage,
     send,
     sendFormMessage,
     findReferenceByMessageId,
+    appendUploadResponseList,
   };
 };

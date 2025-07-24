@@ -1,15 +1,19 @@
-import MessageInput from '@/components/message-input';
+import { FileUploadProps } from '@/components/file-upload';
+import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
-import { useFetchAgentAvatar } from '@/hooks/use-agent-request';
+import {
+  useFetchAgentAvatar,
+  useUploadCanvasFileWithProgress,
+} from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import i18n from '@/locales/config';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import React, { forwardRef, useMemo } from 'react';
+import React, { forwardRef, useCallback, useMemo } from 'react';
 import {
   useGetSharedChatSearchParams,
   useSendNextSharedMessage,
@@ -25,6 +29,9 @@ const ChatContainer = () => {
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
+  const { uploadCanvasFile, loading } =
+    useUploadCanvasFileWithProgress(conversationId);
+
   const {
     handlePressEnter,
     handleInputChange,
@@ -35,6 +42,7 @@ const ChatContainer = () => {
     hasError,
     stopOutputMessage,
     findReferenceByMessageId,
+    appendUploadResponseList,
   } = useSendNextSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
 
@@ -43,6 +51,15 @@ const ChatContainer = () => {
       ? useFetchAgentAvatar
       : useFetchNextConversationSSE;
   }, [from]);
+
+  const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
+    useCallback(
+      async (files, options) => {
+        const ret = await uploadCanvasFile({ files, options });
+        appendUploadResponseList(ret.data);
+      },
+      [appendUploadResponseList, uploadCanvasFile],
+    );
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
@@ -79,6 +96,7 @@ const ChatContainer = () => {
                   showLikeButton={false}
                   showLoudspeaker={false}
                   showLog={false}
+                  sendLoading={sendLoading}
                 ></MessageItem>
               );
             })}
@@ -86,7 +104,7 @@ const ChatContainer = () => {
           <div ref={ref} />
         </div>
 
-        <MessageInput
+        <NextMessageInput
           isShared
           value={value}
           disabled={hasError}
@@ -95,10 +113,10 @@ const ChatContainer = () => {
           onInputChange={handleInputChange}
           onPressEnter={handlePressEnter}
           sendLoading={sendLoading}
-          uploadMethod="external_upload_and_parse"
-          showUploadIcon={false}
           stopOutputMessage={stopOutputMessage}
-        ></MessageInput>
+          onUpload={handleUploadFile}
+          isUploading={loading}
+        ></NextMessageInput>
       </section>
       {visible && (
         <PdfDrawer
