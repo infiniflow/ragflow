@@ -111,7 +111,9 @@ export const useFetchSystemModelSettingOnMount = () => {
 export const useSubmitOllama = () => {
   const [selectedLlmFactory, setSelectedLlmFactory] = useState<string>('');
   const [editMode, setEditMode] = useState(false);
-  const [initialValues, setInitialValues] = useState<Partial<IAddLlmRequestBody> | undefined>();
+  const [initialValues, setInitialValues] = useState<
+    Partial<IAddLlmRequestBody> | undefined
+  >();
   const [originalModelName, setOriginalModelName] = useState<string>('');
   const { addLlm, loading } = useAddLlm();
   const {
@@ -126,7 +128,7 @@ export const useSubmitOllama = () => {
       if (!cleanedPayload.api_key || cleanedPayload.api_key.trim() === '') {
         delete cleanedPayload.api_key;
       }
-      
+
       const ret = await addLlm(cleanedPayload);
       if (ret === 0) {
         hideLlmAddingModal();
@@ -137,10 +139,15 @@ export const useSubmitOllama = () => {
     [hideLlmAddingModal, addLlm],
   );
 
-  const handleShowLlmAddingModal = (llmFactory: string, isEdit = false, modelData?: any, detailedData?: any) => {
+  const handleShowLlmAddingModal = (
+    llmFactory: string,
+    isEdit = false,
+    modelData?: any,
+    detailedData?: any,
+  ) => {
     setSelectedLlmFactory(llmFactory);
     setEditMode(isEdit);
-    
+
     if (isEdit && detailedData) {
       const initialVals = {
         llm_name: getRealModelName(detailedData.name),

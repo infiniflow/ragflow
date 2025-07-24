@@ -11,7 +11,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentTemplates, useSetAgent } from '@/hooks/use-agent-request';
 import { IFlowTemplate } from '@/interfaces/database/flow';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
@@ -21,7 +21,11 @@ export default function AgentTemplates() {
   const { t } = useTranslation();
   const list = useFetchAgentTemplates();
   const { loading, setAgent } = useSetAgent();
+  const [templateList, setTemplateList] = useState<IFlowTemplate[]>([]);
 
+  useEffect(() => {
+    setTemplateList(list);
+  }, [list]);
   const {
     visible: creatingVisible,
     hideModal: hideCreatingModal,
@@ -62,7 +66,14 @@ export default function AgentTemplates() {
       template?.dsl,
     ],
   );
-
+  const handleSiderBarChange = (keyword: string) => {
+    const tempList = list.filter(
+      (item, index) =>
+        item.title.toLocaleLowerCase().includes(keyword?.toLocaleLowerCase()) ||
+        index === 0,
+    );
+    setTemplateList(tempList);
+  };
   return (
     <section>
       <PageHeader>

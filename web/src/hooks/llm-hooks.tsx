@@ -143,7 +143,12 @@ export const useComposeLlmOptionsByModelTypes = (
 
   return modelTypes.reduce<
     (DefaultOptionType & {
-      options: { label: JSX.Element; value: string; disabled: boolean; is_tools: boolean }[];
+      options: {
+        label: JSX.Element;
+        value: string;
+        disabled: boolean;
+        is_tools: boolean;
+      }[];
     })[]
   >((pre, cur) => {
     const options = allOptions[cur];
@@ -211,7 +216,6 @@ export const useFetchMyLlmListDetailed = (): ResponseGetType<
   return { data, loading };
 };
 
-
 export const useSelectLlmList = () => {
   const { data: myLlmList, loading: myLlmListLoading } = useFetchMyLlmList();
   const { data: factoryList, loading: factoryListLoading } =
@@ -262,7 +266,7 @@ export const useSaveApiKey = () => {
       if (data.code === 0) {
         message.success(t('message.modified'));
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
       }
       return data.code;
@@ -314,7 +318,7 @@ export const useAddLlm = () => {
       const { data } = await userService.add_llm(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.modified'));
       }
@@ -338,7 +342,7 @@ export const useDeleteLlm = () => {
       const { data } = await userService.delete_llm(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }
@@ -362,7 +366,7 @@ export const useDeleteFactory = () => {
       const { data } = await userService.deleteFactory(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-      queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }

@@ -54,10 +54,6 @@ export default function DatasetSettings() {
         topn_tags: 3,
         raptor: {
           use_raptor: false,
-          max_token: 256,
-          threshold: 0.1,
-          max_cluster: 64,
-          random_seed: 0,
         },
         graphrag: {
           use_graphrag: false,

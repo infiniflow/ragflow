@@ -1296,6 +1296,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       agentDescription:
         'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
       maxRecords: 'Max records',
+      createAgent: 'Create Agent',
       stringTransform: 'String transform',
       userFillUp: 'Input',
       codeExec: 'Code',
