@@ -113,7 +113,7 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.6.0-dev3
+    tag: v0.6.0-dev4
   storage:
     className:
     capacity: 5Gi
