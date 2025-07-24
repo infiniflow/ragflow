@@ -219,7 +219,10 @@ def chat(dialog, messages, stream=True, **kwargs):
         langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
         if langfuse.auth_check():
             langfuse_tracer = langfuse
-            langfuse.trace = langfuse_tracer.trace(name=f"{dialog.name}-{llm_model_config['llm_name']}")
+            langfuse.trace = langfuse_tracer.trace(
+                name=f"{dialog.name}-{llm_model_config['llm_name']}",
+                sessionId=kwargs.get("langfuse_session_id", None),
+            )
 
     check_langfuse_tracer_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
