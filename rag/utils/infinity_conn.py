@@ -26,7 +26,7 @@ from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
 from rag import settings
-from rag.settings import PAGERANK_FLD
+from rag.settings import PAGERANK_FLD, TAG_FLD
 from rag.utils import singleton
 import pandas as pd
 from api.utils.file_utils import get_project_base_directory
@@ -338,10 +338,21 @@ class InfinityConnection(DocStoreConnection):
         filter_cond = None
         filter_fulltext = ""
         if condition:
+            table_found = False
             for indexName in indexNames:
-                table_name = f"{indexName}_{knowledgebaseIds[0]}"
-                filter_cond = equivalent_condition_to_str(condition, db_instance.get_table(table_name))
-                break
+                for kb_id in knowledgebaseIds:
+                    table_name = f"{indexName}_{kb_id}"
+                    try:
+                        filter_cond = equivalent_condition_to_str(condition, db_instance.get_table(table_name))
+                        table_found = True
+                        break
+                    except Exception:
+                        pass
+                if table_found:
+                    break
+            if not table_found:
+                logger.error(f"No valid tables found for indexNames {indexNames} and knowledgebaseIds {knowledgebaseIds}")
+                return pd.DataFrame(), 0
 
         for matchExpr in matchExprs:
             if isinstance(matchExpr, MatchTextExpr):
@@ -355,6 +366,18 @@ class InfinityConnection(DocStoreConnection):
                 if isinstance(minimum_should_match, float):
                     str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
                     matchExpr.extra_options["minimum_should_match"] = str_minimum_should_match
+
+                # Add rank_feature support
+                if rank_feature and "rank_features" not in matchExpr.extra_options:
+                    # Convert rank_feature dict to Infinity's rank_features string format
+                    # Format: "field^feature_name^weight,field^feature_name^weight"
+                    rank_features_list = []
+                    for feature_name, weight in rank_feature.items():
+                        # Use TAG_FLD as the field containing rank features
+                        rank_features_list.append(f"{TAG_FLD}^{feature_name}^{weight}")
+                    if rank_features_list:
+                        matchExpr.extra_options["rank_features"] = ",".join(rank_features_list)
+
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
@@ -416,7 +439,7 @@ class InfinityConnection(DocStoreConnection):
                                 matchExpr.method, matchExpr.topn, matchExpr.fusion_params
                             )
                 else:
-                    if len(filter_cond) > 0:
+                    if filter_cond and len(filter_cond) > 0:
                         builder.filter(filter_cond)
                 if orderBy.fields:
                     builder.sort(order_by_expr_list)
