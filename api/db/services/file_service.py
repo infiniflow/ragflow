@@ -478,7 +478,8 @@ class FileService(CommonService):
 
                 # Extract metadata using LLM
                 metadata = {}
-                if document_text.strip():
+                # Only extract metadata if document text is not empty and user_type is not "random"
+                if document_text.strip() and user_type != "random":
                     logging.info(f"Extracting metadata with user_type: {user_type}")
                     llm_bundle = LLMBundle(kb.tenant_id, LLMType.CHAT, kb.llm_id if hasattr(kb, 'llm_id') else None)
                     metadata = self.extract_metadata_with_llm(document_text, llm_bundle, user_type=user_type)
