@@ -141,11 +141,8 @@ class TestDatasetsList:
         [
             {"orderby": "create_time"},
             {"orderby": "update_time"},
-            {"orderby": "CREATE_TIME"},
-            {"orderby": "UPDATE_TIME"},
-            {"orderby": " create_time "},
         ],
-        ids=["orderby_create_time", "orderby_update_time", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
+        ids=["orderby_create_time", "orderby_update_time"],
     )
     def test_orderby(self, client, params):
         client.list_datasets(**params)
@@ -156,8 +153,11 @@ class TestDatasetsList:
         [
             {"orderby": ""},
             {"orderby": "unknown"},
+            {"orderby": "CREATE_TIME"},
+            {"orderby": "UPDATE_TIME"},
+            {"orderby": " create_time "},
         ],
-        ids=["empty", "unknown"],
+        ids=["empty", "unknown", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
     )
     def test_orderby_invalid(self, client, params):
         with pytest.raises(Exception) as excinfo:
