@@ -902,6 +902,7 @@ class Search(DataBaseModel):
 
 
 def migrate_db():
+    logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:
         migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
@@ -1008,3 +1009,4 @@ def migrate_db():
         migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
     except Exception:
         pass
+    logging.disable(logging.NOTSET)
