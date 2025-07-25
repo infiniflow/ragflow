@@ -27,12 +27,15 @@ import {
 import { IModalProps } from '@/interfaces/common';
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { get } from 'lodash';
-import { BellElectric, NotebookText } from 'lucide-react';
+import { NotebookText } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
+import { Operator } from '../constant';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
+import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
 
 type LogSheetProps = IModalProps<any> &
@@ -89,6 +92,7 @@ export function LogSheet({
 
   const getNodeName = useCallback(
     (nodeId: string) => {
+      if ('begin' === nodeId) return t('flow.begin');
       return getNode(nodeId)?.data.name;
     },
     [getNode],
@@ -160,8 +164,12 @@ export function LogSheet({
           <Timeline>
             {startedNodeList.map((x, idx) => {
               const nodeDataList = filterFinishedNodeList(x.data.component_id);
+              const finishNodeIds = nodeDataList.map(
+                (x: INodeData) => x.component_id,
+              );
               const inputs = getInputsOrOutputs(nodeDataList, 'inputs');
               const outputs = getInputsOrOutputs(nodeDataList, 'outputs');
+              const nodeLabel = getNode(x.data.component_id)?.data.label;
               return (
                 <TimelineItem
                   key={idx}
@@ -172,7 +180,22 @@ export function LogSheet({
                     <TimelineSeparator className="group-data-[orientation=vertical]/timeline:-left-7 group-data-[orientation=vertical]/timeline:h-[calc(100%-1.5rem-0.25rem)] group-data-[orientation=vertical]/timeline:translate-y-6.5 top-6 bg-background-checked" />
 
                     <TimelineIndicator className="bg-primary/10 group-data-completed/timeline-item:bg-primary group-data-completed/timeline-item:text-primary-foreground flex size-6 items-center justify-center border-none group-data-[orientation=vertical]/timeline:-left-7">
-                      <BellElectric className="size-5" />
+                      <div className='relative after:content-[""] after:absolute after:inset-0 after:z-10 after:bg-transparent after:transition-all after:duration-300'>
+                        <div className="absolute inset-0 z-10 flex items-center justify-center ">
+                          <div
+                            className={cn('rounded-full w-6 h-6', {
+                              ' border-muted-foreground border-2 border-t-transparent animate-spin ':
+                                !finishNodeIds.includes(x.data.component_id),
+                            })}
+                          ></div>
+                        </div>
+                        <div className="size-6 flex items-center justify-center">
+                          <OperatorIcon
+                            className="size-5"
+                            name={nodeLabel as Operator}
+                          ></OperatorIcon>
+                        </div>
+                      </div>
                     </TimelineIndicator>
                   </TimelineHeader>
                   <TimelineContent className="text-foreground  rounded-lg border  mb-5">

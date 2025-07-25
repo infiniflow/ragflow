@@ -3,11 +3,15 @@ import { useGetFileIcon } from '@/pages/chat/hooks';
 
 import { useSendAgentMessage } from './use-send-agent-message';
 
-import MessageInput from '@/components/message-input';
+import { FileUploadProps } from '@/components/file-upload';
+import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import { useFetchAgent } from '@/hooks/use-agent-request';
+import {
+  useFetchAgent,
+  useUploadCanvasFileWithProgress,
+} from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { Message } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
@@ -20,15 +24,16 @@ import { buildBeginQueryWithObject } from '../utils';
 
 const AgentChatBox = () => {
   const {
-    sendLoading,
-    handleInputChange,
-    handlePressEnter,
     value,
     ref,
+    sendLoading,
     derivedMessages,
+    handleInputChange,
+    handlePressEnter,
     stopOutputMessage,
     sendFormMessage,
     findReferenceByMessageId,
+    appendUploadResponseList,
   } = useSendAgentMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -37,6 +42,7 @@ const AgentChatBox = () => {
   const { data: userInfo } = useFetchUserInfo();
   const { data: canvasInfo } = useFetchAgent();
   const { id: canvasId } = useParams();
+  const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
 
   const getInputs = useCallback((message: Message) => {
     return get(message, 'data.inputs', {}) as Record<string, BeginQuery>;
@@ -65,6 +71,15 @@ const AgentChatBox = () => {
     },
     [canvasId, getInputs, sendFormMessage],
   );
+
+  const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
+    useCallback(
+      async (files, options) => {
+        const ret = await uploadCanvasFile({ files, options });
+        appendUploadResponseList(ret.data);
+      },
+      [appendUploadResponseList, uploadCanvasFile],
+    );
 
   return (
     <>
@@ -104,15 +119,17 @@ const AgentChatBox = () => {
           </div>
           <div ref={ref} />
         </div>
-        <MessageInput
+        <NextMessageInput
           value={value}
           sendLoading={sendLoading}
           disabled={false}
           sendDisabled={sendLoading}
-          conversationId=""
+          isUploading={loading}
           onPressEnter={handlePressEnter}
           onInputChange={handleInputChange}
           stopOutputMessage={stopOutputMessage}
+          onUpload={handleUploadFile}
+          conversationId=""
         />
       </section>
       <PdfDrawer
