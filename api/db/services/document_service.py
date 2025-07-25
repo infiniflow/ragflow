@@ -199,8 +199,7 @@ class DocumentService(CommonService):
     def remove_document(cls, doc, tenant_id):
         cls.clear_chunk_num(doc.id)
         try:
-            if doc.run == TaskStatus.RUNNING.value:
-                  TaskService.filter_delete(Task.doc_id == doc.id)
+            TaskService.filter_delete(Task.doc_id == doc.id)
             page = 0
             page_size = 1000
             all_chunk_ids = []
