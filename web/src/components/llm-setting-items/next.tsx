@@ -25,6 +25,7 @@ import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
+  options?: any[];
 }
 
 export const LlmSettingSchema = {
@@ -40,9 +41,13 @@ export const LlmSettingSchema = {
   maxTokensEnabled: z.boolean(),
 };
 
-export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
+export function LlmSettingFieldItems({
+  prefix,
+  options,
+}: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
+
   const modelOptions = useComposeLlmOptionsByModelTypes([
     LlmModelType.Chat,
     LlmModelType.Image2text,
@@ -72,30 +77,9 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
             <FormLabel>{t('model')}</FormLabel>
             <FormControl>
               <SelectWithSearch
-                options={modelOptions}
+                options={options || modelOptions}
                 {...field}
               ></SelectWithSearch>
-              {/* <Select onValueChange={field.onChange} {...field}>
-                <SelectTrigger value={field.value}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelOptions.map((x) => (
-                    <SelectGroup key={x.value}>
-                      <SelectLabel>{x.label}</SelectLabel>
-                      {x.options.map((y) => (
-                        <SelectItem
-                          value={y.value}
-                          key={y.value}
-                          disabled={y.disabled}
-                        >
-                          {y.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select> */}
             </FormControl>
             <FormMessage />
           </FormItem>

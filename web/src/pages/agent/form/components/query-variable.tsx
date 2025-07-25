@@ -55,6 +55,7 @@ export function QueryVariable({
             <SelectWithSearch
               options={finalOptions}
               {...field}
+              allowClear
             ></SelectWithSearch>
           </FormControl>
           <FormMessage />

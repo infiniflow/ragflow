@@ -161,17 +161,21 @@ export default function Agent() {
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
-              <AgentDropdownMenuItem
-                onClick={showEmbedModal}
-                disabled={
-                  !isBeginNodeDataQuerySafe ||
-                  userInfo.nickname !== agentDetail.nickname
-                }
-              >
-                <ScreenShare />
-                {t('common.embedIntoSite')}
-              </AgentDropdownMenuItem>
+              {location.hostname !== 'demo.ragflow.io' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <AgentDropdownMenuItem
+                    onClick={showEmbedModal}
+                    disabled={
+                      !isBeginNodeDataQuerySafe ||
+                      userInfo.nickname !== agentDetail.nickname
+                    }
+                  >
+                    <ScreenShare />
+                    {t('common.embedIntoSite')}
+                  </AgentDropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
