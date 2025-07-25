@@ -1047,7 +1047,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用该模板',
+      useTemplate: '使用',
       wenCai: '问财',
       queryType: '查询类型',
       wenCaiDescription:
