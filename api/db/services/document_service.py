@@ -29,7 +29,7 @@ from peewee import fn
 from api import settings
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
-from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant
+from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -45,10 +45,41 @@ class DocumentService(CommonService):
     model = Document
 
     @classmethod
+    def get_cls_model_fields(cls):
+        return [
+            cls.model.id,
+            cls.model.thumbnail,
+            cls.model.kb_id,
+            cls.model.parser_id,
+            cls.model.parser_config,
+            cls.model.source_type,
+            cls.model.type,
+            cls.model.created_by,
+            cls.model.name,
+            cls.model.location,
+            cls.model.size,
+            cls.model.token_num,
+            cls.model.chunk_num,
+            cls.model.progress,
+            cls.model.progress_msg,
+            cls.model.process_begin_at,
+            cls.model.process_duration,
+            cls.model.meta_fields,
+            cls.model.suffix,
+            cls.model.run,
+            cls.model.status,
+            cls.model.create_time,
+            cls.model.create_date,
+            cls.model.update_time,
+            cls.model.update_date,
+        ]
+
+    @classmethod
     @DB.connection_context()
     def get_list(cls, kb_id, page_number, items_per_page,
                  orderby, desc, keywords, id, name):
-        docs = cls.model.select().where(cls.model.kb_id == kb_id)
+        fields = cls.get_cls_model_fields()
+        docs = cls.model.select(*fields).join(File2Document, on = (File2Document.document_id == cls.model.id)).join(File, on = (File.id == File2Document.file_id)).where(cls.model.kb_id == kb_id)
         if id:
             docs = docs.where(
                 cls.model.id == id)
@@ -73,13 +104,14 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page,
                      orderby, desc, keywords, run_status, types, suffix):
+        fields = cls.get_cls_model_fields()
         if keywords:
-            docs = cls.model.select().where(
+            docs = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(
                 (cls.model.kb_id == kb_id),
                 (fn.LOWER(cls.model.name).contains(keywords.lower()))
             )
         else:
-            docs = cls.model.select().where(cls.model.kb_id == kb_id)
+            docs = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(cls.model.kb_id == kb_id)
 
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))
@@ -117,13 +149,14 @@ class DocumentService(CommonService):
         }, total
         where "1" => RUNNING, "2" => CANCEL
         """
+        fields = cls.get_cls_model_fields()
         if keywords:
-            query = cls.model.select().where(
+            query = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(
                 (cls.model.kb_id == kb_id),
                 (fn.LOWER(cls.model.name).contains(keywords.lower()))
             )
         else:
-            query  = cls.model.select().where(cls.model.kb_id == kb_id)
+            query  = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(cls.model.kb_id == kb_id)
 
 
         if run_status:
