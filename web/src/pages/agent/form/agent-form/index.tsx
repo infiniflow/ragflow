@@ -1,6 +1,9 @@
 import { Collapse } from '@/components/collapse';
 import { FormContainer } from '@/components/form-container';
-import { LargeModelFormField } from '@/components/large-model-form-field';
+import {
+  LargeModelFilterFormSchema,
+  LargeModelFormField,
+} from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import {
@@ -12,10 +15,12 @@ import {
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
+import { LlmModelType } from '@/constants/knowledge';
+import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
@@ -65,6 +70,7 @@ const FormSchema = z.object({
   exception_method: z.string().nullable(),
   exception_comment: z.string().optional(),
   exception_goto: z.string().optional(),
+  ...LargeModelFilterFormSchema,
 });
 
 function AgentForm({ node }: INextOperatorForm) {
@@ -88,6 +94,10 @@ function AgentForm({ node }: INextOperatorForm) {
     resolver: zodResolver(FormSchema),
   });
 
+  const llmId = useWatch({ control: form.control, name: 'llm_id' });
+
+  const findLlmByUuid = useFindLlmByUuid();
+
   useWatchFormChange(node?.id, form);
 
   return (
@@ -101,6 +111,16 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormContainer>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
+          {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
+            <QueryVariable
+              name="visual_files_var"
+              label="Visual Input File"
+              type={VariableType.File}
+            ></QueryVariable>
+          )}
+        </FormContainer>
+
+        <FormContainer>
           <FormField
             control={form.control}
             name={`sys_prompt`}
@@ -117,7 +137,6 @@ function AgentForm({ node }: INextOperatorForm) {
               </FormItem>
             )}
           />
-          <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
         </FormContainer>
         {isSubAgent || (
           <FormContainer>
@@ -148,11 +167,7 @@ function AgentForm({ node }: INextOperatorForm) {
         </FormContainer>
         <Collapse title={<div>Advanced Settings</div>}>
           <FormContainer>
-            <QueryVariable
-              name="visual_files_var"
-              label="Visual Input File"
-              type={VariableType.File}
-            ></QueryVariable>
+            <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
             <FormField
               control={form.control}
               name={`max_retries`}
