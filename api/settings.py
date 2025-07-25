@@ -26,7 +26,6 @@ import rag.utils.opensearch_conn
 from api.constants import RAG_FLOW_SERVICE_NAME
 from api.utils import decrypt_database_config, get_base_config
 from api.utils.file_utils import get_project_base_directory
-from graphrag import search as kg_search
 from rag.nlp import search
 
 LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
@@ -164,11 +163,12 @@ def init_settings():
     elif lower_case_doc_engine == "infinity":
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
-        docStoreConn = rag.utils.opensearch_coon.OSConnection()
+        docStoreConn = rag.utils.opensearch_conn.OSConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
     retrievaler = search.Dealer(docStoreConn)
+    from graphrag import search as kg_search
     kg_retrievaler = kg_search.KGSearch(docStoreConn)
 
     if int(os.environ.get("SANDBOX_ENABLED", "0")):

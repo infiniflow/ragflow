@@ -12,6 +12,14 @@ import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 
+export function useSelectBeginNodeDataInputs() {
+  const getNode = useGraphStore((state) => state.getNode);
+
+  return buildBeginInputListFromObject(
+    getNode(BeginId)?.data?.form?.inputs ?? {},
+  );
+}
+
 export const useGetBeginNodeDataQuery = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
@@ -39,14 +47,14 @@ export const useGetBeginNodeDataInputs = () => {
 export const useGetBeginNodeDataQueryIsSafe = () => {
   const [isBeginNodeDataQuerySafe, setIsBeginNodeDataQuerySafe] =
     useState(false);
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const inputs = useSelectBeginNodeDataInputs();
   const nodes = useGraphStore((state) => state.nodes);
 
   useEffect(() => {
-    const query: BeginQuery[] = getBeginNodeDataQuery();
+    const query: BeginQuery[] = inputs;
     const isSafe = !query.some((q) => !q.optional && q.type === 'file');
     setIsBeginNodeDataQuerySafe(isSafe);
-  }, [getBeginNodeDataQuery, nodes]);
+  }, [inputs, nodes]);
 
   return isBeginNodeDataQuerySafe;
 };
@@ -132,22 +140,21 @@ function transferToVariableType(type: string) {
 }
 
 export function useBuildBeginVariableOptions() {
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const inputs = useSelectBeginNodeDataInputs();
 
   const options = useMemo(() => {
-    const query: BeginQuery[] = getBeginNodeDataQuery();
     return [
       {
         label: <span>Begin Input</span>,
         title: 'Begin Input',
-        options: query.map((x) => ({
+        options: inputs.map((x) => ({
           label: x.name,
           value: `begin@${x.key}`,
           type: transferToVariableType(x.type),
         })),
       },
     ];
-  }, [getBeginNodeDataQuery]);
+  }, [inputs]);
 
   return options;
 }

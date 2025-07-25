@@ -12,10 +12,9 @@ import {
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -68,7 +67,7 @@ const FormSchema = z.object({
   exception_goto: z.string().optional(),
 });
 
-const AgentForm = ({ node }: INextOperatorForm) => {
+function AgentForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const { edges } = useGraphStore((state) => state);
 
@@ -100,23 +99,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         }}
       >
         <FormContainer>
-          {isSubAgent && (
-            <>
-              <DescriptionField></DescriptionField>
-              <FormField
-                control={form.control}
-                name={`user_prompt`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel>Subagent Input</FormLabel>
-                    <FormControl>
-                      <Textarea {...field}></Textarea>
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </>
-          )}
+          {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
           <FormField
             control={form.control}
@@ -167,7 +150,8 @@ const AgentForm = ({ node }: INextOperatorForm) => {
           <FormContainer>
             <QueryVariable
               name="visual_files_var"
-              label="Visual files var"
+              label="Visual Input File"
+              type={VariableType.File}
             ></QueryVariable>
             <FormField
               control={form.control}
@@ -243,6 +227,6 @@ const AgentForm = ({ node }: INextOperatorForm) => {
       </form>
     </Form>
   );
-};
+}
 
-export default AgentForm;
+export default memo(AgentForm);

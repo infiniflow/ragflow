@@ -210,6 +210,7 @@ def bullets_category(sections):
     hits = [0] * len(BULLET_PATTERN)
     for i, pro in enumerate(BULLET_PATTERN):
         for sec in sections:
+            sec = sec.strip()
             for p in pro:
                 if re.match(p, sec) and not not_bullet(sec):
                     hits[i] += 1

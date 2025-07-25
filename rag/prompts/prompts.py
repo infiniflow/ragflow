@@ -56,18 +56,6 @@ def chunks_format(reference):
     ]
 
 
-def llm_id2llm_type(llm_id):
-    from api.db.services.llm_service import TenantLLMService
-
-    llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
-
-    llm_factories = settings.FACTORY_LLM_INFOS
-    for llm_factory in llm_factories:
-        for llm in llm_factory["llm"]:
-            if llm_id == llm["llm_name"]:
-                return llm["model_type"].strip(",")[-1]
-
-
 def message_fit_in(msg, max_length=4000):
     def count():
         nonlocal msg
@@ -208,8 +196,9 @@ def question_proposal(chat_mdl, content, topn=3):
 def full_question(tenant_id, llm_id, messages, language=None):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
+    from api.db.services.llm_service import TenantLLMService
 
-    if llm_id2llm_type(llm_id) == "image2text":
+    if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
         chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
@@ -240,8 +229,9 @@ def full_question(tenant_id, llm_id, messages, language=None):
 def cross_languages(tenant_id, llm_id, query, languages=[]):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
+    from api.db.services.llm_service import TenantLLMService
 
-    if llm_id and llm_id2llm_type(llm_id) == "image2text":
+    if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
         chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)

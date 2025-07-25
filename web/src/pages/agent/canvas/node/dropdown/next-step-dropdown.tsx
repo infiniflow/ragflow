@@ -53,7 +53,7 @@ function AccordionOperators() {
   return (
     <Accordion
       type="multiple"
-      className="px-2 text-text-title"
+      className="px-2 text-text-title max-h-[45vh] overflow-auto"
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">
@@ -98,7 +98,12 @@ function AccordionOperators() {
         <AccordionTrigger className="text-xl">Tools</AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
-            operators={[Operator.TavilySearch]}
+            operators={[
+              Operator.TavilySearch,
+              Operator.TavilyExtract,
+              Operator.ExeSQL,
+              Operator.Bing,
+            ]}
           ></OperatorItemList>
         </AccordionContent>
       </AccordionItem>

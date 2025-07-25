@@ -164,7 +164,7 @@ class Base(ABC):
         return ans + LENGTH_NOTIFICATION_EN
 
     def _exceptions(self, e, attempt):
-        logging.exception("OpenAI cat_with_tools")
+        logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
         if attempt == self.max_retries:
@@ -699,6 +699,7 @@ class OllamaChat(Base):
 
         self.client = Client(host=base_url) if not key or key == "x" else Client(host=base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
+        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
     def _clean_conf(self, gen_conf):
         options = {}
@@ -715,7 +716,7 @@ class OllamaChat(Base):
         ctx_size = self._calculate_dynamic_ctx(history)
 
         gen_conf["num_ctx"] = ctx_size
-        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf, keep_alive=-1)
+        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf, keep_alive=self.keep_alive)
         ans = response["message"]["content"].strip()
         token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
         return ans, token_count
@@ -742,7 +743,7 @@ class OllamaChat(Base):
 
             ans = ""
             try:
-                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=-1)
+                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=self.keep_alive)
                 for resp in response:
                     if resp["done"]:
                         token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
@@ -1716,4 +1717,13 @@ class GPUStackChat(Base):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class DeepInfraChat(Base):
+    _FACTORY_NAME = "DeepInfra"
+
+    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai", **kwargs):
+        if not base_url:
+            base_url = "https://api.deepinfra.com/v1/openai"
         super().__init__(key, model_name, base_url, **kwargs)

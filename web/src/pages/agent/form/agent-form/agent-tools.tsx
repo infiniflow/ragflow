@@ -5,12 +5,14 @@ import { PencilLine, X } from 'lucide-react';
 import { PropsWithChildren, useCallback, useContext, useMemo } from 'react';
 import { Operator } from '../../constant';
 import { AgentInstanceContext } from '../../context';
+import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { filterDownstreamAgentNodeIds } from '../../utils/filter-downstream-nodes';
 import { ToolPopover } from './tool-popover';
+import { useDeleteAgentNodeMCP } from './tool-popover/use-update-mcp';
 import { useDeleteAgentNodeTools } from './tool-popover/use-update-tools';
-import { useGetAgentToolNames } from './use-get-tools';
+import { useGetAgentMCPIds, useGetAgentToolNames } from './use-get-tools';
 
 export function ToolCard({
   children,
@@ -59,6 +61,9 @@ function ActionButton<T>({ edit, deleteRecord, record }: ActionButtonProps<T>) {
 export function AgentTools() {
   const { toolNames } = useGetAgentToolNames();
   const { deleteNodeTool } = useDeleteAgentNodeTools();
+  const { mcpIds } = useGetAgentMCPIds();
+  const { findMcpById } = useFindMcpById();
+  const { deleteNodeMCP } = useDeleteAgentNodeMCP();
 
   return (
     <section className="space-y-2.5">
@@ -71,6 +76,16 @@ export function AgentTools() {
               record={x}
               edit={() => {}}
               deleteRecord={deleteNodeTool(x)}
+            ></ActionButton>
+          </ToolCard>
+        ))}
+        {mcpIds.map((id) => (
+          <ToolCard key={id}>
+            {findMcpById(id)?.name}
+            <ActionButton
+              record={id}
+              edit={() => {}}
+              deleteRecord={deleteNodeMCP(id)}
             ></ActionButton>
           </ToolCard>
         ))}
