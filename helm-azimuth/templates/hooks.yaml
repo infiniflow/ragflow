@@ -1,0 +1,64 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-ragflow-fixup
+  namespace: {{ .Release.Name }}
+  annotations:
+    # Need to keep around for post-delete hooks
+    helm.sh/resource-policy: keep
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-ragflow-fixup
+  namespace: {{ .Release.Name }}
+  annotations:
+    # Need to keep around for post-delete hooks
+    helm.sh/resource-policy: keep
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-ragflow-fixup
+subjects:
+# Namespace is unique to Azimuth app so using default
+# service account is fine.
+- kind: ServiceAccount
+  name: default
+  namespace: {{ .Release.Name }}
+---
+# Delete stateful set PVCs since upstream Helm chart doesn't expose this config option
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pvc-cleanup
+  namespace: {{ .Release.Name }}
+  annotations:
+    helm.sh/hook: post-delete
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: hook-succeeded
+spec:
+  template:
+    spec:
+      containers:
+      - name: pvc-deleter
+        image: gcr.io/google_containers/hyperkube:v1.18.0
+        command:
+        - kubectl
+        - delete
+        - -n
+        - {{ .Release.Name }}
+        - pvc
+        - --all
+      restartPolicy: Never
+      serviceAccountName: default
+---
