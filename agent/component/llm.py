@@ -17,17 +17,12 @@ import json
 import logging
 import os
 import re
-import time
 from typing import Any
 
 import json_repair
 from copy import deepcopy
 from functools import partial
-import pandas as pd
-import trio
-
-from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
+from api.db.services.llm_service import LLMBundle, TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in, citation_prompt
@@ -83,16 +78,11 @@ class LLM(ComponentBase):
     
     def __init__(self, canvas, id, param: ComponentParamBase):
         super().__init__(canvas, id, param)
-        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id,
-                                  max_retries=self._param.max_retries,
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id),
+                                  self._param.llm_id, max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error
                                   )
         self.imgs = []
-        if self._param.visual_files_var:
-            self.imgs = self._canvas.get_variable_value(self._param.visual_files_var)
-            if not self.imgs:
-                self.imgs = []
-            self.imgs = [img for img in self.imgs if img[:len("data:image/")] == "data:image/"]
 
     def get_input_form(self) -> dict[str, dict]:
         res = {}
@@ -117,6 +107,12 @@ class LLM(ComponentBase):
         self._param.sys_prompt += txt
 
     def _prepare_prompt_variables(self):
+        if self._param.visual_files_var:
+            self.imgs = self._canvas.get_variable_value(self._param.visual_files_var)
+            if not self.imgs:
+                self.imgs = []
+            self.imgs = [img for img in self.imgs if img[:len("data:image/")] == "data:image/"]
+
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
         prompt = self._param.sys_prompt

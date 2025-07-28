@@ -18,6 +18,8 @@ import os
 import random
 import re
 from functools import partial
+from typing import Any
+
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
@@ -47,28 +49,38 @@ class MessageParam(ComponentParamBase):
 class Message(ComponentBase):
     component_name = "Message"
 
-    def get_kwargs(self) -> dict[str, str]:
-        res = {}
-        for k,v in self.get_input_elements_from_text(self._param.content).items():
+    def get_kwargs(self, script:str, kwargs:dict = {}, delimeter:str=None) -> tuple[str, dict[str, str | list | Any]]:
+        for k,v in self.get_input_elements_from_text(script).items():
+            if k in kwargs:
+                continue
             v = v["value"]
             ans = ""
             if isinstance(v, partial):
                 for t in v():
                     ans += t
+            elif isinstance(v, list) and delimeter:
+                ans = delimeter.join([str(vv) for vv in v])
+            elif not isinstance(v, str):
+                try:
+                    ans = json.dumps(v, ensure_ascii=False)
+                except Exception:
+                    pass
             else:
-                if not isinstance(v, str):
-                    try:
-                        v = json.dumps(v, ensure_ascii=False)
-                    except Exception:
-                        pass
                 ans = v
-            res[k] = ans
+            if not ans:
+                ans = ""
+            kwargs[k] = ans
             self.set_input_value(k, ans)
-        return res
 
-    def _stream(self):
+        _kwargs = {}
+        for n, v in kwargs.items():
+            _n = re.sub("[@:.]", "_", n)
+            script = re.sub(r"\{%s\}" % re.escape(n), _n, script)
+            _kwargs[_n] = v
+        return script, _kwargs
+
+    def _stream(self, rand_cnt:str):
         s = 0
-        rand_cnt = random.choice(self._param.content)
         all_content = ""
         cache = {}
         for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
@@ -80,6 +92,7 @@ class Message(ComponentBase):
                 yield cache[exp]
                 all_content += cache[exp]
                 continue
+
             v = self._canvas.get_variable_value(exp)
             if isinstance(v, partial):
                 cnt = ""
@@ -87,16 +100,17 @@ class Message(ComponentBase):
                     all_content += t
                     cnt += t
                     yield t
-                cache[exp] = cnt
+
+                continue
+            elif not isinstance(v, str):
+                try:
+                    v = json.dumps(v, ensure_ascii=False)
+                except Exception:
+                    pass
             else:
-                if not isinstance(v, str):
-                    try:
-                        v = json.dumps(v, ensure_ascii=False)
-                    except Exception:
-                        pass
-                all_content += v
                 yield v
-                cache[exp] = v
+            all_content += v
+            cache[exp] = v
 
         if s < len(rand_cnt):
             all_content += rand_cnt[s: ]
@@ -104,33 +118,28 @@ class Message(ComponentBase):
 
         self.set_output("content", all_content)
 
+    def _is_jinjia2(self, content:str) -> bool:
+        patt = [
+            r"\{%.*%\}", "{{", "}}"
+        ]
+        return any([re.search(p, content) for p in patt])
+
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
-    def _invoke(self):
-        if self._param.stream:
-            self.set_output("content", partial(self._stream))
+    def _invoke(self, **kwargs):
+        rand_cnt = random.choice(self._param.content)
+        if self._param.stream and not self._is_jinjia2(rand_cnt):
+            self.set_output("content", partial(self._stream, rand_cnt))
             return
 
-        rand_cnt = random.choice(self._param.content)
+        rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs)
         template = Jinja2Template(rand_cnt)
-        kwargs = self.get_kwargs()
-
         try:
             content = template.render(kwargs)
         except Exception:
             pass
 
         for n, v in kwargs.items():
-            if not isinstance(v, str):
-                try:
-                    v = json.dumps(v, ensure_ascii=False)
-                except Exception:
-                    pass
-            content = re.sub(
-                r"\{%s\}" % re.escape(n), v, content
-            )
-            content = re.sub(
-                r"(#+)", r" \1 ", content
-            )
+            content = re.sub(n, v, content)
 
         self.set_output("content", content)
 

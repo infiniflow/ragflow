@@ -30,8 +30,14 @@ from rag.utils import num_tokens_from_string
 
 
 class Base(ABC):
-    def __init__(self, key, model_name):
-        pass
+    def __init__(self, **kwargs):
+        # Configure retry parameters
+        self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
+        self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+        self.max_rounds = kwargs.get("max_rounds", 5)
+        self.is_tools = False
+        self.tools = []
+        self.toolcall_sessions = {}
 
     def describe(self, image):
         raise NotImplementedError("Please implement encode method!")
@@ -45,8 +51,8 @@ class Base(ABC):
             hist.append({"role": "system", "content": system})
         for h in history:
             if images and h["role"] == "user":
-                images = []
                 h["content"] = self._image_prompt(h["content"], images)
+                images = []
             hist.append(h)
         return hist
 
@@ -86,12 +92,11 @@ class Base(ABC):
                 if not resp.choices[0].delta.content:
                     continue
                 delta = resp.choices[0].delta.content
-                ans += delta
+                ans = delta
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-                    tk_count = resp.usage.total_tokens
                 if resp.choices[0].finish_reason == "stop":
-                    tk_count = resp.usage.total_tokens
+                    tk_count += resp.usage.total_tokens
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -136,12 +141,13 @@ class Base(ABC):
 class GptV4(Base):
     _FACTORY_NAME = "OpenAI"
 
-    def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1"):
+    def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
+        super().__init__(**kwargs)
 
     def describe(self, image):
         b64 = self.image2base64(image)
@@ -169,6 +175,7 @@ class AzureGptV4(GptV4):
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class xAICV(GptV4):
@@ -205,50 +212,54 @@ class Zhipu4V(GptV4):
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class StepFunCV(GptV4):
     _FACTORY_NAME = "StepFun"
 
-    def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1"):
+    def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class LmStudioCV(GptV4):
     _FACTORY_NAME = "LM-Studio"
 
-    def __init__(self, key, model_name, lang="Chinese", base_url=""):
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class OpenAI_APICV(GptV4):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 
-    def __init__(self, key, model_name, lang="Chinese", base_url=""):
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class TogetherAICV(GptV4):
     _FACTORY_NAME = "TogetherAI"
 
-    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.together.xyz/v1"):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.together.xyz/v1", **kwargs):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
-        super().__init__(key, model_name, lang, base_url)
+        super().__init__(key, model_name, lang, base_url, **kwargs)
 
 
 class YiCV(GptV4):
@@ -259,11 +270,11 @@ class YiCV(GptV4):
             key,
             model_name,
             lang="Chinese",
-            base_url="https://api.lingyiwanwu.com/v1",
+            base_url="https://api.lingyiwanwu.com/v1", **kwargs
     ):
         if not base_url:
             base_url = "https://api.lingyiwanwu.com/v1"
-        super().__init__(key, model_name, lang, base_url)
+        super().__init__(key, model_name, lang, base_url, **kwargs)
 
 
 class SILICONFLOWCV(GptV4):
@@ -274,11 +285,11 @@ class SILICONFLOWCV(GptV4):
             key,
             model_name,
             lang="Chinese",
-            base_url="https://api.siliconflow.cn/v1",
+            base_url="https://api.siliconflow.cn/v1", **kwargs
     ):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
-        super().__init__(key, model_name, lang, base_url)
+        super().__init__(key, model_name, lang, base_url, **kwargs)
 
 
 class OpenRouterCV(GptV4):
@@ -289,47 +300,51 @@ class OpenRouterCV(GptV4):
             key,
             model_name,
             lang="Chinese",
-            base_url="https://openrouter.ai/api/v1",
+            base_url="https://openrouter.ai/api/v1", **kwargs
     ):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class LocalAICV(GptV4):
     _FACTORY_NAME = "LocalAI"
 
-    def __init__(self, key, model_name, base_url, lang="Chinese"):
+    def __init__(self, key, model_name, base_url, lang="Chinese", **kwargs):
         if not base_url:
             raise ValueError("Local cv model url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class XinferenceCV(GptV4):
     _FACTORY_NAME = "Xinference"
 
-    def __init__(self, key, model_name="", lang="Chinese", base_url=""):
+    def __init__(self, key, model_name="", lang="Chinese", base_url="", **kwargs):
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class GPUStackCV(GptV4):
     _FACTORY_NAME = "GPUStack"
 
-    def __init__(self, key, model_name, lang="Chinese", base_url=""):
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
 
 class LocalCV(Base):
@@ -351,6 +366,7 @@ class OllamaCV(Base):
         self.model_name = model_name
         self.lang = lang
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
+        Base.__init__(self, **kwargs)
 
     def _clean_conf(self, gen_conf):
         options = {}
@@ -429,7 +445,7 @@ class OllamaCV(Base):
             for resp in response:
                 if resp["done"]:
                     yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
-                ans += resp["message"]["content"]
+                ans = resp["message"]["content"]
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -448,6 +464,7 @@ class GeminiCV(Base):
         self.model = GenerativeModel(model_name=self.model_name)
         self.model._client = _client
         self.lang = lang
+        Base.__init__(self, **kwargs)
 
     def _form_history(self, system, history, images=[]):
         hist = []
@@ -509,7 +526,7 @@ class GeminiCV(Base):
             for resp in response:
                 if not resp.text:
                     continue
-                ans += resp.text
+                ans = resp.text
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -525,7 +542,7 @@ class NvidiaCV(Base):
         key,
         model_name,
         lang="Chinese",
-        base_url="https://ai.api.nvidia.com/v1/vlm",
+        base_url="https://ai.api.nvidia.com/v1/vlm", **kwargs
     ):
         if not base_url:
             base_url = ("https://ai.api.nvidia.com/v1/vlm",)
@@ -536,6 +553,7 @@ class NvidiaCV(Base):
         else:
             self.base_url = urljoin(f"{base_url}/community", llm_name.replace("-v1.6", "16"))
         self.key = key
+        Base.__init__(self, **kwargs)
 
     def _image_prompt(self, text, images):
         if not images:
@@ -611,7 +629,7 @@ class NvidiaCV(Base):
 class AnthropicCV(Base):
     _FACTORY_NAME = "Anthropic"
 
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None, **kwargs):
         import anthropic
 
         self.client = anthropic.Anthropic(api_key=key)
@@ -620,6 +638,7 @@ class AnthropicCV(Base):
         self.max_tokens = 8192
         if "haiku" in self.model_name or "opus" in self.model_name:
             self.max_tokens = 4096
+        Base.__init__(self, **kwargs)
 
     def _image_prompt(self, text, images):
         if not images:
@@ -750,6 +769,7 @@ class GoogleCV(AnthropicCV, GeminiCV):
             else:
                 aiplatform.init(project=project_id, location=region)
             self.client = glm.GenerativeModel(model_name=self.model_name)
+        Base.__init__(self, **kwargs)
 
     def describe(self, image):
         if "claude" in self.model_name:

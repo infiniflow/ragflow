@@ -223,7 +223,7 @@ class TenantLLMService(CommonService):
         for llm_factory in llm_factories:
             for llm in llm_factory["llm"]:
                 if llm_id == llm["llm_name"]:
-                    return llm["model_type"].strip(",")[-1]
+                    return llm["model_type"].split(",")[-1]
 
 
 class LLMBundle:

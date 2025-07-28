@@ -76,7 +76,6 @@ class Base(ABC):
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
         self.max_rounds = kwargs.get("max_rounds", 5)
-        self.react_mode = kwargs.get("react_mode", ReActMode.FUNCTION_CALL)
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
@@ -89,28 +88,23 @@ class Base(ABC):
         """Classify error based on error message content"""
         error_str = str(error).lower()
 
-        if "rate limit" in error_str or "429" in error_str or "tpm limit" in error_str or "too many requests" in error_str or "requests per minute" in error_str:
-            return LLMErrorCode.ERROR_RATE_LIMIT
-        elif "auth" in error_str or "key" in error_str or "apikey" in error_str or "401" in error_str or "forbidden" in error_str or "permission" in error_str:
-            return LLMErrorCode.ERROR_AUTHENTICATION
-        elif "invalid" in error_str or "bad request" in error_str or "400" in error_str or "format" in error_str or "malformed" in error_str or "parameter" in error_str:
-            return LLMErrorCode.ERROR_INVALID_REQUEST
-        elif "server" in error_str or "502" in error_str or "503" in error_str or "504" in error_str or "500" in error_str or "unavailable" in error_str:
-            return LLMErrorCode.ERROR_SERVER
-        elif "timeout" in error_str or "timed out" in error_str:
-            return LLMErrorCode.ERROR_TIMEOUT
-        elif "connect" in error_str or "network" in error_str or "unreachable" in error_str or "dns" in error_str:
-            return LLMErrorCode.ERROR_CONNECTION
-        elif "quota" in error_str or "capacity" in error_str or "credit" in error_str or "billing" in error_str or "limit" in error_str and "rate" not in error_str:
-            return LLMErrorCode.ERROR_QUOTA
-        elif "filter" in error_str or "content" in error_str or "policy" in error_str or "blocked" in error_str or "safety" in error_str or "inappropriate" in error_str:
-            return LLMErrorCode.ERROR_CONTENT_FILTER
-        elif "model" in error_str or "not found" in error_str or "does not exist" in error_str or "not available" in error_str:
-            return LLMErrorCode.ERROR_MODEL
-        elif "max rounds" in error_str:
-            return LLMErrorCode.ERROR_MODEL
-        else:
-            return LLMErrorCode.ERROR_GENERIC
+        keywords_mapping = [
+            (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
+            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
+            (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
+            (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
+            (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
+            (["timeout", "timed out"], LLMErrorCode.ERROR_TIMEOUT),
+            (["connect", "network", "unreachable", "dns"], LLMErrorCode.ERROR_CONNECTION),
+            (["filter", "content", "policy", "blocked", "safety", "inappropriate"], LLMErrorCode.ERROR_CONTENT_FILTER),
+            (["model", "not found", "does not exist", "not available"], LLMErrorCode.ERROR_MODEL),
+            (["max rounds"], LLMErrorCode.ERROR_MODEL),
+        ]
+        for words, code in keywords_mapping:
+            if re.search("({})".format("|".join(words)), error_str):
+                return code
+                
+        return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
         if "max_tokens" in gen_conf:

@@ -26,7 +26,7 @@ import json_repair
 from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
+from api.db.services.llm_service import LLMBundle, TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
@@ -89,12 +89,11 @@ class Agent(LLM, ToolBase):
             cpn = self._load_tool_obj(cpn)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
-        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id,
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id,
                                   max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error,
                                   max_rounds=self._param.max_rounds,
-                                  verbose_tool_use=True,
-                                  react_mode=ReActMode.REACT
+                                  verbose_tool_use=True
                                   )
         self.tool_meta = [v.get_meta() for _,v in self.tools.items()]
 

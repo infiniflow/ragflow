@@ -14,17 +14,13 @@
 #  limitations under the License.
 #
 import base64
-import hashlib
 import json
 import logging
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
 from typing import Any, Union, Tuple
-
-from flask_login import current_user
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
@@ -250,10 +246,20 @@ class Canvas:
                            "outputs": cpn_obj.output(),
                            "component_id": cpn_obj._id,
                            "component_name": self.get_component_name(cpn_obj._id),
+                           "component_type": self.get_component_type(cpn_obj._id),
                            "error": cpn_obj.error(),
                            "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
                            "created_at": cpn_obj.output("_created_time"),
                        })
+
+        def _append_path(cpn_id):
+            if self.path[-1] == cpn_id:
+                return
+            self.path.append(cpn_id)
+
+        def _extend_path(cpn_ids):
+            for cpn_id in cpn_ids:
+                _append_path(cpn_id)
 
         self.error = ""
         idx = len(self.path) - 1
@@ -264,7 +270,8 @@ class Canvas:
                 yield decorate("node_started", {
                     "inputs": None, "created_at": int(time.time()),
                     "component_id": self.path[i],
-                    "component_name": self.get_component_name(self.path[i])
+                    "component_name": self.get_component_name(self.path[i]),
+                    "component_type": self.get_component_type(self.path[i]),
                 })
             _run_batch(idx, to)
 
@@ -323,15 +330,15 @@ class Canvas:
                 if cpn["obj"].component_name.lower() == "iterationitem" and cpn["obj"].end():
                     iter = cpn["obj"].get_parent()
                     yield _node_finished(iter)
-                    self.path.extend(self.get_component(cpn["parent_id"])["downstream"])
+                    _extend_path(self.get_component(cpn["parent_id"])["downstream"])
                 elif cpn["obj"].component_name.lower() in ["categorize", "switch"]:
-                    self.path.extend(cpn["obj"].output("_next"))
+                    _extend_path(cpn["obj"].output("_next"))
                 elif cpn["obj"].component_name.lower() == "iteration":
-                    self.path.append(cpn["obj"].get_start())
+                    _append_path(cpn["obj"].get_start())
                 elif not cpn["downstream"] and cpn["obj"].get_parent():
-                        self.path.append(cpn["obj"].get_parent().get_start())
+                    _append_path(cpn["obj"].get_parent().get_start())
                 else:
-                    self.path.extend(cpn["downstream"])
+                    _extend_path(cpn["downstream"])
 
             if self.error:
                 logging.error(f"Runtime Error: {self.error}")
@@ -370,6 +377,9 @@ class Canvas:
     def get_component_obj(self, cpn_id) -> ComponentBase:
         return self.components.get(cpn_id)["obj"]
 
+    def get_component_type(self, cpn_id) -> str:
+        return self.components.get(cpn_id)["obj"].component_name
+
     def get_component_input_form(self, cpn_id) -> dict:
         return self.components.get(cpn_id)["obj"].get_input_form()
 
@@ -385,7 +395,7 @@ class Canvas:
         return True
 
     def get_variable_value(self, exp: str) -> Any:
-        exp = exp.strip("{").strip("}")
+        exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
             return self.globals[exp]
         cpn_id, var_nm = exp.split("@")
