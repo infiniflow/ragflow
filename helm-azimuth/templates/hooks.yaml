@@ -36,7 +36,7 @@ subjects:
   name: default
   namespace: {{ .Release.Name }}
 ---
-# Delete stateful set PVCs since upstream Helm chart doesn't expose this config option
+# Delete stateful set PVCs since upstream Helm doesn't clean them up
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -58,7 +58,17 @@ spec:
         - -n
         - {{ .Release.Name }}
         - pvc
-        - --all
+        - {{ include "ragflow.fullname" . }}-minio
+        - {{ include "ragflow.fullname" . }}-mysql
+        {{- if eq .Values.ragflow.env.DOC_ENGINE "elasticsearch" }}
+        - {{ include "ragflow.fullname" . }}-es-data
+        {{- end }}
+        {{- if eq .Values.ragflow.env.DOC_ENGINE "infinity" }}
+        - {{ include "ragflow.fullname" . }}-infinity
+        {{- end }}
+        {{- if eq .Values.ragflow.env.DOC_ENGINE "opensearch" }}
+        - {{ include "ragflow.fullname" . }}-opensearch-data
+        {{- end }}
       restartPolicy: Never
       serviceAccountName: default
 ---
