@@ -34,15 +34,15 @@ export function InnerCategorizeNode({
           <div className={'bg-background-card rounded-sm px-1'}>
             <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
           </div>
-          {positions.map((position, idx) => {
+          {positions.map((position) => {
             return (
-              <div key={idx}>
-                <div className={'bg-background-card rounded-sm p-1'}>
-                  {position.text}
+              <div key={position.uuid}>
+                <div className={'bg-background-card rounded-sm p-1 truncate'}>
+                  {position.name}
                 </div>
                 <CommonHandle
-                  key={position.text}
-                  id={position.text}
+                  // key={position.text}
+                  id={position.uuid}
                   type="source"
                   position={Position.Right}
                   isConnectable
