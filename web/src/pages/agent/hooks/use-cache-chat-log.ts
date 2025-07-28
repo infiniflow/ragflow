@@ -12,7 +12,6 @@ export const ExcludeTypes = [
 
 export function useCacheChatLog() {
   const [eventList, setEventList] = useState<IEventList>([]);
-  // 设置一个message_id池,每次设置currentMessageId时,将message_id加入池中,避免重复
   const [messageIdPool, setMessageIdPool] = useState<
     Record<string, IEventList>
   >({});
@@ -20,12 +19,10 @@ export function useCacheChatLog() {
   const [currentMessageId, setCurrentMessageId] = useState('');
   useEffect(() => {
     setMessageIdPool((prev) => ({ ...prev, [currentMessageId]: eventList }));
-    console.log('currentMessageId', currentMessageId, eventList);
   }, [currentMessageId, eventList]);
 
   const filterEventListByMessageId = useCallback(
     (messageId: string) => {
-      console.log('filterEventListByMessageId', messageId, messageIdPool);
       return messageIdPool[messageId]?.filter(
         (x) => x.message_id === messageId,
       );
@@ -46,36 +43,25 @@ export function useCacheChatLog() {
     setEventList([]);
   }, []);
 
-  const addEventList = useCallback((events: IEventList, message_id: string) => {
-    const nextList = [...eventList];
-    events.forEach((x) => {
-      if (nextList.every((y) => y !== x)) {
-        nextList.push(x);
-      }
-    });
-    setEventList((list) => {
-      // const nextList = [...list];
-      // events.forEach((x) => {
-      //   if (nextList.every((y) => y !== x)) {
-      //     nextList.push(x);
-      //   }
-      // });
-      return list;
-    });
-    setMessageIdPool((prev) => ({ ...prev, [message_id]: nextList }));
-  }, []);
+  const addEventList = useCallback(
+    (events: IEventList, message_id: string) => {
+      const nextList = [...eventList];
+      events.forEach((x) => {
+        if (nextList.every((y) => y !== x)) {
+          nextList.push(x);
+        }
+      });
+      setEventList(nextList);
+      setMessageIdPool((prev) => ({ ...prev, [message_id]: nextList }));
+    },
+    [eventList],
+  );
 
   const currentEventListWithoutMessage = useMemo(() => {
     const list = messageIdPool[currentMessageId]?.filter(
       (x) =>
         x.message_id === currentMessageId &&
         ExcludeTypes.every((y) => y !== x.event),
-    );
-    console.log(
-      'currentEventListWithoutMessage',
-      list,
-      currentMessageId,
-      messageIdPool,
     );
     return list as INodeEvent[];
   }, [currentMessageId, messageIdPool]);
@@ -87,15 +73,9 @@ export function useCacheChatLog() {
           x.message_id === messageId &&
           ExcludeTypes.every((y) => y !== x.event),
       );
-      console.log(
-        'currentEventListWithoutMessage',
-        list,
-        currentMessageId,
-        messageIdPool,
-      );
       return list as INodeEvent[];
     },
-    [currentMessageId, messageIdPool],
+    [messageIdPool],
   );
 
   return {
