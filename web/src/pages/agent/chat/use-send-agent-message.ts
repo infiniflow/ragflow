@@ -169,13 +169,20 @@ export function useSetUploadResponseData() {
   };
 }
 
-export const useSendAgentMessage = (url?: string) => {
+export const useSendAgentMessage = (
+  url?: string,
+  addEventList?: (data: IEventList, messageId: string) => void,
+) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     url || api.runCanvas,
   );
+  const messageId = useMemo(() => {
+    return answerList[0]?.message_id;
+  }, [answerList]);
+
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
   const {
@@ -186,7 +193,7 @@ export const useSendAgentMessage = (url?: string) => {
     addNewestOneQuestion,
     addNewestOneAnswer,
   } = useSelectDerivedMessages();
-  const { addEventList } = useContext(AgentChatLogContext);
+  const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
     appendUploadResponseList,
     clearUploadResponseList,
@@ -287,9 +294,11 @@ export const useSendAgentMessage = (url?: string) => {
 
   useEffect(() => {
     if (typeof addEventList === 'function') {
-      addEventList(answerList);
+      addEventList(answerList, messageId);
+    } else if (typeof addEventListFun === 'function') {
+      addEventListFun(answerList, messageId);
     }
-  }, [addEventList, answerList]);
+  }, [addEventList, answerList, addEventListFun, messageId]);
 
   return {
     value,

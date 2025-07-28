@@ -116,6 +116,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     runVisible,
     hideRunOrChatDrawer,
     showChatModal,
+    showFormDrawer,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
@@ -124,7 +125,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const {
     addEventList,
     setCurrentMessageId,
-    currentEventListWithoutMessage,
+    currentEventListWithoutMessageById,
     clearEventList,
     currentMessageId,
   } = useCacheChatLog();
@@ -175,7 +176,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+      <AgentInstanceContext.Provider value={{ addCanvasNode, showFormDrawer }}>
         <ReactFlow
           connectionMode={ConnectionMode.Loose}
           nodes={nodes}
@@ -228,7 +229,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         ref={ref}
       ></NotebookPen>
       {formDrawerVisible && (
-        <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+        <AgentInstanceContext.Provider
+          value={{ addCanvasNode, showFormDrawer }}
+        >
           <FormSheet
             node={clickedNode}
             visible={formDrawerVisible}
@@ -258,7 +261,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       {logSheetVisible && (
         <LogSheet
           hideModal={hideLogSheet}
-          currentEventListWithoutMessage={currentEventListWithoutMessage}
+          currentEventListWithoutMessageById={
+            currentEventListWithoutMessageById
+          }
           currentMessageId={currentMessageId}
         ></LogSheet>
       )}
