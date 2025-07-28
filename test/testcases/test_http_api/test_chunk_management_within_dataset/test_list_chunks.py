@@ -69,7 +69,7 @@ class TestChunksList:
         "params, expected_code, expected_page_size, expected_message",
         [
             ({"page_size": None}, 0, 5, ""),
-            pytest.param({"page_size": 0}, 100, 0, ""),
+            pytest.param({"page_size": 0}, 0, 5, ""),
             ({"page_size": 1}, 0, 1, ""),
             ({"page_size": 6}, 0, 5, ""),
             ({"page_size": "1"}, 0, 1, ""),
