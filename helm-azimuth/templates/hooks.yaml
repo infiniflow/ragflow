@@ -58,16 +58,21 @@ spec:
         - -n
         - {{ .Release.Name }}
         - pvc
-        - {{ include "ragflow.fullname" . }}-minio
-        - {{ include "ragflow.fullname" . }}-mysql
+        # NOTE: PVC names are based on base ragflow chart's full name helper
+        # rather than the azimuth wrapper chart's name so end up with names
+        # like 'test-1-ragflow-mysql' rather than 'test-1-ragflow-azimuth-mysql'
+        # due to .Chart.Name use in the helper function. A simple replace here
+        # ensures the correct volume names are used
+        - {{ include "ragflow-azimuth.fullname" . | replace "-azimuth" "" }}-mysql
+        - {{ include "ragflow-azimuth.fullname" . | replace "-azimuth" "" }}-minio
         {{- if eq .Values.ragflow.env.DOC_ENGINE "elasticsearch" }}
-        - {{ include "ragflow.fullname" . }}-es-data
+        - {{ include "ragflow-azimuth.fullname" . | replace "-azimuth" "" }}-es-data
         {{- end }}
         {{- if eq .Values.ragflow.env.DOC_ENGINE "infinity" }}
-        - {{ include "ragflow.fullname" . }}-infinity
+        - {{ include "ragflow-azimuth.fullname" . | replace "-azimuth" "" }}-infinity
         {{- end }}
         {{- if eq .Values.ragflow.env.DOC_ENGINE "opensearch" }}
-        - {{ include "ragflow.fullname" . }}-opensearch-data
+        - {{ include "ragflow-azimuth.fullname" . | replace "-azimuth" "" }}-opensearch-data
         {{- end }}
       restartPolicy: Never
       serviceAccountName: default
