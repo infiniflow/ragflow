@@ -18,10 +18,8 @@
 import logging
 import os
 import json
-
 from flask import request
 from peewee import OperationalError
-
 from api import settings
 from api.db import FileSource, StatusEnum
 from api.db.db_models import File
