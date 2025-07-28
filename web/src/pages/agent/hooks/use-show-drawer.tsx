@@ -1,7 +1,7 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { Node, NodeMouseHandler } from '@xyflow/react';
+import { NodeMouseHandler } from '@xyflow/react';
 import get from 'lodash/get';
-import { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
 import { useCacheChatLog } from './use-cache-chat-log';
@@ -21,9 +21,9 @@ export const useShowFormDrawer = () => {
     showModal: showFormDrawer,
   } = useSetModalState();
 
-  const handleShow: NodeMouseHandler = useCallback(
-    (e, node: Node) => {
-      setClickedNodeId(node.id);
+  const handleShow = useCallback(
+    (e: React.MouseEvent<Element>, nodeId: string) => {
+      setClickedNodeId(nodeId);
       setClickedToolId(get(e.target, 'dataset.tool'));
       showFormDrawer();
     },
@@ -118,7 +118,7 @@ export function useShowDrawer({
       if (!ExcludedNodes.some((x) => x === node.data.label)) {
         hideSingleDebugDrawer();
         // hideRunOrChatDrawer();
-        showFormDrawer(e, node);
+        showFormDrawer(e, node.id);
       }
       // handle single debug icon click
       if (
