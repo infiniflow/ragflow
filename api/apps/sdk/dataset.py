@@ -18,7 +18,6 @@
 import logging
 import os
 import json
-
 from flask import request
 from peewee import OperationalError
 from api import settings
