@@ -76,7 +76,7 @@ const AgentChatBox = () => {
     useCallback(
       async (files, options) => {
         const ret = await uploadCanvasFile({ files, options });
-        appendUploadResponseList(ret.data);
+        appendUploadResponseList(ret.data, files);
       },
       [appendUploadResponseList, uploadCanvasFile],
     );
