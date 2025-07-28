@@ -321,7 +321,7 @@ export const initialCategorizeValues = {
   query: AgentGlobals.SysQuery,
   parameter: ModelVariableType.Precise,
   message_history_window_size: 1,
-  category_description: {},
+  items: [],
   outputs: {
     category_name: {
       type: 'string',
@@ -760,6 +760,7 @@ export const RestrictedUpstreamMap = {
   [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
+  [Operator.Tool]: [Operator.Begin],
 };
 
 export const NodeMap = {

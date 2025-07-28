@@ -13,13 +13,12 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { FileMimeType, Platform } from '@/constants/common';
 import { IModalProps } from '@/interfaces/common';
 import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { useTranslation } from 'react-i18next';
 
-const options = Object.values(Platform).map((x) => ({ label: x, value: x }));
+// const options = Object.values(Platform).map((x) => ({ label: x, value: x }));
 
 export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
   const { t } = useTranslation();
@@ -72,7 +71,7 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
-        <FormField
+        {/* <FormField
           control={form.control}
           name="platform"
           render={({ field }) => (
@@ -84,7 +83,7 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
               <FormMessage />
             </FormItem>
           )}
-        />
+        /> */}
       </form>
     </Form>
   );
