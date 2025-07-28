@@ -1,3 +1,4 @@
+import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
@@ -98,17 +99,19 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <QueryVariable></QueryVariable>
           <KnowledgeBaseFormField></KnowledgeBaseFormField>
         </FormContainer>
-        <FormContainer>
-          <SimilaritySliderFormField
-            vectorSimilarityWeightName="keywords_similarity_weight"
-            isTooltipShown
-          ></SimilaritySliderFormField>
-          <TopNFormField></TopNFormField>
-          <RerankFormFields></RerankFormFields>
-          <EmptyResponseField></EmptyResponseField>
-          <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-          <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-        </FormContainer>
+        <Collapse title={<div>Advanced Settings</div>}>
+          <FormContainer>
+            <SimilaritySliderFormField
+              vectorSimilarityWeightName="keywords_similarity_weight"
+              isTooltipShown
+            ></SimilaritySliderFormField>
+            <TopNFormField></TopNFormField>
+            <RerankFormFields></RerankFormFields>
+            <EmptyResponseField></EmptyResponseField>
+            <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+          </FormContainer>
+        </Collapse>
         <Output list={outputList}></Output>
       </FormWrapper>
     </Form>
