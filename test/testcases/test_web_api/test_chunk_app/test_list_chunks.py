@@ -68,7 +68,6 @@ class TestChunksList:
         "params, expected_code, expected_page_size, expected_message",
         [
             ({"size": None}, 100, 0, """TypeError("int() argument must be a string, a bytes-like object or a real number, not 'NoneType'")"""),
-            pytest.param({"size": 0}, 0, 5, ""),
             pytest.param({"size": 0}, 100, 0, ""),
             ({"size": 1}, 0, 1, ""),
             ({"size": 6}, 0, 5, ""),
