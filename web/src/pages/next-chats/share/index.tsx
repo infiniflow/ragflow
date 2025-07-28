@@ -11,6 +11,7 @@ import {
 } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import i18n from '@/locales/config';
+import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import React, { forwardRef, useCallback, useMemo } from 'react';
@@ -31,7 +32,13 @@ const ChatContainer = () => {
 
   const { uploadCanvasFile, loading } =
     useUploadCanvasFileWithProgress(conversationId);
-
+  const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessageById,
+    clearEventList,
+    currentMessageId,
+  } = useCacheChatLog();
   const {
     handlePressEnter,
     handleInputChange,
@@ -43,8 +50,21 @@ const ChatContainer = () => {
     stopOutputMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
-  } = useSendNextSharedMessage();
+  } = useSendNextSharedMessage(addEventList);
+
   const sendDisabled = useSendButtonDisabled(value);
+
+  // useEffect(() => {
+  //   if (derivedMessages.length) {
+  //     const derivedMessagesFilter = derivedMessages.filter(
+  //       (message) => message.role === MessageType.Assistant,
+  //     );
+  //     if (derivedMessagesFilter.length) {
+  //       const message = derivedMessagesFilter[derivedMessagesFilter.length - 1];
+  //       setCurrentMessageId(message.id);
+  //     }
+  //   }
+  // }, [derivedMessages, setCurrentMessageId]);
 
   const useFetchAvatar = useMemo(() => {
     return from === SharedFrom.Agent
@@ -81,6 +101,11 @@ const ChatContainer = () => {
               return (
                 <MessageItem
                   visibleAvatar={visibleAvatar}
+                  conversationId={conversationId}
+                  currentEventListWithoutMessageById={
+                    currentEventListWithoutMessageById
+                  }
+                  setCurrentMessageId={setCurrentMessageId}
                   key={buildMessageUuidWithRole(message)}
                   avatarDialog={avatarData.avatar}
                   item={message}
@@ -103,7 +128,6 @@ const ChatContainer = () => {
           </div>
           <div ref={ref} />
         </div>
-
         <NextMessageInput
           isShared
           value={value}

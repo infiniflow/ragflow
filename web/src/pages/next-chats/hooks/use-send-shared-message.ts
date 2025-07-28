@@ -1,4 +1,5 @@
 import { SharedFrom } from '@/constants/chat';
+import { IEventList } from '@/hooks/use-send-message';
 import { useSendAgentMessage } from '@/pages/agent/chat/use-send-agent-message';
 import trim from 'lodash/trim';
 import { useSearchParams } from 'umi';
@@ -27,14 +28,16 @@ export const useGetSharedChatSearchParams = () => {
   };
 };
 
-export function useSendNextSharedMessage() {
+export const useSendNextSharedMessage = (
+  addEventList: (data: IEventList, messageId: string) => void,
+) => {
   const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
   const url = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
 
-  const ret = useSendAgentMessage(url);
+  const ret = useSendAgentMessage(url, addEventList);
 
   return {
     ...ret,
     hasError: false,
   };
-}
+};

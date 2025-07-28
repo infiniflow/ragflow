@@ -124,7 +124,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const {
     addEventList,
     setCurrentMessageId,
-    currentEventListWithoutMessage,
+    currentEventListWithoutMessageById,
     clearEventList,
     currentMessageId,
   } = useCacheChatLog();
@@ -258,7 +258,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       {logSheetVisible && (
         <LogSheet
           hideModal={hideLogSheet}
-          currentEventListWithoutMessage={currentEventListWithoutMessage}
+          currentEventListWithoutMessageById={
+            currentEventListWithoutMessageById
+          }
           currentMessageId={currentMessageId}
         ></LogSheet>
       )}

@@ -29,6 +29,8 @@ export interface INodeData {
   inputs: Record<string, any>;
   outputs: Record<string, any>;
   component_id: string;
+  component_name: string;
+  component_type: string;
   error: null | string;
   elapsed_time: number;
   created_at: number;

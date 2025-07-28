@@ -17,7 +17,9 @@ import {
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
+import { INodeEvent } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
+import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workFlowTimeline';
 import { IMessage } from '@/pages/chat/interface';
 import { getExtension, isImage } from '@/utils/document-util';
 import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
@@ -38,6 +40,9 @@ interface IProps
     IRegenerateMessage,
     PropsWithChildren {
   item: IMessage;
+  conversationId?: string;
+  currentEventListWithoutMessageById?: (messageId: string) => INodeEvent[];
+  setCurrentMessageId?: (messageId: string) => void;
   reference?: IReferenceObject;
   loading?: boolean;
   sendLoading?: boolean;
@@ -54,6 +59,9 @@ interface IProps
 
 function MessageItem({
   item,
+  conversationId,
+  currentEventListWithoutMessageById,
+  setCurrentMessageId,
   reference,
   loading = false,
   avatar,
@@ -106,6 +114,11 @@ function MessageItem({
     }
   }, [item.doc_ids, setDocumentIds, setIds, documentThumbnails]);
 
+  useEffect(() => {
+    if (typeof setCurrentMessageId === 'function') {
+      setCurrentMessageId(item.id);
+    }
+  }, [item.id, setCurrentMessageId]);
   return (
     <div
       className={classNames(styles.messageItem, {
@@ -185,6 +198,15 @@ function MessageItem({
               <ReferenceDocumentList
                 list={referenceDocuments}
               ></ReferenceDocumentList>
+            )}
+            {isAssistant && currentEventListWithoutMessageById && (
+              <WorkFlowTimeline
+                currentEventListWithoutMessage={currentEventListWithoutMessageById(
+                  item.id,
+                )}
+                currentMessageId={item.id}
+                canvasId={conversationId}
+              />
             )}
             {isUser && documentList.length > 0 && (
               <List
