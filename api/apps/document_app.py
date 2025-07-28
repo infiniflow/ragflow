@@ -32,7 +32,7 @@ from api.db.services.document_service import DocumentService, doc_upload_and_par
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
+from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
 from api.utils.api_utils import (
@@ -420,29 +420,29 @@ def run():
                 info["chunk_num"] = 0
                 info["token_num"] = 0
 
-            e, doc = DocumentService.get_by_id(id)
-            if not e:
-                return get_data_error_result(message="Document not found!")
-            if doc.run == TaskStatus.DONE.value:
-                DocumentService.clear_chunk_num_when_rerun(doc.id)
-
-            DocumentService.update_by_id(id, info)
             tenant_id = DocumentService.get_tenant_id(id)
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
             e, doc = DocumentService.get_by_id(id)
             if not e:
                 return get_data_error_result(message="Document not found!")
+
+            if str(req["run"]) == TaskStatus.CANCEL.value:
+                if str(doc.run) == TaskStatus.RUNNING.value:
+                    cancel_all_task_of(id)
+                else:
+                    return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
+
+            if str(req["run"]) == TaskStatus.RUNNING.value and str(doc.run) == TaskStatus.DONE.value:
+                DocumentService.clear_chunk_num_when_rerun(doc.id)
+
+            DocumentService.update_by_id(id, info)
             if req.get("delete", False):
                 TaskService.filter_delete([Task.doc_id == id])
                 if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
-            if str(req["run"]) == TaskStatus.CANCEL.value:
-                cancel_all_task_of(id)
-
             if str(req["run"]) == TaskStatus.RUNNING.value:
-                e, doc = DocumentService.get_by_id(id)
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
 

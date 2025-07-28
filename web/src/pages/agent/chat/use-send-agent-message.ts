@@ -4,7 +4,6 @@ import {
   useHandleMessageInputChange,
   useSelectDerivedMessages,
 } from '@/hooks/logic-hooks';
-import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
   IInputEvent,
@@ -30,37 +29,7 @@ import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
 
-export const useSelectNextMessages = () => {
-  const { data: flowDetail, loading } = useFetchAgent();
-  const reference = flowDetail.dsl.retrieval;
-  const {
-    derivedMessages,
-    ref,
-    addNewestQuestion,
-    addNewestAnswer,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-    addNewestOneQuestion,
-    addNewestOneAnswer,
-  } = useSelectDerivedMessages();
-
-  return {
-    reference,
-    loading,
-    derivedMessages,
-    ref,
-    addNewestQuestion,
-    addNewestAnswer,
-    removeLatestMessage,
-    removeMessageById,
-    addNewestOneQuestion,
-    addNewestOneAnswer,
-    removeMessagesAfterCurrentMessage,
-  };
-};
-
-function findMessageFromList(eventList: IEventList) {
+export function findMessageFromList(eventList: IEventList) {
   const messageEventList = eventList.filter(
     (x) => x.event === MessageEventType.Message,
   ) as IMessageEvent[];
@@ -101,7 +70,7 @@ function findMessageFromList(eventList: IEventList) {
   };
 }
 
-function findInputFromList(eventList: IEventList) {
+export function findInputFromList(eventList: IEventList) {
   const inputEvent = eventList.find(
     (x) => x.event === MessageEventType.UserInputs,
   ) as IInputEvent;
@@ -120,7 +89,7 @@ export function getLatestError(eventList: IEventList) {
   return get(eventList.at(-1), 'data.outputs._ERROR');
 }
 
-const useGetBeginNodePrologue = () => {
+export const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
   return useMemo(() => {
@@ -131,68 +100,21 @@ const useGetBeginNodePrologue = () => {
   }, [getNode]);
 };
 
-export const useSendNextMessage = () => {
-  const {
-    reference,
-    loading,
-    derivedMessages,
-    ref,
-    removeLatestMessage,
-    removeMessageById,
-    addNewestOneQuestion,
-    addNewestOneAnswer,
-  } = useSelectNextMessages();
-  const { id: agentId } = useParams();
-  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  const { refetch } = useFetchAgent();
-  const { addEventList } = useContext(AgentChatLogContext);
-  const inputs = useSelectBeginNodeDataInputs();
+export function useFindMessageReference(answerList: IEventList) {
   const [messageEndEventList, setMessageEndEventList] = useState<
     IMessageEndEvent[]
   >([]);
 
-  const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
-    api.runCanvas,
-  );
-
-  const prologue = useGetBeginNodePrologue();
-
-  const sendMessage = useCallback(
-    async ({ message }: { message: Message; messages?: Message[] }) => {
-      const params: Record<string, unknown> = {
-        id: agentId,
-      };
-
-      params.running_hint_text = i18n.t('flow.runningHintText', {
-        defaultValue: 'is running...🕞',
-      });
-      if (message.content) {
-        const query = inputs;
-
-        params.query = message.content;
-        // params.message_id = message.id;
-        params.inputs = transferInputsArrayToObject(query); // begin operator inputs
-      }
-      const res = await send(params);
-
-      if (receiveMessageError(res)) {
-        sonnerMessage.error(res?.data?.message);
-
-        // cancel loading
-        setValue(message.content);
-        removeLatestMessage();
-      } else {
-        refetch(); // pull the message list after sending the message successfully
+  const findReferenceByMessageId = useCallback(
+    (messageId: string) => {
+      const event = messageEndEventList.find(
+        (item) => item.message_id === messageId,
+      );
+      if (event) {
+        return (event?.data as IMessageEndData)?.reference;
       }
     },
-    [agentId, send, inputs, setValue, removeLatestMessage, refetch],
-  );
-
-  const handleSendMessage = useCallback(
-    async (message: Message) => {
-      sendMessage({ message });
-    },
-    [sendMessage],
+    [messageEndEventList],
   );
 
   useEffect(() => {
@@ -210,33 +132,109 @@ export const useSendNextMessage = () => {
         return nextList;
       });
     }
-  }, [addEventList.length, answerList]);
+  }, [answerList]);
 
-  useEffect(() => {
-    const { content, id } = findMessageFromList(answerList);
-    const inputAnswer = findInputFromList(answerList);
-    if (answerList.length > 0) {
-      addNewestOneAnswer({
-        answer: content || getLatestError(answerList),
-        id: id,
-        ...inputAnswer,
+  return { findReferenceByMessageId };
+}
+
+interface UploadResponseDataType {
+  created_at: number;
+  created_by: string;
+  extension: string;
+  id: string;
+  mime_type: string;
+  name: string;
+  preview_url: null;
+  size: number;
+}
+
+export function useSetUploadResponseData() {
+  const [uploadResponseList, setUploadResponseList] = useState<
+    UploadResponseDataType[]
+  >([]);
+
+  const append = useCallback((data: UploadResponseDataType) => {
+    setUploadResponseList((prev) => [...prev, data]);
+  }, []);
+
+  const clear = useCallback(() => {
+    setUploadResponseList([]);
+  }, []);
+
+  return {
+    uploadResponseList,
+    setUploadResponseList,
+    appendUploadResponseList: append,
+    clearUploadResponseList: clear,
+  };
+}
+
+export const useSendAgentMessage = (url?: string) => {
+  const { id: agentId } = useParams();
+  const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  const inputs = useSelectBeginNodeDataInputs();
+  const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
+    url || api.runCanvas,
+  );
+  const { findReferenceByMessageId } = useFindMessageReference(answerList);
+  const prologue = useGetBeginNodePrologue();
+  const {
+    derivedMessages,
+    ref,
+    removeLatestMessage,
+    removeMessageById,
+    addNewestOneQuestion,
+    addNewestOneAnswer,
+  } = useSelectDerivedMessages();
+  const { addEventList } = useContext(AgentChatLogContext);
+  const {
+    appendUploadResponseList,
+    clearUploadResponseList,
+    uploadResponseList,
+  } = useSetUploadResponseData();
+
+  const sendMessage = useCallback(
+    async ({ message }: { message: Message; messages?: Message[] }) => {
+      const params: Record<string, unknown> = {
+        id: agentId,
+      };
+
+      params.running_hint_text = i18n.t('flow.runningHintText', {
+        defaultValue: 'is running...🕞',
       });
-    }
-  }, [answerList, addNewestOneAnswer]);
+      if (message.content) {
+        const query = inputs;
 
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const id = uuid();
-    if (done) {
-      setValue('');
-      handleSendMessage({ id, content: value.trim(), role: MessageType.User });
-    }
-    addNewestOneQuestion({
-      content: value,
-      id,
-      role: MessageType.User,
-    });
-  }, [value, done, addNewestOneQuestion, setValue, handleSendMessage]);
+        params.query = message.content;
+        // params.message_id = message.id;
+        params.inputs = transferInputsArrayToObject(query); // begin operator inputs
+
+        params.files = uploadResponseList;
+      }
+      const res = await send(params);
+
+      clearUploadResponseList();
+
+      if (receiveMessageError(res)) {
+        sonnerMessage.error(res?.data?.message);
+
+        // cancel loading
+        setValue(message.content);
+        removeLatestMessage();
+      } else {
+        // refetch(); // pull the message list after sending the message successfully
+      }
+    },
+    [
+      agentId,
+      send,
+      inputs,
+      uploadResponseList,
+      setValue,
+      removeLatestMessage,
+      clearUploadResponseList,
+    ],
+  );
 
   const sendFormMessage = useCallback(
     (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
@@ -251,17 +249,33 @@ export const useSendNextMessage = () => {
     [addNewestOneQuestion, send],
   );
 
-  const findReferenceByMessageId = useCallback(
-    (messageId: string) => {
-      const event = messageEndEventList.find(
-        (item) => item.message_id === messageId,
-      );
-      if (event) {
-        return (event?.data as IMessageEndData)?.reference;
-      }
-    },
-    [messageEndEventList],
-  );
+  const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+    const id = uuid();
+    if (done) {
+      setValue('');
+      sendMessage({
+        message: { id, content: value.trim(), role: MessageType.User },
+      });
+    }
+    addNewestOneQuestion({
+      content: value,
+      id,
+      role: MessageType.User,
+    });
+  }, [value, done, addNewestOneQuestion, setValue, sendMessage]);
+
+  useEffect(() => {
+    const { content, id } = findMessageFromList(answerList);
+    const inputAnswer = findInputFromList(answerList);
+    if (answerList.length > 0) {
+      addNewestOneAnswer({
+        answer: content || getLatestError(answerList),
+        id: id,
+        ...inputAnswer,
+      });
+    }
+  }, [answerList, addNewestOneAnswer]);
 
   useEffect(() => {
     if (prologue) {
@@ -272,22 +286,23 @@ export const useSendNextMessage = () => {
   }, [addNewestOneAnswer, agentId, prologue, send, sendFormMessage]);
 
   useEffect(() => {
-    addEventList(answerList);
+    if (typeof addEventList === 'function') {
+      addEventList(answerList);
+    }
   }, [addEventList, answerList]);
 
   return {
-    handlePressEnter,
-    handleInputChange,
     value,
     sendLoading: !done,
-    reference,
-    loading,
     derivedMessages,
     ref,
+    handlePressEnter,
+    handleInputChange,
     removeMessageById,
     stopOutputMessage,
     send,
     sendFormMessage,
     findReferenceByMessageId,
+    appendUploadResponseList,
   };
 };

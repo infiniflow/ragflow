@@ -202,8 +202,9 @@ class QWenEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
-        import dashscope
         import time
+
+        import dashscope
 
         batch_size = 4
         res = []
@@ -282,17 +283,18 @@ class OllamaEmbed(Base):
     _special_tokens = ["<|endoftext|>"]
 
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
+        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
     def encode(self, texts: list):
         arr = []
         tks_num = 0
         for txt in texts:
-            # remove special tokens if they exist
+            # remove special tokens if they exist base on regex in one request
             for token in OllamaEmbed._special_tokens:
                 txt = txt.replace(token, "")
-            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
+            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
             try:
                 arr.append(res["embedding"])
             except Exception as _e:
@@ -304,7 +306,7 @@ class OllamaEmbed(Base):
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
             text = text.replace(token, "")
-        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
+        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
         try:
             return np.array(res["embedding"]), 128
         except Exception as _e:
@@ -352,8 +354,7 @@ class FastEmbed(DefaultEmbedding):
         # Using the internal tokenizer to encode the texts and get the total
         # number of tokens
         encoding = self._model.model.tokenizer.encode(text)
-        embedding = next(self._model.query_embed(text)).tolist()
-
+        embedding = next(self._model.query_embed(text))
         return np.array(embedding), len(encoding.ids)
 
 
@@ -486,6 +487,8 @@ class BedrockEmbed(Base):
         self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
         self.bedrock_region = json.loads(key).get("bedrock_region", "")
         self.model_name = model_name
+        self.is_amazon = self.model_name.split(".")[0] == "amazon"
+        self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
         if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
             # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
@@ -498,9 +501,9 @@ class BedrockEmbed(Base):
         embeddings = []
         token_count = 0
         for text in texts:
-            if self.model_name.split(".")[0] == "amazon":
+            if self.is_amazon:
                 body = {"inputText": text}
-            elif self.model_name.split(".")[0] == "cohere":
+            elif self.is_cohere:
                 body = {"texts": [text], "input_type": "search_document"}
 
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
@@ -516,9 +519,9 @@ class BedrockEmbed(Base):
     def encode_queries(self, text):
         embeddings = []
         token_count = num_tokens_from_string(text)
-        if self.model_name.split(".")[0] == "amazon":
+        if self.is_amazon:
             body = {"inputText": truncate(text, 8196)}
-        elif self.model_name.split(".")[0] == "cohere":
+        elif self.is_cohere:
             body = {"texts": [truncate(text, 8196)], "input_type": "search_query"}
 
         response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
@@ -900,4 +903,13 @@ class GiteeEmbed(SILICONFLOWEmbed):
     def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/embeddings"):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/embeddings"
+        super().__init__(key, model_name, base_url)
+
+
+class DeepInfraEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "DeepInfra"
+
+    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai"):
+        if not base_url:
+            base_url = "https://api.deepinfra.com/v1/openai"
         super().__init__(key, model_name, base_url)

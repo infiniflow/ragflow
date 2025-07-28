@@ -582,6 +582,7 @@ export const initialUserFillUpValues = {
   enable_tips: true,
   tips: '',
   inputs: [],
+  outputs: {},
 };
 
 export enum StringTransformMethod {
@@ -835,6 +836,7 @@ export const NoDebugOperatorsList = [
   Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
+  Operator.UserFillUp,
 ];
 
 export enum NodeHandleId {
