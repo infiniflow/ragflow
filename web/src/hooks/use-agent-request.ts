@@ -7,7 +7,7 @@ import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
-import agentService from '@/services/agent-service';
+import agentService, { fetchTrace } from '@/services/agent-service';
 import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -390,8 +390,12 @@ export const useUploadCanvasFileWithProgress = (
   return { data, loading, uploadCanvasFile: mutateAsync };
 };
 
-export const useFetchMessageTrace = () => {
+export const useFetchMessageTrace = (
+  isStopFetchTrace: boolean,
+  canvasId?: string,
+) => {
   const { id } = useParams();
+  const queryId = id || canvasId;
   const [messageId, setMessageId] = useState('');
 
   const {
@@ -399,16 +403,16 @@ export const useFetchMessageTrace = () => {
     isFetching: loading,
     refetch,
   } = useQuery<ITraceData[]>({
-    queryKey: [AgentApiAction.Trace, id, messageId],
+    queryKey: [AgentApiAction.Trace, queryId, messageId],
     refetchOnReconnect: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
-    enabled: !!id && !!messageId,
-    refetchInterval: 3000,
+    enabled: !!queryId && !!messageId,
+    refetchInterval: !isStopFetchTrace ? 3000 : false,
     queryFn: async () => {
-      const { data } = await agentService.trace({
-        canvas_id: id,
+      const { data } = await fetchTrace({
+        canvas_id: queryId as string,
         message_id: messageId,
       });
 
