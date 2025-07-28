@@ -103,8 +103,10 @@ class Categorize(LLM, ABC):
             msg = [{"role": "user", "content": ""}]
         if kwargs.get("sys.query"):
             msg[-1]["content"] = kwargs["sys.query"]
+            self.set_input_value("sys.query", kwargs["sys.query"])
         else:
             msg[-1]["content"] = self._canvas.get_variable_value(self._param.query)
+            self.set_input_value(self._param.query, msg[-1]["content"])
         self._param.update_prompt()
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
 
@@ -130,9 +132,4 @@ class Categorize(LLM, ABC):
 
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
-
-    def debug(self, **kwargs):
-        df = self._run([], **kwargs)
-        cpn_id = df.iloc[0, 0]
-        return Categorize.be_output(self._canvas.get_component_name(cpn_id))
 

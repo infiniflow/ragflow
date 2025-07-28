@@ -119,7 +119,7 @@ class UserCanvasService(CommonService):
         count = agents.count()
         agents = agents.paginate(page_number, items_per_page)
         return list(agents.dicts()), count
-   
+
 
 def completion(tenant_id, agent_id, session_id=None, **kwargs):
     query = kwargs.get("query", "")
@@ -159,12 +159,14 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
         "id": message_id
     })
     txt = ""
-    for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs, **kwargs):
+    for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
         if ans["event"] == "message":
             txt += ans["data"]["content"]
         yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
+    conv.reference = canvas.get_reference()
+    conv.errors = canvas.error
     API4ConversationService.append_message(conv.id, conv.to_dict())
 
 

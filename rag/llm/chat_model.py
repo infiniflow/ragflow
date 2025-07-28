@@ -119,6 +119,8 @@ class Base(ABC):
 
     def _chat(self, history, gen_conf, **kwargs):
         print("[HISTORY]", json.dumps(history, ensure_ascii=False, indent=2))
+        if self.model_name.lower().find("qwen3"):
+            kwargs["extra_body"] = {"enable_thinking": False}
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):

@@ -799,6 +799,7 @@ class API4Conversation(DataBaseModel):
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
     thumb_up = IntegerField(default=0, index=True)
+    errors = TextField(null=True, help_text="errors")
 
     class Meta:
         db_table = "api_4_conversation"
@@ -1007,5 +1008,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "errors", TextField(null=True, help_text="errors")))
     except Exception:
         pass

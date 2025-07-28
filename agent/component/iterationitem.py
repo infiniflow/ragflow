@@ -51,8 +51,6 @@ class IterationItem(ComponentBase, ABC):
             self.output_collation()
 
         self._idx += 1
-        if self._idx >= len(arr):
-            self._idx = -1
 
     def output_collation(self):
         pid = self.get_parent()._id

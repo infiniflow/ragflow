@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import hashlib
 import json
 import logging
 import re
@@ -28,7 +29,7 @@ from flask_login import current_user
 from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
-from api.utils import get_uuid
+from api.utils import get_uuid, hash_str2int
 from rag.prompts.prompts import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 
@@ -78,6 +79,7 @@ class Canvas:
         self.path = []
         self.history = []
         self.components = {}
+        self.error = ""
         self.globals = {
             "sys.query": "",
             "sys.user_id": tenant_id,
@@ -247,18 +249,23 @@ class Canvas:
                            "inputs": cpn_obj.get_input_values(),
                            "outputs": cpn_obj.output(),
                            "component_id": cpn_obj._id,
+                           "component_name": self.get_component_name(cpn_obj._id),
                            "error": cpn_obj.error(),
                            "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
                            "created_at": cpn_obj.output("_created_time"),
                        })
 
-        error = ""
+        self.error = ""
         idx = len(self.path) - 1
         partials = []
         while idx < len(self.path):
             to = len(self.path)
             for i in range(idx, to):
-                yield decorate("node_started", {"inputs": None, "created_at": int(time.time()), "component_id": self.path[i]})
+                yield decorate("node_started", {
+                    "inputs": None, "created_at": int(time.time()),
+                    "component_id": self.path[i],
+                    "component_name": self.get_component_name(self.path[i])
+                })
             _run_batch(idx, to)
 
             # post processing of components invocation
@@ -301,11 +308,11 @@ class Canvas:
                     if ex and ex["goto"]:
                         self.path.append(ex["goto"])
                     elif not ex or not ex["default_value"]:
-                        error = cpn["obj"].error()
+                        self.error = cpn["obj"].error()
 
                 if cpn["obj"].component_name.lower() != "iteration":
                     if isinstance(cpn["obj"].output("content"), partial):
-                        if error:
+                        if self.error:
                             cpn["obj"].set_output("content", None)
                             yield _node_finished(cpn["obj"])
                         else:
@@ -326,8 +333,8 @@ class Canvas:
                 else:
                     self.path.extend(cpn["downstream"])
 
-            if error:
-                logging.error(f"Runtime Error: {error}")
+            if self.error:
+                logging.error(f"Runtime Error: {self.error}")
                 break
             idx = to
 
@@ -347,7 +354,7 @@ class Canvas:
                 return
 
         self.path = self.path[:idx]
-        if not error:
+        if not self.error:
             yield decorate("workflow_finished",
                        {
                            "inputs": kwargs.get("inputs"),
@@ -491,7 +498,7 @@ class Canvas:
 
         r = self.retrieval[-1]
         for ck in chunks_format({"chunks": chunks}):
-            cid = str(hash(ck["id"])%100)
+            cid = hash_str2int(ck["id"], 100)
             if cid not in r:
                 r["chunks"][cid] = ck
 

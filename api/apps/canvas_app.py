@@ -27,14 +27,15 @@ from flask_login import login_required, current_user
 from agent.component import LLM
 from api import settings
 from api.db import FileType, ParserType
-from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
 from api.utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
+from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
+    get_error_data_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
@@ -426,7 +427,6 @@ def setting():
 
 
 @manager.route('/trace', methods=['GET'])  # noqa: F821
-@login_required
 def trace():
     cvs_id = request.args.get("canvas_id")
     msg_id = request.args.get("message_id")
@@ -438,4 +438,31 @@ def trace():
         return get_json_result(data=json.loads(bin.encode("utf-8")))
     except Exception as e:
         logging.exception(e)
-        return get_json_result(data={})
+
+
+@manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
+@login_required
+def sessions(canvas_id):
+    tenant_id = current_user.id
+    if not UserCanvasService.query(user_id=tenant_id, id=canvas_id):
+        return get_error_data_result(message=f"You don't own the agent {canvas_id}.")
+
+    user_id = request.args.get("user_id")
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 30))
+    keywords = request.args.get("keywords")
+    from_date = request.args.get("from_date")
+    to_date = request.args.get("to_date")
+    orderby = request.args.get("orderby", "update_time")
+    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+        desc = False
+    else:
+        desc = True
+    # dsl defaults to True in all cases except for False and false
+    include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
+    try:
+        return get_json_result(data=API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
+                                             None, user_id, include_dsl, keywords, from_date, to_date))
+    except Exception as e:
+        return server_error_response(e)
+

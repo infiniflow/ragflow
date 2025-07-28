@@ -32,7 +32,7 @@ from api.utils.api_utils import timeout
 from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
 from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, \
-    citation_prompt, reflect, rank_memories, kb_prompt, citation_plus
+    citation_prompt, reflect, rank_memories, kb_prompt, citation_plus, full_question
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 
 
@@ -116,7 +116,7 @@ class Agent(LLM, ToolBase):
             param.check()
         except Exception as e:
             self.set_output("_ERROR", cpn["component_name"] + f" configuration error: {e}")
-            return
+            raise
         cpn_id = f"{self._id}-->" + cpn.get("name", "").replace(" ", "_")
         return component_class(cpn["component_name"])(self._canvas, cpn_id, param)
 
@@ -206,7 +206,11 @@ class Agent(LLM, ToolBase):
         tool_metas = self.tool_meta
         hist = deepcopy(history)
         last_calling = ""
-        user_request = history[-1]["content"]
+        if len(hist) > 3:
+            self.callback("Multi-turn conversation optimization", {}, "...")
+            user_request = full_question(messages=history, chat_mdl=self.chat_mdl)
+        else:
+            user_request = history[-1]["content"]
 
         def use_tool(name, args):
             nonlocal hist, use_tools, token_count,last_calling,user_request
@@ -257,6 +261,12 @@ class Agent(LLM, ToolBase):
             for delta_ans in self._gen_citations(entire_txt):
                 yield delta_ans, 0
 
+        def append_user_content(hist, content):
+            if hist[-1]["role"] == "user":
+                hist[-1]["content"] += content
+            else:
+                hist.append({"role": "user", "content": content})
+
         self.callback("analyze_task", {}, "...")
         task_desc = analyze_task(self.chat_mdl, user_request, tool_metas)
         for _ in range(self._param.max_rounds + 1):
@@ -277,7 +287,7 @@ class Agent(LLM, ToolBase):
                         name = func["name"]
                         args = func["arguments"]
                         if name == COMPLETE_TASK:
-                            hist.append({"role": "user", "content": f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language for the response MUST be as the same as the first user request.\n"})
+                            append_user_content(hist, f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language for the response MUST be as the same as the first user request.\n")
                             for txt, tkcnt in complete():
                                 yield txt, tkcnt
                             return
@@ -285,16 +295,13 @@ class Agent(LLM, ToolBase):
                         thr.append(executor.submit(use_tool, name, args))
 
                     reflection = reflect(self.chat_mdl, hist, [th.result() for th in thr])
-                    hist.append({"role": "user", "content": reflection})
+                    append_user_content(hist, reflection)
                     self.callback("reflection", {}, str(reflection)[:256]+"...")
 
             except Exception as e:
                 logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
                 e = f"\nTool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"
-                if hist[-1]["role"] == "user":
-                    hist[-1]["content"] += e
-                else:
-                    hist.append({"role": "user", "content": e})
+                append_user_content(hist, str(e))
 
         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
         final_instruction = f"""
@@ -309,10 +316,7 @@ Instructions:
 6. Focus on delivering VALUE with the information already gathered
 Respond immediately with your final comprehensive answer.
         """
-        if hist[-1]["role"] == "user":
-            hist[-1]["content"] += final_instruction
-        else:
-            hist.append({"role": "user", "content": final_instruction})
+        append_user_content(hist, final_instruction)
 
         for txt, tkcnt in complete():
             yield txt, tkcnt

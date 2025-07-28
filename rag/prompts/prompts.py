@@ -24,6 +24,7 @@ import jinja2
 import json_repair
 
 from api import settings
+from api.utils import hash_str2int
 from rag.prompts.prompt_template import load_prompt
 from rag.settings import TAG_FLD
 from rag.utils import encoder, num_tokens_from_string
@@ -120,7 +121,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
 
     knowledges = []
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        cnt = "\nID: {}".format(i if not hash_id else hash(get_value(ck, "id", "chunk_id")) % 100)
+        cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 100))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
         cnt += draw_node("URL", ck['url'])  if "url" in ck else ""
         for k, v in docs.get(get_value(ck, "doc_id", "document_id"), {}).items():
@@ -193,15 +194,16 @@ def question_proposal(chat_mdl, content, topn=3):
     return kwd
 
 
-def full_question(tenant_id, llm_id, messages, language=None):
+def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
     from api.db.services.llm_service import TenantLLMService
 
-    if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
-    else:
-        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+    if not chat_mdl:
+        if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
+            chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+        else:
+            chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
     conv = []
     for m in messages:
         if m["role"] not in ["user", "assistant"]:
@@ -221,7 +223,7 @@ def full_question(tenant_id, llm_id, messages, language=None):
         language=language,
     )
 
-    ans = chat_mdl.chat(rendered_prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
+    ans = chat_mdl.chat(rendered_prompt, [{"role": "user", "content": "Output: "}])
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
