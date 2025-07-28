@@ -229,8 +229,10 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
+        from api.db.services.task_service import TaskService
         cls.clear_chunk_num(doc.id)
         try:
+            TaskService.filter_delete(Task.doc_id == doc.id)
             page = 0
             page_size = 1000
             all_chunk_ids = []
