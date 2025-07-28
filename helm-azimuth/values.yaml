@@ -12,3 +12,9 @@ ragflow:
   env:
     RAGFLOW_IMAGE: infiniflow/ragflow:v0.19.1
     DOC_ENGINE: opensearch
+
+  redis:
+    persistence:
+      retentionPolicy:
+        whenDeleted: Delete
+        whenScaled: Delete
