@@ -5,6 +5,7 @@ import {
   EdgeProps,
   getBezierPath,
 } from '@xyflow/react';
+import { memo } from 'react';
 import useGraphStore from '../../store';
 
 import { useFetchAgent } from '@/hooks/use-agent-request';
@@ -12,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 
-export function ButtonEdge({
+function InnerButtonEdge({
   id,
   sourceX,
   sourceY,
@@ -77,7 +78,8 @@ export function ButtonEdge({
   const visible = useMemo(() => {
     return (
       data?.isHovered &&
-      sourceHandleId !== NodeHandleId.Tool && // The connection between the agent node and the tool node does not need to display the delete button
+      sourceHandleId !== NodeHandleId.Tool &&
+      sourceHandleId !== NodeHandleId.AgentBottom && // The connection between the agent node and the tool node does not need to display the delete button
       !target.startsWith(Operator.Tool)
     );
   }, [data?.isHovered, sourceHandleId, target]);
@@ -120,3 +122,5 @@ export function ButtonEdge({
     </>
   );
 }
+
+export const ButtonEdge = memo(InnerButtonEdge);
