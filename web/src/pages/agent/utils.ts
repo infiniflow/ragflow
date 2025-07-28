@@ -159,7 +159,7 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
         return {
           component_name: Operator.Agent,
           id,
-          name,
+          name: name as string, // Cast name to string and provide fallback
           params: { ...formData },
         };
       }),
@@ -172,27 +172,29 @@ function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
   return edges.filter((x) => x.sourceHandle === handleId).map((x) => x.target);
 }
 
-function buildCategorizeTos(edges: Edge[], nodes: Node[], nodeId: string) {
+function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
   const node = nodes.find((x) => x.id === nodeId);
   const params = { ...(node?.data.form ?? {}) } as ICategorizeForm;
   if (node && node.data.label === Operator.Categorize) {
     const subEdges = edges.filter((x) => x.source === nodeId);
 
-    const categoryDescription = params.category_description || {};
+    const items = params.items || [];
 
-    const nextCategoryDescription = Object.entries(categoryDescription).reduce<
+    const nextCategoryDescription = items.reduce<
       ICategorizeForm['category_description']
-    >((pre, [key, val]) => {
+    >((pre, val) => {
+      const key = val.name;
       pre[key] = {
-        ...val,
-        to: filterTargetsBySourceHandleId(subEdges, key),
+        ...omit(val, 'name', 'uuid'),
+        examples: val.examples?.map((x) => x.value) || [],
+        to: filterTargetsBySourceHandleId(subEdges, val.uuid),
       };
       return pre;
     }, {});
 
     params.category_description = nextCategoryDescription;
   }
-  return params;
+  return omit(params, 'items');
 }
 
 const buildOperatorParams = (operatorName: string) =>
@@ -236,7 +238,7 @@ export const buildDslComponentsByGraph = (
           break;
         }
         case Operator.Categorize:
-          params = buildCategorizeTos(edges, nodes, id);
+          params = buildCategorize(edges, nodes, id);
           break;
 
         default:
