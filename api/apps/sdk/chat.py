@@ -37,10 +37,10 @@ def create(tenant_id):
         kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
         if not kbs:
             return get_error_data_result(f"You don't own the dataset {kb_id}")
-        kbs = KnowledgebaseService.query(id=kb_id)
-        kb = kbs[0]
-        if kb.chunk_num == 0:
-            return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+        # kbs = KnowledgebaseService.query(id=kb_id)
+        # kb = kbs[0]
+        # if kb.chunk_num == 0:
+        #     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
 
     kbs = KnowledgebaseService.get_by_ids(ids) if ids else []
     embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
