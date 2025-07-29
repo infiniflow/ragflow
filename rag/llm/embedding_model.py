@@ -60,12 +60,13 @@ class Base(ABC):
 
 class DefaultEmbedding(Base):
     _FACTORY_NAME = "BAAI"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     _model = None
     _model_name = ""
     _model_lock = threading.Lock()
 
     def __init__(self, key, model_name, **kwargs):
+        input_cuda_visible_devices = os.environ["CUDA_VISIBLE_DEVICES"]
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0" # handle some issues with multiple GPUs when initializing the model
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
 
@@ -97,6 +98,9 @@ class DefaultEmbedding(Base):
                         DefaultEmbedding._model = FlagModel(model_dir, query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：", use_fp16=torch.cuda.is_available())
         self._model = DefaultEmbedding._model
         self._model_name = DefaultEmbedding._model_name
+        # restore CUDA_VISIBLE_DEVICES
+        if input_cuda_visible_devices:
+            os.environ["CUDA_VISIBLE_DEVICES"] = input_cuda_visible_devices
 
     def encode(self, texts: list):
         batch_size = 16
