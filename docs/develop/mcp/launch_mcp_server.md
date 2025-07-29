@@ -106,7 +106,7 @@ Where:
 - `mcp-host-api_key`: Required in self-host mode to authenticate the MCP server with the RAGFlow server. See [here](../acquire_ragflow_api_key.md) for instructions on acquiring an API key.
 
 :::tip INFO
-If you set `mcp-mode` to `host`, you must add the ·--no-transport-streamable-http-enabled` flag, because the streamable-HTTP transport is not yet supported in host mode.
+If you set `mcp-mode` to `host`, you must add the `--no-transport-streamable-http-enabled` flag, because the streamable-HTTP transport is not yet supported in host mode.
 :::
 
 #### 2. Launch a RAGFlow server with an MCP server
