@@ -106,25 +106,24 @@ const ChatContainer = ({ controller }: IProps) => {
           </div>
           {/* Attach scrollRef here */}
           <div ref={scrollRef} />
-          {/* Scroll to Bottom Button */}
-          {!isAtBottom && (
-            <Button
-              type="primary"
-              shape="round"
-              style={{
-                position: 'absolute',
-                right: 16,
-                bottom: 16,
-                zIndex: 100,
-              }}
-              onClick={() =>
-                scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
-              }
-            >
-              Scroll to Bottom
-            </Button>
-          )}
         </Flex>
+        {/* Place the button here, above the input box */}
+        {console.log('isAtBottom:', isAtBottom)}
+        {!isAtBottom && (
+          <Button
+            type="primary"
+            shape="round"
+            style={{
+              margin: '12px auto',
+              display: 'block',
+            }}
+            onClick={() =>
+              scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }
+          >
+            Scroll to Bottom
+          </Button>
+        )}
         <MessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}
