@@ -1,4 +1,4 @@
-import { omit } from 'lodash';
+import { omit, pick } from 'lodash';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
 import { useInitializeOperatorParams } from './use-add-node';
@@ -16,7 +16,7 @@ export function useAgentToolInitialValues() {
             ...omit(initialValues, 'query'),
             description: '',
           };
-        case (Operator.TavilySearch, Operator.TavilyExtract):
+        case (Operator.TavilySearch, Operator.TavilyExtract, Operator.Google):
           return {
             api_key: '',
           };
@@ -24,6 +24,24 @@ export function useAgentToolInitialValues() {
           return omit(initialValues, 'sql');
         case Operator.Bing:
           return omit(initialValues, 'query');
+        case Operator.YahooFinance:
+          return omit(initialValues, 'stock_code');
+
+        case Operator.Email:
+          return pick(
+            initialValues,
+            'smtp_server',
+            'smtp_port',
+            'email',
+            'password',
+            'sender_name',
+          );
+
+        case Operator.DuckDuckGo:
+          return pick(initialValues, 'top_n', 'channel');
+
+        case Operator.Wikipedia:
+          return pick(initialValues, 'top_n', 'language');
 
         default:
           return initialValues;

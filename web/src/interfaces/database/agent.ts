@@ -4,11 +4,12 @@ export interface ICategorizeItem {
   examples?: { value: string }[];
   index: number;
   to: string[];
+  uuid: string;
 }
 
 export type ICategorizeItemResult = Record<
   string,
-  Omit<ICategorizeItem, 'name' | 'examples'> & { examples: string[] }
+  Omit<ICategorizeItem, 'name' | 'examples' | 'uuid'> & { examples: string[] }
 >;
 
 export interface ISwitchCondition {
@@ -101,6 +102,7 @@ export interface IGenerateForm {
 
 export interface ICategorizeForm extends IGenerateForm {
   category_description: ICategorizeItemResult;
+  items: ICategorizeItem[];
 }
 
 export interface IRelevantForm extends IGenerateForm {

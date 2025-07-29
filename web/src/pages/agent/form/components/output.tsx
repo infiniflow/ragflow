@@ -24,7 +24,7 @@ export function Output({ list }: OutputProps) {
             key={idx}
             className="bg-background-highlight text-background-checked rounded-sm px-2 py-1"
           >
-            {x.title}: {x.type}
+            {x.title}: <span className="text-text-sub-title">{x.type}</span>
           </li>
         ))}
       </ul>
