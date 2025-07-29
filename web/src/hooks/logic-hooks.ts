@@ -281,16 +281,74 @@ export const useSpeechWithSse = (url: string = api.tts) => {
 
 export const useScrollToBottom = (messages?: unknown) => {
   const ref = useRef<HTMLDivElement>(null);
+  const [isUserAtBottom, setIsUserAtBottom] = useState(true);
+  const messageContainerRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = useCallback(() => {
-    if (messages) {
-      ref.current?.scrollIntoView({ behavior: 'instant' });
+    if (messages && isUserAtBottom) {
+      ref.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages]); // If the message changes, scroll to the bottom
+  }, [messages, isUserAtBottom]); // Only scroll if user is at bottom
+
+  // Force scroll to bottom when user manually scrolls to bottom
+  const forceScrollToBottom = useCallback(() => {
+    if (messages) {
+      ref.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   useEffect(() => {
     scrollToBottom();
   }, [scrollToBottom]);
+
+  // Force scroll when user is at bottom
+  useEffect(() => {
+    if (isUserAtBottom) {
+      forceScrollToBottom();
+    }
+  }, [isUserAtBottom, forceScrollToBottom]);
+
+  // Add scroll event listener to track if user is at bottom
+  useEffect(() => {
+    const handleScroll = () => {
+      if (messageContainerRef.current) {
+        const { scrollTop, scrollHeight, clientHeight } =
+          messageContainerRef.current;
+        // More precise calculation with a small buffer
+        const isAtBottom =
+          Math.abs(scrollTop + clientHeight - scrollHeight) < 25;
+        setIsUserAtBottom(isAtBottom);
+      }
+    };
+
+    // Find the message container (parent of the ref element)
+    const findMessageContainer = () => {
+      if (ref.current) {
+        let parent = ref.current.parentElement;
+        while (parent) {
+          if (parent.scrollHeight > parent.clientHeight) {
+            messageContainerRef.current = parent;
+            break;
+          }
+          parent = parent.parentElement;
+        }
+      }
+    };
+
+    findMessageContainer();
+
+    if (messageContainerRef.current) {
+      messageContainerRef.current.addEventListener('scroll', handleScroll);
+      // Initial check with a small delay to ensure DOM is ready
+      setTimeout(handleScroll, 100);
+      return () => {
+        messageContainerRef.current?.removeEventListener(
+          'scroll',
+          handleScroll,
+        );
+      };
+    }
+  }, []);
 
   return ref;
 };
