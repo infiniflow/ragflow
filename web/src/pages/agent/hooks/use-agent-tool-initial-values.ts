@@ -24,6 +24,8 @@ export function useAgentToolInitialValues() {
           return omit(initialValues, 'sql');
         case Operator.Bing:
           return omit(initialValues, 'query');
+        case Operator.YahooFinance:
+          return omit(initialValues, 'stock_code');
 
         default:
           return initialValues;
