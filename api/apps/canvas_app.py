@@ -460,9 +460,10 @@ def sessions(canvas_id):
         desc = True
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
+    total, sess = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
+                                             None, user_id, include_dsl, keywords, from_date, to_date)
     try:
-        return get_json_result(data=API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
-                                             None, user_id, include_dsl, keywords, from_date, to_date))
+        return get_json_result(data={"total": total, "sessions": sess})
     except Exception as e:
         return server_error_response(e)
 

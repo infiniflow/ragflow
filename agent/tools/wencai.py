@@ -13,18 +13,39 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import os
+import time
 from abc import ABC
 import pandas as pd
 import pywencai
-from agent.component.base import ComponentBase, ComponentParamBase
+
+from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
+from api.utils.api_utils import timeout
 
 
-class WenCaiParam(ComponentParamBase):
+class WenCaiParam(ToolParamBase):
     """
     Define the WenCai component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "iwencai",
+            "description": """
+iwencai search: search platform is committed to providing hundreds of millions of investors with the most timely, accurate and comprehensive information, covering news, announcements, research reports, blogs, forums, Weibo, characters, etc.
+robo-advisor intelligent stock selection platform: through AI technology, is committed to providing investors with intelligent stock selection, quantitative investment, main force tracking, value investment, technical analysis and other types of stock selection technologies.
+fund selection platform: through AI technology, is committed to providing excellent fund, value investment, quantitative analysis and other fund selection technologies for foundation citizens.
+""",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "The question/conditions to select stocks.",
+                    "default": "{sys.query}",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.top_n = 10
         self.query_type = "stock"
@@ -36,45 +57,55 @@ class WenCaiParam(ComponentParamBase):
                                 'futures', 'lccp',
                                 'foreign_exchange'])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "name": "Query",
+                "type": "line"
+            }
+        }
 
-class WenCai(ComponentBase, ABC):
+class WenCai(ToolBase, ABC):
     component_name = "WenCai"
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = ",".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return WenCai.be_output("")
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    def _invoke(self, **kwargs):
+        if not kwargs.get("query"):
+            self.set_output("report", "")
+            return ""
 
-        try:
-            wencai_res = []
-            res = pywencai.get(query=ans, query_type=self._param.query_type, perpage=self._param.top_n)
-            if isinstance(res, pd.DataFrame):
-                wencai_res.append({"content": res.to_markdown()})
-            if isinstance(res, dict):
-                for item in res.items():
-                    if isinstance(item[1], list):
-                        wencai_res.append({"content": item[0] + "\n" + pd.DataFrame(item[1]).to_markdown()})
-                        continue
-                    if isinstance(item[1], str):
-                        wencai_res.append({"content": item[0] + "\n" + item[1]})
-                        continue
-                    if isinstance(item[1], dict):
-                        if "meta" in item[1].keys():
-                            continue
-                        wencai_res.append({"content": pd.DataFrame.from_dict(item[1], orient='index').to_markdown()})
-                        continue
-                    if isinstance(item[1], pd.DataFrame):
-                        if "image_url" in item[1].columns:
-                            continue
-                        wencai_res.append({"content": item[1].to_markdown()})
-                        continue
-                        
-                    wencai_res.append({"content": item[0] + "\n" + str(item[1])})
-        except Exception as e:
-            return WenCai.be_output("**ERROR**: " + str(e))
+        last_e = ""
+        for _ in range(self._param.max_retries+1):
+            try:
+                wencai_res = []
+                res = pywencai.get(query=kwargs["query"], query_type=self._param.query_type, perpage=self._param.top_n)
+                if isinstance(res, pd.DataFrame):
+                    wencai_res.append(res.to_markdown())
+                elif isinstance(res, dict):
+                    for item in res.items():
+                        if isinstance(item[1], list):
+                            wencai_res.append(item[0] + "\n" + pd.DataFrame(item[1]).to_markdown())
+                        elif isinstance(item[1], str):
+                            wencai_res.append(item[0] + "\n" + item[1])
+                        elif isinstance(item[1], dict):
+                            if "meta" in item[1].keys():
+                                continue
+                            wencai_res.append(pd.DataFrame.from_dict(item[1], orient='index').to_markdown())
+                        elif isinstance(item[1], pd.DataFrame):
+                            if "image_url" in item[1].columns:
+                                continue
+                            wencai_res.append(item[1].to_markdown())
+                        else:
+                            wencai_res.append(item[0] + "\n" + str(item[1]))
+                self.set_output("report", "\n\n".join(wencai_res))
+                return self.output("report")
+            except Exception as e:
+                last_e = e
+                logging.exception(f"WenCai error: {e}")
+                time.sleep(self._param.delay_after_error)
 
-        if not wencai_res:
-            return WenCai.be_output("")
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return f"WenCai error: {last_e}"
 
-        return pd.DataFrame(wencai_res)
+        assert False, self.output()

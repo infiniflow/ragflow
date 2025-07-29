@@ -103,7 +103,7 @@ class Base(ABC):
         for words, code in keywords_mapping:
             if re.search("({})".format("|".join(words)), error_str):
                 return code
-                
+
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
@@ -113,7 +113,7 @@ class Base(ABC):
 
     def _chat(self, history, gen_conf, **kwargs):
         print("[HISTORY]", json.dumps(history, ensure_ascii=False, indent=2))
-        if self.model_name.lower().find("qwen3"):
+        if self.model_name.lower().find("qwen3") >=0:
             kwargs["extra_body"] = {"enable_thinking": False}
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 

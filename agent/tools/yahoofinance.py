@@ -14,18 +14,33 @@
 #  limitations under the License.
 #
 import logging
+import os
+import time
 from abc import ABC
 import pandas as pd
-from agent.component.base import ComponentBase, ComponentParamBase
 import yfinance as yf
+from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
+from api.utils.api_utils import timeout
 
 
-class YahooFinanceParam(ComponentParamBase):
+class YahooFinanceParam(ToolParamBase):
     """
     Define the YahooFinance component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "yahoo_finance",
+            "description": "The Yahoo Finance is a service that provides access to real-time and historical stock market data. It enables users to fetch various types of stock information, such as price quotes, historical prices, company profiles, and financial news. The API offers structured data, allowing developers to integrate market data into their applications and analysis tools.",
+            "parameters": {
+                "stock_code": {
+                    "type": "string",
+                    "description": "The stock code or company name.",
+                    "default": "{sys.query}",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.info = True
         self.history = False
@@ -46,39 +61,51 @@ class YahooFinanceParam(ComponentParamBase):
         self.check_boolean(self.cash_flow_statement, "cash flow statement")
         self.check_boolean(self.news, "show news")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "stock_code": {
+                "name": "Stock code/Company name",
+                "type": "line"
+            }
+        }
 
-class YahooFinance(ComponentBase, ABC):
+class YahooFinance(ToolBase, ABC):
     component_name = "YahooFinance"
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = "".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return YahooFinance.be_output("")
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+    def _invoke(self, **kwargs):
+        if not kwargs.get("stock_code"):
+            self.set_output("report", "")
+            return ""
 
-        yohoo_res = []
-        try:
-            msft = yf.Ticker(ans)
-            if self._param.info:
-                yohoo_res.append({"content": "info:\n" + pd.Series(msft.info).to_markdown() + "\n"})
-            if self._param.history:
-                yohoo_res.append({"content": "history:\n" + msft.history().to_markdown() + "\n"})
-            if self._param.financials:
-                yohoo_res.append({"content": "calendar:\n" + pd.DataFrame(msft.calendar).to_markdown() + "\n"})
-            if self._param.balance_sheet:
-                yohoo_res.append({"content": "balance sheet:\n" + msft.balance_sheet.to_markdown() + "\n"})
-                yohoo_res.append(
-                    {"content": "quarterly balance sheet:\n" + msft.quarterly_balance_sheet.to_markdown() + "\n"})
-            if self._param.cash_flow_statement:
-                yohoo_res.append({"content": "cash flow statement:\n" + msft.cashflow.to_markdown() + "\n"})
-                yohoo_res.append(
-                    {"content": "quarterly cash flow statement:\n" + msft.quarterly_cashflow.to_markdown() + "\n"})
-            if self._param.news:
-                yohoo_res.append({"content": "news:\n" + pd.DataFrame(msft.news).to_markdown() + "\n"})
-        except Exception:
-            logging.exception("YahooFinance got exception")
+        last_e = ""
+        for _ in range(self._param.max_retries+1):
+            yohoo_res = []
+            try:
+                msft = yf.Ticker(kwargs["stock_code"])
+                if self._param.info:
+                    yohoo_res.append("# Information:\n" + pd.Series(msft.info).to_markdown() + "\n")
+                if self._param.history:
+                    yohoo_res.append("# History:\n" + msft.history().to_markdown() + "\n")
+                if self._param.financials:
+                    yohoo_res.append("# Calendar:\n" + pd.DataFrame(msft.calendar).to_markdown() + "\n")
+                if self._param.balance_sheet:
+                    yohoo_res.append("# Balance sheet:\n" + msft.balance_sheet.to_markdown() + "\n")
+                    yohoo_res.append("# Quarterly balance sheet:\n" + msft.quarterly_balance_sheet.to_markdown() + "\n")
+                if self._param.cash_flow_statement:
+                    yohoo_res.append("# Cash flow statement:\n" + msft.cashflow.to_markdown() + "\n")
+                    yohoo_res.append("# Quarterly cash flow statement:\n" + msft.quarterly_cashflow.to_markdown() + "\n")
+                if self._param.news:
+                    yohoo_res.append("# News:\n" + pd.DataFrame(msft.news).to_markdown() + "\n")
+                self.set_output("report", "\n\n".join(yohoo_res))
+                return self.output("report")
+            except Exception as e:
+                last_e = e
+                logging.exception(f"YahooFinance error: {e}")
+                time.sleep(self._param.delay_after_error)
 
-        if not yohoo_res:
-            return YahooFinance.be_output("")
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return f"YahooFinance error: {last_e}"
 
-        return pd.DataFrame(yohoo_res)
+        assert False, self.output()

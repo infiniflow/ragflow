@@ -61,7 +61,7 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3))
     def _invoke(self, **kwargs):
         for cond in self._param.conditions:
             res = []

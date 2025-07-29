@@ -303,10 +303,6 @@ class Canvas:
                         yield _node_finished(_cpn["obj"])
                         partials.pop(0)
 
-                if cpn["obj"].output("_references"):
-                    self.retrieval[-1]["chunks"].extend(cpn["obj"].output("_references").get("chunks", []))
-                    self.retrieval[-1]["doc_aggs"].extend(cpn["obj"].output("_references").get("doc_aggs", []))
-
                 if cpn["obj"].error():
                     ex = cpn["obj"].exception_handler()
                     if ex and ex["comment"]:

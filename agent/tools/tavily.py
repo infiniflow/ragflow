@@ -16,11 +16,12 @@
 import logging
 import os
 import re
+import time
 from abc import ABC
 from tavily import TavilyClient
 
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils import get_uuid
+from api.utils import get_uuid, hash_str2int
 from api.utils.api_utils import timeout
 from rag.prompts import kb_prompt
 
@@ -104,36 +105,44 @@ When searching:
 class TavilySearch(ToolBase, ABC):
     component_name = "TavilySearch"
 
-    def _retrieve_chunks(self, response):
+    def _retrieve_chunks(self, response, get_title, get_url, get_content, get_score=None):
         chunks = []
         aggs = []
         for r in response["results"]:
-            if not r["raw_content"] and not r["content"]:
+            content = get_content(r)
+            if content:
                 continue
-            content = r["raw_content"] if r["raw_content"] else r["content"]
             content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+-]+\)", "", content)
+            content = content[:10000]
             if not content:
                 continue
-            id = get_uuid()
+            id = str(hash_str2int(content))
+            title = get_title(r)
+            url = get_url(r)
+            score = get_score(r) if get_score else 1
             chunks.append({
                 "chunk_id": id,
-                "content": content[:10000],
+                "content": content,
                 "doc_id": id,
-                "docnm_kwd": r["title"],
-                "similarity": r["score"],
-                "url": r["url"]
+                "docnm_kwd": title,
+                "similarity": score,
+                "url": url
             })
             aggs.append({
-                "doc_name": r["title"],
+                "doc_name": title,
                 "doc_id": id,
                 "count": 1,
-                "url": r["url"]
+                "url": url
             })
         self._canvas.add_refernce(chunks, aggs)
         self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, True)))
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
     def _invoke(self, **kwargs):
+        if not kwargs.get("query"):
+            self.set_output("formalized_content", "")
+            return ""
+
         self.tavily_client = TavilyClient(api_key=self._param.api_key)
         last_e = None
         for fld in ["search_depth", "topic", "max_results", "days", "include_answer", "include_raw_content", "include_images", "include_image_descriptions", "include_domains", "exclude_domains"]:
@@ -144,12 +153,17 @@ class TavilySearch(ToolBase, ABC):
                 kwargs["include_images"] = False
                 kwargs["include_raw_content"] = False
                 res = self.tavily_client.search(**kwargs)
-                self._retrieve_chunks(res)
+                self._retrieve_chunks(res,
+                                      get_title=lambda r: r["title"],
+                                      get_url=lambda r: r["url"],
+                                      get_content=lambda r: r["raw_content"] if r["raw_content"] else r["content"],
+                                      get_score=lambda r: r["score"])
                 self.set_output("json", res["results"])
                 return self.output("formalized_content")
             except Exception as e:
                 last_e = e
                 logging.exception(f"Tavily error: {e}")
+                time.sleep(self._param.delay_after_error)
         if last_e:
             self.set_output("_ERROR", str(last_e))
             return f"Tavily error: {last_e}"
@@ -214,26 +228,6 @@ class TavilyExtractParam(ToolParamBase):
 
 class TavilyExtract(ToolBase, ABC):
     component_name = "TavilyExtract"
-
-    def _retrieve_chunks(self, response):
-        chunks = []
-        for r in response["results"]:
-            if not r["raw_content"] and not r["content"]:
-                continue
-            content = r["raw_content"] if r["raw_content"] else r["content"]
-            content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+-]+\)", "", content)
-            if not content:
-                continue
-            id = get_uuid()
-            chunks.append({
-                "chunk_id": id,
-                "content": content[:10000],
-                "doc_id": id,
-                "docnm_kwd": "",
-                "similarity": 1,
-                "url": r["url"]
-            })
-        self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": []}, 2000000)))
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):

@@ -14,21 +14,50 @@
 #  limitations under the License.
 #
 import logging
+import os
+import time
 from abc import ABC
 from serpapi import GoogleSearch
-import pandas as pd
-from agent.component.base import ComponentBase, ComponentParamBase
+
+from agent.tools import TavilySearch
+from agent.tools.base import ToolParamBase, ToolMeta
+from api.utils.api_utils import timeout
 
 
-class GoogleParam(ComponentParamBase):
+class GoogleParam(ToolParamBase):
     """
     Define the Google component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "google_search",
+            "description": """Search the world's information, including webpages, images, videos and more. Google has many special features to help you find exactly what you're looking ...""",
+            "parameters": {
+                "q": {
+                    "type": "string",
+                    "description": "The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+                    "default": "{sys.query}",
+                    "required": True
+                },
+                "start": {
+                    "type": "integer",
+                    "description": "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the `start` value.",
+                    "default": 0,
+                    "required": False,
+                },
+                "num": {
+                    "type": "integer",
+                    "description": "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
+                    "default": 6,
+                    "required": False,
+                }
+            }
+        }
         super().__init__()
-        self.top_n = 10
-        self.api_key = "xxx"
+        self.start = 0
+        self.num = 6
+        self.api_key = ""
         self.country = "cn"
         self.language = "en"
 
@@ -69,28 +98,58 @@ class GoogleParam(ComponentParamBase):
                                 'ug', 'uk', 'ur', 'uz', 'vu', 'vi', 'cy', 'wo', 'xh', 'yi', 'yo', 'zu']
                                )
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "q": {
+                "name": "Query",
+                "type": "line"
+            },
+            "start": {
+                "name": "From",
+                "type": "integer"
+            },
+            "num": {
+                "name": "Limit",
+                "type": "integer"
+            }
+        }
 
-class Google(ComponentBase, ABC):
+class Google(TavilySearch, ABC):
     component_name = "Google"
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return Google.be_output("")
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    def _invoke(self, **kwargs):
+        if not kwargs.get("query"):
+            self.set_output("formalized_content", "")
+            return ""
 
-        try:
-            client = GoogleSearch(
-                {"engine": "google", "q": ans, "api_key": self._param.api_key, "gl": self._param.country,
-                 "hl": self._param.language, "num": self._param.top_n})
-            google_res = [{"content": '<a href="' + i["link"] + '">' + i["title"] + '</a>    ' + i["snippet"]} for i in
-                          client.get_dict()["organic_results"]]
-        except Exception:
-            return Google.be_output("**ERROR**: Existing Unavailable Parameters!")
+        params = {
+            "api_key": self._param.api_key,
+            "engine": "google",
+            "q": kwargs["q"],
+            "google_domain": "google.com",
+            "gl": self._param.country,
+            "hl": self._param.language
+        }
+        last_e = ""
+        for _ in range(self._param.max_retries+1):
+            try:
+                search = GoogleSearch(params)
+                self._retrieve_chunks(search["organic_results"],
+                                      get_title=lambda r: r["title"],
+                                      get_url=lambda r: r["link"],
+                                      get_content=lambda r: r.get("about_this_result", {}).get("source", {}).get("description", r["snippet"])
+                                      )
+                self.set_output("json", search["organic_results"])
+                return self.output("formalized_content")
+            except Exception as e:
+                last_e = e
+                logging.exception(f"Google error: {e}")
+                time.sleep(self._param.delay_after_error)
 
-        if not google_res:
-            return Google.be_output("")
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return f"Google error: {last_e}"
 
-        df = pd.DataFrame(google_res)
-        logging.debug(f"df: {df}")
-        return df
+        assert False, self.output()
+

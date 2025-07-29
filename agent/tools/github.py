@@ -14,48 +14,76 @@
 #  limitations under the License.
 #
 import logging
+import os
+import time
 from abc import ABC
-import pandas as pd
 import requests
-from agent.component.base import ComponentBase, ComponentParamBase
+from agent.tools import TavilySearch
+from agent.tools.base import ToolParamBase, ToolMeta
+from api.utils.api_utils import timeout
 
 
-class GitHubParam(ComponentParamBase):
+class GitHubParam(ToolParamBase):
     """
     Define the GitHub component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "github_search",
+            "description": """GitHub repository search is a feature that enables users to find specific repositories on the GitHub platform. This search functionality allows users to locate projects, codebases, and other content hosted on GitHub based on various criteria.""",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "The search keywords to execute with GitHub. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+                    "default": "{sys.query}",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.top_n = 10
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "name": "Query",
+                "type": "line"
+            }
+        }
 
-class GitHub(ComponentBase, ABC):
+class GitHub(TavilySearch, ABC):
     component_name = "GitHub"
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return GitHub.be_output("")
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    def _invoke(self, **kwargs):
+        if not kwargs.get("query"):
+            self.set_output("formalized_content", "")
+            return ""
 
-        try:
-            url = 'https://api.github.com/search/repositories?q=' + ans + '&sort=stars&order=desc&per_page=' + str(
-                self._param.top_n)
-            headers = {"Content-Type": "application/vnd.github+json", "X-GitHub-Api-Version": '2022-11-28'}
-            response = requests.get(url=url, headers=headers).json()
+        last_e = ""
+        for _ in range(self._param.max_retries+1):
+            try:
+                url = 'https://api.github.com/search/repositories?q=' + kwargs["query"] + '&sort=stars&order=desc&per_page=' + str(
+                    self._param.top_n)
+                headers = {"Content-Type": "application/vnd.github+json", "X-GitHub-Api-Version": '2022-11-28'}
+                response = requests.get(url=url, headers=headers).json()
+                self._retrieve_chunks(response['items'],
+                                      get_title=lambda r: r["name"],
+                                      get_url=lambda r: r["html_url"],
+                                      get_content=lambda r: str(r["description"]) + '\n stars:' + str(r['watchers']))
+                self.set_output("json", response['items'])
+                return self.output("formalized_content")
+            except Exception as e:
+                last_e = e
+                logging.exception(f"GitHub error: {e}")
+                time.sleep(self._param.delay_after_error)
 
-            github_res = [{"content": '<a href="' + i["html_url"] + '">' + i["name"] + '</a>' + str(
-                i["description"]) + '\n stars:' + str(i['watchers'])} for i in response['items']]
-        except Exception as e:
-            return GitHub.be_output("**ERROR**: " + str(e))
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return f"GitHub error: {last_e}"
 
-        if not github_res:
-            return GitHub.be_output("")
-
-        df = pd.DataFrame(github_res)
-        logging.debug(f"df: {df}")
-        return df
+        assert False, self.output()

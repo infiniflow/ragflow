@@ -228,7 +228,7 @@ class Agent(LLM, ToolBase):
                 "arguments": args,
                 "results": tool_response
             })
-            self.callback("add_memory", {}, "...")
+            # self.callback("add_memory", {}, "...")
             #self.add_memory(hist[-2]["content"], hist[-1]["content"], name, args, str(tool_response))
 
             return name, tool_response
@@ -270,7 +270,7 @@ class Agent(LLM, ToolBase):
         task_desc = analyze_task(self.chat_mdl, user_request, tool_metas)
         for _ in range(self._param.max_rounds + 1):
             response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc)
-            self.callback("next_step", {}, str(response)[:256]+"...")
+            # self.callback("next_step", {}, str(response)[:256]+"...")
             token_count += tk
             hist.append({"role": "assistant", "content": response})
             try:
@@ -321,7 +321,7 @@ Respond immediately with your final comprehensive answer.
             yield txt, tkcnt
 
     def get_useful_memory(self, goal: str, sub_goal:str, topn=3) -> str:
-        self.callback("get_useful_memory", {"topn": 3}, "...")
+        # self.callback("get_useful_memory", {"topn": 3}, "...")
         mems = self._canvas.get_memory()
         rank = rank_memories(self.chat_mdl, goal, sub_goal, [summ for (user, assist, summ) in mems])
         try:

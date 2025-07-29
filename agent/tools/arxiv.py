@@ -14,19 +14,35 @@
 #  limitations under the License.
 #
 import logging
+import os
+import time
 from abc import ABC
 import arxiv
-import pandas as pd
-from agent.component.base import ComponentBase, ComponentParamBase
+from agent.tools import TavilySearch
+from agent.tools.base import ToolParamBase, ToolMeta
+from api.utils.api_utils import timeout
 
-class ArXivParam(ComponentParamBase):
+
+class ArXivParam(ToolParamBase):
     """
     Define the ArXiv component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "arxiv_search",
+            "description": """arXiv is a free distribution service and an open-access archive for nearly 2.4 million scholarly articles in the fields of physics, mathematics, computer science, quantitative biology, quantitative finance, statistics, electrical engineering and systems science, and economics. Materials on this site are not peer-reviewed by arXiv.""",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+                    "default": "{sys.query}",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
-        self.top_n = 6
+        self.top_n = 12
         self.sort_by = 'submittedDate'
 
     def check(self):
@@ -34,35 +50,48 @@ class ArXivParam(ComponentParamBase):
         self.check_valid_value(self.sort_by, "ArXiv Search Sort_by",
                                ['submittedDate', 'lastUpdatedDate', 'relevance'])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "name": "Query",
+                "type": "line"
+            }
+        }
 
-class ArXiv(ComponentBase, ABC):
+
+class ArXiv(TavilySearch, ABC):
     component_name = "ArXiv"
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return ArXiv.be_output("")
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    def _invoke(self, **kwargs):
+        if not kwargs.get("query"):
+            self.set_output("formalized_content", "")
+            return ""
 
-        try:
-            sort_choices = {"relevance": arxiv.SortCriterion.Relevance,
-                            "lastUpdatedDate": arxiv.SortCriterion.LastUpdatedDate,
-                            'submittedDate': arxiv.SortCriterion.SubmittedDate}
-            arxiv_client = arxiv.Client()
-            search = arxiv.Search(
-                query=ans,
-                max_results=self._param.top_n,
-                sort_by=sort_choices[self._param.sort_by]
-            )
-            arxiv_res = [
-                {"content": 'Title: ' + i.title + '\nPdf_Url: <a href="' + i.pdf_url + '"></a> \nSummary: ' + i.summary} for
-                i in list(arxiv_client.results(search))]
-        except Exception as e:
-            return ArXiv.be_output("**ERROR**: " + str(e))
+        last_e = ""
+        for _ in range(self._param.max_retries+1):
+            try:
+                sort_choices = {"relevance": arxiv.SortCriterion.Relevance,
+                                "lastUpdatedDate": arxiv.SortCriterion.LastUpdatedDate,
+                                'submittedDate': arxiv.SortCriterion.SubmittedDate}
+                arxiv_client = arxiv.Client()
+                search = arxiv.Search(
+                    query=kwargs["query"],
+                    max_results=self._param.top_n,
+                    sort_by=sort_choices[self._param.sort_by]
+                )
+                self._retrieve_chunks(list(arxiv_client.results(search)),
+                                      get_title=lambda r: r.title,
+                                      get_url=lambda r: r.pdf_url,
+                                      get_content=lambda r: r.summary)
+                return self.output("formalized_content")
+            except Exception as e:
+                last_e = e
+                logging.exception(f"ArXiv error: {e}")
+                time.sleep(self._param.delay_after_error)
 
-        if not arxiv_res:
-            return ArXiv.be_output("")
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return f"ArXiv error: {last_e}"
 
-        df = pd.DataFrame(arxiv_res)
-        logging.debug(f"df: {str(df)}")
-        return df
+        assert False, self.output()

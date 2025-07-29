@@ -13,7 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import os
+import time
 from abc import ABC
 import json
 import smtplib
@@ -22,13 +23,46 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from email.utils import formataddr
-from agent.component.base import ComponentBase, ComponentParamBase
 
-class EmailParam(ComponentParamBase):
+from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
+from api.utils.api_utils import timeout
+
+
+class EmailParam(ToolParamBase):
     """
     Define the Email component parameters.
     """
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "email",
+            "description": "The email is a method of electronic communication for sending and receiving information through the Internet. This tool helps users to send emails to one person or to multiple recipients with support for CC, BCC, file attachments, and markdown-to-HTML conversion.",
+            "parameters": {
+                "to_email": {
+                    "type": "string",
+                    "description": "The target email address.",
+                    "default": "{sys.query}",
+                    "required": True
+                },
+                "cc_email": {
+                    "type": "string",
+                    "description": "The other email addresses needs to be send to. Comma splited.",
+                    "default": "",
+                    "required": False
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The content of the email.",
+                    "default": "",
+                    "required": False
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "The subject/title of the email.",
+                    "default": "",
+                    "required": False
+                }
+            }
+        }
         super().__init__()
         # Fixed configuration parameters
         self.smtp_server = ""  # SMTP server address
@@ -44,98 +78,113 @@ class EmailParam(ComponentParamBase):
         self.check_empty(self.password, "Password")
         self.check_empty(self.sender_name, "Sender Name")
 
-class Email(ComponentBase, ABC):
+
+class Email(ToolBase, ABC):
     component_name = "Email"
     
-    def _run(self, history, **kwargs):
-        # Get upstream component output and parse JSON
-        ans = self.get_input()
-        content = "".join(ans["content"]) if "content" in ans else ""
-        if not content:
-            return Email.be_output("No content to send")
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+    def _invoke(self, **kwargs):
+        if not kwargs.get("to_email"):
+            self.set_output("success", False)
+            return ""
 
-        success = False
-        try:
-            # Parse JSON string passed from upstream
-            email_data = json.loads(content)
-            
-            # Validate required fields
-            if "to_email" not in email_data:
-                return Email.be_output("Missing required field: to_email")
+        last_e = ""
+        for _ in range(self._param.max_retries+1):
+            try:
+                # Parse JSON string passed from upstream
+                email_data = kwargs
 
-            # Create email object
-            msg = MIMEMultipart('alternative')
-            
-            # Properly handle sender name encoding
-            msg['From'] = formataddr((str(Header(self._param.sender_name,'utf-8')), self._param.email))
-            msg['To'] = email_data["to_email"]
-            if "cc_email" in email_data and email_data["cc_email"]:
-                msg['Cc'] = email_data["cc_email"]
-            msg['Subject'] = Header(email_data.get("subject", "No Subject"), 'utf-8').encode()
+                # Validate required fields
+                if "to_email" not in email_data:
+                    return Email.be_output("Missing required field: to_email")
 
-            # Use content from email_data or default content
-            email_content = email_data.get("content", "No content provided")
-            # msg.attach(MIMEText(email_content, 'plain', 'utf-8'))
-            msg.attach(MIMEText(email_content, 'html', 'utf-8'))
+                # Create email object
+                msg = MIMEMultipart('alternative')
 
-            # Connect to SMTP server and send
-            logging.info(f"Connecting to SMTP server {self._param.smtp_server}:{self._param.smtp_port}")
-            
-            context = smtplib.ssl.create_default_context()
-            with smtplib.SMTP(self._param.smtp_server, self._param.smtp_port) as server:
-                server.ehlo()
-                server.starttls(context=context)
-                server.ehlo()
-                # Login
-                logging.info(f"Attempting to login with email: {self._param.email}")
-                server.login(self._param.email, self._param.password)
-                
-                # Get all recipient list
-                recipients = [email_data["to_email"]]
-                if "cc_email" in email_data and email_data["cc_email"]:
-                    recipients.extend(email_data["cc_email"].split(','))
-                
-                # Send email
-                logging.info(f"Sending email to recipients: {recipients}")
-                try:
-                    server.send_message(msg, self._param.email, recipients)
-                    success = True
-                except Exception as e:
-                    logging.error(f"Error during send_message: {str(e)}")
-                    # Try alternative method
-                    server.sendmail(self._param.email, recipients, msg.as_string())
-                    success = True
-                
-                try:
-                    server.quit()
-                except Exception as e:
-                    # Ignore errors when closing connection
-                    logging.warning(f"Non-fatal error during connection close: {str(e)}")
+                # Properly handle sender name encoding
+                msg['From'] = formataddr((str(Header(self._param.sender_name,'utf-8')), self._param.email))
+                msg['To'] = email_data["to_email"]
+                if email_data.get("cc_email"):
+                    msg['Cc'] = email_data["cc_email"]
+                msg['Subject'] = Header(email_data.get("subject", "No Subject"), 'utf-8').encode()
 
-            if success:
-                return Email.be_output("Email sent successfully")
+                # Use content from email_data or default content
+                email_content = email_data.get("content", "No content provided")
+                # msg.attach(MIMEText(email_content, 'plain', 'utf-8'))
+                msg.attach(MIMEText(email_content, 'html', 'utf-8'))
 
-        except json.JSONDecodeError:
-            error_msg = "Invalid JSON format in input"
-            logging.error(error_msg)
-            return Email.be_output(error_msg)
-            
-        except smtplib.SMTPAuthenticationError:
-            error_msg = "SMTP Authentication failed. Please check your email and authorization code."
-            logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}")
-            
-        except smtplib.SMTPConnectError:
-            error_msg = f"Failed to connect to SMTP server {self._param.smtp_server}:{self._param.smtp_port}"
-            logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}")
-            
-        except smtplib.SMTPException as e:
-            error_msg = f"SMTP error occurred: {str(e)}"
-            logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}")
-            
-        except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
-            logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}") 
+                # Connect to SMTP server and send
+                logging.info(f"Connecting to SMTP server {self._param.smtp_server}:{self._param.smtp_port}")
+
+                context = smtplib.ssl.create_default_context()
+                with smtplib.SMTP(self._param.smtp_server, self._param.smtp_port) as server:
+                    server.ehlo()
+                    server.starttls(context=context)
+                    server.ehlo()
+                    # Login
+                    logging.info(f"Attempting to login with email: {self._param.email}")
+                    server.login(self._param.email, self._param.password)
+
+                    # Get all recipient list
+                    recipients = [email_data["to_email"]]
+                    if email_data.get("cc_email"):
+                        recipients.extend(email_data["cc_email"].split(','))
+
+                    # Send email
+                    logging.info(f"Sending email to recipients: {recipients}")
+                    try:
+                        server.send_message(msg, self._param.email, recipients)
+                        success = True
+                    except Exception as e:
+                        logging.error(f"Error during send_message: {str(e)}")
+                        # Try alternative method
+                        server.sendmail(self._param.email, recipients, msg.as_string())
+                        success = True
+
+                    try:
+                        server.quit()
+                    except Exception as e:
+                        # Ignore errors when closing connection
+                        logging.warning(f"Non-fatal error during connection close: {str(e)}")
+
+                self.set_output("success", success)
+                return success
+
+            except json.JSONDecodeError:
+                error_msg = "Invalid JSON format in input"
+                logging.error(error_msg)
+                self.set_output("_ERROR", error_msg)
+                self.set_output("success", False)
+                return False
+
+            except smtplib.SMTPAuthenticationError:
+                error_msg = "SMTP Authentication failed. Please check your email and authorization code."
+                logging.error(error_msg)
+                self.set_output("_ERROR", error_msg)
+                self.set_output("success", False)
+                return False
+
+            except smtplib.SMTPConnectError:
+                error_msg = f"Failed to connect to SMTP server {self._param.smtp_server}:{self._param.smtp_port}"
+                logging.error(error_msg)
+                last_e = error_msg
+                time.sleep(self._param.delay_after_error)
+
+            except smtplib.SMTPException as e:
+                error_msg = f"SMTP error occurred: {str(e)}"
+                logging.error(error_msg)
+                last_e = error_msg
+                time.sleep(self._param.delay_after_error)
+
+            except Exception as e:
+                error_msg = f"Unexpected error: {str(e)}"
+                logging.error(error_msg)
+                self.set_output("_ERROR", error_msg)
+                self.set_output("success", False)
+                return False
+
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return False
+
+        assert False, self.output()

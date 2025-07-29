@@ -14,18 +14,34 @@
 #  limitations under the License.
 #
 import logging
+import os
+import time
 from abc import ABC
 import wikipedia
-import pandas as pd
-from agent.component.base import ComponentBase, ComponentParamBase
+
+from agent.tools import TavilySearch
+from agent.tools.base import ToolMeta, ToolParamBase
+from api.utils.api_utils import timeout
 
 
-class WikipediaParam(ComponentParamBase):
+class WikipediaParam(ToolParamBase):
     """
     Define the Wikipedia component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "wikipedia_search",
+            "description": """A wide range of how-to and information pages are made available in wikipedia. Since 2001, it has grown rapidly to become the world's largest reference website. From Wikipedia, the free encyclopedia.""",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
+                    "default": "{sys.query}",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.top_n = 10
         self.language = "en"
@@ -39,29 +55,40 @@ class WikipediaParam(ComponentParamBase):
                                 'ja', 'nb', 'nn', 'ce', 'uz', 'pt', 'kk', 'ro', 'ru', 'ceb', 'sk', 'sl', 'sr', 'sh',
                                 'fi', 'sv', 'ta', 'tt', 'th', 'tg', 'azb', 'tr', 'uk', 'ur', 'vi', 'war', 'zh', 'yue'])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "query": {
+                "name": "Query",
+                "type": "line"
+            }
+        }
 
-class Wikipedia(ComponentBase, ABC):
+class Wikipedia(TavilySearch, ABC):
     component_name = "Wikipedia"
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return Wikipedia.be_output("")
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    def _invoke(self, **kwargs):
+        if not kwargs.get("query"):
+            self.set_output("formalized_content", "")
+            return ""
 
-        try:
-            wiki_res = []
-            wikipedia.set_lang(self._param.language)
-            wiki_engine = wikipedia
-            for wiki_key in wiki_engine.search(ans, results=self._param.top_n):
-                page = wiki_engine.page(title=wiki_key, auto_suggest=False)
-                wiki_res.append({"content": '<a href="' + page.url + '">' + page.title + '</a> ' + page.summary})
-        except Exception as e:
-            return Wikipedia.be_output("**ERROR**: " + str(e))
+        last_e = ""
+        for _ in range(self._param.max_retries+1):
+            try:
+                wikipedia.set_lang(self._param.language)
+                wiki_engine = wikipedia
+                self._retrieve_chunks(wiki_engine.search(kwargs["query"], results=self._param.top_n),
+                                      get_title=lambda r: r.title,
+                                      get_url=lambda r: r.url,
+                                      get_content=lambda r: r.summary)
+                return self.output("formalized_content")
+            except Exception as e:
+                last_e = e
+                logging.exception(f"Wikipedia error: {e}")
+                time.sleep(self._param.delay_after_error)
 
-        if not wiki_res:
-            return Wikipedia.be_output("")
+        if last_e:
+            self.set_output("_ERROR", str(last_e))
+            return f"Wikipedia error: {last_e}"
 
-        df = pd.DataFrame(wiki_res)
-        logging.debug(f"df: {df}")
-        return df
+        assert False, self.output()

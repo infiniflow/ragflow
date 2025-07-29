@@ -65,9 +65,10 @@ class API4ConversationService(CommonService):
             sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
         else:
             sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
+        count = sessions.count()
         sessions = sessions.paginate(page_number, items_per_page)
 
-        return list(sessions.dicts())
+        return count, list(sessions.dicts())
 
     @classmethod
     @DB.connection_context()
