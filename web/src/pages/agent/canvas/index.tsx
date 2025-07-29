@@ -41,7 +41,6 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
-import { EmailNode } from './node/email-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
@@ -71,7 +70,7 @@ export const nodeTypes: NodeTypes = {
   keywordNode: KeywordNode,
   invokeNode: InvokeNode,
   templateNode: TemplateNode,
-  emailNode: EmailNode,
+  // emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
