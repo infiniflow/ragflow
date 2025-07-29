@@ -109,6 +109,13 @@ describe('useScrollToBottom', () => {
     // Optionally, flush again after the assertion to see if it gets called late
     await flushAll();
   });
+
+  it('should indicate button should appear when user is not at bottom', () => {
+    const containerRef = createMockContainer({ atBottom: false });
+    const { result } = renderHook(() => useScrollToBottom([], containerRef));
+    // The button should appear in the UI when isAtBottom is false
+    expect(result.current.isAtBottom).toBe(false);
+  });
 });
 
 const originalRAF = global.requestAnimationFrame;
