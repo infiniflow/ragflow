@@ -4,11 +4,12 @@ export interface ICategorizeItem {
   examples?: { value: string }[];
   index: number;
   to: string[];
+  uuid: string;
 }
 
 export type ICategorizeItemResult = Record<
   string,
-  Omit<ICategorizeItem, 'name' | 'examples'> & { examples: string[] }
+  Omit<ICategorizeItem, 'name' | 'examples' | 'uuid'> & { examples: string[] }
 >;
 
 export interface ISwitchCondition {
@@ -101,6 +102,7 @@ export interface IGenerateForm {
 
 export interface ICategorizeForm extends IGenerateForm {
   category_description: ICategorizeItemResult;
+  items: ICategorizeItem[];
 }
 
 export interface IRelevantForm extends IGenerateForm {
@@ -155,8 +157,13 @@ export interface IAgentForm {
   exception_comment: any;
   exception_goto: any;
   tools: Array<{
+    name: string;
     component_name: string;
     params: Record<string, any>;
+  }>;
+  mcp: Array<{
+    mcp_id: string;
+    tools: Record<string, Record<string, any>>;
   }>;
   outputs: {
     structured_output: Record<string, Record<string, any>>;

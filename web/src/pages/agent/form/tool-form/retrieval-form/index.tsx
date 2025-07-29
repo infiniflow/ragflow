@@ -1,9 +1,12 @@
+import { Collapse } from '@/components/collapse';
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
+import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -42,15 +45,19 @@ const RetrievalForm = () => {
           <DescriptionField></DescriptionField>
           <KnowledgeBaseFormField></KnowledgeBaseFormField>
         </FormContainer>
-        <FormContainer>
-          <SimilaritySliderFormField
-            vectorSimilarityWeightName="keywords_similarity_weight"
-            isTooltipShown
-          ></SimilaritySliderFormField>
-          <TopNFormField></TopNFormField>
-          <RerankFormFields></RerankFormFields>
-          <EmptyResponseField></EmptyResponseField>
-        </FormContainer>
+        <Collapse title={<div>Advanced Settings</div>}>
+          <FormContainer>
+            <SimilaritySliderFormField
+              vectorSimilarityWeightName="keywords_similarity_weight"
+              isTooltipShown
+            ></SimilaritySliderFormField>
+            <TopNFormField></TopNFormField>
+            <RerankFormFields></RerankFormFields>
+            <EmptyResponseField></EmptyResponseField>
+            <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+          </FormContainer>
+        </Collapse>
       </form>
     </Form>
   );

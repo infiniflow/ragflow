@@ -21,10 +21,8 @@ export function InnerIterationNode({
   isConnectable = true,
   selected,
 }: NodeProps<IIterationNode>) {
-  // const { theme } = useTheme();
-
   return (
-    <ToolBar selected={selected} id={id} label={data.label}>
+    <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
       <section
         className={cn('h-full bg-transparent rounded-b-md ', {
           [styles.selectedHeader]: selected,
@@ -56,9 +54,7 @@ export function InnerIterationNode({
           label={data.label}
           wrapperClassName={cn(
             'bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-44px] left-[-0.3px]',
-            // styles.iterationHe ader,
             {
-              // [`${styles.dark} text-white`]: theme === 'dark',
               [styles.selectedHeader]: selected,
             },
           )}
@@ -71,9 +67,10 @@ export function InnerIterationNode({
 function InnerIterationStartNode({
   isConnectable = true,
   id,
+  selected,
 }: NodeProps<IIterationStartNode>) {
   return (
-    <NodeWrapper className="w-20">
+    <NodeWrapper className="w-20" selected={selected}>
       <CommonHandle
         type="source"
         position={Position.Right}

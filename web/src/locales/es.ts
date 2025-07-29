@@ -336,6 +336,7 @@ export default {
       apiKeyTip:
         'La clave API puede obtenerse registrándose con el proveedor correspondiente de LLM.',
       showMoreModels: 'Mostrar más modelos',
+      hideModels: 'Ocultar modelos',
       baseUrl: 'URL base',
       baseUrlTip:
         'Si tu clave API es de OpenAI, ignora esto. Cualquier otro proveedor intermedio proporcionará esta URL base junto con la clave API.',
@@ -432,7 +433,7 @@ export default {
       addGoogleRegion: 'Región de Google Cloud',
       GoogleRegionMessage: '¡Por favor ingresa la Región de Google Cloud!',
       modelProvidersWarn:
-        'Por favor agrega tanto el modelo de embeddings como el LLM en <b>Configuración > Proveedores de Modelos</b> primero.',
+        'Por favor agrega tanto el modelo de embeddings como el LLM en <b>Configuración > Proveedores de Modelos</b> primero. Luego, configúralos en "Establecer modelos predeterminados".',
       apiVersion: 'Versión de la API',
       apiVersionMessage: '¡Por favor ingresa la versión de la API!',
       modelsToBeAddedTooltip:

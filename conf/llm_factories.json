@@ -142,6 +142,61 @@
             ]
         },
         {
+            "name": "xAI",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "grok-4",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-3",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-3-fast",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-3-mini",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-3-mini-mini-fast",
+                    "tags": "LLM,CHAT,130k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+
+                },
+                {
+                    "llm_name": "grok-2-vision",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "image2text",
+                    "is_tools": true
+
+                }
+            ]
+        },
+        {
             "name": "Tongyi-Qianwen",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,TTS,SPEECH2TEXT,MODERATION",
@@ -526,6 +581,34 @@
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
             "llm": [
+                {
+                    "llm_name": "kimi-k2-0711-preview",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-latest-8k",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-latest-32k",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-latest-128k",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
                 {
                     "llm_name": "moonshot-v1-8k",
                     "tags": "LLM,CHAT,",
@@ -1001,6 +1084,20 @@
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
             "llm": [
+                {
+                    "llm_name": "gemini-2.5-flash",
+                    "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-pro",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,1024K",
+                    "max_tokens": 1048576,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
                 {
                     "llm_name": "gemini-2.5-flash-preview-05-20",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
@@ -3190,6 +3287,30 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "voyage-3-large",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3.5",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3.5-lite",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-code-3",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
                     "llm_name": "voyage-multimodal-3",
                     "tags": "TEXT EMBEDDING,Chat,IMAGE2TEXT,32000",
                     "max_tokens": 32000,
@@ -3711,6 +3832,299 @@
             "llm": []
         },
         {
+            "name": "DeepInfra",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TTS,SPEECH2TEXT,MODERATION",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "moonshotai/Kimi-K2-Instruct",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistralai/Voxtral-Small-24B-2507",
+                    "tags": "SPEECH2TEXT",
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "mistralai/Voxtral-Mini-3B-2507",
+                    "tags": "SPEECH2TEXT",
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-R1-0528-Turbo",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-235B-A22B",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-30B-A3B",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-32B",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-14B",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3-0324-Turbo",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-Turbo",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-R1-0528",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3-0324",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistralai/Devstral-Small-2507",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/Llama-Guard-4-12B",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/QwQ-32B",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "anthropic/claude-4-opus",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "anthropic/claude-4-sonnet",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "google/gemini-2.5-flash",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "google/gemini-2.5-pro",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "google/gemma-3-27b-it",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "google/gemma-3-12b-it",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "google/gemma-3-4b-it",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "hexgrad/Kokoro-82M",
+                    "tags": "TTS",
+                    "model_type": "tts"
+                },
+                {
+                    "llm_name": "canopylabs/orpheus-3b-0.1-ft",
+                    "tags": "TTS",
+                    "model_type": "tts"
+                },
+                {
+                    "llm_name": "sesame/csm-1b",
+                    "tags": "TTS",
+                    "model_type": "tts"
+                },
+                {
+                    "llm_name": "microsoft/Phi-4-multimodal-instruct",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/Llama-3.3-70B-Instruct",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "microsoft/phi-4",
+                    "tags": "LLM,CHAT",
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "openai/whisper-large-v3-turbo",
+                    "tags": "SPEECH2TEXT",
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "BAAI/bge-base-en-v1.5",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "BAAI/bge-en-icl",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "BAAI/bge-large-en-v1.5",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "BAAI/bge-m3",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "BAAI/bge-m3-multi",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Embedding-0.6B",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Embedding-4B",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Embedding-8B",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "intfloat/e5-base-v2",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "intfloat/e5-large-v2",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "intfloat/multilingual-e5-large",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "intfloat/multilingual-e5-large-instruct",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sentence-transformers/all-MiniLM-L12-v2",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sentence-transformers/all-MiniLM-L6-v2",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sentence-transformers/all-mpnet-base-v2",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sentence-transformers/clip-ViT-B-32",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sentence-transformers/clip-ViT-B-32-multilingual-v1",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sentence-transformers/multi-qa-mpnet-base-dot-v1",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sentence-transformers/paraphrase-MiniLM-L6-v2",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "shibing624/text2vec-base-chinese",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "thenlper/gte-base",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "thenlper/gte-large",
+                    "tags": "TEXT EMBEDDING",
+                    "model_type": "embedding"
+                }
+            ]
+        },
+        {
           "name": "302.AI",
           "logo": "",
           "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
@@ -3877,7 +4291,5 @@
                 "model_type": "embedding",
                 "is_tools": false
               }
-          ]
-      }
     ]
 }

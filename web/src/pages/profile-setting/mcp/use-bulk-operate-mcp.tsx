@@ -1,14 +1,18 @@
+import { useDeleteMcpServer } from '@/hooks/use-mcp-request';
 import { Trash2, Upload } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useExportMcp } from './use-export-mcp';
 
 export function useBulkOperateMCP() {
   const { t } = useTranslation();
   const [selectedList, setSelectedList] = useState<Array<string>>([]);
+  const { deleteMcpServer } = useDeleteMcpServer();
+  const { handleExportMcpJson } = useExportMcp();
 
-  const handleEnableClick = useCallback(() => {}, []);
-
-  const handleDelete = useCallback(() => {}, []);
+  const handleDelete = useCallback(() => {
+    deleteMcpServer(selectedList);
+  }, [deleteMcpServer, selectedList]);
 
   const handleSelectChange = useCallback((id: string, checked: boolean) => {
     setSelectedList((list) => {
@@ -21,7 +25,7 @@ export function useBulkOperateMCP() {
       id: 'export',
       label: t('mcp.export'),
       icon: <Upload />,
-      onClick: handleEnableClick,
+      onClick: handleExportMcpJson(selectedList),
     },
     {
       id: 'delete',

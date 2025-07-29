@@ -20,12 +20,26 @@ import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
 import DocumentHeader from './components/document-preview/document-header';
 
+import { PageHeader } from '@/components/page-header';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import message from '@/components/ui/message';
 import {
   RAGFlowPagination,
   RAGFlowPaginationType,
 } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
+import {
+  QueryStringMap,
+  useNavigatePage,
+} from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import styles from './index.less';
 
 const Chunk = () => {
@@ -42,6 +56,7 @@ const Chunk = () => {
   } = useFetchNextChunkList();
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo?.type === 'pdf';
+  const { data: dataset } = useFetchKnowledgeBaseConfiguration();
 
   const { t } = useTranslation();
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
@@ -56,7 +71,8 @@ const Chunk = () => {
     chunkUpdatingVisible,
     documentId,
   } = useUpdateChunk();
-
+  const { navigateToDataset, getQueryString, navigateToDatasetList } =
+    useNavigatePage();
   useEffect(() => {
     setChunkList(data);
   }, [data]);
@@ -159,6 +175,31 @@ const Chunk = () => {
 
   return (
     <>
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink onClick={navigateToDatasetList}>
+                {t('knowledgeDetails.dataset')}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink
+                onClick={navigateToDataset(
+                  getQueryString(QueryStringMap.id) as string,
+                )}
+              >
+                {dataset.name}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{documentInfo.name}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </PageHeader>
       <div className={styles.chunkPage}>
         <div className="flex flex-1 gap-8">
           <div className="w-2/5">

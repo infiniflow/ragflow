@@ -6,6 +6,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
@@ -13,12 +18,11 @@ import { CircleX, Play, RefreshCw } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RunningStatus } from './constant';
-import { ParsingCard } from './parsing-card';
+import { ParsingCard, PopoverContent } from './parsing-card';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import { UseSaveMetaShowType } from './use-save-meta';
 import { isParserRunning } from './utils';
-
 const IconMap = {
   [RunningStatus.UNSTART]: <Play />,
   [RunningStatus.RUNNING]: <CircleX />,
@@ -61,7 +65,7 @@ export function ParsingStatusCell({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant={'ghost'} size={'sm'}>
-              {parser_id}
+              {parser_id === 'naive' ? 'general' : parser_id}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
@@ -94,10 +98,17 @@ export function ParsingStatusCell({
         </Button>
       </ConfirmDeleteDialog>
       {isParserRunning(run) ? (
-        <div className="flex items-center gap-1">
-          <Progress value={p} className="h-1 flex-1 min-w-10" />
-          {p}%
-        </div>
+        <HoverCard>
+          <HoverCardTrigger asChild>
+            <div className="flex items-center gap-1">
+              <Progress value={p} className="h-1 flex-1 min-w-10" />
+              {p}%
+            </div>
+          </HoverCardTrigger>
+          <HoverCardContent className="w-[40vw]">
+            <PopoverContent record={record}></PopoverContent>
+          </HoverCardContent>
+        </HoverCard>
       ) : (
         <ParsingCard record={record}></ParsingCard>
       )}

@@ -208,6 +208,15 @@ class GiteeSeq2txt(Base):
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
+class DeepInfraSeq2txt(Base):
+    _FACTORY_NAME = "DeepInfra"
+
+    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai", **kwargs):
+        if not base_url:
+            base_url = "https://api.deepinfra.com/v1/openai"
+
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name
 
 class Ai302Seq2txt(Base):
     _FACTORY_NAME = "302.AI"

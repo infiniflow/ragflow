@@ -309,7 +309,7 @@ export default {
 
 <p>請注意您需要指定的條目類型。</p>`,
       tag: `<p>使用「Tag」分塊方法的知識庫用作標籤集。其他知識庫可以使用它來標記自己的塊，對這些知識庫的查詢也將使用此標籤集進行標記。</p>
-<p>使用「Tag」作為分塊方法的知識庫<b>不</b>參與 RAG 過程。</p>
+<p>標籤集<b>不會</b>直接參與 RAG 過程。</p>
 <p>標籤知識庫中的每個塊都是一個獨立的描述-標籤對。</p>
 
 <p>支援的檔案格式包括<b>XLSX</b>和<b>CSV/TXT</b>檔案格式。</p>
@@ -588,6 +588,7 @@ export default {
       apiKeyMessage: '請輸入api key（如果是本地部署的模型，請忽略它）',
       apiKeyTip: 'API key可以通過註冊相應的LLM供應商來獲取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隱藏模型',
       baseUrl: 'base-url',
       baseUrlTip:
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
@@ -679,7 +680,7 @@ export default {
         '請輸入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 區域',
       GoogleRegionMessage: '請輸入 Google Cloud 區域',
-      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「系統模型設定」中設定它們。`,
+      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「設定預設模型」中設定它們。`,
       add: '添加',
       updateDate: '更新日期',
       role: '角色',
@@ -1016,7 +1017,7 @@ export default {
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用該模板',
+      useTemplate: '使用',
       wenCai: '問財',
       queryType: '查詢類型',
       wenCaiDescription:
@@ -1184,5 +1185,9 @@ export default {
       knowledge: '知識',
       chat: '聊天',
     },
+  },
+  modal: {
+    okText: '確認',
+    cancelText: '取消',
   },
 };

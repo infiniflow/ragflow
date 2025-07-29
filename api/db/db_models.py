@@ -243,8 +243,51 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
+class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop('max_retries', 5)
+        self.retry_delay = kwargs.pop('retry_delay', 1)
+        super().__init__(*args, **kwargs)
+
+    def execute_sql(self, sql, params=None, commit=True):
+        from peewee import OperationalError
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().execute_sql(sql, params, commit)
+            except OperationalError as e:
+                if e.args[0] in (2013, 2006) and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection (attempt {attempt+1}/{self.max_retries}): {e}"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    logging.error(f"DB execution failure: {e}")
+                    raise
+        return None
+
+    def _handle_connection_loss(self):
+        self.close_all()
+        self.connect()
+
+    def begin(self):
+        from peewee import OperationalError
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().begin()
+            except OperationalError as e:
+                if e.args[0] in (2013, 2006) and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    raise
+
+
 class PooledDatabase(Enum):
-    MYSQL = PooledMySQLDatabase
+    MYSQL = RetryingPooledMySQLDatabase
     POSTGRES = PooledPostgresqlDatabase
 
 
@@ -859,6 +902,7 @@ class Search(DataBaseModel):
 
 
 def migrate_db():
+    logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:
         migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
@@ -965,3 +1009,4 @@ def migrate_db():
         migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
     except Exception:
         pass
+    logging.disable(logging.NOTSET)
