@@ -60,7 +60,7 @@ Where:
 
 ### Transports
 
-RAGFlow MCP server supports two transports, lagacy SSE transport (serves at `/sse`), which introduced at 2024-11-05 and deprecated at 2025-3-26 and streamable-http transport (serves at `/mcp`). By default, RAGFlow MCP server runs with lagacy SSE transport, and streamable-http transport with json response enabled. Optially, you can disable any one of these features by pass corresponding flags `--no-transport-sse-enabled`, `--no-transport-streamable-http-enabled` and `--no-json-response`.
+The RAGFlow MCP server supports two transports: the legacy SSE transport (served at `/sse`), introduced on November 5, 2024 and deprecated on March 26, 2025, and the streamable-HTTP transport (served at `/mcp`). The legacy SSE transport and the streamable HTTP transport with JSON responses are enabled by default. To disable either transport, use the flags `--no-transport-sse-enabled` or `--no-transport-streamable-http-enabled`. To disable JSON responses for the streamable HTTP transport,  use the `--no-json-response` flag.
 
 ### Launch from Docker
 
