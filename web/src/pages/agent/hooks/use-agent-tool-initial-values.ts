@@ -37,6 +37,9 @@ export function useAgentToolInitialValues() {
             'sender_name',
           );
 
+        case Operator.DuckDuckGo:
+          return pick(initialValues, 'top_n', 'channel');
+
         default:
           return initialValues;
       }
