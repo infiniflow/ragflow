@@ -58,6 +58,10 @@ Where:
   - `host`: host mode.
 - `api_key`: Required in self-host mode to authenticate the MCP server with the RAGFlow server. See [here](../acquire_ragflow_api_key.md) for instructions on acquiring an API key.
 
+### Transports
+
+RAGFlow MCP server supports two transports, lagacy SSE transport (serves at `/sse`), which introduced at 2024-11-05 and deprecated at 2025-3-26 and streamable-http transport (serves at `/mcp`). By default, RAGFlow MCP server runs with lagacy SSE transport, and streamable-http transport with json response enabled. Optially, you can disable any one of these features by pass corresponding flags `--no-transport-sse-enabled`, `--no-transport-streamable-http-enabled` and `--no-json-response`.
+
 ### Launch from Docker
 
 #### 1. Enable MCP server
@@ -81,6 +85,12 @@ The MCP server is designed as an optional component that complements the RAGFlow
         - --mcp-script-path=/ragflow/mcp/server/server.py
         - --mcp-mode=self-host
         - --mcp-host-api-key=ragflow-xxxxxxx
+        # Optional transport flags for MCP (customize if needed).
+        # Host mode need to combined with --no-transport-streamable-http-enabled flag, namely, host+streamable-http is not supported yet.
+        # The following are enabled by default unless explicitly disabled with --no-<flag>.
+        #   - --no-transport-sse-enabled # Disable legacy SSE endpoints (/sse and /messages/)
+        #   - --no-transport-streamable-http-enabled #  Disable Streamable HTTP transport (/mcp endpoint)
+        #   - --no-json-response # Disable JSON response mode in Streamable HTTP transport (instead of SSE over HTTP)
 ```
 
 Where: 
@@ -93,6 +103,10 @@ Where:
   - `self-host`: (default) self-host mode.
   - `host`: host mode.
 - `mcp-host-api_key`: Required in self-host mode to authenticate the MCP server with the RAGFlow server. See [here](../acquire_ragflow_api_key.md) for instructions on acquiring an API key.
+
+:::tip INFO
+Host mode need to combined with --no-transport-streamable-http-enabled flag, namely, host+streamable-http is not supported yet.
+:::
 
 #### 2. Launch a RAGFlow server with an MCP server
 
