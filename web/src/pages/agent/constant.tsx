@@ -341,7 +341,17 @@ export const initialKeywordExtractValues = {
 export const initialDuckValues = {
   top_n: 10,
   channel: Channel.Text,
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialBaiduValues = {
@@ -352,7 +362,13 @@ export const initialBaiduValues = {
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialPubMedValues = {
@@ -526,7 +542,7 @@ export const initialTemplateValues = {
 
 export const initialEmailValues = {
   smtp_server: '',
-  smtp_port: 587,
+  smtp_port: 465,
   email: '',
   password: '',
   sender_name: '',
@@ -534,6 +550,12 @@ export const initialEmailValues = {
   cc_email: '',
   subject: '',
   content: '',
+  outputs: {
+    success: {
+      value: true,
+      type: 'boolean',
+    },
+  },
 };
 
 export const initialIterationValues = {
@@ -815,7 +837,7 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'invokeNode',
   [Operator.Template]: 'templateNode',
-  [Operator.Email]: 'emailNode',
+  [Operator.Email]: 'ragNode',
   [Operator.Iteration]: 'group',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
