@@ -35,10 +35,8 @@ class RAGFlowJsonParser:
         txt = binary.decode(encoding, errors="ignore")
 
         if self.is_jsonl_format(txt):
-            print("jsonl", flush=True)
             sections = self._parse_jsonl(txt)
         else:
-            print("normal", flush=True)
             sections = self._parse_json(txt)
         return sections
 
