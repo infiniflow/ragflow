@@ -1,6 +1,6 @@
 import MessageItem from '@/components/message-item';
 import { MessageType } from '@/constants/chat';
-import { Button, Flex, Spin } from 'antd';
+import { Flex, Spin } from 'antd';
 import { useRef } from 'react';
 import {
   useCreateConversationBeforeUploadDocument,
@@ -35,7 +35,6 @@ const ChatContainer = ({ controller }: IProps) => {
   const { data: currentDialog } = useFetchNextDialog();
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
-
   const {
     value,
     ref,
@@ -48,9 +47,7 @@ const ChatContainer = ({ controller }: IProps) => {
     removeMessageById,
     stopOutputMessage,
   } = useSendNextMessage(controller);
-
-  // Use the scroll-to-bottom hook (only once!)
-  const { scrollRef, isAtBottom } = useScrollToBottom(
+  const { scrollRef, isAtBottom, scrollToBottom } = useScrollToBottom(
     derivedMessages,
     messageContainerRef,
   );
@@ -64,6 +61,11 @@ const ChatContainer = ({ controller }: IProps) => {
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
 
+  const handleSend = (msg) => {
+    // your send logic
+    setTimeout(scrollToBottom, 0);
+  };
+
   return (
     <>
       <Flex flex={1} className={styles.chatContainer} vertical>
@@ -72,58 +74,41 @@ const ChatContainer = ({ controller }: IProps) => {
           vertical
           className={styles.messageContainer}
           ref={messageContainerRef}
-          style={{ position: 'relative' }}
         >
           <div>
             <Spin spinning={loading}>
-              {derivedMessages?.map((message, i) => (
-                <MessageItem
-                  loading={
-                    message.role === MessageType.Assistant &&
-                    sendLoading &&
-                    derivedMessages.length - 1 === i
-                  }
-                  key={buildMessageUuidWithRole(message)}
-                  item={message}
-                  nickname={userInfo.nickname}
-                  avatar={userInfo.avatar}
-                  avatarDialog={currentDialog.icon}
-                  reference={buildMessageItemReference(
-                    {
-                      message: derivedMessages,
-                      reference: conversation.reference,
-                    },
-                    message,
-                  )}
-                  clickDocumentButton={clickDocumentButton}
-                  index={i}
-                  removeMessageById={removeMessageById}
-                  regenerateMessage={regenerateMessage}
-                  sendLoading={sendLoading}
-                />
-              ))}
+              {derivedMessages?.map((message, i) => {
+                return (
+                  <MessageItem
+                    loading={
+                      message.role === MessageType.Assistant &&
+                      sendLoading &&
+                      derivedMessages.length - 1 === i
+                    }
+                    key={buildMessageUuidWithRole(message)}
+                    item={message}
+                    nickname={userInfo.nickname}
+                    avatar={userInfo.avatar}
+                    avatarDialog={currentDialog.icon}
+                    reference={buildMessageItemReference(
+                      {
+                        message: derivedMessages,
+                        reference: conversation.reference,
+                      },
+                      message,
+                    )}
+                    clickDocumentButton={clickDocumentButton}
+                    index={i}
+                    removeMessageById={removeMessageById}
+                    regenerateMessage={regenerateMessage}
+                    sendLoading={sendLoading}
+                  ></MessageItem>
+                );
+              })}
             </Spin>
           </div>
-          {/* Attach scrollRef here */}
           <div ref={scrollRef} />
         </Flex>
-        {/* Place the button here, above the input box */}
-        {console.log('isAtBottom:', isAtBottom)}
-        {!isAtBottom && (
-          <Button
-            type="primary"
-            shape="round"
-            style={{
-              margin: '12px auto',
-              display: 'block',
-            }}
-            onClick={() =>
-              scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
-            }
-          >
-            Scroll to Bottom
-          </Button>
-        )}
         <MessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}
@@ -136,14 +121,14 @@ const ChatContainer = ({ controller }: IProps) => {
             createConversationBeforeUploadDocument
           }
           stopOutputMessage={stopOutputMessage}
-        />
+        ></MessageInput>
       </Flex>
       <PdfDrawer
         visible={visible}
         hideModal={hideModal}
         documentId={documentId}
         chunk={selectedChunk}
-      />
+      ></PdfDrawer>
     </>
   );
 };

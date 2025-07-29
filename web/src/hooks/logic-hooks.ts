@@ -218,7 +218,6 @@ export const useSendMessageWithSse = (
           if (x) {
             const { done, value } = x;
             if (done) {
-              console.info('done');
               resetAnswer();
               break;
             }
@@ -226,26 +225,23 @@ export const useSendMessageWithSse = (
               const val = JSON.parse(value?.data || '');
               const d = val?.data;
               if (typeof d !== 'boolean') {
-                console.info('data:', d);
                 setAnswer({
                   ...d,
                   conversationId: body?.conversation_id,
                 });
               }
             } catch (e) {
-              console.warn(e);
+              // Swallow parse errors silently
             }
           }
         }
-        console.info('done?');
         setDone(true);
         resetAnswer();
         return { data: await res, response };
       } catch (e) {
         setDone(true);
         resetAnswer();
-
-        console.warn(e);
+        // Swallow fetch errors silently
       }
     },
     [initializeSseRef, url, resetAnswer],
@@ -275,7 +271,7 @@ export const useSpeechWithSse = (url: string = api.tts) => {
           message.error(res?.message);
         }
       } catch (error) {
-        console.warn('🚀 ~ error:', error);
+        // Swallow errors silently
       }
       return response;
     },
@@ -293,25 +289,18 @@ export const useScrollToBottom = (
 ) => {
   const ref = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
-
-  // This ref always holds the latest value of isAtBottom,
-  // so timer callbacks (setTimeout/requestAnimationFrame) can access the up-to-date value,
-  // avoiding race conditions with React state closures.
   const isAtBottomRef = useRef(true);
 
-  // Keep the ref in sync with the latest isAtBottom value.
   useEffect(() => {
     isAtBottomRef.current = isAtBottom;
   }, [isAtBottom]);
 
-  // Helper to check if the user is at the bottom of the container.
   const checkIfUserAtBottom = useCallback(() => {
     if (!containerRef?.current) return true;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     return Math.abs(scrollTop + clientHeight - scrollHeight) < 25;
   }, [containerRef]);
 
-  // Listen for scroll events and update isAtBottom state.
   useEffect(() => {
     if (!containerRef?.current) return;
     const container = containerRef.current;
@@ -321,20 +310,15 @@ export const useScrollToBottom = (
     };
 
     container.addEventListener('scroll', handleScroll);
-    handleScroll(); // initialize on mount
+    handleScroll();
     return () => container.removeEventListener('scroll', handleScroll);
   }, [containerRef, checkIfUserAtBottom]);
 
-  // When messages change, only scroll if the user is at the bottom.
-  // The isAtBottomRef ensures we always check the latest value,
-  // even if timers or async effects are involved (important for tests and real usage).
   useEffect(() => {
     if (!messages) return;
     if (!containerRef?.current) return;
     requestAnimationFrame(() => {
       setTimeout(() => {
-        // Use the ref to get the latest value at the time of scroll.
-        // This avoids race conditions with React state in async/timer callbacks.
         if (isAtBottomRef.current) {
           ref.current?.scrollIntoView({ behavior: 'smooth' });
         }
@@ -342,7 +326,12 @@ export const useScrollToBottom = (
     });
   }, [messages, containerRef]);
 
-  return { scrollRef: ref, isAtBottom };
+  // Imperative scroll function
+  const scrollToBottom = useCallback(() => {
+    ref.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  return { scrollRef: ref, isAtBottom, scrollToBottom };
 };
 
 export const useHandleMessageInputChange = () => {
