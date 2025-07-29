@@ -104,6 +104,7 @@ function AccordionOperators() {
               Operator.ExeSQL,
               Operator.Google,
               Operator.YahooFinance,
+              Operator.Email,
             ]}
           ></OperatorItemList>
         </AccordionContent>

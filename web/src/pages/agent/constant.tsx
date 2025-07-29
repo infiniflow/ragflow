@@ -526,7 +526,7 @@ export const initialTemplateValues = {
 
 export const initialEmailValues = {
   smtp_server: '',
-  smtp_port: 587,
+  smtp_port: 465,
   email: '',
   password: '',
   sender_name: '',
@@ -534,6 +534,12 @@ export const initialEmailValues = {
   cc_email: '',
   subject: '',
   content: '',
+  outputs: {
+    success: {
+      value: true,
+      type: 'boolean',
+    },
+  },
 };
 
 export const initialIterationValues = {
@@ -815,7 +821,7 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'invokeNode',
   [Operator.Template]: 'templateNode',
-  [Operator.Email]: 'emailNode',
+  [Operator.Email]: 'ragNode',
   [Operator.Iteration]: 'group',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
