@@ -12,28 +12,20 @@ import {
   useState,
 } from 'react';
 
-import {
-  useFetchDocumentInfosByIds,
-  useFetchDocumentThumbnailsByIds,
-} from '@/hooks/document-hooks';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { INodeEvent } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workFlowTimeline';
 import { IMessage } from '@/pages/chat/interface';
-import { getExtension, isImage } from '@/utils/document-util';
-import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
 import { isEmpty } from 'lodash';
-import FileIcon from '../file-icon';
 import IndentedTreeModal from '../indented-tree/modal';
-import NewDocumentLink from '../new-document-link';
 import MarkdownContent from '../next-markdown-content';
+import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 import { ReferenceDocumentList } from './reference-document-list';
-
-const { Text } = Typography;
+import { UploadedMessageFiles } from './uploaded-message-files';
 
 interface IProps
   extends Partial<IRemoveMessageById>,
@@ -79,9 +71,6 @@ function MessageItem({
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
-  const { data: documentThumbnails, setDocumentIds: setIds } =
-    useFetchDocumentThumbnailsByIds();
   const { visible, hideModal, showModal } = useSetModalState();
   const [clickedDocumentId, setClickedDocumentId] = useState('');
 
@@ -91,28 +80,9 @@ function MessageItem({
     return Object.values(docs);
   }, [reference?.doc_aggs]);
 
-  const handleUserDocumentClick = useCallback(
-    (id: string) => () => {
-      setClickedDocumentId(id);
-      showModal();
-    },
-    [showModal],
-  );
-
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);
   }, [regenerateMessage, item]);
-
-  useEffect(() => {
-    const ids = item?.doc_ids ?? [];
-    if (ids.length) {
-      setDocumentIds(ids);
-      const documentIds = ids.filter((x) => !(x in documentThumbnails));
-      if (documentIds.length) {
-        setIds(documentIds);
-      }
-    }
-  }, [item.doc_ids, setDocumentIds, setIds, documentThumbnails]);
 
   useEffect(() => {
     if (typeof setCurrentMessageId === 'function') {
@@ -139,15 +109,15 @@ function MessageItem({
         >
           {visibleAvatar &&
             (item.role === MessageType.User ? (
-              <Avatar size={40} src={avatar ?? '/logo.svg'} />
+              <RAGFlowAvatar avatar={avatar ?? '/logo.svg'} />
             ) : avatarDialog ? (
-              <Avatar size={40} src={avatarDialog} />
+              <RAGFlowAvatar avatar={avatarDialog} />
             ) : (
               <AssistantIcon />
             ))}
 
-          <Flex vertical gap={8} flex={1}>
-            <Space>
+          <section className="flex-col gap-2 flex-1">
+            <div className="space-x-1">
               {isAssistant ? (
                 <AssistantGroupButton
                   messageId={item.id}
@@ -171,7 +141,7 @@ function MessageItem({
               )}
 
               {/* <b>{isAssistant ? '' : nickname}</b> */}
-            </Space>
+            </div>
             <div
               className={cn({
                 [theme === 'dark'
@@ -208,48 +178,10 @@ function MessageItem({
                 canvasId={conversationId}
               />
             )}
-            {isUser && documentList.length > 0 && (
-              <List
-                bordered
-                dataSource={documentList}
-                renderItem={(item) => {
-                  // TODO:
-                  // const fileThumbnail =
-                  //   documentThumbnails[item.id] || documentThumbnails[item.id];
-                  const fileExtension = getExtension(item.name);
-                  return (
-                    <List.Item>
-                      <Flex gap={'small'} align="center">
-                        <FileIcon id={item.id} name={item.name}></FileIcon>
-
-                        {isImage(fileExtension) ? (
-                          <NewDocumentLink
-                            documentId={item.id}
-                            documentName={item.name}
-                            prefix="document"
-                          >
-                            {item.name}
-                          </NewDocumentLink>
-                        ) : (
-                          <Button
-                            type={'text'}
-                            onClick={handleUserDocumentClick(item.id)}
-                          >
-                            <Text
-                              style={{ maxWidth: '40vw' }}
-                              ellipsis={{ tooltip: item.name }}
-                            >
-                              {item.name}
-                            </Text>
-                          </Button>
-                        )}
-                      </Flex>
-                    </List.Item>
-                  );
-                }}
-              />
+            {isUser && (
+              <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
             )}
-          </Flex>
+          </section>
         </div>
       </section>
       {visible && (

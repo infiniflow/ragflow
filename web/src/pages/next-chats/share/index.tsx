@@ -36,8 +36,6 @@ const ChatContainer = () => {
     addEventList,
     setCurrentMessageId,
     currentEventListWithoutMessageById,
-    clearEventList,
-    currentMessageId,
   } = useCacheChatLog();
   const {
     handlePressEnter,
@@ -76,7 +74,7 @@ const ChatContainer = () => {
     useCallback(
       async (files, options) => {
         const ret = await uploadCanvasFile({ files, options });
-        appendUploadResponseList(ret.data);
+        appendUploadResponseList(ret.data, files);
       },
       [appendUploadResponseList, uploadCanvasFile],
     );
