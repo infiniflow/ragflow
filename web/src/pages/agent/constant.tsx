@@ -368,11 +368,23 @@ export const initialArXivValues = {
 };
 
 export const initialGoogleValues = {
+  q: AgentGlobals.SysQuery,
+  start: 0,
+  num: 12,
   top_n: 10,
-  api_key: 'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
+  api_key: '',
   country: 'cn',
   language: 'en',
-  ...initialQueryBaseValues,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialBingValues = {
@@ -452,13 +464,19 @@ export const initialWenCaiValues = {
 export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
 
 export const initialYahooFinanceValues = {
+  stock_code: '',
   info: true,
   history: false,
   financials: false,
   balance_sheet: false,
   cash_flow_statement: false,
   news: true,
-  ...initialQueryBaseValues,
+  outputs: {
+    report: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialJin10Values = {

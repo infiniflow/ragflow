@@ -5,16 +5,15 @@ import DeepLForm from '../deepl-form';
 import DuckDuckGoForm from '../duckduckgo-form';
 import EmailForm from '../email-form';
 import GithubForm from '../github-form';
-import GoogleForm from '../google-form';
 import GoogleScholarForm from '../google-scholar-form';
 import PubMedForm from '../pubmed-form';
 import WikipediaForm from '../wikipedia-form';
-import YahooFinanceForm from '../yahoo-finance-form';
 import BingForm from './bing-form';
 import CrawlerForm from './crawler-form';
 import ExeSQLForm from './exesql-form';
 import RetrievalForm from './retrieval-form';
 import TavilyForm from './tavily-form';
+import YahooFinanceForm from './yahoo-finance-form';
 
 export const ToolFormConfigMap = {
   [Operator.Retrieval]: RetrievalForm,
@@ -23,7 +22,7 @@ export const ToolFormConfigMap = {
   [Operator.Wikipedia]: WikipediaForm,
   [Operator.PubMed]: PubMedForm,
   [Operator.ArXiv]: ArXivForm,
-  [Operator.Google]: GoogleForm,
+  [Operator.Google]: TavilyForm,
   [Operator.Bing]: BingForm,
   [Operator.GoogleScholar]: GoogleScholarForm,
   [Operator.DeepL]: DeepLForm,

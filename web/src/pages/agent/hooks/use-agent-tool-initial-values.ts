@@ -16,7 +16,7 @@ export function useAgentToolInitialValues() {
             ...omit(initialValues, 'query'),
             description: '',
           };
-        case (Operator.TavilySearch, Operator.TavilyExtract):
+        case (Operator.TavilySearch, Operator.TavilyExtract, Operator.Google):
           return {
             api_key: '',
           };
@@ -24,6 +24,8 @@ export function useAgentToolInitialValues() {
           return omit(initialValues, 'sql');
         case Operator.Bing:
           return omit(initialValues, 'query');
+        case Operator.YahooFinance:
+          return omit(initialValues, 'stock_code');
 
         default:
           return initialValues;
