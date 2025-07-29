@@ -23,7 +23,7 @@ const HideModalContext = createContext<IModalProps<any>['showModal']>(() => {});
 
 function OperatorItemList({ operators }: OperatorItemProps) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
-  const { nodeId, id, type, position } = useContext(HandleContext);
+  const { nodeId, id, position } = useContext(HandleContext);
   const hideModal = useContext(HideModalContext);
 
   return (
@@ -53,7 +53,7 @@ function AccordionOperators() {
   return (
     <Accordion
       type="multiple"
-      className="px-2 text-text-title"
+      className="px-2 text-text-title max-h-[45vh] overflow-auto"
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">
@@ -67,7 +67,9 @@ function AccordionOperators() {
       <AccordionItem value="item-2">
         <AccordionTrigger className="text-xl">Dialogue </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList operators={[Operator.Message]}></OperatorItemList>
+          <OperatorItemList
+            operators={[Operator.Message, Operator.UserFillUp]}
+          ></OperatorItemList>
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-3">
@@ -87,14 +89,22 @@ function AccordionOperators() {
           Data Manipulation
         </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList operators={[Operator.Code]}></OperatorItemList>
+          <OperatorItemList
+            operators={[Operator.Code, Operator.StringTransform]}
+          ></OperatorItemList>
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-5">
         <AccordionTrigger className="text-xl">Tools</AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
-            operators={[Operator.TavilySearch]}
+            operators={[
+              Operator.TavilySearch,
+              Operator.TavilyExtract,
+              Operator.ExeSQL,
+              Operator.Google,
+              Operator.YahooFinance,
+            ]}
           ></OperatorItemList>
         </AccordionContent>
       </AccordionItem>

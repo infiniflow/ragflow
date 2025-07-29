@@ -13,16 +13,20 @@ import {
 import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { ProgrammingLanguage } from '@/constants/agent';
-import { ICodeForm } from '@/interfaces/database/flow';
+import { ICodeForm } from '@/interfaces/database/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
+import { buildOutputList } from '../../utils/build-output-list';
+import { FormWrapper } from '../components/form-wrapper';
+import { Output } from '../components/output';
 import {
   DynamicInputVariable,
   TypeOptions,
   VariableTitle,
 } from './next-variable';
+import { FormSchema, FormSchemaType } from './schema';
 import { useValues } from './use-values';
 import {
   useHandleLanguageChange,
@@ -36,26 +40,14 @@ const options = [
   ProgrammingLanguage.Javascript,
 ].map((x) => ({ value: x, label: x }));
 
-const CodeForm = ({ node }: INextOperatorForm) => {
+const DynamicFieldName = 'outputs';
+
+function CodeForm({ node }: INextOperatorForm) {
   const formData = node?.data.form as ICodeForm;
   const { t } = useTranslation();
   const values = useValues(node);
 
-  const FormSchema = z.object({
-    lang: z.string(),
-    script: z.string(),
-    arguments: z.array(
-      z.object({ name: z.string(), component_id: z.string() }),
-    ),
-    return: z.union([
-      z
-        .array(z.object({ name: z.string(), component_id: z.string() }))
-        .optional(),
-      z.object({ name: z.string(), component_id: z.string() }),
-    ]),
-  });
-
-  const form = useForm({
+  const form = useForm<FormSchemaType>({
     defaultValues: values,
     resolver: zodResolver(FormSchema),
   });
@@ -66,15 +58,11 @@ const CodeForm = ({ node }: INextOperatorForm) => {
 
   return (
     <Form {...form}>
-      <form
-        className="p-5 space-y-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <DynamicInputVariable
           node={node}
           title={t('flow.input')}
+          isOutputs={false}
         ></DynamicInputVariable>
         <FormField
           control={form.control}
@@ -124,7 +112,8 @@ const CodeForm = ({ node }: INextOperatorForm) => {
           <DynamicInputVariable
             node={node}
             title={'Return Values'}
-            name={'return'}
+            name={DynamicFieldName}
+            isOutputs
           ></DynamicInputVariable>
         ) : (
           <div>
@@ -132,7 +121,7 @@ const CodeForm = ({ node }: INextOperatorForm) => {
             <FormContainer className="space-y-5">
               <FormField
                 control={form.control}
-                name={'return.name'}
+                name={`${DynamicFieldName}.name`}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Name</FormLabel>
@@ -148,7 +137,7 @@ const CodeForm = ({ node }: INextOperatorForm) => {
               />
               <FormField
                 control={form.control}
-                name={`return.component_id`}
+                name={`${DynamicFieldName}.type`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
                     <FormLabel>Type</FormLabel>
@@ -166,9 +155,12 @@ const CodeForm = ({ node }: INextOperatorForm) => {
             </FormContainer>
           </div>
         )}
-      </form>
+      </FormWrapper>
+      <div className="p-5">
+        <Output list={buildOutputList(formData.outputs)}></Output>
+      </div>
     </Form>
   );
-};
+}
 
-export default CodeForm;
+export default memo(CodeForm);

@@ -1,17 +1,21 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import {
   IKnowledge,
+  IKnowledgeGraph,
   IKnowledgeResult,
   INextTestingResult,
 } from '@/interfaces/database/knowledge';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
-import kbService, { listDataset } from '@/services/knowledge-service';
+import kbService, {
+  getKnowledgeGraph,
+  listDataset,
+} from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'umi';
+import { useParams, useSearchParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -26,10 +30,10 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
 }
 
-export const useKnowledgeBaseId = () => {
+export const useKnowledgeBaseId = (): string => {
   const { id } = useParams();
 
-  return id;
+  return (id as string) || '';
 };
 
 export const useTestRetrieval = () => {
@@ -230,6 +234,8 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
 
 export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const knowledgeBaseId = searchParams.get('id') || id;
 
   let queryKey: (KnowledgeApiAction | number)[] = [
     KnowledgeApiAction.FetchKnowledgeDetail,
@@ -244,7 +250,7 @@ export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.get_kb_detail({
-        kb_id: id,
+        kb_id: knowledgeBaseId,
       });
       return data?.data ?? {};
     },
@@ -252,3 +258,20 @@ export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
 
   return { data, loading };
 };
+
+export function useFetchKnowledgeGraph() {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IKnowledgeGraph>({
+    queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+    initialData: { graph: {}, mind_map: {} } as IKnowledgeGraph,
+    enabled: !!knowledgeBaseId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getKnowledgeGraph(knowledgeBaseId);
+      return data?.data;
+    },
+  });
+
+  return { data, loading };
+}

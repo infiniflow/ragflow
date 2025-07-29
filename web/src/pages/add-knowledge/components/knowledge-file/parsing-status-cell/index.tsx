@@ -61,9 +61,9 @@ const PopoverContent = ({ record }: IProps) => {
       children: record.process_begin_at,
     },
     {
-      key: 'process_duation',
+      key: 'process_duration',
       label: t('processDuration'),
-      children: `${record.process_duation.toFixed(2)} s`,
+      children: `${record.process_duration.toFixed(2)} s`,
     },
     {
       key: 'progress_msg',

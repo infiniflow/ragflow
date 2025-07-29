@@ -38,7 +38,7 @@ from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import keyword_extraction
+from rag.prompts import keyword_extraction, cross_languages
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -300,7 +300,7 @@ def update_doc(tenant_id, dataset_id, document_id):
                 doc.kb_id,
                 doc.token_num * -1,
                 doc.chunk_num * -1,
-                doc.process_duation * -1,
+                doc.process_duration * -1,
             )
             if not e:
                 return get_error_data_result(message="Document not found!")
@@ -519,20 +519,20 @@ def list_docs(dataset_id, tenant_id):
 
     # rename key's name
     renamed_doc_list = []
+    key_mapping = {
+        "chunk_num": "chunk_count",
+        "kb_id": "dataset_id",
+        "token_num": "token_count",
+        "parser_id": "chunk_method",
+    }
+    run_mapping = {
+        "0": "UNSTART",
+        "1": "RUNNING",
+        "2": "CANCEL",
+        "3": "DONE",
+        "4": "FAIL",
+    }
     for doc in docs:
-        key_mapping = {
-            "chunk_num": "chunk_count",
-            "kb_id": "dataset_id",
-            "token_num": "token_count",
-            "parser_id": "chunk_method",
-        }
-        run_mapping = {
-            "0": "UNSTART",
-            "1": "RUNNING",
-            "2": "CANCEL",
-            "3": "DONE",
-            "4": "FAIL",
-        }
         renamed_doc = {}
         for key, value in doc.items():
             if key == "run":
@@ -1382,6 +1382,7 @@ def retrieval_test(tenant_id):
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
+    langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
     doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
@@ -1405,6 +1406,9 @@ def retrieval_test(tenant_id):
         rerank_mdl = None
         if req.get("rerank_id"):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
+
+        if langs:
+            question = cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)

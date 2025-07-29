@@ -1,4 +1,12 @@
 import { PageHeader } from '@/components/page-header';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -7,38 +15,55 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
-import { CodeXml, EllipsisVertical, Forward, Import, Key } from 'lucide-react';
+import {
+  ChevronDown,
+  CirclePlay,
+  Download,
+  History,
+  Key,
+  LaptopMinimalCheck,
+  Logs,
+  ScreenShare,
+  Upload,
+} from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AgentSidebar } from './agent-sidebar';
+import { useParams } from 'umi';
 import AgentCanvas from './canvas';
+import EmbedDialog from './embed-dialog';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
-import { useGetBeginNodeDataQuery } from './hooks/use-get-begin-query';
+import {
+  useGetBeginNodeDataInputs,
+  useGetBeginNodeDataQueryIsSafe,
+} from './hooks/use-get-begin-query';
 import { useOpenDocument } from './hooks/use-open-document';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
 } from './hooks/use-save-graph';
-import { BeginQuery } from './interface';
+import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
+import { VersionDialog } from './version-dialog';
 
 function AgentDropdownMenuItem({
   children,
   ...props
 }: ComponentPropsWithoutRef<typeof DropdownMenuItem>) {
   return (
-    <DropdownMenuItem className="flex justify-between items-center" {...props}>
+    <DropdownMenuItem className="justify-start" {...props}>
       {children}
     </DropdownMenuItem>
   );
 }
 
 export default function Agent() {
+  const { id } = useParams();
   const { navigateToAgentList } = useNavigatePage();
   const {
     visible: chatDrawerVisible,
@@ -46,6 +71,8 @@ export default function Agent() {
     showModal: showChatDrawer,
   } = useSetModalState();
   const { t } = useTranslation();
+  const { data: userInfo } = useFetchUserInfo();
+
   const openDocument = useOpenDocument();
   const {
     handleExportJson,
@@ -55,88 +82,128 @@ export default function Agent() {
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-
-  const { flowDetail } = useFetchDataOnMount();
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
-
+  const { flowDetail: agentDetail } = useFetchDataOnMount();
+  const inputs = useGetBeginNodeDataInputs();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
-
   const handleRunAgent = useCallback(() => {
-    const query: BeginQuery[] = getBeginNodeDataQuery();
-    if (query.length > 0) {
+    if (inputs.length > 0) {
       showChatDrawer();
     } else {
       handleRun();
     }
-  }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
+  }, [handleRun, inputs, showChatDrawer]);
+  const {
+    visible: versionDialogVisible,
+    hideModal: hideVersionDialog,
+    showModal: showVersionDialog,
+  } = useSetModalState();
+
+  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
+    useShowEmbedModal();
+
+  const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
 
   return (
-    <section>
-      <PageHeader back={navigateToAgentList} title={flowDetail.title}>
-        <div className="flex items-center gap-2">
+    <section className="h-full">
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink onClick={navigateToAgentList}>
+                Agent
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{agentDetail.title}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div className="flex items-center gap-5">
           <ButtonLoading
-            variant={'outline'}
+            variant={'secondary'}
             onClick={() => saveGraph()}
             loading={loading}
           >
-            Save
+            <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button variant={'outline'} onClick={handleRunAgent}>
-            Run app
+          <Button variant={'secondary'} onClick={handleRunAgent}>
+            <CirclePlay />
+            {t('flow.run')}
           </Button>
-          <Button variant={'outline'}>Publish</Button>
+          <Button variant={'secondary'} onClick={showVersionDialog}>
+            <History />
+            {t('flow.historyversion')}
+          </Button>
+          <Button variant={'secondary'}>
+            <Logs />
+            {t('flow.log')}
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant={'icon'} size={'icon'}>
-                <EllipsisVertical />
+              <Button variant={'secondary'}>
+                <ChevronDown /> {t('flow.management')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <AgentDropdownMenuItem onClick={openDocument}>
-                API
                 <Key />
+                API
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleImportJson}>
-                Import
-                <Import />
+                <Download />
+                {t('flow.import')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
-                Export
-                <Forward />
+                <Upload />
+                {t('flow.export')}
               </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
-              <AgentDropdownMenuItem>
-                {t('common.embedIntoSite')}
-                <CodeXml />
-              </AgentDropdownMenuItem>
+              {location.hostname !== 'demo.ragflow.io' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <AgentDropdownMenuItem
+                    onClick={showEmbedModal}
+                    disabled={
+                      !isBeginNodeDataQuerySafe ||
+                      userInfo.nickname !== agentDetail.nickname
+                    }
+                  >
+                    <ScreenShare />
+                    {t('common.embedIntoSite')}
+                  </AgentDropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </PageHeader>
       <ReactFlowProvider>
-        <div>
-          <SidebarProvider>
-            <AgentSidebar />
-            <div className="w-full">
-              <SidebarTrigger />
-              <div className="w-full h-full">
-                <AgentCanvas
-                  drawerVisible={chatDrawerVisible}
-                  hideDrawer={hideChatDrawer}
-                ></AgentCanvas>
-              </div>
-            </div>
-          </SidebarProvider>
-        </div>
+        <AgentCanvas
+          drawerVisible={chatDrawerVisible}
+          hideDrawer={hideChatDrawer}
+        ></AgentCanvas>
       </ReactFlowProvider>
       {fileUploadVisible && (
         <UploadAgentDialog
           hideModal={hideFileUploadModal}
           onOk={onFileUploadOk}
         ></UploadAgentDialog>
+      )}
+      {embedVisible && (
+        <EmbedDialog
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={id!}
+          from={SharedFrom.Agent}
+          beta={beta}
+          isAgent
+        ></EmbedDialog>
+      )}
+      {versionDialogVisible && (
+        <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
       )}
     </section>
   );

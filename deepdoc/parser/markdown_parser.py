@@ -17,39 +17,55 @@
 
 import re
 
+from markdown import markdown
+
 class RAGFlowMarkdownParser:
     def __init__(self, chunk_token_num=128):
         self.chunk_token_num = int(chunk_token_num)
 
-    def extract_tables_and_remainder(self, markdown_text):
+    def extract_tables_and_remainder(self, markdown_text, separate_tables=True):
         tables = []
-        remainder = markdown_text
+        working_text = markdown_text
+
+        def replace_tables_with_rendered_html(pattern, table_list, render=True):
+            new_text = ""
+            last_end = 0
+            for match in pattern.finditer(working_text):
+                raw_table = match.group()
+                table_list.append(raw_table)
+                if separate_tables:
+                    # Skip this match (i.e., remove it)
+                    new_text += working_text[last_end:match.start()] + "\n\n"
+                else:
+                    # Replace with rendered HTML
+                    html_table = markdown(raw_table, extensions=['markdown.extensions.tables']) if render else raw_table
+                    new_text += working_text[last_end:match.start()] + html_table + "\n\n"
+                last_end = match.end()
+            new_text += working_text[last_end:]
+            return new_text
+
         if "|" in markdown_text: # for optimize performance
             # Standard Markdown table
             border_table_pattern = re.compile(
                 r'''
-                (?:\n|^)                     
-                (?:\|.*?\|.*?\|.*?\n)        
-                (?:\|(?:\s*[:-]+[-| :]*\s*)\|.*?\n) 
+                (?:\n|^)
+                (?:\|.*?\|.*?\|.*?\n)
+                (?:\|(?:\s*[:-]+[-| :]*\s*)\|.*?\n)
                 (?:\|.*?\|.*?\|.*?\n)+
             ''', re.VERBOSE)
-            border_tables = border_table_pattern.findall(markdown_text)
-            tables.extend(border_tables)
-            remainder = border_table_pattern.sub('', remainder)
+            working_text = replace_tables_with_rendered_html(border_table_pattern, tables)
 
             # Borderless Markdown table
             no_border_table_pattern = re.compile(
                 r'''
-                (?:\n|^)                 
+                (?:\n|^)
                 (?:\S.*?\|.*?\n)
                 (?:(?:\s*[:-]+[-| :]*\s*).*?\n)
                 (?:\S.*?\|.*?\n)+
                 ''', re.VERBOSE)
-            no_border_tables = no_border_table_pattern.findall(remainder)
-            tables.extend(no_border_tables)
-            remainder = no_border_table_pattern.sub('', remainder)
+            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
 
-        if "<table>" in remainder.lower(): # for optimize performance
+        if "<table>" in working_text.lower(): # for optimize performance
             #HTML table extraction - handle possible html/body wrapper tags
             html_table_pattern = re.compile(
             r'''
@@ -70,8 +86,21 @@ class RAGFlowMarkdownParser:
             ''',
             re.VERBOSE | re.DOTALL | re.IGNORECASE
             )
-            html_tables = html_table_pattern.findall(remainder)
-            tables.extend(html_tables)
-            remainder = html_table_pattern.sub('', remainder)
+            def replace_html_tables():
+                nonlocal working_text
+                new_text = ""
+                last_end = 0
+                for match in html_table_pattern.finditer(working_text):
+                    raw_table = match.group()
+                    tables.append(raw_table)
+                    if separate_tables:
+                        new_text += working_text[last_end:match.start()] + "\n\n"
+                    else:
+                        new_text += working_text[last_end:match.start()] + raw_table + "\n\n"
+                    last_end = match.end()
+                new_text += working_text[last_end:]
+                working_text = new_text
 
-        return remainder, tables
+            replace_html_tables()
+
+        return working_text, tables

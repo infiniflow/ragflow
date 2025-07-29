@@ -10,7 +10,7 @@ export default ({
   tab: 'generalForm' | 'chunkMethodForm';
   parserId: string;
 }) => {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(false);
 
   return (
     <div
