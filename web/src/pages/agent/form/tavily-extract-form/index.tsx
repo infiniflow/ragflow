@@ -23,9 +23,10 @@ import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
+import { ApiKeyField } from '../components/api-key-field';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { TavilyApiKeyField, TavilyFormSchema } from '../tavily-form';
+import { TavilyFormSchema } from '../tavily-form';
 
 const outputList = buildOutputList(initialTavilyExtractValues.outputs);
 
@@ -53,7 +54,7 @@ function TavilyExtractForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <TavilyApiKeyField></TavilyApiKeyField>
+          <ApiKeyField></ApiKeyField>
         </FormContainer>
         <FormContainer>
           <FormField
