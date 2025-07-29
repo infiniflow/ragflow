@@ -243,10 +243,6 @@ const routes = [
         path: Routes.Agents,
         component: `@/pages${Routes.Agents}`,
       },
-      // {
-      //   path: `${Routes.Agents}${Routes.AgentLogPage}`,
-      //   component: `@/pages${Routes.Agents}${Routes.AgentLogPage}`,
-      // },
     ],
   },
   {
