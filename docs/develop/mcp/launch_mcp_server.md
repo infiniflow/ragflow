@@ -86,7 +86,7 @@ The MCP server is designed as an optional component that complements the RAGFlow
         - --mcp-mode=self-host
         - --mcp-host-api-key=ragflow-xxxxxxx
         # Optional transport flags for the RAGFlow MCP server.
-        # Host mode need to combined with --no-transport-streamable-http-enabled flag, namely, host+streamable-http is not supported yet.
+        # If you set `mcp-mode` to `host`, you must add the --no-transport-streamable-http-enabled flag, because the streamable-HTTP transport is not yet supported in host mode.
         # The following are enabled by default unless explicitly disabled with --no-<flag>.
         #   - --no-transport-sse-enabled # Disable legacy SSE endpoints (/sse and /messages/)
         #   - --no-transport-streamable-http-enabled #  Disables the streamable-HTTP transport (served at the /mcp endpoint)
