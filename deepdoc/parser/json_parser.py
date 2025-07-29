@@ -34,12 +34,12 @@ class RAGFlowJsonParser:
         encoding = find_codec(binary)
         txt = binary.decode(encoding, errors="ignore")
 
-        if "\n" in txt.strip():
+        if self.is_jsonl_format(txt):
+            print("jsonl", flush=True)
             sections = self._parse_jsonl(txt)
         else:
-            json_data = json.loads(txt)
-            chunks = self.split_json(json_data, True)
-            sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
+            print("normal", flush=True)
+            sections = self._parse_json(txt)
         return sections
 
     @staticmethod
@@ -129,6 +129,16 @@ class RAGFlowJsonParser:
         # Convert to string
         return [json.dumps(chunk, ensure_ascii=ensure_ascii) for chunk in chunks]
 
+    def _parse_json(self, content: str) -> list[str]:
+        sections = []
+        try:
+            json_data = json.loads(content)
+            chunks = self.split_json(json_data, True)
+            sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
+        except json.JSONDecodeError:
+            pass
+        return sections
+
     def _parse_jsonl(self, content: str) -> list[str]:
         lines = content.strip().splitlines()
         all_chunks = []
@@ -142,3 +152,30 @@ class RAGFlowJsonParser:
             except json.JSONDecodeError:
                 continue
         return all_chunks
+
+    def is_jsonl_format(self, txt: str, sample_limit: int = 10, threshold: float = 0.8) -> bool:
+        lines = [line.strip() for line in txt.strip().splitlines() if line.strip()]
+        if not lines:
+            return False
+
+        try:
+            json.loads(txt)
+            return False
+        except json.JSONDecodeError:
+            pass
+
+        sample_limit = min(len(lines), sample_limit)
+        sample_lines = lines[:sample_limit]
+        valid_lines = sum(1 for line in sample_lines if self._is_valid_json(line))
+
+        if not valid_lines:
+            return False
+
+        return (valid_lines / len(sample_lines)) >= threshold
+
+    def _is_valid_json(self, line: str) -> bool:
+        try:
+            json.loads(line)
+            return True
+        except json.JSONDecodeError:
+            return False
