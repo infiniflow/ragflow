@@ -40,6 +40,9 @@ export function useAgentToolInitialValues() {
         case Operator.DuckDuckGo:
           return pick(initialValues, 'top_n', 'channel');
 
+        case Operator.Wikipedia:
+          return pick(initialValues, 'top_n', 'language');
+
         default:
           return initialValues;
       }

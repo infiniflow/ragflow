@@ -106,6 +106,7 @@ function AccordionOperators() {
               Operator.YahooFinance,
               Operator.Email,
               Operator.DuckDuckGo,
+              Operator.Wikipedia,
             ]}
           ></OperatorItemList>
         </AccordionContent>

@@ -362,7 +362,13 @@ export const initialBaiduValues = {
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialPubMedValues = {
