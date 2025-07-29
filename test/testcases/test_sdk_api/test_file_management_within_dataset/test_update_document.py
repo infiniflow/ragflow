@@ -207,7 +207,7 @@ class TestUpdateDocumentParserConfig:
             (
                 "naive",
                 {
-                    "chunk_token_num": 128,
+                    "chunk_token_num": 512,
                     "layout_recognize": "DeepDOC",
                     "html4excel": False,
                     "delimiter": r"\n",
@@ -401,11 +401,12 @@ class TestUpdateDocumentParserConfig:
                 expected_config = DataSet.ParserConfig(
                     client,
                     {
-                        "chunk_token_num": 128,
+                        "chunk_token_num": 512,
                         "delimiter": r"\n",
                         "html4excel": False,
                         "layout_recognize": "DeepDOC",
                         "raptor": {"use_raptor": False},
+                        "graphrag": {"use_graphrag": False},
                     },
                 )
                 assert str(updated_doc.parser_config) == str(expected_config), str(updated_doc)

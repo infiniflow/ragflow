@@ -223,6 +223,16 @@ class AzureGptV4(Base):
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
 
+class xAICV(Base):
+    _FACTORY_NAME = "xAI"
+
+    def __init__(self, key, model_name="grok-3", base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://api.x.ai/v1"
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
+        return
+
+
 class QWenCV(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
@@ -459,6 +469,7 @@ class OllamaCV(Base):
         self.client = Client(host=kwargs["base_url"])
         self.model_name = model_name
         self.lang = lang
+        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
     def describe(self, image):
         prompt = self.prompt("")
@@ -507,7 +518,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 messages=history,
                 options=options,
-                keep_alive=-1,
+                keep_alive=self.keep_alive,
             )
 
             ans = response["message"]["content"].strip()
@@ -538,7 +549,7 @@ class OllamaCV(Base):
                 messages=history,
                 stream=True,
                 options=options,
-                keep_alive=-1,
+                keep_alive=self.keep_alive,
             )
             for resp in response:
                 if resp["done"]:
@@ -619,7 +630,7 @@ class GeminiCV(Base):
         from PIL.Image import open
 
         b64 = self.image2base64(image)
-        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
+        vision_prompt = prompt if prompt else vision_llm_describe_prompt()
         img = open(BytesIO(base64.b64decode(b64)))
         input = [vision_prompt, img]
         res = self.model.generate_content(

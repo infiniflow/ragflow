@@ -327,7 +327,7 @@ export default {
 
 注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
-<p>使用“标签”作为分块方法的知识库<b>不</b>参与 RAG 检索过程。</p>
+<p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
 <p>标签集中的每个文本分块是都是相互独立的标签和标签描述的文本对。</p>
 
 <p>Tag 分块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
@@ -609,6 +609,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       apiKeyMessage: '请输入api key（如果是本地部署的模型，请忽略它）',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隐藏模型',
       baseUrl: 'Base-Url',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
@@ -633,6 +634,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
+      editLlmTitle: '编辑 {{name}} 模型',
+      editModel: '编辑模型',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',
@@ -700,7 +703,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn: `请先在<b>模型提供商</b>中添加嵌入模型和LLM，然后在“系统模型设置”中设置它们。`,
+      modelProvidersWarn: `请先在<b>模型提供商</b>中添加嵌入模型和LLM，然后在“设置默认模型”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -1044,7 +1047,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用该模板',
+      useTemplate: '使用',
       wenCai: '问财',
       queryType: '查询类型',
       wenCaiDescription:
@@ -1244,6 +1247,19 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       query: '查询变量',
       agent: 'Agent',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
+      maxRecords: '最大记录数',
+      createAgent: 'Create Agent',
+      stringTransform: '文本处理',
+      userFillUp: '等待输入',
+      codeExec: '代码',
+      tavilySearch: 'Tavily Search',
+      tavilySearchDescription: '通过 Tavily 服务搜索结果',
+      tavilyExtract: 'Tavily Extract',
+      tavilyExtractDescription: 'Tavily Extract',
+      log: '日志',
+      management: '管理',
+      import: '导入',
+      export: '导出',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1263,5 +1279,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         },
       },
     },
+  },
+  modal: {
+    okText: '确认',
+    cancelText: '取消',
   },
 };

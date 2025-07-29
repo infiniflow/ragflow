@@ -71,9 +71,13 @@ export const useFetchKnowledgeConfigurationOnMount = (
       knowledgeDetails.avatar,
     );
 
-    console.log('🚀 ~ useEffect ~ fileList:', fileList);
-    form.reset({
-      ...pick(knowledgeDetails, [
+    console.log('🚀 ~ useEffect ~ fileList:', fileList, knowledgeDetails);
+    const parser_config = {
+      ...form.formState?.defaultValues?.parser_config,
+      ...knowledgeDetails.parser_config,
+    };
+    const formValues = {
+      ...pick({ ...knowledgeDetails, parser_config: parser_config }, [
         'description',
         'name',
         'permission',
@@ -83,6 +87,9 @@ export const useFetchKnowledgeConfigurationOnMount = (
         'parser_config',
         'pagerank',
       ]),
+    };
+    form.reset({
+      ...formValues,
       avatar: fileList,
     });
   }, [form, knowledgeDetails]);

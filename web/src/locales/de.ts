@@ -325,7 +325,7 @@ export default {
   <p>Die Chunks werden dann dem LLM zugeführt, um Entitäten und Beziehungen für einen Wissensgraphen und eine Mind Map zu extrahieren.</p>
   <p>Stellen Sie sicher, dass Sie die <b>Entitätstypen</b> festlegen.</p>`,
       tag: `<p>Eine Wissensdatenbank, die die 'Tag'-Chunk-Methode verwendet, fungiert als Tag-Set. Andere Wissensdatenbanken können es verwenden, um ihre eigenen Chunks zu taggen, und Abfragen an diese Wissensdatenbanken werden ebenfalls mit diesem Tag-Set getaggt.</p>
-      <p>Die Wissensdatenbank, die 'Tag' als Chunk-Methode verwendet, ist <b>NICHT</b> an einem Retrieval-Augmented Generation (RAG)-Prozess beteiligt.</p>
+      <p>Ein Tag-Set wird <b>NICHT</b> direkt in einen Retrieval-Augmented Generation (RAG)-Prozess einbezogen.</p>
       <p>Jeder Chunk in dieser Wissensdatenbank ist ein unabhängiges Beschreibungs-Tag-Paar.</p>
       <p>Zu den unterstützten Dateiformaten gehören <b>XLSX</b> und <b>CSV/TXT</b>:</p>
       <p>Wenn eine Datei im <b>XLSX</b>-Format vorliegt, sollte sie zwei Spalten ohne Überschriften enthalten: eine für Tag-Beschreibungen und die andere für Tag-Namen, wobei die Spalte "Beschreibung" vor der Spalte "Tag" steht. Mehrere Blätter sind zulässig, sofern die Spalten ordnungsgemäß strukturiert sind.</p>
@@ -620,6 +620,7 @@ export default {
       apiKeyTip:
         'Der API-Schlüssel kann durch Registrierung beim entsprechenden LLM-Anbieter erhalten werden.',
       showMoreModels: 'Mehr Modelle anzeigen',
+      hideModels: 'Modelle ausblenden',
       baseUrl: 'Basis-URL',
       baseUrlTip:
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
@@ -716,7 +717,7 @@ export default {
       addGoogleRegion: 'Google Cloud Region',
       GoogleRegionMessage: 'Bitte geben Sie die Google Cloud Region ein',
       modelProvidersWarn:
-        'Bitte fügen Sie zuerst sowohl das Embedding-Modell als auch das LLM in <b>Einstellungen > Modellanbieter</b> hinzu. Legen Sie sie dann in "Systemmodelleinstellungen" fest.',
+        'Bitte fügen Sie zuerst sowohl das Embedding-Modell als auch das LLM in <b>Einstellungen > Modellanbieter</b> hinzu. Legen Sie sie dann in "Standardmodelle festlegen" fest.',
       apiVersion: 'API-Version',
       apiVersionMessage: 'Bitte geben Sie die API-Version ein',
       add: 'Hinzufügen',

@@ -13,17 +13,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
+import { memo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { INextOperatorForm } from '../../interface';
+import { BeginQuery, INextOperatorForm } from '../../interface';
 import { ParameterDialog } from '../begin-form/parameter-dialog';
 import { QueryTable } from '../begin-form/query-table';
 import { useEditQueryRecord } from '../begin-form/use-edit-query';
+import { Output } from '../components/output';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const UserFillUpForm = ({ node }: INextOperatorForm) => {
+function UserFillUpForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
@@ -52,7 +54,15 @@ const UserFillUpForm = ({ node }: INextOperatorForm) => {
 
   useWatchFormChange(node?.id, form);
 
-  const inputs = useWatch({ control: form.control, name: 'inputs' });
+  const inputs: BeginQuery[] = useWatch({
+    control: form.control,
+    name: 'inputs',
+  });
+
+  const outputList = inputs?.map((item) => ({
+    title: item.name,
+    type: item.type,
+  }));
 
   const {
     ok,
@@ -148,8 +158,9 @@ const UserFillUpForm = ({ node }: INextOperatorForm) => {
           ></ParameterDialog>
         )}
       </Form>
+      <Output list={outputList}></Output>
     </section>
   );
-};
+}
 
-export default UserFillUpForm;
+export default memo(UserFillUpForm);

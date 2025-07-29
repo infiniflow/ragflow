@@ -1,5 +1,5 @@
 import useGraphStore from '@/pages/agent/store';
-import { useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 
 export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
@@ -17,15 +17,14 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
   }, [id, updateNodeForm, values]);
 }
 
-export function useChangeName(id: string) {
+export function useWatchNameFormChange(id?: string, form?: UseFormReturn<any>) {
+  let values = useWatch({ control: form?.control });
   const updateNodeName = useGraphStore((state) => state.updateNodeName);
 
-  const handleChangeName = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      updateNodeName(id, e.target.value.trim());
-    },
-    [id, updateNodeName],
-  );
-
-  return { handleChangeName };
+  useEffect(() => {
+    // Manually triggered form updates are synchronized to the canvas
+    if (id) {
+      updateNodeName(id, values.name);
+    }
+  }, [id, updateNodeName, values]);
 }

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
-import { CrossLanguageItem } from '@/components/cross-language-item-ui';
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import {
   initialTopKValue,
@@ -32,7 +32,7 @@ import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-ite
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { trim } from 'lodash';
 import { CirclePlay } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type TestingFormProps = Pick<
@@ -46,7 +46,6 @@ export default function TestingForm({
   setValues,
 }: TestingFormProps) {
   const { t } = useTranslation();
-  const [cross_languages, setCrossLangArr] = useState<string[]>([]);
 
   const formSchema = z.object({
     question: z.string().min(1, {
@@ -71,9 +70,8 @@ export default function TestingForm({
   const values = useWatch({ control: form.control });
 
   useEffect(() => {
-    // setValues(values as Required<z.infer<typeof formSchema>>);
-    setValues({ ...values, cross_languages });
-  }, [setValues, values, cross_languages]);
+    setValues(values as Required<z.infer<typeof formSchema>>);
+  }, [setValues, values]);
 
   function onSubmit() {
     refetch();
@@ -89,12 +87,9 @@ export default function TestingForm({
           ></SimilaritySliderFormField>
           <RerankFormFields></RerankFormFields>
           <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-          <CrossLanguageItem
+          <CrossLanguageFormField
             name={'cross_languages'}
-            onChange={(valArr) => {
-              setCrossLangArr(valArr);
-            }}
-          ></CrossLanguageItem>
+          ></CrossLanguageFormField>
         </FormContainer>
         <FormField
           control={form.control}

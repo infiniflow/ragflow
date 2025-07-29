@@ -318,8 +318,8 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>A knowledge base using the 'Tag' chunking method functions as a tag set. Other knowledge bases can use it to tag their own chunks, and queries to these knowledge bases will also be tagged using this tag set.</p>
-<p>Knowledge base using 'Tag' as a chunking method will <b>NOT</b> be involved in a Retrieval-Augmented Generation (RAG) process.</p>
+      tag: `<p>A knowledge base using the 'Tag' chunking method functions as a tag set. Other knowledge bases use it to tag their chunks, and queries to these knowledge bases are also tagged using this tag set.</p>
+<p>A tag set will <b>NOT</b> be directly involved in a Retrieval-Augmented Generation (RAG) process.</p>
 <p>Each chunk in this knowledge base is an independent description-tag pair.</p>
 <p>Supported file formats include <b>XLSX</b> and <b>CSV/TXT</b>:</p>
 <p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for tag descriptions and the other for tag names, with the Description column preceding the Tag column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
@@ -602,13 +602,14 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cancel: 'Cancel',
       addedModels: 'Added models',
       modelsToBeAdded: 'Models to be added',
-      addTheModel: 'Add the model',
+      addTheModel: 'Add Model',
       apiKey: 'API-Key',
       apiKeyMessage:
         'Please enter the API key (for locally deployed model,ignore this).',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
-      showMoreModels: 'Show more models',
+      showMoreModels: 'View Models',
+      hideModels: 'Hide Models',
       baseUrl: 'Base-Url',
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
@@ -634,6 +635,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       workspace: 'Workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
+      editLlmTitle: 'Edit {{name}} Model',
+      editModel: 'Edit Model',
       modelName: 'Model name',
       modelID: 'Model ID',
       modelUid: 'Model UID',
@@ -703,7 +706,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Please input Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud Region',
       GoogleRegionMessage: 'Please input Google Cloud Region',
-      modelProvidersWarn: `Please add both embedding model and LLM in <b>Settings > Model providers</b>  firstly. Then, set them in 'System model settings'.`,
+      modelProvidersWarn: `Please add both embedding model and LLM in <b>Settings > Model providers</b> first. Then, set them in 'Set default models'.`,
       apiVersion: 'API-Version',
       apiVersionMessage: 'Please input API version',
       add: 'Add',
@@ -729,6 +732,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       view: 'View',
       modelsToBeAddedTooltip:
         'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
+      mcp: 'MCP',
     },
     message: {
       registered: 'Registered!',
@@ -1046,7 +1050,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       operator: 'Operator',
       value: 'Value',
-      useTemplate: 'Use this template',
+      useTemplate: 'Use',
       wenCai: 'WenCai',
       queryType: 'Query type',
       wenCaiDescription:
@@ -1291,6 +1295,19 @@ This delimiter is used to split the input text into several text pieces echo of 
       agent: 'Agent',
       agentDescription:
         'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
+      maxRecords: 'Max records',
+      createAgent: 'Create Agent',
+      stringTransform: 'String transform',
+      userFillUp: 'Input',
+      codeExec: 'Code',
+      tavilySearch: 'Tavily Search',
+      tavilySearchDescription: 'Search results via Tavily service.',
+      tavilyExtract: 'Tavily Extract',
+      tavilyExtractDescription: 'Tavily Extract',
+      log: 'Log',
+      management: 'Management',
+      import: 'Import',
+      export: 'Export',
     },
     llmTools: {
       bad_calculator: {
@@ -1302,6 +1319,18 @@ This delimiter is used to split the input text into several text pieces echo of 
           b: 'The second number',
         },
       },
+    },
+    modal: {
+      okText: 'Confirm',
+      cancelText: 'Cancel',
+    },
+    mcp: {
+      export: 'Export',
+      import: 'Import',
+      url: 'URL',
+      serverType: 'Server Type',
+      addMCP: 'Add MCP',
+      editMCP: 'Edit MCP',
     },
   },
 };

@@ -5,7 +5,6 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
-  Background,
   ConnectionMode,
   ControlButton,
   Controls,
@@ -17,6 +16,7 @@ import { NotebookPen } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
+import { AgentBackground } from '../components/background';
 import {
   AgentChatContext,
   AgentChatLogContext,
@@ -41,7 +41,6 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
-import { EmailNode } from './node/email-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
@@ -56,7 +55,7 @@ import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 import { ToolNode } from './node/tool-node';
 
-const nodeTypes: NodeTypes = {
+export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
@@ -71,7 +70,7 @@ const nodeTypes: NodeTypes = {
   keywordNode: KeywordNode,
   invokeNode: InvokeNode,
   templateNode: TemplateNode,
-  emailNode: EmailNode,
+  // emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
@@ -116,6 +115,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     runVisible,
     hideRunOrChatDrawer,
     showChatModal,
+    showFormDrawer,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
@@ -124,7 +124,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const {
     addEventList,
     setCurrentMessageId,
-    currentEventListWithoutMessage,
+    currentEventListWithoutMessageById,
     clearEventList,
     currentMessageId,
   } = useCacheChatLog();
@@ -175,7 +175,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+      <AgentInstanceContext.Provider value={{ addCanvasNode, showFormDrawer }}>
         <ReactFlow
           connectionMode={ConnectionMode.Loose}
           nodes={nodes}
@@ -202,15 +202,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
             type: 'buttonEdge',
             markerEnd: 'logo',
             style: {
-              strokeWidth: 2,
-              stroke: 'rgb(202 197 245)',
+              strokeWidth: 1,
+              stroke: 'rgba(91, 93, 106, 1)',
             },
             zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}
           deleteKeyCode={['Delete', 'Backspace']}
           onBeforeDelete={handleBeforeDelete}
         >
-          <Background />
+          <AgentBackground></AgentBackground>
           <Controls position={'bottom-center'} orientation="horizontal">
             <ControlButton>
               <Tooltip>
@@ -228,11 +228,14 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         ref={ref}
       ></NotebookPen>
       {formDrawerVisible && (
-        <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+        <AgentInstanceContext.Provider
+          value={{ addCanvasNode, showFormDrawer }}
+        >
           <FormSheet
             node={clickedNode}
             visible={formDrawerVisible}
             hideModal={hideFormDrawer}
+            chatVisible={chatVisible}
             singleDebugDrawerVisible={singleDebugDrawerVisible}
             hideSingleDebugDrawer={hideSingleDebugDrawer}
             showSingleDebugDrawer={showSingleDebugDrawer}
@@ -257,7 +260,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       {logSheetVisible && (
         <LogSheet
           hideModal={hideLogSheet}
-          currentEventListWithoutMessage={currentEventListWithoutMessage}
+          currentEventListWithoutMessageById={
+            currentEventListWithoutMessageById
+          }
           currentMessageId={currentMessageId}
         ></LogSheet>
       )}

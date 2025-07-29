@@ -1,6 +1,7 @@
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
-import { DefaultAgentToolValuesMap } from '../../constant';
+import { Operator } from '../../constant';
+import { useAgentToolInitialValues } from '../../hooks/use-agent-tool-initial-values';
 import useGraphStore from '../../store';
 import { getAgentNodeTools } from '../../utils';
 
@@ -18,6 +19,7 @@ export function useValues() {
   const { clickedToolId, clickedNodeId, findUpstreamNodeById } = useGraphStore(
     (state) => state,
   );
+  const { initializeAgentToolValues } = useAgentToolInitialValues();
 
   const values = useMemo(() => {
     const agentNode = findUpstreamNodeById(clickedNodeId);
@@ -28,10 +30,9 @@ export function useValues() {
     )?.params;
 
     if (isEmpty(formData)) {
-      const defaultValues =
-        DefaultAgentToolValuesMap[
-          clickedToolId as keyof typeof DefaultAgentToolValuesMap
-        ];
+      const defaultValues = initializeAgentToolValues(
+        clickedNodeId as Operator,
+      );
 
       return defaultValues;
     }
@@ -39,7 +40,12 @@ export function useValues() {
     return {
       ...formData,
     };
-  }, [clickedNodeId, clickedToolId, findUpstreamNodeById]);
+  }, [
+    clickedNodeId,
+    clickedToolId,
+    findUpstreamNodeById,
+    initializeAgentToolValues,
+  ]);
 
   return values;
 }

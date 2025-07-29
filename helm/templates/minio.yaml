@@ -19,9 +19,9 @@ spec:
       storage: {{ .Values.minio.storage.capacity }}
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: ragflow-minio-deployment
+  name: {{ include "ragflow.fullname" . }}-minio
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: minio

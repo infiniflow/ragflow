@@ -1,7 +1,6 @@
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 
 import {
@@ -16,22 +15,22 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
-import { useEffect } from 'react';
+import { loader } from '@monaco-editor/react';
+import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
+
+loader.config({ paths: { vs: '/vs' } });
 
 export const FormId = 'EditMcpForm';
 
-enum ServerType {
+export enum ServerType {
   SSE = 'sse',
   StreamableHttp = 'streamable-http',
 }
 
 const ServerTypeOptions = buildOptions(ServerType);
 
-export function EditMcpForm({
-  initialName,
-  onOk,
-}: IModalProps<any> & { initialName?: string }) {
+export function useBuildFormSchema() {
   const { t } = useTranslation();
 
   const FormSchema = z.object({
@@ -43,6 +42,7 @@ export function EditMcpForm({
       .trim(),
     url: z
       .string()
+      .url()
       .min(1, {
         message: t('common.namePlaceholder'),
       })
@@ -53,22 +53,26 @@ export function EditMcpForm({
         message: t('common.namePlaceholder'),
       })
       .trim(),
+    authorization_token: z.string().optional(),
   });
 
-  const form = useForm<z.infer<typeof FormSchema>>({
-    resolver: zodResolver(FormSchema),
-    defaultValues: { name: '', server_type: ServerType.SSE, url: '' },
-  });
+  return FormSchema;
+}
+
+export function EditMcpForm({
+  form,
+  onOk,
+  setFieldChanged,
+}: IModalProps<any> & {
+  form: UseFormReturn<any>;
+  setFieldChanged: Dispatch<SetStateAction<boolean>>;
+}) {
+  const { t } = useTranslation();
+  const FormSchema = useBuildFormSchema();
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     onOk?.(data);
   }
-
-  useEffect(() => {
-    if (initialName) {
-      form.setValue('name', initialName);
-    }
-  }, [form, initialName]);
 
   return (
     <Form {...form}>
@@ -99,12 +103,16 @@ export function EditMcpForm({
           name="url"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('common.url')}</FormLabel>
+              <FormLabel>{t('mcp.url')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('common.namePlaceholder')}
                   {...field}
                   autoComplete="off"
+                  onChange={(e) => {
+                    field.onChange(e.target.value.trim());
+                    setFieldChanged(true);
+                  }}
                 />
               </FormControl>
               <FormMessage />
@@ -116,12 +124,38 @@ export function EditMcpForm({
           name="server_type"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('common.serverType')}</FormLabel>
+              <FormLabel>{t('mcp.serverType')}</FormLabel>
               <FormControl>
                 <RAGFlowSelect
                   {...field}
                   autoComplete="off"
                   options={ServerTypeOptions}
+                  onChange={(value) => {
+                    field.onChange(value);
+                    setFieldChanged(true);
+                  }}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="authorization_token"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Authorization Token</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder={t('common.namePlaceholder')}
+                  {...field}
+                  autoComplete="off"
+                  type="password"
+                  onChange={(e) => {
+                    field.onChange(e.target.value.trim());
+                    setFieldChanged(true);
+                  }}
                 />
               </FormControl>
               <FormMessage />
