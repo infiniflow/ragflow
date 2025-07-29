@@ -30,7 +30,7 @@
 	"knowledge_graph_kwd": {"type": "varchar", "default": ""},
 	"entities_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"pagerank_fea": {"type": "integer", "default":  0},
-	"tag_feas": {"type": "varchar", "default":  ""},
+	"tag_feas": {"type": "varchar", "default": "", "analyzer": "rankfeatures"},
 
 	"from_entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"to_entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},

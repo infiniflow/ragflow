@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import json
-import os
 
 from flask import request
 from flask_login import login_required, current_user
@@ -106,13 +105,6 @@ def update():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
-        if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
-            return get_json_result(
-                data=False,
-                message='The chunking method Tag has not been supported by Infinity yet.',
-                code=settings.RetCode.OPERATING_ERROR
-            )
-
         if req["name"].lower() != kb.name.lower() \
                 and len(
             KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) >= 1:
@@ -124,9 +116,6 @@ def update():
             return get_data_error_result()
 
         if kb.pagerank != req.get("pagerank", 0):
-            if os.environ.get("DOC_ENGINE", "elasticsearch") != "elasticsearch":
-                return get_data_error_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
-            
             if req.get("pagerank", 0) > 0:
                 settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
