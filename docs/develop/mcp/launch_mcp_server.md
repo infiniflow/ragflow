@@ -90,7 +90,7 @@ The MCP server is designed as an optional component that complements the RAGFlow
         # The following are enabled by default unless explicitly disabled with --no-<flag>.
         #   - --no-transport-sse-enabled # Disable legacy SSE endpoints (/sse and /messages/)
         #   - --no-transport-streamable-http-enabled #  Disable Streamable HTTP transport (/mcp endpoint)
-        #   - --no-json-response # Disable JSON response mode in Streamable HTTP transport (instead of SSE over HTTP)
+        #   - --no-json-response # Disables JSON responses for the streamable-HTTP transport
 ```
 
 Where: 
