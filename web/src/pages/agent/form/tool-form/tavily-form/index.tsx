@@ -3,8 +3,9 @@ import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { ApiKeyField } from '../../components/api-key-field';
 import { FormWrapper } from '../../components/form-wrapper';
-import { TavilyApiKeyField, TavilyFormSchema } from '../../tavily-form';
+import { TavilyFormSchema } from '../../tavily-form';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
 
@@ -24,7 +25,7 @@ const TavilyForm = () => {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <TavilyApiKeyField></TavilyApiKeyField>
+          <ApiKeyField></ApiKeyField>
         </FormContainer>
       </FormWrapper>
     </Form>

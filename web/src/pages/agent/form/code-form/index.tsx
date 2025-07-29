@@ -19,6 +19,7 @@ import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { buildOutputList } from '../../utils/build-output-list';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import {
   DynamicInputVariable,
@@ -57,12 +58,7 @@ function CodeForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="p-5 space-y-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <DynamicInputVariable
           node={node}
           title={t('flow.input')}
@@ -159,7 +155,7 @@ function CodeForm({ node }: INextOperatorForm) {
             </FormContainer>
           </div>
         )}
-      </form>
+      </FormWrapper>
       <div className="p-5">
         <Output list={buildOutputList(formData.outputs)}></Output>
       </div>

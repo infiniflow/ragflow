@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
   TavilySearchDepth,
@@ -21,31 +21,13 @@ import {
   initialTavilyValues,
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { ApiKeyField } from '../components/api-key-field';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output, OutputType } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { DynamicDomain } from './dynamic-domain';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
-
-export function TavilyApiKeyField() {
-  const form = useFormContext();
-  return (
-    <FormField
-      control={form.control}
-      name="api_key"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>Api Key</FormLabel>
-          <FormControl>
-            <Input type="password" {...field}></Input>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
-}
 
 export const TavilyFormSchema = {
   api_key: z.string(),
@@ -90,7 +72,7 @@ function TavilyForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <TavilyApiKeyField></TavilyApiKeyField>
+          <ApiKeyField></ApiKeyField>
         </FormContainer>
         <FormContainer>
           <QueryVariable></QueryVariable>
