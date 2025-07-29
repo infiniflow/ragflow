@@ -394,7 +394,7 @@ class DeepInfraTTS(OpenAITTS):
 class Ai302TTS(Base):
     _FACTORY_NAME = "302.AI"
 
-    def __init__(self, key, model_name="elevenlabs-tts", base_url="https://api.302.ai"):
+    def __init__(self, key, model_name, base_url="https://api.302.ai"):
         if not base_url:
             base_url = "https://api.302.ai"
         self.api_key = key
@@ -405,28 +405,51 @@ class Ai302TTS(Base):
             "Content-Type": "application/json"
         }
 
-    def tts(self, text, voice="alloy", response_format="mp3", speed=1.0):
+    def tts(self, text, voice="alloy", provider="openai", output_format="mp3", speed=1.0, volume=1.0, timeout=180):
         text = self.normalize_text(text)
         payload = {
-            "model": self.model_name,
-            "input": text,
+            "text": text,
             "voice": voice,
-            "response_format": response_format,
-            "speed": speed
+            "provider": provider,
+            "speed": speed,
+            "volume": volume,
+            "output_format": output_format,
+            "timeout": timeout,
+            "model": self.model_name,
         }
 
         response = requests.post(
-            f"{self.base_url}/v1/audio/speech", 
+            f"{self.base_url}/302/tts/generate", 
             headers=self.headers, 
-            json=payload, 
-            stream=True
+            json=payload,
+            timeout=timeout
         )
 
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
         
-        for chunk in response.iter_content(chunk_size=1024):
-            if chunk:
-                yield chunk
+        # Parse the JSON response to get the audio URL
+        try:
+            result = response.json()
+            if "error" in result and result["error"]:
+                raise Exception(f"**Error**: {result['error']}")
+            
+            audio_url = result.get("audio_url")
+            if not audio_url:
+                raise Exception("**Error**: No audio URL returned from 302.AI API")
+            
+            # Download the audio from the URL
+            audio_response = requests.get(audio_url, stream=True, timeout=timeout)
+            if audio_response.status_code != 200:
+                raise Exception(f"**Error downloading audio**: {audio_response.status_code}, {audio_response.text}")
+            
+            for chunk in audio_response.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+                    
+        except json.JSONDecodeError:
+            raise Exception("**Error**: Invalid JSON response from 302.AI API")
+        except requests.exceptions.Timeout:
+            raise Exception(f"**Error**: Request timeout after {timeout} seconds")
         
         yield num_tokens_from_string(text)
