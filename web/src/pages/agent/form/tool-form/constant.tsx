@@ -1,20 +1,20 @@
 import { Operator } from '../../constant';
 import AkShareForm from '../akshare-form';
-import ArXivForm from '../arxiv-form';
 import DeepLForm from '../deepl-form';
-import DuckDuckGoForm from '../duckduckgo-form';
-import EmailForm from '../email-form';
-import GithubForm from '../github-form';
-import GoogleForm from '../google-form';
-import GoogleScholarForm from '../google-scholar-form';
-import PubMedForm from '../pubmed-form';
-import WikipediaForm from '../wikipedia-form';
-import YahooFinanceForm from '../yahoo-finance-form';
+import ArXivForm from './arxiv-form';
 import BingForm from './bing-form';
 import CrawlerForm from './crawler-form';
+import DuckDuckGoForm from './duckduckgo-form';
+import EmailForm from './email-form';
 import ExeSQLForm from './exesql-form';
+import GithubForm from './github-form';
+import GoogleForm from './google-form';
+import GoogleScholarForm from './google-scholar-form';
+import PubMedForm from './pubmed-form';
 import RetrievalForm from './retrieval-form';
 import TavilyForm from './tavily-form';
+import WikipediaForm from './wikipedia-form';
+import YahooFinanceForm from './yahoo-finance-form';
 
 export const ToolFormConfigMap = {
   [Operator.Retrieval]: RetrievalForm,

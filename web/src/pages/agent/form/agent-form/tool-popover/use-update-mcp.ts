@@ -40,7 +40,7 @@ export function useUpdateAgentNodeMCP() {
           } else if (tools) {
             pre.push({
               mcp_id: cur,
-              tools,
+              tools: {},
             });
           }
           return pre;

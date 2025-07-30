@@ -158,7 +158,8 @@ curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
         "dataset_ids": ["DATASET_ID_HERE"],
         "document_ids": []
       }
-
+    }
+  }'
 ```
 
 #### Transport

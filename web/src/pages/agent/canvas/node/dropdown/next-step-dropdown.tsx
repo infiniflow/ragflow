@@ -102,7 +102,16 @@ function AccordionOperators() {
               Operator.TavilySearch,
               Operator.TavilyExtract,
               Operator.ExeSQL,
-              Operator.Bing,
+              Operator.Google,
+              Operator.YahooFinance,
+              Operator.Email,
+              Operator.DuckDuckGo,
+              Operator.Wikipedia,
+              Operator.GoogleScholar,
+              Operator.ArXiv,
+              Operator.PubMed,
+              Operator.GitHub,
+              Operator.Invoke,
             ]}
           ></OperatorItemList>
         </AccordionContent>
