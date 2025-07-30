@@ -1,13 +1,20 @@
 import { FileUploadProps } from '@/components/file-upload';
 import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
-import { ITraceData } from '@/interfaces/database/agent';
+import {
+  IAgentLogsRequest,
+  IAgentLogsResponse,
+  ITraceData,
+} from '@/interfaces/database/agent';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
-import agentService, { fetchTrace } from '@/services/agent-service';
+import agentService, {
+  fetchAgentLogsByCanvasId,
+  fetchTrace,
+} from '@/services/agent-service';
 import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -557,4 +564,23 @@ export const useFetchAgentAvatar = (): {
   });
 
   return { data, loading, refetch };
+};
+
+export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
+  const { id } = useParams();
+  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
+    queryKey: ['fetchAgentLog', id, searchParams],
+    initialData: {} as IAgentLogsResponse,
+    gcTime: 0,
+    queryFn: async () => {
+      console.log('useFetchAgentLog', searchParams);
+      const { data } = await fetchAgentLogsByCanvasId(id as string, {
+        ...searchParams,
+      });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
 };
