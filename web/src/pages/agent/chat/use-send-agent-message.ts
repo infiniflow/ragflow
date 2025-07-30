@@ -180,11 +180,18 @@ export const useSendAgentMessage = (
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     url || api.runCanvas,
   );
   const messageId = useMemo(() => {
     return answerList[0]?.message_id;
+  }, [answerList]);
+
+  useEffect(() => {
+    if (answerList[0]?.session_id) {
+      setSessionId(answerList[0]?.session_id);
+    }
   }, [answerList]);
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
@@ -222,6 +229,8 @@ export const useSendAgentMessage = (
         params.inputs = transferInputsArrayToObject(query); // begin operator inputs
 
         params.files = uploadResponseList;
+
+        params.session_id = sessionId;
       }
       const res = await send(params);
 
@@ -239,6 +248,7 @@ export const useSendAgentMessage = (
     },
     [
       agentId,
+      sessionId,
       send,
       inputs,
       uploadResponseList,
