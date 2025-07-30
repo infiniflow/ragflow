@@ -507,7 +507,13 @@ export const initialSwitchValues = {
 export const initialWenCaiValues = {
   top_n: 20,
   query_type: 'stock',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    report: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
