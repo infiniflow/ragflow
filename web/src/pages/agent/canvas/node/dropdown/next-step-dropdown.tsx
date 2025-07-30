@@ -112,6 +112,7 @@ function AccordionOperators() {
               Operator.PubMed,
               Operator.GitHub,
               Operator.Invoke,
+              Operator.WenCai,
             ]}
           ></OperatorItemList>
         </AccordionContent>

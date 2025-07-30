@@ -52,6 +52,8 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'top_n', 'email');
         case Operator.GitHub:
           return pick(initialValues, 'top_n');
+        case Operator.WenCai:
+          return pick(initialValues, 'top_n', 'query_type');
 
         default:
           return initialValues;

@@ -27,6 +27,7 @@ const Menus = [
       Operator.PubMed,
       Operator.GoogleScholar,
       Operator.ArXiv,
+      Operator.WenCai,
     ],
   },
   {
