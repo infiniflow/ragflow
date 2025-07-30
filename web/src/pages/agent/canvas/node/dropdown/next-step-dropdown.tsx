@@ -15,7 +15,9 @@ import { IModalProps } from '@/interfaces/common';
 import { Operator } from '@/pages/agent/constant';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
 import OperatorIcon from '@/pages/agent/operator-icon';
+import { lowerFirst } from 'lodash';
 import { PropsWithChildren, createContext, useContext } from 'react';
+import { useTranslation } from 'react-i18next';
 
 type OperatorItemProps = { operators: Operator[] };
 
@@ -25,6 +27,7 @@ function OperatorItemList({ operators }: OperatorItemProps) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
   const { nodeId, id, position } = useContext(HandleContext);
   const hideModal = useContext(HideModalContext);
+  const { t } = useTranslation();
 
   return (
     <ul className="space-y-2">
@@ -41,7 +44,7 @@ function OperatorItemList({ operators }: OperatorItemProps) {
             onSelect={() => hideModal?.()}
           >
             <OperatorIcon name={x}></OperatorIcon>
-            {x}
+            {t(`flow.${lowerFirst(x)}`)}
           </DropdownMenuItem>
         );
       })}
