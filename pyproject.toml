@@ -102,7 +102,7 @@ dependencies = [
     "tiktoken==0.7.0",
     "umap_learn==0.5.6",
     "vertexai==1.64.0",
-    "volcengine==1.0.146",
+    "volcengine==1.0.194",
     "voyageai==0.2.3",
     "webdriver-manager==4.0.1",
     "werkzeug==3.0.6",
