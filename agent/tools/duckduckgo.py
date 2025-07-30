@@ -18,9 +18,7 @@ import os
 import time
 from abc import ABC
 from duckduckgo_search import DDGS
-
-from agent.tools import TavilySearch
-from agent.tools.base import ToolMeta, ToolParamBase
+from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
 from api.utils.api_utils import timeout
 
 
@@ -65,13 +63,14 @@ class DuckDuckGoParam(ToolParamBase):
             },
             "channel": {
                 "name": "Channel",
-                "type": "line",
+                "type": "options",
+                "value": "general",
                 "options": ["general", "news"]
             }
         }
 
 
-class DuckDuckGo(TavilySearch, ABC):
+class DuckDuckGo(ToolBase, ABC):
     component_name = "DuckDuckGo"
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))

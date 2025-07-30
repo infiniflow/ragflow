@@ -379,7 +379,7 @@ class Canvas:
     def get_component_input_form(self, cpn_id) -> dict:
         return self.components.get(cpn_id)["obj"].get_input_form()
 
-    def is_reff(self, exp):
+    def is_reff(self, exp: str) -> bool:
         exp = exp.strip("{").strip("}")
         if exp.find("@") < 0:
             return exp in self.globals

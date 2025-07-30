@@ -18,8 +18,7 @@ import os
 import time
 from abc import ABC
 import requests
-from agent.tools import TavilySearch
-from agent.tools.base import ToolParamBase, ToolMeta
+from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
 from api.utils.api_utils import timeout
 
 
@@ -55,7 +54,7 @@ class GitHubParam(ToolParamBase):
             }
         }
 
-class GitHub(TavilySearch, ABC):
+class GitHub(ToolBase, ABC):
     component_name = "GitHub"
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))

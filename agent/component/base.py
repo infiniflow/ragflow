@@ -453,9 +453,9 @@ class ComponentBase(ABC):
         res = {}
         for var, o in self.get_input_elements().items():
             v = self.get_param(var)
-            if not v:
+            if v is None:
                 continue
-            if self._canvas.is_reff(v):
+            if isinstance(v, str) and self._canvas.is_reff(v):
                 self.set_input_value(var, self._canvas.get_variable_value(v))
             else:
                 self.set_input_value(var, v)

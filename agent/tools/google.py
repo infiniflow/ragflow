@@ -18,9 +18,7 @@ import os
 import time
 from abc import ABC
 from serpapi import GoogleSearch
-
-from agent.tools import TavilySearch
-from agent.tools.base import ToolParamBase, ToolMeta
+from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
 from api.utils.api_utils import timeout
 
 
@@ -43,13 +41,13 @@ class GoogleParam(ToolParamBase):
                 "start": {
                     "type": "integer",
                     "description": "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the `start` value.",
-                    "default": 0,
+                    "default": "0",
                     "required": False,
                 },
                 "num": {
                     "type": "integer",
                     "description": "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
-                    "default": 6,
+                    "default": "6",
                     "required": False,
                 }
             }
@@ -62,7 +60,6 @@ class GoogleParam(ToolParamBase):
         self.language = "en"
 
     def check(self):
-        self.check_positive_integer(self.top_n, "Top N")
         self.check_empty(self.api_key, "SerpApi API key")
         self.check_valid_value(self.country, "Google Country",
                                ['af', 'al', 'dz', 'as', 'ad', 'ao', 'ai', 'aq', 'ag', 'ar', 'am', 'aw', 'au', 'at',
@@ -106,20 +103,22 @@ class GoogleParam(ToolParamBase):
             },
             "start": {
                 "name": "From",
-                "type": "integer"
+                "type": "integer",
+                "value": 0
             },
             "num": {
                 "name": "Limit",
-                "type": "integer"
+                "type": "integer",
+                "value": 12
             }
         }
 
-class Google(TavilySearch, ABC):
+class Google(ToolBase, ABC):
     component_name = "Google"
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
     def _invoke(self, **kwargs):
-        if not kwargs.get("query"):
+        if not kwargs.get("q"):
             self.set_output("formalized_content", "")
             return ""
 
@@ -134,7 +133,7 @@ class Google(TavilySearch, ABC):
         last_e = ""
         for _ in range(self._param.max_retries+1):
             try:
-                search = GoogleSearch(params)
+                search = GoogleSearch(params).get_dict()
                 self._retrieve_chunks(search["organic_results"],
                                       get_title=lambda r: r["title"],
                                       get_url=lambda r: r["link"],

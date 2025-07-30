@@ -105,38 +105,6 @@ When searching:
 class TavilySearch(ToolBase, ABC):
     component_name = "TavilySearch"
 
-    def _retrieve_chunks(self, response, get_title, get_url, get_content, get_score=None):
-        chunks = []
-        aggs = []
-        for r in response["results"]:
-            content = get_content(r)
-            if content:
-                continue
-            content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+-]+\)", "", content)
-            content = content[:10000]
-            if not content:
-                continue
-            id = str(hash_str2int(content))
-            title = get_title(r)
-            url = get_url(r)
-            score = get_score(r) if get_score else 1
-            chunks.append({
-                "chunk_id": id,
-                "content": content,
-                "doc_id": id,
-                "docnm_kwd": title,
-                "similarity": score,
-                "url": url
-            })
-            aggs.append({
-                "doc_name": title,
-                "doc_id": id,
-                "count": 1,
-                "url": url
-            })
-        self._canvas.add_refernce(chunks, aggs)
-        self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, True)))
-
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
@@ -153,7 +121,7 @@ class TavilySearch(ToolBase, ABC):
                 kwargs["include_images"] = False
                 kwargs["include_raw_content"] = False
                 res = self.tavily_client.search(**kwargs)
-                self._retrieve_chunks(res,
+                self._retrieve_chunks(res["results"],
                                       get_title=lambda r: r["title"],
                                       get_url=lambda r: r["url"],
                                       get_content=lambda r: r["raw_content"] if r["raw_content"] else r["content"],

@@ -18,8 +18,7 @@ import os
 import time
 from abc import ABC
 from scholarly import scholarly
-from agent.tools import TavilySearch
-from agent.tools.base import ToolMeta, ToolParamBase
+from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
 from api.utils.api_utils import timeout
 
 
@@ -61,7 +60,7 @@ class GoogleScholarParam(ToolParamBase):
             }
         }
 
-class GoogleScholar(TavilySearch, ABC):
+class GoogleScholar(ToolBase, ABC):
     component_name = "GoogleScholar"
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))

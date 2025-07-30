@@ -14,12 +14,15 @@
 #  limitations under the License.
 #
 import logging
+import re
 import time
 from copy import deepcopy
 from functools import partial
 from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
+from api.utils import hash_str2int
 from rag.llm.chat_model import ToolCallSession
+from rag.prompts.prompts import kb_prompt
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession
 
 
@@ -132,3 +135,35 @@ class ToolBase(ComponentBase):
 
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return res
+
+    def _retrieve_chunks(self, res_list: list, get_title, get_url, get_content, get_score=None):
+        chunks = []
+        aggs = []
+        for r in res_list:
+            content = get_content(r)
+            if not content:
+                continue
+            content = re.sub(r"!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+-]+\)", "", content)
+            content = content[:10000]
+            if not content:
+                continue
+            id = str(hash_str2int(content))
+            title = get_title(r)
+            url = get_url(r)
+            score = get_score(r) if get_score else 1
+            chunks.append({
+                "chunk_id": id,
+                "content": content,
+                "doc_id": id,
+                "docnm_kwd": title,
+                "similarity": score,
+                "url": url
+            })
+            aggs.append({
+                "doc_name": title,
+                "doc_id": id,
+                "count": 1,
+                "url": url
+            })
+        self._canvas.add_refernce(chunks, aggs)
+        self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, True)))

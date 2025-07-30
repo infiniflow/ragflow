@@ -20,9 +20,7 @@ from abc import ABC
 from Bio import Entrez
 import re
 import xml.etree.ElementTree as ET
-
-from agent.tools import TavilySearch
-from agent.tools.base import ToolParamBase, ToolMeta
+from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
 from api.utils.api_utils import timeout
 
 
@@ -68,7 +66,7 @@ In addition to MEDLINE, PubMed provides access to:
             }
         }
 
-class PubMed(TavilySearch, ABC):
+class PubMed(ToolBase, ABC):
     component_name = "PubMed"
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))

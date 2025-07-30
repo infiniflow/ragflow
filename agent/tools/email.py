@@ -78,6 +78,23 @@ class EmailParam(ToolParamBase):
         self.check_empty(self.password, "Password")
         self.check_empty(self.sender_name, "Sender Name")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {
+            "to_email": {
+                "name": "To ",
+                "type": "line"
+            },
+            "subject": {
+                "name": "Subject",
+                "type": "line",
+                "optional": True
+            },
+            "cc_email": {
+                "name": "CC To",
+                "type": "line",
+                "optional": True
+            },
+        }
 
 class Email(ToolBase, ABC):
     component_name = "Email"

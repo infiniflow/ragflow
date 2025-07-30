@@ -18,8 +18,7 @@ import os
 import time
 from abc import ABC
 import arxiv
-from agent.tools import TavilySearch
-from agent.tools.base import ToolParamBase, ToolMeta
+from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
 from api.utils.api_utils import timeout
 
 
@@ -59,7 +58,7 @@ class ArXivParam(ToolParamBase):
         }
 
 
-class ArXiv(TavilySearch, ABC):
+class ArXiv(ToolBase, ABC):
     component_name = "ArXiv"
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))

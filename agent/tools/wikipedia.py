@@ -18,9 +18,7 @@ import os
 import time
 from abc import ABC
 import wikipedia
-
-from agent.tools import TavilySearch
-from agent.tools.base import ToolMeta, ToolParamBase
+from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
 from api.utils.api_utils import timeout
 
 
@@ -63,10 +61,10 @@ class WikipediaParam(ToolParamBase):
             }
         }
 
-class Wikipedia(TavilySearch, ABC):
+class Wikipedia(ToolBase, ABC):
     component_name = "Wikipedia"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
@@ -77,7 +75,13 @@ class Wikipedia(TavilySearch, ABC):
             try:
                 wikipedia.set_lang(self._param.language)
                 wiki_engine = wikipedia
-                self._retrieve_chunks(wiki_engine.search(kwargs["query"], results=self._param.top_n),
+                pages = []
+                for p in wiki_engine.search(kwargs["query"], results=self._param.top_n):
+                    try:
+                        pages.append(wikipedia.page(p))
+                    except:
+                        pass
+                self._retrieve_chunks(pages,
                                       get_title=lambda r: r.title,
                                       get_url=lambda r: r.url,
                                       get_content=lambda r: r.summary)

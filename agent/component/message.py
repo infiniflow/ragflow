@@ -104,11 +104,10 @@ class Message(ComponentBase):
                 continue
             elif not isinstance(v, str):
                 try:
-                    v = json.dumps(v, ensure_ascii=False)
+                    v = json.dumps(v, ensure_ascii=False, indent=2)
                 except Exception:
-                    pass
-            else:
-                yield v
+                    v = str(v)
+            yield v
             all_content += v
             cache[exp] = v
 
