@@ -293,7 +293,7 @@ class Agent(LLM, ToolBase):
 
                     reflection = reflect(self.chat_mdl, hist, [th.result() for th in thr])
                     append_user_content(hist, reflection)
-                    self.callback("reflection", {}, str(reflection)[:256]+"...")
+                    self.callback("reflection", {}, str(reflection))
 
             except Exception as e:
                 logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")

@@ -29,6 +29,9 @@ class BeginParam(UserFillUpParam):
     def check(self):
         self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task"])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return getattr(self, "inputs")
+
 
 class Begin(UserFillUp):
     component_name = "Begin"
