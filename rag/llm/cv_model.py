@@ -44,7 +44,7 @@ class Base(ABC):
 
     def describe_with_prompt(self, image, prompt=None):
         raise NotImplementedError("Please implement encode method!")
-    
+
     def _form_history(self, system, history, images=[]):
         hist = []
         if system:
@@ -395,7 +395,7 @@ class OllamaCV(Base):
     def describe(self, image):
         prompt = self.prompt("")
         try:
-            response = self.client.chat(
+            response = self.client.generate(
                 model=self.model_name,
                 prompt=prompt[0]["content"][0]["text"],
                 images=[image],

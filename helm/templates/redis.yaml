@@ -64,6 +64,15 @@ spec:
             {{- . | toYaml | nindent 12 }}
           {{- end }}
   {{- if .Values.redis.persistence.enabled }}
+  {{- with .Values.redis.persistence.retentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    {{- with .whenDeleted }}
+    whenDeleted: {{ . }}
+    {{- end }}
+    {{- with .whenScaled }}
+    whenScaled: {{ . }}
+    {{- end }}
+  {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: redis-data

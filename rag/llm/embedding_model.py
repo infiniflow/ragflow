@@ -60,7 +60,6 @@ class Base(ABC):
 
 class DefaultEmbedding(Base):
     _FACTORY_NAME = "BAAI"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     _model = None
     _model_name = ""
     _model_lock = threading.Lock()
@@ -78,9 +77,13 @@ class DefaultEmbedding(Base):
 
         """
         if not settings.LIGHTEN:
+            input_cuda_visible_devices = None
             with DefaultEmbedding._model_lock:
                 import torch
                 from FlagEmbedding import FlagModel
+                if "CUDA_VISIBLE_DEVICES" in os.environ:
+                    input_cuda_visible_devices = os.environ["CUDA_VISIBLE_DEVICES"]
+                    os.environ["CUDA_VISIBLE_DEVICES"] = "0" # handle some issues with multiple GPUs when initializing the model
 
                 if not DefaultEmbedding._model or model_name != DefaultEmbedding._model_name:
                     try:
@@ -95,6 +98,10 @@ class DefaultEmbedding(Base):
                             repo_id="BAAI/bge-large-zh-v1.5", local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z0-9]+/", "", model_name)), local_dir_use_symlinks=False
                         )
                         DefaultEmbedding._model = FlagModel(model_dir, query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：", use_fp16=torch.cuda.is_available())
+                    finally:
+                        if input_cuda_visible_devices:
+                            # restore CUDA_VISIBLE_DEVICES
+                            os.environ["CUDA_VISIBLE_DEVICES"] = input_cuda_visible_devices
         self._model = DefaultEmbedding._model
         self._model_name = DefaultEmbedding._model_name
 
@@ -285,15 +292,16 @@ class OllamaEmbed(Base):
     def __init__(self, key, model_name, **kwargs):
         self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
+        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
     def encode(self, texts: list):
         arr = []
         tks_num = 0
         for txt in texts:
-            # remove special tokens if they exist
+            # remove special tokens if they exist base on regex in one request
             for token in OllamaEmbed._special_tokens:
                 txt = txt.replace(token, "")
-            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
+            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
             try:
                 arr.append(res["embedding"])
             except Exception as _e:
@@ -305,7 +313,7 @@ class OllamaEmbed(Base):
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
             text = text.replace(token, "")
-        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
+        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
         try:
             return np.array(res["embedding"]), 128
         except Exception as _e:
@@ -486,6 +494,8 @@ class BedrockEmbed(Base):
         self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
         self.bedrock_region = json.loads(key).get("bedrock_region", "")
         self.model_name = model_name
+        self.is_amazon = self.model_name.split(".")[0] == "amazon"
+        self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
         if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
             # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
@@ -498,9 +508,9 @@ class BedrockEmbed(Base):
         embeddings = []
         token_count = 0
         for text in texts:
-            if self.model_name.split(".")[0] == "amazon":
+            if self.is_amazon:
                 body = {"inputText": text}
-            elif self.model_name.split(".")[0] == "cohere":
+            elif self.is_cohere:
                 body = {"texts": [text], "input_type": "search_document"}
 
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
@@ -516,9 +526,9 @@ class BedrockEmbed(Base):
     def encode_queries(self, text):
         embeddings = []
         token_count = num_tokens_from_string(text)
-        if self.model_name.split(".")[0] == "amazon":
+        if self.is_amazon:
             body = {"inputText": truncate(text, 8196)}
-        elif self.model_name.split(".")[0] == "cohere":
+        elif self.is_cohere:
             body = {"texts": [truncate(text, 8196)], "input_type": "search_query"}
 
         response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))

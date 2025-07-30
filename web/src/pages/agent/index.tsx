@@ -25,7 +25,6 @@ import {
   CirclePlay,
   Download,
   History,
-  Key,
   LaptopMinimalCheck,
   Logs,
   ScreenShare,
@@ -42,7 +41,6 @@ import {
   useGetBeginNodeDataInputs,
   useGetBeginNodeDataQueryIsSafe,
 } from './hooks/use-get-begin-query';
-import { useOpenDocument } from './hooks/use-open-document';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
@@ -73,7 +71,7 @@ export default function Agent() {
   const { t } = useTranslation();
   const { data: userInfo } = useFetchUserInfo();
 
-  const openDocument = useOpenDocument();
+  // const openDocument = useOpenDocument();
   const {
     handleExportJson,
     handleImportJson,
@@ -100,7 +98,7 @@ export default function Agent() {
 
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-
+  const { navigateToAgentLogs } = useNavigatePage();
   const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
 
   return (
@@ -135,7 +133,10 @@ export default function Agent() {
             <History />
             {t('flow.historyversion')}
           </Button>
-          <Button variant={'secondary'}>
+          <Button
+            variant={'secondary'}
+            onClick={navigateToAgentLogs(id as string)}
+          >
             <Logs />
             {t('flow.log')}
           </Button>
@@ -147,11 +148,11 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentDropdownMenuItem onClick={openDocument}>
+              {/* <AgentDropdownMenuItem onClick={openDocument}>
                 <Key />
                 API
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
+              </AgentDropdownMenuItem> */}
+              {/* <DropdownMenuSeparator /> */}
               <AgentDropdownMenuItem onClick={handleImportJson}>
                 <Download />
                 {t('flow.import')}
@@ -161,17 +162,21 @@ export default function Agent() {
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
-              <AgentDropdownMenuItem
-                onClick={showEmbedModal}
-                disabled={
-                  !isBeginNodeDataQuerySafe ||
-                  userInfo.nickname !== agentDetail.nickname
-                }
-              >
-                <ScreenShare />
-                {t('common.embedIntoSite')}
-              </AgentDropdownMenuItem>
+              {location.hostname !== 'demo.ragflow.io' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <AgentDropdownMenuItem
+                    onClick={showEmbedModal}
+                    disabled={
+                      !isBeginNodeDataQuerySafe ||
+                      userInfo.nickname !== agentDetail.nickname
+                    }
+                  >
+                    <ScreenShare />
+                    {t('common.embedIntoSite')}
+                  </AgentDropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
