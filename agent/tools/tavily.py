@@ -20,7 +20,6 @@ from abc import ABC
 from tavily import TavilyClient
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api.utils.api_utils import timeout
-from rag.prompts import kb_prompt
 
 
 class TavilySearchParam(ToolParamBase):
