@@ -155,6 +155,10 @@ def init_llm_factory():
 def add_graph_templates():
     dir = os.path.join(get_project_base_directory(), "agent", "templates")
     CanvasTemplateService.filter_delete([1 == 1])
+    if not os.path.exists(dir):
+        logging.warning("Missing agent templates!")
+        return
+
     for fnm in os.listdir(dir):
         try:
             cnvs = json.load(open(os.path.join(dir, fnm), "r",encoding="utf-8"))
@@ -163,7 +167,7 @@ def add_graph_templates():
             except Exception:
                 CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
         except Exception:
-            logging.exception("Add graph templates error: ")
+            logging.exception("Add agent templates error: ")
 
 
 def init_web_data():
