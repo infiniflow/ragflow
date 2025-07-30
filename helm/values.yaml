@@ -187,6 +187,11 @@ redis:
     capacity: 5Gi
   persistence:
     enabled: true
+    # Set's the retention policy for the persistent storage (only available in k8s 1.32 or later)
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    # retentionPolicy:
+      # whenDeleted: Delete
+      # whenScaled: Delete
   deployment:
     strategy:
     resources:
