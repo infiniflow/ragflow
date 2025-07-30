@@ -6,14 +6,14 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ApiKeyField } from '../../components/api-key-field';
 import { FormWrapper } from '../../components/form-wrapper';
-import { TavilyFormSchema } from '../../tavily-form';
+import { GoogleFormPartialSchema, GoogleFormWidgets } from '../../google-form';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
 
-function TavilyForm() {
+function GoogleForm() {
   const values = useValues();
 
-  const FormSchema = z.object(TavilyFormSchema);
+  const FormSchema = z.object(GoogleFormPartialSchema);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues: values,
@@ -27,10 +27,11 @@ function TavilyForm() {
       <FormWrapper>
         <FormContainer>
           <ApiKeyField></ApiKeyField>
+          <GoogleFormWidgets></GoogleFormWidgets>
         </FormContainer>
       </FormWrapper>
     </Form>
   );
 }
 
-export default memo(TavilyForm);
+export default memo(GoogleForm);

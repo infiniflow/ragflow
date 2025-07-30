@@ -26,6 +26,8 @@ const Menus = [
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.GoogleScholar,
+      Operator.ArXiv,
+      Operator.WenCai,
     ],
   },
   {
@@ -38,13 +40,7 @@ const Menus = [
   },
   {
     label: 'Developer',
-    list: [
-      Operator.GitHub,
-      Operator.ExeSQL,
-      Operator.Invoke,
-      Operator.Code,
-      Operator.Retrieval,
-    ],
+    list: [Operator.GitHub, Operator.ExeSQL, Operator.Code, Operator.Retrieval],
   },
 ];
 
