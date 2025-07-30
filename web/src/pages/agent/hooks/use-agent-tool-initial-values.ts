@@ -48,6 +48,10 @@ export function useAgentToolInitialValues() {
           return omit(initialValues, 'query', 'outputs');
         case Operator.ArXiv:
           return pick(initialValues, 'top_n', 'sort_by');
+        case Operator.PubMed:
+          return pick(initialValues, 'top_n', 'email');
+        case Operator.GitHub:
+          return pick(initialValues, 'top_n');
 
         default:
           return initialValues;

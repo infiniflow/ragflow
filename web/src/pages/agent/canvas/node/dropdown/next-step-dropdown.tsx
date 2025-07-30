@@ -109,6 +109,9 @@ function AccordionOperators() {
               Operator.Wikipedia,
               Operator.GoogleScholar,
               Operator.ArXiv,
+              Operator.PubMed,
+              Operator.GitHub,
+              Operator.Invoke,
             ]}
           ></OperatorItemList>
         </AccordionContent>
