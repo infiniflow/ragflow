@@ -54,6 +54,13 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToAgentLogs = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.AgentLogPage}/${id}`);
+    },
+    [navigate],
+  );
+
   const navigateToAgentTemplates = useCallback(() => {
     navigate(Routes.AgentTemplates);
   }, [navigate]);
@@ -120,6 +127,7 @@ export const useNavigatePage = () => {
     navigateToChunk,
     navigateToAgents,
     navigateToAgent,
+    navigateToAgentLogs,
     navigateToAgentTemplates,
     navigateToSearchList,
     navigateToSearch,
