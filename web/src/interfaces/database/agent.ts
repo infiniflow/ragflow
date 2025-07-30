@@ -229,3 +229,38 @@ export interface ITraceData {
   component_id: string;
   trace: Array<Record<string, any>>;
 }
+
+export interface IAgentLogResponse {
+  id: string;
+  message: IAgentLogMessage[];
+  update_date: string;
+  create_date: string;
+  update_time: number;
+  create_time: number;
+  round: number;
+  thumb_up: number;
+  errors: string;
+  source: string;
+  user_id: string;
+  dsl: string;
+  reference: IReference;
+}
+export interface IAgentLogsResponse {
+  total: number;
+  sessions: IAgentLogResponse[];
+}
+export interface IAgentLogsRequest {
+  keywords?: string;
+  to_date?: string | Date;
+  from_date?: string | Date;
+  orderby?: string;
+  desc?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+export interface IAgentLogMessage {
+  content: string;
+  role: 'user' | 'assistant';
+  id: string;
+}

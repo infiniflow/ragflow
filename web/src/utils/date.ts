@@ -32,3 +32,14 @@ export function formatPureDate(date: any) {
   }
   return dayjs(date).format('DD/MM/YYYY');
 }
+
+export function formatStandardDate(date: any) {
+  if (!date) {
+    return '';
+  }
+  const parsedDate = dayjs(date);
+  if (!parsedDate.isValid()) {
+    return '';
+  }
+  return parsedDate.format('YYYY-MM-DD');
+}

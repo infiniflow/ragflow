@@ -1,3 +1,4 @@
+import { IAgentLogsRequest } from '@/interfaces/database/agent';
 import api from '@/utils/api';
 import { registerNextServer } from '@/utils/register-server';
 import request from '@/utils/request';
@@ -22,6 +23,7 @@ const {
   fetchVersion,
   fetchCanvas,
   fetchAgentAvatar,
+  fetchAgentLogs,
 } = api;
 
 const methods = {
@@ -101,12 +103,22 @@ const methods = {
     url: fetchAgentAvatar,
     method: 'get',
   },
+  fetchAgentLogs: {
+    url: fetchAgentLogs,
+    method: 'get',
+  },
 } as const;
 
 const agentService = registerNextServer<keyof typeof methods>(methods);
 
 export const fetchTrace = (data: { canvas_id: string; message_id: string }) => {
   return request.get(methods.trace.url, { params: data });
+};
+export const fetchAgentLogsByCanvasId = (
+  canvasId: string,
+  params: IAgentLogsRequest,
+) => {
+  return request.get(methods.fetchAgentLogs.url(canvasId), { params: params });
 };
 
 export default agentService;

@@ -153,6 +153,8 @@ export default {
   fetchCanvas: (id: string) => `${api_host}/canvas/get/${id}`,
   fetchAgentAvatar: (id: string) => `${api_host}/canvas/getsse/${id}`,
   uploadAgentFile: (id?: string) => `${api_host}/canvas/upload/${id}`,
+  fetchAgentLogs: (canvasId: string) =>
+    `${api_host}/canvas/${canvasId}/sessions`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
