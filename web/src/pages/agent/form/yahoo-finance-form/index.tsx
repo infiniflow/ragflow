@@ -16,6 +16,7 @@ import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { initialYahooFinanceValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
@@ -98,6 +99,8 @@ const YahooFinanceForm = ({ node }: INextOperatorForm) => {
     defaultValues,
     resolver: zodResolver(FormSchema),
   });
+
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>

@@ -1,7 +1,6 @@
 import { FormContainer } from '@/components/form-container';
 import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
@@ -12,10 +11,11 @@ import {
 } from '@/components/ui/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { initialGoogleValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { GoogleCountryOptions, GoogleLanguageOptions } from '../../options';
 import { buildOutputList } from '../../utils/build-output-list';
@@ -26,15 +26,60 @@ import { QueryVariable } from '../components/query-variable';
 
 const outputList = buildOutputList(initialGoogleValues.outputs);
 
-export const FormSchema = z.object({
-  top_n: z.number(),
+export const GoogleFormPartialSchema = {
   api_key: z.string(),
   country: z.string(),
   language: z.string(),
+};
+
+export const FormSchema = z.object({
+  ...GoogleFormPartialSchema,
   q: z.string(),
   start: z.number(),
   num: z.number(),
 });
+
+export function GoogleFormWidgets() {
+  const form = useFormContext();
+  const { t } = useTranslate('flow');
+
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name={`country`}
+        render={({ field }) => (
+          <FormItem className="flex-1">
+            <FormLabel>{t('country')}</FormLabel>
+            <FormControl>
+              <SelectWithSearch
+                {...field}
+                options={GoogleCountryOptions}
+              ></SelectWithSearch>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name={`language`}
+        render={({ field }) => (
+          <FormItem className="flex-1">
+            <FormLabel>{t('language')}</FormLabel>
+            <FormControl>
+              <SelectWithSearch
+                {...field}
+                options={GoogleLanguageOptions}
+              ></SelectWithSearch>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  );
+}
 
 const GoogleForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslate('flow');
@@ -44,6 +89,8 @@ const GoogleForm = ({ node }: INextOperatorForm) => {
     defaultValues,
     resolver: zodResolver(FormSchema),
   });
+
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
@@ -79,39 +126,7 @@ const GoogleForm = ({ node }: INextOperatorForm) => {
               </FormItem>
             )}
           />
-          <TopNFormField></TopNFormField>
-          <FormField
-            control={form.control}
-            name={`country`}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{t('country')}</FormLabel>
-                <FormControl>
-                  <SelectWithSearch
-                    {...field}
-                    options={GoogleCountryOptions}
-                  ></SelectWithSearch>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name={`language`}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{t('language')}</FormLabel>
-                <FormControl>
-                  <SelectWithSearch
-                    {...field}
-                    options={GoogleLanguageOptions}
-                  ></SelectWithSearch>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <GoogleFormWidgets></GoogleFormWidgets>
         </FormContainer>
       </FormWrapper>
       <div className="p-5">

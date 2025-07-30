@@ -1,8 +1,8 @@
 import { IAgentForm, IToolNode } from '@/interfaces/database/agent';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
-import { memo, useCallback } from 'react';
-import { NodeHandleId } from '../../constant';
+import { MouseEventHandler, memo, useCallback } from 'react';
+import { NodeHandleId, Operator } from '../../constant';
 import { ToolCard } from '../../form/agent-form/agent-tools';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
 import useGraphStore from '../../store';
@@ -18,7 +18,16 @@ function InnerToolNode({
   const upstreamAgentNode = getNode(upstreamAgentNodeId);
   const { findMcpById } = useFindMcpById();
 
-  const handleClick = useCallback(() => {}, []);
+  const handleClick = useCallback(
+    (operator: string): MouseEventHandler<HTMLLIElement> =>
+      (e) => {
+        if (operator === Operator.Code) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      },
+    [],
+  );
 
   const tools: IAgentForm['tools'] = get(
     upstreamAgentNode,
@@ -44,17 +53,18 @@ function InnerToolNode({
         {tools.map((x) => (
           <ToolCard
             key={x.component_name}
-            onClick={handleClick}
+            onClick={handleClick(x.component_name)}
             className="cursor-pointer"
             data-tool={x.component_name}
           >
             {x.component_name}
           </ToolCard>
         ))}
+
         {mcpList.map((x) => (
           <ToolCard
             key={x.mcp_id}
-            onClick={handleClick}
+            onClick={handleClick(x.mcp_id)}
             className="cursor-pointer"
             data-tool={x.mcp_id}
           >

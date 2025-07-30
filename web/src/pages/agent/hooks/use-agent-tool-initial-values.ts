@@ -16,7 +16,7 @@ export function useAgentToolInitialValues() {
             ...omit(initialValues, 'query'),
             description: '',
           };
-        case (Operator.TavilySearch, Operator.TavilyExtract, Operator.Google):
+        case (Operator.TavilySearch, Operator.TavilyExtract):
           return {
             api_key: '',
           };
@@ -42,6 +42,12 @@ export function useAgentToolInitialValues() {
 
         case Operator.Wikipedia:
           return pick(initialValues, 'top_n', 'language');
+        case Operator.Google:
+          return pick(initialValues, 'api_key', 'country', 'language');
+        case Operator.GoogleScholar:
+          return omit(initialValues, 'query', 'outputs');
+        case Operator.ArXiv:
+          return pick(initialValues, 'top_n', 'sort_by');
 
         default:
           return initialValues;

@@ -107,6 +107,8 @@ function AccordionOperators() {
               Operator.Email,
               Operator.DuckDuckGo,
               Operator.Wikipedia,
+              Operator.GoogleScholar,
+              Operator.ArXiv,
             ]}
           ></OperatorItemList>
         </AccordionContent>

@@ -1,4 +1,9 @@
 import { BlockButton } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { Position } from '@xyflow/react';
 import { PencilLine, X } from 'lucide-react';
@@ -25,17 +30,32 @@ export function ToolCard({
   className,
   ...props
 }: PropsWithChildren & React.HTMLAttributes<HTMLLIElement>) {
-  return (
-    <li
-      {...props}
-      className={cn(
-        'flex bg-background-card p-1 rounded-sm justify-between',
-        className,
-      )}
-    >
-      {children}
-    </li>
-  );
+  const element = useMemo(() => {
+    return (
+      <li
+        {...props}
+        className={cn(
+          'flex bg-background-card p-1 rounded-sm justify-between',
+          className,
+        )}
+      >
+        {children}
+      </li>
+    );
+  }, [children, className, props]);
+
+  if (children === Operator.Code) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{element}</TooltipTrigger>
+        <TooltipContent>
+          <p>It doesn't have any config.</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return element;
 }
 
 type ActionButtonProps<T> = {
