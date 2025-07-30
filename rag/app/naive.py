@@ -370,7 +370,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))

@@ -72,7 +72,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Supported file formats are docx, pdf, excel, txt.
         One file forms a chunk which maintains original text order.
     """
-
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     eng = lang.lower() == "english"  # is_english(cks)
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
@@ -85,7 +87,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
         sections, _ = pdf_parser(
             filename if not binary else binary, to_page=to_page, callback=callback)

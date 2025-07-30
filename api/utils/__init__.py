@@ -15,6 +15,7 @@
 #
 import base64
 import datetime
+import hashlib
 import io
 import json
 import os
@@ -405,3 +406,7 @@ def download_img(url):
 def delta_seconds(date_string: str):
     dt = datetime.datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
     return (datetime.datetime.now() - dt).total_seconds()
+
+
+def hash_str2int(line:str, mod: int=10 ** 8) -> int:
+    return int(hashlib.sha1(line.encode("utf-8")).hexdigest(), 16) % mod

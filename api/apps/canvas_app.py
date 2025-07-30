@@ -14,19 +14,34 @@
 #  limitations under the License.
 #
 import json
-import traceback
+import logging
+import re
+import sys
+from functools import partial
+
+import trio
 from flask import request, Response
 from flask_login import login_required, current_user
-from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+
+from agent.component import LLM
+from api.db import FileType
+from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
+from api.db.services.document_service import DocumentService
+from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
 from api.utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
+from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
+    get_error_data_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
 import time
+
+from api.utils.file_utils import filename_type, read_potential_broken_pdf
+from rag.utils.redis_conn import REDIS_CONN
+
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
@@ -112,8 +127,10 @@ def getsse(canvas_id):
 @login_required
 def run():
     req = request.json
-    stream = req.get("stream", True)
-    running_hint_text = req.get("running_hint_text", "")
+    query = req.get("query", "")
+    files = req.get("files", [])
+    inputs = req.get("inputs", {})
+    user_id = req.get("user_id", current_user.id)
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
@@ -125,68 +142,29 @@ def run():
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    final_ans = {"reference": [], "content": ""}
-    message_id = req.get("message_id", get_uuid())
     try:
-        canvas = Canvas(cvs.dsl, current_user.id)
-        if "message" in req:
-            canvas.messages.append({"role": "user", "content": req["message"], "id": message_id})
-            canvas.add_user_input(req["message"])
+        canvas = Canvas(cvs.dsl, current_user.id, req["id"])
     except Exception as e:
         return server_error_response(e)
 
-    if stream:
-        def sse():
-            nonlocal answer, cvs
-            try:
-                for ans in canvas.run(running_hint_text = running_hint_text, stream=True):
-                    if ans.get("running_status"):
-                        yield "data:" + json.dumps({"code": 0, "message": "",
-                                                    "data": {"answer": ans["content"],
-                                                             "running_status": True}},
-                                                   ensure_ascii=False) + "\n\n"
-                        continue
-                    for k in ans.keys():
-                        final_ans[k] = ans[k]
-                    ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+    def sse():
+        nonlocal canvas, user_id
+        try:
+            for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-                canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-                canvas.history.append(("assistant", final_ans["content"]))
-                if not canvas.path[-1]:
-                    canvas.path.pop(-1)
-                if final_ans.get("reference"):
-                    canvas.reference.append(final_ans["reference"])
-                cvs.dsl = json.loads(str(canvas))
-                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-            except Exception as e:
-                cvs.dsl = json.loads(str(canvas))
-                if not canvas.path[-1]:
-                    canvas.path.pop(-1)
-                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-                traceback.print_exc()
-                yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                            "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                           ensure_ascii=False) + "\n\n"
-            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+            cvs.dsl = json.loads(str(canvas))
+            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+        except Exception as e:
+            logging.exception(e)
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": False}, ensure_ascii=False) + "\n\n"
 
-        resp = Response(sse(), mimetype="text/event-stream")
-        resp.headers.add_header("Cache-control", "no-cache")
-        resp.headers.add_header("Connection", "keep-alive")
-        resp.headers.add_header("X-Accel-Buffering", "no")
-        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-        return resp
-
-    for answer in canvas.run(running_hint_text = running_hint_text, stream=False):
-        if answer.get("running_status"):
-            continue
-        final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-        canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-        if final_ans.get("reference"):
-            canvas.reference.append(final_ans["reference"])
-        cvs.dsl = json.loads(str(canvas))
-        UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-        return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
+    resp = Response(sse(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
 
 
 @manager.route('/reset', methods=['POST'])  # noqa: F821
@@ -212,9 +190,84 @@ def reset():
         return server_error_response(e)
 
 
-@manager.route('/input_elements', methods=['GET'])  # noqa: F821
+@manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
+def upload(canvas_id):
+    e, cvs = UserCanvasService.get_by_tenant_id(canvas_id)
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+
+    user_id = cvs["user_id"]
+    def structured(filename, filetype, blob, content_type):
+        nonlocal user_id
+        if filetype == FileType.PDF.value:
+            blob = read_potential_broken_pdf(blob)
+
+        location = get_uuid()
+        FileService.put_blob(user_id, location, blob)
+
+        return {
+            "id": location,
+            "name": filename,
+            "size": sys.getsizeof(blob),
+            "extension": filename.split(".")[-1].lower(),
+            "mime_type": content_type,
+            "created_by": user_id,
+            "created_at": time.time(),
+            "preview_url": None
+        }
+
+    if request.args.get("url"):
+        from crawl4ai import (
+            AsyncWebCrawler,
+            BrowserConfig,
+            CrawlerRunConfig,
+            DefaultMarkdownGenerator,
+            PruningContentFilter,
+            CrawlResult
+        )
+        try:
+            url = request.args.get("url")
+            filename = re.sub(r"\?.*", "", url.split("/")[-1])
+            async def adownload():
+                browser_config = BrowserConfig(
+                    headless=True,
+                    verbose=False,
+                )
+                async with AsyncWebCrawler(config=browser_config) as crawler:
+                    crawler_config = CrawlerRunConfig(
+                        markdown_generator=DefaultMarkdownGenerator(
+                            content_filter=PruningContentFilter()
+                        ),
+                        pdf=True,
+                        screenshot=False
+                    )
+                    result: CrawlResult = await crawler.arun(
+                        url=url,
+                        config=crawler_config
+                    )
+                    return result
+            page = trio.run(adownload())
+            if page.pdf:
+                if filename.split(".")[-1].lower() != "pdf":
+                    filename += ".pdf"
+                return get_json_result(data=structured(filename, "pdf", page.pdf, page.response_headers["content-type"]))
+
+            return get_json_result(data=structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id))
+
+        except Exception as e:
+            return  server_error_response(e)
+
+    file = request.files['file']
+    try:
+        DocumentService.check_doc_health(user_id, file.filename)
+        return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
+    except Exception as e:
+        return  server_error_response(e)
+
+
+@manager.route('/input_form', methods=['GET'])  # noqa: F821
 @login_required
-def input_elements():
+def input_form():
     cvs_id = request.args.get("id")
     cpn_id = request.args.get("component_id")
     try:
@@ -227,7 +280,7 @@ def input_elements():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        return get_json_result(data=canvas.get_component_input_elements(cpn_id))
+        return get_json_result(data=canvas.get_component_input_form(cpn_id))
     except Exception as e:
         return server_error_response(e)
 
@@ -237,8 +290,6 @@ def input_elements():
 @login_required
 def debug():
     req = request.json
-    for p in req["params"]:
-        assert p.get("key")
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
@@ -249,11 +300,22 @@ def debug():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        componant = canvas.get_component(req["component_id"])["obj"]
-        componant.reset()
-        componant._param.debug_inputs = req["params"]
-        df = canvas.get_component(req["component_id"])["obj"].debug()
-        return get_json_result(data=df.to_dict(orient="records"))
+        canvas.reset()
+        canvas.message_id = get_uuid()
+        component = canvas.get_component(req["component_id"])["obj"]
+        component.reset()
+
+        if isinstance(component, LLM):
+            component.set_debug_inputs(req["params"])
+        component.invoke(**{k: o["value"] for k,o in req["params"].items()})
+        outputs = component.output()
+        for k in outputs.keys():
+            if isinstance(outputs[k], partial):
+                txt = ""
+                for c in outputs[k]():
+                    txt += c
+                outputs[k] = txt
+        return get_json_result(data=outputs)
     except Exception as e:
         return server_error_response(e)
 
@@ -292,6 +354,8 @@ def test_db_connect():
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
+
+
 #api get list version dsl of canvas
 @manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
@@ -301,6 +365,8 @@ def getlistversion(canvas_id):
         return get_json_result(data=list)
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
+
+
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
@@ -312,6 +378,8 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
+
+
 @manager.route('/listteam', methods=['GET'])  # noqa: F821
 @login_required
 def list_kbs():
@@ -328,6 +396,8 @@ def list_kbs():
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
+
+
 @manager.route('/setting', methods=['POST'])  # noqa: F821
 @validate_request("id", "title", "permission")
 @login_required
@@ -351,3 +421,46 @@ def setting():
             code=RetCode.OPERATING_ERROR)
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
+
+
+@manager.route('/trace', methods=['GET'])  # noqa: F821
+def trace():
+    cvs_id = request.args.get("canvas_id")
+    msg_id = request.args.get("message_id")
+    try:
+        bin = REDIS_CONN.get(f"{cvs_id}-{msg_id}-logs")
+        if not bin:
+            return get_json_result(data={})
+
+        return get_json_result(data=json.loads(bin.encode("utf-8")))
+    except Exception as e:
+        logging.exception(e)
+
+
+@manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
+@login_required
+def sessions(canvas_id):
+    tenant_id = current_user.id
+    if not UserCanvasService.query(user_id=tenant_id, id=canvas_id):
+        return get_error_data_result(message=f"You don't own the agent {canvas_id}.")
+
+    user_id = request.args.get("user_id")
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 30))
+    keywords = request.args.get("keywords")
+    from_date = request.args.get("from_date")
+    to_date = request.args.get("to_date")
+    orderby = request.args.get("orderby", "update_time")
+    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+        desc = False
+    else:
+        desc = True
+    # dsl defaults to True in all cases except for False and false
+    include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
+    total, sess = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
+                                             None, user_id, include_dsl, keywords, from_date, to_date)
+    try:
+        return get_json_result(data={"total": total, "sessions": sess})
+    except Exception as e:
+        return server_error_response(e)
+

@@ -89,7 +89,7 @@ class DefaultRerank(Base):
 
             torch.cuda.empty_cache()
         except Exception as e:
-            print(f"Error emptying cache: {e}")
+            log_exception(e)
 
     def _process_batch(self, pairs, max_batch_size=None):
         """template method for subclass call"""

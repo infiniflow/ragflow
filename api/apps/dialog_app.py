@@ -51,7 +51,7 @@ def set_dialog():
     vector_similarity_weight = req.get("vector_similarity_weight", 0.3)
     llm_setting = req.get("llm_setting", {})
     prompt_config = req["prompt_config"]
-    
+
     if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config['system']:
         return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no knowledge base/Tavily used here.")
 

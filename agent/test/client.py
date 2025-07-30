@@ -15,9 +15,8 @@
 #
 import argparse
 import os
-from functools import partial
 from agent.canvas import Canvas
-from agent.settings import DEBUG
+from api import settings
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -31,19 +30,17 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--stream', default=False, help="Stream output", action='store_true', required=False)
     args = parser.parse_args()
 
+    settings.init_settings()
     canvas = Canvas(open(args.dsl, "r").read(), args.tenant_id)
+    if canvas.get_prologue():
+        print(f"==================== Bot =====================\n>    {canvas.get_prologue()}", end='')
+    query = ""
     while True:
-        ans = canvas.run(stream=args.stream)
+        canvas.reset(True)
+        query = input("\n==================== User =====================\n> ")
+        ans = canvas.run(query=query)
         print("==================== Bot =====================\n>    ", end='')
-        if args.stream and isinstance(ans, partial):
-            cont = ""
-            for an in ans():
-                print(an["content"][len(cont):], end='', flush=True)
-                cont = an["content"]
-        else:
-            print(ans["content"])
+        for ans in canvas.run(query=query):
+            print(ans, end='\n', flush=True)
 
-        if DEBUG:
-            print(canvas.path)
-        question = input("\n==================== User =====================\n> ")
-        canvas.add_user_input(question)
+        print(canvas.path)

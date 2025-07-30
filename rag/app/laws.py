@@ -145,6 +145,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
         Supported file formats are docx, pdf, txt.
     """
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -163,7 +166,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
         for txt, poss in pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)[0]:
