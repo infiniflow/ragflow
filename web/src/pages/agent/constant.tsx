@@ -487,6 +487,16 @@ export const initialExeSqlValues = {
   port: 3306,
   password: '',
   max_records: 1024,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialSwitchValues = {

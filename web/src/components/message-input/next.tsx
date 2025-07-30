@@ -143,6 +143,7 @@ export function NextMessageInput({
                 size="icon"
                 variant="ghost"
                 className="size-7 rounded-sm"
+                disabled={isUploading || sendLoading}
               >
                 <Paperclip className="size-3.5" />
                 <span className="sr-only">Attach file</span>
