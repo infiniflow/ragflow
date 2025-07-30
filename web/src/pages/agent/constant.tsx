@@ -378,18 +378,23 @@ export const initialPubMedValues = {
 };
 
 export const initialArXivValues = {
-  top_n: 10,
+  top_n: 12,
   sort_by: 'relevance',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialGoogleValues = {
   q: AgentGlobals.SysQuery,
   start: 0,
   num: 12,
-  top_n: 10,
   api_key: '',
-  country: 'cn',
+  country: 'us',
   language: 'en',
   outputs: {
     formalized_content: {
@@ -414,10 +419,22 @@ export const initialBingValues = {
 };
 
 export const initialGoogleScholarValues = {
-  top_n: 5,
+  top_n: 12,
   sort_by: 'relevance',
   patents: true,
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  year_low: undefined,
+  year_high: undefined,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialDeepLValues = {

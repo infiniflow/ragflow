@@ -26,6 +26,7 @@ const Menus = [
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.GoogleScholar,
+      Operator.ArXiv,
     ],
   },
   {

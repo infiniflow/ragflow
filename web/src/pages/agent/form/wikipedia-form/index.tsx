@@ -16,6 +16,7 @@ import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { initialWikipediaValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { LanguageOptions } from '../../options';
 import { buildOutputList } from '../../utils/build-output-list';
@@ -66,6 +67,8 @@ function WikipediaForm({ node }: INextOperatorForm) {
     defaultValues,
     resolver: zodResolver(FormSchema),
   });
+
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
