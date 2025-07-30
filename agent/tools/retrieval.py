@@ -16,8 +16,6 @@
 import os
 import re
 from abc import ABC
-from typing import Any
-
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -97,7 +95,7 @@ class Retrieval(ToolBase, ABC):
 
         kbs = KnowledgebaseService.get_by_ids(filtered_kb_ids)
         if not kbs:
-            raise Exception(f"No dataset is selected.")
+            raise Exception("No dataset is selected.")
 
         embd_nms = list(set([kb.embd_id for kb in kbs]))
         assert len(embd_nms) == 1, "Knowledge bases use different embedding models."

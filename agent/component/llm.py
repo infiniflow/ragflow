@@ -199,7 +199,7 @@ class LLM(ComponentBase):
                 try:
                     self.set_output("structured_content", json_repair.loads(clean_formated_answer(ans)))
                     return
-                except Exception as e:
+                except Exception:
                     msg.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
                     error = "The answer can't not be parsed as JSON"
             if error:

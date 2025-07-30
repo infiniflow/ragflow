@@ -79,7 +79,7 @@ class Wikipedia(ToolBase, ABC):
                 for p in wiki_engine.search(kwargs["query"], results=self._param.top_n):
                     try:
                         pages.append(wikipedia.page(p))
-                    except:
+                    except Exception:
                         pass
                 self._retrieve_chunks(pages,
                                       get_title=lambda r: r.title,

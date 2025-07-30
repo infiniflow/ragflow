@@ -21,94 +21,16 @@ from .agent_with_tools import Agent, AgentParam
 from .categorize import Categorize, CategorizeParam
 from .switch import Switch, SwitchParam
 from .message import Message, MessageParam
-from .iteration import Iteration, IterationParam
-from .iterationitem import IterationItem, IterationItemParam
 from .fillup import UserFillUp, UserFillUpParam
 from .string_transform import StringTransform, StringTransformParam
+from .invoke import Invoke, InvokeParam
 
 
 def component_class(class_name):
     m = importlib.import_module("agent.component")
     try:
         return getattr(m, class_name)
-    except:
+    except Exception:
         return getattr(importlib.import_module("agent.tools"), class_name)
 
 
-__all__ = [
-    "Begin",
-    "BeginParam",
-    "UserFillUp",
-    "UserFillUpParam",
-    "LLMParam",
-    "LLM",
-    "Categorize",
-    "CategorizeParam",
-    "Switch",
-    "SwitchParam",
-    "Message",
-    "MessageParam",
-    "Agent",
-    "AgentParam",
-    "StringTransformParam",
-    "StringTransform"
-]
-"""
-    "RewriteQuestion",
-    "RewriteQuestionParam",
-    "KeywordExtract",
-    "KeywordExtractParam",
-    "Concentrator",
-    "ConcentratorParam",
-    "Baidu",
-    "BaiduParam",
-    "DuckDuckGo",
-    "DuckDuckGoParam",
-    "Wikipedia",
-    "WikipediaParam",
-    "PubMed",
-    "PubMedParam",
-    "ArXiv",
-    "ArXivParam",
-    "Google",
-    "GoogleParam",
-    "Bing",
-    "BingParam",
-    "GoogleScholar",
-    "GoogleScholarParam",
-    "DeepL",
-    "DeepLParam",
-    "GitHub",
-    "GitHubParam",
-    "BaiduFanyi",
-    "BaiduFanyiParam",
-    "QWeather",
-    "QWeatherParam",
-    "ExeSQL",
-    "ExeSQLParam",
-    "YahooFinance",
-    "YahooFinanceParam",
-    "WenCai",
-    "WenCaiParam",
-    "Jin10",
-    "Jin10Param",
-    "TuShare",
-    "TuShareParam",
-    "AkShare",
-    "AkShareParam",
-    "Crawler",
-    "CrawlerParam",
-    "Invoke",
-    "InvokeParam",
-    "Iteration",
-    "IterationParam",
-    "IterationItem",
-    "IterationItemParam",
-    "Template",
-    "TemplateParam",
-    "Email",
-    "EmailParam",
-    "Code",
-    "CodeParam",
-    "component_class"
-"""

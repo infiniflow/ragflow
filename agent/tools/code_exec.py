@@ -17,12 +17,9 @@ import base64
 import logging
 import os
 from abc import ABC
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Optional
-
-import json_repair
 from pydantic import BaseModel, Field, field_validator
-from agent.component.base import ComponentBase, ComponentParamBase
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api import settings
 from api.utils.api_utils import timeout
@@ -163,7 +160,7 @@ class CodeExec(ToolBase, ABC):
                     return
                 try:
                     rt = eval(body.get("stdout", ""))
-                except:
+                except Exception:
                     rt = body.get("stdout", "")
                 logging.info(f"http://{settings.SANDBOX_HOST}:9385/run -> {rt}")
                 if isinstance(rt, tuple):

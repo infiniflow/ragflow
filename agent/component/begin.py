@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 from agent.component.fillup import UserFillUpParam, UserFillUp
-from api.db.services.file_service import FileService
 
 
 class BeginParam(UserFillUpParam):

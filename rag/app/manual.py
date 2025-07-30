@@ -45,9 +45,6 @@ class Pdf(PdfParser):
             callback
         )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
-        # for bb in self.boxes:
-        #    for b in bb:
-        #        print(b)
         logging.debug("OCR: {}".format(timer() - start))
 
         start = timer()
@@ -225,7 +222,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             if lvl <= most_level and i > 0 and lvl != levels[i - 1]:
                 sid += 1
             sec_ids.append(sid)
-            # print(lvl, self.boxes[i]["text"], most_level, sid)
 
         sections = [(txt, sec_ids[i], poss)
                     for i, (txt, _, poss) in enumerate(sections)]

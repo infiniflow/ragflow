@@ -112,7 +112,7 @@ class Base(ABC):
         return gen_conf
 
     def _chat(self, history, gen_conf, **kwargs):
-        print("[HISTORY]", json.dumps(history, ensure_ascii=False, indent=2))
+        logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >=0:
             kwargs["extra_body"] = {"enable_thinking": False}
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
@@ -125,7 +125,7 @@ class Base(ABC):
         return ans, self.total_token_count(response)
 
     def _chat_streamly(self, history, gen_conf, **kwargs):
-        print("[HISTORY STREAMLY]", json.dumps(history, ensure_ascii=False, indent=4))
+        logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
         response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
         for resp in response:
@@ -226,7 +226,7 @@ class Base(ABC):
             history = hist
             try:
                 for _ in range(self.max_rounds+1):
-                    print(f"{self.tools=}")
+                    logging.info(f"{self.tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
@@ -243,7 +243,7 @@ class Base(ABC):
                         return ans, tk_count
 
                     for tool_call in response.choices[0].message.tool_calls:
-                        print(f"response {tool_call=}")
+                        logging.info(f"Response {tool_call=}")
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
@@ -311,7 +311,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds+1):
                     reasoning_start = False
-                    print(f"{tools=}")
+                    logging.info(f"{tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
                     final_tool_calls = {}
                     answer = ""
@@ -366,7 +366,6 @@ class Base(ABC):
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
                             tool_response = self.toolcall_session.tool_call(name, args)
-                            print("tool_response: ", tool_response)
                             history = self._append_history(history, tool_call, tool_response)
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:

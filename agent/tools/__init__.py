@@ -8,14 +8,14 @@ _package_path = os.path.dirname(__file__)
 __all_classes: Dict[str, Type] = {}
 
 def _import_submodules() -> None:
-    for filename in os.listdir(_package_path):
+    for filename in os.listdir(_package_path): # noqa: F821
         if filename.startswith("__") or not filename.endswith(".py") or filename.startswith("base"):
             continue
         module_name = filename[:-3]
 
         try:
             module = importlib.import_module(f".{module_name}", package=__name__)
-            _extract_classes_from_module(module)
+            _extract_classes_from_module(module)  # noqa: F821
         except ImportError as e:
             print(f"Warning: Failed to import module {module_name}: {str(e)}")
 

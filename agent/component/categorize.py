@@ -60,7 +60,7 @@ class CategorizeParam(LLMParam):
             for line in desc.get("examples", []):
                 if not line:
                     continue
-                cate_lines.append(f"USER: \"" + re.sub(r"\n", "    ", line, flags=re.DOTALL) + "\" → "+c)
+                cate_lines.append("USER: \"" + re.sub(r"\n", "    ", line, flags=re.DOTALL) + "\" → "+c)
 
         descriptions = []
         for c, desc in self.category_description.items():

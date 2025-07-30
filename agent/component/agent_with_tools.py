@@ -25,11 +25,9 @@ import json_repair
 
 from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
-from api.db import LLMType
 from api.db.services.llm_service import LLMBundle, TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
 from api.utils.api_utils import timeout
-from rag.llm.chat_model import ReActMode
 from rag.prompts import message_fit_in
 from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, \
     citation_prompt, reflect, rank_memories, kb_prompt, citation_plus, full_question
@@ -55,7 +53,7 @@ class AgentParam(LLMParam, ToolParamBase):
                     "reasoning": {
                         "type": "string",
                         "description": (
-                            f"Supervisor's reasoning for choosing the this agent. "
+                            "Supervisor's reasoning for choosing the this agent. "
                             "Explain why this agent is being invoked and what is expected of it."
                         ),
                         "required": True

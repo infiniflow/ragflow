@@ -19,18 +19,17 @@ import logging
 import re
 from copy import deepcopy
 from typing import Tuple
-
 import jinja2
 import json_repair
-
-from api import settings
 from api.utils import hash_str2int
 from rag.prompts.prompt_template import load_prompt
 from rag.settings import TAG_FLD
 from rag.utils import encoder, num_tokens_from_string
 
+
 STOP_TOKEN="<|STOP|>"
 COMPLETE_TASK="complete_task"
+
 
 def get_value(d, k1, k2):
     return d.get(k1, d.get(k2))
@@ -382,7 +381,6 @@ def reflect(chat_mdl, history: list[dict], tool_call_res: list[Tuple]):
     _, msg = message_fit_in(hist, chat_mdl.max_length)
     ans = chat_mdl.chat(msg[0]["content"], msg[1:])
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-    tk_cnt = num_tokens_from_string(ans)
     return """
 **Observation**
 {}
@@ -397,7 +395,6 @@ def form_message(system_prompt, user_prompt):
 
 
 def tool_call_summary(chat_mdl, name: str, params: dict, result: str) -> str:
-    results = re.sub(r"!\[[a-z]+\]\(data:image/png;base64[^()]+\)", "", str(result), flags=re.DOTALL)[:4096]
     template = PROMPT_JINJA_ENV.from_string(SUMMARY4MEMORY)
     system_prompt = template.render(name=name,
                            params=json.dumps(params, ensure_ascii=False, indent=2),

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 import time
 import traceback
 from uuid import uuid4
@@ -22,11 +23,12 @@ from api.db import TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
-from api.db.services.conversation_service import structure_answer
 from api.utils import get_uuid
 from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
+
+
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
 
@@ -79,7 +81,7 @@ class UserCanvasService(CommonService):
             # obj = cls.model.query(id=pid)[0]
             return True, agents.dicts()[0]
         except Exception as e:
-            print(e)
+            logging.exception(e)
             return False, None
      
     @classmethod

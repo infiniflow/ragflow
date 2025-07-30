@@ -614,7 +614,6 @@ class NvidiaCV(Base):
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf, images=[], **kwargs):
-        ans = ""
         try:
             response = self._request(self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
@@ -700,7 +699,6 @@ class AnthropicCV(Base):
 
     def chat_streamly(self, system, history, gen_conf, images=[]):
         gen_conf = self._clean_conf(gen_conf)
-        ans = ""
         total_tokens = 0
         try:
             response = self.client.messages.create(

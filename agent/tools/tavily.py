@@ -15,13 +15,10 @@
 #
 import logging
 import os
-import re
 import time
 from abc import ABC
 from tavily import TavilyClient
-
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils import get_uuid, hash_str2int
 from api.utils.api_utils import timeout
 from rag.prompts import kb_prompt
 
