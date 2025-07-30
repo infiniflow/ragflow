@@ -27,7 +27,7 @@ import xxhash
 from peewee import fn
 
 from api import settings
-from api.constants import IMG_BASE64_PREFIX
+from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File
 from api.db.db_utils import bulk_insert_into_db
@@ -99,6 +99,17 @@ class DocumentService(CommonService):
         count = docs.count()
         docs = docs.paginate(page_number, items_per_page)
         return list(docs.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def check_doc_health(cls, tenant_id: str, filename):
+        import os
+        MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
+        if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(tenant_id) >= MAX_FILE_NUM_PER_USER:
+            raise RuntimeError("Exceed the maximum file number of a free user!")
+        if len(filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            raise RuntimeError("Exceed the maximum length of file name!")
+        return True
 
     @classmethod
     @DB.connection_context()
@@ -258,13 +269,13 @@ class DocumentService(CommonService):
             )
             if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
                 settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
-                                            {"remove": {"source_id": doc.id}},
-                                            search.index_name(tenant_id), doc.kb_id)
+                                             {"remove": {"source_id": doc.id}},
+                                             search.index_name(tenant_id), doc.kb_id)
                 settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
-                                            {"removed_kwd": "Y"},
-                                            search.index_name(tenant_id), doc.kb_id)
+                                             {"removed_kwd": "Y"},
+                                             search.index_name(tenant_id), doc.kb_id)
                 settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
-                                            search.index_name(tenant_id), doc.kb_id)
+                                             search.index_name(tenant_id), doc.kb_id)
         except Exception:
             pass
         return cls.delete_by_id(doc.id)
@@ -323,9 +334,9 @@ class DocumentService(CommonService):
                 "Document not found which is supposed to be there")
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num +
-            token_num,
+                      token_num,
             chunk_num=Knowledgebase.chunk_num +
-            chunk_num).where(
+                      chunk_num).where(
             Knowledgebase.id == kb_id).execute()
         return num
 
@@ -341,9 +352,9 @@ class DocumentService(CommonService):
                 "Document not found which is supposed to be there")
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num -
-            token_num,
+                      token_num,
             chunk_num=Knowledgebase.chunk_num -
-            chunk_num
+                      chunk_num
         ).where(
             Knowledgebase.id == kb_id).execute()
         return num
@@ -356,9 +367,9 @@ class DocumentService(CommonService):
 
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num -
-            doc.token_num,
+                      doc.token_num,
             chunk_num=Knowledgebase.chunk_num -
-            doc.chunk_num,
+                      doc.chunk_num,
             doc_num=Knowledgebase.doc_num - 1
         ).where(
             Knowledgebase.id == doc.kb_id).execute()
@@ -388,7 +399,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             Knowledgebase.tenant_id).join(
             Knowledgebase, on=(
-                Knowledgebase.id == cls.model.kb_id)).where(
+                    Knowledgebase.id == cls.model.kb_id)).where(
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
@@ -410,7 +421,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             Knowledgebase.tenant_id).join(
             Knowledgebase, on=(
-                Knowledgebase.id == cls.model.kb_id)).where(
+                    Knowledgebase.id == cls.model.kb_id)).where(
             cls.model.name == name, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
@@ -423,7 +434,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             cls.model.id).join(
             Knowledgebase, on=(
-                Knowledgebase.id == cls.model.kb_id)
+                    Knowledgebase.id == cls.model.kb_id)
         ).join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
                ).where(cls.model.id == doc_id, UserTenant.user_id == user_id).paginate(0, 1)
         docs = docs.dicts()
@@ -435,12 +446,12 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def accessible4deletion(cls, doc_id, user_id):
         docs = cls.model.select(cls.model.id
-        ).join(
+                                ).join(
             Knowledgebase, on=(
-                Knowledgebase.id == cls.model.kb_id)
+                    Knowledgebase.id == cls.model.kb_id)
         ).join(
             UserTenant, on=(
-                (UserTenant.tenant_id == Knowledgebase.created_by) & (UserTenant.user_id == user_id))
+                    (UserTenant.tenant_id == Knowledgebase.created_by) & (UserTenant.user_id == user_id))
         ).where(
             cls.model.id == doc_id,
             UserTenant.status == StatusEnum.VALID.value,
@@ -457,7 +468,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             Knowledgebase.embd_id).join(
             Knowledgebase, on=(
-                Knowledgebase.id == cls.model.kb_id)).where(
+                    Knowledgebase.id == cls.model.kb_id)).where(
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
@@ -499,7 +510,7 @@ class DocumentService(CommonService):
         if not doc_id:
             return
         return doc_id[0]["id"]
-    
+
     @classmethod
     @DB.connection_context()
     def get_doc_ids_by_doc_names(cls, doc_names):
@@ -612,7 +623,7 @@ class DocumentService(CommonService):
                 info = {
                     "process_duration": datetime.timestamp(
                         datetime.now()) -
-                    d["process_begin_at"].timestamp(),
+                                       d["process_begin_at"].timestamp(),
                     "run": status}
                 if prg != 0:
                     info["progress"] = prg
