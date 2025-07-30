@@ -91,55 +91,63 @@ const ChatContainer = () => {
   }
 
   return (
-    <section className="h-[100vh]">
-      <section className={cn('flex flex-1 flex-col p-2.5 h-full')}>
-        <div className={cn('flex flex-1 flex-col overflow-auto pr-2')}>
-          <div>
-            {derivedMessages?.map((message, i) => {
-              return (
-                <MessageItem
-                  visibleAvatar={visibleAvatar}
-                  conversationId={conversationId}
-                  currentEventListWithoutMessageById={
-                    currentEventListWithoutMessageById
-                  }
-                  setCurrentMessageId={setCurrentMessageId}
-                  key={buildMessageUuidWithRole(message)}
-                  avatarDialog={avatarData.avatar}
-                  item={message}
-                  nickname="You"
-                  reference={findReferenceByMessageId(message.id)}
-                  loading={
-                    message.role === MessageType.Assistant &&
-                    sendLoading &&
-                    derivedMessages?.length - 1 === i
-                  }
-                  index={i}
-                  clickDocumentButton={clickDocumentButton}
-                  showLikeButton={false}
-                  showLoudspeaker={false}
-                  showLog={false}
-                  sendLoading={sendLoading}
-                ></MessageItem>
-              );
-            })}
+    <section className="h-[100vh] flex justify-center items-center">
+      <div className=" w-[80vw]">
+        <div className="flex flex-1 flex-col p-2.5  h-[90vh] border rounded-lg">
+          <div
+            className={cn('flex flex-1 flex-col overflow-auto m-auto w-5/6')}
+          >
+            <div>
+              {derivedMessages?.map((message, i) => {
+                return (
+                  <MessageItem
+                    visibleAvatar={visibleAvatar}
+                    conversationId={conversationId}
+                    currentEventListWithoutMessageById={
+                      currentEventListWithoutMessageById
+                    }
+                    setCurrentMessageId={setCurrentMessageId}
+                    key={buildMessageUuidWithRole(message)}
+                    avatarDialog={avatarData.avatar}
+                    item={message}
+                    nickname="You"
+                    reference={findReferenceByMessageId(message.id)}
+                    loading={
+                      message.role === MessageType.Assistant &&
+                      sendLoading &&
+                      derivedMessages?.length - 1 === i
+                    }
+                    index={i}
+                    clickDocumentButton={clickDocumentButton}
+                    showLikeButton={false}
+                    showLoudspeaker={false}
+                    showLog={false}
+                    sendLoading={sendLoading}
+                  ></MessageItem>
+                );
+              })}
+            </div>
+            <div ref={ref} />
           </div>
-          <div ref={ref} />
+          <div className="flex w-full justify-center mb-8">
+            <div className="w-5/6">
+              <NextMessageInput
+                isShared
+                value={value}
+                disabled={hasError}
+                sendDisabled={sendDisabled}
+                conversationId={conversationId}
+                onInputChange={handleInputChange}
+                onPressEnter={handlePressEnter}
+                sendLoading={sendLoading}
+                stopOutputMessage={stopOutputMessage}
+                onUpload={handleUploadFile}
+                isUploading={loading}
+              ></NextMessageInput>
+            </div>
+          </div>
         </div>
-        <NextMessageInput
-          isShared
-          value={value}
-          disabled={hasError}
-          sendDisabled={sendDisabled}
-          conversationId={conversationId}
-          onInputChange={handleInputChange}
-          onPressEnter={handlePressEnter}
-          sendLoading={sendLoading}
-          stopOutputMessage={stopOutputMessage}
-          onUpload={handleUploadFile}
-          isUploading={loading}
-        ></NextMessageInput>
-      </section>
+      </div>
       {visible && (
         <PdfDrawer
           visible={visible}

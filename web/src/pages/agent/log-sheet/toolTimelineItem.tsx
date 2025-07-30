@@ -18,16 +18,26 @@ import { JsonViewer } from './workFlowTimeline';
 
 const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
   if (!tools || tools.length === 0 || !Array.isArray(tools)) return null;
-  const blackList = ['analyze_task', 'add_memory', 'gen_citations'];
+  const blackList = ['add_memory', 'gen_citations'];
   const filteredTools = tools.filter(
     (tool) => !blackList.includes(tool.tool_name),
   );
+  const capitalizeWords = (str: string, separator: string = '_'): string => {
+    if (!str) return '';
+
+    return str
+      .split(separator)
+      .map((word) => {
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
+  };
   return (
     <>
       {filteredTools?.map((tool, idx) => {
         return (
           <TimelineItem
-            key={idx}
+            key={'tool_' + idx}
             step={idx}
             className="group-data-[orientation=vertical]/timeline:ms-10 group-data-[orientation=vertical]/timeline:not-last:pb-8"
           >
@@ -82,7 +92,10 @@ const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
                   <AccordionItem value={idx.toString()}>
                     <AccordionTrigger>
                       <div className="flex gap-2 items-center">
-                        <span>{tool.tool_name}</span>
+                        <span>
+                          {tool.path + ' '}
+                          {capitalizeWords(tool.tool_name, '_')}
+                        </span>
                         <span className="text-text-sub-title text-xs">
                           {/* 0:00
                           {x.data.elapsed_time?.toString().slice(0, 6)} */}

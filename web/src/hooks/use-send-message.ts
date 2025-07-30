@@ -20,6 +20,7 @@ export enum MessageEventType {
 export interface IAnswerEvent<T> {
   event: MessageEventType;
   message_id: string;
+  session_id: string;
   created_at: number;
   task_id: string;
   data: T;

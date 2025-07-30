@@ -143,6 +143,9 @@ const TimeRangePicker = ({
   const [date, setDate] = useState<DateRange | undefined>(
     selectDateRange || { from: today, to: today },
   );
+  useEffect(() => {
+    setDate(selectDateRange);
+  }, [selectDateRange]);
   const onChange = (e: DateRange | undefined) => {
     if (!e) return;
     setDate(e);

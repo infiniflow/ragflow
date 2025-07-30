@@ -13,7 +13,12 @@ import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentLog } from '@/hooks/use-agent-request';
-import { IAgentLogResponse } from '@/interfaces/database/agent';
+import {
+  IAgentLogMessage,
+  IAgentLogResponse,
+} from '@/interfaces/database/agent';
+import { IReferenceObject } from '@/interfaces/database/chat';
+import { useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { DateRange } from '../../components/originui/calendar/index';
@@ -26,16 +31,27 @@ import {
   TableRow,
 } from '../../components/ui/table';
 import { useFetchDataOnMount } from '../agent/hooks/use-fetch-data';
+import { AgentLogDetailModal } from './agent-log-detail-modal';
+const getStartOfToday = (): Date => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
 
+const getEndOfToday = (): Date => {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return today;
+};
 const AgentLogPage: React.FC = () => {
   const { navigateToAgentList, navigateToAgent } = useNavigatePage();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { id: canvasId } = useParams();
-  const today = new Date();
+  const queryClient = useQueryClient();
   const init = {
     keywords: '',
-    from_date: today,
-    to_date: today,
+    from_date: getStartOfToday(),
+    to_date: getEndOfToday(),
     orderby: 'create_time',
     desc: false,
     page: 1,
@@ -152,6 +168,13 @@ const AgentLogPage: React.FC = () => {
     });
   };
 
+  const handleClickSearch = () => {
+    setPagination({ ...pagination, current: 1 });
+    handleSearch();
+    queryClient.invalidateQueries({
+      queryKey: ['fetchAgentLog'],
+    });
+  };
   useEffect(() => {
     handleSearch();
   }, [pagination.current, pagination.pageSize, sortConfig]);
@@ -166,7 +189,17 @@ const AgentLogPage: React.FC = () => {
 
   const handleReset = () => {
     setSearchParams(init);
+    setKeywords(init.keywords);
+    setCurrentDate({ from: init.from_date, to: init.to_date });
   };
+
+  const [openModal, setOpenModal] = useState(false);
+  const [modalData, setModalData] = useState<IAgentLogResponse>();
+  const showLogDetail = (item: IAgentLogResponse) => {
+    setModalData(item);
+    setOpenModal(true);
+  };
+
   return (
     <div className=" text-white">
       <PageHeader>
@@ -209,15 +242,14 @@ const AgentLogPage: React.FC = () => {
               <span className="whitespace-nowrap">Latest Date</span>
               <TimeRangePicker
                 onSelect={handleDateRangeChange}
-                selectDateRange={{ from: currentDate.from, to: currentDate.to }}
+                selectDateRange={currentDate}
               />
             </div>
             <button
               type="button"
               className="bg-foreground  text-text-title-invert  px-4 py-1 rounded"
               onClick={() => {
-                setPagination({ ...pagination, current: 1 });
-                handleSearch();
+                handleClickSearch();
               }}
             >
               Search
@@ -276,7 +308,12 @@ const AgentLogPage: React.FC = () => {
               )}
               {!loading &&
                 data?.map((item) => (
-                  <TableRow key={item.id}>
+                  <TableRow
+                    key={item.id}
+                    onClick={() => {
+                      showLogDetail(item);
+                    }}
+                  >
                     {columns.map((column) => (
                       <TableCell key={column.dataIndex}>
                         {column.render
@@ -312,6 +349,12 @@ const AgentLogPage: React.FC = () => {
           </div>
         </div>
       </div>
+      <AgentLogDetailModal
+        isOpen={openModal}
+        message={modalData?.message as IAgentLogMessage[]}
+        reference={modalData?.reference as unknown as IReferenceObject}
+        onClose={() => setOpenModal(false)}
+      />
     </div>
   );
 };

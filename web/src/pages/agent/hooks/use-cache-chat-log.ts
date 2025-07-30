@@ -43,19 +43,13 @@ export function useCacheChatLog() {
     setEventList([]);
   }, []);
 
-  const addEventList = useCallback(
-    (events: IEventList, message_id: string) => {
-      const nextList = [...eventList];
-      events.forEach((x) => {
-        if (nextList.every((y) => y !== x)) {
-          nextList.push(x);
-        }
-      });
-      setEventList(nextList);
-      setMessageIdPool((prev) => ({ ...prev, [message_id]: nextList }));
-    },
-    [eventList],
-  );
+  const addEventList = useCallback((events: IEventList, message_id: string) => {
+    setEventList((x) => {
+      const list = [...x, ...events];
+      setMessageIdPool((prev) => ({ ...prev, [message_id]: list }));
+      return list;
+    });
+  }, []);
 
   const currentEventListWithoutMessage = useMemo(() => {
     const list = messageIdPool[currentMessageId]?.filter(

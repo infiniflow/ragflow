@@ -170,13 +170,15 @@ function MessageItem({
               ></ReferenceDocumentList>
             )}
             {isAssistant && currentEventListWithoutMessageById && (
-              <WorkFlowTimeline
-                currentEventListWithoutMessage={currentEventListWithoutMessageById(
-                  item.id,
-                )}
-                currentMessageId={item.id}
-                canvasId={conversationId}
-              />
+              <div className="mt-4">
+                <WorkFlowTimeline
+                  currentEventListWithoutMessage={currentEventListWithoutMessageById(
+                    item.id,
+                  )}
+                  currentMessageId={item.id}
+                  canvasId={conversationId}
+                />
+              </div>
             )}
             {isUser && (
               <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
