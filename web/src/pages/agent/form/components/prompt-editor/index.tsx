@@ -46,7 +46,7 @@ const Nodes: Array<Klass<LexicalNode>> = [
   VariableNode,
 ];
 
-type PromptContentProps = { showToolbar?: boolean };
+type PromptContentProps = { showToolbar?: boolean; multiLine?: boolean };
 
 type IProps = {
   value?: string;
@@ -54,7 +54,10 @@ type IProps = {
   placeholder?: ReactNode;
 } & PromptContentProps;
 
-function PromptContent({ showToolbar = true }: PromptContentProps) {
+function PromptContent({
+  showToolbar = true,
+  multiLine = true,
+}: PromptContentProps) {
   const [editor] = useLexicalComposerContext();
   const [isBlur, setIsBlur] = useState(false);
   const { t } = useTranslation();
@@ -100,7 +103,9 @@ function PromptContent({ showToolbar = true }: PromptContentProps) {
         </div>
       )}
       <ContentEditable
-        className="min-h-40 relative px-2 py-1 focus-visible:outline-none"
+        className={cn('relative px-2 py-1 focus-visible:outline-none', {
+          'min-h-40': multiLine,
+        })}
         onBlur={handleBlur}
         onFocus={handleFocus}
       />
@@ -113,6 +118,7 @@ export function PromptEditor({
   onChange,
   placeholder,
   showToolbar,
+  multiLine = true,
 }: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
@@ -142,14 +148,22 @@ export function PromptEditor({
       <LexicalComposer initialConfig={initialConfig}>
         <RichTextPlugin
           contentEditable={
-            <PromptContent showToolbar={showToolbar}></PromptContent>
+            <PromptContent
+              showToolbar={showToolbar}
+              multiLine={multiLine}
+            ></PromptContent>
           }
           placeholder={
             <div
-              className="absolute top-10 left-2 text-text-sub-title"
+              className={cn(
+                'absolute top-1 left-2 text-text-sub-title pointer-events-none',
+                {
+                  'truncate w-[90%]': !multiLine,
+                },
+              )}
               data-xxx
             >
-              {placeholder || t('common.pleaseInput')}
+              {placeholder || t('common.promptPlaceholder')}
             </div>
           }
           ErrorBoundary={LexicalErrorBoundary}

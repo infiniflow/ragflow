@@ -38,6 +38,7 @@ export default {
       previousPage: 'Previous',
       nextPage: 'Next',
       add: 'Add',
+      promptPlaceholder: `Please input or use / to quickly insert variables.`,
     },
     login: {
       login: 'Sign in',
@@ -1156,7 +1157,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       note: 'Note',
       noteDescription: 'Note',
       notePlaceholder: 'Please enter a note',
-      invoke: 'Invoke',
+      invoke: 'HTTP Request',
       invokeDescription: `A component capable of calling remote services, using other components' outputs or constants as inputs.`,
       url: 'Url',
       method: 'Method',
@@ -1207,10 +1208,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
       iteration: 'Iteration',
-      iterationDescription: `This component firstly split the input into array by "delimiter".
-Perform the same operation steps on the elements in the array in sequence until all results are output, which can be understood as a task batch processor.
-
-For example, within the long text translation iteration node, if all content is input to the LLM node, the single conversation limit may be reached. The upstream node can first split the long text into multiple fragments, and cooperate with the iterative node to perform batch translation on each fragment to avoid reaching the LLM message limit for a single conversation.`,
+      iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
       delimiterTip: `
 This delimiter is used to split the input text into several text pieces echo of which will be performed as input item of each iteration.`,
       delimiterOptions: {
@@ -1297,8 +1295,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
       maxRecords: 'Max records',
       createAgent: 'Create Agent',
-      stringTransform: 'String transform',
-      userFillUp: 'Input',
+      stringTransform: 'Text Processing',
+      userFillUp: 'Await Response',
       codeExec: 'Code',
       tavilySearch: 'Tavily Search',
       tavilySearchDescription: 'Search results via Tavily service.',
@@ -1309,6 +1307,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       import: 'Import',
       export: 'Export',
       seconds: 'Seconds',
+      subject: 'Subject',
     },
     llmTools: {
       bad_calculator: {

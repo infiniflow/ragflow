@@ -573,6 +573,12 @@ export const initialInvokeValues = {
   proxy: '',
   clean_html: false,
   variables: [],
+  outputs: {
+    result: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialTemplateValues = {

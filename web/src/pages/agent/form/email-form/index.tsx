@@ -20,6 +20,7 @@ import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
+import { PromptEditor } from '../components/prompt-editor';
 
 interface InputFormFieldProps {
   name: string;
@@ -47,6 +48,29 @@ function InputFormField({ name, label, type }: InputFormFieldProps) {
   );
 }
 
+function PromptFormField({ name, label }: InputFormFieldProps) {
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <PromptEditor
+              {...field}
+              showToolbar={false}
+              multiLine={false}
+            ></PromptEditor>
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
 export function EmailFormWidgets() {
   const { t } = useTranslate('flow');
 
@@ -108,10 +132,22 @@ const EmailForm = ({ node }: INextOperatorForm) => {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <InputFormField name="to_email" label={t('toEmail')}></InputFormField>
-          <InputFormField name="cc_email" label={t('ccEmail')}></InputFormField>
-          <InputFormField name="content" label={t('content')}></InputFormField>
-          <InputFormField name="subject" label={t('subject')}></InputFormField>
+          <PromptFormField
+            name="to_email"
+            label={t('toEmail')}
+          ></PromptFormField>
+          <PromptFormField
+            name="cc_email"
+            label={t('ccEmail')}
+          ></PromptFormField>
+          <PromptFormField
+            name="content"
+            label={t('content')}
+          ></PromptFormField>
+          <PromptFormField
+            name="subject"
+            label={t('subject')}
+          ></PromptFormField>
           <EmailFormWidgets></EmailFormWidgets>
         </FormContainer>
       </FormWrapper>
