@@ -1,7 +1,5 @@
-
 include:
   - ./docker-compose-base.yml
-
 # To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
 services:
   ragflow:
@@ -17,7 +15,13 @@ services:
     #   - --mcp-base-url=http://127.0.0.1:9380
     #   - --mcp-script-path=/ragflow/mcp/server/server.py
     #   - --mcp-mode=self-host
-    #   - --mcp-host-api-key=ragflow-xxxxxxx
+    #   - --mcp-host-api-key=ragflow-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    # Optional transport flags for MCP (customize if needed).
+    # Host mode need to combined with --no-transport-streamable-http-enabled flag, namely, host+streamable-http is not supported yet.
+    # The following are enabled by default unless explicitly disabled with --no-<flag>.
+    #   - --no-transport-sse-enabled # Disable legacy SSE endpoints (/sse and /messages/)
+    #   - --no-transport-streamable-http-enabled #  Disable Streamable HTTP transport (/mcp endpoint)
+    #   - --no-json-response # Disable JSON response mode in Streamable HTTP transport (instead of SSE over HTTP)
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
@@ -34,7 +38,6 @@ services:
       - ../history_data_agent:/ragflow/history_data_agent
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
-
     env_file: .env
     environment:
       - TZ=${TIMEZONE}
