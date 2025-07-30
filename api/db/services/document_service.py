@@ -27,7 +27,7 @@ import xxhash
 from peewee import fn
 
 from api import settings
-from api.constants import IMG_BASE64_PREFIX
+from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File
 from api.db.db_utils import bulk_insert_into_db
@@ -107,7 +107,7 @@ class DocumentService(CommonService):
         MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
         if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(tenant_id) >= MAX_FILE_NUM_PER_USER:
             raise RuntimeError("Exceed the maximum file number of a free user!")
-        if len(filename.encode("utf-8")) >= 128:
+        if len(filename.encode("utf-8")) >= FILE_NAME_LEN_LIMIT:
             raise RuntimeError("Exceed the maximum length of file name!")
         return True
 
