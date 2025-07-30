@@ -154,6 +154,7 @@ def init_llm_factory():
 
 def add_graph_templates():
     dir = os.path.join(get_project_base_directory(), "agent", "templates")
+    CanvasTemplateService.filter_delete([1 == 1])
     for fnm in os.listdir(dir):
         try:
             cnvs = json.load(open(os.path.join(dir, fnm), "r",encoding="utf-8"))

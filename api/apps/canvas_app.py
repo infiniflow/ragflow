@@ -17,7 +17,6 @@ import json
 import logging
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 import trio
@@ -25,8 +24,7 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from agent.component import LLM
-from api import settings
-from api.db import FileType, ParserType
+from api.db import FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
@@ -43,7 +41,6 @@ import time
 
 from api.utils.file_utils import filename_type, read_potential_broken_pdf
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
