@@ -177,6 +177,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
         Only pdf is supported.
     """
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     pdf_parser = None
     doc = {
         "docnm_kwd": filename
@@ -187,7 +190,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)

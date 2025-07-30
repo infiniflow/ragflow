@@ -556,7 +556,7 @@ def list_agent_session(tenant_id, agent_id):
         desc = True
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
+    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
     if not convs:
         return get_result(data=[])
     for conv in convs:
