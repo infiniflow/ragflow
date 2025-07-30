@@ -77,6 +77,7 @@ class DefaultEmbedding(Base):
 
         """
         if not settings.LIGHTEN:
+            input_cuda_visible_devices = None
             with DefaultEmbedding._model_lock:
                 import torch
                 from FlagEmbedding import FlagModel
