@@ -74,7 +74,6 @@ export type RFState = {
   deleteAgentDownstreamNodesById: (id: string) => void;
   deleteAgentToolNodeById: (id: string) => void;
   deleteIterationNodeById: (id: string) => void;
-  deleteEdgeBySourceAndSourceHandle: (connection: Partial<Connection>) => void;
   findNodeByName: (operatorName: Operator) => RAGFlowNodeType | undefined;
   updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
   getOperatorTypeFromId: (id?: string | null) => string | undefined;
@@ -84,7 +83,10 @@ export type RFState = {
   setClickedNodeId: (id?: string) => void;
   setClickedToolId: (id?: string) => void;
   findUpstreamNodeById: (id?: string | null) => RAGFlowNodeType | undefined;
-  deleteCategorizeCaseEdges: (source: string, sourceHandle: string) => void; // Deleting a condition of a classification operator will delete the related edge
+  deleteEdgesBySourceAndSourceHandle: (
+    source: string,
+    sourceHandle: string,
+  ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
 };
@@ -330,19 +332,6 @@ const useGraphStore = create<RFState>()(
           edges: edges.filter((edge) => edge.id !== id),
         });
       },
-      deleteEdgeBySourceAndSourceHandle: ({
-        source,
-        sourceHandle,
-      }: Partial<Connection>) => {
-        const { edges } = get();
-        const nextEdges = edges.filter(
-          (edge) =>
-            edge.source !== source || edge.sourceHandle !== sourceHandle,
-        );
-        set({
-          edges: nextEdges,
-        });
-      },
       deleteNodeById: (id: string) => {
         const {
           nodes,
@@ -511,7 +500,7 @@ const useGraphStore = create<RFState>()(
         const edge = edges.find((x) => x.target === id);
         return getNode(edge?.source);
       },
-      deleteCategorizeCaseEdges: (source, sourceHandle) => {
+      deleteEdgesBySourceAndSourceHandle: (source, sourceHandle) => {
         const { edges, setEdges } = get();
         setEdges(
           edges.filter(

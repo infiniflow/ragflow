@@ -19,19 +19,22 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   AgentExceptionMethod,
+  NodeHandleId,
   VariableType,
   initialAgentValues,
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { isBottomSubAgent } from '../../utils';
+import { buildOutputList } from '../../utils/build-output-list';
 import { DescriptionField } from '../components/description-field';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
@@ -69,25 +72,24 @@ const FormSchema = z.object({
   max_rounds: z.coerce.number().optional(),
   exception_method: z.string().nullable(),
   exception_comment: z.string().optional(),
-  exception_goto: z.string().optional(),
+  exception_goto: z.array(z.string()).optional(),
+  exception_default_value: z.string().optional(),
   ...LargeModelFilterFormSchema,
 });
 
+const outputList = buildOutputList(initialAgentValues.outputs);
+
 function AgentForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
-  const { edges } = useGraphStore((state) => state);
+  const { edges, deleteEdgesBySourceAndSourceHandle } = useGraphStore(
+    (state) => state,
+  );
 
   const defaultValues = useValues(node);
 
   const isSubAgent = useMemo(() => {
     return isBottomSubAgent(edges, node?.id);
   }, [edges, node?.id]);
-
-  const outputList = useMemo(() => {
-    return [
-      { title: 'content', type: initialAgentValues.outputs.content.type },
-    ];
-  }, []);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues: defaultValues,
@@ -98,16 +100,27 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const findLlmByUuid = useFindLlmByUuid();
 
+  const exceptionMethod = useWatch({
+    control: form.control,
+    name: 'exception_method',
+  });
+
+  useEffect(() => {
+    if (exceptionMethod !== AgentExceptionMethod.Goto) {
+      if (node?.id) {
+        deleteEdgesBySourceAndSourceHandle(
+          node?.id,
+          NodeHandleId.AgentException,
+        );
+      }
+    }
+  }, [deleteEdgesBySourceAndSourceHandle, exceptionMethod, node?.id]);
+
   useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
@@ -221,6 +234,18 @@ function AgentForm({ node }: INextOperatorForm) {
             />
             <FormField
               control={form.control}
+              name={`exception_default_value`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel>Exception default value</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
               name={`exception_comment`}
               render={({ field }) => (
                 <FormItem className="flex-1">
@@ -231,15 +256,10 @@ function AgentForm({ node }: INextOperatorForm) {
                 </FormItem>
               )}
             />
-            <QueryVariable
-              name="exception_goto"
-              label="Exception goto"
-              type={VariableType.File}
-            ></QueryVariable>
           </FormContainer>
         </Collapse>
         <Output list={outputList}></Output>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }
