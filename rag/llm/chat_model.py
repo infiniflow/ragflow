@@ -1690,6 +1690,7 @@ class DeepInfraChat(Base):
         if not base_url:
             base_url = "https://api.deepinfra.com/v1/openai"
         super().__init__(key, model_name, base_url, **kwargs)
+        
 
 class Ai302Chat(Base):
     _FACTORY_NAME = "302.AI"

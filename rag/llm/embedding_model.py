@@ -937,6 +937,7 @@ class DeepInfraEmbed(OpenAIEmbed):
             base_url = "https://api.deepinfra.com/v1/openai"
         super().__init__(key, model_name, base_url)
 
+
 class Ai302Embed(Base):
     _FACTORY_NAME = "302.AI"
 
