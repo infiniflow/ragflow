@@ -288,7 +288,7 @@ def docinfos():
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
 def thumbnails():
-    doc_ids = request.args.get("doc_ids").split(",")
+    doc_ids = request.args.getlist("doc_ids")
     if not doc_ids:
         return get_json_result(data=False, message='Lack of "Document ID"', code=settings.RetCode.ARGUMENT_ERROR)
 
