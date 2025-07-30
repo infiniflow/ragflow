@@ -257,7 +257,7 @@ def add_llm():
         )
         try:
             image_data = base64.b64decode(test_image_base64)
-            m, tc, _ = mdl.describe(image_data)
+            m, tc = mdl.describe(image_data)
             if not m and not tc:
                 raise Exception(m)
         except Exception as e:
