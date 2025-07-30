@@ -463,25 +463,42 @@ class MistralEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
+        import time
+        import random
         texts = [truncate(t, 8196) for t in texts]
         batch_size = 16
         ress = []
         token_count = 0
         for i in range(0, len(texts), batch_size):
-            res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
-            try:
-                ress.extend([d.embedding for d in res.data])
-                token_count += self.total_token_count(res)
-            except Exception as _e:
-                log_exception(_e, res)
+            retry_max = 5
+            while retry_max > 0:
+                try:
+                    res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
+                    ress.extend([d.embedding for d in res.data])
+                    token_count += self.total_token_count(res)
+                    break
+                except Exception as _e:
+                    if retry_max == 1:
+                        log_exception(_e)
+                    delay = random.uniform(20, 60)
+                    time.sleep(delay)
+                    retry_max -= 1
         return np.array(ress), token_count
 
     def encode_queries(self, text):
-        res = self.client.embeddings(input=[truncate(text, 8196)], model=self.model_name)
-        try:
-            return np.array(res.data[0].embedding), self.total_token_count(res)
-        except Exception as _e:
-            log_exception(_e, res)
+        import time
+        import random
+        retry_max = 5
+        while retry_max > 0:
+            try:
+                res = self.client.embeddings(input=[truncate(text, 8196)], model=self.model_name)
+                return np.array(res.data[0].embedding), self.total_token_count(res)
+            except Exception as _e:
+                if retry_max == 1:
+                    log_exception(_e)
+                delay = random.randint(20, 60)
+                time.sleep(delay)
+                retry_max -= 1
 
 
 class BedrockEmbed(Base):
