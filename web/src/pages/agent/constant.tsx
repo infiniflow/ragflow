@@ -372,9 +372,15 @@ export const initialWikipediaValues = {
 };
 
 export const initialPubMedValues = {
-  top_n: 10,
+  top_n: 12,
   email: '',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialArXivValues = {
@@ -444,7 +450,17 @@ export const initialDeepLValues = {
 
 export const initialGithubValues = {
   top_n: 5,
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialBaiduFanyiValues = {
@@ -540,7 +556,7 @@ export const initialCrawlerValues = {
 };
 
 export const initialInvokeValues = {
-  url: 'http://',
+  url: '',
   method: 'GET',
   timeout: 60,
   headers: `{
@@ -548,8 +564,9 @@ export const initialInvokeValues = {
   "Cache-Control": "no-cache",
   "Connection": "keep-alive"
 }`,
-  proxy: 'http://',
+  proxy: '',
   clean_html: false,
+  variables: [],
 };
 
 export const initialTemplateValues = {
@@ -852,7 +869,7 @@ export const NodeMap = {
   [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
-  [Operator.Invoke]: 'invokeNode',
+  [Operator.Invoke]: 'ragNode',
   [Operator.Template]: 'templateNode',
   [Operator.Email]: 'ragNode',
   [Operator.Iteration]: 'group',

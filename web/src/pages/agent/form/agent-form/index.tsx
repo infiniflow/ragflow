@@ -126,7 +126,7 @@ function AgentForm({ node }: INextOperatorForm) {
             name={`sys_prompt`}
             render={({ field }) => (
               <FormItem className="flex-1">
-                <FormLabel>Prompt</FormLabel>
+                <FormLabel>System Prompt</FormLabel>
                 <FormControl>
                   <PromptEditor
                     {...field}

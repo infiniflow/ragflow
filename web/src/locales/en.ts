@@ -1308,6 +1308,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       management: 'Management',
       import: 'Import',
       export: 'Export',
+      seconds: 'Seconds',
     },
     llmTools: {
       bad_calculator: {

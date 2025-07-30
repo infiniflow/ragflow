@@ -7,7 +7,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -21,6 +20,7 @@ import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
+import { QueryVariable } from '../components/query-variable';
 
 export const YahooFinanceFormPartialSchema = {
   info: z.boolean(),
@@ -106,19 +106,12 @@ const YahooFinanceForm = ({ node }: INextOperatorForm) => {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <FormField
-            control={form.control}
-            name={`stock_code`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('stockCode')}</FormLabel>
-                <FormControl>
-                  <Input {...field}></Input>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <QueryVariable
+            name="stock_code"
+            label={t('stockCode')}
+          ></QueryVariable>
+        </FormContainer>
+        <FormContainer>
           <YahooFinanceFormWidgets></YahooFinanceFormWidgets>
         </FormContainer>
       </FormWrapper>
