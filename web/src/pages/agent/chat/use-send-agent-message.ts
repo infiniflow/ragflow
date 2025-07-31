@@ -235,18 +235,23 @@ export const useSendAgentMessage = (
 
         params.session_id = sessionId;
       }
-      const res = await send(params);
 
-      clearUploadResponseList();
+      try {
+        const res = await send(params);
 
-      if (receiveMessageError(res)) {
-        sonnerMessage.error(res?.data?.message);
+        clearUploadResponseList();
 
-        // cancel loading
-        setValue(message.content);
-        removeLatestMessage();
-      } else {
-        // refetch(); // pull the message list after sending the message successfully
+        if (receiveMessageError(res)) {
+          sonnerMessage.error(res?.data?.message);
+
+          // cancel loading
+          setValue(message.content);
+          removeLatestMessage();
+        } else {
+          // refetch(); // pull the message list after sending the message successfully
+        }
+      } catch (error) {
+        console.log('🚀 ~ useSendAgentMessage ~ error:', error);
       }
     },
     [
