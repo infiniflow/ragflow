@@ -204,8 +204,8 @@ class Agent(LLM, ToolBase):
         hist = deepcopy(history)
         last_calling = ""
         if len(hist) > 3:
-            self.callback("Multi-turn conversation optimization", {}, " running ...")
             user_request = full_question(messages=history, chat_mdl=self.chat_mdl)
+            self.callback("Multi-turn conversation optimization", {}, user_request)
         else:
             user_request = history[-1]["content"]
 
@@ -241,9 +241,6 @@ class Agent(LLM, ToolBase):
                     cited = True
             yield "", token_count
 
-            if not cited and need2cite:
-                self.callback("gen_citations", {}, " running ...")
-
             _hist = hist
             if len(hist) > 12:
                 _hist = [hist[0], hist[1], *hist[-10:]]
@@ -255,8 +252,12 @@ class Agent(LLM, ToolBase):
             if not need2cite or cited:
                 return
 
+            txt = ""
             for delta_ans in self._gen_citations(entire_txt):
                 yield delta_ans, 0
+                txt += delta_ans
+
+            self.callback("gen_citations", {}, txt)
 
         def append_user_content(hist, content):
             if hist[-1]["role"] == "user":
@@ -264,8 +265,8 @@ class Agent(LLM, ToolBase):
             else:
                 hist.append({"role": "user", "content": content})
 
-        self.callback("analyze_task", {}, " running ...")
         task_desc = analyze_task(self.chat_mdl, user_request, tool_metas)
+        self.callback("analyze_task", {}, task_desc)
         for _ in range(self._param.max_rounds + 1):
             response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc)
             # self.callback("next_step", {}, str(response)[:256]+"...")

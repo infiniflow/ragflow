@@ -54,6 +54,8 @@ class LLMToolPluginCallSession(ToolCallSession):
             resp = self.tools_map[name].tool_call(name, arguments, 60)
         else:
             resp = self.tools_map[name].invoke(**arguments)
+
+        self.callback(name, arguments, resp)
         return resp
 
     def get_tool_obj(self, name):
