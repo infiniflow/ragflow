@@ -60,16 +60,16 @@ class LLMParam(ComponentParamBase):
 
     def gen_conf(self):
         conf = {}
-        if self.max_tokens > 0:
-            conf["max_tokens"] = self.max_tokens
-        if self.temperature > 0:
-            conf["temperature"] = self.temperature
-        if self.top_p > 0:
-            conf["top_p"] = self.top_p
-        if self.presence_penalty > 0:
-            conf["presence_penalty"] = self.presence_penalty
-        if self.frequency_penalty > 0:
-            conf["frequency_penalty"] = self.frequency_penalty
+        if float(self.max_tokens) > 0 and getattr(self, "maxTokensEnabled"):
+            conf["max_tokens"] = int(self.max_tokens)
+        if float(self.temperature) > 0 and getattr(self, "temperatureEnabled"):
+            conf["temperature"] = float(self.temperature)
+        if float(self.top_p) > 0 and getattr(self, "topPEnabled"):
+            conf["top_p"] = float(self.top_p)
+        if float(self.presence_penalty) > 0 and getattr(self, "presencePenaltyEnabled"):
+            conf["presence_penalty"] = float(self.presence_penalty)
+        if float(self.frequency_penalty) > 0 and getattr(self, "frequencyPenaltyEnabled"):
+            conf["frequency_penalty"] = float(self.frequency_penalty)
         return conf
 
 
