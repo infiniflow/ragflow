@@ -49,18 +49,18 @@ class LLMParam(ComponentParamBase):
         self.visual_files_var = None
 
     def check(self):
-        self.check_decimal_float(self.temperature, "[Agent] Temperature")
-        self.check_decimal_float(self.presence_penalty, "[Agent] Presence penalty")
-        self.check_decimal_float(self.frequency_penalty, "[Agent] Frequency penalty")
-        self.check_nonnegative_number(self.max_tokens, "[Agent] Max tokens")
-        self.check_decimal_float(self.top_p, "[Agent] Top P")
+        self.check_decimal_float(float(self.temperature), "[Agent] Temperature")
+        self.check_decimal_float(float(self.presence_penalty), "[Agent] Presence penalty")
+        self.check_decimal_float(float(self.frequency_penalty), "[Agent] Frequency penalty")
+        self.check_nonnegative_number(int(self.max_tokens), "[Agent] Max tokens")
+        self.check_decimal_float(float(self.top_p), "[Agent] Top P")
         self.check_empty(self.llm_id, "[Agent] LLM")
         self.check_empty(self.sys_prompt, "[Agent] System prompt")
         self.check_empty(self.prompts, "[Agent] User prompt")
 
     def gen_conf(self):
         conf = {}
-        if float(self.max_tokens) > 0 and getattr(self, "maxTokensEnabled"):
+        if int(self.max_tokens) > 0 and getattr(self, "maxTokensEnabled"):
             conf["max_tokens"] = int(self.max_tokens)
         if float(self.temperature) > 0 and getattr(self, "temperatureEnabled"):
             conf["temperature"] = float(self.temperature)
