@@ -487,6 +487,16 @@ export const initialExeSqlValues = {
   port: 3306,
   password: '',
   max_records: 1024,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialSwitchValues = {
@@ -507,7 +517,13 @@ export const initialSwitchValues = {
 export const initialWenCaiValues = {
   top_n: 20,
   query_type: 'stock',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    report: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
@@ -567,6 +583,12 @@ export const initialInvokeValues = {
   proxy: '',
   clean_html: false,
   variables: [],
+  outputs: {
+    result: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialTemplateValues = {
@@ -632,19 +654,20 @@ export const initialAgentValues = {
   max_rounds: 5,
   exception_method: null,
   exception_comment: '',
-  exception_goto: '',
+  exception_goto: [],
+  exception_default_value: '',
   tools: [],
   mcp: [],
   outputs: {
-    structured_output: {
-      // topic: {
-      //   type: 'string',
-      //   description:
-      //     'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-      //   enum: ['general', 'news'],
-      //   default: 'general',
-      // },
-    },
+    // structured_output: {
+    //   topic: {
+    //     type: 'string',
+    //     description:
+    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
+    //     enum: ['general', 'news'],
+    //     default: 'general',
+    //   },
+    // },
     content: {
       type: 'string',
       value: '',
@@ -920,6 +943,7 @@ export enum NodeHandleId {
   Tool = 'tool',
   AgentTop = 'agentTop',
   AgentBottom = 'agentBottom',
+  AgentException = 'agentException',
 }
 
 export enum VariableType {

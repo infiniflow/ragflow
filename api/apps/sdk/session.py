@@ -556,7 +556,7 @@ def list_agent_session(tenant_id, agent_id):
         desc = True
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
+    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
     if not convs:
         return get_result(data=[])
     for conv in convs:
@@ -817,9 +817,6 @@ def agent_bot_completions(agent_id):
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
-    if "quote" not in req:
-        req["quote"] = False
-
     if req.get("stream", True):
         resp = Response(agent_completion(objs[0].tenant_id, agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -830,3 +827,23 @@ def agent_bot_completions(agent_id):
 
     for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
+
+
+@manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
+def begin_inputs(agent_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    e, cvs = UserCanvasService.get_by_id(agent_id)
+    if not e:
+        return get_error_data_result(f"Can't find agent by ID: {agent_id}")
+
+    canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
+    return get_result(data=canvas.get_component_input_form("begin"))
+
+

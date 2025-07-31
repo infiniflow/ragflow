@@ -176,15 +176,23 @@ export function useSetUploadResponseData() {
 export const useSendAgentMessage = (
   url?: string,
   addEventList?: (data: IEventList, messageId: string) => void,
+  beginParams?: any[],
 ) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     url || api.runCanvas,
   );
   const messageId = useMemo(() => {
     return answerList[0]?.message_id;
+  }, [answerList]);
+
+  useEffect(() => {
+    if (answerList[0]?.session_id) {
+      setSessionId(answerList[0]?.session_id);
+    }
   }, [answerList]);
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
@@ -219,9 +227,13 @@ export const useSendAgentMessage = (
 
         params.query = message.content;
         // params.message_id = message.id;
-        params.inputs = transferInputsArrayToObject(query); // begin operator inputs
+        params.inputs = transferInputsArrayToObject(
+          beginParams ? beginParams : query,
+        ); // begin operator inputs
 
         params.files = uploadResponseList;
+
+        params.session_id = sessionId;
       }
       const res = await send(params);
 
@@ -240,11 +252,13 @@ export const useSendAgentMessage = (
     [
       agentId,
       send,
+      clearUploadResponseList,
       inputs,
+      beginParams,
       uploadResponseList,
+      sessionId,
       setValue,
       removeLatestMessage,
-      clearUploadResponseList,
     ],
   );
 
