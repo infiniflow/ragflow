@@ -266,7 +266,7 @@ export const useResetAgent = () => {
   return { data, loading, resetAgent: mutateAsync };
 };
 
-export const useSetAgent = () => {
+export const useSetAgent = (showMessage: boolean = true) => {
   const queryClient = useQueryClient();
   const {
     data,
@@ -282,9 +282,11 @@ export const useSetAgent = () => {
     }) => {
       const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
-        message.success(
-          i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
-        );
+        if (showMessage) {
+          message.success(
+            i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
+          );
+        }
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentList],
         });
