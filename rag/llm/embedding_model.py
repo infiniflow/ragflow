@@ -378,8 +378,9 @@ class XinferenceEmbed(Base):
         ress = []
         total_tokens = 0
         for i in range(0, len(texts), batch_size):
-            res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name)
+            res = None
             try:
+                res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name)
                 ress.extend([d.embedding for d in res.data])
                 total_tokens += self.total_token_count(res)
             except Exception as _e:
@@ -387,8 +388,9 @@ class XinferenceEmbed(Base):
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=[text], model=self.model_name)
+        res = None
         try:
+            res = self.client.embeddings.create(input=[text], model=self.model_name)
             return np.array(res.data[0].embedding), self.total_token_count(res)
         except Exception as _e:
             log_exception(_e, res)
@@ -928,12 +930,20 @@ class GiteeEmbed(SILICONFLOWEmbed):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
-
-
+        
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 
     def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai"):
         if not base_url:
             base_url = "https://api.deepinfra.com/v1/openai"
+        super().__init__(key, model_name, base_url)
+
+
+class Ai302Embed(Base):
+    _FACTORY_NAME = "302.AI"
+
+    def __init__(self, key, model_name, base_url="https://api.302.ai/v1/embeddings"):
+        if not base_url:
+            base_url = "https://api.302.ai/v1/embeddings"
         super().__init__(key, model_name, base_url)

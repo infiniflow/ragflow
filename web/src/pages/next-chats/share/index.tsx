@@ -3,6 +3,7 @@ import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useSwitchToDarkThemeOnMount } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
 import {
   useFetchExternalAgentInputs,
@@ -90,6 +91,8 @@ const ChatContainer = () => {
       showParameterDialog();
     }
   }, [data, showParameterDialog]);
+
+  useSwitchToDarkThemeOnMount();
 
   if (!conversationId) {
     return <div>empty</div>;
