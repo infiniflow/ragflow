@@ -20,7 +20,7 @@ from abc import ABC
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from agent.component import LLMParam, LLM
+from agent.component.llm import LLMParam, LLM
 from api.utils.api_utils import timeout
 from rag.llm.chat_model import ERROR_PREFIX
 
@@ -133,3 +133,5 @@ class Categorize(LLM, ABC):
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
 
+    def thoughts(self) -> str:
+        return "Which should it falls into {}? ...".format(",".join([f"`{c}`" for c, _ in self._param.category_description.items()]))

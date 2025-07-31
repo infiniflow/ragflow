@@ -94,5 +94,7 @@ class StringTransform(Message, ABC):
 
         self.set_output("result", script)
 
+    def thoughts(self) -> str:
+        return f"It's {self._param.method}ing."
 
 

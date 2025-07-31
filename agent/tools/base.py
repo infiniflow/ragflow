@@ -165,3 +165,6 @@ class ToolBase(ComponentBase):
             })
         self._canvas.add_refernce(chunks, aggs)
         self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, True)))
+
+    def thoughts(self) -> str:
+        return self._canvas.get_component_name(self._id) + " is running..."

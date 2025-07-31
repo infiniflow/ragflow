@@ -86,3 +86,6 @@ class GitHub(ToolBase, ABC):
             return f"GitHub error: {last_e}"
 
         assert False, self.output()
+
+    def thoughts(self) -> str:
+        return "Scanning GitHub repos related to `{}`.".format(self.get_input().get("query", "-_-!"))

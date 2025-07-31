@@ -23,7 +23,6 @@ from typing import Any
 
 import json_repair
 
-from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
 from api.db.services.llm_service import LLMBundle, TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
@@ -32,6 +31,7 @@ from rag.prompts import message_fit_in
 from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, \
     citation_prompt, reflect, rank_memories, kb_prompt, citation_plus, full_question
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
+from agent.component.llm import LLMParam, LLM
 
 
 class AgentParam(LLMParam, ToolParamBase):
@@ -330,3 +330,4 @@ Respond immediately with your final comprehensive answer.
             logging.exception(e)
 
         return "Error occurred."
+

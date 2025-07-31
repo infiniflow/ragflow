@@ -103,3 +103,6 @@ class PubMed(ToolBase, ABC):
             return f"PubMed error: {last_e}"
 
         assert False, self.output()
+
+    def thoughts(self) -> str:
+        return "Looking for scholarly papers on `{}`,” prioritising reputable sources.".format(self.get_input().get("query", "-_-!"))

@@ -13,9 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import re
 import time
-from abc import ABC
+from abc import ABC, abstractmethod
 import builtins
 import json
 import os
@@ -535,3 +536,6 @@ class ComponentBase(ABC):
     def get_exception_default_value(self):
         return self._param.exception_default_value
 
+    @abstractmethod
+    def thoughts(self) -> str:
+        ...

@@ -159,3 +159,9 @@ class Retrieval(ToolBase, ABC):
         form_cnt = "\n".join(kb_prompt(kbinfos, 200000, True))
         self.set_output("formalized_content", form_cnt)
         return form_cnt
+
+    def thoughts(self) -> str:
+        return """
+Keywords: {} 
+Looking for the most relevant articles.
+        """.format(self.get_input().get("query", "-_-!"))

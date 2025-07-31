@@ -134,6 +134,12 @@ class TavilySearch(ToolBase, ABC):
 
         assert False, self.output()
 
+    def thoughts(self) -> str:
+        return """
+Keywords: {} 
+Looking for the most relevant articles.
+                """.format(self.get_input().get("query", "-_-!"))
+
 
 class TavilyExtractParam(ToolParamBase):
     """
@@ -216,3 +222,6 @@ class TavilyExtract(ToolBase, ABC):
             return f"Tavily error: {last_e}"
 
         assert False, self.output()
+
+    def thoughts(self) -> str:
+        return "Opened {}—pulling out the main text…".format(self.get_input().get("urls", "-_-!"))

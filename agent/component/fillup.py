@@ -34,6 +34,7 @@ class UserFillUp(ComponentBase):
         for k, v in kwargs.get("inputs", {}).items():
             self.set_output(k, v)
 
-
+    def thoughts(self) -> str:
+        return "Waiting for your input..."
 
 

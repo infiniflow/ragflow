@@ -142,3 +142,5 @@ class Message(ComponentBase):
 
         self.set_output("content", content)
 
+    def thoughts(self) -> str:
+        return "Thinking ..."

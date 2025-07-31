@@ -109,3 +109,6 @@ class YahooFinance(ToolBase, ABC):
             return f"YahooFinance error: {last_e}"
 
         assert False, self.output()
+
+    def thoughts(self) -> str:
+        return "Pulling live financial data for `{}`.".format(self.get_input().get("stock_code", "-_-!"))
