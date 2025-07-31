@@ -14,12 +14,13 @@ type LogSheetProps = IModalProps<any> &
   Pick<
     ReturnType<typeof useCacheChatLog>,
     'currentEventListWithoutMessageById' | 'currentMessageId'
-  >;
+  > & { sendLoading: boolean };
 
 export function LogSheet({
   hideModal,
   currentEventListWithoutMessageById,
   currentMessageId,
+  sendLoading,
 }: LogSheetProps) {
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
@@ -36,6 +37,7 @@ export function LogSheet({
               currentMessageId,
             )}
             currentMessageId={currentMessageId}
+            sendLoading={sendLoading}
           />
         </section>
       </SheetContent>

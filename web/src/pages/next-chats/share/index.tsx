@@ -112,7 +112,6 @@ const ChatContainer = () => {
                     }
                     setCurrentMessageId={setCurrentMessageId}
                     key={buildMessageUuidWithRole(message)}
-                    avatarDialog={avatarData.avatar}
                     item={message}
                     nickname="You"
                     reference={findReferenceByMessageId(message.id)}

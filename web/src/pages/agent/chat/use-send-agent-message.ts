@@ -257,7 +257,6 @@ export const useSendAgentMessage = (
       inputs,
       beginParams,
       uploadResponseList,
-      sessionId,
       setValue,
       removeLatestMessage,
     ],

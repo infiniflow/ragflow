@@ -16,7 +16,13 @@ import { Operator } from '../constant';
 import OperatorIcon from '../operator-icon';
 import { JsonViewer } from './workFlowTimeline';
 
-const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
+const ToolTimelineItem = ({
+  tools,
+  sendLoading = false,
+}: {
+  tools: Record<string, any>[];
+  sendLoading: boolean;
+}) => {
   if (!tools || tools.length === 0 || !Array.isArray(tools)) return null;
   const blackList = ['add_memory', 'gen_citations'];
   const filteredTools = tools.filter(
@@ -67,7 +73,9 @@ const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
                   'group-data-completed/timeline-item:bg-primary group-data-completed/timeline-item:text-primary-foreground flex size-6 p-1 items-center justify-center group-data-[orientation=vertical]/timeline:-left-7',
                   {
                     'border border-blue-500': !(
-                      idx >= filteredTools.length - 1 && tool.result === '...'
+                      idx >= filteredTools.length - 1 &&
+                      tool.result === '...' &&
+                      sendLoading
                     ),
                   },
                 )}
@@ -78,7 +86,8 @@ const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
                       className={cn('rounded-full w-6 h-6', {
                         ' border-muted-foreground border-2 border-t-transparent animate-spin ':
                           idx >= filteredTools.length - 1 &&
-                          tool.result === '...',
+                          tool.result === '...' &&
+                          sendLoading,
                       })}
                     ></div>
                   </div>
