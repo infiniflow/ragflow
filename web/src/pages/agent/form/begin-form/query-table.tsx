@@ -90,7 +90,11 @@ export function QueryTable({ data = [], deleteRecord, showModal }: IProps) {
     {
       accessorKey: 'type',
       header: t('flow.type'),
-      cell: ({ row }) => <div>{row.getValue('type')}</div>,
+      cell: ({ row }) => (
+        <div>
+          {t(`flow.${(row.getValue('type')?.toString() || '').toLowerCase()}`)}
+        </div>
+      ),
     },
     {
       accessorKey: 'optional',
