@@ -176,6 +176,7 @@ export function useSetUploadResponseData() {
 export const useSendAgentMessage = (
   url?: string,
   addEventList?: (data: IEventList, messageId: string) => void,
+  beginParams?: any[],
 ) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -226,7 +227,9 @@ export const useSendAgentMessage = (
 
         params.query = message.content;
         // params.message_id = message.id;
-        params.inputs = transferInputsArrayToObject(query); // begin operator inputs
+        params.inputs = transferInputsArrayToObject(
+          beginParams ? beginParams : query,
+        ); // begin operator inputs
 
         params.files = uploadResponseList;
 
@@ -248,13 +251,14 @@ export const useSendAgentMessage = (
     },
     [
       agentId,
-      sessionId,
       send,
+      clearUploadResponseList,
       inputs,
+      beginParams,
       uploadResponseList,
+      sessionId,
       setValue,
       removeLatestMessage,
-      clearUploadResponseList,
     ],
   );
 

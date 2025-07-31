@@ -18,7 +18,6 @@ import {
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -37,10 +36,7 @@ import AgentCanvas from './canvas';
 import EmbedDialog from './embed-dialog';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
-import {
-  useGetBeginNodeDataInputs,
-  useGetBeginNodeDataQueryIsSafe,
-} from './hooks/use-get-begin-query';
+import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
@@ -69,7 +65,6 @@ export default function Agent() {
     showModal: showChatDrawer,
   } = useSetModalState();
   const { t } = useTranslation();
-  const { data: userInfo } = useFetchUserInfo();
 
   // const openDocument = useOpenDocument();
   const {
@@ -99,7 +94,6 @@ export default function Agent() {
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
   const { navigateToAgentLogs } = useNavigatePage();
-  const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
 
   return (
     <section className="h-full">
@@ -165,13 +159,7 @@ export default function Agent() {
               {location.hostname !== 'demo.ragflow.io' && (
                 <>
                   <DropdownMenuSeparator />
-                  <AgentDropdownMenuItem
-                    onClick={showEmbedModal}
-                    disabled={
-                      !isBeginNodeDataQuerySafe ||
-                      userInfo.nickname !== agentDetail.nickname
-                    }
-                  >
+                  <AgentDropdownMenuItem onClick={showEmbedModal}>
                     <ScreenShare />
                     {t('common.embedIntoSite')}
                   </AgentDropdownMenuItem>

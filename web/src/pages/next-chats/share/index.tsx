@@ -3,10 +3,9 @@ import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
+import { MessageType } from '@/constants/chat';
 import {
-  useFetchAgentAvatar,
+  useFetchExternalAgentInputs,
   useUploadCanvasFileWithProgress,
 } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
@@ -14,11 +13,13 @@ import i18n from '@/locales/config';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import React, { forwardRef, useCallback, useMemo } from 'react';
+import { isEmpty } from 'lodash';
+import React, { forwardRef, useCallback } from 'react';
 import {
   useGetSharedChatSearchParams,
   useSendNextSharedMessage,
 } from '../hooks/use-send-shared-message';
+import { ParameterDialog } from './parameter-dialog';
 
 const ChatContainer = () => {
   const {
@@ -48,8 +49,13 @@ const ChatContainer = () => {
     stopOutputMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
+    parameterDialogVisible,
+    hideParameterDialog,
+    showParameterDialog,
+    ok,
   } = useSendNextSharedMessage(addEventList);
 
+  const { data } = useFetchExternalAgentInputs();
   const sendDisabled = useSendButtonDisabled(value);
 
   // useEffect(() => {
@@ -63,12 +69,6 @@ const ChatContainer = () => {
   //     }
   //   }
   // }, [derivedMessages, setCurrentMessageId]);
-
-  const useFetchAvatar = useMemo(() => {
-    return from === SharedFrom.Agent
-      ? useFetchAgentAvatar
-      : useFetchNextConversationSSE;
-  }, [from]);
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
@@ -84,12 +84,16 @@ const ChatContainer = () => {
       i18n.changeLanguage(locale);
     }
   }, [locale, visibleAvatar]);
-  const { data: avatarData } = useFetchAvatar();
+
+  React.useEffect(() => {
+    if (!isEmpty(data)) {
+      showParameterDialog();
+    }
+  }, [data, showParameterDialog]);
 
   if (!conversationId) {
     return <div>empty</div>;
   }
-
   return (
     <section className="h-[100vh] flex justify-center items-center">
       <div className=" w-[80vw]">
@@ -108,7 +112,6 @@ const ChatContainer = () => {
                     }
                     setCurrentMessageId={setCurrentMessageId}
                     key={buildMessageUuidWithRole(message)}
-                    avatarDialog={avatarData.avatar}
                     item={message}
                     nickname="You"
                     reference={findReferenceByMessageId(message.id)}
@@ -155,6 +158,12 @@ const ChatContainer = () => {
           documentId={documentId}
           chunk={selectedChunk}
         ></PdfDrawer>
+      )}
+      {parameterDialogVisible && (
+        <ParameterDialog
+          hideModal={hideParameterDialog}
+          ok={ok}
+        ></ParameterDialog>
       )}
     </section>
   );

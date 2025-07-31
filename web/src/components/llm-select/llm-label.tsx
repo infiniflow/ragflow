@@ -20,7 +20,7 @@ const LLMLabel = ({ value }: IProps) => {
         height={20}
         size={'small'}
       />
-      {llmName}
+      <span className="flex-1 truncate"> {llmName}</span>
     </div>
   );
 };

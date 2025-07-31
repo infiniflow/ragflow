@@ -24,6 +24,7 @@ const {
   fetchCanvas,
   fetchAgentAvatar,
   fetchAgentLogs,
+  fetchExternalAgentInputs,
 } = api;
 
 const methods = {
@@ -105,6 +106,10 @@ const methods = {
   },
   fetchAgentLogs: {
     url: fetchAgentLogs,
+    method: 'get',
+  },
+  fetchExternalAgentInputs: {
+    url: fetchExternalAgentInputs,
     method: 'get',
   },
 } as const;
