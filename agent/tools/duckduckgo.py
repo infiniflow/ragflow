@@ -112,3 +112,9 @@ class DuckDuckGo(ToolBase, ABC):
             return f"DuckDuckGo error: {last_e}"
 
         assert False, self.output()
+
+    def thoughts(self) -> str:
+        return """
+Keywords: {} 
+Looking for the most relevant articles.
+                """.format(self.get_input().get("query", "-_-!"))

@@ -240,3 +240,7 @@ class LLM(ComponentBase):
         summ = tool_call_summary(self.chat_mdl, func_name, params, results)
         logging.info(f"[MEMORY]: {summ}")
         self._canvas.add_memory(user, assist, summ)
+
+    def thoughts(self) -> str:
+        _, msg = self._prepare_prompt_variables()
+        return f"I’m thinking and planning the next move, starting from the prompt:<br/>“{msg[-1]['content']}”<span class=\"collapse\"> (tap to see full text)</span>"

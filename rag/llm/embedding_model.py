@@ -930,12 +930,20 @@ class GiteeEmbed(SILICONFLOWEmbed):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
-
-
+        
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 
     def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai"):
         if not base_url:
             base_url = "https://api.deepinfra.com/v1/openai"
+        super().__init__(key, model_name, base_url)
+
+
+class Ai302Embed(Base):
+    _FACTORY_NAME = "302.AI"
+
+    def __init__(self, key, model_name, base_url="https://api.302.ai/v1/embeddings"):
+        if not base_url:
+            base_url = "https://api.302.ai/v1/embeddings"
         super().__init__(key, model_name, base_url)
