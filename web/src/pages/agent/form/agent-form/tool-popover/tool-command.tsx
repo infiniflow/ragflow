@@ -23,7 +23,7 @@ const Menus = [
       Operator.TavilySearch,
       Operator.TavilyExtract,
       Operator.Google,
-      Operator.Bing,
+      // Operator.Bing,
       Operator.DuckDuckGo,
       Operator.Wikipedia,
       Operator.YahooFinance,
