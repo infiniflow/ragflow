@@ -128,6 +128,5 @@ class ExeSQL(ToolBase, ABC):
         self.set_output("formalized_content", "\n\n".join(formalized_content))
         return self.output("formalized_content")
 
-
-    def debug(self, **kwargs):
-        return self._run([], **kwargs)
+    def thoughts(self) -> str:
+        return "Query sent—waiting for the data."

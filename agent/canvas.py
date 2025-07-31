@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import importlib
 import json
 import logging
 import time
@@ -272,6 +273,7 @@ class Canvas:
                     "component_id": self.path[i],
                     "component_name": self.get_component_name(self.path[i]),
                     "component_type": self.get_component_type(self.path[i]),
+                    "thoughts": self.get_component_thoughts(self.path[i])
                 })
             _run_batch(idx, to)
 
@@ -522,4 +524,7 @@ class Canvas:
 
     def get_memory(self) -> list[Tuple]:
         return self.memory
+
+    def get_component_thoughts(self, cpn_id) -> str:
+        return self.components.get(cpn_id)["obj"].thoughts()
 

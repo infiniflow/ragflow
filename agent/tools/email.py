@@ -205,3 +205,11 @@ class Email(ToolBase, ABC):
             return False
 
         assert False, self.output()
+
+    def thoughts(self) -> str:
+        inputs = self.get_input()
+        return """
+To: {}
+Subject: {}
+Your email is on its way—sit tight!
+""".format(inputs.get("to_email", "-_-!"), inputs.get("subject", "-_-!"))

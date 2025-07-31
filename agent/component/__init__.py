@@ -48,10 +48,10 @@ __all__ = list(__all_classes.keys()) + ["__all_classes"]
 
 del _package_path, _import_submodules, _extract_classes_from_module
 
+
 def component_class(class_name):
     m = importlib.import_module("agent.component")
     try:
         return getattr(m, class_name)
     except Exception:
         return getattr(importlib.import_module("agent.tools"), class_name)
-
