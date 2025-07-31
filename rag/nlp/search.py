@@ -384,7 +384,7 @@ class Dealer:
         zero_vector = [0.0] * dim
         sim_np = np.array(sim)
         if doc_ids:
-            similarity_threshold = 0 
+            similarity_threshold = 0
         filtered_count = (sim_np >= similarity_threshold).sum()    
         ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
@@ -403,7 +403,7 @@ class Dealer:
                     ranks["doc_aggs"][dnm]["count"] += 1
                     continue
                 break
-                
+
             position_int = chunk.get("position_int", [])
             d = {
                 "chunk_id": id,

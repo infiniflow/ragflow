@@ -177,7 +177,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   const FormSchema = useCreateCategorizeFormSchema();
 
   const deleteCategorizeCaseEdges = useGraphStore(
-    (state) => state.deleteCategorizeCaseEdges,
+    (state) => state.deleteEdgesBySourceAndSourceHandle,
   );
   const form = useFormContext<z.infer<typeof FormSchema>>();
   const { t } = useTranslate('flow');
