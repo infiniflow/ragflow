@@ -251,12 +251,12 @@ export const useSendAgentMessage = (
     },
     [
       agentId,
+      sessionId,
       send,
       clearUploadResponseList,
       inputs,
       beginParams,
       uploadResponseList,
-      sessionId,
       setValue,
       removeLatestMessage,
     ],
