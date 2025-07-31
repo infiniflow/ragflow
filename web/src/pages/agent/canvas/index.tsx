@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
 import { AgentBackground } from '../components/background';
@@ -132,6 +132,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
   });
+  const [lastSendLoading, setLastSendLoading] = useState(false);
 
   const { handleBeforeDelete } = useBeforeDelete();
 
@@ -152,7 +153,13 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       clearEventList();
     }
   }, [chatVisible, clearEventList]);
-
+  const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
+    if (messageId === currentMessageId) {
+      setLastSendLoading(loading);
+    } else {
+      setLastSendLoading(false);
+    }
+  };
   return (
     <div className={styles.canvasWrapper}>
       <svg
@@ -243,7 +250,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         </AgentInstanceContext.Provider>
       )}
       {chatVisible && (
-        <AgentChatContext.Provider value={{ showLogSheet }}>
+        <AgentChatContext.Provider
+          value={{ showLogSheet, setLastSendLoadingFunc }}
+        >
           <AgentChatLogContext.Provider
             value={{ addEventList, setCurrentMessageId }}
           >
@@ -264,6 +273,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
             currentEventListWithoutMessageById
           }
           currentMessageId={currentMessageId}
+          sendLoading={lastSendLoading}
         ></LogSheet>
       )}
     </div>

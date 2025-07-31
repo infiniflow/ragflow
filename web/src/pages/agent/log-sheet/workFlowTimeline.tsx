@@ -20,6 +20,7 @@ import {
 } from '@/hooks/use-send-message';
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { get } from 'lodash';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import JsonView from 'react18-json-view';
@@ -30,7 +31,7 @@ import ToolTimelineItem from './toolTimelineItem';
 type LogFlowTimelineProps = Pick<
   ReturnType<typeof useCacheChatLog>,
   'currentEventListWithoutMessage' | 'currentMessageId'
-> & { canvasId?: string };
+> & { canvasId?: string; sendLoading: boolean };
 export function JsonViewer({
   data,
   title,
@@ -67,6 +68,7 @@ export const WorkFlowTimeline = ({
   currentEventListWithoutMessage,
   currentMessageId,
   canvasId,
+  sendLoading,
 }: LogFlowTimelineProps) => {
   // const getNode = useGraphStore((state) => state.getNode);
   const [isStopFetchTrace, setISStopFetchTrace] = useState(false);
@@ -79,31 +81,20 @@ export const WorkFlowTimeline = ({
   useEffect(() => {
     setMessageId(currentMessageId);
   }, [currentMessageId, setMessageId]);
-  // const getNodeName = useCallback(
-  //   (nodeId: string) => {
-  //     if ('begin' === nodeId) return t('flow.begin');
-  //     return getNode(nodeId)?.data.name;
-  //   },
-  //   [getNode],
-  // );
-  // const getNodeById = useCallback(
-  //   (nodeId: string) => {
-  //     const data = currentEventListWithoutMessage
-  //       .map((x) => x.data)
-  //       .filter((x) => x.component_id === nodeId);
-  //     if ('begin' === nodeId) return t('flow.begin');
-  //     if (data && data.length) {
-  //       return data[0];
-  //     }
-  //     return {};
-  //   },
-  //   [currentEventListWithoutMessage],
-  // );
+  const getNodeName = (nodeId: string) => {
+    if ('begin' === nodeId) return t('flow.begin');
+    return nodeId;
+  };
+
+  useEffect(() => {
+    setISStopFetchTrace(!sendLoading);
+  }, [sendLoading]);
+
   const startedNodeList = useMemo(() => {
     const finish = currentEventListWithoutMessage?.some(
       (item) => item.event === MessageEventType.WorkflowFinished,
     );
-    setISStopFetchTrace(finish);
+    setISStopFetchTrace(finish || !sendLoading);
     const duplicateList = currentEventListWithoutMessage?.filter(
       (x) => x.event === MessageEventType.NodeStarted,
     ) as INodeEvent[];
@@ -115,7 +106,7 @@ export const WorkFlowTimeline = ({
       }
       return pre;
     }, []);
-  }, [currentEventListWithoutMessage]);
+  }, [currentEventListWithoutMessage, sendLoading]);
 
   const hasTrace = useCallback(
     (componentId: string) => {
@@ -198,7 +189,8 @@ export const WorkFlowTimeline = ({
                       <div
                         className={cn('rounded-full w-6 h-6', {
                           ' border-muted-foreground border-2 border-t-transparent animate-spin ':
-                            !finishNodeIds.includes(x.data.component_id),
+                            !finishNodeIds.includes(x.data.component_id) &&
+                            sendLoading,
                         })}
                       ></div>
                     </div>
@@ -212,7 +204,7 @@ export const WorkFlowTimeline = ({
                 </TimelineIndicator>
               </TimelineHeader>
               <TimelineContent className="text-foreground  rounded-lg border  mb-5">
-                <section key={idx}>
+                <section key={'content_' + idx}>
                   <Accordion
                     type="single"
                     collapsible
@@ -221,7 +213,7 @@ export const WorkFlowTimeline = ({
                     <AccordionItem value={idx.toString()}>
                       <AccordionTrigger>
                         <div className="flex gap-2 items-center">
-                          <span>{x.data?.component_name}</span>
+                          <span>{getNodeName(x.data?.component_name)}</span>
                           <span className="text-text-sub-title text-xs">
                             {x.data.elapsed_time?.toString().slice(0, 6)}
                           </span>
@@ -253,7 +245,9 @@ export const WorkFlowTimeline = ({
             </TimelineItem>
             {hasTrace(x.data.component_id) && (
               <ToolTimelineItem
+                key={'tool_' + idx}
                 tools={filterTrace(x.data.component_id)}
+                sendLoading={sendLoading}
               ></ToolTimelineItem>
             )}
           </>

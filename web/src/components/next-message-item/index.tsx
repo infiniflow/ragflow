@@ -7,6 +7,7 @@ import {
   PropsWithChildren,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useState,
@@ -15,6 +16,7 @@ import {
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { INodeEvent } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
+import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workFlowTimeline';
 import { IMessage } from '@/pages/chat/interface';
 import { isEmpty } from 'lodash';
@@ -74,6 +76,14 @@ function MessageItem({
   const { visible, hideModal, showModal } = useSetModalState();
   const [clickedDocumentId, setClickedDocumentId] = useState('');
 
+  const { setLastSendLoadingFunc } = useContext(AgentChatContext);
+
+  useEffect(() => {
+    if (typeof setLastSendLoadingFunc === 'function') {
+      setLastSendLoadingFunc(loading, item.id);
+    }
+  }, [loading, setLastSendLoadingFunc, item.id]);
+
   const referenceDocuments = useMemo(() => {
     const docs = reference?.doc_aggs ?? {};
 
@@ -115,7 +125,6 @@ function MessageItem({
             ) : (
               <AssistantIcon />
             ))}
-
           <section className="flex-col gap-2 flex-1">
             <div className="space-x-1">
               {isAssistant ? (
@@ -177,6 +186,7 @@ function MessageItem({
                   )}
                   currentMessageId={item.id}
                   canvasId={conversationId}
+                  sendLoading={loading}
                 />
               </div>
             )}
