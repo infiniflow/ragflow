@@ -1,4 +1,5 @@
 import { IconFont } from '@/components/icon-font';
+import SvgIcon from '@/components/svg-icon';
 import { cn } from '@/lib/utils';
 import { CirclePlay } from 'lucide-react';
 import { Operator } from './constant';
@@ -10,8 +11,6 @@ interface IProps {
 
 export const OperatorIconMap = {
   [Operator.Retrieval]: 'KR',
-  // [Operator.Generate]: MergeCellsOutlined,
-  // [Operator.Answer]: SendOutlined,
   [Operator.Begin]: CirclePlay,
   [Operator.Categorize]: 'a-QuestionClassification',
   [Operator.Message]: 'reply',
@@ -22,35 +21,25 @@ export const OperatorIconMap = {
   [Operator.UserFillUp]: 'await',
   [Operator.StringTransform]: 'a-textprocessing',
   [Operator.Note]: 'notebook-pen',
-  // [Operator.Relevant]: BranchesOutlined,
-  // [Operator.RewriteQuestion]: FormOutlined,
-  // [Operator.KeywordExtract]: KeywordIcon,
-  // [Operator.DuckDuckGo]: DuckIcon,
-  // [Operator.Baidu]: BaiduIcon,
-  // [Operator.Wikipedia]: WikipediaIcon,
-  // [Operator.PubMed]: PubMedIcon,
-  // [Operator.ArXiv]: ArXivIcon,
-  // [Operator.Google]: GoogleIcon,
-  // [Operator.Bing]: BingIcon,
-  // [Operator.GoogleScholar]: GoogleScholarIcon,
-  // [Operator.DeepL]: DeepLIcon,
-  // [Operator.GitHub]: GitHubIcon,
-  // [Operator.BaiduFanyi]: baiduFanyiIcon,
-  // [Operator.QWeather]: QWeatherIcon,
-  // [Operator.ExeSQL]: ExeSqlIcon,
-  // [Operator.WenCai]: WenCaiIcon,
-  // [Operator.AkShare]: AkShareIcon,
-  // [Operator.YahooFinance]: YahooFinanceIcon,
-  // [Operator.Jin10]: Jin10Icon,
-  // [Operator.Concentrator]: ConcentratorIcon,
-  // [Operator.TuShare]: TuShareIcon,
-  // [Operator.Note]: NoteIcon,
-  // [Operator.Crawler]: CrawlerIcon,
-  // [Operator.Invoke]: InvokeIcon,
-  // [Operator.Template]: TemplateIcon,
-  // [Operator.Email]: EmailIcon,
-  // [Operator.IterationStart]: CirclePower,
-  // [Operator.WaitingDialogue]: MessageSquareMore,
+  [Operator.ExeSQL]: 'executesql-0',
+  [Operator.Invoke]: 'httprequest-0',
+  [Operator.Email]: 'sendemail-0',
+};
+
+const SVGIconMap = {
+  [Operator.ArXiv]: 'arxiv',
+  [Operator.GitHub]: 'github',
+  [Operator.Bing]: 'bing',
+  [Operator.DuckDuckGo]: 'duck',
+  [Operator.Google]: 'google',
+  [Operator.GoogleScholar]: 'google-scholar',
+  [Operator.PubMed]: 'pubmed',
+  [Operator.TavilyExtract]: 'tavily',
+  [Operator.TavilySearch]: 'tavily',
+  [Operator.Wikipedia]: 'wikipedia',
+  [Operator.YahooFinance]: 'yahoo-finance',
+  [Operator.WenCai]: 'wencai',
+  [Operator.Crawler]: 'crawler',
 };
 
 const Empty = () => {
@@ -60,10 +49,20 @@ const Empty = () => {
 const OperatorIcon = ({ name, className }: IProps) => {
   const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap] || Empty;
 
+  if (name in SVGIconMap) {
+    return (
+      <SvgIcon
+        name={SVGIconMap[name as keyof typeof SVGIconMap]}
+        width={20}
+        className={className}
+      ></SvgIcon>
+    );
+  }
+
   return typeof Icon === 'string' ? (
     <IconFont name={Icon} className={cn('size-5', className)}></IconFont>
   ) : (
-    <Icon className={cn('size-5', className)}> </Icon>
+    <Icon width={20} className={cn('size-5 fill-current', className)}></Icon>
   );
 };
 
