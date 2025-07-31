@@ -1311,6 +1311,12 @@ This delimiter is used to split the input text into several text pieces echo of 
       tag: 'Tag',
       tagPlaceholder: 'Please enter tag',
       descriptionPlaceholder: 'Please enter description',
+      line: 'Single-line text',
+      paragraph: 'Paragraph text',
+      options: 'Dropdown options',
+      file: 'File upload',
+      integer: 'Number',
+      boolean: 'Boolean',
     },
     llmTools: {
       bad_calculator: {

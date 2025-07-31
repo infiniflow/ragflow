@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
@@ -41,6 +42,7 @@ function ParameterForm({
   otherThanCurrentQuery,
   submit,
 }: ModalFormProps) {
+  const { t } = useTranslate('flow');
   const FormSchema = z.object({
     type: z.string(),
     key: z
@@ -84,7 +86,7 @@ function ParameterForm({
                 <Icon
                   className={`size-${cur === BeginQueryType.Options ? 4 : 5}`}
                 ></Icon>
-                {cur}
+                {t(cur.toLowerCase())}
               </div>
             ),
             value: cur,
