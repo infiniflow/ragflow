@@ -123,7 +123,7 @@ function BeginForm({ node }: INextOperatorForm) {
             )}
           />
         )}
-        {enablePrologue && (
+        {mode === AgentDialogueMode.Conversational && enablePrologue && (
           <FormField
             control={form.control}
             name={'prologue'}
@@ -175,7 +175,6 @@ function BeginForm({ node }: INextOperatorForm) {
             deleteRecord={handleDeleteRecord}
           ></QueryTable>
         </Collapse>
-
         {visible && (
           <ParameterDialog
             hideModal={hideModal}
