@@ -189,4 +189,5 @@ class CodeExec(ToolBase, ABC):
     def _encode_code(self, code: str) -> str:
         return base64.b64encode(code.encode("utf-8")).decode("utf-8")
 
-
+    def thoughts(self) -> str:
+        return "Running a short script to process data."

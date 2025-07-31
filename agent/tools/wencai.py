@@ -109,3 +109,6 @@ class WenCai(ToolBase, ABC):
             return f"WenCai error: {last_e}"
 
         assert False, self.output()
+
+    def thoughts(self) -> str:
+        return "Pulling live financial data for `{}`.".format(self.get_input().get("query", "-_-!"))

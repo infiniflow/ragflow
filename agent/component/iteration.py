@@ -53,6 +53,8 @@ class Iteration(ComponentBase, ABC):
         if not isinstance(arr, list):
             self.set_output("_ERROR", self._param.items_ref + " must be an array, but its type is "+str(type(arr)))
 
+    def thoughts(self) -> str:
+        return "Need to process {} items.".format(len(self._canvas.get_variable_value(self._param.items_ref)))
 
 
 
