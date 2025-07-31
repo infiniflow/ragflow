@@ -152,3 +152,8 @@ class Google(ToolBase, ABC):
 
         assert False, self.output()
 
+    def thoughts(self) -> str:
+        return """
+Keywords: {} 
+Looking for the most relevant articles.
+        """.format(self.get_input().get("query", "-_-!"))

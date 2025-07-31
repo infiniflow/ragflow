@@ -79,3 +79,5 @@ class IterationItem(ComponentBase, ABC):
     def end(self):
         return self._idx == -1
 
+    def thoughts(self) -> str:
+        return "Next turn..."

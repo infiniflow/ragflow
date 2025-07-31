@@ -44,3 +44,6 @@ class Begin(UserFillUp):
                 v = v.get("value")
             self.set_output(k, v)
             self.set_input_value(k, v)
+
+    def thoughts(self) -> str:
+        return "☕ Here we go..."
