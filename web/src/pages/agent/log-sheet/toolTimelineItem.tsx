@@ -19,7 +19,6 @@ import { JsonViewer } from './workFlowTimeline';
 const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
   if (!tools || tools.length === 0 || !Array.isArray(tools)) return null;
   const blackList = ['add_memory', 'gen_citations'];
-  const blackList = ['add_memory', 'gen_citations'];
   const filteredTools = tools.filter(
     (tool) => !blackList.includes(tool.tool_name),
   );
