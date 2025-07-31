@@ -18,6 +18,7 @@ import { Operator } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
 import { INextOperatorForm } from '../../interface';
+import OperatorIcon from '../../operator-icon';
 import useGraphStore from '../../store';
 import { filterDownstreamAgentNodeIds } from '../../utils/filter-downstream-nodes';
 import { ToolPopover } from './tool-popover';
@@ -109,7 +110,10 @@ export function AgentTools() {
       <ul className="space-y-2">
         {toolNames.map((x) => (
           <ToolCard key={x}>
-            {x}
+            <div className="flex gap-2 items-center">
+              <OperatorIcon name={x as Operator}></OperatorIcon>
+              {x}
+            </div>
             <ActionButton
               record={x}
               deleteRecord={deleteNodeTool(x)}
