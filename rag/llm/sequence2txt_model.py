@@ -208,7 +208,6 @@ class GiteeSeq2txt(Base):
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
-
 class DeepInfraSeq2txt(Base):
     _FACTORY_NAME = "DeepInfra"
 
