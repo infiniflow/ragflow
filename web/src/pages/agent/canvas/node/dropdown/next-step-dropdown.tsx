@@ -16,7 +16,7 @@ import { Operator } from '@/pages/agent/constant';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
 import OperatorIcon from '@/pages/agent/operator-icon';
 import { lowerFirst } from 'lodash';
-import { PropsWithChildren, createContext, useContext } from 'react';
+import { PropsWithChildren, createContext, memo, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type OperatorItemProps = { operators: Operator[] };
@@ -124,7 +124,7 @@ function AccordionOperators() {
   );
 }
 
-export function NextStepDropdown({
+export function InnerNextStepDropdown({
   children,
   hideModal,
 }: PropsWithChildren & IModalProps<any>) {
@@ -143,3 +143,5 @@ export function NextStepDropdown({
     </DropdownMenu>
   );
 }
+
+export const NextStepDropdown = memo(InnerNextStepDropdown);
