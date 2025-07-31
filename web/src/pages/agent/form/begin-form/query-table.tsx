@@ -53,7 +53,7 @@ export function QueryTable({ data = [], deleteRecord, showModal }: IProps) {
   const columns: ColumnDef<BeginQuery>[] = [
     {
       accessorKey: 'key',
-      header: 'key',
+      header: 'Key',
       meta: { cellClassName: 'max-w-30' },
       cell: ({ row }) => {
         const key: string = row.getValue('key');
@@ -90,7 +90,11 @@ export function QueryTable({ data = [], deleteRecord, showModal }: IProps) {
     {
       accessorKey: 'type',
       header: t('flow.type'),
-      cell: ({ row }) => <div>{row.getValue('type')}</div>,
+      cell: ({ row }) => (
+        <div>
+          {t(`flow.${(row.getValue('type')?.toString() || '').toLowerCase()}`)}
+        </div>
+      ),
     },
     {
       accessorKey: 'optional',
