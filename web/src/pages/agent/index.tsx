@@ -1,4 +1,5 @@
 import { PageHeader } from '@/components/page-header';
+import { useSwitchToDarkThemeOnMount } from '@/components/theme-provider';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -40,6 +41,7 @@ import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
+  useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
@@ -94,23 +96,31 @@ export default function Agent() {
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
   const { navigateToAgentLogs } = useNavigatePage();
+  const time = useWatchAgentChange(chatDrawerVisible);
+
+  useSwitchToDarkThemeOnMount();
 
   return (
     <section className="h-full">
       <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToAgentList}>
-                Agent
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{agentDetail.title}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+        <section>
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink onClick={navigateToAgentList}>
+                  Agent
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{agentDetail.title}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <div className="text-xs text-text-sub-title translate-y-3">
+            {t('flow.autosaved')} {time}
+          </div>
+        </section>
         <div className="flex items-center gap-5">
           <ButtonLoading
             variant={'secondary'}

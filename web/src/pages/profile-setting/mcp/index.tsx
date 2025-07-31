@@ -32,7 +32,7 @@ export default function McpServer() {
   );
 
   return (
-    <section className="p-4">
+    <section className="p-4 w-full">
       <div className="text-text-title text-2xl">MCP Servers</div>
       <section className="flex items-center justify-between pb-5">
         <div className="text-text-sub-title">
