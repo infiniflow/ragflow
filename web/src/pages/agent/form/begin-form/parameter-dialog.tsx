@@ -20,7 +20,7 @@ import { Switch } from '@/components/ui/switch';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
-import { useEffect, useMemo } from 'react';
+import { ChangeEvent, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -116,6 +116,13 @@ function ParameterForm({
     submit(values);
   }
 
+  const handleKeyChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const name = form.getValues().name || '';
+    form.setValue('key', e.target.value.trim());
+    if (!name) {
+      form.setValue('name', e.target.value.trim());
+    }
+  };
   return (
     <Form {...form}>
       <form
@@ -144,7 +151,7 @@ function ParameterForm({
             <FormItem>
               <FormLabel>Key</FormLabel>
               <FormControl>
-                <Input {...field} autoComplete="off" />
+                <Input {...field} autoComplete="off" onBlur={handleKeyChange} />
               </FormControl>
               <FormMessage />
             </FormItem>

@@ -897,12 +897,12 @@ export const NodeMap = {
 };
 
 export enum BeginQueryType {
-  Line = 'line',
-  Paragraph = 'paragraph',
-  Options = 'options',
-  File = 'file',
-  Integer = 'integer',
-  Boolean = 'boolean',
+  Line = 'Single-line text',
+  Paragraph = 'Paragraph text',
+  Options = 'Dropdown options',
+  File = 'File upload',
+  Integer = 'Number',
+  Boolean = 'Boolean',
 }
 
 export const BeginQueryTypeIconMap = {

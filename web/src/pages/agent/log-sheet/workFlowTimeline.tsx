@@ -20,6 +20,7 @@ import {
 } from '@/hooks/use-send-message';
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { get } from 'lodash';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import JsonView from 'react18-json-view';
@@ -79,13 +80,10 @@ export const WorkFlowTimeline = ({
   useEffect(() => {
     setMessageId(currentMessageId);
   }, [currentMessageId, setMessageId]);
-  // const getNodeName = useCallback(
-  //   (nodeId: string) => {
-  //     if ('begin' === nodeId) return t('flow.begin');
-  //     return getNode(nodeId)?.data.name;
-  //   },
-  //   [getNode],
-  // );
+  const getNodeName = (nodeId: string) => {
+    if ('begin' === nodeId) return t('flow.begin');
+    return nodeId;
+  };
   // const getNodeById = useCallback(
   //   (nodeId: string) => {
   //     const data = currentEventListWithoutMessage
@@ -212,7 +210,7 @@ export const WorkFlowTimeline = ({
                 </TimelineIndicator>
               </TimelineHeader>
               <TimelineContent className="text-foreground  rounded-lg border  mb-5">
-                <section key={idx}>
+                <section key={'content_' + idx}>
                   <Accordion
                     type="single"
                     collapsible
@@ -221,7 +219,7 @@ export const WorkFlowTimeline = ({
                     <AccordionItem value={idx.toString()}>
                       <AccordionTrigger>
                         <div className="flex gap-2 items-center">
-                          <span>{x.data?.component_name}</span>
+                          <span>{getNodeName(x.data?.component_name)}</span>
                           <span className="text-text-sub-title text-xs">
                             {x.data.elapsed_time?.toString().slice(0, 6)}
                           </span>
@@ -253,6 +251,7 @@ export const WorkFlowTimeline = ({
             </TimelineItem>
             {hasTrace(x.data.component_id) && (
               <ToolTimelineItem
+                key={'tool_' + idx}
                 tools={filterTrace(x.data.component_id)}
               ></ToolTimelineItem>
             )}

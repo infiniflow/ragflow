@@ -32,6 +32,15 @@ const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
       })
       .join(' ');
   };
+  const parentName = (str: string, separator: string = '-->') => {
+    if (!str) return '';
+    const strs = str.split(separator);
+    if (strs.length > 1) {
+      return strs[strs.length - 1];
+    } else {
+      return str;
+    }
+  };
   return (
     <>
       {filteredTools?.map((tool, idx) => {
@@ -93,7 +102,7 @@ const ToolTimelineItem = ({ tools }: { tools: Record<string, any>[] }) => {
                     <AccordionTrigger>
                       <div className="flex gap-2 items-center">
                         <span>
-                          {tool.path + ' '}
+                          {parentName(tool.path) + ' '}
                           {capitalizeWords(tool.tool_name, '_')}
                         </span>
                         <span className="text-text-sub-title text-xs">
