@@ -203,6 +203,13 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "Moonshot-Kimi-K2-Instruct",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-r1",
                     "tags": "LLM,CHAT,64K",
                     "max_tokens": 65792,
