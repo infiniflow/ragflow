@@ -58,7 +58,7 @@ function InnerToolNode({
             className="cursor-pointer"
             data-tool={x.component_name}
           >
-            <div className="flex gap-1 items-center">
+            <div className="flex gap-1 items-center pointer-events-none">
               <OperatorIcon name={x.component_name as Operator}></OperatorIcon>
               {x.component_name}
             </div>
