@@ -23,6 +23,7 @@ const buttonVariants = cva(
           'bg-colors-background-sentiment-solid-primary text-colors-text-persist-light hover:bg-colors-background-sentiment-solid-primary/80',
         icon: 'bg-colors-background-inverse-standard text-foreground hover:bg-colors-background-inverse-standard/80',
         dashed: 'border border-dashed border-input hover:bg-accent',
+        transparent: 'bg-transparent hover:bg-accent border',
       },
       size: {
         default: 'h-8 px-2.5 py-1.5 ',

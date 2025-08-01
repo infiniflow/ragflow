@@ -18,7 +18,6 @@ import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { IInputs } from '@/pages/agent/interface';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { isEmpty } from 'lodash';
 import { RefreshCcw } from 'lucide-react';
 import React, { forwardRef, useCallback, useState } from 'react';
 import {
@@ -96,7 +95,7 @@ const ChatContainer = () => {
   }, [inputsData, setAgentInfo]);
 
   React.useEffect(() => {
-    if (!isEmpty(inputsData)) {
+    if (inputsData && inputsData.inputs && inputsData.inputs.length) {
       showParameterDialog();
     }
   }, [inputsData, showParameterDialog]);
@@ -144,7 +143,9 @@ const ChatContainer = () => {
         </div>
         <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
           <div
-            className={cn('flex flex-1 flex-col overflow-auto m-auto w-5/6')}
+            className={cn(
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6',
+            )}
           >
             <div>
               {derivedMessages?.map((message, i) => {
@@ -165,6 +166,7 @@ const ChatContainer = () => {
                       sendLoading &&
                       derivedMessages?.length - 1 === i
                     }
+                    isShare={true}
                     avatarDialog={agentInfo.avatar}
                     agentName={agentInfo.title}
                     index={i}

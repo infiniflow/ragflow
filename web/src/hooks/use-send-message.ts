@@ -35,6 +35,7 @@ export interface INodeData {
   error: null | string;
   elapsed_time: number;
   created_at: number;
+  thoughts: string;
 }
 
 export interface IInputData {
