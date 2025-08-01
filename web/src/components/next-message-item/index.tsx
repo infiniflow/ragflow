@@ -79,9 +79,9 @@ function MessageItem({
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { visible, hideModal, showModal } = useSetModalState();
-  const [clickedDocumentId, setClickedDocumentId] = useState('');
-  const [showThing, setShowThinking] = useState(false);
+  const { visible, hideModal } = useSetModalState();
+  const [clickedDocumentId] = useState('');
+  const [showThinking, setShowThinking] = useState(false);
   const { setLastSendLoadingFunc } = useContext(AgentChatContext);
 
   useEffect(() => {
@@ -107,7 +107,7 @@ function MessageItem({
   }, [item.id, setCurrentMessageId]);
 
   const startedNodeList = useCallback(
-    (item) => {
+    (item: IMessage) => {
       const finish = currentEventListWithoutMessageById?.(item.id)?.some(
         (item) => item.event === MessageEventType.WorkflowFinished,
       );
@@ -159,7 +159,7 @@ function MessageItem({
                       />
                     </div>
                     Thinking
-                    {showThing ? <ChevronUp /> : <ChevronDown />}
+                    {showThinking ? <ChevronUp /> : <ChevronDown />}
                   </div>
                 </Button>
               )}
@@ -205,19 +205,21 @@ function MessageItem({
               </div>
             </div>
 
-            {isAssistant && currentEventListWithoutMessageById && showThing && (
-              <div className="mt-4 mb-4">
-                <WorkFlowTimeline
-                  currentEventListWithoutMessage={currentEventListWithoutMessageById(
-                    item.id,
-                  )}
-                  isShare={isShare}
-                  currentMessageId={item.id}
-                  canvasId={conversationId}
-                  sendLoading={loading}
-                />
-              </div>
-            )}
+            {isAssistant &&
+              currentEventListWithoutMessageById &&
+              showThinking && (
+                <div className="mt-4 mb-4">
+                  <WorkFlowTimeline
+                    currentEventListWithoutMessage={currentEventListWithoutMessageById(
+                      item.id,
+                    )}
+                    isShare={isShare}
+                    currentMessageId={item.id}
+                    canvasId={conversationId}
+                    sendLoading={loading}
+                  />
+                </div>
+              )}
             <div
               className={cn({
                 [theme === 'dark'
