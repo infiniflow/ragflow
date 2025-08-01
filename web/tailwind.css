@@ -239,3 +239,38 @@
     max-width: none;
   }
 }
+
+@layer utilities {
+  .scrollbar-auto {
+    /* hide scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+  }
+
+  .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.3);
+  }
+}

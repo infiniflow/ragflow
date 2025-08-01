@@ -14,16 +14,18 @@ import {
 } from 'react';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
-import { INodeEvent } from '@/hooks/use-send-message';
+import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workFlowTimeline';
 import { IMessage } from '@/pages/chat/interface';
 import { isEmpty } from 'lodash';
+import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import IndentedTreeModal from '../indented-tree/modal';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
+import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 import { ReferenceDocumentList } from './reference-document-list';
@@ -50,6 +52,7 @@ interface IProps
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
   showLog?: boolean;
+  isShare?: boolean;
 }
 
 function MessageItem({
@@ -71,13 +74,14 @@ function MessageItem({
   visibleAvatar = true,
   children,
   showLog,
+  isShare,
 }: IProps) {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { visible, hideModal, showModal } = useSetModalState();
-  const [clickedDocumentId, setClickedDocumentId] = useState('');
-
+  const { visible, hideModal } = useSetModalState();
+  const [clickedDocumentId] = useState('');
+  const [showThinking, setShowThinking] = useState(false);
   const { setLastSendLoadingFunc } = useContext(AgentChatContext);
 
   useEffect(() => {
@@ -101,6 +105,16 @@ function MessageItem({
       setCurrentMessageId(item.id);
     }
   }, [item.id, setCurrentMessageId]);
+
+  const startedNodeList = useCallback(
+    (item: IMessage) => {
+      const finish = currentEventListWithoutMessageById?.(item.id)?.some(
+        (item) => item.event === MessageEventType.WorkflowFinished,
+      );
+      return !finish && loading;
+    },
+    [currentEventListWithoutMessageById, loading],
+  );
   return (
     <div
       className={classNames(styles.messageItem, {
@@ -123,36 +137,89 @@ function MessageItem({
             (item.role === MessageType.User ? (
               <RAGFlowAvatar avatar={avatar ?? '/logo.svg'} />
             ) : avatarDialog || agentName ? (
-              <RAGFlowAvatar avatar={avatarDialog} name={agentName} isPerson />
+              <RAGFlowAvatar
+                avatar={avatarDialog as string}
+                name={agentName}
+                isPerson
+              />
             ) : (
               <AssistantIcon />
             ))}
           <section className="flex-col gap-2 flex-1">
-            <div className="space-x-1">
-              {isAssistant ? (
-                <AssistantGroupButton
-                  messageId={item.id}
-                  content={item.content}
-                  prompt={item.prompt}
-                  showLikeButton={showLikeButton}
-                  audioBinary={item.audio_binary}
-                  showLoudspeaker={showLoudspeaker}
-                  showLog={showLog}
-                ></AssistantGroupButton>
-              ) : (
-                <UserGroupButton
-                  content={item.content}
-                  messageId={item.id}
-                  removeMessageById={removeMessageById}
-                  regenerateMessage={
-                    regenerateMessage && handleRegenerateMessage
-                  }
-                  sendLoading={sendLoading}
-                ></UserGroupButton>
+            <div className="flex justify-between items-center">
+              {isShare && isAssistant && (
+                <Button
+                  variant={'transparent'}
+                  onClick={() => setShowThinking((think) => !think)}
+                >
+                  <div className="flex items-center gap-1">
+                    <div className="">
+                      <Atom
+                        className={startedNodeList(item) ? 'animate-spin' : ''}
+                      />
+                    </div>
+                    Thinking
+                    {showThinking ? <ChevronUp /> : <ChevronDown />}
+                  </div>
+                </Button>
               )}
+              <div className="space-x-1">
+                {isAssistant ? (
+                  <>
+                    {isShare && !sendLoading && !isEmpty(item.content) && (
+                      <AssistantGroupButton
+                        messageId={item.id}
+                        content={item.content}
+                        prompt={item.prompt}
+                        showLikeButton={showLikeButton}
+                        audioBinary={item.audio_binary}
+                        showLoudspeaker={showLoudspeaker}
+                        showLog={showLog}
+                      ></AssistantGroupButton>
+                    )}
+                    {!isShare && (
+                      <AssistantGroupButton
+                        messageId={item.id}
+                        content={item.content}
+                        prompt={item.prompt}
+                        showLikeButton={showLikeButton}
+                        audioBinary={item.audio_binary}
+                        showLoudspeaker={showLoudspeaker}
+                        showLog={showLog}
+                      ></AssistantGroupButton>
+                    )}
+                  </>
+                ) : (
+                  <UserGroupButton
+                    content={item.content}
+                    messageId={item.id}
+                    removeMessageById={removeMessageById}
+                    regenerateMessage={
+                      regenerateMessage && handleRegenerateMessage
+                    }
+                    sendLoading={sendLoading}
+                  ></UserGroupButton>
+                )}
 
-              {/* <b>{isAssistant ? '' : nickname}</b> */}
+                {/* <b>{isAssistant ? '' : nickname}</b> */}
+              </div>
             </div>
+
+            {isAssistant &&
+              currentEventListWithoutMessageById &&
+              showThinking && (
+                <div className="mt-4 mb-4">
+                  <WorkFlowTimeline
+                    currentEventListWithoutMessage={currentEventListWithoutMessageById(
+                      item.id,
+                    )}
+                    isShare={isShare}
+                    currentMessageId={item.id}
+                    canvasId={conversationId}
+                    sendLoading={loading}
+                  />
+                </div>
+              )}
             <div
               className={cn({
                 [theme === 'dark'
@@ -165,7 +232,7 @@ function MessageItem({
               {item.data ? (
                 children
               ) : sendLoading && isEmpty(item.content) ? (
-                'searching...'
+                <>{!isShare && 'running...'}</>
               ) : (
                 <MarkdownContent
                   loading={loading}
@@ -180,18 +247,7 @@ function MessageItem({
                 list={referenceDocuments}
               ></ReferenceDocumentList>
             )}
-            {isAssistant && currentEventListWithoutMessageById && (
-              <div className="mt-4">
-                <WorkFlowTimeline
-                  currentEventListWithoutMessage={currentEventListWithoutMessageById(
-                    item.id,
-                  )}
-                  currentMessageId={item.id}
-                  canvasId={conversationId}
-                  sendLoading={loading}
-                />
-              </div>
-            )}
+
             {isUser && (
               <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
             )}
