@@ -22,6 +22,8 @@ from typing import Any
 import json_repair
 from copy import deepcopy
 from functools import partial
+
+from api.db import LLMType
 from api.db.services.llm_service import LLMBundle, TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
@@ -118,6 +120,12 @@ class LLM(ComponentBase):
             if not self.imgs:
                 self.imgs = []
             self.imgs = [img for img in self.imgs if img[:len("data:image/")] == "data:image/"]
+            if self.imgs and TenantLLMService.llm_id2llm_type(self._param.llm_id) == LLMType.CHAT.value:
+                self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value,
+                                          self._param.llm_id, max_retries=self._param.max_retries,
+                                          retry_interval=self._param.delay_after_error
+                                          )
+
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
