@@ -44,6 +44,7 @@ interface IProps
   nickname?: string;
   avatar?: string;
   avatarDialog?: string | null;
+  agentName?: string;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
   index: number;
   showLikeButton?: boolean;
@@ -60,6 +61,7 @@ function MessageItem({
   loading = false,
   avatar,
   avatarDialog,
+  agentName,
   sendLoading = false,
   clickDocumentButton,
   removeMessageById,
@@ -120,8 +122,8 @@ function MessageItem({
           {visibleAvatar &&
             (item.role === MessageType.User ? (
               <RAGFlowAvatar avatar={avatar ?? '/logo.svg'} />
-            ) : avatarDialog ? (
-              <RAGFlowAvatar avatar={avatarDialog} />
+            ) : avatarDialog || agentName ? (
+              <RAGFlowAvatar avatar={avatarDialog} name={agentName} isPerson />
             ) : (
               <AssistantIcon />
             ))}
