@@ -47,13 +47,13 @@ function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
 
   return (
     <NodeWrapper
-      className="p-0  w-full h-full flex flex-col rounded-md "
+      className="p-0  w-full h-full flex flex-col"
       selected={selected}
     >
       <NodeResizeControl minWidth={190} minHeight={128} style={controlStyle}>
         <ResizeIcon />
       </NodeResizeControl>
-      <section className="px-1 py-2 flex gap-2 bg-background-highlight items-center note-drag-handle rounded-s-md">
+      <section className="p-2 flex gap-2 bg-background-note items-center note-drag-handle rounded-t">
         <NotebookPen className="size-4" />
         <Form {...nameForm}>
           <form className="flex-1">
@@ -67,6 +67,7 @@ function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
                       placeholder={t('flow.notePlaceholder')}
                       {...field}
                       type="text"
+                      className="bg-transparent border-none focus-visible:outline focus-visible:outline-text-sub-title"
                     />
                   </FormControl>
                   <FormMessage />
@@ -86,7 +87,7 @@ function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
                 <FormControl>
                   <Textarea
                     placeholder={t('flow.notePlaceholder')}
-                    className="resize-none rounded-none p-1 h-full overflow-auto bg-background-header-bar focus-visible:ring-0 border-none"
+                    className="resize-none rounded-none p-1 h-full overflow-auto bg-transparent focus-visible:ring-0 border-none"
                     {...field}
                   />
                 </FormControl>

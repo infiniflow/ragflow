@@ -71,7 +71,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   }
 
   return typeof Icon === 'string' ? (
-    <IconFont name={Icon} className={cn('size-5', className)}></IconFont>
+    <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
   ) : (
     <SvgIcon className={cn('size-5 fill-current', className)}></SvgIcon>
   );

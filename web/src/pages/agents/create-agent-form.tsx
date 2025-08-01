@@ -66,7 +66,7 @@ export function CreateAgentForm({ hideModal, onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
-        <FormField
+        {/* <FormField
           control={form.control}
           name="tag"
           render={({ field }) => (
@@ -99,7 +99,7 @@ export function CreateAgentForm({ hideModal, onOk }: IModalProps<any>) {
               <FormMessage />
             </FormItem>
           )}
-        />
+        /> */}
       </form>
     </Form>
   );

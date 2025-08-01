@@ -2,11 +2,11 @@ export function ResizeIcon() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width="20"
-      height="20"
+      width="14"
+      height="14"
       viewBox="0 0 24 24"
       strokeWidth="2"
-      stroke="#5025f9"
+      stroke="rgba(76, 164, 231, 1)"
       fill="none"
       strokeLinecap="round"
       strokeLinejoin="round"

@@ -932,6 +932,7 @@ export const NoDebugOperatorsList = [
   Operator.Switch,
   Operator.Iteration,
   Operator.UserFillUp,
+  Operator.IterationStart,
 ];
 
 export enum NodeHandleId {

@@ -1251,6 +1251,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       createAgent: 'Create Agent',
       stringTransform: '文本处理',
       userFillUp: '等待输入',
+      userFillUpDescription: `此组件会暂停当前的流程并等待用户发送消息，接收到消息之后再进行之后的流程。`,
+
       codeExec: '代码',
       tavilySearch: 'Tavily Search',
       tavilySearchDescription: '通过 Tavily 服务搜索结果',
