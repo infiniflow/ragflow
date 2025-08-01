@@ -35,21 +35,21 @@ cd ragflow/
 
 ### Install Python dependencies
 
-1. Install uv:
+1. Install uv, if your system does not have it already:
    
    ```bash
    pipx install uv
    ```
 
-2. Install Python dependencies:
+2. Install RAGFlow dependencies:
    - slim:
-   ```bash
-   uv sync --python 3.10 # install RAGFlow dependent python modules
-   ```
+      ```bash
+      uv sync --python 3.10
+      ```
    - full:
-   ```bash
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
-   ```
+      ```bash
+      uv sync --python 3.10 --all-extras
+      ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
 ### Launch third-party services
@@ -60,22 +60,27 @@ The following command launches the 'base' services (MinIO, Elasticsearch, Redis,
 docker compose -f docker/docker-compose-base.yml up -d
 ```
 
-### Update `host` and `port` Settings for Third-party Services
+### Update `hosts` file to resolve third-party services' addresses
 
-1. Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml.template** to `127.0.0.1`:
+Add the following line to `/etc/hosts` to resolve all hosts specified in **conf/service_conf.yaml** to `127.0.0.1`:
 
-   ```
-   127.0.0.1       es01 infinity mysql minio redis
-   ```
-
-2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+```
+127.0.0.1       es01 infinity mysql minio redis
+```
 
 ### Launch the RAGFlow backend service
 
-1. Comment out the `nginx` line in **docker/entrypoint.sh**.
+1. Install jemalloc, if your system does not have it already:
 
-   ```
-   # /usr/sbin/nginx
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+
+   # centos
+   sudo yum install jemalloc
+
+   # homebrew (macos)
+   brew install jemalloc
    ```
 
 2. Activate the Python virtual environment:
@@ -85,7 +90,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    export PYTHONPATH=$(pwd)
    ```
 
-3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
+3. **Optional:** If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
  
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
@@ -93,7 +98,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
    
-5. Run the **entrypoint.sh** script to launch the backend service:
+5. Run the RAGFlow backend service:
 
    ```shell
    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
@@ -112,13 +117,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
-
-   ```bash
-   vim .umirc.ts
-   ```
-
-3. Start up the RAGFlow frontend service:
+2. Start up the RAGFlow frontend service:
 
    ```bash
    npm run dev 
