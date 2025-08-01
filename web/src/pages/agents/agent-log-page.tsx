@@ -147,7 +147,7 @@ const AgentLogPage: React.FC = () => {
     setPagination((pre) => {
       return {
         ...pre,
-        current: current ?? pre.current,
+        current: current ?? pre.pageSize ? 1 : pre.current,
         pageSize: pageSize ?? pre.pageSize,
       };
     });
@@ -196,8 +196,10 @@ const AgentLogPage: React.FC = () => {
   const [openModal, setOpenModal] = useState(false);
   const [modalData, setModalData] = useState<IAgentLogResponse>();
   const showLogDetail = (item: IAgentLogResponse) => {
-    setModalData(item);
-    setOpenModal(true);
+    if (item?.round) {
+      setModalData(item);
+      setOpenModal(true);
+    }
   };
 
   return (

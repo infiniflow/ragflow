@@ -25,21 +25,25 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
   const { data: canvasInfo } = useFetchAgent();
 
   const shortMessage = useMemo(() => {
-    const content = derivedMessages[0]?.content || '';
+    if (derivedMessages?.length) {
+      const content = derivedMessages[0]?.content || '';
 
-    const chineseCharCount = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
-    const totalLength = content.length;
+      const chineseCharCount = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
+      const totalLength = content.length;
 
-    if (chineseCharCount > 0) {
-      if (totalLength > 15) {
-        return content.substring(0, 15) + '...';
+      if (chineseCharCount > 0) {
+        if (totalLength > 15) {
+          return content.substring(0, 15) + '...';
+        }
+      } else {
+        if (totalLength > 30) {
+          return content.substring(0, 30) + '...';
+        }
       }
+      return content;
     } else {
-      if (totalLength > 30) {
-        return content.substring(0, 30) + '...';
-      }
+      return '';
     }
-    return content;
   }, [derivedMessages]);
 
   return (
@@ -52,7 +56,7 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
       className="!w-[900px]"
     >
       <div className="flex items-start mb-4 flex-col gap-4 justify-start">
-        <div>
+        <div className="w-full">
           {derivedMessages?.map((message, i) => {
             return (
               <MessageItem
