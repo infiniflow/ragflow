@@ -5,7 +5,7 @@ import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { IAgentLogMessage } from '@/interfaces/database/agent';
 import { IReferenceObject, Message } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { IMessage } from '../chat/interface';
 
 interface CustomModalProps {
@@ -23,13 +23,32 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
 }) => {
   const { data: userInfo } = useFetchUserInfo();
   const { data: canvasInfo } = useFetchAgent();
+
+  const shortMessage = useMemo(() => {
+    const content = derivedMessages[0]?.content || '';
+
+    const chineseCharCount = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const totalLength = content.length;
+
+    if (chineseCharCount > 0) {
+      if (totalLength > 15) {
+        return content.substring(0, 15) + '...';
+      }
+    } else {
+      if (totalLength > 30) {
+        return content.substring(0, 30) + '...';
+      }
+    }
+    return content;
+  }, [derivedMessages]);
+
   return (
     <Modal
       open={isOpen}
       onCancel={onClose}
       showfooter={false}
       footer={null}
-      title={derivedMessages?.length ? derivedMessages[0]?.content : ''}
+      title={shortMessage || ''}
       className="!w-[900px]"
     >
       <div className="flex items-start mb-4 flex-col gap-4 justify-start">
