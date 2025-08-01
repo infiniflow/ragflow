@@ -15,7 +15,7 @@
 #
 import logging
 import json
-import os
+import base64
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
@@ -24,7 +24,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from api.utils.file_utils import get_project_base_directory
+from api.utils.base64_image import test_image_base64
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 
 
@@ -256,10 +256,10 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            with open(os.path.join(get_project_base_directory(), "web/src/assets/yay.jpg"), "rb") as f:
-                m, tc = mdl.describe(f.read())
-                if not m and not tc:
-                    raise Exception(m)
+            image_data = base64.b64decode(test_image_base64)
+            m, tc = mdl.describe(image_data)
+            if not m and not tc:
+                raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
@@ -312,21 +312,53 @@ def delete_factory():
 @login_required
 def my_llms():
     try:
-        res = {}
-        for o in TenantLLMService.get_my_llms(current_user.id):
-            if o["llm_factory"] not in res:
-                res[o["llm_factory"]] = {
-                    "tags": o["tags"],
-                    "llm": []
-                }
-            res[o["llm_factory"]]["llm"].append({
-                "type": o["model_type"],
-                "name": o["llm_name"],
-                "used_token": o["used_tokens"]
-            })
+        include_details = request.args.get('include_details', 'false').lower() == 'true'
+        
+        if include_details:
+            res = {}
+            objs = TenantLLMService.query(tenant_id=current_user.id)
+            factories = LLMFactoriesService.query(status=StatusEnum.VALID.value)
+            
+            for o in objs:
+                o_dict = o.to_dict()
+                factory_tags = None
+                for f in factories:
+                    if f.name == o_dict["llm_factory"]:
+                        factory_tags = f.tags
+                        break
+                        
+                if o_dict["llm_factory"] not in res:
+                    res[o_dict["llm_factory"]] = {
+                        "tags": factory_tags,
+                        "llm": []
+                    }
+                
+                res[o_dict["llm_factory"]]["llm"].append({
+                    "type": o_dict["model_type"],
+                    "name": o_dict["llm_name"],
+                    "used_token": o_dict["used_tokens"],
+                    "api_base": o_dict["api_base"] or "",
+                    "max_tokens": o_dict["max_tokens"] or 8192
+                })
+        else:
+            res = {}
+            for o in TenantLLMService.get_my_llms(current_user.id):
+                if o["llm_factory"] not in res:
+                    res[o["llm_factory"]] = {
+                        "tags": o["tags"],
+                        "llm": []
+                    }
+                res[o["llm_factory"]]["llm"].append({
+                    "type": o["model_type"],
+                    "name": o["llm_name"],
+                    "used_token": o["used_tokens"]
+                })
+        
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
+
+
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821

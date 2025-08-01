@@ -210,6 +210,7 @@ def bullets_category(sections):
     hits = [0] * len(BULLET_PATTERN)
     for i, pro in enumerate(BULLET_PATTERN):
         for sec in sections:
+            sec = sec.strip()
             for p in pro:
                 if re.match(p, sec) and not not_bullet(sec):
                     hits[i] += 1
@@ -225,15 +226,23 @@ def bullets_category(sections):
 
 
 def is_english(texts):
-    eng = 0
     if not texts:
         return False
-    for t in texts:
-        if re.match(r"[ `a-zA-Z.,':;/\"?<>!\(\)-]", t.strip()):
-            eng += 1
-    if eng / len(texts) > 0.8:
-        return True
-    return False
+
+    pattern = re.compile(r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]")
+
+    if isinstance(texts, str):
+        texts = list(texts)
+    elif isinstance(texts, list):
+        texts = [t for t in texts if isinstance(t, str) and t.strip()]
+    else:
+        return False
+
+    if not texts:
+        return False
+
+    eng = sum(1 for t in texts if pattern.fullmatch(t.strip()))
+    return (eng / len(texts)) > 0.8
 
 
 def is_chinese(text):
@@ -509,7 +518,8 @@ def hierarchical_merge(bull, sections, depth):
     return res
 
 
-def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
+def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
+    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     if not sections:
         return []
     if isinstance(sections[0], type("")):
@@ -525,8 +535,10 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num  
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
-
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
+            if cks:
+                overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
+                t = overlapped[int(len(overlapped)*(100-overlapped_percent)/100.):] + t
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -539,7 +551,10 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
 
     dels = get_delimiters(delimiter)
     for sec, pos in sections:
-        splited_sec = re.split(r"(%s)" % dels, sec)
+        if num_tokens_from_string(sec) < chunk_token_num:
+            add_chunk(sec, pos)
+            continue
+        splited_sec = re.split(r"(%s)" % dels, sec, flags=re.DOTALL)
         for sub_sec in splited_sec:
             if re.match(f"^{dels}$", sub_sec):
                 continue
@@ -551,9 +566,6 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
     if not texts or len(texts) != len(images):
         return [], []
-    # Enuser texts is str not tuple, if it is tuple, convert to str (get the first item)
-    if isinstance(texts[0], tuple):
-        texts = [t[0] for t in texts]
     cks = [""]
     result_images = [None]
     tk_nums = [0]
@@ -584,11 +596,21 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
     dels = get_delimiters(delimiter)
     for text, image in zip(texts, images):
-        splited_sec = re.split(r"(%s)" % dels, text)
-        for sub_sec in splited_sec:
-            if re.match(f"^{dels}$", sub_sec):
-                continue
-            add_chunk(text, image)
+        # if text is tuple, unpack it
+        if isinstance(text, tuple):
+            text_str = text[0]
+            text_pos = text[1] if len(text) > 1 else ""
+            splited_sec = re.split(r"(%s)" % dels, text_str)
+            for sub_sec in splited_sec:
+                if re.match(f"^{dels}$", sub_sec):
+                    continue
+                add_chunk(sub_sec, image, text_pos)
+        else:
+            splited_sec = re.split(r"(%s)" % dels, text)
+            for sub_sec in splited_sec:
+                if re.match(f"^{dels}$", sub_sec):
+                    continue
+                add_chunk(sub_sec, image)
 
     return cks, result_images
 

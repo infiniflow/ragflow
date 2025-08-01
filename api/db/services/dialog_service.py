@@ -36,7 +36,7 @@ from api.utils import current_timestamp, datetime_format
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, llm_id2llm_type, message_fit_in
+from rag.prompts import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in
 from rag.utils import num_tokens_from_string, rmSpace
 from rag.utils.tavily_conn import Tavily
 
@@ -97,7 +97,7 @@ class DialogService(CommonService):
 
 
 def chat_solo(dialog, messages, stream=True):
-    if llm_id2llm_type(dialog.llm_id) == "image2text":
+    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
@@ -139,7 +139,7 @@ def get_models(dialog):
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    if llm_id2llm_type(dialog.llm_id) == "image2text":
+    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
@@ -198,7 +198,7 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     chat_start_ts = timer()
 
-    if llm_id2llm_type(dialog.llm_id) == "image2text":
+    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)

@@ -205,6 +205,7 @@ export default {
       titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
       name: '知识库名称',
       photo: '知识库图片',
+      photoTip: '你可以上传4MB的文件',
       description: '描述',
       language: '文档语言',
       languageMessage: '请输入语言',
@@ -326,7 +327,7 @@ export default {
 
 注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
-<p>使用“标签”作为分块方法的知识库<b>不</b>参与 RAG 检索过程。</p>
+<p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
 <p>标签集中的每个文本分块是都是相互独立的标签和标签描述的文本对。</p>
 
 <p>Tag 分块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
@@ -413,6 +414,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mind: '思维导图',
       question: '问题',
       questionTip: `如果有给定的问题，则块的嵌入将基于它们。`,
+      chunkResult: '切片结果',
+      chunkResultTip: `查看用于嵌入和召回的切片段落。`,
+      enable: '启用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新会话',
@@ -542,7 +548,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       useKnowledgeGraphTip:
         '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
       keyword: '关键词分析',
-      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
+      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。对长查询效果较好，但会延长响应时间。`,
       reasoning: '推理',
       reasoningTip:
         '在问答过程中是否启用推理工作流，例如Deepseek-R1或OpenAI o1等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
@@ -556,6 +562,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     setting: {
       profile: '概要',
       avatar: '头像',
+      avatarTip: '这会在你的个人主页展示',
       profileDescription: '在此更新您的照片和个人详细信息。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
@@ -588,6 +595,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       currentPassword: '当前密码',
       currentPasswordMessage: '请输入当前密码',
       newPassword: '新密码',
+      changePassword: '修改密码',
       newPasswordMessage: '请输入新密码',
       newPasswordDescription: '您的新密码必须超过 8 个字符。',
       confirmPassword: '确认新密码',
@@ -601,6 +609,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       apiKeyMessage: '请输入api key（如果是本地部署的模型，请忽略它）',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隐藏模型',
       baseUrl: 'Base-Url',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
@@ -625,6 +634,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
+      editLlmTitle: '编辑 {{name}} 模型',
+      editModel: '编辑模型',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',
@@ -692,7 +703,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn: `请先在<b>模型提供商</b>中添加嵌入模型和LLM，然后在“系统模型设置”中设置它们。`,
+      modelProvidersWarn: `请先在<b>模型提供商</b>中添加嵌入模型和LLM，然后在“设置默认模型”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -1036,7 +1047,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用该模板',
+      useTemplate: '使用',
       wenCai: '问财',
       queryType: '查询类型',
       wenCaiDescription:
@@ -1139,7 +1150,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       note: '注释',
       noteDescription: '注释',
       notePlaceholder: '请输入注释',
-      invoke: 'Invoke',
+      invoke: 'HTTP 请求',
       invokeDescription:
         '该组件可以调用远程端点调用。将其他组件的输出作为参数或设置常量参数来调用远程函数。',
       url: 'Url',
@@ -1189,7 +1200,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       jsonUploadTypeErrorMessage: '请上传json文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
       iteration: '循环',
-      iterationDescription: `该组件首先将输入以“分隔符”分割成数组，然后依次对数组中的元素执行相同的操作步骤，直到输出所有结果，可以理解为一个任务批处理器。例如在长文本翻译迭代节点中，如果所有内容都输入到LLM节点，可能会达到单次对话的限制，上游节点可以先将长文本分割成多个片段，配合迭代节点对每个片段进行批量翻译，避免达到单次对话的LLM消息限制。`,
+      iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
       delimiterOptions: {
         comma: '逗号',
@@ -1236,6 +1247,20 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       query: '查询变量',
       agent: 'Agent',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
+      maxRecords: '最大记录数',
+      createAgent: 'Create Agent',
+      stringTransform: '文本处理',
+      userFillUp: '等待输入',
+      codeExec: '代码',
+      tavilySearch: 'Tavily Search',
+      tavilySearchDescription: '通过 Tavily 服务搜索结果',
+      tavilyExtract: 'Tavily Extract',
+      tavilyExtractDescription: 'Tavily Extract',
+      log: '日志',
+      management: '管理',
+      import: '导入',
+      export: '导出',
+      subject: '主题',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1255,5 +1280,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         },
       },
     },
+  },
+  modal: {
+    okText: '确认',
+    cancelText: '取消',
   },
 };

@@ -4,14 +4,20 @@ env:
   # Available options:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
+  # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
   # DOC_ENGINE: elasticsearch
   DOC_ENGINE: infinity
+  # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
 
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
+
+  # The password for OpenSearch.
+  # At least one uppercase letter, one lowercase letter, one digit, and one special character
+  OPENSEARCH_PASSWORD: infini_rag_flow_OS_01
 
   # The password for MySQL
   MYSQL_PASSWORD: infini_rag_flow_helm
@@ -69,6 +75,30 @@ env:
   EMBEDDING_BATCH_SIZE: 16
 
 ragflow:
+
+  # Optional service configuration overrides
+  # to be written to local.service_conf.yaml
+  # inside the RAGFlow container
+  # https://ragflow.io/docs/dev/configurations#service-configuration
+  service_conf:
+
+  # Optional yaml formatted override for the
+  # llm_factories.json file inside the RAGFlow
+  # container.
+  llm_factories:
+    # factory_llm_infos:
+    # - name: OpenAI-API-Compatible
+    #   logo: ""
+    #   tags: "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION"
+    #   status: "1"
+    #   llm:
+    #     - llm_name: my-custom-llm
+    #       tags: "LLM,CHAT,"
+    #       max_tokens: 100000
+    #       model_type: chat
+    #       is_tools: false
+
+  # Kubernetes configuration
   deployment:
     strategy:
     resources:
@@ -83,7 +113,7 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.6.0-dev3
+    tag: v0.6.0-dev5
   storage:
     className:
     capacity: 5Gi
@@ -94,6 +124,22 @@ infinity:
     type: ClusterIP
 
 elasticsearch:
+  storage:
+    className:
+    capacity: 20Gi
+  deployment:
+    strategy:
+    resources:
+      requests:
+        cpu: "4"
+        memory: "16Gi"
+  service:
+    type: ClusterIP
+
+opensearch:
+  image:
+    repository: opensearchproject/opensearch
+    tag: 2.19.1
   storage:
     className:
     capacity: 20Gi
@@ -141,6 +187,11 @@ redis:
     capacity: 5Gi
   persistence:
     enabled: true
+    # Set's the retention policy for the persistent storage (only available in k8s 1.32 or later)
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    # retentionPolicy:
+      # whenDeleted: Delete
+      # whenScaled: Delete
   deployment:
     strategy:
     resources:

@@ -152,7 +152,6 @@ class EntityResolution(Extractor):
         )
 
     async def _resolve_candidate(self, candidate_resolution_i: tuple[str, list[tuple[str, str]]], resolution_result: set[str], resolution_result_lock: trio.Lock):
-        gen_conf = {"temperature": 0.5}
         pair_txt = [
             f'When determining whether two {candidate_resolution_i[0]}s are the same, you should only focus on critical properties and overlook noisy factors.\n']
         for index, candidate in enumerate(candidate_resolution_i[1]):
@@ -171,7 +170,7 @@ class EntityResolution(Extractor):
         async with chat_limiter:
             try:
                 with trio.move_on_after(120) as cancel_scope:
-                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
+                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], {})
                 if cancel_scope.cancelled_caught:
                     logging.warning("_resolve_candidate._chat timeout, skipping...")
                     return
@@ -218,13 +217,29 @@ class EntityResolution(Extractor):
 
         return ans_list
 
+    def _has_digit_in_2gram_diff(self, a, b):
+        def to_2gram_set(s):
+            return {s[i:i+2] for i in range(len(s) - 1)}
+
+        set_a = to_2gram_set(a)
+        set_b = to_2gram_set(b)
+        diff = set_a ^ set_b
+
+        return any(any(c.isdigit() for c in pair) for pair in diff)
+
     def is_similarity(self, a, b):
+        if self._has_digit_in_2gram_diff(a, b):
+            return False
+
         if is_english(a) and is_english(b):
             if editdistance.eval(a, b) <= min(len(a), len(b)) // 2:
                 return True
             return False
 
-        if len(set(a) & set(b)) > 1:
-            return True
+        a, b = set(a), set(b)
+        max_l = max(len(a), len(b))
+        if max_l < 4:
+            return len(a & b) > 1
 
-        return False
+        return len(a & b)*1./max_l >= 0.8
+

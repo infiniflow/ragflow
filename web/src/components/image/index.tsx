@@ -1,8 +1,6 @@
 import { api_host } from '@/utils/api';
-import { Popover } from 'antd';
 import classNames from 'classnames';
-
-import styles from './index.less';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 interface IImage {
   id: string;
@@ -16,7 +14,7 @@ const Image = ({ id, className, ...props }: IImage) => {
       {...props}
       src={`${api_host}/document/image/${id}`}
       alt=""
-      className={classNames(styles.primitiveImg, className)}
+      className={classNames('max-w-[45vw] max-h-[40wh] block', className)}
     />
   );
 };
@@ -25,11 +23,13 @@ export default Image;
 
 export const ImageWithPopover = ({ id }: { id: string }) => {
   return (
-    <Popover
-      placement="left"
-      content={<Image id={id} className={styles.imagePreview}></Image>}
-    >
-      <Image id={id} className={styles.image}></Image>
+    <Popover>
+      <PopoverTrigger>
+        <Image id={id} className="max-h-[100px] inline-block"></Image>
+      </PopoverTrigger>
+      <PopoverContent>
+        <Image id={id} className="max-w-[100px] object-contain"></Image>
+      </PopoverContent>
     </Popover>
   );
 };

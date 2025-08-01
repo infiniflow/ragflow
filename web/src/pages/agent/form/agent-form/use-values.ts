@@ -23,7 +23,10 @@ export function useValues(node?: RAGFlowNodeType) {
       return defaultValues;
     }
 
-    return { ...formData, prompts: get(formData, 'prompts.0.content', '') };
+    return {
+      ...formData,
+      prompts: get(formData, 'prompts.0.content', ''),
+    };
   }, [defaultValues, node?.data?.form]);
 
   return values;

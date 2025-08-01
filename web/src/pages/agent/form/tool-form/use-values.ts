@@ -1,5 +1,7 @@
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
+import { Operator } from '../../constant';
+import { useAgentToolInitialValues } from '../../hooks/use-agent-tool-initial-values';
 import useGraphStore from '../../store';
 import { getAgentNodeTools } from '../../utils';
 
@@ -13,14 +15,11 @@ export enum Topic {
   General = 'general',
 }
 
-export const defaultValues = {
-  api_key: '',
-};
-
 export function useValues() {
   const { clickedToolId, clickedNodeId, findUpstreamNodeById } = useGraphStore(
     (state) => state,
   );
+  const { initializeAgentToolValues } = useAgentToolInitialValues();
 
   const values = useMemo(() => {
     const agentNode = findUpstreamNodeById(clickedNodeId);
@@ -31,13 +30,22 @@ export function useValues() {
     )?.params;
 
     if (isEmpty(formData)) {
+      const defaultValues = initializeAgentToolValues(
+        clickedNodeId as Operator,
+      );
+
       return defaultValues;
     }
 
     return {
       ...formData,
     };
-  }, [clickedNodeId, clickedToolId, findUpstreamNodeById]);
+  }, [
+    clickedNodeId,
+    clickedToolId,
+    findUpstreamNodeById,
+    initializeAgentToolValues,
+  ]);
 
   return values;
 }

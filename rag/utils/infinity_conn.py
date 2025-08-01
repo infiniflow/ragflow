@@ -26,7 +26,7 @@ from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
 from rag import settings
-from rag.settings import PAGERANK_FLD
+from rag.settings import PAGERANK_FLD, TAG_FLD
 from rag.utils import singleton
 import pandas as pd
 from api.utils.file_utils import get_project_base_directory
@@ -311,7 +311,7 @@ class InfinityConnection(DocStoreConnection):
         df_list = list()
         table_list = list()
         output = selectFields.copy()
-        for essential_field in ["id"]:
+        for essential_field in ["id"] + aggFields:
             if essential_field not in output:
                 output.append(essential_field)
         score_func = ""
@@ -333,15 +333,29 @@ class InfinityConnection(DocStoreConnection):
             if PAGERANK_FLD not in output:
                 output.append(PAGERANK_FLD)
         output = [f for f in output if f != "_score"]
+        if limit <= 0:
+            # ElasticSearch default limit is 10000
+            limit = 10000
 
         # Prepare expressions common to all tables
         filter_cond = None
         filter_fulltext = ""
         if condition:
+            table_found = False
             for indexName in indexNames:
-                table_name = f"{indexName}_{knowledgebaseIds[0]}"
-                filter_cond = equivalent_condition_to_str(condition, db_instance.get_table(table_name))
-                break
+                for kb_id in knowledgebaseIds:
+                    table_name = f"{indexName}_{kb_id}"
+                    try:
+                        filter_cond = equivalent_condition_to_str(condition, db_instance.get_table(table_name))
+                        table_found = True
+                        break
+                    except Exception:
+                        pass
+                if table_found:
+                    break
+            if not table_found:
+                logger.error(f"No valid tables found for indexNames {indexNames} and knowledgebaseIds {knowledgebaseIds}")
+                return pd.DataFrame(), 0
 
         for matchExpr in matchExprs:
             if isinstance(matchExpr, MatchTextExpr):
@@ -355,6 +369,18 @@ class InfinityConnection(DocStoreConnection):
                 if isinstance(minimum_should_match, float):
                     str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
                     matchExpr.extra_options["minimum_should_match"] = str_minimum_should_match
+
+                # Add rank_feature support
+                if rank_feature and "rank_features" not in matchExpr.extra_options:
+                    # Convert rank_feature dict to Infinity's rank_features string format
+                    # Format: "field^feature_name^weight,field^feature_name^weight"
+                    rank_features_list = []
+                    for feature_name, weight in rank_feature.items():
+                        # Use TAG_FLD as the field containing rank features
+                        rank_features_list.append(f"{TAG_FLD}^{feature_name}^{weight}")
+                    if rank_features_list:
+                        matchExpr.extra_options["rank_features"] = ",".join(rank_features_list)
+
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
@@ -416,7 +442,7 @@ class InfinityConnection(DocStoreConnection):
                                 matchExpr.method, matchExpr.topn, matchExpr.fusion_params
                             )
                 else:
-                    if len(filter_cond) > 0:
+                    if filter_cond and len(filter_cond) > 0:
                         builder.filter(filter_cond)
                 if orderBy.fields:
                     builder.sort(order_by_expr_list)
@@ -662,6 +688,8 @@ class InfinityConnection(DocStoreConnection):
             k = column.lower()
             if field_keyword(k):
                 res2[column] = res2[column].apply(lambda v:[kwd for kwd in v.split("###") if kwd])
+            elif re.search(r"_feas$", k):
+                res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})
             elif k == "position_int":
                 def to_position_int(v):
                     if v:
@@ -712,9 +740,46 @@ class InfinityConnection(DocStoreConnection):
 
     def getAggregation(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fieldnm: str):
         """
-        TODO: Infinity doesn't provide aggregation
+        Manual aggregation for tag fields since Infinity doesn't provide native aggregation
         """
-        return list()
+        from collections import Counter
+
+        # Extract DataFrame from result
+        if isinstance(res, tuple):
+            df, _ = res
+        else:
+            df = res
+
+        if df.empty or fieldnm not in df.columns:
+            return []
+
+        # Aggregate tag counts
+        tag_counter = Counter()
+
+        for value in df[fieldnm]:
+            if pd.isna(value) or not value:
+                continue
+
+            # Handle different tag formats
+            if isinstance(value, str):
+                # Split by ### for tag_kwd field or comma for other formats
+                if fieldnm == "tag_kwd" and "###" in value:
+                    tags = [tag.strip() for tag in value.split("###") if tag.strip()]
+                else:
+                    # Try comma separation as fallback
+                    tags = [tag.strip() for tag in value.split(",") if tag.strip()]
+
+                for tag in tags:
+                    if tag:  # Only count non-empty tags
+                        tag_counter[tag] += 1
+            elif isinstance(value, list):
+                # Handle list format
+                for tag in value:
+                    if tag and isinstance(tag, str):
+                        tag_counter[tag.strip()] += 1
+
+        # Return as list of [tag, count] pairs, sorted by count descending
+        return [[tag, count] for tag, count in tag_counter.most_common()]
 
     """
     SQL
