@@ -1297,6 +1297,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       createAgent: 'Create Agent',
       stringTransform: 'Text Processing',
       userFillUp: 'Await Response',
+      userFillUpDescription: `Pauses the workflow and waits for the user's message before continuing.`,
       codeExec: 'Code',
       tavilySearch: 'Tavily Search',
       tavilySearchDescription: 'Search results via Tavily service.',
