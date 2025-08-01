@@ -167,3 +167,15 @@ export function useShowLogSheet({
     showLogSheet: handleShow,
   };
 }
+
+export function useHideFormSheetOnNodeDeletion({
+  hideFormDrawer,
+}: Pick<ReturnType<typeof useShowFormDrawer>, 'hideFormDrawer'>) {
+  const { nodes, clickedNodeId } = useGraphStore((state) => state);
+
+  useEffect(() => {
+    if (!nodes.some((x) => x.id === clickedNodeId)) {
+      hideFormDrawer();
+    }
+  }, [clickedNodeId, hideFormDrawer, nodes]);
+}
