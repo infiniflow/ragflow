@@ -1317,6 +1317,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       file: 'File upload',
       integer: 'Number',
       boolean: 'Boolean',
+      goto: 'Fail Branch',
+      comment: 'Default Value',
     },
     llmTools: {
       bad_calculator: {
