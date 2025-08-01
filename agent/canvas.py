@@ -252,15 +252,6 @@ class Canvas:
                            "created_at": cpn_obj.output("_created_time"),
                        })
 
-        def _append_path(cpn_id):
-            if self.path[-1] == cpn_id:
-                return
-            self.path.append(cpn_id)
-
-        def _extend_path(cpn_ids):
-            for cpn_id in cpn_ids:
-                _append_path(cpn_id)
-
         self.error = ""
         idx = len(self.path) - 1
         partials = []
@@ -305,10 +296,12 @@ class Canvas:
                         yield _node_finished(_cpn_obj)
                         partials.pop(0)
 
+                other_branch = False
                 if cpn_obj.error():
                     ex = cpn_obj.exception_handler()
                     if ex and ex["goto"]:
                         self.path.extend(ex["goto"])
+                        other_branch = True
                     elif ex and ex["default_value"]:
                         yield decorate("message", {"content": ex["default_value"]})
                         yield decorate("message_end", {})
@@ -324,6 +317,21 @@ class Canvas:
                             partials.append(self.path[i])
                     else:
                         yield _node_finished(cpn_obj)
+
+                def _append_path(cpn_id):
+                    nonlocal other_branch
+                    if other_branch:
+                        return
+                    if self.path[-1] == cpn_id:
+                        return
+                    self.path.append(cpn_id)
+
+                def _extend_path(cpn_ids):
+                    nonlocal other_branch
+                    if other_branch:
+                        return
+                    for cpn_id in cpn_ids:
+                        _append_path(cpn_id)
 
                 if cpn_obj.component_name.lower() == "iterationitem" and cpn_obj.end():
                     iter = cpn_obj.get_parent()

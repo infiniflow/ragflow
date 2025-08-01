@@ -258,4 +258,4 @@ class LLM(ComponentBase):
 
     def thoughts(self) -> str:
         _, msg = self._prepare_prompt_variables()
-        return "⌛Give me a moment—starting from: \n\n" + re.sub(r'[\\]+', '', msg[-1]['content'], flags=re.DOTALL) + "\n\nI’ll figure out our best next move."
+        return "⌛Give me a moment—starting from: \n\n" + re.sub(r"(User's query:|[\\]+)", '', msg[-1]['content'], flags=re.DOTALL) + "\n\nI’ll figure out our best next move."
