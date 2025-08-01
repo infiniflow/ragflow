@@ -242,7 +242,7 @@
 
 @layer utilities {
   .scrollbar-auto {
-    /* 默认隐藏滚动条 */
+    /* hide scrollbar */
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
   }
