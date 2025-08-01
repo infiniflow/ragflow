@@ -21,7 +21,6 @@ import builtins
 import json
 import os
 import logging
-from functools import partial
 from typing import Any, List, Union
 import pandas as pd
 import trio
