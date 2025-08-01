@@ -14,14 +14,20 @@ import {
 import { cn } from '@/lib/utils';
 import { Operator } from '../constant';
 import OperatorIcon from '../operator-icon';
-import { JsonViewer } from './workFlowTimeline';
+import {
+  JsonViewer,
+  toLowerCaseStringAndDeleteChar,
+  typeMap,
+} from './workFlowTimeline';
 
 const ToolTimelineItem = ({
   tools,
   sendLoading = false,
+  isShare = false,
 }: {
   tools: Record<string, any>[];
   sendLoading: boolean;
+  isShare?: boolean;
 }) => {
   if (!tools || tools.length === 0 || !Array.isArray(tools)) return null;
   const blackList = ['add_memory', 'gen_citations'];
@@ -110,10 +116,23 @@ const ToolTimelineItem = ({
                   <AccordionItem value={idx.toString()}>
                     <AccordionTrigger>
                       <div className="flex gap-2 items-center">
-                        <span>
-                          {parentName(tool.path) + ' '}
-                          {capitalizeWords(tool.tool_name, '_')}
-                        </span>
+                        {!isShare && (
+                          <span>
+                            {parentName(tool.path) + ' '}
+                            {capitalizeWords(tool.tool_name, '_')}
+                          </span>
+                        )}
+                        {isShare && (
+                          <span>
+                            {
+                              typeMap[
+                                toLowerCaseStringAndDeleteChar(
+                                  tool.tool_name,
+                                ) as keyof typeof typeMap
+                              ]
+                            }
+                          </span>
+                        )}
                         <span className="text-text-sub-title text-xs">
                           {/* 0:00
                           {x.data.elapsed_time?.toString().slice(0, 6)} */}
@@ -129,10 +148,18 @@ const ToolTimelineItem = ({
                     </AccordionTrigger>
                     <AccordionContent>
                       <div className="space-y-2">
-                        <JsonViewer
-                          data={tool.result}
-                          title="content"
-                        ></JsonViewer>
+                        {!isShare && (
+                          <JsonViewer
+                            data={tool.result}
+                            title="content"
+                          ></JsonViewer>
+                        )}
+                        {isShare && (
+                          <JsonViewer
+                            data={tool.result}
+                            title={''}
+                          ></JsonViewer>
+                        )}
                       </div>
                     </AccordionContent>
                   </AccordionItem>

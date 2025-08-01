@@ -1,3 +1,4 @@
+import HightLightMarkdown from '@/components/highlight-markdown';
 import {
   Timeline,
   TimelineContent,
@@ -31,7 +32,11 @@ import ToolTimelineItem from './toolTimelineItem';
 type LogFlowTimelineProps = Pick<
   ReturnType<typeof useCacheChatLog>,
   'currentEventListWithoutMessage' | 'currentMessageId'
-> & { canvasId?: string; sendLoading: boolean };
+> & {
+  canvasId?: string;
+  sendLoading: boolean;
+  isShare?: boolean;
+};
 export function JsonViewer({
   data,
   title,
@@ -46,12 +51,41 @@ export function JsonViewer({
         src={data}
         displaySize
         collapseStringsAfterLength={100000000000}
-        className="w-full h-[200px] break-words overflow-auto p-2 bg-background-card"
+        className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-slate-800"
       />
     </section>
   );
 }
-
+export const typeMap = {
+  begin: t('flow.logTimeline.begin'),
+  agent: t('flow.logTimeline.agent'),
+  retrieval: t('flow.logTimeline.retrieval'),
+  message: t('flow.logTimeline.message'),
+  awaitResponse: t('flow.logTimeline.awaitResponse'),
+  switch: t('flow.logTimeline.switch'),
+  iteration: t('flow.logTimeline.iteration'),
+  categorize: t('flow.logTimeline.categorize'),
+  code: t('flow.logTimeline.code'),
+  textProcessing: t('flow.logTimeline.textProcessing'),
+  tavilySearch: t('flow.logTimeline.tavilySearch'),
+  tavilyExtract: t('flow.logTimeline.tavilyExtract'),
+  exeSQL: t('flow.logTimeline.exeSQL'),
+  google: t('flow.logTimeline.google'),
+  duckDuckGo: t('flow.logTimeline.google'),
+  wikipedia: t('flow.logTimeline.wikipedia'),
+  googleScholar: t('flow.logTimeline.googleScholar'),
+  arXiv: t('flow.logTimeline.googleScholar'),
+  pubMed: t('flow.logTimeline.googleScholar'),
+  gitHub: t('flow.logTimeline.gitHub'),
+  email: t('flow.logTimeline.email'),
+  httpRequest: t('flow.logTimeline.httpRequest'),
+  wenCai: t('flow.logTimeline.wenCai'),
+  yahooFinance: t('flow.logTimeline.yahooFinance'),
+};
+export const toLowerCaseStringAndDeleteChar = (
+  str: string,
+  char: string = '_',
+) => str.toLowerCase().replace(/ /g, '').replaceAll(char, '');
 function getInputsOrOutputs(
   nodeEventList: INodeData[],
   field: 'inputs' | 'outputs',
@@ -69,6 +103,7 @@ export const WorkFlowTimeline = ({
   currentMessageId,
   canvasId,
   sendLoading,
+  isShare,
 }: LogFlowTimelineProps) => {
   // const getNode = useGraphStore((state) => state.getNode);
   const [isStopFetchTrace, setISStopFetchTrace] = useState(false);
@@ -146,6 +181,7 @@ export const WorkFlowTimeline = ({
     },
     [currentEventListWithoutMessage],
   );
+
   return (
     <Timeline>
       {startedNodeList?.map((x, idx) => {
@@ -213,7 +249,15 @@ export const WorkFlowTimeline = ({
                     <AccordionItem value={idx.toString()}>
                       <AccordionTrigger>
                         <div className="flex gap-2 items-center">
-                          <span>{getNodeName(x.data?.component_name)}</span>
+                          <span>
+                            {!isShare && getNodeName(x.data?.component_name)}
+                            {isShare &&
+                              typeMap[
+                                toLowerCaseStringAndDeleteChar(
+                                  nodeLabel,
+                                ) as keyof typeof typeMap
+                              ]}
+                          </span>
                           <span className="text-text-sub-title text-xs">
                             {x.data.elapsed_time?.toString().slice(0, 6)}
                           </span>
@@ -228,16 +272,36 @@ export const WorkFlowTimeline = ({
                           </span>
                         </div>
                       </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2">
-                          <JsonViewer data={inputs} title="Input"></JsonViewer>
+                      {!isShare && (
+                        <AccordionContent>
+                          <div className="space-y-2">
+                            {!isShare && (
+                              <>
+                                <JsonViewer
+                                  data={inputs}
+                                  title="Input"
+                                ></JsonViewer>
 
-                          <JsonViewer
-                            data={outputs}
-                            title={'Output'}
-                          ></JsonViewer>
-                        </div>
-                      </AccordionContent>
+                                <JsonViewer
+                                  data={outputs}
+                                  title={'Output'}
+                                ></JsonViewer>
+                              </>
+                            )}
+                          </div>
+                        </AccordionContent>
+                      )}
+                      {isShare && x.data?.thoughts && (
+                        <AccordionContent>
+                          <div className="space-y-2">
+                            <div className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-slate-800">
+                              <HightLightMarkdown>
+                                {x.data.thoughts || ''}
+                              </HightLightMarkdown>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      )}
                     </AccordionItem>
                   </Accordion>
                 </section>
@@ -248,6 +312,7 @@ export const WorkFlowTimeline = ({
                 key={'tool_' + idx}
                 tools={filterTrace(x.data.component_id)}
                 sendLoading={sendLoading}
+                isShare={isShare}
               ></ToolTimelineItem>
             )}
           </>

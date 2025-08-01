@@ -11,7 +11,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentTemplates, useSetAgent } from '@/hooks/use-agent-request';
 import { IFlowTemplate } from '@/interfaces/database/flow';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
@@ -70,15 +70,19 @@ export default function AgentTemplates() {
     ],
   );
   const handleSiderBarChange = (keyword: string) => {
-    const tempList = list.filter(
-      (item, index) =>
-        item.canvas_type
-          ?.toLocaleLowerCase()
-          .includes(keyword?.toLocaleLowerCase()) || index === 0,
-    );
-    setTemplateList(tempList);
     setSelectMenuItem(keyword);
   };
+
+  const tempListFilter = useMemo(() => {
+    if (!selectMenuItem) {
+      return templateList;
+    }
+    return templateList.filter(
+      (item, index) =>
+        item.canvas_type?.toLocaleLowerCase() ===
+          selectMenuItem?.toLocaleLowerCase() || index === 0,
+    );
+  }, [selectMenuItem, templateList]);
   return (
     <section>
       <PageHeader>
@@ -104,7 +108,7 @@ export default function AgentTemplates() {
 
         <main className="flex-1 bg-text-title-invert/50 h-dvh">
           <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[94vh] overflow-auto px-8 pt-8">
-            {templateList?.map((x, index) => {
+            {tempListFilter?.map((x, index) => {
               return (
                 <TemplateCard
                   isCreate={index === 0}
