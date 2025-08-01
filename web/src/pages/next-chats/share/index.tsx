@@ -4,7 +4,6 @@ import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { useSwitchToDarkThemeOnMount } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
 import { MessageType } from '@/constants/chat';
 import { useFetchAppConf } from '@/hooks/logic-hooks';
@@ -100,8 +99,6 @@ const ChatContainer = () => {
       showParameterDialog();
     }
   }, [inputsData, showParameterDialog]);
-
-  useSwitchToDarkThemeOnMount();
 
   const handleInputsModalOk = (params: any[]) => {
     ok(params);

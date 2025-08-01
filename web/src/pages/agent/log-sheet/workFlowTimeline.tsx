@@ -21,7 +21,7 @@ import {
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
-import { get } from 'lodash';
+import { get, isEmpty } from 'lodash';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import JsonView from 'react18-json-view';
 import { Operator } from '../constant';
@@ -46,7 +46,7 @@ export function JsonViewer({
         src={data}
         displaySize
         collapseStringsAfterLength={100000000000}
-        className="w-full h-[200px] break-words overflow-auto p-2 bg-slate-800"
+        className="w-full h-[200px] break-words overflow-auto p-2 bg-background-card"
       />
     </section>
   );
@@ -219,9 +219,9 @@ export const WorkFlowTimeline = ({
                           </span>
                           <span
                             className={cn(
-                              'border-background  -end-1 -top-1 size-2 rounded-full border-2 bg-dot-green',
-                              { 'text-dot-green': x.data.error === null },
-                              { 'text-dot-red': x.data.error !== null },
+                              'border-background  -end-1 -top-1 size-2 rounded-full',
+                              { 'bg-dot-green': isEmpty(x.data.error) },
+                              { 'bg-dot-red': !isEmpty(x.data.error) },
                             )}
                           >
                             <span className="sr-only">Online</span>
