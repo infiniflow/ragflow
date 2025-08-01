@@ -1,7 +1,7 @@
 import { IconFont } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { cn } from '@/lib/utils';
-import { CirclePlay } from 'lucide-react';
+import { HousePlus } from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -11,7 +11,7 @@ interface IProps {
 
 export const OperatorIconMap = {
   [Operator.Retrieval]: 'KR',
-  [Operator.Begin]: CirclePlay,
+  [Operator.Begin]: 'house-plus',
   [Operator.Categorize]: 'a-QuestionClassification',
   [Operator.Message]: 'reply',
   [Operator.Iteration]: 'loop',
@@ -48,6 +48,14 @@ const Empty = () => {
 
 const OperatorIcon = ({ name, className }: IProps) => {
   const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap] || Empty;
+
+  if (name === Operator.Begin) {
+    return (
+      <div className="inline-block p-1 bg-background-checked rounded-sm">
+        <HousePlus className="rounded size-3" />
+      </div>
+    );
+  }
 
   if (name in SVGIconMap) {
     return (
