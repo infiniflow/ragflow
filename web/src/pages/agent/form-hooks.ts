@@ -30,40 +30,6 @@ export const useBuildFormSelectOptions = (
   return buildCategorizeToOptions;
 };
 
-/**
- * dumped
- * @param nodeId
- * @returns
- */
-export const useHandleFormSelectChange = (nodeId?: string) => {
-  const { addEdge, deleteEdgeBySourceAndSourceHandle } = useGraphStore(
-    (state) => state,
-  );
-  const handleSelectChange = useCallback(
-    (name?: string) => (value?: string) => {
-      if (nodeId && name) {
-        if (value) {
-          addEdge({
-            source: nodeId,
-            target: value,
-            sourceHandle: name,
-            targetHandle: null,
-          });
-        } else {
-          // clear selected value
-          deleteEdgeBySourceAndSourceHandle({
-            source: nodeId,
-            sourceHandle: name,
-          });
-        }
-      }
-    },
-    [addEdge, nodeId, deleteEdgeBySourceAndSourceHandle],
-  );
-
-  return { handleSelectChange };
-};
-
 export const useBuildSortOptions = () => {
   const { t } = useTranslate('flow');
 

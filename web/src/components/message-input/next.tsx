@@ -132,7 +132,7 @@ export function NextMessageInput({
           onChange={onInputChange}
           placeholder="Type your message here..."
           className="field-sizing-content min-h-10 w-full resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
-          disabled={isUploading || disabled}
+          disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
         />
         <div className="flex items-center justify-between gap-1.5">
@@ -143,6 +143,7 @@ export function NextMessageInput({
                 size="icon"
                 variant="ghost"
                 className="size-7 rounded-sm"
+                disabled={isUploading || sendLoading}
               >
                 <Paperclip className="size-3.5" />
                 <span className="sr-only">Attach file</span>

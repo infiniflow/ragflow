@@ -49,6 +49,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTavilyExtractValues,
   initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
@@ -135,6 +136,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.TavilyExtract]: initialTavilyExtractValues,
     };
   }, [llmId]);
 
@@ -331,7 +333,7 @@ export const useHandleFormValuesChange = (
 };
 
 export const useValidateConnection = () => {
-  const { edges, getOperatorTypeFromId, getParentIdById } = useGraphStore(
+  const { getOperatorTypeFromId, getParentIdById } = useGraphStore(
     (state) => state,
   );
 
@@ -354,20 +356,19 @@ export const useValidateConnection = () => {
       const isSelfConnected = connection.target === connection.source;
 
       // limit the connection between two nodes to only one connection line in one direction
-      const hasLine = edges.some(
-        (x) => x.source === connection.source && x.target === connection.target,
-      );
+      // const hasLine = edges.some(
+      //   (x) => x.source === connection.source && x.target === connection.target,
+      // );
 
       const ret =
         !isSelfConnected &&
-        !hasLine &&
         RestrictedUpstreamMap[
           getOperatorTypeFromId(connection.source) as Operator
         ]?.every((x) => x !== getOperatorTypeFromId(connection.target)) &&
         isSameNodeChild(connection);
       return ret;
     },
-    [edges, getOperatorTypeFromId, isSameNodeChild],
+    [getOperatorTypeFromId, isSameNodeChild],
   );
 
   return isValidConnection;

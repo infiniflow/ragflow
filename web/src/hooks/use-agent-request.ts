@@ -1,13 +1,21 @@
 import { FileUploadProps } from '@/components/file-upload';
 import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
-import { ITraceData } from '@/interfaces/database/agent';
+import {
+  IAgentLogsRequest,
+  IAgentLogsResponse,
+  ITraceData,
+} from '@/interfaces/database/agent';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
+import { BeginQuery } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
-import agentService from '@/services/agent-service';
+import agentService, {
+  fetchAgentLogsByCanvasId,
+  fetchTrace,
+} from '@/services/agent-service';
 import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -39,6 +47,7 @@ export const enum AgentApiAction {
   FetchVersionList = 'fetchVersionList',
   FetchVersion = 'fetchVersion',
   FetchAgentAvatar = 'fetchAgentAvatar',
+  FetchExternalAgentInputs = 'fetchExternalAgentInputs',
 }
 
 export const EmptyDsl = {
@@ -257,7 +266,7 @@ export const useResetAgent = () => {
   return { data, loading, resetAgent: mutateAsync };
 };
 
-export const useSetAgent = () => {
+export const useSetAgent = (showMessage: boolean = true) => {
   const queryClient = useQueryClient();
   const {
     data,
@@ -273,9 +282,11 @@ export const useSetAgent = () => {
     }) => {
       const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
-        message.success(
-          i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
-        );
+        if (showMessage) {
+          message.success(
+            i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
+          );
+        }
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentList],
         });
@@ -390,8 +401,12 @@ export const useUploadCanvasFileWithProgress = (
   return { data, loading, uploadCanvasFile: mutateAsync };
 };
 
-export const useFetchMessageTrace = () => {
+export const useFetchMessageTrace = (
+  isStopFetchTrace: boolean,
+  canvasId?: string,
+) => {
   const { id } = useParams();
+  const queryId = id || canvasId;
   const [messageId, setMessageId] = useState('');
 
   const {
@@ -399,16 +414,16 @@ export const useFetchMessageTrace = () => {
     isFetching: loading,
     refetch,
   } = useQuery<ITraceData[]>({
-    queryKey: [AgentApiAction.Trace, id, messageId],
+    queryKey: [AgentApiAction.Trace, queryId, messageId],
     refetchOnReconnect: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
-    enabled: !!id && !!messageId,
-    refetchInterval: 3000,
+    enabled: !!queryId && !!messageId,
+    refetchInterval: !isStopFetchTrace ? 3000 : false,
     queryFn: async () => {
-      const { data } = await agentService.trace({
-        canvas_id: id,
+      const { data } = await fetchTrace({
+        canvas_id: queryId as string,
         message_id: messageId,
       });
 
@@ -547,6 +562,50 @@ export const useFetchAgentAvatar = (): {
     queryFn: async () => {
       if (!sharedId) return {};
       const { data } = await agentService.fetchAgentAvatar(sharedId);
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
+  const { id } = useParams();
+  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
+    queryKey: ['fetchAgentLog', id, searchParams],
+    initialData: {} as IAgentLogsResponse,
+    gcTime: 0,
+    queryFn: async () => {
+      console.log('useFetchAgentLog', searchParams);
+      const { data } = await fetchAgentLogsByCanvasId(id as string, {
+        ...searchParams,
+      });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchExternalAgentInputs = () => {
+  const { sharedId } = useGetSharedChatSearchParams();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<Record<string, BeginQuery>>({
+    queryKey: [AgentApiAction.FetchExternalAgentInputs],
+    initialData: {} as Record<string, BeginQuery>,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+    enabled: !!sharedId,
+    queryFn: async () => {
+      const { data } = await agentService.fetchExternalAgentInputs(sharedId!);
 
       return data?.data ?? {};
     },

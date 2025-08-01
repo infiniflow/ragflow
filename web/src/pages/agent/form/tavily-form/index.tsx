@@ -12,8 +12,8 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useMemo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { memo } from 'react';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
   TavilySearchDepth,
@@ -21,35 +21,20 @@ import {
   initialTavilyValues,
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { buildOutputList } from '../../utils/build-output-list';
+import { ApiKeyField } from '../components/api-key-field';
 import { FormWrapper } from '../components/form-wrapper';
-import { Output, OutputType } from '../components/output';
+import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { DynamicDomain } from './dynamic-domain';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-export function TavilyApiKeyField() {
-  const form = useFormContext();
-  return (
-    <FormField
-      control={form.control}
-      name="api_key"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>Api Key</FormLabel>
-          <FormControl>
-            <Input type="password" {...field}></Input>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
-}
-
 export const TavilyFormSchema = {
   api_key: z.string(),
 };
+
+const outputList = buildOutputList(initialTavilyValues.outputs);
 
 function TavilyForm({ node }: INextOperatorForm) {
   const values = useValues(node);
@@ -74,23 +59,13 @@ function TavilyForm({ node }: INextOperatorForm) {
     resolver: zodResolver(FormSchema),
   });
 
-  const outputList = useMemo(() => {
-    return Object.entries(initialTavilyValues.outputs).reduce<OutputType[]>(
-      (pre, [key, val]) => {
-        pre.push({ title: key, type: val.type });
-        return pre;
-      },
-      [],
-    );
-  }, []);
-
   useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <TavilyApiKeyField></TavilyApiKeyField>
+          <ApiKeyField></ApiKeyField>
         </FormContainer>
         <FormContainer>
           <QueryVariable></QueryVariable>

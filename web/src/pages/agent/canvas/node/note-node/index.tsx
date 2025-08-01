@@ -56,7 +56,7 @@ function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
       <section className="px-1 py-2 flex gap-2 bg-background-highlight items-center note-drag-handle rounded-s-md">
         <NotebookPen className="size-4" />
         <Form {...nameForm}>
-          <form>
+          <form className="flex-1">
             <FormField
               control={nameForm.control}
               name="name"

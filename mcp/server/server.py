@@ -374,6 +374,10 @@ __  __  ____ ____       ____  _____ ______     _______ ____
     print(f"MCP port: {PORT}", flush=True)
     print(f"MCP base_url: {BASE_URL}", flush=True)
 
+    if not any([TRANSPORT_SSE_ENABLED, TRANSPORT_STREAMABLE_HTTP_ENABLED]):
+        print("At least one transport should be enabled, enable streamable-http automatically", flush=True)
+        TRANSPORT_STREAMABLE_HTTP_ENABLED = True
+
     if TRANSPORT_SSE_ENABLED:
         print("SSE transport enabled: yes", flush=True)
         print("SSE endpoint available at /sse", flush=True)

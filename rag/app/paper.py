@@ -143,8 +143,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        if kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "Plain Text":
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
             paper = {
                 "title": filename,

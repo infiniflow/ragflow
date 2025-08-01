@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
 import { AgentBackground } from '../components/background';
@@ -32,7 +32,11 @@ import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useMoveNote } from '../hooks/use-move-note';
-import { useShowDrawer, useShowLogSheet } from '../hooks/use-show-drawer';
+import {
+  useHideFormSheetOnNodeDeletion,
+  useShowDrawer,
+  useShowLogSheet,
+} from '../hooks/use-show-drawer';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
@@ -41,7 +45,6 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
-import { EmailNode } from './node/email-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
@@ -71,7 +74,7 @@ export const nodeTypes: NodeTypes = {
   keywordNode: KeywordNode,
   invokeNode: InvokeNode,
   templateNode: TemplateNode,
-  emailNode: EmailNode,
+  // emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
@@ -116,6 +119,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     runVisible,
     hideRunOrChatDrawer,
     showChatModal,
+    showFormDrawer,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
@@ -124,7 +128,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const {
     addEventList,
     setCurrentMessageId,
-    currentEventListWithoutMessage,
+    currentEventListWithoutMessageById,
     clearEventList,
     currentMessageId,
   } = useCacheChatLog();
@@ -132,6 +136,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
   });
+  const [lastSendLoading, setLastSendLoading] = useState(false);
 
   const { handleBeforeDelete } = useBeforeDelete();
 
@@ -152,6 +157,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       clearEventList();
     }
   }, [chatVisible, clearEventList]);
+  const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
+    if (messageId === currentMessageId) {
+      setLastSendLoading(loading);
+    } else {
+      setLastSendLoading(false);
+    }
+  };
+
+  useHideFormSheetOnNodeDeletion({ hideFormDrawer });
 
   return (
     <div className={styles.canvasWrapper}>
@@ -175,7 +189,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+      <AgentInstanceContext.Provider value={{ addCanvasNode, showFormDrawer }}>
         <ReactFlow
           connectionMode={ConnectionMode.Loose}
           nodes={nodes}
@@ -228,7 +242,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         ref={ref}
       ></NotebookPen>
       {formDrawerVisible && (
-        <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+        <AgentInstanceContext.Provider
+          value={{ addCanvasNode, showFormDrawer }}
+        >
           <FormSheet
             node={clickedNode}
             visible={formDrawerVisible}
@@ -241,7 +257,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         </AgentInstanceContext.Provider>
       )}
       {chatVisible && (
-        <AgentChatContext.Provider value={{ showLogSheet }}>
+        <AgentChatContext.Provider
+          value={{ showLogSheet, setLastSendLoadingFunc }}
+        >
           <AgentChatLogContext.Provider
             value={{ addEventList, setCurrentMessageId }}
           >
@@ -258,8 +276,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       {logSheetVisible && (
         <LogSheet
           hideModal={hideLogSheet}
-          currentEventListWithoutMessage={currentEventListWithoutMessage}
+          currentEventListWithoutMessageById={
+            currentEventListWithoutMessageById
+          }
           currentMessageId={currentMessageId}
+          sendLoading={lastSendLoading}
         ></LogSheet>
       )}
     </div>

@@ -17,7 +17,7 @@ log_file_max_size        = "100MB"
 log_file_rotate_count    = 10
 
 # trace/debug/info/warning/error/critical 6 log levels, default: info
-log_level               = "info"
+log_level               = "trace"
 
 [storage]
 persistence_dir         = "/var/infinity/persistence"
@@ -47,7 +47,7 @@ mem_index_capacity       = 65536
 buffer_manager_size      = "8GB"
 lru_num                  = 7
 temp_dir                 = "/var/infinity/tmp"
-result_cache             = "on"
+result_cache             = "off"
 memindex_memory_quota    = "1GB"
 
 [wal]

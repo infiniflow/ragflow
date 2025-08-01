@@ -1,20 +1,19 @@
+import { ThemeEnum } from '@/constants/common';
 import React, { createContext, useContext, useEffect, useState } from 'react';
-
-type Theme = 'dark' | 'light' | 'system';
 
 type ThemeProviderProps = {
   children: React.ReactNode;
-  defaultTheme?: Theme;
+  defaultTheme?: ThemeEnum;
   storageKey?: string;
 };
 
 type ThemeProviderState = {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
+  theme: ThemeEnum;
+  setTheme: (theme: ThemeEnum) => void;
 };
 
 const initialState: ThemeProviderState = {
-  theme: 'light',
+  theme: ThemeEnum.Light,
   setTheme: () => null,
 };
 
@@ -22,17 +21,17 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
 export function ThemeProvider({
   children,
-  defaultTheme = 'light',
+  defaultTheme = ThemeEnum.Light,
   storageKey = 'vite-ui-theme',
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
+  const [theme, setTheme] = useState<ThemeEnum>(
+    () => (localStorage.getItem(storageKey) as ThemeEnum) || defaultTheme,
   );
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
+    root.classList.remove(ThemeEnum.Light, ThemeEnum.Dark);
     localStorage.setItem(storageKey, theme);
     root.classList.add(theme);
   }, [storageKey, theme]);
@@ -62,5 +61,13 @@ export const useTheme = () => {
 export const useIsDarkTheme = () => {
   const { theme } = useTheme();
 
-  return theme === 'dark';
+  return theme === ThemeEnum.Dark;
 };
+
+export function useSwitchToDarkThemeOnMount() {
+  const { setTheme } = useTheme();
+
+  useEffect(() => {
+    setTheme(ThemeEnum.Dark);
+  }, [setTheme]);
+}

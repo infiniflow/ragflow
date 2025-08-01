@@ -1,4 +1,5 @@
 let api_host = `/v1`;
+const ExternalApi = `/api`;
 
 export { api_host };
 
@@ -153,6 +154,10 @@ export default {
   fetchCanvas: (id: string) => `${api_host}/canvas/get/${id}`,
   fetchAgentAvatar: (id: string) => `${api_host}/canvas/getsse/${id}`,
   uploadAgentFile: (id?: string) => `${api_host}/canvas/upload/${id}`,
+  fetchAgentLogs: (canvasId: string) =>
+    `${api_host}/canvas/${canvasId}/sessions`,
+  fetchExternalAgentInputs: (canvasId: string) =>
+    `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
