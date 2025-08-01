@@ -237,14 +237,16 @@ const DebugContent = ({
             {parameters.map((x, idx) => {
               return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
             })}
-            <ButtonLoading
-              type="submit"
-              loading={loading}
-              disabled={!submittable || submitButtonDisabled}
-              className="w-full"
-            >
-              {btnText || t(isNext ? 'common.next' : 'flow.run')}
-            </ButtonLoading>
+            <div>
+              <ButtonLoading
+                type="submit"
+                loading={loading}
+                disabled={!submittable || submitButtonDisabled}
+                className="w-full mt-8"
+              >
+                {btnText || t(isNext ? 'common.next' : 'flow.run')}
+              </ButtonLoading>
+            </div>
           </form>
         </Form>
       </section>
