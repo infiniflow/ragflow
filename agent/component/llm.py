@@ -235,6 +235,8 @@ class LLM(ComponentBase):
             yield ans
             answer += ans
         self.set_output("content", answer)
+        if answer.find("**ERROR**") >= 0:
+            self.set_output("_ERROR", answer)
 
     def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str):
         summ = tool_call_summary(self.chat_mdl, func_name, params, results)

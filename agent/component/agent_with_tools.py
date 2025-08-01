@@ -189,6 +189,9 @@ class Agent(LLM, ToolBase):
         if use_tools:
             self.set_output("use_tools", use_tools)
 
+        if answer_without_toolcall.find("**ERROR**") >= 0:
+            self.set_output("_ERROR", answer_without_toolcall)
+
     def _gen_citations(self, text):
         retrievals = self._canvas.get_reference()
         retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
