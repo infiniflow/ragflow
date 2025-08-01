@@ -1,30 +1,21 @@
 ---
-sidebar_position: 7
+sidebar_position: 4
 slug: /message_component
 ---
 
 # Message component
 
-A component that sends out a static message.
+A component that sends out a static or dynamic message.
 
 ---
 
-A **Message** component sends out a static message. If multiple messages are supplied, it randomly selects one to send.
+As the final component of the workflow, a Message component returns the workflow’s ultimate data output accompanied by predefined message content. The system selects one message at random if multiple messages are provided.
 
 ## Configurations
 
 ### Messages
 
-The message to send out. 
+The message to send out. Click `(x)` or type `/` to quickly insert variables.
 
 Click **+ Add message** to add message options. When multiple messages are supplied, the **Message** component randomly selects one to send.
 
-## Examples
-
-Explore our customer service agent template, where the **Message** component (component ID: **What else?**) randomly sends out a message to the user interface if the user inputs is related to personal contact information:
-
-1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
-2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
-3. On the **agent template** page, hover over the **Customer service** card and click **Use this template**.
-4. Name your new agent and click **OK** to enter the workflow editor.
-5. Click on the **Message** component to display its **Configuration** window.
