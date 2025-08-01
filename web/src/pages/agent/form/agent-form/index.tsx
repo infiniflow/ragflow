@@ -6,6 +6,7 @@ import {
 } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   Form,
   FormControl,
@@ -14,10 +15,8 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
-import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -41,8 +40,6 @@ import { QueryVariable } from '../components/query-variable';
 import { AgentTools, Agents } from './agent-tools';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
-
-const exceptionMethodOptions = buildOptions(AgentExceptionMethod);
 
 const FormSchema = z.object({
   sys_prompt: z.string(),
@@ -70,8 +67,7 @@ const FormSchema = z.object({
   delay_after_error: z.coerce.number().optional(),
   visual_files_var: z.string().optional(),
   max_rounds: z.coerce.number().optional(),
-  exception_method: z.string().nullable(),
-  exception_comment: z.string().optional(),
+  exception_method: z.string().optional(),
   exception_goto: z.array(z.string()).optional(),
   exception_default_value: z.string().optional(),
   ...LargeModelFilterFormSchema,
@@ -86,6 +82,13 @@ function AgentForm({ node }: INextOperatorForm) {
   );
 
   const defaultValues = useValues(node);
+
+  const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
+    (x) => ({
+      label: t(`flow.${x}`),
+      value: x,
+    }),
+  );
 
   const isSubAgent = useMemo(() => {
     return isBottomSubAgent(edges, node?.id);
@@ -224,38 +227,29 @@ function AgentForm({ node }: INextOperatorForm) {
                 <FormItem className="flex-1">
                   <FormLabel>Exception method</FormLabel>
                   <FormControl>
-                    <RAGFlowSelect
+                    <SelectWithSearch
                       {...field}
-                      options={exceptionMethodOptions}
+                      options={ExceptionMethodOptions}
+                      allowClear
                     />
                   </FormControl>
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name={`exception_default_value`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Exception default value</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name={`exception_comment`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>Exception comment</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+            {exceptionMethod === AgentExceptionMethod.Comment && (
+              <FormField
+                control={form.control}
+                name={`exception_default_value`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>Exception default value</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            )}
           </FormContainer>
         </Collapse>
         <Output list={outputList}></Output>

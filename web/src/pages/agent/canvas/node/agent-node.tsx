@@ -3,6 +3,7 @@ import { IAgentNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
 import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AgentExceptionMethod, NodeHandleId } from '../../constant';
 import useGraphStore from '../../store';
 import { isBottomSubAgent } from '../../utils';
@@ -20,6 +21,7 @@ function InnerAgentNode({
   selected,
 }: NodeProps<IAgentNode>) {
   const edges = useGraphStore((state) => state.edges);
+  const { t } = useTranslation();
 
   const isHeadAgent = useMemo(() => {
     return !isBottomSubAgent(edges, id);
@@ -87,9 +89,9 @@ function InnerAgentNode({
           {(isGotoMethod ||
             exceptionMethod === AgentExceptionMethod.Comment) && (
             <div className="bg-background-card rounded-sm p-1 flex justify-between gap-2">
-              <span className="text-text-sub-title">Abnormal</span>
-              <span className="truncate flex-1">
-                {isGotoMethod ? 'Exception branch' : 'Output default value'}
+              <span className="text-text-sub-title">On Failure</span>
+              <span className="truncate flex-1 text-right">
+                {t(`flow.${exceptionMethod}`)}
               </span>
             </div>
           )}
