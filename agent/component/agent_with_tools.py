@@ -169,7 +169,10 @@ class Agent(LLM, ToolBase):
 
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Agent._chat got error. response: {ans}")
-            self.set_output("_ERROR", ans)
+            if self.get_exception_default_value():
+                self.set_output("content", self.get_exception_default_value())
+            else:
+                self.set_output("_ERROR", ans)
             return
 
         self.set_output("content", ans)
@@ -182,15 +185,18 @@ class Agent(LLM, ToolBase):
         answer_without_toolcall = ""
         use_tools = []
         for delta_ans,_ in self._react_with_tools_streamly(msg, use_tools):
+            if delta_ans.find("**ERROR**") >= 0:
+                if self.get_exception_default_value():
+                    self.set_output("content", self.get_exception_default_value())
+                    yield self.get_exception_default_value()
+                else:
+                    self.set_output("_ERROR", delta_ans)
             answer_without_toolcall += delta_ans
             yield delta_ans
 
         self.set_output("content", answer_without_toolcall)
         if use_tools:
             self.set_output("use_tools", use_tools)
-
-        if answer_without_toolcall.find("**ERROR**") >= 0:
-            self.set_output("_ERROR", answer_without_toolcall)
 
     def _gen_citations(self, text):
         retrievals = self._canvas.get_reference()

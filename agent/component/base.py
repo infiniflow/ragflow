@@ -534,6 +534,8 @@ class ComponentBase(ABC):
         }
 
     def get_exception_default_value(self):
+        if self._param.exception_method != "comment":
+            return ""
         return self._param.exception_default_value
 
     @abstractmethod

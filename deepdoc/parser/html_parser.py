@@ -29,7 +29,6 @@ def get_encoding(file):
 
 class RAGFlowHtmlParser:
     def __call__(self, fnm, binary=None):
-        txt = ""
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")

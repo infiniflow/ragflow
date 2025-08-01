@@ -82,6 +82,7 @@ class LLM(ComponentBase):
                                   self._param.llm_id, max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error
                                   )
+        self.set_output("content", "")
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:
@@ -224,19 +225,25 @@ class LLM(ComponentBase):
             break
 
         if error:
-            self.set_output("_ERROR", error)
             if self.get_exception_default_value():
                 self.set_output("content", self.get_exception_default_value())
+            else:
+                self.set_output("_ERROR", error)
 
     def _stream_output(self, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
         for ans in self._generate_streamly(msg):
+            if ans.find("**ERROR**") >= 0:
+                if self.get_exception_default_value():
+                    self.set_output("content", self.get_exception_default_value())
+                    yield self.get_exception_default_value()
+                else:
+                    self.set_output("_ERROR", ans)
+                return
             yield ans
             answer += ans
         self.set_output("content", answer)
-        if answer.find("**ERROR**") >= 0:
-            self.set_output("_ERROR", answer)
 
     def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str):
         summ = tool_call_summary(self.chat_mdl, func_name, params, results)
