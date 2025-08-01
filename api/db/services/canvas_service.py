@@ -134,7 +134,9 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
         assert e, "Session not found!"
         if not conv.message:
             conv.message = []
-        canvas = Canvas(json.dumps(conv.dsl), tenant_id, session_id)
+        if not isinstance(conv.dsl, str):
+            conv.dsl = json.dumps(conv.dsl, ensure_ascii=False)
+        canvas = Canvas(conv.dsl, tenant_id, agent_id)
     else:
         e, cvs = UserCanvasService.get_by_id(agent_id)
         assert e, "Agent not found."
@@ -142,7 +144,8 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
         if not isinstance(cvs.dsl, str):
             cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
         session_id=get_uuid()
-        canvas = Canvas(cvs.dsl, tenant_id, session_id)
+        canvas = Canvas(cvs.dsl, tenant_id, agent_id)
+        canvas.reset()
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,

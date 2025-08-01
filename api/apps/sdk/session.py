@@ -848,6 +848,10 @@ def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
-    return get_result(data=canvas.get_component_input_form("begin"))
+    return get_result(data={
+        "title": cvs.title,
+        "avatar": cvs.avatar,
+        "inputs": canvas.get_component_input_form("begin")
+    })
 
 

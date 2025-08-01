@@ -44,7 +44,6 @@ class ComponentParamBase(ABC):
         self.delay_after_error = 2.0
         self.exception_method = None
         self.exception_default_value = None
-        self.exception_comment = None
         self.exception_goto = None
         self.debug_inputs = {}
 
@@ -97,6 +96,14 @@ class ComponentParamBase(ABC):
     def as_dict(self):
         def _recursive_convert_obj_to_dict(obj):
             ret_dict = {}
+            if isinstance(obj, dict):
+                for k,v in obj.items():
+                    if isinstance(v, dict) or (v and type(v).__name__ not in dir(builtins)):
+                        ret_dict[k] = _recursive_convert_obj_to_dict(v)
+                    else:
+                        ret_dict[k] = v
+                return ret_dict
+
             for attr_name in list(obj.__dict__):
                 if attr_name in [_FEEDED_DEPRECATED_PARAMS, _DEPRECATED_PARAMS, _USER_FEEDED_PARAMS, _IS_RAW_CONF]:
                     continue
@@ -105,7 +112,7 @@ class ComponentParamBase(ABC):
                 if isinstance(attr, pd.DataFrame):
                     ret_dict[attr_name] = attr.to_dict()
                     continue
-                if attr and type(attr).__name__ not in dir(builtins):
+                if isinstance(attr, dict) or (attr and type(attr).__name__ not in dir(builtins)):
                     ret_dict[attr_name] = _recursive_convert_obj_to_dict(attr)
                 else:
                     ret_dict[attr_name] = attr
@@ -415,7 +422,10 @@ class ComponentBase(ABC):
         try:
             self._invoke(**kwargs)
         except Exception as e:
-            self._param.outputs["_ERROR"] = {"value": str(e)}
+            if self.get_exception_default_value():
+                self.set_exception_default_value()
+            else:
+                self.set_output("_ERROR", str(e))
             logging.exception(e)
         self._param.debug_inputs = {}
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
@@ -427,7 +437,7 @@ class ComponentBase(ABC):
 
     def output(self, var_nm: str=None) -> Union[dict[str, Any], Any]:
         if var_nm:
-            return self._param.outputs.get(var_nm, {}).get("value")
+            return self._param.outputs.get(var_nm, {}).get("value", "")
         return {k: o.get("value") for k,o in self._param.outputs.items()}
 
     def set_output(self, key: str, value: Any):
@@ -520,7 +530,7 @@ class ComponentBase(ABC):
     def string_format(content: str, kv: dict[str, str]) -> str:
         for n, v in kv.items():
             content = re.sub(
-                r"\{%s\}" % re.escape(n), re.escape(v), content
+                r"\{%s\}" % re.escape(n), v, content
             )
         return content
 
@@ -529,12 +539,16 @@ class ComponentBase(ABC):
             return
         return {
             "goto": self._param.exception_goto,
-            "comment": self._param.exception_comment,
             "default_value": self._param.exception_default_value
         }
 
     def get_exception_default_value(self):
+        if self._param.exception_method != "comment":
+            return ""
         return self._param.exception_default_value
+
+    def set_exception_default_value(self):
+        self.set_output("result", self.get_exception_default_value())
 
     @abstractmethod
     def thoughts(self) -> str:
