@@ -32,7 +32,11 @@ import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useMoveNote } from '../hooks/use-move-note';
-import { useShowDrawer, useShowLogSheet } from '../hooks/use-show-drawer';
+import {
+  useHideFormSheetOnNodeDeletion,
+  useShowDrawer,
+  useShowLogSheet,
+} from '../hooks/use-show-drawer';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
@@ -160,6 +164,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       setLastSendLoading(false);
     }
   };
+
+  useHideFormSheetOnNodeDeletion({ hideFormDrawer });
+
   return (
     <div className={styles.canvasWrapper}>
       <svg

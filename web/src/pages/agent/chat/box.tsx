@@ -16,13 +16,13 @@ import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { Message } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { get } from 'lodash';
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { useParams } from 'umi';
 import DebugContent from '../debug-content';
 import { BeginQuery } from '../interface';
 import { buildBeginQueryWithObject } from '../utils';
 
-const AgentChatBox = () => {
+function AgentChatBox() {
   const {
     value,
     ref,
@@ -117,7 +117,7 @@ const AgentChatBox = () => {
             })}
             {/* </Spin> */}
           </div>
-          <div ref={ref} />
+          <div ref={ref.scrollRef} />
         </div>
         <NextMessageInput
           value={value}
@@ -140,6 +140,6 @@ const AgentChatBox = () => {
       ></PdfDrawer>
     </>
   );
-};
+}
 
-export default AgentChatBox;
+export default memo(AgentChatBox);
