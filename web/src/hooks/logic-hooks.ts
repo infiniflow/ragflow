@@ -487,6 +487,10 @@ export const useSelectDerivedMessages = () => {
     [setDerivedMessages],
   );
 
+  const removeAllMessages = useCallback(() => {
+    setDerivedMessages([]);
+  }, [setDerivedMessages]);
+
   return {
     ref,
     derivedMessages,
@@ -498,6 +502,7 @@ export const useSelectDerivedMessages = () => {
     addNewestOneQuestion,
     addNewestOneAnswer,
     removeMessagesAfterCurrentMessage,
+    removeAllMessages,
   };
 };
 

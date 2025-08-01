@@ -10,7 +10,7 @@ import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
-import { BeginQuery } from '@/pages/agent/interface';
+import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import agentService, {
   fetchAgentLogsByCanvasId,
@@ -596,9 +596,9 @@ export const useFetchExternalAgentInputs = () => {
     data,
     isFetching: loading,
     refetch,
-  } = useQuery<Record<string, BeginQuery>>({
+  } = useQuery<IInputs>({
     queryKey: [AgentApiAction.FetchExternalAgentInputs],
-    initialData: {} as Record<string, BeginQuery>,
+    initialData: {} as IInputs,
     refetchOnReconnect: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,

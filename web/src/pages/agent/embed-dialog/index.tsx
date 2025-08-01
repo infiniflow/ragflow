@@ -139,7 +139,7 @@ function EmbedDialog({
           </Form>
           <div>
             <span>Embed code</span>
-            <HightLightMarkdown dark>{text}</HightLightMarkdown>
+            <HightLightMarkdown>{text}</HightLightMarkdown>
           </div>
           <div className=" font-medium mt-4 mb-1">
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}

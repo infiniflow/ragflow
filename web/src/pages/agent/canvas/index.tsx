@@ -1,3 +1,4 @@
+import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
 import {
   Tooltip,
   TooltipContent,
@@ -32,7 +33,11 @@ import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useMoveNote } from '../hooks/use-move-note';
-import { useShowDrawer, useShowLogSheet } from '../hooks/use-show-drawer';
+import {
+  useHideFormSheetOnNodeDeletion,
+  useShowDrawer,
+  useShowLogSheet,
+} from '../hooks/use-show-drawer';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
@@ -140,6 +145,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   const { ref, showImage, hideImage, imgVisible, mouse } = useMoveNote();
 
+  const { theme } = useTheme();
+
   const onPaneClick = useCallback(() => {
     hideFormDrawer();
     if (imgVisible) {
@@ -160,6 +167,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       setLastSendLoading(false);
     }
   };
+
+  const isDarkTheme = useIsDarkTheme();
+
+  useHideFormSheetOnNodeDeletion({ hideFormDrawer });
+
   return (
     <div className={styles.canvasWrapper}>
       <svg
@@ -204,13 +216,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onEdgeMouseEnter={onEdgeMouseEnter}
           onEdgeMouseLeave={onEdgeMouseLeave}
           className="h-full"
-          colorMode="dark"
+          colorMode={theme}
           defaultEdgeOptions={{
             type: 'buttonEdge',
             markerEnd: 'logo',
             style: {
               strokeWidth: 1,
-              stroke: 'rgba(91, 93, 106, 1)',
+              stroke: isDarkTheme
+                ? 'rgba(91, 93, 106, 1)'
+                : 'rgba(151, 154, 171, 1)',
             },
             zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}

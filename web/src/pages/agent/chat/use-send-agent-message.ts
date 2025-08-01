@@ -182,9 +182,8 @@ export const useSendAgentMessage = (
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
-    url || api.runCanvas,
-  );
+  const { send, answerList, done, stopOutputMessage, resetAnswerList } =
+    useSendMessageBySSE(url || api.runCanvas);
   const messageId = useMemo(() => {
     return answerList[0]?.message_id;
   }, [answerList]);
@@ -204,6 +203,7 @@ export const useSendAgentMessage = (
     removeMessageById,
     addNewestOneQuestion,
     addNewestOneAnswer,
+    removeAllMessages,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
@@ -235,18 +235,23 @@ export const useSendAgentMessage = (
 
         params.session_id = sessionId;
       }
-      const res = await send(params);
 
-      clearUploadResponseList();
+      try {
+        const res = await send(params);
 
-      if (receiveMessageError(res)) {
-        sonnerMessage.error(res?.data?.message);
+        clearUploadResponseList();
 
-        // cancel loading
-        setValue(message.content);
-        removeLatestMessage();
-      } else {
-        // refetch(); // pull the message list after sending the message successfully
+        if (receiveMessageError(res)) {
+          sonnerMessage.error(res?.data?.message);
+
+          // cancel loading
+          setValue(message.content);
+          removeLatestMessage();
+        } else {
+          // refetch(); // pull the message list after sending the message successfully
+        }
+      } catch (error) {
+        console.log('🚀 ~ useSendAgentMessage ~ error:', error);
       }
     },
     [
@@ -274,6 +279,14 @@ export const useSendAgentMessage = (
     },
     [addNewestOneQuestion, send],
   );
+
+  // reset session
+  const resetSession = useCallback(() => {
+    stopOutputMessage();
+    resetAnswerList();
+    setSessionId(null);
+    removeAllMessages();
+  }, [resetAnswerList, removeAllMessages, stopOutputMessage]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
@@ -331,6 +344,7 @@ export const useSendAgentMessage = (
     stopOutputMessage,
     send,
     sendFormMessage,
+    resetSession,
     findReferenceByMessageId,
     appendUploadResponseList,
   };

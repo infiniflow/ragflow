@@ -103,11 +103,13 @@ const FormSheet = ({
               )}
               <X onClick={hideModal} />
             </div>
-            <span>
-              {t(
-                `${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
-              )}
-            </span>
+            {isMcp || (
+              <span>
+                {t(
+                  `${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
+                )}
+              </span>
+            )}
           </section>
         </SheetHeader>
         <section className="pt-4 overflow-auto flex-1">
