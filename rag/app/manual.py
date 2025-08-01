@@ -22,6 +22,7 @@ from api.db import ParserType
 from io import BytesIO
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from rag.utils import num_tokens_from_string
+from rag.utils.mineru_parse import MinerUPdf
 from deepdoc.parser import PdfParser, PlainParser, DocxParser
 from docx import Document
 from PIL import Image
@@ -186,9 +187,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
+        elif kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "MinerU":
+            pdf_parser = MinerUPdf()
+        else:
+            pdf_parser = Pdf()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:

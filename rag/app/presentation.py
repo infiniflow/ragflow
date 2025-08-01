@@ -16,39 +16,71 @@
 
 import copy
 import re
+import os
+import tempfile
 from io import BytesIO
 
 from PIL import Image
 
-from rag.nlp import tokenize, is_english
+from rag.nlp import tokenize
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser
 from PyPDF2 import PdfReader as pdf2_read
+from rag.utils.mineru_parse import MinerUPdf
 
 
 class Ppt(PptParser):
     def __call__(self, fnm, from_page, to_page, callback=None):
-        txts = super().__call__(fnm, from_page, to_page)
+        txts = super().__call__(fnm, from_page, to_page, callback)
 
-        callback(0.5, "Text extraction finished.")
-        import aspose.slides as slides
-        import aspose.pydrawing as drawing
-        imgs = []
-        with slides.Presentation(BytesIO(fnm)) as presentation:
-            for i, slide in enumerate(presentation.slides[from_page: to_page]):
-                try:
-                    buffered = BytesIO()
-                    slide.get_thumbnail(
-                        0.5, 0.5).save(
-                        buffered, drawing.imaging.ImageFormat.jpeg)
-                    imgs.append(Image.open(buffered))
-                except RuntimeError as e:
-                    raise RuntimeError(f'ppt parse error at page {i+1}, original error: {str(e)}') from e
-        assert len(imgs) == len(
-            txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
-        callback(0.9, "Image extraction finished")
-        self.is_english = is_english(txts)
-        return [(txts[i], imgs[i]) for i in range(len(txts))]
+        if callback:
+            callback(0.5, "Text extraction finished.")
+
+        try:
+            import subprocess
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                # 写入临时文件
+                ppt_stream = self._sanitize_input(fnm)
+                ppt_path = os.path.join(tmp_dir, "temp.pptx")
+                with open(ppt_path, 'wb') as f:
+                    f.write(ppt_stream.getvalue())
+
+                # 调用LibreOffice转换
+                output_dir = os.path.join(tmp_dir, "images")
+                os.makedirs(output_dir, exist_ok=True)
+
+                cmd = [
+                    'libreoffice', '--headless', '--convert-to', 'jpg',
+                    '--outdir', output_dir, ppt_path
+                ]
+                subprocess.run(cmd, check=True, capture_output=True)
+
+                # 加载图片并处理异常
+                imgs = []
+                img_files = sorted(
+                    [f for f in os.listdir(output_dir) if f.endswith('.jpg')],
+                    key=lambda x: int(x.split('_')[-1].split('.')[0])
+                )
+
+                for i in range(len(txts)):
+                    try:
+                        if i < len(img_files):
+                            img_path = os.path.join(output_dir, img_files[i])
+                            img = Image.open(img_path)
+                            imgs.append(img if img else Image.new('RGB', (800, 600), 'white'))
+                        else:
+                            imgs.append(Image.new('RGB', (800, 600), 'white'))
+                    except Exception:
+                        imgs.append(Image.new('RGB', (800, 600), 'white'))
+
+                if callback:
+                    callback(0.9, "Image extraction finished")
+
+                return list(zip(txts, imgs))
+
+        except Exception as e:
+            return [(txt, Image.new('RGB', (800, 600), 'white')) for txt in txts]
 
 
 class Pdf(PdfParser):
@@ -122,9 +154,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
+        elif kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "MinerU":
+            pdf_parser = MinerUPdf()
+        else:
+            pdf_parser = Pdf()
         for pn, (txt, img) in enumerate(pdf_parser(filename, binary,
                                                    from_page=from_page, to_page=to_page, callback=callback)):
             d = copy.deepcopy(doc)

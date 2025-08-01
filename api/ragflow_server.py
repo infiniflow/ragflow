@@ -17,14 +17,21 @@
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
-
+# 获取当前文件所在目录
+import os
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 获取项目根目录
+project_root = os.path.dirname(current_dir)  
+# project_root = current_dir  # 如果主程序在项目根目录
+# 将项目根目录添加到Python路径
+if project_root not in sys.path:
+    sys.path.append(project_root)
 from api.utils.log_utils import initRootLogger
 initRootLogger("ragflow_server")
 
 import logging
-import os
 import signal
-import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor

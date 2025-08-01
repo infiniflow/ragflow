@@ -22,6 +22,7 @@ from api.db import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
+from rag.utils.mineru_parse import MinerUPdf
 
 
 class Pdf(PdfParser):
@@ -151,6 +152,17 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "authors": " ",
                 "abstract": "",
                 "sections": pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page)[0],
+                "tables": []
+            }
+        elif kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "MinerU":
+            pdf_parser = MinerUPdf()
+            sections, tbls = pdf_parser(filename if not binary else binary,
+                                        from_page=from_page, to_page=to_page, callback=callback)
+            paper = {
+                "title": filename,
+                "authors": " ",
+                "abstract": "",
+                "sections": sections,
                 "tables": []
             }
         else:

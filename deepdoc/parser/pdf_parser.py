@@ -23,6 +23,7 @@ import threading
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
+from typing import Union
 
 import numpy as np
 import pdfplumber
@@ -99,6 +100,25 @@ class RAGFlowPdfParser:
 
     def __height(self, c):
         return c["bottom"] - c["top"]
+
+    def _sanitize_input(self, fnm: Union[str, bytes]) -> BytesIO:
+        """统一处理输入，确保返回安全的BytesIO对象"""
+        try:
+            if isinstance(fnm, str):
+                # 处理文件路径：移除空字节并标准化路径
+                sanitized_path = fnm.replace('\x00', '')
+                sanitized_path = os.path.normpath(sanitized_path)
+                with open(sanitized_path, 'rb') as f:
+                    return BytesIO(f.read())
+            elif isinstance(fnm, bytes):
+                return BytesIO(fnm)
+            elif hasattr(fnm, 'read'):  # 支持文件类对象
+                return BytesIO(fnm.read())
+            else:
+                raise ValueError("Unsupported input type")
+        except Exception as e:
+            logging.error(f"Input sanitization failed: {str(e)}")
+            raise RuntimeError("Failed to process input file") from e
 
     def _x_dis(self, a, b):
         return min(abs(a["x1"] - b["x0"]), abs(a["x0"] - b["x1"]),
@@ -1117,15 +1137,28 @@ class RAGFlowPdfParser:
             self.__images__(fnm, zoomin * 3, page_from, page_to, callback)
 
     def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
-        self.__images__(fnm, zoomin)
-        self._layouts_rec(zoomin)
-        self._table_transformer_job(zoomin)
-        self._text_merge()
-        self._concat_downward()
-        self._filter_forpages()
-        tbls = self._extract_table_figure(
-            need_image, zoomin, return_html, False)
-        return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
+        try:
+            # 统一输入处理
+            pdf_stream = self._sanitize_input(fnm)
+
+            mineru_url = os.getenv('MINERU_URL')
+            if mineru_url:
+                from rag.utils.pdf_to_txts import convert_pdf_to_txts
+                txts = convert_pdf_to_txts(pdf_stream)
+                return txts, []
+            else:
+                self.__images__(fnm, zoomin)
+                self._layouts_rec(zoomin)
+                self._table_transformer_job(zoomin)
+                self._text_merge()
+                self._concat_downward()
+                self._filter_forpages()
+                tbls = self._extract_table_figure(
+                    need_image, zoomin, return_html, False)
+                return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
+        except Exception as e:
+            logging.critical(f"PDF processing failed: {str(e)}")
+            raise RuntimeError(f"PDF parsing error: {str(e)}") from e
 
     def remove_tag(self, txt):
         return re.sub(r"@@[\t0-9.-]+?##", "", txt)

@@ -25,6 +25,7 @@ from rag.nlp import bullets_category, is_english,remove_contents_table, \
     tokenize_chunks
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
+from rag.utils.mineru_parse import MinerUPdf
 
 
 class Pdf(PdfParser):
@@ -88,9 +89,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        if kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
+        elif kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "MinerU":
+            pdf_parser = MinerUPdf()
+        else:
+            pdf_parser = Pdf()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
 

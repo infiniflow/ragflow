@@ -27,6 +27,7 @@ DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 
 ES = {}
 INFINITY = {}
+GAUSS = {}
 AZURE = {}
 S3 = {}
 MINIO = {}
@@ -37,6 +38,8 @@ if DOC_ENGINE == 'elasticsearch':
     ES = get_base_config("es", {})
 elif DOC_ENGINE == 'infinity':
     INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+elif DOC_ENGINE == 'gaussvector':
+    GAUSS = get_base_config("gaussvector", {})
 
 if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
     AZURE = get_base_config("azure", {})

@@ -6,6 +6,7 @@ import { camelCase } from 'lodash';
 import { useMemo } from 'react';
 
 const enum DocumentType {
+  MinerU = 'MinerU',
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
 }
@@ -15,8 +16,17 @@ const LayoutRecognize = () => {
   const allOptions = useSelectLlmOptionsByModelType();
 
   const options = useMemo(() => {
-    const list = [DocumentType.DeepDOC, DocumentType.PlainText].map((x) => ({
-      label: x === DocumentType.PlainText ? t(camelCase(x)) : 'DeepDoc',
+    const list = [
+      DocumentType.MinerU,
+      DocumentType.DeepDOC,
+      DocumentType.PlainText,
+    ].map((x) => ({
+      label:
+        x === DocumentType.DeepDOC
+          ? 'DeepDoc'
+          : x === DocumentType.PlainText
+            ? t(camelCase(x))
+            : 'MinerU',
       value: x,
     }));
 
@@ -44,7 +54,7 @@ const LayoutRecognize = () => {
     <Form.Item
       name={['parser_config', 'layout_recognize']}
       label={t('layoutRecognize')}
-      initialValue={DocumentType.DeepDOC}
+      initialValue={DocumentType.MinerU}
       tooltip={t('layoutRecognizeTip')}
     >
       <Select options={options} popupMatchSelectWidth={false} />

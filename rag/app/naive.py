@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import os
 import logging
 import re
 from functools import reduce
@@ -33,6 +33,7 @@ from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parse
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_docx, tokenize_table
 from rag.utils import num_tokens_from_string
+from rag.utils.mineru_parse import MinerUPdf
 
 
 class Docx(DocxParser):
@@ -402,7 +403,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
-
+        elif layout_recognizer == "MinerU":
+            pdf_parser = MinerUPdf()
+            sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
+                                          callback=callback)
+            callback(0.8, "Finish parsing.")
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()

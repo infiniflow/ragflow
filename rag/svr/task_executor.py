@@ -18,6 +18,16 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 import random
 import sys
+import os
+
+# 获取当前文件所在路径
+current_file_path = os.path.abspath(__file__)
+# 计算项目根目录（根据实际结构调整层级）
+# 从 task_executor.py 到 ragflow 根目录需要向上走 3 级
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file_path)))
+# 将项目根目录添加到搜索路径
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import run_graphrag
