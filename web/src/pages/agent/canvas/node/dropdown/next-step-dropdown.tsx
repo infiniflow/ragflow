@@ -60,7 +60,7 @@ function AccordionOperators() {
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">
-        <AccordionTrigger className="text-xl">AI</AccordionTrigger>
+        <AccordionTrigger className="text-xl">Foundation</AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
             operators={[Operator.Agent, Operator.Retrieval]}

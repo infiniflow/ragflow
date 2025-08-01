@@ -37,10 +37,10 @@ const Menus = [
     label: 'Communication',
     list: [Operator.Email],
   },
-  {
-    label: 'Productivity',
-    list: [],
-  },
+  // {
+  //   label: 'Productivity',
+  //   list: [],
+  // },
   {
     label: 'Developer',
     list: [Operator.GitHub, Operator.ExeSQL, Operator.Code, Operator.Retrieval],
