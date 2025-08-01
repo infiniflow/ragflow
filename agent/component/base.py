@@ -539,3 +539,10 @@ class ComponentBase(ABC):
     @abstractmethod
     def thoughts(self) -> str:
         ...
+
+    #get latest user input content
+    def get_latest_user_input(self):
+        for role, content in self._canvas.history[::-1]:
+            if role == "user":
+                return content
+        return None
