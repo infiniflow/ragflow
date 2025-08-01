@@ -488,6 +488,7 @@ class GeminiCV(Base):
         img = open(BytesIO(base64.b64decode(b64)))
         input = [prompt, img]
         res = self.model.generate_content(input)
+        img.close()
         return res.text, res.usage_metadata.total_token_count
 
     def describe_with_prompt(self, image, prompt=None):
@@ -500,6 +501,7 @@ class GeminiCV(Base):
         res = self.model.generate_content(
             input,
         )
+        img.close()
         return res.text, res.usage_metadata.total_token_count
 
     def chat(self, system, history, gen_conf, images=[]):
