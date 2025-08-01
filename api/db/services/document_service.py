@@ -683,7 +683,7 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
 
 def get_queue_length(priority):
     group_info = REDIS_CONN.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
-    return int(group_info.get("lag", 0))
+    return int(group_info.get("lag", 0) or 0)
 
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):
