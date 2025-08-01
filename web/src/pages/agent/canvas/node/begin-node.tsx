@@ -33,7 +33,7 @@ function InnerBeginNode({ data, id, selected }: NodeProps<IBeginNode>) {
         id={NodeHandleId.Start}
       ></CommonHandle>
 
-      <section className="flex items-center justify-center gap-2">
+      <section className="flex items-center  gap-2">
         <OperatorIcon name={data.label as Operator}></OperatorIcon>
         <div className="truncate text-center font-semibold text-sm">
           {t(`flow.begin`)}

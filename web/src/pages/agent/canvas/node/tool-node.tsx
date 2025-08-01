@@ -5,6 +5,7 @@ import { MouseEventHandler, memo, useCallback } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 import { ToolCard } from '../../form/agent-form/agent-tools';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
+import OperatorIcon from '../../operator-icon';
 import useGraphStore from '../../store';
 import { NodeWrapper } from './node-wrapper';
 
@@ -57,7 +58,10 @@ function InnerToolNode({
             className="cursor-pointer"
             data-tool={x.component_name}
           >
-            {x.component_name}
+            <div className="flex gap-1 items-center pointer-events-none">
+              <OperatorIcon name={x.component_name as Operator}></OperatorIcon>
+              {x.component_name}
+            </div>
           </ToolCard>
         ))}
 
