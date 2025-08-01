@@ -307,12 +307,12 @@ class Canvas:
 
                 if cpn_obj.error():
                     ex = cpn_obj.exception_handler()
-                    if ex and ex["comment"]:
-                        yield decorate("message", {"content": ex["comment"]})
-                        yield decorate("message_end", {})
                     if ex and ex["goto"]:
                         self.path.extend(ex["goto"])
-                    elif not ex or not ex["default_value"]:
+                    elif ex and ex["default_value"]:
+                        yield decorate("message", {"content": ex["default_value"]})
+                        yield decorate("message_end", {})
+                    else:
                         self.error = cpn_obj.error()
 
                 if cpn_obj.component_name.lower() != "iteration":

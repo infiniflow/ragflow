@@ -530,7 +530,7 @@ class ComponentBase(ABC):
     def string_format(content: str, kv: dict[str, str]) -> str:
         for n, v in kv.items():
             content = re.sub(
-                r"\{%s\}" % re.escape(n), re.escape(v), content
+                r"\{%s\}" % re.escape(n), v, content
             )
         return content
 
@@ -539,7 +539,6 @@ class ComponentBase(ABC):
             return
         return {
             "goto": self._param.exception_goto,
-            "comment": self._param.exception_comment,
             "default_value": self._param.exception_default_value
         }
 

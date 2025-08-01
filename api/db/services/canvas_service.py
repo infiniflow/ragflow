@@ -145,6 +145,7 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
             cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
         session_id=get_uuid()
         canvas = Canvas(cvs.dsl, tenant_id, session_id)
+        canvas.reset()
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
