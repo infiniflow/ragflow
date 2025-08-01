@@ -788,18 +788,8 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Relevant],
-  [Operator.Categorize]: [
-    Operator.Begin,
-    Operator.Categorize,
-    Operator.Answer,
-    Operator.Relevant,
-  ],
-  [Operator.Answer]: [
-    Operator.Begin,
-    Operator.Answer,
-    Operator.Message,
-    Operator.Relevant,
-  ],
+  [Operator.Categorize]: [Operator.Begin, Operator.Categorize, Operator.Answer],
+  [Operator.Answer]: [Operator.Begin, Operator.Answer, Operator.Message],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Generate]: [Operator.Begin, Operator.Relevant],
   [Operator.Message]: [
@@ -809,9 +799,8 @@ export const RestrictedUpstreamMap = {
     Operator.Retrieval,
     Operator.RewriteQuestion,
     Operator.Categorize,
-    Operator.Relevant,
   ],
-  [Operator.Relevant]: [Operator.Begin, Operator.Answer, Operator.Relevant],
+  [Operator.Relevant]: [Operator.Begin, Operator.Answer],
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
