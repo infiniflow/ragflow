@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 3
 slug: /retrieval_component
 ---
 
@@ -9,20 +9,26 @@ A component that retrieves information from specified datasets.
 
 ## Scenarios
 
-A **Retrieval** component is essential in most RAG scenarios, where information is extracted from designated knowledge bases before being sent to the LLM for content generation.
+A **Retrieval** component is essential in most RAG scenarios, where information is extracted from designated knowledge bases before being sent to the LLM for content generation. As of v0.20.0, a **Retrieval** component can operate either as a workflow component or as a tool of an **Agent**, enabling the Agent to control its invocation and search queries.
 
 ## Configurations
 
 Click on a **Retrieval** component to open its configuration window.
 
-### Input
+### Query variables
 
-The **Retrieval** component relies on input variables to specify its data inputs (queries). Click **+ Add variable** in the **Input** section to add the desired input variables. There are two types of input variables: **Reference** and **Text**.
+*Mandatory*
 
-- **Reference**: Uses a component's output or a user input as the data source. You are required to select from the dropdown menu:
-  - A component ID under **Component Output**, or 
-  - A global variable under **Begin input**, which is defined in the **Begin** component.
-- **Text**: Uses fixed text as the query. You are required to enter static text.
+Select the query source for retrieval.
+
+The **Retrieval** component relies on query variables to specify its data inputs (queries). All global variables defined before the **Retrieval** component are available in the dropdown list.  
+
+### Knowledge bases 
+
+Select the knowledge base(s) to retrieve data from.
+
+- If no knowledge base is selected, meaning conversations with the agent will not be based on any knowledge base, ensure that the **Empty response** field is left blank to avoid an error.
+- If you select multiple knowledge bases, you must ensure that the knowledge bases (datasets) you select use the same embedding model; otherwise, an error message would occur.
 
 ### Similarity threshold
 
@@ -51,25 +57,6 @@ If a rerank model is selected, a combination of weighted keyword similarity and 
 Using a rerank model will *significantly* increase the system's response time.
 :::
 
-### Tavily API key
-
-*Optional*
-
-Enter your Tavily API key here to enable Tavily web search during retrieval. See [here](https://app.tavily.com/home) for instructions on getting a Tavily API key.
-
-### Use knowledge graph
-
-Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.
-
-### Knowledge bases 
-
-*Optional*
-
-Select the knowledge base(s) to retrieve data from.
-
-- If no knowledge base is selected, meaning conversations with the agent will not be based on any knowledge base, ensure that the **Empty response** field is left blank to avoid an error.
-- If you select multiple knowledge bases, you must ensure that the knowledge bases (datasets) you select use the same embedding model; otherwise, an error message would occur.
-
 ### Empty response
 
 - Set this as a response if no results are retrieved from the knowledge base(s) for your query, or 
@@ -79,12 +66,14 @@ Select the knowledge base(s) to retrieve data from.
 If you do not specify a knowledge base, you must leave this field blank; otherwise, an error would occur.
 :::
 
-## Examples
+### Cross-language search
 
-Explore our customer service agent template, where the **Retrieval** component (component ID: **Search product info**) is used to search the dataset and send the Top N results to the LLM:
+Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.
 
-1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
-2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
-3. On the **agent template** page, hover over the **Customer service** card and click **Use this template**.
-4. Name your new agent and click **OK** to enter the workflow editor.
-5. Click on the **Retrieval** component to display its **Configuration** window.
+### Use knowledge graph
+
+Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.
+
+### Output
+
+The global variable name for the output of the **Retrieval** component, which can be referenced by other components in the workflow.
