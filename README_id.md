@@ -80,6 +80,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-08-01 Mendukung Alur Kerja agen.
 - 2025-05-23 Menambahkan komponen pelaksana kode Python/JS ke Agen.
 - 2025-05-05 Mendukung kueri lintas bahasa.
 - 2025-03-19 Mendukung penggunaan model multi-modal untuk memahami gambar di dalam file PDF atau DOCX.
