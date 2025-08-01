@@ -47,6 +47,17 @@ docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
 docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
+## Launch the RAGFlow Service with Docker
+
+After building the `infiniflow/ragflow:nightly` image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
+
+1. Update Docker Compose configuration
+
+    Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change which value is uncommented to use the pre-built image:
+
+    ```
+    RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim
+    ```
 
   </TabItem>
   <TabItem value="including">
@@ -66,27 +77,37 @@ docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
+## Launch the RAGFlow Service with Docker
+
+After building the `infiniflow/ragflow:nightly` image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
+
+1. Update Docker Compose configuration
+
+    Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change which value is uncommented to use the pre-built image:
+
+    ```
+    RAGFLOW_IMAGE=infiniflow/ragflow:nightly
+    ```
+
   </TabItem>
 </Tabs>
 
-## Launch a RAGFlow Service from Docker for MacOS
+2. Launch the RAGFlow Service:
 
-After building the infiniflow/ragflow:nightly-slim image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
+    ```bash
+    docker compose -f docker/docker-compose.yml up -d
+    ```
 
-## Example: Apple M2 Pro (Sequoia)
+    ...or for MacOS (arm64):
 
-1. Edit Docker Compose Configuration
-
-Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.19.1-slim` to `infiniflow/ragflow:nightly-slim` to use the pre-built image.
-
-
-2. Launch the Service
-
-```bash
-cd docker
-$ docker compose -f docker-compose-macos.yml up -d
-```
+    ```bash
+    docker compose -f docker/docker-compose-macos.yml up -d
+    ```
 
 3. Access the RAGFlow Service
 
-Once the setup is complete, open your web browser and navigate to http://127.0.0.1 or your server's \<IP_ADDRESS\>; (the default port is \<PORT\> = 80). You will be directed to the RAGFlow welcome page. Enjoy!🍻
+    Once the setup is complete, open your web browser and navigate to http://127.0.0.1
+
+    > `http://127.0.0.1:<YOUR_SERVING_PORT>` if the server's HTTP serving port has been changed from the default `80:80` to `<YOUR_SERVING_PORT>:80` in `docker-compose.yml` (or `docker-compose-macos.yml` for MacOS/arm64).
+
+    You will be directed to the RAGFlow welcome page. Enjoy!🍻
