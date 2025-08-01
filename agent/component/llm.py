@@ -60,15 +60,21 @@ class LLMParam(ComponentParamBase):
 
     def gen_conf(self):
         conf = {}
-        if int(self.max_tokens) > 0 and getattr(self, "maxTokensEnabled"):
+        def get_attr(nm):
+            try:
+                return getattr(self, nm)
+            except Exception:
+                pass
+
+        if int(self.max_tokens) > 0 and get_attr("maxTokensEnabled"):
             conf["max_tokens"] = int(self.max_tokens)
-        if float(self.temperature) > 0 and getattr(self, "temperatureEnabled"):
+        if float(self.temperature) > 0 and get_attr("temperatureEnabled"):
             conf["temperature"] = float(self.temperature)
-        if float(self.top_p) > 0 and getattr(self, "topPEnabled"):
+        if float(self.top_p) > 0 and get_attr("topPEnabled"):
             conf["top_p"] = float(self.top_p)
-        if float(self.presence_penalty) > 0 and getattr(self, "presencePenaltyEnabled"):
+        if float(self.presence_penalty) > 0 and get_attr("presencePenaltyEnabled"):
             conf["presence_penalty"] = float(self.presence_penalty)
-        if float(self.frequency_penalty) > 0 and getattr(self, "frequencyPenaltyEnabled"):
+        if float(self.frequency_penalty) > 0 and get_attr("frequencyPenaltyEnabled"):
             conf["frequency_penalty"] = float(self.frequency_penalty)
         return conf
 
@@ -82,7 +88,6 @@ class LLM(ComponentBase):
                                   self._param.llm_id, max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error
                                   )
-        self.set_output("content", "")
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:
@@ -208,7 +213,8 @@ class LLM(ComponentBase):
             return
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
+        ex = self.exception_handler()
+        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure and not (ex and ex["goto"]):
             self.set_output("content", partial(self._stream_output, prompt, msg))
             return
 
