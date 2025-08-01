@@ -36,7 +36,7 @@ export function CommonHandle({
           showModal();
         }}
       >
-        <Plus className="size-3 pointer-events-none" />
+        <Plus className="size-3 pointer-events-none text-text-title-invert" />
         {visible && (
           <InnerNextStepDropdown hideModal={hideModal}>
             <span></span>
