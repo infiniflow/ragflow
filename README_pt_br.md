@@ -80,6 +80,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 01-08-2025 Suporta o fluxo de trabalho agêntico.
 - 23-05-2025 Adicione o componente executor de código Python/JS ao Agente.
 - 05-05-2025 Suporte a consultas entre idiomas.
 - 19-03-2025 Suporta o uso de um modelo multi-modal para entender imagens dentro de arquivos PDF ou DOCX.
