@@ -43,6 +43,7 @@ const ChatContainer = () => {
     setCurrentMessageId,
     currentEventListWithoutMessageById,
     clearEventList,
+    clearEventList,
   } = useCacheChatLog();
   const {
     handlePressEnter,
@@ -59,10 +60,19 @@ const ChatContainer = () => {
     showParameterDialog,
     ok,
     resetSession,
+    resetSession,
   } = useSendNextSharedMessage(addEventList);
 
   // const { data } = useFetchExternalAgentInputs();
+  // const { data } = useFetchExternalAgentInputs();
   const sendDisabled = useSendButtonDisabled(value);
+  const appConf = useFetchAppConf();
+  const { data: inputsData } = useFetchExternalAgentInputs();
+  const [agentInfo, setAgentInfo] = useState<IInputs>({
+    avatar: '',
+    title: '',
+    inputs: {},
+  });
   const appConf = useFetchAppConf();
   const { data: inputsData } = useFetchExternalAgentInputs();
   const [agentInfo, setAgentInfo] = useState<IInputs>({
@@ -102,6 +112,13 @@ const ChatContainer = () => {
 
   useSwitchToDarkThemeOnMount();
 
+  const handleInputsModalOk = (params: any[]) => {
+    ok(params);
+  };
+  const handleReset = () => {
+    resetSession();
+    clearEventList();
+  };
   const handleInputsModalOk = (params: any[]) => {
     ok(params);
   };
@@ -210,6 +227,9 @@ const ChatContainer = () => {
       )}
       {parameterDialogVisible && (
         <ParameterDialog
+          // hideModal={hideParameterDialog}
+          ok={handleInputsModalOk}
+          data={agentInfo.inputs}
           // hideModal={hideParameterDialog}
           ok={handleInputsModalOk}
           data={agentInfo.inputs}

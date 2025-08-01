@@ -1340,6 +1340,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         httpRequest: 'Calling an API',
         wenCai: 'Querying financial data',
       },
+      goto: 'Fail Branch',
+      comment: 'Default Value',
     },
     llmTools: {
       bad_calculator: {
