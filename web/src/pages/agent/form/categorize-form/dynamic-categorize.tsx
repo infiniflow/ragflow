@@ -18,7 +18,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { useUpdateNodeInternals } from '@xyflow/react';
 import humanId from 'human-id';
 import trim from 'lodash/trim';
-import { ChevronsUpDown,ChevronDown, ChevronUp, ChevronsUpDown, X } from 'lucide-react';
+import { ChevronsUpDown, ChevronDown, ChevronUp, X } from 'lucide-react';
 import {
   ChangeEventHandler,
   FocusEventHandler,
