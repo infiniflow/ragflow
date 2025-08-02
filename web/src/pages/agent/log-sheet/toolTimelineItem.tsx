@@ -12,32 +12,43 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 import { Operator } from '../constant';
 import OperatorIcon from '../operator-icon';
-import { JsonViewer } from './workFlowTimeline';
+import {
+  JsonViewer,
+  toLowerCaseStringAndDeleteChar,
+  typeMap,
+} from './workFlowTimeline';
+const capitalizeWords = (str: string, separator: string = '_'): string => {
+  if (!str) return '';
 
+  return str
+    .split(separator)
+    .map((word) => {
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+};
+const changeToolName = (toolName: any) => {
+  const name = 'Agent ' + capitalizeWords(toolName);
+  return name;
+};
 const ToolTimelineItem = ({
   tools,
   sendLoading = false,
+  isShare = false,
 }: {
   tools: Record<string, any>[];
   sendLoading: boolean;
+  isShare?: boolean;
 }) => {
   if (!tools || tools.length === 0 || !Array.isArray(tools)) return null;
   const blackList = ['add_memory', 'gen_citations'];
   const filteredTools = tools.filter(
     (tool) => !blackList.includes(tool.tool_name),
   );
-  const capitalizeWords = (str: string, separator: string = '_'): string => {
-    if (!str) return '';
 
-    return str
-      .split(separator)
-      .map((word) => {
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-      })
-      .join(' ');
-  };
   const parentName = (str: string, separator: string = '-->') => {
     if (!str) return '';
     const strs = str.split(separator);
@@ -110,10 +121,21 @@ const ToolTimelineItem = ({
                   <AccordionItem value={idx.toString()}>
                     <AccordionTrigger>
                       <div className="flex gap-2 items-center">
-                        <span>
-                          {parentName(tool.path) + ' '}
-                          {capitalizeWords(tool.tool_name, '_')}
-                        </span>
+                        {!isShare && (
+                          <span>
+                            {parentName(tool.path) + ' '}
+                            {capitalizeWords(tool.tool_name, '_')}
+                          </span>
+                        )}
+                        {isShare && (
+                          <span>
+                            {typeMap[
+                              toLowerCaseStringAndDeleteChar(
+                                tool.tool_name,
+                              ) as keyof typeof typeMap
+                            ] ?? changeToolName(tool.tool_name)}
+                          </span>
+                        )}
                         <span className="text-text-sub-title text-xs">
                           {/* 0:00
                           {x.data.elapsed_time?.toString().slice(0, 6)} */}
@@ -127,14 +149,37 @@ const ToolTimelineItem = ({
                         </span>
                       </div>
                     </AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-2">
-                        <JsonViewer
-                          data={tool.result}
-                          title="content"
-                        ></JsonViewer>
-                      </div>
-                    </AccordionContent>
+                    {!isShare && (
+                      <AccordionContent>
+                        <div className="space-y-2">
+                          <JsonViewer
+                            data={tool.result}
+                            title="content"
+                          ></JsonViewer>
+                        </div>
+                      </AccordionContent>
+                    )}
+                    {isShare && !isEmpty(tool.arguments) && (
+                      <AccordionContent>
+                        <div className="space-y-2">
+                          {tool &&
+                            tool.arguments &&
+                            Object.entries(tool.arguments).length &&
+                            Object.entries(tool.arguments).map(([key, val]) => {
+                              return (
+                                <div key={key}>
+                                  <div className="text-sm font-medium leading-none">
+                                    {key}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {val || ''}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </AccordionContent>
+                    )}
                   </AccordionItem>
                 </Accordion>
               </section>

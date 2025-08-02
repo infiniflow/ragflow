@@ -3423,6 +3423,7 @@ The chat model autonomously determines the number of questions to generate based
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string`
+  - `"industry"`: `string`
 
 ##### Request example
 
@@ -3433,7 +3434,8 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '
      {
-          "question": "What are the key advantages of Neovim over Vim?"
+          "question": "What are the key advantages of Neovim over Vim?",
+          "industry": "software_development"
      }'
 ```
 
@@ -3441,6 +3443,8 @@ curl --request POST \
 
 - `"question"`: (*Body Parameter*), `string`
   The original user question.
+- `"industry"`: (*Body Parameter*), `string`
+  Industry of the question.
 
 #### Response
 

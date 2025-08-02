@@ -1,5 +1,4 @@
 import { PageHeader } from '@/components/page-header';
-import { useSwitchToDarkThemeOnMount } from '@/components/theme-provider';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -97,8 +96,6 @@ export default function Agent() {
     useShowEmbedModal();
   const { navigateToAgentLogs } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
-
-  useSwitchToDarkThemeOnMount();
 
   return (
     <section className="h-full">
