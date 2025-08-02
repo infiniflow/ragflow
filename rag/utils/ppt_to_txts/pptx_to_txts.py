@@ -16,6 +16,8 @@ from PIL import Image
 
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag import settings
+from rag.utils.mineru_api_parse import MineruDocumentParser
+from typing import Optional
 
 MINIO_BUCKET_NAME = "parsed-file-images"
 MINIO_ERROR_BUCKET_NAME = "parsed-file-images-error"
@@ -33,6 +35,7 @@ def convert_ppt_to_txts(ppt_stream: BytesIO):
         list[str]: List of markdown pages extracted from the presentation
     """
     mineru_url = os.getenv("MINERU_URL")
+    print(mineru_url)
     vl_url = os.getenv("VL_URL")
     vl_api_key = os.getenv("VL_API_KEY")
     vl_model = os.getenv("VL_MODEL")
@@ -109,12 +112,28 @@ def extract_using_mineru(ppt_stream: BytesIO, mineru_url=None, vl_url=None, vl_a
     Returns:
         list[str]: List of markdown pages extracted from the presentation
     """
-    mineru_parse_result = parse_pptx_with_mineru(ppt_stream, mineru_url)
+    file_path = save_ppt_with_unique_id(ppt_stream, "ppt_files")
+    # file_path = mineru_api_parser.save_pdf_with_unique_id(pdf_stream)
+    
+    mineru_api_parser = MineruDocumentParser(api_key="eyJ0eXBlIjoiSldUIiwiYWxnIjoiSFM1MTIifQ.eyJqdGkiOiI0MzMwMDIwMiIsInJvbCI6IlJPTEVfUkVHSVNURVIiLCJpc3MiOiJPcGVuWExhYiIsImlhdCI6MTc1MzkzMTg3MiwiY2xpZW50SWQiOiJsa3pkeDU3bnZ5MjJqa3BxOXgydyIsInBob25lIjoiIiwib3BlbklkIjpudWxsLCJ1dWlkIjoiMDA3MGY5NGItOGVhOC00YzE2LTg4ZmQtYzdmZTUyYzg5NzBhIiwiZW1haWwiOiIiLCJleHAiOjE3NTUxNDE0NzJ9.dBrbXhNjH-qC4cvCpXOufo3I_PxAcApRGrsRmHuH8BTWClGWM08SVHzntCKFGeA94V8jCggR9C7MFU1vmZrx1w"
+                                ,file_path=file_path)
+    if mineru_api_parser.start_parsing():
+        print(f"Parse file succeed") 
+    else:
+        print(f"Parse file failed")  
+    content_list = mineru_api_parser.get_content_list()
 
-    content_list = mineru_parse_result["content_list"]
+    # mineru_parse_result = parse_pdf_with_mineru(pdf_stream, mineru_url)
+
+    # content_list = mineru_parse_result["content_list"]
     markdown_pages = generate_markdown_pages(content_list)
+    
+    # mineru_parse_result = parse_pptx_with_mineru(ppt_stream, mineru_url)
 
-    images = mineru_parse_result["images"]
+    # content_list = mineru_parse_result["content_list"]
+    # markdown_pages = generate_markdown_pages(content_list)
+    images = mineru_api_parser.get_base64_images()
+    # images = mineru_parse_result["images"]
     if vl_url and vl_api_key and vl_model:
         markdown_pages = add_image_description_to_markdown_pages(markdown_pages, images, vl_url, vl_api_key, vl_model)
 
@@ -440,3 +459,54 @@ def generate_markdown_pages(content_list):
         markdown_pages.append("\n\n".join(page_content))
 
     return markdown_pages
+
+
+def save_ppt_with_unique_id(ppt_bytesio: BytesIO, files_dir: str = "ppt_files") -> Optional[str]:
+    """
+    将字节流形式的PPT保存为具有唯一ID的本地PPT文件
+    
+    Args:
+        ppt_bytesio: 包含PPT数据的BytesIO对象
+        files_dir: 保存PPT文件的目录，默认为"ppt_files"
+        
+    Returns:
+        成功时返回文件完整路径，失败时返回None
+    """
+    try:
+        # 获取当前文件路径并计算项目根目录（根据实际目录结构调整）
+        current_file_path = os.path.abspath(__file__)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file_path))))
+        save_dir = os.path.join(project_root, files_dir)
+        
+        # 确保保存目录存在
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # 生成唯一ID作为文件名（UUID4格式）
+        unique_id = str(uuid.uuid4())
+        file_name = f"{unique_id}.ppt"  # 针对.ppt格式
+        # 如果需要支持.pptx格式，可以使用：file_name = f"{unique_id}.pptx"
+        file_path = os.path.join(save_dir, file_name)
+    
+        # 检查文件是否已存在（UUID碰撞概率极低，做双重保障）
+        if os.path.exists(file_path):
+            unique_id = str(uuid.uuid4())
+            file_name = f"{unique_id}.ppt"
+            file_path = os.path.join(save_dir, file_name)
+    
+        # 将BytesIO中的PPT数据写入文件
+        with open(file_path, "wb") as ppt_file:
+            ppt_bytesio.seek(0)  # 确保指针流指针移至起始位置，确保读取完整数据
+            ppt_file.write(ppt_bytesio.read())
+    
+        # 验证文件是否有效（非空）
+        if os.path.getsize(file_path) > 0:
+            return file_path
+        else:
+            print(f"错误：生成的PPT文件为空 - {file_path}")
+            if os.path.exists(file_path):
+                os.remove(file_path)  # 清理空文件
+            return None
+        
+    except Exception as e:
+        print(f"保存PPT文件失败：{str(e)}")
+        return None
