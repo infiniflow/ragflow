@@ -18,7 +18,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { useUpdateNodeInternals } from '@xyflow/react';
 import humanId from 'human-id';
 import trim from 'lodash/trim';
-import { ChevronsUpDown, X } from 'lucide-react';
+import { ChevronsUpDown,ChevronDown, ChevronUp, ChevronsUpDown, X } from 'lucide-react';
 import {
   ChangeEventHandler,
   FocusEventHandler,
@@ -181,7 +181,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   );
   const form = useFormContext<z.infer<typeof FormSchema>>();
   const { t } = useTranslate('flow');
-  const { fields, remove, append } = useFieldArray({
+  const { fields, remove, append, move} = useFieldArray({
     name: 'items',
     control: form.control,
   });
@@ -206,6 +206,14 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
     },
     [deleteCategorizeCaseEdges, fields, nodeId, remove],
   );
+  const handleMove = useCallback(
+    (from: number, to: number) => () => {
+      if (to < 0 || to >= fields.length) return;
+      move(from, to);
+      if (nodeId) updateNodeInternals(nodeId);
+    },
+    [fields.length, move, nodeId, updateNodeInternals],
+  );
 
   return (
     <div className="flex flex-col gap-4 ">
@@ -217,6 +225,26 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
             </h4>
             <CollapsibleTrigger asChild>
               <div className="flex gap-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-9 p-0"
+                  onClick={handleMove(index, index - 1)}
+                  disabled={index === 0}
+                  title="Move up"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-9 p-0"
+                  onClick={handleMove(index, index + 1)}
+                  disabled={index === fields.length - 1}
+                  title="Move down"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
