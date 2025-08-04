@@ -1265,6 +1265,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       subject: '主题',
       logTimeline: {
         begin: '准备开始',
+        userFillUp: '等你输入',
         agent: '智能体正在思考',
         retrieval: '查找知识',
         message: '回复',

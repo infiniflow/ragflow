@@ -13,14 +13,11 @@ import {
   useUploadCanvasFileWithProgress,
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
-import { Message } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { get } from 'lodash';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback } from 'react';
 import { useParams } from 'umi';
 import DebugContent from '../debug-content';
-import { BeginQuery } from '../interface';
-import { buildBeginQueryWithObject } from '../utils';
+import { useAwaitCompentData } from '../hooks/use-chat-logic';
 
 function AgentChatBox() {
   const {
@@ -43,33 +40,12 @@ function AgentChatBox() {
   const { data: canvasInfo } = useFetchAgent();
   const { id: canvasId } = useParams();
   const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
-  const getInputs = useCallback((message: Message) => {
-    return get(message, 'data.inputs', {}) as Record<string, BeginQuery>;
-  }, []);
 
-  const buildInputList = useCallback(
-    (message: Message) => {
-      return Object.entries(getInputs(message)).map(([key, val]) => {
-        return {
-          ...val,
-          key,
-        };
-      });
-    },
-    [getInputs],
-  );
-
-  const handleOk = useCallback(
-    (message: Message) => (values: BeginQuery[]) => {
-      const inputs = getInputs(message);
-      const nextInputs = buildBeginQueryWithObject(inputs, values);
-      sendFormMessage({
-        inputs: nextInputs,
-        id: canvasId,
-      });
-    },
-    [canvasId, getInputs, sendFormMessage],
-  );
+  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+    derivedMessages,
+    sendFormMessage,
+    canvasId: canvasId as string,
+  });
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
@@ -79,16 +55,7 @@ function AgentChatBox() {
       },
       [appendUploadResponseList, uploadCanvasFile],
     );
-  const isWaitting = useMemo(() => {
-    const temp = derivedMessages?.some((message, i) => {
-      const flag =
-        message.role === MessageType.Assistant &&
-        derivedMessages.length - 1 === i &&
-        message.data;
-      return flag;
-    });
-    return temp;
-  }, [derivedMessages]);
+
   return (
     <>
       <section className="flex flex-1 flex-col px-5 h-[90vh]">

@@ -1322,6 +1322,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       logTimeline: {
         begin: 'Ready to begin',
         agent: 'Agent is thinking',
+        userFillUp: 'Waiting for you',
         retrieval: 'Looking up knowledge',
         message: 'Agent says',
         awaitResponse: 'Waiting for you',

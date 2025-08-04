@@ -2,11 +2,11 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { IRetrievalNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
-import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { memo, useMemo } from 'react';
 import { NodeHandleId } from '../../constant';
+import { useGetVariableLabelByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
@@ -21,6 +21,7 @@ function InnerRetrievalNode({
   selected,
 }: NodeProps<IRetrievalNode>) {
   const knowledgeBaseIds: string[] = get(data, 'form.kb_ids', []);
+  console.log('🚀 ~ InnerRetrievalNode ~ knowledgeBaseIds:', knowledgeBaseIds);
   const { list: knowledgeList } = useFetchKnowledgeList(true);
   const knowledgeBases = useMemo(() => {
     return knowledgeBaseIds.map((x) => {
@@ -32,6 +33,8 @@ function InnerRetrievalNode({
       };
     });
   }, [knowledgeList, knowledgeBaseIds]);
+
+  const getLabel = useGetVariableLabelByValue(id);
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
@@ -63,25 +66,27 @@ function InnerRetrievalNode({
             [styles.nodeHeader]: knowledgeBaseIds.length > 0,
           })}
         ></NodeHeader>
-        <Flex vertical gap={8}>
-          {knowledgeBases.map((knowledge) => {
+        <section className="flex flex-col gap-2">
+          {knowledgeBaseIds.map((id) => {
+            const item = knowledgeList.find((y) => id === y.id);
+            const label = getLabel(id);
+
             return (
-              <div className={styles.nodeText} key={knowledge.id}>
-                <Flex align={'center'} gap={6}>
+              <div className={styles.nodeText} key={id}>
+                <div className="flex items-center gap-1.5">
                   <RAGFlowAvatar
                     className="size-6 rounded-lg"
-                    avatar={knowledge.avatar}
-                    name={knowledge.name || 'CN'}
+                    avatar={id}
+                    name={item?.name || (label as string) || 'CN'}
                     isPerson={true}
                   />
-                  <Flex className={styles.knowledgeNodeName} flex={1}>
-                    {knowledge.name}
-                  </Flex>
-                </Flex>
+
+                  <div className={'truncate flex-1'}>{label || item?.name}</div>
+                </div>
               </div>
             );
           })}
-        </Flex>
+        </section>
       </NodeWrapper>
     </ToolBar>
   );
