@@ -81,11 +81,21 @@ export const typeMap = {
   httpRequest: t('flow.logTimeline.httpRequest'),
   wenCai: t('flow.logTimeline.wenCai'),
   yahooFinance: t('flow.logTimeline.yahooFinance'),
+  userFillUp: t('flow.logTimeline.userFillUp'),
 };
 export const toLowerCaseStringAndDeleteChar = (
   str: string,
   char: string = '_',
 ) => str.toLowerCase().replace(/ /g, '').replaceAll(char, '');
+
+// Convert all keys in typeMap to lowercase and output the new typeMap
+export const typeMapLowerCase = Object.fromEntries(
+  Object.entries(typeMap).map(([key, value]) => [
+    toLowerCaseStringAndDeleteChar(key),
+    value,
+  ]),
+);
+
 function getInputsOrOutputs(
   nodeEventList: INodeData[],
   field: 'inputs' | 'outputs',
@@ -254,11 +264,12 @@ export const WorkFlowTimeline = ({
                           <span>
                             {!isShare && getNodeName(x.data?.component_name)}
                             {isShare &&
-                              typeMap[
+                              (typeMapLowerCase[
                                 toLowerCaseStringAndDeleteChar(
                                   nodeLabel,
                                 ) as keyof typeof typeMap
-                              ]}
+                              ] ??
+                                nodeLabel)}
                           </span>
                           <span className="text-text-sub-title text-xs">
                             {x.data.elapsed_time?.toString().slice(0, 6)}
