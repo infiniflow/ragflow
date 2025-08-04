@@ -1134,7 +1134,7 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?create_time_from={timestamp}&create_time_to={timestamp} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
