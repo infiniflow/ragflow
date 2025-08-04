@@ -122,7 +122,7 @@ dependencies = [
     "flasgger>=0.9.7.1,<0.10.0",
     "xxhash>=3.5.0,<4.0.0",
     "trio>=0.29.0",
-    "langfuse>=2.60.0",
+    "langfuse>=2.60.0,<3.0.0",
     "debugpy>=1.8.13",
     "mcp>=1.9.4",
     "opensearch-py==2.7.1",
