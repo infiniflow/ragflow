@@ -1,3 +1,4 @@
+// https://github.com/sersavan/shadcn-multi-select-component
 // src/components/multi-select.tsx
 
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -28,6 +29,51 @@ import {
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+
+export type MultiSelectOptionType = {
+  label: React.ReactNode;
+  value: string;
+  disabled?: boolean;
+  icon?: React.ComponentType<{ className?: string }>;
+};
+
+export type MultiSelectGroupOptionType = {
+  label: React.ReactNode;
+  options: MultiSelectOptionType[];
+};
+
+function MultiCommandItem({
+  option,
+  isSelected,
+  toggleOption,
+}: {
+  option: MultiSelectOptionType;
+  isSelected: boolean;
+  toggleOption(value: string): void;
+}) {
+  return (
+    <CommandItem
+      key={option.value}
+      onSelect={() => toggleOption(option.value)}
+      className="cursor-pointer"
+    >
+      <div
+        className={cn(
+          'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
+          isSelected
+            ? 'bg-primary text-primary-foreground'
+            : 'opacity-50 [&_svg]:invisible',
+        )}
+      >
+        <CheckIcon className="h-4 w-4" />
+      </div>
+      {option.icon && (
+        <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
+      )}
+      <span>{option.label}</span>
+    </CommandItem>
+  );
+}
 
 /**
  * Variants for the multi-select component to handle different styles.
@@ -63,14 +109,7 @@ interface MultiSelectProps
    * An array of option objects to be displayed in the multi-select component.
    * Each option object has a label, value, and an optional icon.
    */
-  options: {
-    /** The text to display for the option. */
-    label: string;
-    /** The unique value associated with the option. */
-    value: string;
-    /** Optional icon component to display alongside the option. */
-    icon?: React.ComponentType<{ className?: string }>;
-  }[];
+  options: (MultiSelectGroupOptionType | MultiSelectOptionType)[];
 
   /**
    * Callback function triggered when the selected values change.
@@ -144,6 +183,11 @@ export const MultiSelect = React.forwardRef<
     const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
     const [isAnimating, setIsAnimating] = React.useState(false);
 
+    const flatOptions = React.useMemo(() => {
+      return options.flatMap((option) =>
+        'options' in option ? option.options : [option],
+      );
+    }, [options]);
     const handleInputKeyDown = (
       event: React.KeyboardEvent<HTMLInputElement>,
     ) => {
@@ -181,10 +225,10 @@ export const MultiSelect = React.forwardRef<
     };
 
     const toggleAll = () => {
-      if (selectedValues.length === options.length) {
+      if (selectedValues.length === flatOptions.length) {
         handleClear();
       } else {
-        const allValues = options.map((option) => option.value);
+        const allValues = flatOptions.map((option) => option.value);
         setSelectedValues(allValues);
         onValueChange(allValues);
       }
@@ -210,7 +254,7 @@ export const MultiSelect = React.forwardRef<
               <div className="flex justify-between items-center w-full">
                 <div className="flex flex-wrap items-center">
                   {selectedValues?.slice(0, maxCount)?.map((value) => {
-                    const option = options.find((o) => o.value === value);
+                    const option = flatOptions.find((o) => o.value === value);
                     const IconComponent = option?.icon;
                     return (
                       <Badge
@@ -304,7 +348,7 @@ export const MultiSelect = React.forwardRef<
                   <div
                     className={cn(
                       'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-                      selectedValues.length === options.length
+                      selectedValues.length === flatOptions.length
                         ? 'bg-primary text-primary-foreground'
                         : 'opacity-50 [&_svg]:invisible',
                     )}
@@ -313,32 +357,38 @@ export const MultiSelect = React.forwardRef<
                   </div>
                   <span>(Select All)</span>
                 </CommandItem>
-                {options.map((option) => {
-                  const isSelected = selectedValues.includes(option.value);
-                  return (
-                    <CommandItem
-                      key={option.value}
-                      onSelect={() => toggleOption(option.value)}
-                      className="cursor-pointer"
-                    >
-                      <div
-                        className={cn(
-                          'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-                          isSelected
-                            ? 'bg-primary text-primary-foreground'
-                            : 'opacity-50 [&_svg]:invisible',
-                        )}
-                      >
-                        <CheckIcon className="h-4 w-4" />
-                      </div>
-                      {option.icon && (
-                        <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
-                      )}
-                      <span>{option.label}</span>
-                    </CommandItem>
-                  );
-                })}
+                {!options.some((x) => 'options' in x) &&
+                  (options as unknown as MultiSelectOptionType[]).map(
+                    (option) => {
+                      const isSelected = selectedValues.includes(option.value);
+                      return (
+                        <MultiCommandItem
+                          option={option}
+                          key={option.value}
+                          isSelected={isSelected}
+                          toggleOption={toggleOption}
+                        ></MultiCommandItem>
+                      );
+                    },
+                  )}
               </CommandGroup>
+              {options.every((x) => 'options' in x) &&
+                options.map((x, idx) => (
+                  <CommandGroup heading={x.label} key={idx}>
+                    {x.options.map((option) => {
+                      const isSelected = selectedValues.includes(option.value);
+
+                      return (
+                        <MultiCommandItem
+                          option={option}
+                          key={option.value}
+                          isSelected={isSelected}
+                          toggleOption={toggleOption}
+                        ></MultiCommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                ))}
               <CommandSeparator />
               <CommandGroup>
                 <div className="flex items-center justify-between">

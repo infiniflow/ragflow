@@ -175,7 +175,7 @@ const ChatContainer = () => {
                 );
               })}
             </div>
-            <div ref={ref} />
+            <div ref={ref.scrollRef} />
           </div>
           <div className="flex w-full justify-center mb-8">
             <div className="w-5/6">
