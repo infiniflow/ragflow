@@ -59,6 +59,10 @@ class Base(ABC):
     def _image_prompt(self, text, images):
         if not images:
             return text
+
+        if isinstance(images, str):
+            images = [images]
+
         pmpt = [{"type": "text", "text": text}]
         for img in images:
             pmpt.append({
