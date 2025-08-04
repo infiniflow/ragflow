@@ -193,3 +193,5 @@ dist
 # SvelteKit build / generate output
 .svelte-kit
 
+# Default backup dir
+backup
