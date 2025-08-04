@@ -51,7 +51,7 @@ export function JsonViewer({
         src={data}
         displaySize
         collapseStringsAfterLength={100000000000}
-        className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-slate-800"
+        className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-muted"
       />
     </section>
   );
@@ -247,7 +247,9 @@ export const WorkFlowTimeline = ({
                     className="bg-background-card px-3"
                   >
                     <AccordionItem value={idx.toString()}>
-                      <AccordionTrigger>
+                      <AccordionTrigger
+                        hideDownIcon={isShare && !x.data?.thoughts}
+                      >
                         <div className="flex gap-2 items-center">
                           <span>
                             {!isShare && getNodeName(x.data?.component_name)}
@@ -294,7 +296,7 @@ export const WorkFlowTimeline = ({
                       {isShare && x.data?.thoughts && (
                         <AccordionContent>
                           <div className="space-y-2">
-                            <div className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-slate-800">
+                            <div className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-muted">
                               <HightLightMarkdown>
                                 {x.data.thoughts || ''}
                               </HightLightMarkdown>
