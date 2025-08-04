@@ -507,7 +507,16 @@ print(doc)
 ### List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 30, order_by:str = "create_time", desc: bool = True) -> list[Document]
+Dataset.list_documents(
+    id: str = None,
+    keywords: str = None,
+    page: int = 1,
+    page_size: int = 30,
+    order_by: str = "create_time",
+    desc: bool = True,
+    create_time_from: int = 0,
+    create_time_to: int = 0
+) -> list[Document]
 ```
 
 Lists documents in the current dataset.
@@ -540,6 +549,12 @@ The field by which documents should be sorted. Available options:
 ##### desc: `bool`
 
 Indicates whether the retrieved documents should be sorted in descending order. Defaults to `True`.
+
+##### create_time_from: `int`
+Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to 0.
+
+##### create_time_to: `int`
+Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to 0.
 
 #### Returns
 
