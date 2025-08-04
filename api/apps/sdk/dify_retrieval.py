@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from flask import request, jsonify
 
 from api.db import LLMType
@@ -77,7 +79,7 @@ def retrieval(tenant_id):
                 "content": c["content_with_weight"],
                 "score": c["similarity"],
                 "title": c["docnm_kwd"],
-                "metadata": doc.meta_fields
+                "metadata": getattr(doc, 'meta_fields', {})
             })
 
         return jsonify({"records": records})
@@ -87,4 +89,5 @@ def retrieval(tenant_id):
                 message='No chunk found! Check the chunk status please!',
                 code=settings.RetCode.NOT_FOUND
             )
+        logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
