@@ -247,7 +247,10 @@ def list_tags(kb_id):
             code=settings.RetCode.AUTHENTICATION_ERROR
         )
 
-    tags = settings.retrievaler.all_tags(current_user.id, [kb_id])
+    tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
+    tags = []
+    for tenant in tenants:
+        tags += settings.retrievaler.all_tags(tenant["tenant_id"], [kb_id])
     return get_json_result(data=tags)
 
 
@@ -263,7 +266,10 @@ def list_tags_from_kbs():
                 code=settings.RetCode.AUTHENTICATION_ERROR
             )
 
-    tags = settings.retrievaler.all_tags(current_user.id, kb_ids)
+    tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
+    tags = []
+    for tenant in tenants:
+        tags += settings.retrievaler.all_tags(tenant["tenant_id"], kb_ids)
     return get_json_result(data=tags)
 
 
