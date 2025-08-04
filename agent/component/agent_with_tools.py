@@ -157,7 +157,8 @@ class Agent(LLM, ToolBase):
         prompt, msg = self._prepare_prompt_variables()
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
+        ex = self.exception_handler()
+        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure and not (ex and ex["goto"]):
             self.set_output("content", partial(self.stream_output_with_tools, prompt, msg))
             return
 
@@ -169,7 +170,10 @@ class Agent(LLM, ToolBase):
 
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Agent._chat got error. response: {ans}")
-            self.set_output("_ERROR", ans)
+            if self.get_exception_default_value():
+                self.set_output("content", self.get_exception_default_value())
+            else:
+                self.set_output("_ERROR", ans)
             return
 
         self.set_output("content", ans)
@@ -182,6 +186,12 @@ class Agent(LLM, ToolBase):
         answer_without_toolcall = ""
         use_tools = []
         for delta_ans,_ in self._react_with_tools_streamly(msg, use_tools):
+            if delta_ans.find("**ERROR**") >= 0:
+                if self.get_exception_default_value():
+                    self.set_output("content", self.get_exception_default_value())
+                    yield self.get_exception_default_value()
+                else:
+                    self.set_output("_ERROR", delta_ans)
             answer_without_toolcall += delta_ans
             yield delta_ans
 
@@ -204,8 +214,8 @@ class Agent(LLM, ToolBase):
         hist = deepcopy(history)
         last_calling = ""
         if len(hist) > 3:
-            self.callback("Multi-turn conversation optimization", {}, " running ...")
             user_request = full_question(messages=history, chat_mdl=self.chat_mdl)
+            self.callback("Multi-turn conversation optimization", {}, user_request)
         else:
             user_request = history[-1]["content"]
 
@@ -241,9 +251,6 @@ class Agent(LLM, ToolBase):
                     cited = True
             yield "", token_count
 
-            if not cited and need2cite:
-                self.callback("gen_citations", {}, " running ...")
-
             _hist = hist
             if len(hist) > 12:
                 _hist = [hist[0], hist[1], *hist[-10:]]
@@ -255,8 +262,12 @@ class Agent(LLM, ToolBase):
             if not need2cite or cited:
                 return
 
+            txt = ""
             for delta_ans in self._gen_citations(entire_txt):
                 yield delta_ans, 0
+                txt += delta_ans
+
+            self.callback("gen_citations", {}, txt)
 
         def append_user_content(hist, content):
             if hist[-1]["role"] == "user":
@@ -264,8 +275,8 @@ class Agent(LLM, ToolBase):
             else:
                 hist.append({"role": "user", "content": content})
 
-        self.callback("analyze_task", {}, " running ...")
         task_desc = analyze_task(self.chat_mdl, user_request, tool_metas)
+        self.callback("analyze_task", {}, task_desc)
         for _ in range(self._param.max_rounds + 1):
             response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc)
             # self.callback("next_step", {}, str(response)[:256]+"...")

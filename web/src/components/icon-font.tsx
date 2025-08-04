@@ -8,7 +8,7 @@ type IconFontType = {
 };
 
 export const IconFont = ({ name, className }: IconFontType) => (
-  <svg className={cn('fill-current size-4', className)}>
+  <svg className={cn('size-4', className)}>
     <use xlinkHref={`#icon-${name}`} />
   </svg>
 );

@@ -182,9 +182,8 @@ export const useSendAgentMessage = (
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
-    url || api.runCanvas,
-  );
+  const { send, answerList, done, stopOutputMessage, resetAnswerList } =
+    useSendMessageBySSE(url || api.runCanvas);
   const messageId = useMemo(() => {
     return answerList[0]?.message_id;
   }, [answerList]);
@@ -204,6 +203,7 @@ export const useSendAgentMessage = (
     removeMessageById,
     addNewestOneQuestion,
     addNewestOneAnswer,
+    removeAllMessages,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
@@ -269,7 +269,7 @@ export const useSendAgentMessage = (
 
   const sendFormMessage = useCallback(
     (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
-      send(body);
+      send({ ...body, session_id: sessionId });
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([key, val]) => `${key}: ${val.value}`)
@@ -277,8 +277,16 @@ export const useSendAgentMessage = (
         role: MessageType.User,
       });
     },
-    [addNewestOneQuestion, send],
+    [addNewestOneQuestion, send, sessionId],
   );
+
+  // reset session
+  const resetSession = useCallback(() => {
+    stopOutputMessage();
+    resetAnswerList();
+    setSessionId(null);
+    removeAllMessages();
+  }, [resetAnswerList, removeAllMessages, stopOutputMessage]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
@@ -336,6 +344,7 @@ export const useSendAgentMessage = (
     stopOutputMessage,
     send,
     sendFormMessage,
+    resetSession,
     findReferenceByMessageId,
     appendUploadResponseList,
   };

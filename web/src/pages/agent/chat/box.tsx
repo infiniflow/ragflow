@@ -13,14 +13,11 @@ import {
   useUploadCanvasFileWithProgress,
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
-import { Message } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { get } from 'lodash';
 import { memo, useCallback } from 'react';
 import { useParams } from 'umi';
 import DebugContent from '../debug-content';
-import { BeginQuery } from '../interface';
-import { buildBeginQueryWithObject } from '../utils';
+import { useAwaitCompentData } from '../hooks/use-chat-logic';
 
 function AgentChatBox() {
   const {
@@ -44,33 +41,11 @@ function AgentChatBox() {
   const { id: canvasId } = useParams();
   const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
 
-  const getInputs = useCallback((message: Message) => {
-    return get(message, 'data.inputs', {}) as Record<string, BeginQuery>;
-  }, []);
-
-  const buildInputList = useCallback(
-    (message: Message) => {
-      return Object.entries(getInputs(message)).map(([key, val]) => {
-        return {
-          ...val,
-          key,
-        };
-      });
-    },
-    [getInputs],
-  );
-
-  const handleOk = useCallback(
-    (message: Message) => (values: BeginQuery[]) => {
-      const inputs = getInputs(message);
-      const nextInputs = buildBeginQueryWithObject(inputs, values);
-      sendFormMessage({
-        inputs: nextInputs,
-        id: canvasId,
-      });
-    },
-    [canvasId, getInputs, sendFormMessage],
-  );
+  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+    derivedMessages,
+    sendFormMessage,
+    canvasId: canvasId as string,
+  });
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
@@ -106,12 +81,26 @@ function AgentChatBox() {
                   showLikeButton={false}
                   sendLoading={sendLoading}
                 >
-                  <DebugContent
-                    parameters={buildInputList(message)}
-                    ok={handleOk(message)}
-                    isNext={false}
-                    btnText={'Submit'}
-                  ></DebugContent>
+                  {message.role === MessageType.Assistant &&
+                    derivedMessages.length - 1 === i && (
+                      <DebugContent
+                        parameters={buildInputList(message)}
+                        message={message}
+                        ok={handleOk(message)}
+                        isNext={false}
+                        btnText={'Submit'}
+                      ></DebugContent>
+                    )}
+                  {message.role === MessageType.Assistant &&
+                    derivedMessages.length - 1 !== i && (
+                      <div>
+                        <div>{message?.data?.tips}</div>
+
+                        <div>
+                          {buildInputList(message)?.map((item) => item.value)}
+                        </div>
+                      </div>
+                    )}
                 </MessageItem>
               );
             })}
@@ -122,9 +111,9 @@ function AgentChatBox() {
         <NextMessageInput
           value={value}
           sendLoading={sendLoading}
-          disabled={false}
-          sendDisabled={sendLoading}
-          isUploading={loading}
+          disabled={isWaitting}
+          sendDisabled={sendLoading || isWaitting}
+          isUploading={loading || isWaitting}
           onPressEnter={handlePressEnter}
           onInputChange={handleInputChange}
           stopOutputMessage={stopOutputMessage}

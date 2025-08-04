@@ -737,6 +737,7 @@ def related_questions(tenant_id):
     if not req.get("question"):
         return get_error_data_result("`question` is required.")
     question = req["question"]
+    industry = req.get("industry", "")
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     prompt = """
 Objective: To generate search terms related to the user's search keywords, helping users find more valuable information.
@@ -746,7 +747,10 @@ Instructions:
  - Use common, general terms as much as possible, avoiding obscure words or technical jargon.
  - Keep the term length between 2-4 words, concise and clear.
  - DO NOT translate, use the language of the original keywords.
-
+"""
+    if industry:
+        prompt += f" - Ensure all search terms are relevant to the industry: {industry}.\n"
+    prompt += """
 ### Example:
 Keywords: Chinese football
 Related search terms:
@@ -844,6 +848,10 @@ def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
-    return get_result(data=canvas.get_component_input_form("begin"))
+    return get_result(data={
+        "title": cvs.title,
+        "avatar": cvs.avatar,
+        "inputs": canvas.get_component_input_form("begin")
+    })
 
 

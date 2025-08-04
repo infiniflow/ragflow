@@ -144,12 +144,14 @@ const AgentLogPage: React.FC = () => {
 
   const handlePageChange = (current?: number, pageSize?: number) => {
     console.log('current', current, 'pageSize', pageSize);
-    setPagination((pre) => {
-      return {
-        ...pre,
-        current: current ?? pre.current,
-        pageSize: pageSize ?? pre.pageSize,
-      };
+    let page = current || 1;
+    if (pagination.pageSize !== pageSize) {
+      page = 1;
+    }
+    setPagination({
+      ...pagination,
+      current: page,
+      pageSize: pageSize || 10,
     });
   };
 
@@ -196,8 +198,10 @@ const AgentLogPage: React.FC = () => {
   const [openModal, setOpenModal] = useState(false);
   const [modalData, setModalData] = useState<IAgentLogResponse>();
   const showLogDetail = (item: IAgentLogResponse) => {
-    setModalData(item);
-    setOpenModal(true);
+    if (item?.round) {
+      setModalData(item);
+      setOpenModal(true);
+    }
   };
 
   return (
@@ -227,7 +231,7 @@ const AgentLogPage: React.FC = () => {
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold mb-4">Log</h1>
 
-          <div className="flex justify-end space-x-2 mb-4">
+          <div className="flex justify-end space-x-2 mb-4 text-foreground">
             <div className="flex items-center space-x-2">
               <span>ID/Title</span>
               <SearchInput

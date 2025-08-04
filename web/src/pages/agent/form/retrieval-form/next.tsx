@@ -97,7 +97,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
       <FormWrapper>
         <FormContainer>
           <QueryVariable></QueryVariable>
-          <KnowledgeBaseFormField></KnowledgeBaseFormField>
+          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
         <Collapse title={<div>Advanced Settings</div>}>
           <FormContainer>
