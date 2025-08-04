@@ -80,7 +80,7 @@ export function Header() {
       { path: Routes.Datasets, name: t('header.knowledgeBase'), icon: Library },
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('header.search'), icon: Search },
-      { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
+      { path: Routes.Agents, name: '智能体', icon: Cpu },
       { path: Routes.Files, name: t('header.fileManager'), icon: File },
     ],
     [t],
@@ -117,7 +117,7 @@ export function Header() {
   }, [navigate]);
 
   return (
-    <section className="p-5 pr-14 flex justify-between items-center ">
+    <section className="flex items-center justify-between p-5 pr-14 ">
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
@@ -127,7 +127,7 @@ export function Header() {
         />
         <div className="flex items-center gap-1.5 text-text-sub-title">
           <Github className="size-3.5" />
-          <span className=" text-base">21.5k stars</span>
+          <span className="text-base ">21.5k stars</span>
         </div>
       </div>
       <Segmented
@@ -161,7 +161,7 @@ export function Header() {
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}
-            className="size-8 cursor-pointer"
+            className="cursor-pointer size-8"
             onClick={navigateToProfile}
           ></RAGFlowAvatar>
           <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-text-title-invert bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
