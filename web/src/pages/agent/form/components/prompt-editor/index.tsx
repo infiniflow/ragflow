@@ -103,9 +103,12 @@ function PromptContent({
         </div>
       )}
       <ContentEditable
-        className={cn('relative px-2 py-1 focus-visible:outline-none', {
-          'min-h-40': multiLine,
-        })}
+        className={cn(
+          'relative px-2 py-1 focus-visible:outline-none max-h-[50vh] overflow-auto',
+          {
+            'min-h-40': multiLine,
+          },
+        )}
         onBlur={handleBlur}
         onFocus={handleFocus}
       />
