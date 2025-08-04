@@ -269,7 +269,7 @@ export const useSendAgentMessage = (
 
   const sendFormMessage = useCallback(
     (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
-      send(body);
+      send({ ...body, session_id: sessionId });
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([key, val]) => `${key}: ${val.value}`)
@@ -277,7 +277,7 @@ export const useSendAgentMessage = (
         role: MessageType.User,
       });
     },
-    [addNewestOneQuestion, send],
+    [addNewestOneQuestion, send, sessionId],
   );
 
   // reset session

@@ -43,7 +43,7 @@ const RetrievalForm = () => {
       >
         <FormContainer>
           <DescriptionField></DescriptionField>
-          <KnowledgeBaseFormField></KnowledgeBaseFormField>
+          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
         <Collapse title={<div>Advanced Settings</div>}>
           <FormContainer>
