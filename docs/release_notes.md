@@ -51,7 +51,7 @@ From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and
 - A blog generation workflow that transforms raw ideas into SEO-friendly blog content.
 - An intelligent customer service workflow.
 - A user feedback analysis template that directs user feedback to appropriate teams through semantic analysis.
-- Trip Planner: Uses web search and MCP maps to assist with travel planning.
+- Trip Planner: Uses web search and map MCP servers to assist with travel planning.
 - Image Lingo: Translates content from uploaded photos.
 - An information search assistant that retrieves answers from both internal knowledge bases and the web.
 
