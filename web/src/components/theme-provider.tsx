@@ -25,9 +25,7 @@ export function ThemeProvider({
   storageKey = 'vite-ui-theme',
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<ThemeEnum>(
-    () => (localStorage.getItem(storageKey) as ThemeEnum) || defaultTheme,
-  );
+  const [theme, setTheme] = useState<ThemeEnum>(() => defaultTheme);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -61,13 +59,13 @@ export const useTheme = () => {
 export const useIsDarkTheme = () => {
   const { theme } = useTheme();
 
-  return theme === ThemeEnum.Dark;
+  return theme === ThemeEnum.Light;
 };
 
 export function useSwitchToDarkThemeOnMount() {
   const { setTheme } = useTheme();
 
   useEffect(() => {
-    setTheme(ThemeEnum.Dark);
+    setTheme(ThemeEnum.Light);
   }, [setTheme]);
 }
