@@ -687,6 +687,12 @@ def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Option
 
 
 async def is_strong_enough(chat_model, embedding_model):
+    count = settings.STRONG_TEST_COUNT
+    if not chat_model or not embedding_model:
+        return
+    if isinstance(count, int) and count <= 0:
+        return
+
     @timeout(60, 2)
     async def _is_strong_enough():
         nonlocal chat_model, embedding_model
@@ -701,5 +707,5 @@ async def is_strong_enough(chat_model, embedding_model):
 
     # Pressure test for GraphRAG task
     async with trio.open_nursery() as nursery:
-        for _ in range(32):
+        for _ in range(count):
             nursery.start_soon(_is_strong_enough)
