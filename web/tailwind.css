@@ -246,7 +246,7 @@
 @layer utilities {
   .scrollbar-auto {
     /* hide scrollbar */
-    scrollbar-width: thin;
+    scrollbar-width: none;
     scrollbar-color: transparent transparent;
   }
 
