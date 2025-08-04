@@ -169,7 +169,7 @@
                             "presence_penalty": 0.5,
                             "prompts": [
                                 {
-                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Ouline agent output is {Agent:BetterSitesSend@content}",
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Outline agent output is {Agent:BetterSitesSend@content}",
                                     "role": "user"
                                 }
                             ],
@@ -249,7 +249,7 @@
                             "presence_penalty": 0.5,
                             "prompts": [
                                 {
-                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Ouline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Outline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
                                     "role": "user"
                                 }
                             ],
@@ -601,7 +601,7 @@
                                 "presence_penalty": 0.5,
                                 "prompts": [
                                     {
-                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Ouline agent output is {Agent:BetterSitesSend@content}",
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Outline agent output is {Agent:BetterSitesSend@content}",
                                         "role": "user"
                                     }
                                 ],
@@ -714,7 +714,7 @@
                                 "presence_penalty": 0.5,
                                 "prompts": [
                                     {
-                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Ouline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Outline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
                                         "role": "user"
                                     }
                                 ],
