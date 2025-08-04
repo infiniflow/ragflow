@@ -1,9 +1,13 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
 import { UserOutlined } from '@ant-design/icons';
 import { Avatar as AntAvatar, Form, Select, Space } from 'antd';
+import { toLower } from 'lodash';
+import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { RAGFlowAvatar } from './ragflow-avatar';
 import { FormControl, FormField, FormItem, FormLabel } from './ui/form';
 import { MultiSelect } from './ui/multi-select';
@@ -66,15 +70,21 @@ const KnowledgeBaseItem = ({
 
 export default KnowledgeBaseItem;
 
-export function KnowledgeBaseFormField() {
+export function KnowledgeBaseFormField({
+  showVariable = false,
+}: {
+  showVariable?: boolean;
+}) {
   const form = useFormContext();
-  const { t } = useTranslate('chat');
+  const { t } = useTranslation();
 
   const { list: knowledgeList } = useFetchKnowledgeList(true);
 
   const filteredKnowledgeList = knowledgeList.filter(
     (x) => x.parser_id !== DocumentParserType.Tag,
   );
+
+  const nextOptions = useBuildQueryVariableOptions();
 
   const knowledgeOptions = filteredKnowledgeList.map((x) => ({
     label: x.name,
@@ -84,18 +94,48 @@ export function KnowledgeBaseFormField() {
     ),
   }));
 
+  const options = useMemo(() => {
+    if (showVariable) {
+      return [
+        {
+          label: t('knowledgeDetails.dataset'),
+          options: knowledgeOptions,
+        },
+        ...nextOptions.map((x) => {
+          return {
+            ...x,
+            options: x.options
+              .filter((y) => toLower(y.type).includes('string'))
+              .map((x) => ({
+                ...x,
+                icon: () => (
+                  <RAGFlowAvatar
+                    className="size-4 mr-2"
+                    avatar={x.label}
+                    name={x.label}
+                  />
+                ),
+              })),
+          };
+        }),
+      ];
+    }
+
+    return knowledgeOptions;
+  }, [knowledgeOptions, nextOptions, showVariable, t]);
+
   return (
     <FormField
       control={form.control}
       name="kb_ids"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>{t('knowledgeBases')}</FormLabel>
+          <FormLabel>{t('chat.knowledgeBases')}</FormLabel>
           <FormControl>
             <MultiSelect
-              options={knowledgeOptions}
+              options={options}
               onValueChange={field.onChange}
-              placeholder={t('knowledgeBasesMessage')}
+              placeholder={t('chat.knowledgeBasesMessage')}
               variant="inverted"
               maxCount={100}
               defaultValue={field.value}

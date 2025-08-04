@@ -47,7 +47,7 @@ class Extractor:
         self._language = language
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
 
-    @timeout(60*3)
+    @timeout(60*5)
     def _chat(self, system, history, gen_conf={}):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
