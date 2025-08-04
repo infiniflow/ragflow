@@ -634,6 +634,17 @@ def concat_img(img1, img2):
         return img2
     if not img1 and not img2:
         return None
+    
+    if img1 is img2:
+        return img1
+    
+    if isinstance(img1, Image.Image) and isinstance(img2, Image.Image):
+        pixel_data1 = img1.tobytes()
+        pixel_data2 = img2.tobytes()
+        if pixel_data1 == pixel_data2:
+            img2.close()
+            return img1
+
     width1, height1 = img1.size
     width2, height2 = img2.size
 
@@ -643,7 +654,8 @@ def concat_img(img1, img2):
 
     new_image.paste(img1, (0, 0))
     new_image.paste(img2, (0, height1))
-
+    img1.close()
+    img2.close()
     return new_image
 
 
