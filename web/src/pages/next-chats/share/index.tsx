@@ -13,7 +13,9 @@ import {
 } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import i18n from '@/locales/config';
+import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
+import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
 import { IInputs } from '@/pages/agent/interface';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
@@ -56,10 +58,15 @@ const ChatContainer = () => {
     appendUploadResponseList,
     parameterDialogVisible,
     showParameterDialog,
+    sendFormMessage,
     ok,
     resetSession,
   } = useSendNextSharedMessage(addEventList);
-
+  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+    derivedMessages,
+    sendFormMessage,
+    canvasId: conversationId as string,
+  });
   const sendDisabled = useSendButtonDisabled(value);
   const appConf = useFetchAppConf();
   const { data: inputsData } = useFetchExternalAgentInputs();
@@ -171,7 +178,28 @@ const ChatContainer = () => {
                     showLoudspeaker={false}
                     showLog={false}
                     sendLoading={sendLoading}
-                  ></MessageItem>
+                  >
+                    {message.role === MessageType.Assistant &&
+                      derivedMessages.length - 1 === i && (
+                        <DebugContent
+                          parameters={buildInputList(message)}
+                          message={message}
+                          ok={handleOk(message)}
+                          isNext={false}
+                          btnText={'Submit'}
+                        ></DebugContent>
+                      )}
+                    {message.role === MessageType.Assistant &&
+                      derivedMessages.length - 1 !== i && (
+                        <div>
+                          <div>{message?.data?.tips}</div>
+
+                          <div>
+                            {buildInputList(message)?.map((item) => item.value)}
+                          </div>
+                        </div>
+                      )}
+                  </MessageItem>
                 );
               })}
             </div>
@@ -182,15 +210,15 @@ const ChatContainer = () => {
               <NextMessageInput
                 isShared
                 value={value}
-                disabled={hasError}
-                sendDisabled={sendDisabled}
+                disabled={hasError || isWaitting}
+                sendDisabled={sendDisabled || isWaitting}
                 conversationId={conversationId}
                 onInputChange={handleInputChange}
                 onPressEnter={handlePressEnter}
                 sendLoading={sendLoading}
                 stopOutputMessage={stopOutputMessage}
                 onUpload={handleUploadFile}
-                isUploading={loading}
+                isUploading={loading || isWaitting}
               ></NextMessageInput>
             </div>
           </div>

@@ -38,7 +38,7 @@ export const OperatorIconMap = {
   [Operator.Email]: 'sendemail-0',
 };
 
-const SVGIconMap = {
+export const SVGIconMap = {
   [Operator.ArXiv]: ArxivIcon,
   [Operator.GitHub]: GithubIcon,
   [Operator.Bing]: BingIcon,

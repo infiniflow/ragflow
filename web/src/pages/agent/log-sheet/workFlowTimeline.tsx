@@ -51,7 +51,7 @@ export function JsonViewer({
         src={data}
         displaySize
         collapseStringsAfterLength={100000000000}
-        className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-slate-800"
+        className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-muted"
       />
     </section>
   );
@@ -81,11 +81,21 @@ export const typeMap = {
   httpRequest: t('flow.logTimeline.httpRequest'),
   wenCai: t('flow.logTimeline.wenCai'),
   yahooFinance: t('flow.logTimeline.yahooFinance'),
+  userFillUp: t('flow.logTimeline.userFillUp'),
 };
 export const toLowerCaseStringAndDeleteChar = (
   str: string,
   char: string = '_',
 ) => str.toLowerCase().replace(/ /g, '').replaceAll(char, '');
+
+// Convert all keys in typeMap to lowercase and output the new typeMap
+export const typeMapLowerCase = Object.fromEntries(
+  Object.entries(typeMap).map(([key, value]) => [
+    toLowerCaseStringAndDeleteChar(key),
+    value,
+  ]),
+);
+
 function getInputsOrOutputs(
   nodeEventList: INodeData[],
   field: 'inputs' | 'outputs',
@@ -247,16 +257,19 @@ export const WorkFlowTimeline = ({
                     className="bg-background-card px-3"
                   >
                     <AccordionItem value={idx.toString()}>
-                      <AccordionTrigger>
+                      <AccordionTrigger
+                        hideDownIcon={isShare && !x.data?.thoughts}
+                      >
                         <div className="flex gap-2 items-center">
                           <span>
                             {!isShare && getNodeName(x.data?.component_name)}
                             {isShare &&
-                              typeMap[
+                              (typeMapLowerCase[
                                 toLowerCaseStringAndDeleteChar(
                                   nodeLabel,
                                 ) as keyof typeof typeMap
-                              ]}
+                              ] ??
+                                nodeLabel)}
                           </span>
                           <span className="text-text-sub-title text-xs">
                             {x.data.elapsed_time?.toString().slice(0, 6)}
@@ -294,7 +307,7 @@ export const WorkFlowTimeline = ({
                       {isShare && x.data?.thoughts && (
                         <AccordionContent>
                           <div className="space-y-2">
-                            <div className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-slate-800">
+                            <div className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-muted">
                               <HightLightMarkdown>
                                 {x.data.thoughts || ''}
                               </HightLightMarkdown>
