@@ -934,11 +934,28 @@ class BedrockChat(Base):
         self.bedrock_region = json.loads(key).get("bedrock_region", "")
         self.model_name = model_name
 
+        logging.info(f"[BedrockChat] Initializing - Model: {self.model_name}")
+        logging.info(f"[BedrockChat] Region: {self.bedrock_region}")
+        logging.info(f"[BedrockChat] AK configured: {'Yes' if self.bedrock_ak else 'No'}")
+        logging.info(f"[BedrockChat] SK configured: {'Yes' if self.bedrock_sk else 'No'}")
+
         if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
             # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
-            self.client = boto3.client("bedrock-runtime")
+            logging.info("[BedrockChat] Using default AWS credentials")
+            try:
+                self.client = boto3.client("bedrock-runtime")
+                logging.info("[BedrockChat] Successfully created client with default credentials")
+            except Exception as e:
+                logging.error(f"[BedrockChat] Failed to create client with default credentials: {e}")
+                raise
         else:
-            self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+            logging.info(f"[BedrockChat] Using configured credentials in region: {self.bedrock_region}")
+            try:
+                self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+                logging.info("[BedrockChat] Successfully created client with configured credentials")
+            except Exception as e:
+                logging.error(f"[BedrockChat] Failed to create client with configured credentials: {e}")
+                raise
 
     def _clean_conf(self, gen_conf):
         for k in list(gen_conf.keys()):
@@ -947,59 +964,129 @@ class BedrockChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        hist = []
-        for item in history:
-            if item["role"] == "system":
-                continue
-            hist.append(deepcopy(item))
-            if not isinstance(hist[-1]["content"], list) and not isinstance(hist[-1]["content"], tuple):
-                hist[-1]["content"] = [{"text": hist[-1]["content"]}]
-        # Send the message to the model, using a basic inference configuration.
-        response = self.client.converse(
-            modelId=self.model_name,
-            messages=hist,
-            inferenceConfig=gen_conf,
-            system=[{"text": (system if system else "Answer the user's message.")}],
-        )
+        try:
+            logging.info(f"[BedrockChat] _chat called - Model: {self.model_name}")
+            logging.info(f"[BedrockChat] History length: {len(history)}")
+            logging.info(f"[BedrockChat] Gen config: {gen_conf}")
 
-        # Extract and print the response text.
-        ans = response["output"]["message"]["content"][0]["text"]
-        return ans, num_tokens_from_string(ans)
+            system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+            logging.info(f"[BedrockChat] System message: {system}")
+
+            hist = []
+            for item in history:
+                if item["role"] == "system":
+                    continue
+                hist.append(deepcopy(item))
+                if not isinstance(hist[-1]["content"], list) and not isinstance(hist[-1]["content"], tuple):
+                    hist[-1]["content"] = [{"text": hist[-1]["content"]}]
+
+            logging.info(f"[BedrockChat] Processed history: {hist}")
+            logging.info(f"[BedrockChat] About to call client.converse with modelId: {self.model_name}")
+
+            # Send the message to the model, using a basic inference configuration.
+            response = self.client.converse(
+                modelId=self.model_name,
+                messages=hist,
+                inferenceConfig=gen_conf,
+                system=[{"text": (system if system else "Answer the user's message.")}],
+            )
+
+            logging.info(f"[BedrockChat] Response received: {response}")
+
+            # Extract and print the response text.
+            ans = response["output"]["message"]["content"][0]["text"]
+            logging.info(f"[BedrockChat] Extracted answer: {ans[:100]}...")
+            return ans, num_tokens_from_string(ans)
+
+        except Exception as e:
+            logging.error(f"[BedrockChat] Error in _chat - Model: {self.model_name}")
+            logging.error(f"[BedrockChat] Error type: {type(e).__name__}")
+            logging.error(f"[BedrockChat] Error message: {str(e)}")
+            logging.error(f"[BedrockChat] Full error: {e}")
+            raise
 
     def chat_streamly(self, system, history, gen_conf):
         from botocore.exceptions import ClientError
 
+        logging.info(f"[BedrockChat] chat_streamly called - Model: {self.model_name}")
+        logging.info(f"[BedrockChat] System: {system}")
+        logging.info(f"[BedrockChat] History length: {len(history)}")
+        logging.info(f"[BedrockChat] Gen config: {gen_conf}")
+
         for k in list(gen_conf.keys()):
             if k not in ["temperature"]:
                 del gen_conf[k]
+        logging.info(f"[BedrockChat] Cleaned gen config: {gen_conf}")
+        
         for item in history:
             if not isinstance(item["content"], list) and not isinstance(item["content"], tuple):
                 item["content"] = [{"text": item["content"]}]
 
         if self.model_name.split(".")[0] == "ai21":
+            logging.info("[BedrockChat] Using ai21 model path")
             try:
                 response = self.client.converse(modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}])
                 ans = response["output"]["message"]["content"][0]["text"]
                 return ans, num_tokens_from_string(ans)
 
             except (ClientError, Exception) as e:
+                logging.error(f"[BedrockChat] ai21 model error - Model: {self.model_name}")
+                logging.error(f"[BedrockChat] Error type: {type(e).__name__}")
+                logging.error(f"[BedrockChat] Error message: {str(e)}")
                 return f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}", 0
 
         ans = ""
         try:
+            logging.info(f"[BedrockChat] About to call converse_stream with modelId: {self.model_name}")
             # Send the message to the model, using a basic inference configuration.
             streaming_response = self.client.converse_stream(
                 modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}]
             )
+            logging.info(f"[BedrockChat] Streaming response received: {streaming_response}")
 
             # Extract and print the streamed response text in real-time.
-            for resp in streaming_response["stream"]:
-                if "contentBlockDelta" in resp:
-                    ans = resp["contentBlockDelta"]["delta"]["text"]
-                    yield ans
+            for event in streaming_response["stream"]:
+                logging.debug(f"[BedrockChat] Processing stream event: {event}")
+                
+                # Handle different response formats
+                if "contentBlockDelta" in event:
+                    delta = event["contentBlockDelta"].get("delta", {})
+                    # 先兼容 text (Amazon Nova等标准格式)
+                    if "text" in delta:
+                        text = delta["text"]
+                        if text:
+                            ans = text
+                            yield ans
+                    # 再兼容 DeepSeek 的 reasoningContent
+                    elif "reasoningContent" in delta and "text" in delta["reasoningContent"]:
+                        reasoning_text = delta["reasoningContent"]["text"]
+                        if reasoning_text:
+                            ans = reasoning_text
+                            yield ans
+                    # 兼容SDK_UNKNOWN_MEMBER但无法直接提取内容的情况
+                    elif "SDK_UNKNOWN_MEMBER" in delta:
+                        unknown_member = delta["SDK_UNKNOWN_MEMBER"]
+                        if unknown_member.get("name") == "reasoningContent":
+                            logging.debug(f"[BedrockChat] Found reasoningContent in SDK_UNKNOWN_MEMBER: {unknown_member}")
+                            # 这里无法直接获取text内容，需要从原始响应中解析
+                            continue
+                    else:
+                        logging.debug(f"[BedrockChat] Unknown delta format: {delta}")
+                        continue
+                elif "reasoningContent" in event.get("delta", {}):
+                    # 直接处理reasoningContent格式
+                    reasoning_text = event["delta"]["reasoningContent"].get("text", "")
+                    if reasoning_text:
+                        ans = reasoning_text
+                        yield ans
+                else:
+                    logging.debug(f"[BedrockChat] Unknown response format: {event}")
 
         except (ClientError, Exception) as e:
+            logging.error(f"[BedrockChat] Streaming error - Model: {self.model_name}")
+            logging.error(f"[BedrockChat] Error type: {type(e).__name__}")
+            logging.error(f"[BedrockChat] Error message: {str(e)}")
+            logging.error(f"[BedrockChat] Full error: {e}")
             yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
 
         yield num_tokens_from_string(ans)
@@ -1534,8 +1621,7 @@ class GoogleChat(Base):
 
         from google.oauth2 import service_account
 
-        key = json.loads(key)
-        access_token = json.loads(base64.b64decode(key.get("google_service_account_key", "")))
+        key = json.loads(base64.b64decode(key.get("google_service_account_key", "")))
         project_id = key.get("google_project_id", "")
         region = key.get("google_region", "")
 
@@ -1546,8 +1632,8 @@ class GoogleChat(Base):
             from anthropic import AnthropicVertex
             from google.auth.transport.requests import Request
 
-            if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+            if key:
+                credits = service_account.Credentials.from_service_account_info(key, scopes=scopes)
                 request = Request()
                 credits.refresh(request)
                 token = credits.token
@@ -1558,8 +1644,8 @@ class GoogleChat(Base):
             import vertexai.generative_models as glm
             from google.cloud import aiplatform
 
-            if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
+            if key:
+                credits = service_account.Credentials.from_service_account_info(key)
                 aiplatform.init(credentials=credits, project=project_id, location=region)
             else:
                 aiplatform.init(project=project_id, location=region)
