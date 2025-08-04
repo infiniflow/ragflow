@@ -18,10 +18,14 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { NodeWrapper } from '../node-wrapper';
 import { ResizeIcon, controlStyle } from '../resize-icon';
-import { useChangeName, useWatchFormChange } from './use-watch-change';
+import { useWatchFormChange, useWatchNameFormChange } from './use-watch-change';
 
 const FormSchema = z.object({
   text: z.string(),
+});
+
+const NameFormSchema = z.object({
+  name: z.string(),
 });
 
 function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
@@ -32,28 +36,49 @@ function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
     defaultValues: data.form,
   });
 
-  const { handleChangeName } = useChangeName(id);
+  const nameForm = useForm<z.infer<typeof NameFormSchema>>({
+    resolver: zodResolver(NameFormSchema),
+    defaultValues: { name: data.name },
+  });
 
   useWatchFormChange(id, form);
 
+  useWatchNameFormChange(id, nameForm);
+
   return (
     <NodeWrapper
-      className="p-0  w-full h-full flex flex-col rounded-md "
+      className="p-0  w-full h-full flex flex-col"
       selected={selected}
     >
       <NodeResizeControl minWidth={190} minHeight={128} style={controlStyle}>
         <ResizeIcon />
       </NodeResizeControl>
-      <section className="px-1 py-2 flex gap-2 bg-background-highlight items-center note-drag-handle rounded-s-md">
+      <section className="p-2 flex gap-2 bg-background-note items-center note-drag-handle rounded-t">
         <NotebookPen className="size-4" />
-        <Input
-          type="text"
-          defaultValue={data.name}
-          onChange={handleChangeName}
-        ></Input>
+        <Form {...nameForm}>
+          <form className="flex-1">
+            <FormField
+              control={nameForm.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem className="h-full">
+                  <FormControl>
+                    <Input
+                      placeholder={t('flow.notePlaceholder')}
+                      {...field}
+                      type="text"
+                      className="bg-transparent border-none focus-visible:outline focus-visible:outline-text-sub-title"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </form>
+        </Form>
       </section>
       <Form {...form}>
-        <form className="flex-1">
+        <form className="flex-1 p-1">
           <FormField
             control={form.control}
             name="text"
@@ -62,7 +87,7 @@ function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
                 <FormControl>
                   <Textarea
                     placeholder={t('flow.notePlaceholder')}
-                    className="resize-none rounded-none p-1 h-full overflow-auto bg-background-header-bar"
+                    className="resize-none rounded-none p-1 h-full overflow-auto bg-transparent focus-visible:ring-0 border-none"
                     {...field}
                   />
                 </FormControl>

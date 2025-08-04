@@ -137,13 +137,63 @@ export function useFindMessageReference(answerList: IEventList) {
   return { findReferenceByMessageId };
 }
 
-export const useSendAgentMessage = (url?: string) => {
+interface UploadResponseDataType {
+  created_at: number;
+  created_by: string;
+  extension: string;
+  id: string;
+  mime_type: string;
+  name: string;
+  preview_url: null;
+  size: number;
+}
+
+export function useSetUploadResponseData() {
+  const [uploadResponseList, setUploadResponseList] = useState<
+    UploadResponseDataType[]
+  >([]);
+  const [fileList, setFileList] = useState<File[]>([]);
+
+  const append = useCallback((data: UploadResponseDataType, files: File[]) => {
+    setUploadResponseList((prev) => [...prev, data]);
+    setFileList((pre) => [...pre, ...files]);
+  }, []);
+
+  const clear = useCallback(() => {
+    setUploadResponseList([]);
+    setFileList([]);
+  }, []);
+
+  return {
+    uploadResponseList,
+    fileList,
+    setUploadResponseList,
+    appendUploadResponseList: append,
+    clearUploadResponseList: clear,
+  };
+}
+
+export const useSendAgentMessage = (
+  url?: string,
+  addEventList?: (data: IEventList, messageId: string) => void,
+  beginParams?: any[],
+) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
-  const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
-    url || api.runCanvas,
-  );
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const { send, answerList, done, stopOutputMessage, resetAnswerList } =
+    useSendMessageBySSE(url || api.runCanvas);
+  const messageId = useMemo(() => {
+    return answerList[0]?.message_id;
+  }, [answerList]);
+
+  useEffect(() => {
+    if (answerList[0]?.session_id) {
+      setSessionId(answerList[0]?.session_id);
+    }
+  }, [answerList]);
+
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
   const {
@@ -153,8 +203,15 @@ export const useSendAgentMessage = (url?: string) => {
     removeMessageById,
     addNewestOneQuestion,
     addNewestOneAnswer,
+    removeAllMessages,
   } = useSelectDerivedMessages();
-  const { addEventList } = useContext(AgentChatLogContext);
+  const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
+  const {
+    appendUploadResponseList,
+    clearUploadResponseList,
+    uploadResponseList,
+    fileList,
+  } = useSetUploadResponseData();
 
   const sendMessage = useCallback(
     async ({ message }: { message: Message; messages?: Message[] }) => {
@@ -170,26 +227,49 @@ export const useSendAgentMessage = (url?: string) => {
 
         params.query = message.content;
         // params.message_id = message.id;
-        params.inputs = transferInputsArrayToObject(query); // begin operator inputs
+        params.inputs = transferInputsArrayToObject(
+          beginParams ? beginParams : query,
+        ); // begin operator inputs
+
+        params.files = uploadResponseList;
+
+        params.session_id = sessionId;
       }
-      const res = await send(params);
 
-      if (receiveMessageError(res)) {
-        sonnerMessage.error(res?.data?.message);
+      try {
+        const res = await send(params);
 
-        // cancel loading
-        setValue(message.content);
-        removeLatestMessage();
-      } else {
-        // refetch(); // pull the message list after sending the message successfully
+        clearUploadResponseList();
+
+        if (receiveMessageError(res)) {
+          sonnerMessage.error(res?.data?.message);
+
+          // cancel loading
+          setValue(message.content);
+          removeLatestMessage();
+        } else {
+          // refetch(); // pull the message list after sending the message successfully
+        }
+      } catch (error) {
+        console.log('🚀 ~ useSendAgentMessage ~ error:', error);
       }
     },
-    [agentId, send, inputs, setValue, removeLatestMessage],
+    [
+      agentId,
+      sessionId,
+      send,
+      clearUploadResponseList,
+      inputs,
+      beginParams,
+      uploadResponseList,
+      setValue,
+      removeLatestMessage,
+    ],
   );
 
   const sendFormMessage = useCallback(
     (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
-      send(body);
+      send({ ...body, session_id: sessionId });
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([key, val]) => `${key}: ${val.value}`)
@@ -197,24 +277,33 @@ export const useSendAgentMessage = (url?: string) => {
         role: MessageType.User,
       });
     },
-    [addNewestOneQuestion, send],
+    [addNewestOneQuestion, send, sessionId],
   );
+
+  // reset session
+  const resetSession = useCallback(() => {
+    stopOutputMessage();
+    resetAnswerList();
+    setSessionId(null);
+    removeAllMessages();
+  }, [resetAnswerList, removeAllMessages, stopOutputMessage]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
     const id = uuid();
+    const msgBody = {
+      id,
+      content: value.trim(),
+      role: MessageType.User,
+    };
     if (done) {
       setValue('');
       sendMessage({
-        message: { id, content: value.trim(), role: MessageType.User },
+        message: msgBody,
       });
     }
-    addNewestOneQuestion({
-      content: value,
-      id,
-      role: MessageType.User,
-    });
-  }, [value, done, addNewestOneQuestion, setValue, sendMessage]);
+    addNewestOneQuestion({ ...msgBody, files: fileList });
+  }, [value, done, addNewestOneQuestion, fileList, setValue, sendMessage]);
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
@@ -238,21 +327,25 @@ export const useSendAgentMessage = (url?: string) => {
 
   useEffect(() => {
     if (typeof addEventList === 'function') {
-      addEventList(answerList);
+      addEventList(answerList, messageId);
+    } else if (typeof addEventListFun === 'function') {
+      addEventListFun(answerList, messageId);
     }
-  }, [addEventList, answerList]);
+  }, [addEventList, answerList, addEventListFun, messageId]);
 
   return {
-    handlePressEnter,
-    handleInputChange,
     value,
     sendLoading: !done,
     derivedMessages,
     ref,
+    handlePressEnter,
+    handleInputChange,
     removeMessageById,
     stopOutputMessage,
     send,
     sendFormMessage,
+    resetSession,
     findReferenceByMessageId,
+    appendUploadResponseList,
   };
 };

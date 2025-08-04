@@ -74,6 +74,7 @@ export interface Message {
   id?: string;
   audio_binary?: string;
   data?: any;
+  files?: File[];
 }
 
 export interface IReferenceChunk {

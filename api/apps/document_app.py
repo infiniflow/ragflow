@@ -206,6 +206,8 @@ def list_docs():
         desc = False
     else:
         desc = True
+    create_time_from = int(request.args.get("create_time_from", 0))
+    create_time_to = int(request.args.get("create_time_to", 0))
 
     req = request.get_json()
 
@@ -225,6 +227,14 @@ def list_docs():
 
     try:
         docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix)
+
+        if create_time_from or create_time_to:
+            filtered_docs = []
+            for doc in docs:
+                doc_create_time = doc.get("create_time", 0)
+                if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
+                    filtered_docs.append(doc)
+            docs = filtered_docs
 
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
@@ -288,7 +298,7 @@ def docinfos():
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
 def thumbnails():
-    doc_ids = request.args.get("doc_ids").split(",")
+    doc_ids = request.args.getlist("doc_ids")
     if not doc_ids:
         return get_json_result(data=False, message='Lack of "Document ID"', code=settings.RetCode.ARGUMENT_ERROR)
 

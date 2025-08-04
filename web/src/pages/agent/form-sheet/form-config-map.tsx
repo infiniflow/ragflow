@@ -30,7 +30,7 @@ import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
-import { StringTransformForm } from '../form/string-transform-form';
+import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TavilyExtractForm from '../form/tavily-extract-form';
 import TavilyForm from '../form/tavily-form';

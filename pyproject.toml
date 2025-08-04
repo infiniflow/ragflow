@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.19.1"
+version = "0.20.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -102,7 +102,7 @@ dependencies = [
     "tiktoken==0.7.0",
     "umap_learn==0.5.6",
     "vertexai==1.64.0",
-    "volcengine==1.0.146",
+    "volcengine==1.0.194",
     "voyageai==0.2.3",
     "webdriver-manager==4.0.1",
     "werkzeug==3.0.6",
@@ -110,7 +110,7 @@ dependencies = [
     "word2number==1.1",
     "xgboost==1.6.0",
     "xpinyin==0.7.6",
-    "yfinance==0.1.96",
+    "yfinance==0.2.65",
     "zhipuai==2.0.1",
     "google-generativeai>=0.8.1,<0.9.0",
     "python-docx>=1.1.2,<2.0.0",

@@ -7,7 +7,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,9 +22,11 @@ import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
+import { ApiKeyField } from '../components/api-key-field';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { TavilyApiKeyField, TavilyFormSchema } from '../tavily-form';
+import { PromptEditor } from '../components/prompt-editor';
+import { TavilyFormSchema } from '../tavily-form';
 
 const outputList = buildOutputList(initialTavilyExtractValues.outputs);
 
@@ -53,7 +54,7 @@ function TavilyExtractForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <TavilyApiKeyField></TavilyApiKeyField>
+          <ApiKeyField></ApiKeyField>
         </FormContainer>
         <FormContainer>
           <FormField
@@ -63,7 +64,11 @@ function TavilyExtractForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>URL</FormLabel>
                 <FormControl>
-                  <Input {...field} />
+                  <PromptEditor
+                    {...field}
+                    multiLine={false}
+                    showToolbar={false}
+                  ></PromptEditor>
                 </FormControl>
                 <FormMessage />
               </FormItem>

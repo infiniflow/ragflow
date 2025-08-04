@@ -65,7 +65,7 @@ const FormSheet = ({
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className={cn('top-20 p-0 flex flex-col pb-20', {
+        className={cn('top-20 p-0 flex flex-col pb-20 ', {
           'right-[620px]': chatVisible,
         })}
         closeIcon={false}
@@ -103,7 +103,13 @@ const FormSheet = ({
               )}
               <X onClick={hideModal} />
             </div>
-            <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
+            {isMcp || (
+              <span>
+                {t(
+                  `${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
+                )}
+              </span>
+            )}
           </section>
         </SheetHeader>
         <section className="pt-4 overflow-auto flex-1">
