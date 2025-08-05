@@ -159,6 +159,15 @@ export default {
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
 
+  // Schedule endpoints
+  createSchedule: `${api_host}/canvas/schedule/create`,
+  listSchedules: `${api_host}/canvas/schedule/list`,
+  updateSchedule: `${api_host}/canvas/schedule/update`,
+  toggleSchedule: `${api_host}/canvas/schedule/toggle`,
+  deleteSchedule: `${api_host}/canvas/schedule/delete`,
+  getFrequencyOptions: `${api_host}/canvas/schedule/frequency-options`,
+  getScheduleHistory: `${api_host}/canvas/schedule/history`,
+  getScheduleStats: `${api_host}/canvas/schedule/stats`,
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
   getMcpServer: `${api_host}/mcp_server/detail`,
