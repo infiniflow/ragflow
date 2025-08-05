@@ -82,7 +82,7 @@ An integer specifying the number of previous dialogue rounds to input into the L
 This feature is used for multi-turn dialogue *only*.
 :::
 
-### Max retrieves
+### Max retries
 
 Defines the maximum number of attempts the agent will make to retry a failed task or operation before stopping or reporting failure.
 
@@ -93,6 +93,10 @@ The waiting period in seconds that the agent observes before retrying a failed t
 ### Max rounds
 
 Defines the maximum number reflection rounds of the selected chat model. Defaults to 5 rounds.
+
+:::tip NOTE
+You can set the value to 1 to shorten your agent's response time.
+:::
 
 ### Output
 
