@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form';
 import { initialCategorizeValues } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import DynamicCategorize from './dynamic-categorize';
@@ -31,12 +32,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-5 "
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <QueryVariable></QueryVariable>
           <LargeModelFormField></LargeModelFormField>
@@ -44,7 +40,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
         <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
         <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
         <Output list={outputList}></Output>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }

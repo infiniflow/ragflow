@@ -59,6 +59,10 @@ class Base(ABC):
     def _image_prompt(self, text, images):
         if not images:
             return text
+
+        if isinstance(images, str):
+            images = [images]
+
         pmpt = [{"type": "text", "text": text}]
         for img in images:
             pmpt.append({
@@ -518,6 +522,7 @@ class GeminiCV(Base):
     def chat_streamly(self, system, history, gen_conf, images=[]):
         from transformers import GenerationConfig
         ans = ""
+        response = None
         try:
             response = self.model.generate_content(
                 self._form_history(system, history, images),
@@ -533,8 +538,10 @@ class GeminiCV(Base):
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
-        yield response._chunks[-1].usage_metadata.total_token_count
-
+        if response and hasattr(response, "usage_metadata") and hasattr(response.usage_metadata, "total_token_count"):
+            yield response.usage_metadata.total_token_count
+        else:
+            yield 0
 
 class NvidiaCV(Base):
     _FACTORY_NAME = "NVIDIA"

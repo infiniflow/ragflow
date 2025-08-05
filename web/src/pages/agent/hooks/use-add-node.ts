@@ -23,7 +23,6 @@ import {
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
-  initialGenerateValues,
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
@@ -43,7 +42,6 @@ import {
   initialSwitchValues,
   initialTavilyExtractValues,
   initialTavilyValues,
-  initialTemplateValues,
   initialTuShareValues,
   initialUserFillUpValues,
   initialWaitingDialogueValues,
@@ -70,8 +68,6 @@ export const useInitializeOperatorParams = () => {
     return {
       [Operator.Begin]: initialBeginValues,
       [Operator.Retrieval]: initialRetrievalValues,
-      [Operator.Generate]: { ...initialGenerateValues, llm_id: llmId },
-      [Operator.Answer]: {},
       [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
       [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
       [Operator.RewriteQuestion]: {
@@ -106,7 +102,6 @@ export const useInitializeOperatorParams = () => {
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
       [Operator.Invoke]: initialInvokeValues,
-      [Operator.Template]: initialTemplateValues,
       [Operator.Email]: initialEmailValues,
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationStartValues,
