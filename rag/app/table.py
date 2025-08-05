@@ -249,47 +249,6 @@ class Excel(ExcelParser):
                 return False
         return True
 
-    def get_formatted_chunks(self, fnm, binary=None, from_page=0, to_page=10000000000):
-        if not binary:
-            wb = Excel._load_excel_to_workbook(fnm)
-        else:
-            wb = Excel._load_excel_to_workbook(BytesIO(binary))
-        formatted_chunks = []
-        rn = 0
-        for sheetname in wb.sheetnames:
-            ws = wb[sheetname]
-            rows = list(ws.rows)
-            if not rows:
-                continue
-            headers, header_rows = self._parse_headers(ws, rows)
-            if not headers:
-                continue
-            for i, r in enumerate(rows[header_rows:]):
-                rn += 1
-                if rn - 1 < from_page:
-                    continue
-                if rn - 1 >= to_page:
-                    break
-                row_data = self._extract_row_data(ws, r, header_rows + i, len(headers))
-                if row_data is None:
-                    continue
-                if self._is_empty_row(row_data):
-                    continue
-                formatted_output = self._format_output_row(headers, row_data, sheetname)
-                formatted_chunks.append(formatted_output)
-        return formatted_chunks
-
-    def _format_output_row(self, headers, row_data, sheetname=None):
-        formatted_parts = []
-        if sheetname:
-            formatted_parts.append(f"SheetName: {sheetname}")
-        for header, value in zip(headers, row_data):
-            if value is not None:
-                formatted_parts.append(f"{header}:{value}")
-            else:
-                formatted_parts.append(f"{header}:None")
-        return "; ".join(formatted_parts)
-
 
 def trans_datatime(s):
     try:
