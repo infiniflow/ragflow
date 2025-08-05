@@ -19,8 +19,8 @@ import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
 import { needsSingleStepDebugging } from '../utils';
-import SingleDebugDrawer from './single-debug-drawer';
-import { useFormConfigMap } from './use-form-config-map';
+import { FormConfigMap } from './form-config-map';
+import SingleDebugSheet from './single-debug-sheet';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -44,8 +44,6 @@ const FormSheet = ({
   const operatorName: Operator = node?.data.label as Operator;
   const clickedToolId = useGraphStore((state) => state.clickedToolId);
 
-  const FormConfigMap = useFormConfigMap();
-
   const currentFormMap = FormConfigMap[operatorName];
 
   const OperatorForm = currentFormMap?.component ?? EmptyContent;
@@ -67,7 +65,7 @@ const FormSheet = ({
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className={cn('top-20 p-0 flex flex-col pb-20', {
+        className={cn('top-20 p-0 flex flex-col pb-20 ', {
           'right-[620px]': chatVisible,
         })}
         closeIcon={false}
@@ -105,7 +103,13 @@ const FormSheet = ({
               )}
               <X onClick={hideModal} />
             </div>
-            <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
+            {isMcp || (
+              <span>
+                {t(
+                  `${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
+                )}
+              </span>
+            )}
           </section>
         </SheetHeader>
         <section className="pt-4 overflow-auto flex-1">
@@ -117,11 +121,11 @@ const FormSheet = ({
         </section>
       </SheetContent>
       {singleDebugDrawerVisible && (
-        <SingleDebugDrawer
+        <SingleDebugSheet
           visible={singleDebugDrawerVisible}
           hideModal={hideSingleDebugDrawer}
           componentId={node?.id}
-        ></SingleDebugDrawer>
+        ></SingleDebugSheet>
       )}
     </Sheet>
   );

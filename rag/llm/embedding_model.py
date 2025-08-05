@@ -60,7 +60,6 @@ class Base(ABC):
 
 class DefaultEmbedding(Base):
     _FACTORY_NAME = "BAAI"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     _model = None
     _model_name = ""
     _model_lock = threading.Lock()
@@ -78,9 +77,13 @@ class DefaultEmbedding(Base):
 
         """
         if not settings.LIGHTEN:
+            input_cuda_visible_devices = None
             with DefaultEmbedding._model_lock:
                 import torch
                 from FlagEmbedding import FlagModel
+                if "CUDA_VISIBLE_DEVICES" in os.environ:
+                    input_cuda_visible_devices = os.environ["CUDA_VISIBLE_DEVICES"]
+                    os.environ["CUDA_VISIBLE_DEVICES"] = "0" # handle some issues with multiple GPUs when initializing the model
 
                 if not DefaultEmbedding._model or model_name != DefaultEmbedding._model_name:
                     try:
@@ -95,6 +98,10 @@ class DefaultEmbedding(Base):
                             repo_id="BAAI/bge-large-zh-v1.5", local_dir=os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z0-9]+/", "", model_name)), local_dir_use_symlinks=False
                         )
                         DefaultEmbedding._model = FlagModel(model_dir, query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：", use_fp16=torch.cuda.is_available())
+                    finally:
+                        if input_cuda_visible_devices:
+                            # restore CUDA_VISIBLE_DEVICES
+                            os.environ["CUDA_VISIBLE_DEVICES"] = input_cuda_visible_devices
         self._model = DefaultEmbedding._model
         self._model_name = DefaultEmbedding._model_name
 
@@ -202,8 +209,9 @@ class QWenEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
-        import dashscope
         import time
+
+        import dashscope
 
         batch_size = 4
         res = []
@@ -282,17 +290,18 @@ class OllamaEmbed(Base):
     _special_tokens = ["<|endoftext|>"]
 
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
+        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
     def encode(self, texts: list):
         arr = []
         tks_num = 0
         for txt in texts:
-            # remove special tokens if they exist
+            # remove special tokens if they exist base on regex in one request
             for token in OllamaEmbed._special_tokens:
                 txt = txt.replace(token, "")
-            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
+            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
             try:
                 arr.append(res["embedding"])
             except Exception as _e:
@@ -304,7 +313,7 @@ class OllamaEmbed(Base):
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
             text = text.replace(token, "")
-        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=-1)
+        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
         try:
             return np.array(res["embedding"]), 128
         except Exception as _e:
@@ -352,8 +361,7 @@ class FastEmbed(DefaultEmbedding):
         # Using the internal tokenizer to encode the texts and get the total
         # number of tokens
         encoding = self._model.model.tokenizer.encode(text)
-        embedding = next(self._model.query_embed(text)).tolist()
-
+        embedding = next(self._model.query_embed(text))
         return np.array(embedding), len(encoding.ids)
 
 
@@ -370,8 +378,9 @@ class XinferenceEmbed(Base):
         ress = []
         total_tokens = 0
         for i in range(0, len(texts), batch_size):
-            res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name)
+            res = None
             try:
+                res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name)
                 ress.extend([d.embedding for d in res.data])
                 total_tokens += self.total_token_count(res)
             except Exception as _e:
@@ -379,8 +388,9 @@ class XinferenceEmbed(Base):
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=[text], model=self.model_name)
+        res = None
         try:
+            res = self.client.embeddings.create(input=[text], model=self.model_name)
             return np.array(res.data[0].embedding), self.total_token_count(res)
         except Exception as _e:
             log_exception(_e, res)
@@ -455,25 +465,42 @@ class MistralEmbed(Base):
         self.model_name = model_name
 
     def encode(self, texts: list):
+        import time
+        import random
         texts = [truncate(t, 8196) for t in texts]
         batch_size = 16
         ress = []
         token_count = 0
         for i in range(0, len(texts), batch_size):
-            res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
-            try:
-                ress.extend([d.embedding for d in res.data])
-                token_count += self.total_token_count(res)
-            except Exception as _e:
-                log_exception(_e, res)
+            retry_max = 5
+            while retry_max > 0:
+                try:
+                    res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
+                    ress.extend([d.embedding for d in res.data])
+                    token_count += self.total_token_count(res)
+                    break
+                except Exception as _e:
+                    if retry_max == 1:
+                        log_exception(_e)
+                    delay = random.uniform(20, 60)
+                    time.sleep(delay)
+                    retry_max -= 1
         return np.array(ress), token_count
 
     def encode_queries(self, text):
-        res = self.client.embeddings(input=[truncate(text, 8196)], model=self.model_name)
-        try:
-            return np.array(res.data[0].embedding), self.total_token_count(res)
-        except Exception as _e:
-            log_exception(_e, res)
+        import time
+        import random
+        retry_max = 5
+        while retry_max > 0:
+            try:
+                res = self.client.embeddings(input=[truncate(text, 8196)], model=self.model_name)
+                return np.array(res.data[0].embedding), self.total_token_count(res)
+            except Exception as _e:
+                if retry_max == 1:
+                    log_exception(_e)
+                delay = random.randint(20, 60)
+                time.sleep(delay)
+                retry_max -= 1
 
 
 class BedrockEmbed(Base):
@@ -486,6 +513,8 @@ class BedrockEmbed(Base):
         self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
         self.bedrock_region = json.loads(key).get("bedrock_region", "")
         self.model_name = model_name
+        self.is_amazon = self.model_name.split(".")[0] == "amazon"
+        self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
         if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
             # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
@@ -498,9 +527,9 @@ class BedrockEmbed(Base):
         embeddings = []
         token_count = 0
         for text in texts:
-            if self.model_name.split(".")[0] == "amazon":
+            if self.is_amazon:
                 body = {"inputText": text}
-            elif self.model_name.split(".")[0] == "cohere":
+            elif self.is_cohere:
                 body = {"texts": [text], "input_type": "search_document"}
 
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
@@ -516,9 +545,9 @@ class BedrockEmbed(Base):
     def encode_queries(self, text):
         embeddings = []
         token_count = num_tokens_from_string(text)
-        if self.model_name.split(".")[0] == "amazon":
+        if self.is_amazon:
             body = {"inputText": truncate(text, 8196)}
-        elif self.model_name.split(".")[0] == "cohere":
+        elif self.is_cohere:
             body = {"texts": [truncate(text, 8196)], "input_type": "search_query"}
 
         response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
@@ -900,4 +929,21 @@ class GiteeEmbed(SILICONFLOWEmbed):
     def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/embeddings"):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/embeddings"
+        super().__init__(key, model_name, base_url)
+        
+class DeepInfraEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "DeepInfra"
+
+    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai"):
+        if not base_url:
+            base_url = "https://api.deepinfra.com/v1/openai"
+        super().__init__(key, model_name, base_url)
+
+
+class Ai302Embed(Base):
+    _FACTORY_NAME = "302.AI"
+
+    def __init__(self, key, model_name, base_url="https://api.302.ai/v1/embeddings"):
+        if not base_url:
+            base_url = "https://api.302.ai/v1/embeddings"
         super().__init__(key, model_name, base_url)

@@ -152,7 +152,6 @@ class EntityResolution(Extractor):
         )
 
     async def _resolve_candidate(self, candidate_resolution_i: tuple[str, list[tuple[str, str]]], resolution_result: set[str], resolution_result_lock: trio.Lock):
-        gen_conf = {"temperature": 0.5}
         pair_txt = [
             f'When determining whether two {candidate_resolution_i[0]}s are the same, you should only focus on critical properties and overlook noisy factors.\n']
         for index, candidate in enumerate(candidate_resolution_i[1]):
@@ -171,7 +170,7 @@ class EntityResolution(Extractor):
         async with chat_limiter:
             try:
                 with trio.move_on_after(120) as cancel_scope:
-                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
+                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], {})
                 if cancel_scope.cancelled_caught:
                     logging.warning("_resolve_candidate._chat timeout, skipping...")
                     return
@@ -237,7 +236,10 @@ class EntityResolution(Extractor):
                 return True
             return False
 
-        if len(set(a) & set(b)) > 1:
-            return True
+        a, b = set(a), set(b)
+        max_l = max(len(a), len(b))
+        if max_l < 4:
+            return len(a & b) > 1
 
-        return False
+        return len(a & b)*1./max_l >= 0.8
+

@@ -42,7 +42,7 @@ class Ppt(PptParser):
                 try:
                     with BytesIO() as buffered:
                         slide.get_thumbnail(
-                            0.5, 0.5).save(
+                            0.1, 0.1).save(
                             buffered, drawing.imaging.ImageFormat.jpeg)
                         buffered.seek(0)
                         imgs.append(Image.open(buffered).copy())

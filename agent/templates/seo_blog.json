@@ -1,1209 +1,915 @@
 {
-  "id": 9,
-  "title": "SEO Blog Generator",
-  "description": "A blog generator that creates SEO-optimized content based on your chosen title or keywords.",
-  "canvas_type": "chatbot",
-  "dsl": {
-      "answer": [],
-      "components": {
-        "Answer:TameWavesChange": {
-          "downstream": [],
-          "obj": {
-            "component_name": "Answer",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "debug_inputs": [],
-              "inputs": [],
-              "message_history_window_size": 22,
-              "output": null,
-              "output_var_name": "output",
-              "post_answers": [],
-              "query": []
-            }
-          },
-          "upstream": [
-            "Template:YellowPlumsYell"
-          ]
-        },
-        "Baidu:SharpSignsBeg": {
-          "downstream": [
-            "Generate:FastTipsCamp"
-          ],
-          "obj": {
-            "component_name": "Baidu",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "debug_inputs": [],
-              "inputs": [],
-              "message_history_window_size": 22,
-              "output": null,
-              "output_var_name": "output",
-              "query": [
-                {
-                  "component_id": "Generate:PublicPotsPush",
-                  "type": "reference"
-                }
-              ],
-              "top_n": 10
-            }
-          },
-          "upstream": [
-            "Generate:PublicPotsPush"
-          ]
-        },
-        "Baidu:ShyTeamsJuggle": {
-          "downstream": [
-            "Generate:ReadyHandsInvent"
-          ],
-          "obj": {
-            "component_name": "Baidu",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "debug_inputs": [],
-              "inputs": [],
-              "message_history_window_size": 22,
-              "output": null,
-              "output_var_name": "output",
-              "query": [
-                {
-                  "component_id": "begin@keywords",
-                  "type": "reference"
-                }
-              ],
-              "top_n": 10
-            }
-          },
-          "upstream": [
-            "Switch:LargeWaspsSlide"
-          ]
-        },
-        "Generate:CuddlyBatsCamp": {
-          "downstream": [
-            "Template:YellowPlumsYell"
-          ],
-          "obj": {
-            "component_name": "Generate",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "cite": false,
-              "debug_inputs": [],
-              "frequency_penalty": 0.7,
-              "inputs": [],
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 0,
-              "message_history_window_size": 1,
-              "output": null,
-              "output_var_name": "output",
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "You are an SEO expert who writes in a direct, practical, educational style that is factual rather than storytelling or narrative, focusing on explaining to {begin@audience} the \"how\" and \"what is\" and “why” rather than narrating to the audience. \n - Please write at a sixth grade reading level. \n - ONLY output in Markdown format.\n - Use positive, present tense expressions and avoid using complex words and sentence structures that lack narrative, such as \"reveal\" and \"dig deep.\"\n - Next, please continue writing articles related to our topic with a concise title, {begin@title}{Generate:ReadyHandsInvent} {begin@keywords}{Generate:FancyMomentsTalk}. \n - Please AVOID repeating what has already been written and do not use the same sentence structure. \n - JUST write the body of the article based on the outline.\n - DO NOT include introduction, title.\n - DO NOT miss anything mentioned in article outline, except introduction and title.\n - Please use the information I provide to create in-depth, interesting and unique content. Also, incorporate the references and data points I provided earlier into the article to increase its value to the reader.\n - MUST be in language as \" {begin@keywords} {begin@title}\".\n\n<article_outline>\n{Generate:FastTipsCamp}\n\n<article_body>",
-              "query": [],
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "upstream": [
-            "Generate:FastTipsCamp"
-          ]
-        },
-        "Generate:FancyMomentsTalk": {
-          "downstream": [
-            "Generate:PublicPotsPush"
-          ],
-          "obj": {
-            "component_name": "Generate",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "cite": false,
-              "debug_inputs": [],
-              "frequency_penalty": 0.7,
-              "inputs": [],
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "output": null,
-              "output_var_name": "output",
-              "parameters": [
-                {
-                  "component_id": "begin@title",
-                  "id": "2beef84b-204b-475a-89b3-3833bd108088",
-                  "key": "title"
-                }
-              ],
-              "presence_penalty": 0.4,
-              "prompt": "I'm doing research for an article called {begin@title}, what relevant, high-traffic phrase should I type into Google to find this article? Just return the phrase without including any special symbols like quotes and colons.",
-              "query": [],
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "upstream": [
-            "Switch:LargeWaspsSlide"
-          ]
-        },
-        "Generate:FastTipsCamp": {
-          "downstream": [
-            "Generate:FortyBirdsAsk",
-            "Generate:CuddlyBatsCamp"
-          ],
-          "obj": {
-            "component_name": "Generate",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "cite": false,
-              "debug_inputs": [],
-              "frequency_penalty": 0.7,
-              "inputs": [],
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 0,
-              "message_history_window_size": 1,
-              "output": null,
-              "output_var_name": "output",
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "I'm an expert blogger.\nHere is some research I did for the blog post title \" {begin@title} {Generate:ReadyHandsInvent}\".\nThese are related search results:\n{Baidu:SharpSignsBeg}\n\nPlease study it in depth:\n\nArticle title: {begin@title} {Generate:ReadyHandsInvent}\nTarget keywords: {begin@keywords} {Generate:FancyMomentsTalk}\nMy blog post’s audience: {begin@audience}\nExclude brands: {begin@brands_to_avoid}\n\nCan you write a detailed blog outline with unique chapters? \n - The outline should include specific points and details that the article can mention. \n - AVOID generalities. \n - This SHOULD be researched in depth, not generalized.\n - Each chapter includes 7-8 projects, use some of the links above for reference if you can. For each item, don't just say \"discuss how\" but actually explain in detail the points that can be made. \n - DO NOT include things that you know are false and may contain inaccuracies. You are writing for a mature audience, avoid generalities and make specific quotes. Make sure to define key terms for users in your outline. Stay away from very controversial topics. \n - In the introduction, provide the background information needed for the rest of the article.\n - Please return in base array format and only the outline array, escaping quotes in the format. Each array item includes a complete chapter:\n[\"Includes Chapter 1 of all sub-projects\", \"Includes Chapter 2 of all sub-projects\", \"Includes Chapter 3 of all sub-projects\", \"Includes Chapter 4 of all sub-projects\"...etc.]\n - Each section SHOULD be wrapped with \"\" and ensure escaping within the content to ensure it is a valid array item.\n - MUST be in language of \" {begin@keywords} {begin@title}\".\n\nHere is an example of valid output. Please follow this structure and ignore the content:\n[\n  \"Introduction - Explore the vibrant city of Miami, a destination that offers rich history, diverse culture, and many hidden treasures. Discover the little-known wonders that make Miami a unique destination for adventure seekers. Explore from historical landmarks to exotic places Attractions include atmospheric neighborhoods, local cuisine and lively nightlife. \",\n  \"History of Miami - Begin the adventure with a journey into Miami's past. Learn about the city's transformation from a sleepy settlement to a busy metropolis. Understand the impact of multiculturalism on the city's development, as reflected in its architecture, cuisine and lifestyle See. Discover the historical significance of Miami landmarks like Hemingway's home. Uncover the fascinating stories of famous Miami neighborhoods like Key West. Explore the role of art and culture in shaping Miami, as shown at Art Basel events.\n\"Major Attractions - Go beyond Miami's famous beaches and explore the city's top attractions. Discover the artistic talent of the Wynwood Arts District, known for its vibrant street art. Visit iconic South Beach, known for its nightlife and boutiques . Explore the charming Coconut Grove district, known for its tree-lined streets and shopping areas. Visit the Holocaust Memorial Museum, a sombre reminder of a dark chapter in human history. Explore the Everglades Country, one of Miami's natural treasures. The park's diverse wildlife \",\n\"Trail Discovery - Get off the tourist trail and discover Miami's hidden treasures. Experience a water taxi tour across Biscayne Bay to get another perspective on the city. Visit the little-known Kabinett Department of Art, showcasing unique installation art . Explore the abandoned bridges and hidden bars of Duval Street and go on a culinary adventure in local neighborhoods known for their authentic cuisine. Go shopping at Brickell City Center, a trendy shopping and apartment complex in the heart of Miami. body.\",\n\"Local Cuisine - Dive into Miami's food scene and sample the city's diverse flavors. Enjoy ultra-fresh food and drinks at Bartaco, a local favorite. Experience fine dining at upscale Italian restaurants like Il Mulino New York. Explore the city ’s local food market and sample delicious local produce in Miami. Try a unique blend of Cuban and American cuisine that is a testament to Miami’s multicultural heritage.\"\n\"Nightlife - Experience the city's lively nightlife, a perfect blend of sophistication and fun. Visit America's Social Bar & Kitchen, a sports\nA hotspot for enthusiasts. Explore the nightlife of Mary Brickell Village, known for its clubby atmosphere. Spend an evening at Smith & Walensky Miami Beach's South Point Park, known for its stunning views and vintage wines. Visit iconic Miami Beach, famous for its pulsating nightlife. \",\n  \"Conclusion- Miami is more than just stunning beaches and dazzling nightlife. It is a treasure trove of experiences waiting to be discovered. From its rich history and diverse culture to its hidden treasures, local cuisine and lively nightlife, Miami has something for everyone A traveler offers a unique adventure to experience the magic of Miami Beach and create unforgettable memories with your family.\"\n]",
-              "query": [],
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "upstream": [
-            "Baidu:SharpSignsBeg"
-          ]
-        },
-        "Generate:FortyBirdsAsk": {
-          "downstream": [
-            "Template:YellowPlumsYell"
-          ],
-          "obj": {
-            "component_name": "Generate",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "cite": false,
-              "debug_inputs": [],
-              "frequency_penalty": 0.7,
-              "inputs": [],
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 0,
-              "message_history_window_size": 1,
-              "output": null,
-              "output_var_name": "output",
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "You are an SEO expert who writes in a direct, practical, educational style that is factual rather than storytelling or narrative, focusing on explaining to {begin@audience} the \"how\" and \"what is\" and “why” rather than narrating to the audience. \n - Please write at a sixth grade reading level. \n - ONLY output in Markdown format.\n - Use active, present tense, avoid using complex language and syntax, such as \"unravel\", \"dig deeper\", etc., \n - DO NOT provide narration.\n - Now, excluding the title, introduce the blog in 3-5 sentences. \n - Use h2 headings to write chapter titles. \n - Provide a concise, SEO-optimized title. \n - DO NOT include h3 subheadings. \n - Feel free to use bullet points, numbered lists or paragraphs, or bold text for emphasis when appropriate. \n - You should transition naturally to each section, build on each section, and should NOT repeat the same sentence structure. \n - JUST write the introduction of the article based on the outline.\n - DO NOT include title, conclusions, summaries, or summaries, no \"summaries,\" \"conclusions,\" or variations. \n - DO NOT include links or mention any companies that compete with the brand (avoid mentioning {begin@brands_to_avoid}).\n - JUST write the introduction of the article based on the outline.\n - MUST be in language as \"{Generate:FancyMomentsTalk} {Generate:ReadyHandsInvent}\".\n\n<article_outline>\n{Generate:FastTipsCamp}\n\n<article_introduction>\n",
-              "query": [],
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "upstream": [
-            "Generate:FastTipsCamp"
-          ]
-        },
-        "Generate:PublicPotsPush": {
-          "downstream": [
-            "Baidu:SharpSignsBeg"
-          ],
-          "obj": {
-            "component_name": "Generate",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "cite": false,
-              "debug_inputs": [],
-              "frequency_penalty": 0.7,
-              "inputs": [],
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 1,
-              "output": null,
-              "output_var_name": "output",
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "I want a Google search phrase to get authoritative information for my article \" {begin@title} {Generate:ReadyHandsInvent} {begin@keywords} {Generate:FancyMomentsTalk}\" for {begin@audience}. Please return a search phrase of five words or less so that I can get a good overview of the topic. Include any words you're unfamiliar with in your search query.",
-              "query": [],
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "upstream": [
-            "Generate:ReadyHandsInvent",
-            "Generate:FancyMomentsTalk"
-          ]
-        },
-        "Generate:ReadyHandsInvent": {
-          "downstream": [
-            "Generate:PublicPotsPush"
-          ],
-          "obj": {
-            "component_name": "Generate",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "cite": false,
-              "debug_inputs": [],
-              "frequency_penalty": 0.7,
-              "inputs": [],
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 1,
-              "output": null,
-              "output_var_name": "output",
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "Role: You are an SEO expert and subject area expert. Your task is to generate an SEO article title based on the keywords provided by the user and the context of the Google search.\n\nThe context of the Google search is as follows:\n{Baidu:ShyTeamsJuggle}\nThe context of the Google search is as above.\n\nIn order to craft an SEO article title that is keyword friendly and aligns with the principles observed in the top results you share, it is important to understand why these titles are effective. Here are the principles that may help them rank high:\n1. **Keyword Placement and Clarity**: Each title directly responds to the query by containing the exact keyword or a very close variation. This clarity ensures that search engines can easily understand the relevance of the content.\n2. **Succinctness and directness**: The title is concise, making it easy to read and understand quickly. They avoid unnecessary words and get straight to the point.\n3. **Contains a definition or explanation**: The title implies that the article will define or explain the concept, which is what people searching for \"{Generate:FancyMomentsTalk}\" are looking for.\n4. **Variety of Presentation**: Despite covering similar content, each title approaches the topic from a slightly different angle. This diversity can attract the interest of a wider audience.\n\nGiven these principles, please help me generate a title that will be optimized for the keyword \"{Generate:FancyMomentsTalk}\" based on the syntax of a top-ranking title. \n\nPlease don't copy, but give better options, and avoid using language like \"master,\" \"comprehensive,\" \"discover,\" or \"reveal.\" \n\nDo not use gerunds, only active tense and present tense. \n\nTitle SHOULD be in language as \"{Generate:FancyMomentsTalk}\"\n\nJust return the title.",
-              "query": [],
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "upstream": [
-            "Baidu:ShyTeamsJuggle"
-          ]
-        },
-        "Switch:LargeWaspsSlide": {
-          "downstream": [
-            "Baidu:ShyTeamsJuggle",
-            "Generate:FancyMomentsTalk"
-          ],
-          "obj": {
-            "component_name": "Switch",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "conditions": [
-                {
-                  "items": [
-                    {
-                      "cpn_id": "begin@title",
-                      "operator": "empty"
-                    }
-                  ],
-                  "logical_operator": "and",
-                  "to": "Baidu:ShyTeamsJuggle"
-                }
-              ],
-              "debug_inputs": [],
-              "end_cpn_id": "Generate:FancyMomentsTalk",
-              "inputs": [],
-              "message_history_window_size": 22,
-              "operators": [
-                "contains",
-                "not contains",
-                "start with",
-                "end with",
-                "empty",
-                "not empty",
-                "=",
-                "≠",
-                ">",
-                "<",
-                "≥",
-                "≤"
-              ],
-              "output": null,
-              "output_var_name": "output",
-              "query": []
-            }
-          },
-          "upstream": [
-            "begin"
-          ]
-        },
-        "Template:YellowPlumsYell": {
-          "downstream": [
-            "Answer:TameWavesChange"
-          ],
-          "obj": {
-            "component_name": "Template",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "content": "\n##{begin@title}{Generate:ReadyHandsInvent}\n\n{Generate:FortyBirdsAsk}\n\n\n\n{Generate:CuddlyBatsCamp}\n\n\n",
-              "debug_inputs": [],
-              "inputs": [],
-              "message_history_window_size": 22,
-              "output": null,
-              "output_var_name": "output",
-              "parameters": [],
-              "query": []
-            }
-          },
-          "upstream": [
-            "Generate:FortyBirdsAsk",
-            "Generate:CuddlyBatsCamp"
-          ]
-        },
-        "begin": {
-          "downstream": [
-            "Switch:LargeWaspsSlide"
-          ],
-          "obj": {
-            "component_name": "Begin",
-            "inputs": [],
-            "output": null,
-            "params": {
-              "debug_inputs": [],
-              "inputs": [],
-              "message_history_window_size": 22,
-              "output": null,
-              "output_var_name": "output",
-              "prologue": "",
-              "query": [
-                {
-                  "key": "title",
-                  "name": "Title",
-                  "optional": true,
-                  "type": "line"
-                },
-                {
-                  "key": "keywords",
-                  "name": "Keywords",
-                  "optional": true,
-                  "type": "line"
-                },
-                {
-                  "key": "audience",
-                  "name": "Audience",
-                  "optional": true,
-                  "type": "line"
-                },
-                {
-                  "key": "brands_to_avoid",
-                  "name": "Brands to avoid",
-                  "optional": true,
-                  "type": "line"
-                }
-              ]
-            }
-          },
-          "upstream": []
-        }
-      },
-      "embed_id": "",
-      "graph": {
-        "edges": [
-          {
-            "id": "reactflow__edge-begin-Switch:LargeWaspsSlidea",
-            "markerEnd": "logo",
-            "source": "begin",
-            "sourceHandle": null,
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Switch:LargeWaspsSlide",
-            "targetHandle": "a",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Switch:LargeWaspsSlideCase 1-Baidu:ShyTeamsJugglec",
-            "markerEnd": "logo",
-            "source": "Switch:LargeWaspsSlide",
-            "sourceHandle": "Case 1",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Baidu:ShyTeamsJuggle",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Switch:LargeWaspsSlideend_cpn_id-Generate:FancyMomentsTalkc",
-            "markerEnd": "logo",
-            "source": "Switch:LargeWaspsSlide",
-            "sourceHandle": "end_cpn_id",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:FancyMomentsTalk",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "xy-edge__Baidu:ShyTeamsJuggleb-Generate:ReadyHandsInventc",
-            "markerEnd": "logo",
-            "source": "Baidu:ShyTeamsJuggle",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:ReadyHandsInvent",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Generate:ReadyHandsInventb-Generate:PublicPotsPushc",
-            "markerEnd": "logo",
-            "source": "Generate:ReadyHandsInvent",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:PublicPotsPush",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Generate:FancyMomentsTalkb-Generate:PublicPotsPushc",
-            "markerEnd": "logo",
-            "source": "Generate:FancyMomentsTalk",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:PublicPotsPush",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Generate:PublicPotsPushb-Baidu:SharpSignsBegc",
-            "markerEnd": "logo",
-            "source": "Generate:PublicPotsPush",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Baidu:SharpSignsBeg",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Baidu:SharpSignsBegb-Generate:FastTipsCampc",
-            "markerEnd": "logo",
-            "source": "Baidu:SharpSignsBeg",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:FastTipsCamp",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Generate:FastTipsCampb-Generate:FortyBirdsAskc",
-            "markerEnd": "logo",
-            "source": "Generate:FastTipsCamp",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:FortyBirdsAsk",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Generate:FastTipsCampb-Generate:CuddlyBatsCampc",
-            "markerEnd": "logo",
-            "source": "Generate:FastTipsCamp",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CuddlyBatsCamp",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Generate:FortyBirdsAskb-Template:YellowPlumsYellc",
-            "markerEnd": "logo",
-            "source": "Generate:FortyBirdsAsk",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Template:YellowPlumsYell",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Generate:CuddlyBatsCampb-Template:YellowPlumsYellc",
-            "markerEnd": "logo",
-            "source": "Generate:CuddlyBatsCamp",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Template:YellowPlumsYell",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          },
-          {
-            "id": "xy-edge__Template:YellowPlumsYellb-Answer:TameWavesChangec",
-            "markerEnd": "logo",
-            "source": "Template:YellowPlumsYell",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Answer:TameWavesChange",
-            "targetHandle": "c",
-            "type": "buttonEdge",
-            "zIndex": 1001
-          }
-        ],
-        "nodes": [
-          {
-            "data": {
-              "form": {
-                "prologue": "",
-                "query": [
-                  {
-                    "key": "title",
-                    "name": "Title",
-                    "optional": true,
-                    "type": "line"
-                  },
-                  {
-                    "key": "keywords",
-                    "name": "Keywords",
-                    "optional": true,
-                    "type": "line"
-                  },
-                  {
-                    "key": "audience",
-                    "name": "Audience",
-                    "optional": true,
-                    "type": "line"
-                  },
-                  {
-                    "key": "brands_to_avoid",
-                    "name": "Brands to avoid",
-                    "optional": true,
-                    "type": "line"
-                  }
-                ]
-              },
-              "label": "Begin",
-              "name": "begin"
-            },
-            "dragging": false,
-            "height": 212,
-            "id": "begin",
-            "measured": {
-              "height": 212,
-              "width": 200
-            },
-            "position": {
-              "x": -432.2850120660528,
-              "y": 82.47567395502324
-            },
-            "positionAbsolute": {
-              "x": -432.2850120660528,
-              "y": 82.47567395502324
-            },
-            "selected": false,
-            "sourcePosition": "left",
-            "targetPosition": "right",
-            "type": "beginNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "conditions": [
-                  {
-                    "items": [
-                      {
-                        "cpn_id": "begin@title",
-                        "operator": "empty"
-                      }
+    "id": 4,
+    "title": "Generate SEO Blog",
+    "description": "This workflow automatically generates a complete SEO-optimized blog article based on a simple user input. You don’t need any writing experience. Just provide a topic or short request — the system will handle the rest.",
+    "canvas_type": "Recommended",
+    "dsl": {
+            "components": {
+                "Agent:BetterSitesSend": {
+                    "downstream": [
+                        "Agent:EagerNailsRemain"
                     ],
-                    "logical_operator": "and",
-                    "to": "Baidu:ShyTeamsJuggle"
-                  }
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.3,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 3,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Balance",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.2,
+                            "prompts": [
+                                {
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Outline_Agent**, responsible for generating a clear and SEO-optimized blog outline based on the user's parsed writing intent and keyword strategy.\n\n# Tool Access:\n\n- You have access to a search tool called `Tavily Search`.\n\n- If you are unsure how to structure a section, you may call this tool to search for related blog outlines or content from Google.\n\n- Do not overuse it. Your job is to extract **structure**, not to write paragraphs.\n\n\n# Goals\n\n1. Create a well-structured outline with appropriate H2 and H3 headings.\n\n2. Ensure logical flow from introduction to conclusion.\n\n3. Assign 1\u20132 suggested long-tail keywords to each major section for SEO alignment.\n\n4. Make the structure suitable for downstream paragraph writing.\n\n\n\n\n#Note\n\n- Use concise, scannable section titles.\n\n- Do not write full paragraphs.\n\n- Prioritize clarity, logical progression, and SEO alignment.\n\n\n\n- If the blog type is \u201cTutorial\u201d or \u201cHow-to\u201d, include step-based sections.\n\n\n# Input\n\nYou will receive:\n\n- Writing Type (e.g., Tutorial, Informative Guide)\n\n- Target Audience\n\n- User Intent Summary\n\n- 3\u20135 long-tail keywords\n\n\nUse this information to design a structure that both informs readers and maximizes search engine visibility.\n\n# Output Format\n\n```markdown\n\n## Blog Title (suggested)\n\n[Give a short, SEO-friendly title suggestion]\n\n## Outline\n\n### Introduction\n\n- Purpose of the article\n\n- Brief context\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 1]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 2]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 3]\n\n- [Optional H3 Subsection Title A]\n\n  - [Explanation of sub-point]\n\n- [Optional H3 Subsection Title B]\n\n  - [Explanation of sub-point]\n\n- **Suggested keywords**: [keyword1]\n\n### Conclusion\n\n- Recap key takeaways\n\n- Optional CTA (Call to Action)\n\n- **Suggested keywords**: [keyword3]\n\n",
+                            "temperature": 0.5,
+                            "temperatureEnabled": true,
+                            "tools": [
+                                {
+                                    "component_name": "TavilySearch",
+                                    "name": "TavilySearch",
+                                    "params": {
+                                        "api_key": "",
+                                        "days": 7,
+                                        "exclude_domains": [],
+                                        "include_answer": false,
+                                        "include_domains": [],
+                                        "include_image_descriptions": false,
+                                        "include_images": false,
+                                        "include_raw_content": true,
+                                        "max_results": 5,
+                                        "outputs": {
+                                            "formalized_content": {
+                                                "type": "string",
+                                                "value": ""
+                                            },
+                                            "json": {
+                                                "type": "Array<Object>",
+                                                "value": []
+                                            }
+                                        },
+                                        "query": "sys.query",
+                                        "search_depth": "basic",
+                                        "topic": "general"
+                                    }
+                                }
+                            ],
+                            "topPEnabled": false,
+                            "top_p": 0.85,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "Agent:ClearRabbitsScream"
+                    ]
+                },
+                "Agent:ClearRabbitsScream": {
+                    "downstream": [
+                        "Agent:BetterSitesSend"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.5,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 1,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Precise",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.5,
+                            "prompts": [
+                                {
+                                    "content": "The user query is {sys.query}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Parse_And_Keyword_Agent**, responsible for interpreting a user's blog writing request and generating a structured writing intent summary and keyword strategy for SEO-optimized content generation.\n\n# Goals\n\n1. Extract and infer the user's true writing intent, even if the input is informal or vague.\n\n2. Identify the writing type, target audience, and implied goal.\n\n3. Suggest 3\u20135 long-tail keywords based on the input and context.\n\n4. Output all data in a Markdown format for downstream agents.\n\n# Operating Guidelines\n\n\n- If the user's input lacks clarity, make reasonable and **conservative** assumptions based on SEO best practices.\n\n- Always choose one clear \"Writing Type\" from the list below.\n\n- Your job is not to write the blog \u2014 only to structure the brief.\n\n# Output Format\n\n```markdown\n## Writing Type\n\n[Choose one: Tutorial / Informative Guide / Marketing Content / Case Study / Opinion Piece / How-to / Comparison Article]\n\n## Target Audience\n\n[Try to be specific based on clues in the input: e.g., marketing managers, junior developers, SEO beginners]\n\n## User Intent Summary\n\n[A 1\u20132 sentence summary of what the user wants to achieve with the blog post]\n\n## Suggested Long-tail Keywords\n\n- keyword 1\n\n- keyword 2\n\n- keyword 3\n\n- keyword 4 (optional)\n\n- keyword 5 (optional)\n\n\n\n\n## Input Examples (and how to handle them)\n\nInput: \"I want to write about RAGFlow.\"\n\u2192 Output: Informative Guide, Audience: AI developers, Intent: explain what RAGFlow is and its use cases\n\nInput: \"Need a blog to promote our prompt design tool.\"\n\u2192 Output: Marketing Content, Audience: product managers or tool adopters, Intent: raise awareness and interest in the product\n\n\n\nInput: \"How to get more Google traffic using AI\"\n\u2192 Output: How-to, Audience: SEO marketers, Intent: guide readers on applying AI for SEO growth",
+                            "temperature": 0.2,
+                            "temperatureEnabled": true,
+                            "tools": [],
+                            "topPEnabled": false,
+                            "top_p": 0.75,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "begin"
+                    ]
+                },
+                "Agent:EagerNailsRemain": {
+                    "downstream": [
+                        "Agent:LovelyHeadsOwn"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.5,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 5,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Precise",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.5,
+                            "prompts": [
+                                {
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Outline agent output is {Agent:BetterSitesSend@content}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Body_Agent**, responsible for generating the full content of each section of an SEO-optimized blog based on the provided outline and keyword strategy.\n\n# Tool Access:\n\nYou can use the `Tavily Search` tool to retrieve relevant content, statistics, or examples to support each section you're writing.\n\nUse it **only** when the provided outline lacks enough information, or if the section requires factual grounding.\n\nAlways cite the original link or indicate source where possible.\n\n\n# Goals\n\n1. Write each section (based on H2/H3 structure) as a complete and natural blog paragraph.\n\n2. Integrate the suggested long-tail keywords naturally into each section.\n\n3. When appropriate, use the `Tavily Search` tool to enrich your writing with relevant facts, examples, or quotes.\n\n4. Ensure each section is clear, engaging, and informative, suitable for both human readers and search engines.\n\n\n# Style Guidelines\n\n- Write in a tone appropriate to the audience. Be explanatory, not promotional, unless it's a marketing blog.\n\n- Avoid generic filler content. Prioritize clarity, structure, and value.\n\n- Ensure SEO keywords are embedded seamlessly, not forcefully.\n\n\n\n- Maintain writing rhythm. Vary sentence lengths. Use transitions between ideas.\n\n\n# Input\n\n\nYou will receive:\n\n- Blog title\n\n- Structured outline (including section titles, keywords, and descriptions)\n\n- Target audience\n\n- Blog type and user intent\n\nYou must **follow the outline strictly**. Write content **section-by-section**, based on the structure.\n\n\n# Output Format\n\n```markdown\n\n## H2: [Section Title]\n\n[Your generated content for this section \u2014 500-600 words, using keywords naturally.]\n\n",
+                            "temperature": 0.2,
+                            "temperatureEnabled": true,
+                            "tools": [
+                                {
+                                    "component_name": "TavilySearch",
+                                    "name": "TavilySearch",
+                                    "params": {
+                                        "api_key": "",
+                                        "days": 7,
+                                        "exclude_domains": [],
+                                        "include_answer": false,
+                                        "include_domains": [],
+                                        "include_image_descriptions": false,
+                                        "include_images": false,
+                                        "include_raw_content": true,
+                                        "max_results": 5,
+                                        "outputs": {
+                                            "formalized_content": {
+                                                "type": "string",
+                                                "value": ""
+                                            },
+                                            "json": {
+                                                "type": "Array<Object>",
+                                                "value": []
+                                            }
+                                        },
+                                        "query": "sys.query",
+                                        "search_depth": "basic",
+                                        "topic": "general"
+                                    }
+                                }
+                            ],
+                            "topPEnabled": false,
+                            "top_p": 0.75,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "Agent:BetterSitesSend"
+                    ]
+                },
+                "Agent:LovelyHeadsOwn": {
+                    "downstream": [
+                        "Message:LegalBeansBet"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.5,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 5,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Precise",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.5,
+                            "prompts": [
+                                {
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Outline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Editor_Agent**, responsible for finalizing the blog post for both human readability and SEO effectiveness.\n\n# Goals\n\n1. Polish the entire blog content for clarity, coherence, and style.\n\n2. Improve transitions between sections, ensure logical flow.\n\n3. Verify that keywords are used appropriately and effectively.\n\n4. Conduct a lightweight SEO audit \u2014 checking keyword density, structure (H1/H2/H3), and overall searchability.\n\n\n\n# Style Guidelines\n\n- Be precise. Avoid bloated or vague language.\n\n- Maintain an informative and engaging tone, suitable to the target audience.\n\n- Do not remove keywords unless absolutely necessary for clarity.\n\n- Ensure paragraph flow and section continuity.\n\n\n# Input\n\nYou will receive:\n\n- Full blog content, written section-by-section\n\n- Original outline with suggested keywords\n\n- Target audience and writing type\n\n# Output Format\n\n```markdown\n\n[The revised, fully polished blog post content goes here.]\n\n",
+                            "temperature": 0.2,
+                            "temperatureEnabled": true,
+                            "tools": [],
+                            "topPEnabled": false,
+                            "top_p": 0.75,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "Agent:EagerNailsRemain"
+                    ]
+                },
+                "Message:LegalBeansBet": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Message",
+                        "params": {
+                            "content": [
+                                "{Agent:LovelyHeadsOwn@content}"
+                            ]
+                        }
+                    },
+                    "upstream": [
+                        "Agent:LovelyHeadsOwn"
+                    ]
+                },
+                "begin": {
+                    "downstream": [
+                        "Agent:ClearRabbitsScream"
+                    ],
+                    "obj": {
+                        "component_name": "Begin",
+                        "params": {
+                            "enablePrologue": true,
+                            "inputs": {},
+                            "mode": "conversational",
+                            "prologue": "Hi! I'm your SEO blog assistant.\n\nTo get started, please tell me:\n1. What topic you want the blog to cover\n2. Who is the target audience\n3. What you hope to achieve with this blog (e.g., SEO traffic, teaching beginners, promoting a product)\n"
+                        }
+                    },
+                    "upstream": []
+                }
+            },
+            "globals": {
+                "sys.conversation_turns": 0,
+                "sys.files": [],
+                "sys.query": "",
+                "sys.user_id": ""
+            },
+            "graph": {
+                "edges": [
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__beginstart-Agent:ClearRabbitsScreamend",
+                        "source": "begin",
+                        "sourceHandle": "start",
+                        "target": "Agent:ClearRabbitsScream",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:ClearRabbitsScreamstart-Agent:BetterSitesSendend",
+                        "source": "Agent:ClearRabbitsScream",
+                        "sourceHandle": "start",
+                        "target": "Agent:BetterSitesSend",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:BetterSitesSendtool-Tool:SharpPensBurnend",
+                        "source": "Agent:BetterSitesSend",
+                        "sourceHandle": "tool",
+                        "target": "Tool:SharpPensBurn",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:BetterSitesSendstart-Agent:EagerNailsRemainend",
+                        "source": "Agent:BetterSitesSend",
+                        "sourceHandle": "start",
+                        "target": "Agent:EagerNailsRemain",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "id": "xy-edge__Agent:EagerNailsRemaintool-Tool:WickedDeerHealend",
+                        "source": "Agent:EagerNailsRemain",
+                        "sourceHandle": "tool",
+                        "target": "Tool:WickedDeerHeal",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:EagerNailsRemainstart-Agent:LovelyHeadsOwnend",
+                        "source": "Agent:EagerNailsRemain",
+                        "sourceHandle": "start",
+                        "target": "Agent:LovelyHeadsOwn",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:LovelyHeadsOwnstart-Message:LegalBeansBetend",
+                        "source": "Agent:LovelyHeadsOwn",
+                        "sourceHandle": "start",
+                        "target": "Message:LegalBeansBet",
+                        "targetHandle": "end"
+                    }
                 ],
-                "end_cpn_id": "Generate:FancyMomentsTalk"
-              },
-              "label": "Switch",
-              "name": "Empty title?"
+                "nodes": [
+                    {
+                        "data": {
+                            "form": {
+                                "enablePrologue": true,
+                                "inputs": {},
+                                "mode": "conversational",
+                                "prologue": "Hi! I'm your SEO blog assistant.\n\nTo get started, please tell me:\n1. What topic you want the blog to cover\n2. Who is the target audience\n3. What you hope to achieve with this blog (e.g., SEO traffic, teaching beginners, promoting a product)\n"
+                            },
+                            "label": "Begin",
+                            "name": "begin"
+                        },
+                        "id": "begin",
+                        "measured": {
+                            "height": 48,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 50,
+                            "y": 200
+                        },
+                        "selected": false,
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.5,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 1,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Precise",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.5,
+                                "prompts": [
+                                    {
+                                        "content": "The user query is {sys.query}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Parse_And_Keyword_Agent**, responsible for interpreting a user's blog writing request and generating a structured writing intent summary and keyword strategy for SEO-optimized content generation.\n\n# Goals\n\n1. Extract and infer the user's true writing intent, even if the input is informal or vague.\n\n2. Identify the writing type, target audience, and implied goal.\n\n3. Suggest 3\u20135 long-tail keywords based on the input and context.\n\n4. Output all data in a Markdown format for downstream agents.\n\n# Operating Guidelines\n\n\n- If the user's input lacks clarity, make reasonable and **conservative** assumptions based on SEO best practices.\n\n- Always choose one clear \"Writing Type\" from the list below.\n\n- Your job is not to write the blog \u2014 only to structure the brief.\n\n# Output Format\n\n```markdown\n## Writing Type\n\n[Choose one: Tutorial / Informative Guide / Marketing Content / Case Study / Opinion Piece / How-to / Comparison Article]\n\n## Target Audience\n\n[Try to be specific based on clues in the input: e.g., marketing managers, junior developers, SEO beginners]\n\n## User Intent Summary\n\n[A 1\u20132 sentence summary of what the user wants to achieve with the blog post]\n\n## Suggested Long-tail Keywords\n\n- keyword 1\n\n- keyword 2\n\n- keyword 3\n\n- keyword 4 (optional)\n\n- keyword 5 (optional)\n\n\n\n\n## Input Examples (and how to handle them)\n\nInput: \"I want to write about RAGFlow.\"\n\u2192 Output: Informative Guide, Audience: AI developers, Intent: explain what RAGFlow is and its use cases\n\nInput: \"Need a blog to promote our prompt design tool.\"\n\u2192 Output: Marketing Content, Audience: product managers or tool adopters, Intent: raise awareness and interest in the product\n\n\n\nInput: \"How to get more Google traffic using AI\"\n\u2192 Output: How-to, Audience: SEO marketers, Intent: guide readers on applying AI for SEO growth",
+                                "temperature": 0.2,
+                                "temperatureEnabled": true,
+                                "tools": [],
+                                "topPEnabled": false,
+                                "top_p": 0.75,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Parse And Keyword Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:ClearRabbitsScream",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 344.7766966202233,
+                            "y": 234.82202253184496
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.3,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 3,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Balance",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.2,
+                                "prompts": [
+                                    {
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Outline_Agent**, responsible for generating a clear and SEO-optimized blog outline based on the user's parsed writing intent and keyword strategy.\n\n# Tool Access:\n\n- You have access to a search tool called `Tavily Search`.\n\n- If you are unsure how to structure a section, you may call this tool to search for related blog outlines or content from Google.\n\n- Do not overuse it. Your job is to extract **structure**, not to write paragraphs.\n\n\n# Goals\n\n1. Create a well-structured outline with appropriate H2 and H3 headings.\n\n2. Ensure logical flow from introduction to conclusion.\n\n3. Assign 1\u20132 suggested long-tail keywords to each major section for SEO alignment.\n\n4. Make the structure suitable for downstream paragraph writing.\n\n\n\n\n#Note\n\n- Use concise, scannable section titles.\n\n- Do not write full paragraphs.\n\n- Prioritize clarity, logical progression, and SEO alignment.\n\n\n\n- If the blog type is \u201cTutorial\u201d or \u201cHow-to\u201d, include step-based sections.\n\n\n# Input\n\nYou will receive:\n\n- Writing Type (e.g., Tutorial, Informative Guide)\n\n- Target Audience\n\n- User Intent Summary\n\n- 3\u20135 long-tail keywords\n\n\nUse this information to design a structure that both informs readers and maximizes search engine visibility.\n\n# Output Format\n\n```markdown\n\n## Blog Title (suggested)\n\n[Give a short, SEO-friendly title suggestion]\n\n## Outline\n\n### Introduction\n\n- Purpose of the article\n\n- Brief context\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 1]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 2]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 3]\n\n- [Optional H3 Subsection Title A]\n\n  - [Explanation of sub-point]\n\n- [Optional H3 Subsection Title B]\n\n  - [Explanation of sub-point]\n\n- **Suggested keywords**: [keyword1]\n\n### Conclusion\n\n- Recap key takeaways\n\n- Optional CTA (Call to Action)\n\n- **Suggested keywords**: [keyword3]\n\n",
+                                "temperature": 0.5,
+                                "temperatureEnabled": true,
+                                "tools": [
+                                    {
+                                        "component_name": "TavilySearch",
+                                        "name": "TavilySearch",
+                                        "params": {
+                                            "api_key": "",
+                                            "days": 7,
+                                            "exclude_domains": [],
+                                            "include_answer": false,
+                                            "include_domains": [],
+                                            "include_image_descriptions": false,
+                                            "include_images": false,
+                                            "include_raw_content": true,
+                                            "max_results": 5,
+                                            "outputs": {
+                                                "formalized_content": {
+                                                    "type": "string",
+                                                    "value": ""
+                                                },
+                                                "json": {
+                                                    "type": "Array<Object>",
+                                                    "value": []
+                                                }
+                                            },
+                                            "query": "sys.query",
+                                            "search_depth": "basic",
+                                            "topic": "general"
+                                        }
+                                    }
+                                ],
+                                "topPEnabled": false,
+                                "top_p": 0.85,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Outline Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:BetterSitesSend",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 613.4368763415628,
+                            "y": 164.3074269048589
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "description": "This is an agent for a specific task.",
+                                "user_prompt": "This is the order you need to send to the agent."
+                            },
+                            "label": "Tool",
+                            "name": "flow.tool_0"
+                        },
+                        "dragging": false,
+                        "id": "Tool:SharpPensBurn",
+                        "measured": {
+                            "height": 44,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 580.1877078861457,
+                            "y": 287.7669662022325
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "toolNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.5,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 5,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Precise",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.5,
+                                "prompts": [
+                                    {
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Outline agent output is {Agent:BetterSitesSend@content}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Body_Agent**, responsible for generating the full content of each section of an SEO-optimized blog based on the provided outline and keyword strategy.\n\n# Tool Access:\n\nYou can use the `Tavily Search` tool to retrieve relevant content, statistics, or examples to support each section you're writing.\n\nUse it **only** when the provided outline lacks enough information, or if the section requires factual grounding.\n\nAlways cite the original link or indicate source where possible.\n\n\n# Goals\n\n1. Write each section (based on H2/H3 structure) as a complete and natural blog paragraph.\n\n2. Integrate the suggested long-tail keywords naturally into each section.\n\n3. When appropriate, use the `Tavily Search` tool to enrich your writing with relevant facts, examples, or quotes.\n\n4. Ensure each section is clear, engaging, and informative, suitable for both human readers and search engines.\n\n\n# Style Guidelines\n\n- Write in a tone appropriate to the audience. Be explanatory, not promotional, unless it's a marketing blog.\n\n- Avoid generic filler content. Prioritize clarity, structure, and value.\n\n- Ensure SEO keywords are embedded seamlessly, not forcefully.\n\n\n\n- Maintain writing rhythm. Vary sentence lengths. Use transitions between ideas.\n\n\n# Input\n\n\nYou will receive:\n\n- Blog title\n\n- Structured outline (including section titles, keywords, and descriptions)\n\n- Target audience\n\n- Blog type and user intent\n\nYou must **follow the outline strictly**. Write content **section-by-section**, based on the structure.\n\n\n# Output Format\n\n```markdown\n\n## H2: [Section Title]\n\n[Your generated content for this section \u2014 500-600 words, using keywords naturally.]\n\n",
+                                "temperature": 0.2,
+                                "temperatureEnabled": true,
+                                "tools": [
+                                    {
+                                        "component_name": "TavilySearch",
+                                        "name": "TavilySearch",
+                                        "params": {
+                                            "api_key": "",
+                                            "days": 7,
+                                            "exclude_domains": [],
+                                            "include_answer": false,
+                                            "include_domains": [],
+                                            "include_image_descriptions": false,
+                                            "include_images": false,
+                                            "include_raw_content": true,
+                                            "max_results": 5,
+                                            "outputs": {
+                                                "formalized_content": {
+                                                    "type": "string",
+                                                    "value": ""
+                                                },
+                                                "json": {
+                                                    "type": "Array<Object>",
+                                                    "value": []
+                                                }
+                                            },
+                                            "query": "sys.query",
+                                            "search_depth": "basic",
+                                            "topic": "general"
+                                        }
+                                    }
+                                ],
+                                "topPEnabled": false,
+                                "top_p": 0.75,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Body Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:EagerNailsRemain",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 889.0614605692713,
+                            "y": 247.00973041799065
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "description": "This is an agent for a specific task.",
+                                "user_prompt": "This is the order you need to send to the agent."
+                            },
+                            "label": "Tool",
+                            "name": "flow.tool_1"
+                        },
+                        "dragging": false,
+                        "id": "Tool:WickedDeerHeal",
+                        "measured": {
+                            "height": 44,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 853.2006404239659,
+                            "y": 364.37541577229143
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "toolNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.5,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 5,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Precise",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.5,
+                                "prompts": [
+                                    {
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Outline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Editor_Agent**, responsible for finalizing the blog post for both human readability and SEO effectiveness.\n\n# Goals\n\n1. Polish the entire blog content for clarity, coherence, and style.\n\n2. Improve transitions between sections, ensure logical flow.\n\n3. Verify that keywords are used appropriately and effectively.\n\n4. Conduct a lightweight SEO audit \u2014 checking keyword density, structure (H1/H2/H3), and overall searchability.\n\n\n\n# Style Guidelines\n\n- Be precise. Avoid bloated or vague language.\n\n- Maintain an informative and engaging tone, suitable to the target audience.\n\n- Do not remove keywords unless absolutely necessary for clarity.\n\n- Ensure paragraph flow and section continuity.\n\n\n# Input\n\nYou will receive:\n\n- Full blog content, written section-by-section\n\n- Original outline with suggested keywords\n\n- Target audience and writing type\n\n# Output Format\n\n```markdown\n\n[The revised, fully polished blog post content goes here.]\n\n",
+                                "temperature": 0.2,
+                                "temperatureEnabled": true,
+                                "tools": [],
+                                "topPEnabled": false,
+                                "top_p": 0.75,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Editor Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:LovelyHeadsOwn",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 1160.3332919804993,
+                            "y": 149.50806732882472
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "content": [
+                                    "{Agent:LovelyHeadsOwn@content}"
+                                ]
+                            },
+                            "label": "Message",
+                            "name": "Response"
+                        },
+                        "dragging": false,
+                        "id": "Message:LegalBeansBet",
+                        "measured": {
+                            "height": 56,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 1370.6665839609984,
+                            "y": 267.0323933738015
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "messageNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "This workflow automatically generates a complete SEO-optimized blog article based on a simple user input. You don\u2019t need any writing experience. Just provide a topic or short request \u2014 the system will handle the rest.\n\nThe process includes the following key stages:\n\n1. **Understanding your topic and goals**\n2. **Designing the blog structure**\n3. **Writing high-quality content**\n\n\n"
+                            },
+                            "label": "Note",
+                            "name": "Workflow Overall Description"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 205,
+                        "id": "Note:SlimyGhostsWear",
+                        "measured": {
+                            "height": 205,
+                            "width": 415
+                        },
+                        "position": {
+                            "x": -284.3143151688742,
+                            "y": 150.47632147913419
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 415
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent reads the user\u2019s input and figures out what kind of blog needs to be written.\n\n**What it does**:\n- Understands the main topic you want to write about  \n- Identifies who the blog is for (e.g., beginners, marketers, developers)  \n- Determines the writing purpose (e.g., SEO traffic, product promotion, education)  \n- Suggests 3\u20135 long-tail SEO keywords related to the topic"
+                            },
+                            "label": "Note",
+                            "name": "Parse And Keyword Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 152,
+                        "id": "Note:EmptyChairsShake",
+                        "measured": {
+                            "height": 152,
+                            "width": 340
+                        },
+                        "position": {
+                            "x": 295.04147626768133,
+                            "y": 372.2755718118446
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 340
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent builds the blog structure \u2014 just like writing a table of contents before you start writing the full article.\n\n**What it does**:\n- Suggests a clear blog title that includes important keywords  \n- Breaks the article into sections using H2 and H3 headings (like a professional blog layout)  \n- Assigns 1\u20132 recommended keywords to each section to help with SEO  \n- Follows the writing goal and target audience set in the previous step"
+                            },
+                            "label": "Note",
+                            "name": "Outline Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 146,
+                        "id": "Note:TallMelonsNotice",
+                        "measured": {
+                            "height": 146,
+                            "width": 343
+                        },
+                        "position": {
+                            "x": 598.5644991893463,
+                            "y": 5.801054564756448
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 343
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent is responsible for writing the actual content of the blog \u2014 paragraph by paragraph \u2014 based on the outline created earlier.\n\n**What it does**:\n- Looks at each H2/H3 section in the outline  \n- Writes 150\u2013220 words of clear, helpful, and well-structured content per section  \n- Includes the suggested SEO keywords naturally (not keyword stuffing)  \n- Uses real examples or facts if needed (by calling a web search tool like Tavily)"
+                            },
+                            "label": "Note",
+                            "name": "Body Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 137,
+                        "id": "Note:RipeCougarsBuild",
+                        "measured": {
+                            "height": 137,
+                            "width": 319
+                        },
+                        "position": {
+                            "x": 860.4854129814981,
+                            "y": 427.2196835690842
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 319
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent reviews the entire blog draft to make sure it is smooth, professional, and SEO-friendly. It acts like a human editor before publishing.\n\n**What it does**:\n- Polishes the writing: improves sentence clarity, fixes awkward phrasing  \n- Makes sure the content flows well from one section to the next  \n- Double-checks keyword usage: are they present, natural, and not overused?  \n- Verifies the blog structure (H1, H2, H3 headings) is correct  \n- Adds two key SEO elements:\n  - **Meta Title** (shows up in search results)\n  - **Meta Description** (summary for Google and social sharing)"
+                            },
+                            "label": "Note",
+                            "name": "Editor Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "height": 146,
+                        "id": "Note:OpenTurkeysSell",
+                        "measured": {
+                            "height": 146,
+                            "width": 320
+                        },
+                        "position": {
+                            "x": 1129,
+                            "y": -30
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 320
+                    }
+                ]
             },
-            "dragging": false,
-            "height": 164,
-            "id": "Switch:LargeWaspsSlide",
-            "measured": {
-              "height": 164,
-              "width": 200
-            },
-            "position": {
-              "x": -171.8139076194234,
-              "y": 106.58178484885428
-            },
-            "positionAbsolute": {
-              "x": -171.8139076194234,
-              "y": 106.58178484885428
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "switchNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "query": [
-                  {
-                    "component_id": "begin@keywords",
-                    "type": "reference"
-                  }
-                ],
-                "top_n": 10
-              },
-              "label": "Baidu",
-              "name": "Baidu4title"
-            },
-            "dragging": false,
-            "height": 64,
-            "id": "Baidu:ShyTeamsJuggle",
-            "measured": {
-              "height": 64,
-              "width": 200
-            },
-            "position": {
-              "x": 99.2698941117485,
-              "y": 131.97513574677558
-            },
-            "positionAbsolute": {
-              "x": 99.2698941117485,
-              "y": 131.97513574677558
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "begin@title",
-                    "id": "2beef84b-204b-475a-89b3-3833bd108088",
-                    "key": "title"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "I'm doing research for an article called {begin@title}, what relevant, high-traffic phrase should I type into Google to find this article? Just return the phrase without including any special symbols like quotes and colons.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Keywords gen"
-            },
-            "dragging": false,
-            "height": 148,
-            "id": "Generate:FancyMomentsTalk",
-            "measured": {
-              "height": 148,
-              "width": 200
-            },
-            "position": {
-              "x": 102.41401952481024,
-              "y": 250.74278147746412
-            },
-            "positionAbsolute": {
-              "x": 102.41401952481024,
-              "y": 250.74278147746412
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "query": [
-                  {
-                    "component_id": "Generate:PublicPotsPush",
-                    "type": "reference"
-                  }
-                ],
-                "top_n": 10
-              },
-              "label": "Baidu",
-              "name": "Baidu4Info"
-            },
-            "dragging": false,
-            "height": 64,
-            "id": "Baidu:SharpSignsBeg",
-            "measured": {
-              "height": 64,
-              "width": 200
-            },
-            "position": {
-              "x": 932.3075370153801,
-              "y": 293.31101119905543
-            },
-            "positionAbsolute": {
-              "x": 933.5156264729844,
-              "y": 289.6867428262425
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {},
-              "label": "Answer",
-              "name": "Interact_0"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Answer:TameWavesChange",
-            "measured": {
-              "height": 44,
-              "width": 200
-            },
-            "position": {
-              "x": 2067.9179213988796,
-              "y": 373.3415280349531
-            },
-            "positionAbsolute": {
-              "x": 2150.301454782809,
-              "y": 360.9062777128506
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "logicNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "text": "Function: Collect information such as keywords, titles, audience, words/brands to avoid, tone, and other details provided by the user.\n\nVariables:\n - keyword：Keywords\n - title：Title, \n - audience：Audience\n - brands_to_avoid：Words/brands to avoid.\n\nMUST NOT both of keywords and title are blank."
-              },
-              "label": "Note",
-              "name": "N：Begin"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 368,
-            "id": "Note:FruityColtsBattle",
-            "measured": {
-              "height": 368,
-              "width": 275
-            },
-            "position": {
-              "x": -430.17115299591364,
-              "y": -320.31044749815453
-            },
-            "positionAbsolute": {
-              "x": -430.17115299591364,
-              "y": -320.31044749815453
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 368,
-              "width": 275
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 275
-          },
-          {
-            "data": {
-              "form": {
-                "text": "If title is not empty, let LLM help you to generate keywords."
-              },
-              "label": "Note",
-              "name": "N: Keywords gen"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:SilverGiftsHide",
-            "measured": {
-              "height": 128,
-              "width": 269
-            },
-            "position": {
-              "x": 100.4673650631783,
-              "y": 414.8198461927788
-            },
-            "positionAbsolute": {
-              "x": 100.4673650631783,
-              "y": 414.8198461927788
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 269
-          },
-          {
-            "data": {
-              "form": {
-                "text": "Use user defined keywords to search.\nNext, generate a title based on the search result.\nChange to DuckDuckGo if you want."
-              },
-              "label": "Note",
-              "name": "N: Baidu4title"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 192,
-            "id": "Note:ShaggyMelonsFail",
-            "measured": {
-              "height": 192,
-              "width": 254
-            },
-            "position": {
-              "x": 101.98068917850298,
-              "y": -79.85480052081127
-            },
-            "positionAbsolute": {
-              "x": 101.98068917850298,
-              "y": -79.85480052081127
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 192,
-              "width": 254
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 254
-          },
-          {
-            "data": {
-              "form": {
-                "text": "Let LLM to generate keywords to search. \nBased on the search result, the outline of the article will be generated."
-              },
-              "label": "Note",
-              "name": "N: Words to search"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 132,
-            "id": "Note:EvilIdeasDress",
-            "measured": {
-              "height": 132,
-              "width": 496
-            },
-            "position": {
-              "x": 822.1382301557384,
-              "y": 1.1013324480075255
-            },
-            "positionAbsolute": {
-              "x": 822.1382301557384,
-              "y": 1.1013324480075255
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 132,
-              "width": 496
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 496
-          },
-          {
-            "data": {
-              "form": {
-                "text": "1 . User input:\nThe user enters information such as avoid keywords, title, audience, required words/brands, tone, etc. at the start node.\n\n2. Conditional judgment:\nCheck whether the title is empty, if it is empty, generate the title.\n\n3. Generate titles and keywords:\nGenerate SEO optimized titles and related keywords based on the entered user keywords.\n\n4. Web search:\nUse the generated titles and keywords to conduct a Google search to obtain relevant information.\n\n5. Generate outline and articles:\nGenerate article outlines, topics, and bodies based on user input information and search results.\n\n6. Template conversion and output:\nCombine the beginning of the article and the main body to generate a complete article, and output the result."
-              },
-              "label": "Note",
-              "name": "Steps"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 456,
-            "id": "Note:WeakApesDivide",
-            "measured": {
-              "height": 456,
-              "width": 955
-            },
-            "position": {
-              "x": 441.5385839522079,
-              "y": 638.4606789293297
-            },
-            "positionAbsolute": {
-              "x": 377.5385839522079,
-              "y": 638.4606789293297
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 450,
-              "width": 827
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 955
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 1,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are an SEO expert and subject area expert. Your task is to generate an SEO article title based on the keywords provided by the user and the context of the Google search.\n\nThe context of the Google search is as follows:\n{Baidu:ShyTeamsJuggle}\nThe context of the Google search is as above.\n\nIn order to craft an SEO article title that is keyword friendly and aligns with the principles observed in the top results you share, it is important to understand why these titles are effective. Here are the principles that may help them rank high:\n1. **Keyword Placement and Clarity**: Each title directly responds to the query by containing the exact keyword or a very close variation. This clarity ensures that search engines can easily understand the relevance of the content.\n2. **Succinctness and directness**: The title is concise, making it easy to read and understand quickly. They avoid unnecessary words and get straight to the point.\n3. **Contains a definition or explanation**: The title implies that the article will define or explain the concept, which is what people searching for \"{Generate:FancyMomentsTalk}\" are looking for.\n4. **Variety of Presentation**: Despite covering similar content, each title approaches the topic from a slightly different angle. This diversity can attract the interest of a wider audience.\n\nGiven these principles, please help me generate a title that will be optimized for the keyword \"{Generate:FancyMomentsTalk}\" based on the syntax of a top-ranking title. \n\nPlease don't copy, but give better options, and avoid using language like \"master,\" \"comprehensive,\" \"discover,\" or \"reveal.\" \n\nDo not use gerunds, only active tense and present tense. \n\nTitle SHOULD be in language as \"{Generate:FancyMomentsTalk}\"\n\nJust return the title.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Title Gen"
-            },
-            "dragging": false,
-            "id": "Generate:ReadyHandsInvent",
-            "measured": {
-              "height": 106,
-              "width": 200
-            },
-            "position": {
-              "x": 362.61841535531624,
-              "y": 109.52633857873508
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode"
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 1,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "I want a Google search phrase to get authoritative information for my article \" {begin@title} {Generate:ReadyHandsInvent} {begin@keywords} {Generate:FancyMomentsTalk}\" for {begin@audience}. Please return a search phrase of five words or less so that I can get a good overview of the topic. Include any words you're unfamiliar with in your search query.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Words to search"
-            },
-            "dragging": false,
-            "id": "Generate:PublicPotsPush",
-            "measured": {
-              "height": 106,
-              "width": 200
-            },
-            "position": {
-              "x": 631.7110159663526,
-              "y": 271.70568678331114
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode"
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": false,
-                "max_tokens": 256,
-                "message_history_window_size": 1,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "I'm an expert blogger.\nHere is some research I did for the blog post title \" {begin@title} {Generate:ReadyHandsInvent}\".\nThese are related search results:\n{Baidu:SharpSignsBeg}\n\nPlease study it in depth:\n\nArticle title: {begin@title} {Generate:ReadyHandsInvent}\nTarget keywords: {begin@keywords} {Generate:FancyMomentsTalk}\nMy blog post’s audience: {begin@audience}\nExclude brands: {begin@brands_to_avoid}\n\nCan you write a detailed blog outline with unique chapters? \n - The outline should include specific points and details that the article can mention. \n - AVOID generalities. \n - This SHOULD be researched in depth, not generalized.\n - Each chapter includes 7-8 projects, use some of the links above for reference if you can. For each item, don't just say \"discuss how\" but actually explain in detail the points that can be made. \n - DO NOT include things that you know are false and may contain inaccuracies. You are writing for a mature audience, avoid generalities and make specific quotes. Make sure to define key terms for users in your outline. Stay away from very controversial topics. \n - In the introduction, provide the background information needed for the rest of the article.\n - Please return in base array format and only the outline array, escaping quotes in the format. Each array item includes a complete chapter:\n[\"Includes Chapter 1 of all sub-projects\", \"Includes Chapter 2 of all sub-projects\", \"Includes Chapter 3 of all sub-projects\", \"Includes Chapter 4 of all sub-projects\"...etc.]\n - Each section SHOULD be wrapped with \"\" and ensure escaping within the content to ensure it is a valid array item.\n - MUST be in language of \" {begin@keywords} {begin@title}\".\n\nHere is an example of valid output. Please follow this structure and ignore the content:\n[\n  \"Introduction - Explore the vibrant city of Miami, a destination that offers rich history, diverse culture, and many hidden treasures. Discover the little-known wonders that make Miami a unique destination for adventure seekers. Explore from historical landmarks to exotic places Attractions include atmospheric neighborhoods, local cuisine and lively nightlife. \",\n  \"History of Miami - Begin the adventure with a journey into Miami's past. Learn about the city's transformation from a sleepy settlement to a busy metropolis. Understand the impact of multiculturalism on the city's development, as reflected in its architecture, cuisine and lifestyle See. Discover the historical significance of Miami landmarks like Hemingway's home. Uncover the fascinating stories of famous Miami neighborhoods like Key West. Explore the role of art and culture in shaping Miami, as shown at Art Basel events.\n\"Major Attractions - Go beyond Miami's famous beaches and explore the city's top attractions. Discover the artistic talent of the Wynwood Arts District, known for its vibrant street art. Visit iconic South Beach, known for its nightlife and boutiques . Explore the charming Coconut Grove district, known for its tree-lined streets and shopping areas. Visit the Holocaust Memorial Museum, a sombre reminder of a dark chapter in human history. Explore the Everglades Country, one of Miami's natural treasures. The park's diverse wildlife \",\n\"Trail Discovery - Get off the tourist trail and discover Miami's hidden treasures. Experience a water taxi tour across Biscayne Bay to get another perspective on the city. Visit the little-known Kabinett Department of Art, showcasing unique installation art . Explore the abandoned bridges and hidden bars of Duval Street and go on a culinary adventure in local neighborhoods known for their authentic cuisine. Go shopping at Brickell City Center, a trendy shopping and apartment complex in the heart of Miami. body.\",\n\"Local Cuisine - Dive into Miami's food scene and sample the city's diverse flavors. Enjoy ultra-fresh food and drinks at Bartaco, a local favorite. Experience fine dining at upscale Italian restaurants like Il Mulino New York. Explore the city ’s local food market and sample delicious local produce in Miami. Try a unique blend of Cuban and American cuisine that is a testament to Miami’s multicultural heritage.\"\n\"Nightlife - Experience the city's lively nightlife, a perfect blend of sophistication and fun. Visit America's Social Bar & Kitchen, a sports\nA hotspot for enthusiasts. Explore the nightlife of Mary Brickell Village, known for its clubby atmosphere. Spend an evening at Smith & Walensky Miami Beach's South Point Park, known for its stunning views and vintage wines. Visit iconic Miami Beach, famous for its pulsating nightlife. \",\n  \"Conclusion- Miami is more than just stunning beaches and dazzling nightlife. It is a treasure trove of experiences waiting to be discovered. From its rich history and diverse culture to its hidden treasures, local cuisine and lively nightlife, Miami has something for everyone A traveler offers a unique adventure to experience the magic of Miami Beach and create unforgettable memories with your family.\"\n]",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Outline gen"
-            },
-            "dragging": false,
-            "id": "Generate:FastTipsCamp",
-            "measured": {
-              "height": 106,
-              "width": 200
-            },
-            "position": {
-              "x": 1188.847302971411,
-              "y": 272.42758089250634
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode"
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": false,
-                "max_tokens": 256,
-                "message_history_window_size": 1,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "You are an SEO expert who writes in a direct, practical, educational style that is factual rather than storytelling or narrative, focusing on explaining to {begin@audience} the \"how\" and \"what is\" and “why” rather than narrating to the audience. \n - Please write at a sixth grade reading level. \n - ONLY output in Markdown format.\n - Use active, present tense, avoid using complex language and syntax, such as \"unravel\", \"dig deeper\", etc., \n - DO NOT provide narration.\n - Now, excluding the title, introduce the blog in 3-5 sentences. \n - Use h2 headings to write chapter titles. \n - Provide a concise, SEO-optimized title. \n - DO NOT include h3 subheadings. \n - Feel free to use bullet points, numbered lists or paragraphs, or bold text for emphasis when appropriate. \n - You should transition naturally to each section, build on each section, and should NOT repeat the same sentence structure. \n - JUST write the introduction of the article based on the outline.\n - DO NOT include title, conclusions, summaries, or summaries, no \"summaries,\" \"conclusions,\" or variations. \n - DO NOT include links or mention any companies that compete with the brand (avoid mentioning {begin@brands_to_avoid}).\n - JUST write the introduction of the article based on the outline.\n - MUST be in language as \"{Generate:FancyMomentsTalk} {Generate:ReadyHandsInvent}\".\n\n<article_outline>\n{Generate:FastTipsCamp}\n\n<article_introduction>\n",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Introduction gen"
-            },
-            "dragging": false,
-            "id": "Generate:FortyBirdsAsk",
-            "measured": {
-              "height": 106,
-              "width": 200
-            },
-            "position": {
-              "x": 1467.1832072218494,
-              "y": 273.6641444369902
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode"
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": false,
-                "max_tokens": 256,
-                "message_history_window_size": 1,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "You are an SEO expert who writes in a direct, practical, educational style that is factual rather than storytelling or narrative, focusing on explaining to {begin@audience} the \"how\" and \"what is\" and “why” rather than narrating to the audience. \n - Please write at a sixth grade reading level. \n - ONLY output in Markdown format.\n - Use positive, present tense expressions and avoid using complex words and sentence structures that lack narrative, such as \"reveal\" and \"dig deep.\"\n - Next, please continue writing articles related to our topic with a concise title, {begin@title}{Generate:ReadyHandsInvent} {begin@keywords}{Generate:FancyMomentsTalk}. \n - Please AVOID repeating what has already been written and do not use the same sentence structure. \n - JUST write the body of the article based on the outline.\n - DO NOT include introduction, title.\n - DO NOT miss anything mentioned in article outline, except introduction and title.\n - Please use the information I provide to create in-depth, interesting and unique content. Also, incorporate the references and data points I provided earlier into the article to increase its value to the reader.\n - MUST be in language as \" {begin@keywords} {begin@title}\".\n\n<article_outline>\n{Generate:FastTipsCamp}\n\n<article_body>",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Body gen"
-            },
-            "dragging": false,
-            "id": "Generate:CuddlyBatsCamp",
-            "measured": {
-              "height": 108,
-              "width": 200
-            },
-            "position": {
-              "x": 1459.030461505832,
-              "y": 430.80927477654984
-            },
-            "selected": true,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode"
-          },
-          {
-            "data": {
-              "form": {
-                "content": "\n##{begin@title}{Generate:ReadyHandsInvent}\n\n{Generate:FortyBirdsAsk}\n\n\n\n{Generate:CuddlyBatsCamp}\n\n\n",
-                "parameters": []
-              },
-              "label": "Template",
-              "name": "Template trans"
-            },
-            "dragging": false,
-            "id": "Template:YellowPlumsYell",
-            "measured": {
-              "height": 76,
-              "width": 200
-            },
-            "position": {
-              "x": 1784.1452214476085,
-              "y": 356.5796437282643
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "templateNode"
-          }
-        ]
-      },
-      "history": [],
-      "messages": [],
-      "path": [],
-      "reference": []
-    },
-  "avatar": "data:image/jpeg;base64,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"
+            "history": [],
+            "messages": [],
+            "path": [],
+            "retrieval": []
+        },
+    "avatar": "data:image/jpeg;base64,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"
 }

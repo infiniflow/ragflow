@@ -2,6 +2,7 @@ import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { ThemeEnum } from '@/constants/common';
 import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
@@ -60,7 +61,7 @@ export function SideBar() {
 
   const handleThemeChange = useCallback(
     (checked: boolean) => {
-      setTheme(checked ? 'dark' : 'light');
+      setTheme(checked ? ThemeEnum.Dark : ThemeEnum.Light);
     },
     [setTheme],
   );

@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
@@ -20,6 +21,7 @@ export enum MessageEventType {
 export interface IAnswerEvent<T> {
   event: MessageEventType;
   message_id: string;
+  session_id: string;
   created_at: number;
   task_id: string;
   data: T;
@@ -29,9 +31,12 @@ export interface INodeData {
   inputs: Record<string, any>;
   outputs: Record<string, any>;
   component_id: string;
+  component_name: string;
+  component_type: string;
   error: null | string;
   elapsed_time: number;
   created_at: number;
+  thoughts: string;
 }
 
 export interface IInputData {
@@ -42,6 +47,8 @@ export interface IInputData {
 
 export interface IMessageData {
   content: string;
+  start_to_think?: boolean;
+  end_to_think?: boolean;
 }
 
 export interface IMessageEndData {
@@ -131,6 +138,9 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
               const val = JSON.parse(value?.data || '');
 
               console.info('data:', val);
+              if (val.code === 500) {
+                message.error(val.message);
+              }
 
               setAnswerList((list) => {
                 const nextList = [...list];

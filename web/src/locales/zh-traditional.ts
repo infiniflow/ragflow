@@ -588,6 +588,7 @@ export default {
       apiKeyMessage: '請輸入api key（如果是本地部署的模型，請忽略它）',
       apiKeyTip: 'API key可以通過註冊相應的LLM供應商來獲取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隱藏模型',
       baseUrl: 'base-url',
       baseUrlTip:
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
@@ -679,7 +680,7 @@ export default {
         '請輸入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 區域',
       GoogleRegionMessage: '請輸入 Google Cloud 區域',
-      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「系統模型設定」中設定它們。`,
+      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「設定預設模型」中設定它們。`,
       add: '添加',
       updateDate: '更新日期',
       role: '角色',
@@ -1016,7 +1017,7 @@ export default {
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用該模板',
+      useTemplate: '使用',
       wenCai: '問財',
       queryType: '查詢類型',
       wenCaiDescription:

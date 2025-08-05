@@ -20,7 +20,6 @@ import {
 import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { omit } from 'lodash';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -88,6 +87,7 @@ export enum Operator {
   Agent = 'Agent',
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
+  TavilyExtract = 'TavilyExtract',
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
 }
@@ -114,148 +114,6 @@ export const AgentOperatorList = [
   Operator.Note,
   Operator.Agent,
 ];
-
-export const operatorMap: Record<
-  Operator,
-  {
-    backgroundColor?: string;
-    color?: string;
-    width?: number;
-    height?: number;
-    fontSize?: number;
-    iconFontSize?: number;
-    iconWidth?: number;
-    moreIconColor?: string;
-  }
-> = {
-  [Operator.Retrieval]: {
-    backgroundColor: '#cad6e0',
-    color: '#385974',
-  },
-  [Operator.Generate]: {
-    backgroundColor: '#ebd6d6',
-    width: 150,
-    height: 150,
-    fontSize: 20,
-    iconFontSize: 30,
-    color: '#996464',
-  },
-  [Operator.Answer]: {
-    backgroundColor: '#f4816d',
-    color: '#f4816d',
-  },
-  [Operator.Begin]: {
-    backgroundColor: '#4f51d6',
-  },
-  [Operator.Categorize]: {
-    backgroundColor: '#ffebcd',
-    color: '#cc8a26',
-  },
-  [Operator.Message]: {
-    backgroundColor: '#c5ddc7',
-    color: 'green',
-  },
-  [Operator.Relevant]: {
-    backgroundColor: '#9fd94d',
-    color: '#8ef005',
-    width: 70,
-    height: 70,
-    fontSize: 12,
-    iconFontSize: 16,
-  },
-  [Operator.RewriteQuestion]: {
-    backgroundColor: '#f8c7f8',
-    color: '#f32bf3',
-    width: 70,
-    height: 70,
-    fontSize: 12,
-    iconFontSize: 16,
-  },
-  [Operator.KeywordExtract]: {
-    width: 70,
-    height: 70,
-    backgroundColor: '#6E5494',
-    color: '#6E5494',
-    fontSize: 12,
-    iconWidth: 16,
-  },
-  [Operator.DuckDuckGo]: {
-    backgroundColor: '#e7e389',
-    color: '#aea00c',
-  },
-  [Operator.Baidu]: {
-    backgroundColor: '#d9e0f8',
-  },
-  [Operator.Wikipedia]: {
-    backgroundColor: '#dee0e2',
-  },
-  [Operator.PubMed]: {
-    backgroundColor: '#a2ccf0',
-  },
-  [Operator.ArXiv]: {
-    width: 70,
-    height: 70,
-    fontSize: 12,
-    iconWidth: 16,
-    iconFontSize: 16,
-    moreIconColor: 'white',
-    backgroundColor: '#b31b1b',
-    color: 'white',
-  },
-  [Operator.Google]: {
-    backgroundColor: 'pink',
-  },
-  [Operator.Bing]: {
-    backgroundColor: '#c0dcc4',
-  },
-  [Operator.GoogleScholar]: {
-    backgroundColor: '#b4e4f6',
-  },
-  [Operator.DeepL]: {
-    backgroundColor: '#f5e8e6',
-  },
-  [Operator.GitHub]: {
-    backgroundColor: 'purple',
-    color: 'purple',
-  },
-  [Operator.BaiduFanyi]: { backgroundColor: '#e5f2d3' },
-  [Operator.QWeather]: {
-    backgroundColor: '#a4bbf3',
-    color: '#a4bbf3',
-  },
-  [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
-  [Operator.Switch]: { backgroundColor: '#dbaff6', color: '#dbaff6' },
-  [Operator.WenCai]: { backgroundColor: '#faac5b' },
-  [Operator.AkShare]: { backgroundColor: '#8085f5' },
-  [Operator.YahooFinance]: { backgroundColor: '#b474ff' },
-  [Operator.Jin10]: { backgroundColor: '#a0b9f8' },
-  [Operator.Concentrator]: {
-    backgroundColor: '#32d2a3',
-    color: '#32d2a3',
-    width: 70,
-    height: 70,
-    fontSize: 10,
-    iconFontSize: 16,
-  },
-  [Operator.TuShare]: { backgroundColor: '#f8cfa0' },
-  [Operator.Note]: { backgroundColor: '#f8cfa0' },
-  [Operator.Crawler]: {
-    backgroundColor: '#dee0e2',
-  },
-  [Operator.Invoke]: {
-    backgroundColor: '#dee0e2',
-  },
-  [Operator.Template]: {
-    backgroundColor: '#dee0e2',
-  },
-  [Operator.Email]: { backgroundColor: '#e6f7ff' },
-  [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
-  [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
-  [Operator.Code]: { backgroundColor: '#4c5458' },
-  [Operator.WaitingDialogue]: { backgroundColor: '#a5d65c' },
-  [Operator.Agent]: { backgroundColor: '#a5d65c' },
-  [Operator.TavilySearch]: { backgroundColor: '#a5d65c' },
-};
 
 export const componentMenuList = [
   {
@@ -407,6 +265,8 @@ export const initialRetrievalValues = {
   empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
+  use_kg: false,
+  cross_languages: [],
   outputs: {
     formalized_content: {
       type: 'string',
@@ -461,7 +321,12 @@ export const initialCategorizeValues = {
   query: AgentGlobals.SysQuery,
   parameter: ModelVariableType.Precise,
   message_history_window_size: 1,
-  category_description: {},
+  items: [],
+  outputs: {
+    category_name: {
+      type: 'string',
+    },
+  },
 };
 
 export const initialMessageValues = {
@@ -476,7 +341,17 @@ export const initialKeywordExtractValues = {
 export const initialDuckValues = {
   top_n: 10,
   channel: Channel.Text,
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialBaiduValues = {
@@ -487,27 +362,56 @@ export const initialBaiduValues = {
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialPubMedValues = {
-  top_n: 10,
+  top_n: 12,
   email: '',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialArXivValues = {
-  top_n: 10,
+  top_n: 12,
   sort_by: 'relevance',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialGoogleValues = {
-  top_n: 10,
-  api_key: 'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
-  country: 'cn',
+  q: AgentGlobals.SysQuery,
+  start: 0,
+  num: 12,
+  api_key: '',
+  country: 'us',
   language: 'en',
-  ...initialQueryBaseValues,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialBingValues = {
@@ -517,14 +421,26 @@ export const initialBingValues = {
     'YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
   country: 'CH',
   language: 'en',
-  ...initialQueryBaseValues,
+  query: '',
 };
 
 export const initialGoogleScholarValues = {
-  top_n: 5,
+  top_n: 12,
   sort_by: 'relevance',
   patents: true,
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  year_low: undefined,
+  year_high: undefined,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialDeepLValues = {
@@ -534,7 +450,17 @@ export const initialDeepLValues = {
 
 export const initialGithubValues = {
   top_n: 5,
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialBaiduFanyiValues = {
@@ -553,16 +479,24 @@ export const initialQWeatherValues = {
 };
 
 export const initialExeSqlValues = {
-  ...initialLlmBaseValues,
+  sql: '',
   db_type: 'mysql',
   database: '',
   username: '',
   host: '',
   port: 3306,
   password: '',
-  loop: 3,
-  top_n: 30,
-  ...initialQueryBaseValues,
+  max_records: 1024,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const initialSwitchValues = {
@@ -583,19 +517,31 @@ export const initialSwitchValues = {
 export const initialWenCaiValues = {
   top_n: 20,
   query_type: 'stock',
-  ...initialQueryBaseValues,
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    report: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
 
 export const initialYahooFinanceValues = {
+  stock_code: '',
   info: true,
   history: false,
   financials: false,
   balance_sheet: false,
   cash_flow_statement: false,
   news: true,
-  ...initialQueryBaseValues,
+  outputs: {
+    report: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialJin10Values = {
@@ -626,7 +572,7 @@ export const initialCrawlerValues = {
 };
 
 export const initialInvokeValues = {
-  url: 'http://',
+  url: '',
   method: 'GET',
   timeout: 60,
   headers: `{
@@ -634,8 +580,15 @@ export const initialInvokeValues = {
   "Cache-Control": "no-cache",
   "Connection": "keep-alive"
 }`,
-  proxy: 'http://',
+  proxy: '',
   clean_html: false,
+  variables: [],
+  outputs: {
+    result: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialTemplateValues = {
@@ -645,7 +598,7 @@ export const initialTemplateValues = {
 
 export const initialEmailValues = {
   smtp_server: '',
-  smtp_port: 587,
+  smtp_port: 465,
   email: '',
   password: '',
   sender_name: '',
@@ -653,6 +606,12 @@ export const initialEmailValues = {
   cc_email: '',
   subject: '',
   content: '',
+  outputs: {
+    success: {
+      value: true,
+      type: 'boolean',
+    },
+  },
 };
 
 export const initialIterationValues = {
@@ -686,28 +645,37 @@ export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
   user_prompt: '',
-  sys_prompt: ``,
+  sys_prompt: `<role>
+  You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
+</role>
+<instructions>
+  1. Understand the user’s request.  
+  2. Decompose it into logical subtasks.  
+  3. Execute each subtask step by step, reasoning transparently.  
+  4. Validate accuracy and consistency.  
+  5. Summarize the final result clearly.
+</instructions>`,
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
   max_retries: 3,
   delay_after_error: 1,
   visual_files_var: '',
   max_rounds: 5,
-  exception_method: null,
-  exception_comment: '',
-  exception_goto: '',
+  exception_method: '',
+  exception_goto: [],
+  exception_default_value: '',
   tools: [],
   mcp: [],
   outputs: {
-    structured_output: {
-      // topic: {
-      //   type: 'string',
-      //   description:
-      //     'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-      //   enum: ['general', 'news'],
-      //   default: 'general',
-      // },
-    },
+    // structured_output: {
+    //   topic: {
+    //     type: 'string',
+    //     description:
+    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
+    //     enum: ['general', 'news'],
+    //     default: 'general',
+    //   },
+    // },
     content: {
       type: 'string',
       value: '',
@@ -719,6 +687,7 @@ export const initialUserFillUpValues = {
   enable_tips: true,
   tips: '',
   inputs: [],
+  outputs: {},
 };
 
 export enum StringTransformMethod {
@@ -776,8 +745,34 @@ export const initialTavilyValues = {
       type: 'string',
     },
     json: {
-      value: {},
-      type: 'Object',
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export enum TavilyExtractDepth {
+  Basic = 'basic',
+  Advanced = 'advanced',
+}
+
+export enum TavilyExtractFormat {
+  Text = 'text',
+  Markdown = 'markdown',
+}
+
+export const initialTavilyExtractValues = {
+  urls: '',
+  extract_depth: TavilyExtractDepth.Basic,
+  format: TavilyExtractFormat.Markdown,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
     },
   },
 };
@@ -801,18 +796,8 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Relevant],
-  [Operator.Categorize]: [
-    Operator.Begin,
-    Operator.Categorize,
-    Operator.Answer,
-    Operator.Relevant,
-  ],
-  [Operator.Answer]: [
-    Operator.Begin,
-    Operator.Answer,
-    Operator.Message,
-    Operator.Relevant,
-  ],
+  [Operator.Categorize]: [Operator.Begin, Operator.Categorize, Operator.Answer],
+  [Operator.Answer]: [Operator.Begin, Operator.Answer, Operator.Message],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Generate]: [Operator.Begin, Operator.Relevant],
   [Operator.Message]: [
@@ -822,9 +807,8 @@ export const RestrictedUpstreamMap = {
     Operator.Retrieval,
     Operator.RewriteQuestion,
     Operator.Categorize,
-    Operator.Relevant,
   ],
-  [Operator.Relevant]: [Operator.Begin, Operator.Answer, Operator.Relevant],
+  [Operator.Relevant]: [Operator.Begin, Operator.Answer],
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
@@ -867,8 +851,10 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
+  [Operator.Tool]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -903,9 +889,9 @@ export const NodeMap = {
   [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
-  [Operator.Invoke]: 'invokeNode',
+  [Operator.Invoke]: 'ragNode',
   [Operator.Template]: 'templateNode',
-  [Operator.Email]: 'emailNode',
+  [Operator.Email]: 'ragNode',
   [Operator.Iteration]: 'group',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
@@ -915,6 +901,7 @@ export const NodeMap = {
   [Operator.TavilySearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',
+  [Operator.TavilyExtract]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -944,6 +931,8 @@ export const NoDebugOperatorsList = [
   Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
+  Operator.UserFillUp,
+  Operator.IterationStart,
 ];
 
 export enum NodeHandleId {
@@ -952,6 +941,7 @@ export enum NodeHandleId {
   Tool = 'tool',
   AgentTop = 'agentTop',
   AgentBottom = 'agentBottom',
+  AgentException = 'agentException',
 }
 
 export enum VariableType {
@@ -960,18 +950,7 @@ export enum VariableType {
   File = 'file',
 }
 
-export const DefaultAgentToolValuesMap = {
-  [Operator.Retrieval]: {
-    ...omit(initialRetrievalValues, 'query'),
-    description: '',
-  },
-  [Operator.TavilySearch]: {
-    api_key: '',
-  },
-};
-
 export enum AgentExceptionMethod {
   Comment = 'comment',
   Goto = 'goto',
-  Null = 'null',
 }

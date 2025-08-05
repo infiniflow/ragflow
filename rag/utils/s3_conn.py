@@ -66,6 +66,7 @@ class RAGFlowS3:
 
         try:
             s3_params = {}
+            config_kwargs = {}
             # if not set ak/sk, boto3 s3 client would try several ways to do the authentication
             # see doc: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#configuring-credentials
             if self.access_key and self.secret_key:
@@ -78,9 +79,12 @@ class RAGFlowS3:
             if 'endpoint_url' in self.s3_config:
                 s3_params['endpoint_url'] = self.endpoint_url
             if 'signature_version' in self.s3_config:
-                s3_params['config'] = Config(s3={"signature_version": self.signature_version})
+                config_kwargs['signature_version'] = self.signature_version
             if 'addressing_style' in self.s3_config:
-                s3_params['config'] = Config(s3={"addressing_style": self.addressing_style})
+                config_kwargs['addressing_style'] = self.addressing_style
+            if config_kwargs:
+                s3_params['config'] = Config(**config_kwargs)
+            
             self.conn = boto3.client('s3', **s3_params)
         except Exception:
             logging.exception(f"Fail to connect at region {self.region} or endpoint {self.endpoint_url}")
@@ -119,7 +123,7 @@ class RAGFlowS3:
 
     @use_prefix_path
     @use_default_bucket
-    def put(self, bucket, fnm, binary):
+    def put(self, bucket, fnm, binary, **kwargs):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
         for _ in range(1):
             try:
@@ -136,7 +140,7 @@ class RAGFlowS3:
 
     @use_prefix_path
     @use_default_bucket
-    def rm(self, bucket, fnm):
+    def rm(self, bucket, fnm, **kwargs):
         try:
             self.conn.delete_object(Bucket=bucket, Key=fnm)
         except Exception:
@@ -144,7 +148,7 @@ class RAGFlowS3:
 
     @use_prefix_path
     @use_default_bucket
-    def get(self, bucket, fnm):
+    def get(self, bucket, fnm, **kwargs):
         for _ in range(1):
             try:
                 r = self.conn.get_object(Bucket=bucket, Key=fnm)
@@ -158,7 +162,7 @@ class RAGFlowS3:
 
     @use_prefix_path
     @use_default_bucket
-    def obj_exist(self, bucket, fnm):
+    def obj_exist(self, bucket, fnm, **kwargs):
         try:
             if self.conn.head_object(Bucket=bucket, Key=fnm):
                 return True
@@ -170,7 +174,7 @@ class RAGFlowS3:
 
     @use_prefix_path
     @use_default_bucket
-    def get_presigned_url(self, bucket, fnm, expires):
+    def get_presigned_url(self, bucket, fnm, expires, **kwargs):
         for _ in range(10):
             try:
                 r = self.conn.generate_presigned_url('get_object',

@@ -39,6 +39,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 
 
+
 async def run_graphrag(
     row: dict,
     language,
@@ -65,7 +66,7 @@ async def run_graphrag(
         doc_id,
         chunks,
         language,
-        row["kb_parser_config"]["graphrag"]["entity_types"],
+        row["kb_parser_config"]["graphrag"].get("entity_types", []),
         chat_model,
         embedding_model,
         callback,

@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { IMessage } from '@/pages/chat/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
 import React, { ReactNode, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -20,15 +21,6 @@ import { BeginQueryType } from '../constant';
 import { BeginQuery } from '../interface';
 import { FileUploadDirectUpload } from './uploader';
 
-export const BeginQueryComponentMap = {
-  [BeginQueryType.Line]: 'string',
-  [BeginQueryType.Paragraph]: 'string',
-  [BeginQueryType.Options]: 'string',
-  [BeginQueryType.File]: 'file',
-  [BeginQueryType.Integer]: 'number',
-  [BeginQueryType.Boolean]: 'boolean',
-};
-
 const StringFields = [
   BeginQueryType.Line,
   BeginQueryType.Paragraph,
@@ -37,6 +29,7 @@ const StringFields = [
 
 interface IProps {
   parameters: BeginQuery[];
+  message?: IMessage;
   ok(parameters: any[]): void;
   isNext?: boolean;
   loading?: boolean;
@@ -46,6 +39,7 @@ interface IProps {
 
 const DebugContent = ({
   parameters,
+  message,
   ok,
   isNext = true,
   loading = false,
@@ -68,7 +62,7 @@ const DebugContent = ({
         } else if (type === BeginQueryType.Boolean) {
           fieldSchema = z.boolean();
           value = false;
-        } else if (type === BeginQueryType.Integer) {
+        } else if (type === BeginQueryType.Integer || type === 'float') {
           fieldSchema = z.coerce.number();
         } else {
           fieldSchema = z.record(z.any());
@@ -237,23 +231,25 @@ const DebugContent = ({
     },
     [formSchemaValues, ok, parameters],
   );
-
   return (
     <>
       <section>
+        {message?.data?.tips && <div className="mb-2">{message.data.tips}</div>}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {parameters.map((x, idx) => {
               return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
             })}
-            <ButtonLoading
-              type="submit"
-              loading={loading}
-              disabled={!submittable || submitButtonDisabled}
-              className="w-full"
-            >
-              {btnText || t(isNext ? 'common.next' : 'flow.run')}
-            </ButtonLoading>
+            <div>
+              <ButtonLoading
+                type="submit"
+                loading={loading}
+                disabled={!submittable || submitButtonDisabled}
+                className="w-full mt-1"
+              >
+                {btnText || t(isNext ? 'common.next' : 'flow.run')}
+              </ButtonLoading>
+            </div>
           </form>
         </Form>
       </section>

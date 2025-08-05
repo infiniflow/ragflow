@@ -554,11 +554,12 @@ export default {
       apiKeyTip:
         'Khóa API có thể được lấy bằng cách đăng ký nhà cung cấp LLM tương ứng.',
       showMoreModels: 'Hiển thị thêm mô hình',
+      hideModels: 'Ẩn mô hình',
       baseUrl: 'Base-Url',
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
       modify: 'Sửa đổi',
-      systemModelSettings: 'Thiết lập mô hình mặc định',
+      systemModelSettings: 'Đặt mô hình mặc định',
       chatModel: 'Mô hình trò chuyện',
       chatModelTip:
         'LLM trò chuyện mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',
@@ -647,7 +648,7 @@ export default {
         'Vui lòng nhập Khóa Tài khoản Dịch vụ Google Cloud ở định dạng base64',
       addGoogleRegion: 'Vùng Google Cloud',
       GoogleRegionMessage: 'Vui lòng nhập Vùng Google Cloud',
-      modelProvidersWarn: `Vui lòng thêm cả mô hình nhúng và LLM trong <b>Cài đặt > Nhà cung cấp mô hình</b> trước tiên. Sau đó, đặt chúng trong 'Cài đặt mô hình hệ thống'.`,
+      modelProvidersWarn: `Vui lòng thêm cả mô hình nhúng và LLM trong <b>Cài đặt > Nhà cung cấp mô hình</b> trước tiên. Sau đó, đặt chúng trong 'Đặt mô hình mặc định'.`,
       apiVersion: 'Phiên bản API',
       apiVersionMessage: 'Vui lòng nhập phiên bản API',
       add: 'Thêm',

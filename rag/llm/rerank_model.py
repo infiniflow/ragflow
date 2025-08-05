@@ -32,11 +32,6 @@ from api.utils.file_utils import get_home_cache_dir
 from api.utils.log_utils import log_exception
 from rag.utils import num_tokens_from_string, truncate
 
-
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
-
-
 class Base(ABC):
     def __init__(self, key, model_name):
         pass
@@ -94,16 +89,17 @@ class DefaultRerank(Base):
 
             torch.cuda.empty_cache()
         except Exception as e:
-            print(f"Error emptying cache: {e}")
+            log_exception(e)
 
     def _process_batch(self, pairs, max_batch_size=None):
         """template method for subclass call"""
         old_dynamic_batch_size = self._dynamic_batch_size
         if max_batch_size is not None:
             self._dynamic_batch_size = max_batch_size
-        res = []
+        res = np.array([], dtype=float)
         i = 0
         while i < len(pairs):
+            cur_i = i
             current_batch = self._dynamic_batch_size
             max_retries = 5
             retry_count = 0
@@ -111,7 +107,7 @@ class DefaultRerank(Base):
                 try:
                     # call subclass implemented batch processing calculation
                     batch_scores = self._compute_batch_scores(pairs[i : i + current_batch])
-                    res.extend(batch_scores)
+                    res = np.append(res, batch_scores)
                     i += current_batch
                     self._dynamic_batch_size = min(self._dynamic_batch_size * 2, 8)
                     break
@@ -119,6 +115,7 @@ class DefaultRerank(Base):
                     if "CUDA out of memory" in str(e) and current_batch > self._min_batch_size:
                         current_batch = max(current_batch // 2, self._min_batch_size)
                         self.torch_empty_cache()
+                        i = cur_i # reset i to the start of the current batch
                         retry_count += 1
                     else:
                         raise
@@ -131,10 +128,9 @@ class DefaultRerank(Base):
 
     def _compute_batch_scores(self, batch_pairs, max_length=None):
         if max_length is None:
-            scores = self._model.compute_score(batch_pairs)
+            scores = self._model.compute_score(batch_pairs, normalize=True)
         else:
-            scores = self._model.compute_score(batch_pairs, max_length=max_length)
-        scores = sigmoid(np.array(scores)).tolist()
+            scores = self._model.compute_score(batch_pairs, max_length=max_length, normalize=True)
         if not isinstance(scores, Iterable):
             scores = [scores]
         return scores
@@ -362,7 +358,7 @@ class OpenAI_APIRerank(Base):
         max_rank = np.max(rank)
 
         # Avoid division by zero if all ranks are identical
-        if max_rank - min_rank != 0:
+        if np.isclose(min_rank, max_rank, atol=1e-3):
             rank = (rank - min_rank) / (max_rank - min_rank)
         else:
             rank = np.zeros_like(rank)
@@ -620,4 +616,13 @@ class GiteeRerank(JinaRerank):
     def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/rerank"):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/rerank"
+        super().__init__(key, model_name, base_url)
+
+
+class Ai302Rerank(Base):
+    _FACTORY_NAME = "302.AI"
+
+    def __init__(self, key, model_name, base_url="https://api.302.ai/v1/rerank"):
+        if not base_url:
+            base_url = "https://api.302.ai/v1/rerank"
         super().__init__(key, model_name, base_url)

@@ -37,20 +37,23 @@ export function useBuildFormSchema() {
     name: z
       .string()
       .min(1, {
-        message: t('common.namePlaceholder'),
+        message: t('common.mcp.namePlaceholder'),
+      })
+      .regex(/^[a-zA-Z0-9_-]{1,64}$/, {
+        message: t('common.mcp.nameRequired'),
       })
       .trim(),
     url: z
       .string()
       .url()
       .min(1, {
-        message: t('common.namePlaceholder'),
+        message: t('common.mcp.urlPlaceholder'),
       })
       .trim(),
     server_type: z
       .string()
       .min(1, {
-        message: t('common.namePlaceholder'),
+        message: t('common.pleaseSelect'),
       })
       .trim(),
     authorization_token: z.string().optional(),
@@ -89,7 +92,7 @@ export function EditMcpForm({
               <FormLabel>{t('common.name')}</FormLabel>
               <FormControl>
                 <Input
-                  placeholder={t('common.namePlaceholder')}
+                  placeholder={t('common.mcp.namePlaceholder')}
                   {...field}
                   autoComplete="off"
                 />
@@ -106,7 +109,7 @@ export function EditMcpForm({
               <FormLabel>{t('mcp.url')}</FormLabel>
               <FormControl>
                 <Input
-                  placeholder={t('common.namePlaceholder')}
+                  placeholder={t('common.mcp.urlPlaceholder')}
                   {...field}
                   autoComplete="off"
                   onChange={(e) => {
@@ -148,7 +151,7 @@ export function EditMcpForm({
               <FormLabel>Authorization Token</FormLabel>
               <FormControl>
                 <Input
-                  placeholder={t('common.namePlaceholder')}
+                  placeholder={t('common.mcp.tokenPlaceholder')}
                   {...field}
                   autoComplete="off"
                   type="password"

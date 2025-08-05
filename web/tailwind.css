@@ -81,9 +81,11 @@
     --text-sub-title: rgba(151, 154, 171, 1);
     --text-sub-title-invert: rgba(91, 93, 106, 1);
 
-    --background-header-bar: rgba(11, 11, 12, 1);
+    --background-header-bar: rgba(0, 0, 0, 0.05);
     --text-title-invert: rgba(255, 255, 255, 1);
     --background-card: rgba(22, 22, 24, 0.05);
+
+    --background-note: rgba(22, 22, 24, 0.1);
 
     --background-checked: rgba(76, 164, 231, 1);
     --background-highlight: rgba(76, 164, 231, 0.1);
@@ -196,6 +198,7 @@
     --text-title-invert: rgba(22, 22, 24, 1);
 
     --background-card: rgba(255, 255, 255, 0.05);
+    --background-note: rgba(255, 255, 255, 0.05);
     --background-checked: rgba(76, 164, 231, 1);
 
     --background-highlight: rgba(76, 164, 231, 0.1);
@@ -237,5 +240,40 @@
   img,
   video {
     max-width: none;
+  }
+}
+
+@layer utilities {
+  .scrollbar-auto {
+    /* hide scrollbar */
+    scrollbar-width: none;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+  }
+
+  .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.3);
   }
 }

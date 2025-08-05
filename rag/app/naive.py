@@ -313,9 +313,21 @@ class Markdown(MarkdownParser):
         # Find all image URLs in text
         for url in image_urls:
             try:
-                response = requests.get(url, stream=True, timeout=30)
-                if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
-                    img = Image.open(BytesIO(response.content)).convert('RGB')
+                # check if the url is a local file or a remote URL
+                if url.startswith(('http://', 'https://')):
+                    # For remote URLs, download the image
+                    response = requests.get(url, stream=True, timeout=30)
+                    if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
+                        img = Image.open(BytesIO(response.content)).convert('RGB')
+                        images.append(img)
+                else:
+                    # For local file paths, open the image directly
+                    from pathlib import Path
+                    local_path = Path(url)
+                    if not local_path.exists():
+                        logging.warning(f"Local image file not found: {url}")
+                        continue
+                    img = Image.open(url).convert('RGB')
                     images.append(img)
             except Exception as e:
                 logging.error(f"Failed to download/open image from {url}: {e}")
@@ -358,7 +370,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -487,7 +499,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
-    elif re.search(r"\.json$", filename, re.IGNORECASE):
+    elif re.search(r"\.(json|jsonl|ldjson)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = JsonParser(chunk_token_num)(binary)

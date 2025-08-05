@@ -4,14 +4,20 @@ env:
   # Available options:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
+  # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
   # DOC_ENGINE: elasticsearch
   DOC_ENGINE: infinity
+  # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
 
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
+
+  # The password for OpenSearch.
+  # At least one uppercase letter, one lowercase letter, one digit, and one special character
+  OPENSEARCH_PASSWORD: infini_rag_flow_OS_01
 
   # The password for MySQL
   MYSQL_PASSWORD: infini_rag_flow_helm
@@ -27,13 +33,13 @@ env:
   REDIS_PASSWORD: infini_rag_flow_helm
 
   # The RAGFlow Docker image to download.
-  # Defaults to the v0.19.1-slim edition, which is the RAGFlow Docker image without embedding models.
-  RAGFLOW_IMAGE: infiniflow/ragflow:v0.19.1-slim
+  # Defaults to the v0.20.0-slim edition, which is the RAGFlow Docker image without embedding models.
+  RAGFLOW_IMAGE: infiniflow/ragflow:v0.20.0-slim
   #
   # To download the RAGFlow Docker image with embedding models, uncomment the following line instead:
-  # RAGFLOW_IMAGE: infiniflow/ragflow:v0.19.1
+  # RAGFLOW_IMAGE: infiniflow/ragflow:v0.20.0
   #
-  # The Docker image of the v0.19.1 edition includes:
+  # The Docker image of the v0.20.0 edition includes:
   # - Built-in embedding models:
   #   - BAAI/bge-large-zh-v1.5
   #   - BAAI/bge-reranker-v2-m3
@@ -107,7 +113,7 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.6.0-dev3
+    tag: v0.6.0-dev5
   storage:
     className:
     capacity: 5Gi
@@ -118,6 +124,22 @@ infinity:
     type: ClusterIP
 
 elasticsearch:
+  storage:
+    className:
+    capacity: 20Gi
+  deployment:
+    strategy:
+    resources:
+      requests:
+        cpu: "4"
+        memory: "16Gi"
+  service:
+    type: ClusterIP
+
+opensearch:
+  image:
+    repository: opensearchproject/opensearch
+    tag: 2.19.1
   storage:
     className:
     capacity: 20Gi
@@ -165,6 +187,11 @@ redis:
     capacity: 5Gi
   persistence:
     enabled: true
+    # Set's the retention policy for the persistent storage (only available in k8s 1.32 or later)
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    # retentionPolicy:
+      # whenDeleted: Delete
+      # whenScaled: Delete
   deployment:
     strategy:
     resources:

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 8
 slug: /categorize_component
 ---
 
@@ -16,6 +16,15 @@ A **Categorize** component is usually the downstream of the **Interact** compone
 A **Categorize** component is essential when you need the LLM to help you identify user intentions and apply appropriate processing strategies.
 
 ## Configurations
+
+### Query variables
+
+*Mandatory*
+
+Select the source for categorization.
+
+The **Categorize** component relies on query variables to specify its data inputs (queries). All global variables defined before the **Categorize** component are available in the dropdown list.  
+
 
 ### Input
 
@@ -90,19 +99,9 @@ Additional examples that may help the LLM determine which inputs belong in this 
 Examples are more helpful than the description if you want the LLM to classify particular cases into this category.
 :::
 
-#### Next step
+Once a new category is added, navigate to the **Categorize** component on the canvas, find the **+** button next to the case, and click it to specify the downstream component(s).
 
-Specifies the downstream component of this category.
 
-- Once you specify the ID of the downstream component, a link is established between this category and the corresponding component.
-- If you manually link this category to a downstream component on the canvas, the ID of that component is auto-populated.
+#### Output
 
-## Examples
-
-You can explore our customer service agent template, where a **Categorize** component (component ID: **Question Categorize**) has four defined categories and takes data inputs from an **Interact** component (component ID: **Interface**):
-
-1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
-2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
-3. On the **agent template** page, hover over the **Interpreter** card and click **Use this template**.
-4. Name your new agent and click **OK** to enter the workflow editor.
-
+The global variable name for the output of the component, which can be referenced by other components in the workflow. Defaults to `category_name`.

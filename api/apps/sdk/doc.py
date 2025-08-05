@@ -38,7 +38,7 @@ from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import keyword_extraction
+from rag.prompts import cross_languages, keyword_extraction
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -456,6 +456,18 @@ def list_docs(dataset_id, tenant_id):
         required: false
         default: true
         description: Order in descending.
+    - in: query
+        name: create_time_from
+        type: integer
+        required: false
+        default: 0
+        description: Unix timestamp for filtering documents created after this time. 0 means no filter.
+      - in: query
+        name: create_time_to
+        type: integer
+        required: false
+        default: 0
+        description: Unix timestamp for filtering documents created before this time. 0 means no filter.
       - in: header
         name: Authorization
         type: string
@@ -516,6 +528,17 @@ def list_docs(dataset_id, tenant_id):
     else:
         desc = True
     docs, tol = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, id, name)
+
+    create_time_from = int(request.args.get("create_time_from", 0))
+    create_time_to = int(request.args.get("create_time_to", 0))
+
+    if create_time_from or create_time_to:
+        filtered_docs = []
+        for doc in docs:
+            doc_create_time = doc.get("create_time", 0)
+            if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
+                filtered_docs.append(doc)
+        docs = filtered_docs
 
     # rename key's name
     renamed_doc_list = []
@@ -1382,6 +1405,7 @@ def retrieval_test(tenant_id):
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
+    langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
     doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
@@ -1405,6 +1429,9 @@ def retrieval_test(tenant_id):
         rerank_mdl = None
         if req.get("rerank_id"):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
+
+        if langs:
+            question = cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)

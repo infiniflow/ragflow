@@ -21,9 +21,12 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
     if (id) {
       values = form?.getValues() || {};
 
+      const inputs = transferInputsArrayToObject(values.inputs);
+
       const nextValues = {
         ...values,
-        inputs: transferInputsArrayToObject(values.inputs),
+        inputs,
+        outputs: inputs,
       };
 
       updateNodeForm(id, nextValues);
