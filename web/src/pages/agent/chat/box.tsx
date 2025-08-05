@@ -22,7 +22,8 @@ import { useAwaitCompentData } from '../hooks/use-chat-logic';
 function AgentChatBox() {
   const {
     value,
-    ref,
+    scrollRef,
+    messageContainerRef,
     sendLoading,
     derivedMessages,
     handleInputChange,
@@ -59,7 +60,7 @@ function AgentChatBox() {
   return (
     <>
       <section className="flex flex-1 flex-col px-5 h-[90vh]">
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto" ref={messageContainerRef}>
           <div>
             {/* <Spin spinning={sendLoading}> */}
             {derivedMessages?.map((message, i) => {
@@ -106,7 +107,7 @@ function AgentChatBox() {
             })}
             {/* </Spin> */}
           </div>
-          <div ref={ref.scrollRef} />
+          <div ref={scrollRef} />
         </div>
         <NextMessageInput
           value={value}

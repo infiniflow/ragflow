@@ -50,7 +50,8 @@ const ChatContainer = () => {
     handleInputChange,
     value,
     sendLoading,
-    ref,
+    scrollRef,
+    messageContainerRef,
     derivedMessages,
     hasError,
     stopOutputMessage,
@@ -149,6 +150,7 @@ const ChatContainer = () => {
             className={cn(
               'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6',
             )}
+            ref={messageContainerRef}
           >
             <div>
               {derivedMessages?.map((message, i) => {
@@ -203,7 +205,7 @@ const ChatContainer = () => {
                 );
               })}
             </div>
-            <div ref={ref.scrollRef} />
+            <div ref={scrollRef} />
           </div>
           <div className="flex w-full justify-center mb-8">
             <div className="w-5/6">

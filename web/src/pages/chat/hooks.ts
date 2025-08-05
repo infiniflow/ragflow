@@ -291,7 +291,8 @@ export const useSetConversation = () => {
 
 export const useSelectNextMessages = () => {
   const {
-    ref,
+    scrollRef,
+    messageContainerRef,
     setDerivedMessages,
     derivedMessages,
     addNewestAnswer,
@@ -335,7 +336,8 @@ export const useSelectNextMessages = () => {
   }, [conversation.message, conversationId, setDerivedMessages, isNew]);
 
   return {
-    ref,
+    scrollRef,
+    messageContainerRef,
     derivedMessages,
     loading,
     addNewestAnswer,
@@ -371,7 +373,8 @@ export const useSendNextMessage = (controller: AbortController) => {
     api.completeConversation,
   );
   const {
-    ref,
+    scrollRef,
+    messageContainerRef,
     derivedMessages,
     loading,
     addNewestAnswer,
@@ -499,7 +502,8 @@ export const useSendNextMessage = (controller: AbortController) => {
     regenerateMessage,
     sendLoading: !done,
     loading,
-    ref,
+    scrollRef,
+    messageContainerRef,
     derivedMessages,
     removeMessageById,
     stopOutputMessage,
