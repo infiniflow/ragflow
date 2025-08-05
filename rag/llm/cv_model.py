@@ -534,7 +534,7 @@ class GeminiCV(Base):
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
-        if response and hasattr(response, usage_metadata) and hasattr(response.usage_metadata, total_token_count):
+        if response and hasattr(response, "usage_metadata") and hasattr(response.usage_metadata, "total_token_count"):
             yield response.usage_metadata.total_token_count
         else:
             yield 0
