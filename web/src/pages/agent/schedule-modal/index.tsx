@@ -407,7 +407,7 @@ function ScheduleRunDrawer({
   } = useFetchScheduleHistory(schedule?.id || '');
 
   const formatDateTime = useCallback((dateTime: Date) => {
-    //example dateTime: "Thu, 29 May 2025 12:55:41 GMT"
+    // example dateTime: "Thu, 29 May 2023 12:55:41 GMT"
     try {
       return dayjs(dateTime).tz(dayjs.tz.guess()).format('YYYY-MM-DD HH:mm:ss');
     } catch (error) {
