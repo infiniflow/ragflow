@@ -63,7 +63,7 @@ class ServeTTSRequest(BaseModel):
 
 
 class Base(ABC):
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, **kwargs):
         pass
 
     def tts(self, audio):

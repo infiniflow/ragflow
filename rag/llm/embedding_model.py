@@ -37,7 +37,7 @@ from rag.utils import num_tokens_from_string, truncate
 
 
 class Base(ABC):
-    def __init__(self, key, model_name):
+    def __init__(self, key, model_name, **kwargs):
         pass
 
     def encode(self, texts: list):
@@ -864,7 +864,7 @@ class VoyageEmbed(Base):
 class HuggingFaceEmbed(Base):
     _FACTORY_NAME = "HuggingFace"
 
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None, **kwargs):
         if not model_name:
             raise ValueError("Model name cannot be None")
         self.key = key

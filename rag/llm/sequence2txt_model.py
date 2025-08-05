@@ -28,7 +28,7 @@ from rag.utils import num_tokens_from_string
 
 
 class Base(ABC):
-    def __init__(self, key, model_name):
+    def __init__(self, key, model_name, **kwargs):
         pass
 
     def transcription(self, audio, **kwargs):
