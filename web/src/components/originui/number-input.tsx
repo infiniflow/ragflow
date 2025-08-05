@@ -63,7 +63,7 @@ const NumberInput: React.FC<NumberInputProps> = ({
     >
       <button
         type="button"
-        className="w-10 p-2 text-white focus:outline-none border-r-[1px]"
+        className="w-10 p-2 focus:outline-none border-r-[1px]"
         onClick={handleDecrement}
         style={style}
       >
@@ -74,12 +74,12 @@ const NumberInput: React.FC<NumberInputProps> = ({
         value={value}
         onInput={handleInput}
         onChange={handleChange}
-        className="w-full flex-1 text-center bg-transparent text-white focus:outline-none"
+        className="w-full flex-1 text-center bg-transparent focus:outline-none"
         style={style}
       />
       <button
         type="button"
-        className="w-10 p-2 text-white focus:outline-none border-l-[1px]"
+        className="w-10 p-2 focus:outline-none border-l-[1px]"
         onClick={handleIncrement}
         style={style}
       >

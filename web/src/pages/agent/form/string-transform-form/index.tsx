@@ -20,6 +20,7 @@ import {
   initialStringTransformValues,
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output, transferOutputs } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
@@ -76,13 +77,7 @@ function StringTransformForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-5 px-5 "
-        autoComplete="off"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <FormField
             control={form.control}
@@ -157,7 +152,7 @@ function StringTransformForm({ node }: INextOperatorForm) {
             render={() => <div></div>}
           />
         </FormContainer>
-      </form>
+      </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>
       </div>

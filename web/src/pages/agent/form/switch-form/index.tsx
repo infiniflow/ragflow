@@ -28,6 +28,7 @@ import {
 } from '../../constant';
 import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 import { IOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -249,12 +250,7 @@ function SwitchForm({ node }: IOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-5 "
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         {fields.map((field, index) => {
           const name = `${ConditionKey}.${index}`;
           const conditions: Array<any> = form.getValues(`${name}.${ItemKey}`);
@@ -323,7 +319,7 @@ function SwitchForm({ node }: IOperatorForm) {
         >
           Add
         </BlockButton>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }

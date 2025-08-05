@@ -15,6 +15,7 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
@@ -48,13 +49,7 @@ function MessageForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-5 px-5 "
-        autoComplete="off"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <FormItem>
             <FormLabel tooltip={t('flow.msgTip')}>{t('flow.msg')}</FormLabel>
@@ -98,7 +93,7 @@ function MessageForm({ node }: INextOperatorForm) {
             <FormMessage />
           </FormItem>
         </FormContainer>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }
