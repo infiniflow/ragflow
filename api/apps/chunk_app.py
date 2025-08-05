@@ -31,7 +31,7 @@ from api.utils.api_utils import get_data_error_result, get_json_result, server_e
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import cross_languages, keyword_extraction
+from rag.prompts.prompts import cross_languages, keyword_extraction
 from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 
