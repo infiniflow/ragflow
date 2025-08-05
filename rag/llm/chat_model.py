@@ -38,6 +38,7 @@ from zhipuai import ZhipuAI
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
 
+
 # Error message constants
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
@@ -57,6 +58,7 @@ class LLMErrorCode(StrEnum):
 class ReActMode(StrEnum):
     FUNCTION_CALL = "function_call"
     REACT = "react"
+
 
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
@@ -113,7 +115,7 @@ class Base(ABC):
 
     def _chat(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
-        if self.model_name.lower().find("qwen3") >=0:
+        if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
@@ -167,7 +169,7 @@ class Base(ABC):
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
         # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = (error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER)
+        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
         if not should_retry:
             return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
@@ -176,11 +178,7 @@ class Base(ABC):
         time.sleep(delay)
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({
-            "name": name,
-            "args": args,
-            "result": res
-        }, ensure_ascii=False, indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -213,7 +211,7 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    def chat_with_tools(self, system: str, history: list, gen_conf: dict={}):
+    def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         if system:
             history.insert(0, {"role": "system", "content": system})
@@ -225,7 +223,7 @@ class Base(ABC):
         for attempt in range(self.max_retries + 1):
             history = hist
             try:
-                for _ in range(self.max_rounds+1):
+                for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += self.total_token_count(response)
@@ -255,7 +253,7 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             ans += self._verbose_tool_use(name, {}, str(e))
 
-                logging.warning( f"Exceed max rounds: {self.max_rounds}")
+                logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
                 response, token_count = self._chat(history, gen_conf)
                 ans += response
@@ -297,7 +295,7 @@ class Base(ABC):
 
         return final_tool_calls
 
-    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict={}):
+    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system:
@@ -309,7 +307,7 @@ class Base(ABC):
         for attempt in range(self.max_retries + 1):
             history = hist
             try:
-                for _ in range(self.max_rounds+1):
+                for _ in range(self.max_rounds + 1):
                     reasoning_start = False
                     logging.info(f"{tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
@@ -373,7 +371,7 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             yield self._verbose_tool_use(name, {}, str(e))
 
-                logging.warning( f"Exceed max rounds: {self.max_rounds}")
+                logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
                 response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
                 for resp in response:
@@ -402,7 +400,7 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    def chat_streamly(self, system, history, gen_conf: dict={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -1727,6 +1725,8 @@ class GPUStackChat(Base):
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url, **kwargs)
+
+
 class DeepInfraChat(Base):
     _FACTORY_NAME = "DeepInfra"
 
@@ -1734,7 +1734,7 @@ class DeepInfraChat(Base):
         if not base_url:
             base_url = "https://api.deepinfra.com/v1/openai"
         super().__init__(key, model_name, base_url, **kwargs)
-        
+
 
 class Ai302Chat(Base):
     _FACTORY_NAME = "302.AI"
