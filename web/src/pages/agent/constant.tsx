@@ -660,7 +660,7 @@ export const initialAgentValues = {
   max_retries: 3,
   delay_after_error: 1,
   visual_files_var: '',
-  max_rounds: 5,
+  max_rounds: 1,
   exception_method: '',
   exception_goto: [],
   exception_default_value: '',
