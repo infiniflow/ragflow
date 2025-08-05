@@ -542,6 +542,7 @@ class GeminiCV(Base):
             yield response.usage_metadata.total_token_count
         else:
             yield 0
+            
 
 class NvidiaCV(Base):
     _FACTORY_NAME = "NVIDIA"
