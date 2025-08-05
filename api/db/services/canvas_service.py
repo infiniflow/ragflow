@@ -16,7 +16,6 @@
 import json
 import logging
 import time
-import traceback
 from uuid import uuid4
 from agent.canvas import Canvas
 from api.db import TenantPermission
@@ -196,7 +195,8 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 if isinstance(ans, str):
                     try:
                         ans = json.loads(ans[5:])  # remove "data:"
-                    except:
+                    except Exception as e:
+                        logging.exception(f"Agent OpenAI-Compatible completionOpenAI parse answer failed: {e}")
                         continue
 
                 if ans.get("event") != "message":
