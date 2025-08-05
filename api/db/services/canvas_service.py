@@ -173,7 +173,8 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
     conv.reference = canvas.get_reference()
     conv.errors = canvas.error
-    API4ConversationService.append_message(conv.id, conv.to_dict())
+    conv = conv.to_dict()
+    API4ConversationService.append_message(conv["id"], conv)
 
 
 def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
