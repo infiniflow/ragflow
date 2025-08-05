@@ -420,7 +420,6 @@ def init_kb(row, vector_size: int):
     return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
 
 
-@timeout(60*20)
 async def embedding(docs, mdl, parser_config=None, callback=None):
     if parser_config is None:
         parser_config = {}
@@ -441,10 +440,15 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
         tk_count += c
 
+    @timeout(5)
+    def batch_encode(txts):
+        nonlocal mdl
+        return mdl.encode([truncate(c, mdl.max_length-10) for c in txts])
+
     cnts_ = np.array([])
     for i in range(0, len(cnts), EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
-            vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + EMBEDDING_BATCH_SIZE]]))
+            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + EMBEDDING_BATCH_SIZE]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
