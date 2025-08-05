@@ -6,30 +6,34 @@ set -e
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--disable-agentexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--agent-workers=<num>] [--host-id=<string>]"
     echo
     echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor          Disables task executor workers."
+    echo "  --disable-agentexecutor         Disables agent executor workers."
     echo "  --enable-mcpserver              Enables the MCP server."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
+    echo "  --agent-workers=<num>           Number of agent executors to run."
     echo "  --host-id=<string>              Unique ID for the host (defaults to \`hostname\`)."
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
-    echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
+    echo "  $0 --disable-webserver --workers=2 --agent-workers=1 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
     exit 1
 }
 
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
+ENABLE_AGENTEXECUTOR=1  # Default to enable agent executor
 ENABLE_MCP_SERVER=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
+AGENT_WORKERS=1
 
 MCP_HOST="127.0.0.1"
 MCP_PORT=9382
@@ -64,6 +68,10 @@ for arg in "$@"; do
       ;;
     --disable-taskexecutor)
       ENABLE_TASKEXECUTOR=0
+      shift
+      ;;
+    --disable-agentexecutor)
+      ENABLE_AGENTEXECUTOR=0
       shift
       ;;
     --enable-mcpserver)
@@ -118,6 +126,10 @@ for arg in "$@"; do
       WORKERS="${arg#*=}"
       shift
       ;;
+    --agent-workers=*)
+      AGENT_WORKERS="${arg#*=}"
+      shift
+      ;;
     --host-id=*)
       HOST_ID="${arg#*=}"
       shift
@@ -142,7 +154,6 @@ done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
-
 # -----------------------------------------------------------------------------
 # Function(s)
 # -----------------------------------------------------------------------------
@@ -155,6 +166,17 @@ function task_exe() {
     while true; do
         LD_PRELOAD="$JEMALLOC_PATH" \
         "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
+    done
+}
+
+function agent_exe() {
+    local consumer_id="$1"
+    local host_id="$2"
+
+    JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
+    while true; do
+        LD_PRELOAD="$JEMALLOC_PATH" \
+        "$PY" rag/svr/agent_executor.py "${host_id}_${consumer_id}"
     done
 }
 
@@ -205,6 +227,15 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
           task_exe "${i}" "${HOST_ID}" &
         done
     fi
+fi
+
+
+if [[ "${ENABLE_AGENTEXECUTOR}" -eq 1 ]]; then
+    echo "Starting ${AGENT_WORKERS} agent executor(s) on host '${HOST_ID}'..."
+    for (( i=0; i<AGENT_WORKERS; i++ ))
+    do
+      agent_exe "${i}" "${HOST_ID}" &
+    done
 fi
 
 wait
