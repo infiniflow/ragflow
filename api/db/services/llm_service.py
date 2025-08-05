@@ -225,6 +225,9 @@ class TenantLLMService(CommonService):
                 if llm_id == llm["llm_name"]:
                     return llm["model_type"].split(",")[-1]
 
+        for llm in LLMService.query(llm_name=llm_id):
+            return llm.model_type
+
 
 class LLMBundle:
     def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese", **kwargs):
