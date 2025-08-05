@@ -32,8 +32,8 @@ export default function Agent() {
   );
 
   return (
-    <section>
-      <div className="px-8 pt-8">
+    <section className="flex flex-col w-full flex-1">
+      <div className="px-8 pt-8 ">
         <ListFilterBar
           title="Agents"
           searchString={searchString}
@@ -45,18 +45,20 @@ export default function Agent() {
           </Button>
         </ListFilterBar>
       </div>
-      <div className="flex flex-wrap gap-4 max-h-[78vh] overflow-auto px-8">
-        {data.map((x) => {
-          return (
-            <AgentCard
-              key={x.id}
-              data={x}
-              showAgentRenameModal={showAgentRenameModal}
-            ></AgentCard>
-          );
-        })}
+      <div className="flex-1 overflow-auto">
+        <div className="flex flex-wrap gap-4   px-8">
+          {data.map((x) => {
+            return (
+              <AgentCard
+                key={x.id}
+                data={x}
+                showAgentRenameModal={showAgentRenameModal}
+              ></AgentCard>
+            );
+          })}
+        </div>
       </div>
-      <div className="mt-8 px-8">
+      <div className="mt-8 px-8 pb-8">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
           total={pagination.total}

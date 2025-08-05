@@ -1,7 +1,10 @@
+import LLMLabel from '@/components/llm-select/llm-label';
 import { IAgentNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
+import { get } from 'lodash';
 import { memo, useMemo } from 'react';
-import { NodeHandleId } from '../../constant';
+import { useTranslation } from 'react-i18next';
+import { AgentExceptionMethod, NodeHandleId } from '../../constant';
 import useGraphStore from '../../store';
 import { isBottomSubAgent } from '../../utils';
 import { CommonHandle } from './handle';
@@ -18,10 +21,19 @@ function InnerAgentNode({
   selected,
 }: NodeProps<IAgentNode>) {
   const edges = useGraphStore((state) => state.edges);
+  const { t } = useTranslation();
 
   const isHeadAgent = useMemo(() => {
     return !isBottomSubAgent(edges, id);
   }, [edges, id]);
+
+  const exceptionMethod = useMemo(() => {
+    return get(data, 'form.exception_method');
+  }, [data]);
+
+  const isGotoMethod = useMemo(() => {
+    return exceptionMethod === AgentExceptionMethod.Goto;
+  }, [exceptionMethod]);
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
@@ -48,6 +60,7 @@ function InnerAgentNode({
             ></CommonHandle>
           </>
         )}
+
         <Handle
           type="target"
           position={Position.Top}
@@ -69,6 +82,32 @@ function InnerAgentNode({
           style={{ left: 20 }}
         ></Handle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+        <section className="flex flex-col gap-2">
+          <div className={'bg-background-card rounded-sm p-1'}>
+            <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
+          </div>
+          {(isGotoMethod ||
+            exceptionMethod === AgentExceptionMethod.Comment) && (
+            <div className="bg-background-card rounded-sm p-1 flex justify-between gap-2">
+              <span className="text-text-sub-title">On Failure</span>
+              <span className="truncate flex-1 text-right">
+                {t(`flow.${exceptionMethod}`)}
+              </span>
+            </div>
+          )}
+        </section>
+        {isGotoMethod && (
+          <CommonHandle
+            type="source"
+            position={Position.Right}
+            isConnectable={isConnectable}
+            className="!bg-text-delete-red"
+            style={{ ...RightHandleStyle, top: 94 }}
+            nodeId={id}
+            id={NodeHandleId.AgentException}
+            isConnectableEnd={false}
+          ></CommonHandle>
+        )}
       </NodeWrapper>
     </ToolBar>
   );

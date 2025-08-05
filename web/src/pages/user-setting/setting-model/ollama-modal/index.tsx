@@ -48,8 +48,8 @@ const OllamaModal = ({
   llmFactory,
   editMode = false,
   initialValues,
-}: IModalProps<IAddLlmRequestBody> & { 
-  llmFactory: string; 
+}: IModalProps<IAddLlmRequestBody> & {
+  llmFactory: string;
   editMode?: boolean;
   initialValues?: Partial<IAddLlmRequestBody>;
 }) => {
@@ -96,7 +96,7 @@ const OllamaModal = ({
       form.resetFields();
     }
   }, [visible, editMode, initialValues, form]);
-  
+
   const url =
     llmFactoryToUrlMap[llmFactory as LlmFactory] ||
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
@@ -134,7 +134,11 @@ const OllamaModal = ({
   };
   return (
     <Modal
-      title={editMode ? t('editLlmTitle', { name: llmFactory }) : t('addLlmTitle', { name: llmFactory })}
+      title={
+        editMode
+          ? t('editLlmTitle', { name: llmFactory })
+          : t('addLlmTitle', { name: llmFactory })
+      }
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
@@ -196,10 +200,7 @@ const OllamaModal = ({
           name="api_key"
           rules={[{ required: false, message: t('apiKeyMessage') }]}
         >
-          <Input 
-            placeholder={t('apiKeyMessage')} 
-            onKeyDown={handleKeyDown} 
-          />
+          <Input placeholder={t('apiKeyMessage')} onKeyDown={handleKeyDown} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('maxTokens')}

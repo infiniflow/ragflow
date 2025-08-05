@@ -11,11 +11,18 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { IModalProps } from '@/interfaces/common';
 import { Operator } from '@/pages/agent/constant';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
 import OperatorIcon from '@/pages/agent/operator-icon';
-import { PropsWithChildren, createContext, useContext } from 'react';
+import { lowerFirst } from 'lodash';
+import { PropsWithChildren, createContext, memo, useContext } from 'react';
+import { useTranslation } from 'react-i18next';
 
 type OperatorItemProps = { operators: Operator[] };
 
@@ -25,24 +32,32 @@ function OperatorItemList({ operators }: OperatorItemProps) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
   const { nodeId, id, position } = useContext(HandleContext);
   const hideModal = useContext(HideModalContext);
+  const { t } = useTranslation();
 
   return (
     <ul className="space-y-2">
       {operators.map((x) => {
         return (
-          <DropdownMenuItem
-            key={x}
-            className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start"
-            onClick={addCanvasNode(x, {
-              nodeId,
-              id,
-              position,
-            })}
-            onSelect={() => hideModal?.()}
-          >
-            <OperatorIcon name={x}></OperatorIcon>
-            {x}
-          </DropdownMenuItem>
+          <Tooltip key={x}>
+            <TooltipTrigger asChild>
+              <DropdownMenuItem
+                key={x}
+                className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start"
+                onClick={addCanvasNode(x, {
+                  nodeId,
+                  id,
+                  position,
+                })}
+                onSelect={() => hideModal?.()}
+              >
+                <OperatorIcon name={x}></OperatorIcon>
+                {t(`flow.${lowerFirst(x)}`)}
+              </DropdownMenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>{t(`flow.${lowerFirst(x)}Description`)}</p>
+            </TooltipContent>
+          </Tooltip>
         );
       })}
     </ul>
@@ -57,7 +72,7 @@ function AccordionOperators() {
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">
-        <AccordionTrigger className="text-xl">AI</AccordionTrigger>
+        <AccordionTrigger className="text-xl">Foundation</AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
             operators={[Operator.Agent, Operator.Retrieval]}
@@ -102,7 +117,17 @@ function AccordionOperators() {
               Operator.TavilySearch,
               Operator.TavilyExtract,
               Operator.ExeSQL,
-              Operator.Bing,
+              Operator.Google,
+              Operator.YahooFinance,
+              Operator.Email,
+              Operator.DuckDuckGo,
+              Operator.Wikipedia,
+              Operator.GoogleScholar,
+              Operator.ArXiv,
+              Operator.PubMed,
+              Operator.GitHub,
+              Operator.Invoke,
+              Operator.WenCai,
             ]}
           ></OperatorItemList>
         </AccordionContent>
@@ -111,7 +136,7 @@ function AccordionOperators() {
   );
 }
 
-export function NextStepDropdown({
+export function InnerNextStepDropdown({
   children,
   hideModal,
 }: PropsWithChildren & IModalProps<any>) {
@@ -130,3 +155,5 @@ export function NextStepDropdown({
     </DropdownMenu>
   );
 }
+
+export const NextStepDropdown = memo(InnerNextStepDropdown);

@@ -1,4 +1,4 @@
-import { Calendar, CheckIcon } from 'lucide-react';
+import { CheckIcon } from 'lucide-react';
 
 import {
   Command,
@@ -11,7 +11,10 @@ import {
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { cn } from '@/lib/utils';
 import { Operator } from '@/pages/agent/constant';
+import OperatorIcon from '@/pages/agent/operator-icon';
+import { lowerFirst } from 'lodash';
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const Menus = [
   {
@@ -20,31 +23,27 @@ const Menus = [
       Operator.TavilySearch,
       Operator.TavilyExtract,
       Operator.Google,
-      Operator.Bing,
+      // Operator.Bing,
       Operator.DuckDuckGo,
       Operator.Wikipedia,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.GoogleScholar,
+      Operator.ArXiv,
+      Operator.WenCai,
     ],
   },
   {
     label: 'Communication',
     list: [Operator.Email],
   },
-  {
-    label: 'Productivity',
-    list: [],
-  },
+  // {
+  //   label: 'Productivity',
+  //   list: [],
+  // },
   {
     label: 'Developer',
-    list: [
-      Operator.GitHub,
-      Operator.ExeSQL,
-      Operator.Invoke,
-      Operator.Code,
-      Operator.Retrieval,
-    ],
+    list: [Operator.GitHub, Operator.ExeSQL, Operator.Code, Operator.Retrieval],
   },
 ];
 
@@ -109,6 +108,7 @@ function useHandleSelectChange({ onChange, value }: ToolCommandProps) {
 }
 
 export function ToolCommand({ value, onChange }: ToolCommandProps) {
+  const { t } = useTranslation();
   const { toggleOption, currentValue } = useHandleSelectChange({
     onChange,
     value,
@@ -131,8 +131,8 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
                   isSelected={isSelected}
                 >
                   <>
-                    <Calendar />
-                    <span>{y}</span>
+                    <OperatorIcon name={y as Operator}></OperatorIcon>
+                    <span>{t(`flow.${lowerFirst(y)}`)}</span>
                   </>
                 </ToolCommandItem>
               );

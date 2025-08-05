@@ -1,0 +1,917 @@
+
+{
+    "id": 4,
+    "title": "Generate SEO Blog",
+    "description": "This workflow automatically generates a complete SEO-optimized blog article based on a simple user input. You don’t need any writing experience. Just provide a topic or short request — the system will handle the rest.",
+    "canvas_type": "Recommended",
+    "dsl": {
+            "components": {
+                "Agent:BetterSitesSend": {
+                    "downstream": [
+                        "Agent:EagerNailsRemain"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.3,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 3,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Balance",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.2,
+                            "prompts": [
+                                {
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Outline_Agent**, responsible for generating a clear and SEO-optimized blog outline based on the user's parsed writing intent and keyword strategy.\n\n# Tool Access:\n\n- You have access to a search tool called `Tavily Search`.\n\n- If you are unsure how to structure a section, you may call this tool to search for related blog outlines or content from Google.\n\n- Do not overuse it. Your job is to extract **structure**, not to write paragraphs.\n\n\n# Goals\n\n1. Create a well-structured outline with appropriate H2 and H3 headings.\n\n2. Ensure logical flow from introduction to conclusion.\n\n3. Assign 1\u20132 suggested long-tail keywords to each major section for SEO alignment.\n\n4. Make the structure suitable for downstream paragraph writing.\n\n\n\n\n#Note\n\n- Use concise, scannable section titles.\n\n- Do not write full paragraphs.\n\n- Prioritize clarity, logical progression, and SEO alignment.\n\n\n\n- If the blog type is \u201cTutorial\u201d or \u201cHow-to\u201d, include step-based sections.\n\n\n# Input\n\nYou will receive:\n\n- Writing Type (e.g., Tutorial, Informative Guide)\n\n- Target Audience\n\n- User Intent Summary\n\n- 3\u20135 long-tail keywords\n\n\nUse this information to design a structure that both informs readers and maximizes search engine visibility.\n\n# Output Format\n\n```markdown\n\n## Blog Title (suggested)\n\n[Give a short, SEO-friendly title suggestion]\n\n## Outline\n\n### Introduction\n\n- Purpose of the article\n\n- Brief context\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 1]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 2]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 3]\n\n- [Optional H3 Subsection Title A]\n\n  - [Explanation of sub-point]\n\n- [Optional H3 Subsection Title B]\n\n  - [Explanation of sub-point]\n\n- **Suggested keywords**: [keyword1]\n\n### Conclusion\n\n- Recap key takeaways\n\n- Optional CTA (Call to Action)\n\n- **Suggested keywords**: [keyword3]\n\n",
+                            "temperature": 0.5,
+                            "temperatureEnabled": true,
+                            "tools": [
+                                {
+                                    "component_name": "TavilySearch",
+                                    "name": "TavilySearch",
+                                    "params": {
+                                        "api_key": "",
+                                        "days": 7,
+                                        "exclude_domains": [],
+                                        "include_answer": false,
+                                        "include_domains": [],
+                                        "include_image_descriptions": false,
+                                        "include_images": false,
+                                        "include_raw_content": true,
+                                        "max_results": 5,
+                                        "outputs": {
+                                            "formalized_content": {
+                                                "type": "string",
+                                                "value": ""
+                                            },
+                                            "json": {
+                                                "type": "Array<Object>",
+                                                "value": []
+                                            }
+                                        },
+                                        "query": "sys.query",
+                                        "search_depth": "basic",
+                                        "topic": "general"
+                                    }
+                                }
+                            ],
+                            "topPEnabled": false,
+                            "top_p": 0.85,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "Agent:ClearRabbitsScream"
+                    ]
+                },
+                "Agent:ClearRabbitsScream": {
+                    "downstream": [
+                        "Agent:BetterSitesSend"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.5,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 1,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Precise",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.5,
+                            "prompts": [
+                                {
+                                    "content": "The user query is {sys.query}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Parse_And_Keyword_Agent**, responsible for interpreting a user's blog writing request and generating a structured writing intent summary and keyword strategy for SEO-optimized content generation.\n\n# Goals\n\n1. Extract and infer the user's true writing intent, even if the input is informal or vague.\n\n2. Identify the writing type, target audience, and implied goal.\n\n3. Suggest 3\u20135 long-tail keywords based on the input and context.\n\n4. Output all data in a Markdown format for downstream agents.\n\n# Operating Guidelines\n\n\n- If the user's input lacks clarity, make reasonable and **conservative** assumptions based on SEO best practices.\n\n- Always choose one clear \"Writing Type\" from the list below.\n\n- Your job is not to write the blog \u2014 only to structure the brief.\n\n# Output Format\n\n```markdown\n## Writing Type\n\n[Choose one: Tutorial / Informative Guide / Marketing Content / Case Study / Opinion Piece / How-to / Comparison Article]\n\n## Target Audience\n\n[Try to be specific based on clues in the input: e.g., marketing managers, junior developers, SEO beginners]\n\n## User Intent Summary\n\n[A 1\u20132 sentence summary of what the user wants to achieve with the blog post]\n\n## Suggested Long-tail Keywords\n\n- keyword 1\n\n- keyword 2\n\n- keyword 3\n\n- keyword 4 (optional)\n\n- keyword 5 (optional)\n\n\n\n\n## Input Examples (and how to handle them)\n\nInput: \"I want to write about RAGFlow.\"\n\u2192 Output: Informative Guide, Audience: AI developers, Intent: explain what RAGFlow is and its use cases\n\nInput: \"Need a blog to promote our prompt design tool.\"\n\u2192 Output: Marketing Content, Audience: product managers or tool adopters, Intent: raise awareness and interest in the product\n\n\n\nInput: \"How to get more Google traffic using AI\"\n\u2192 Output: How-to, Audience: SEO marketers, Intent: guide readers on applying AI for SEO growth",
+                            "temperature": 0.2,
+                            "temperatureEnabled": true,
+                            "tools": [],
+                            "topPEnabled": false,
+                            "top_p": 0.75,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "begin"
+                    ]
+                },
+                "Agent:EagerNailsRemain": {
+                    "downstream": [
+                        "Agent:LovelyHeadsOwn"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.5,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 5,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Precise",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.5,
+                            "prompts": [
+                                {
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Outline agent output is {Agent:BetterSitesSend@content}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Body_Agent**, responsible for generating the full content of each section of an SEO-optimized blog based on the provided outline and keyword strategy.\n\n# Tool Access:\n\nYou can use the `Tavily Search` tool to retrieve relevant content, statistics, or examples to support each section you're writing.\n\nUse it **only** when the provided outline lacks enough information, or if the section requires factual grounding.\n\nAlways cite the original link or indicate source where possible.\n\n\n# Goals\n\n1. Write each section (based on H2/H3 structure) as a complete and natural blog paragraph.\n\n2. Integrate the suggested long-tail keywords naturally into each section.\n\n3. When appropriate, use the `Tavily Search` tool to enrich your writing with relevant facts, examples, or quotes.\n\n4. Ensure each section is clear, engaging, and informative, suitable for both human readers and search engines.\n\n\n# Style Guidelines\n\n- Write in a tone appropriate to the audience. Be explanatory, not promotional, unless it's a marketing blog.\n\n- Avoid generic filler content. Prioritize clarity, structure, and value.\n\n- Ensure SEO keywords are embedded seamlessly, not forcefully.\n\n\n\n- Maintain writing rhythm. Vary sentence lengths. Use transitions between ideas.\n\n\n# Input\n\n\nYou will receive:\n\n- Blog title\n\n- Structured outline (including section titles, keywords, and descriptions)\n\n- Target audience\n\n- Blog type and user intent\n\nYou must **follow the outline strictly**. Write content **section-by-section**, based on the structure.\n\n\n# Output Format\n\n```markdown\n\n## H2: [Section Title]\n\n[Your generated content for this section \u2014 500-600 words, using keywords naturally.]\n\n",
+                            "temperature": 0.2,
+                            "temperatureEnabled": true,
+                            "tools": [
+                                {
+                                    "component_name": "TavilySearch",
+                                    "name": "TavilySearch",
+                                    "params": {
+                                        "api_key": "",
+                                        "days": 7,
+                                        "exclude_domains": [],
+                                        "include_answer": false,
+                                        "include_domains": [],
+                                        "include_image_descriptions": false,
+                                        "include_images": false,
+                                        "include_raw_content": true,
+                                        "max_results": 5,
+                                        "outputs": {
+                                            "formalized_content": {
+                                                "type": "string",
+                                                "value": ""
+                                            },
+                                            "json": {
+                                                "type": "Array<Object>",
+                                                "value": []
+                                            }
+                                        },
+                                        "query": "sys.query",
+                                        "search_depth": "basic",
+                                        "topic": "general"
+                                    }
+                                }
+                            ],
+                            "topPEnabled": false,
+                            "top_p": 0.75,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "Agent:BetterSitesSend"
+                    ]
+                },
+                "Agent:LovelyHeadsOwn": {
+                    "downstream": [
+                        "Message:LegalBeansBet"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.5,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 5,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Precise",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.5,
+                            "prompts": [
+                                {
+                                    "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Outline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Editor_Agent**, responsible for finalizing the blog post for both human readability and SEO effectiveness.\n\n# Goals\n\n1. Polish the entire blog content for clarity, coherence, and style.\n\n2. Improve transitions between sections, ensure logical flow.\n\n3. Verify that keywords are used appropriately and effectively.\n\n4. Conduct a lightweight SEO audit \u2014 checking keyword density, structure (H1/H2/H3), and overall searchability.\n\n\n\n# Style Guidelines\n\n- Be precise. Avoid bloated or vague language.\n\n- Maintain an informative and engaging tone, suitable to the target audience.\n\n- Do not remove keywords unless absolutely necessary for clarity.\n\n- Ensure paragraph flow and section continuity.\n\n\n# Input\n\nYou will receive:\n\n- Full blog content, written section-by-section\n\n- Original outline with suggested keywords\n\n- Target audience and writing type\n\n# Output Format\n\n```markdown\n\n[The revised, fully polished blog post content goes here.]\n\n",
+                            "temperature": 0.2,
+                            "temperatureEnabled": true,
+                            "tools": [],
+                            "topPEnabled": false,
+                            "top_p": 0.75,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "Agent:EagerNailsRemain"
+                    ]
+                },
+                "Message:LegalBeansBet": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Message",
+                        "params": {
+                            "content": [
+                                "{Agent:LovelyHeadsOwn@content}"
+                            ]
+                        }
+                    },
+                    "upstream": [
+                        "Agent:LovelyHeadsOwn"
+                    ]
+                },
+                "begin": {
+                    "downstream": [
+                        "Agent:ClearRabbitsScream"
+                    ],
+                    "obj": {
+                        "component_name": "Begin",
+                        "params": {
+                            "enablePrologue": true,
+                            "inputs": {},
+                            "mode": "conversational",
+                            "prologue": "Hi! I'm your SEO blog assistant.\n\nTo get started, please tell me:\n1. What topic you want the blog to cover\n2. Who is the target audience\n3. What you hope to achieve with this blog (e.g., SEO traffic, teaching beginners, promoting a product)\n"
+                        }
+                    },
+                    "upstream": []
+                }
+            },
+            "globals": {
+                "sys.conversation_turns": 0,
+                "sys.files": [],
+                "sys.query": "",
+                "sys.user_id": ""
+            },
+            "graph": {
+                "edges": [
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__beginstart-Agent:ClearRabbitsScreamend",
+                        "source": "begin",
+                        "sourceHandle": "start",
+                        "target": "Agent:ClearRabbitsScream",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:ClearRabbitsScreamstart-Agent:BetterSitesSendend",
+                        "source": "Agent:ClearRabbitsScream",
+                        "sourceHandle": "start",
+                        "target": "Agent:BetterSitesSend",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:BetterSitesSendtool-Tool:SharpPensBurnend",
+                        "source": "Agent:BetterSitesSend",
+                        "sourceHandle": "tool",
+                        "target": "Tool:SharpPensBurn",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:BetterSitesSendstart-Agent:EagerNailsRemainend",
+                        "source": "Agent:BetterSitesSend",
+                        "sourceHandle": "start",
+                        "target": "Agent:EagerNailsRemain",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "id": "xy-edge__Agent:EagerNailsRemaintool-Tool:WickedDeerHealend",
+                        "source": "Agent:EagerNailsRemain",
+                        "sourceHandle": "tool",
+                        "target": "Tool:WickedDeerHeal",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:EagerNailsRemainstart-Agent:LovelyHeadsOwnend",
+                        "source": "Agent:EagerNailsRemain",
+                        "sourceHandle": "start",
+                        "target": "Agent:LovelyHeadsOwn",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:LovelyHeadsOwnstart-Message:LegalBeansBetend",
+                        "source": "Agent:LovelyHeadsOwn",
+                        "sourceHandle": "start",
+                        "target": "Message:LegalBeansBet",
+                        "targetHandle": "end"
+                    }
+                ],
+                "nodes": [
+                    {
+                        "data": {
+                            "form": {
+                                "enablePrologue": true,
+                                "inputs": {},
+                                "mode": "conversational",
+                                "prologue": "Hi! I'm your SEO blog assistant.\n\nTo get started, please tell me:\n1. What topic you want the blog to cover\n2. Who is the target audience\n3. What you hope to achieve with this blog (e.g., SEO traffic, teaching beginners, promoting a product)\n"
+                            },
+                            "label": "Begin",
+                            "name": "begin"
+                        },
+                        "id": "begin",
+                        "measured": {
+                            "height": 48,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 50,
+                            "y": 200
+                        },
+                        "selected": false,
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.5,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 1,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Precise",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.5,
+                                "prompts": [
+                                    {
+                                        "content": "The user query is {sys.query}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Parse_And_Keyword_Agent**, responsible for interpreting a user's blog writing request and generating a structured writing intent summary and keyword strategy for SEO-optimized content generation.\n\n# Goals\n\n1. Extract and infer the user's true writing intent, even if the input is informal or vague.\n\n2. Identify the writing type, target audience, and implied goal.\n\n3. Suggest 3\u20135 long-tail keywords based on the input and context.\n\n4. Output all data in a Markdown format for downstream agents.\n\n# Operating Guidelines\n\n\n- If the user's input lacks clarity, make reasonable and **conservative** assumptions based on SEO best practices.\n\n- Always choose one clear \"Writing Type\" from the list below.\n\n- Your job is not to write the blog \u2014 only to structure the brief.\n\n# Output Format\n\n```markdown\n## Writing Type\n\n[Choose one: Tutorial / Informative Guide / Marketing Content / Case Study / Opinion Piece / How-to / Comparison Article]\n\n## Target Audience\n\n[Try to be specific based on clues in the input: e.g., marketing managers, junior developers, SEO beginners]\n\n## User Intent Summary\n\n[A 1\u20132 sentence summary of what the user wants to achieve with the blog post]\n\n## Suggested Long-tail Keywords\n\n- keyword 1\n\n- keyword 2\n\n- keyword 3\n\n- keyword 4 (optional)\n\n- keyword 5 (optional)\n\n\n\n\n## Input Examples (and how to handle them)\n\nInput: \"I want to write about RAGFlow.\"\n\u2192 Output: Informative Guide, Audience: AI developers, Intent: explain what RAGFlow is and its use cases\n\nInput: \"Need a blog to promote our prompt design tool.\"\n\u2192 Output: Marketing Content, Audience: product managers or tool adopters, Intent: raise awareness and interest in the product\n\n\n\nInput: \"How to get more Google traffic using AI\"\n\u2192 Output: How-to, Audience: SEO marketers, Intent: guide readers on applying AI for SEO growth",
+                                "temperature": 0.2,
+                                "temperatureEnabled": true,
+                                "tools": [],
+                                "topPEnabled": false,
+                                "top_p": 0.75,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Parse And Keyword Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:ClearRabbitsScream",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 344.7766966202233,
+                            "y": 234.82202253184496
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.3,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 3,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Balance",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.2,
+                                "prompts": [
+                                    {
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Outline_Agent**, responsible for generating a clear and SEO-optimized blog outline based on the user's parsed writing intent and keyword strategy.\n\n# Tool Access:\n\n- You have access to a search tool called `Tavily Search`.\n\n- If you are unsure how to structure a section, you may call this tool to search for related blog outlines or content from Google.\n\n- Do not overuse it. Your job is to extract **structure**, not to write paragraphs.\n\n\n# Goals\n\n1. Create a well-structured outline with appropriate H2 and H3 headings.\n\n2. Ensure logical flow from introduction to conclusion.\n\n3. Assign 1\u20132 suggested long-tail keywords to each major section for SEO alignment.\n\n4. Make the structure suitable for downstream paragraph writing.\n\n\n\n\n#Note\n\n- Use concise, scannable section titles.\n\n- Do not write full paragraphs.\n\n- Prioritize clarity, logical progression, and SEO alignment.\n\n\n\n- If the blog type is \u201cTutorial\u201d or \u201cHow-to\u201d, include step-based sections.\n\n\n# Input\n\nYou will receive:\n\n- Writing Type (e.g., Tutorial, Informative Guide)\n\n- Target Audience\n\n- User Intent Summary\n\n- 3\u20135 long-tail keywords\n\n\nUse this information to design a structure that both informs readers and maximizes search engine visibility.\n\n# Output Format\n\n```markdown\n\n## Blog Title (suggested)\n\n[Give a short, SEO-friendly title suggestion]\n\n## Outline\n\n### Introduction\n\n- Purpose of the article\n\n- Brief context\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 1]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 2]\n\n- [Short description of what this section will cover]\n\n- **Suggested keywords**: [keyword1, keyword2]\n\n### H2: [Section Title 3]\n\n- [Optional H3 Subsection Title A]\n\n  - [Explanation of sub-point]\n\n- [Optional H3 Subsection Title B]\n\n  - [Explanation of sub-point]\n\n- **Suggested keywords**: [keyword1]\n\n### Conclusion\n\n- Recap key takeaways\n\n- Optional CTA (Call to Action)\n\n- **Suggested keywords**: [keyword3]\n\n",
+                                "temperature": 0.5,
+                                "temperatureEnabled": true,
+                                "tools": [
+                                    {
+                                        "component_name": "TavilySearch",
+                                        "name": "TavilySearch",
+                                        "params": {
+                                            "api_key": "",
+                                            "days": 7,
+                                            "exclude_domains": [],
+                                            "include_answer": false,
+                                            "include_domains": [],
+                                            "include_image_descriptions": false,
+                                            "include_images": false,
+                                            "include_raw_content": true,
+                                            "max_results": 5,
+                                            "outputs": {
+                                                "formalized_content": {
+                                                    "type": "string",
+                                                    "value": ""
+                                                },
+                                                "json": {
+                                                    "type": "Array<Object>",
+                                                    "value": []
+                                                }
+                                            },
+                                            "query": "sys.query",
+                                            "search_depth": "basic",
+                                            "topic": "general"
+                                        }
+                                    }
+                                ],
+                                "topPEnabled": false,
+                                "top_p": 0.85,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Outline Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:BetterSitesSend",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 613.4368763415628,
+                            "y": 164.3074269048589
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "description": "This is an agent for a specific task.",
+                                "user_prompt": "This is the order you need to send to the agent."
+                            },
+                            "label": "Tool",
+                            "name": "flow.tool_0"
+                        },
+                        "dragging": false,
+                        "id": "Tool:SharpPensBurn",
+                        "measured": {
+                            "height": 44,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 580.1877078861457,
+                            "y": 287.7669662022325
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "toolNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.5,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 5,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Precise",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.5,
+                                "prompts": [
+                                    {
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\n\n\nThe Outline agent output is {Agent:BetterSitesSend@content}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Body_Agent**, responsible for generating the full content of each section of an SEO-optimized blog based on the provided outline and keyword strategy.\n\n# Tool Access:\n\nYou can use the `Tavily Search` tool to retrieve relevant content, statistics, or examples to support each section you're writing.\n\nUse it **only** when the provided outline lacks enough information, or if the section requires factual grounding.\n\nAlways cite the original link or indicate source where possible.\n\n\n# Goals\n\n1. Write each section (based on H2/H3 structure) as a complete and natural blog paragraph.\n\n2. Integrate the suggested long-tail keywords naturally into each section.\n\n3. When appropriate, use the `Tavily Search` tool to enrich your writing with relevant facts, examples, or quotes.\n\n4. Ensure each section is clear, engaging, and informative, suitable for both human readers and search engines.\n\n\n# Style Guidelines\n\n- Write in a tone appropriate to the audience. Be explanatory, not promotional, unless it's a marketing blog.\n\n- Avoid generic filler content. Prioritize clarity, structure, and value.\n\n- Ensure SEO keywords are embedded seamlessly, not forcefully.\n\n\n\n- Maintain writing rhythm. Vary sentence lengths. Use transitions between ideas.\n\n\n# Input\n\n\nYou will receive:\n\n- Blog title\n\n- Structured outline (including section titles, keywords, and descriptions)\n\n- Target audience\n\n- Blog type and user intent\n\nYou must **follow the outline strictly**. Write content **section-by-section**, based on the structure.\n\n\n# Output Format\n\n```markdown\n\n## H2: [Section Title]\n\n[Your generated content for this section \u2014 500-600 words, using keywords naturally.]\n\n",
+                                "temperature": 0.2,
+                                "temperatureEnabled": true,
+                                "tools": [
+                                    {
+                                        "component_name": "TavilySearch",
+                                        "name": "TavilySearch",
+                                        "params": {
+                                            "api_key": "",
+                                            "days": 7,
+                                            "exclude_domains": [],
+                                            "include_answer": false,
+                                            "include_domains": [],
+                                            "include_image_descriptions": false,
+                                            "include_images": false,
+                                            "include_raw_content": true,
+                                            "max_results": 5,
+                                            "outputs": {
+                                                "formalized_content": {
+                                                    "type": "string",
+                                                    "value": ""
+                                                },
+                                                "json": {
+                                                    "type": "Array<Object>",
+                                                    "value": []
+                                                }
+                                            },
+                                            "query": "sys.query",
+                                            "search_depth": "basic",
+                                            "topic": "general"
+                                        }
+                                    }
+                                ],
+                                "topPEnabled": false,
+                                "top_p": 0.75,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Body Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:EagerNailsRemain",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 889.0614605692713,
+                            "y": 247.00973041799065
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "description": "This is an agent for a specific task.",
+                                "user_prompt": "This is the order you need to send to the agent."
+                            },
+                            "label": "Tool",
+                            "name": "flow.tool_1"
+                        },
+                        "dragging": false,
+                        "id": "Tool:WickedDeerHeal",
+                        "measured": {
+                            "height": 44,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 853.2006404239659,
+                            "y": 364.37541577229143
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "toolNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.5,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 5,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Precise",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.5,
+                                "prompts": [
+                                    {
+                                        "content": "The parse and keyword agent output is {Agent:ClearRabbitsScream@content}\n\nThe Outline agent output is {Agent:BetterSitesSend@content}\n\nThe Body agent output is {Agent:EagerNailsRemain@content}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Editor_Agent**, responsible for finalizing the blog post for both human readability and SEO effectiveness.\n\n# Goals\n\n1. Polish the entire blog content for clarity, coherence, and style.\n\n2. Improve transitions between sections, ensure logical flow.\n\n3. Verify that keywords are used appropriately and effectively.\n\n4. Conduct a lightweight SEO audit \u2014 checking keyword density, structure (H1/H2/H3), and overall searchability.\n\n\n\n# Style Guidelines\n\n- Be precise. Avoid bloated or vague language.\n\n- Maintain an informative and engaging tone, suitable to the target audience.\n\n- Do not remove keywords unless absolutely necessary for clarity.\n\n- Ensure paragraph flow and section continuity.\n\n\n# Input\n\nYou will receive:\n\n- Full blog content, written section-by-section\n\n- Original outline with suggested keywords\n\n- Target audience and writing type\n\n# Output Format\n\n```markdown\n\n[The revised, fully polished blog post content goes here.]\n\n",
+                                "temperature": 0.2,
+                                "temperatureEnabled": true,
+                                "tools": [],
+                                "topPEnabled": false,
+                                "top_p": 0.75,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Editor Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:LovelyHeadsOwn",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 1160.3332919804993,
+                            "y": 149.50806732882472
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "content": [
+                                    "{Agent:LovelyHeadsOwn@content}"
+                                ]
+                            },
+                            "label": "Message",
+                            "name": "Response"
+                        },
+                        "dragging": false,
+                        "id": "Message:LegalBeansBet",
+                        "measured": {
+                            "height": 56,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 1370.6665839609984,
+                            "y": 267.0323933738015
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "messageNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "This workflow automatically generates a complete SEO-optimized blog article based on a simple user input. You don\u2019t need any writing experience. Just provide a topic or short request \u2014 the system will handle the rest.\n\nThe process includes the following key stages:\n\n1. **Understanding your topic and goals**\n2. **Designing the blog structure**\n3. **Writing high-quality content**\n\n\n"
+                            },
+                            "label": "Note",
+                            "name": "Workflow Overall Description"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 205,
+                        "id": "Note:SlimyGhostsWear",
+                        "measured": {
+                            "height": 205,
+                            "width": 415
+                        },
+                        "position": {
+                            "x": -284.3143151688742,
+                            "y": 150.47632147913419
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 415
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent reads the user\u2019s input and figures out what kind of blog needs to be written.\n\n**What it does**:\n- Understands the main topic you want to write about  \n- Identifies who the blog is for (e.g., beginners, marketers, developers)  \n- Determines the writing purpose (e.g., SEO traffic, product promotion, education)  \n- Suggests 3\u20135 long-tail SEO keywords related to the topic"
+                            },
+                            "label": "Note",
+                            "name": "Parse And Keyword Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 152,
+                        "id": "Note:EmptyChairsShake",
+                        "measured": {
+                            "height": 152,
+                            "width": 340
+                        },
+                        "position": {
+                            "x": 295.04147626768133,
+                            "y": 372.2755718118446
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 340
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent builds the blog structure \u2014 just like writing a table of contents before you start writing the full article.\n\n**What it does**:\n- Suggests a clear blog title that includes important keywords  \n- Breaks the article into sections using H2 and H3 headings (like a professional blog layout)  \n- Assigns 1\u20132 recommended keywords to each section to help with SEO  \n- Follows the writing goal and target audience set in the previous step"
+                            },
+                            "label": "Note",
+                            "name": "Outline Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 146,
+                        "id": "Note:TallMelonsNotice",
+                        "measured": {
+                            "height": 146,
+                            "width": 343
+                        },
+                        "position": {
+                            "x": 598.5644991893463,
+                            "y": 5.801054564756448
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 343
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent is responsible for writing the actual content of the blog \u2014 paragraph by paragraph \u2014 based on the outline created earlier.\n\n**What it does**:\n- Looks at each H2/H3 section in the outline  \n- Writes 150\u2013220 words of clear, helpful, and well-structured content per section  \n- Includes the suggested SEO keywords naturally (not keyword stuffing)  \n- Uses real examples or facts if needed (by calling a web search tool like Tavily)"
+                            },
+                            "label": "Note",
+                            "name": "Body Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 137,
+                        "id": "Note:RipeCougarsBuild",
+                        "measured": {
+                            "height": 137,
+                            "width": 319
+                        },
+                        "position": {
+                            "x": 860.4854129814981,
+                            "y": 427.2196835690842
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 319
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "**Purpose**:  \nThis agent reviews the entire blog draft to make sure it is smooth, professional, and SEO-friendly. It acts like a human editor before publishing.\n\n**What it does**:\n- Polishes the writing: improves sentence clarity, fixes awkward phrasing  \n- Makes sure the content flows well from one section to the next  \n- Double-checks keyword usage: are they present, natural, and not overused?  \n- Verifies the blog structure (H1, H2, H3 headings) is correct  \n- Adds two key SEO elements:\n  - **Meta Title** (shows up in search results)\n  - **Meta Description** (summary for Google and social sharing)"
+                            },
+                            "label": "Note",
+                            "name": "Editor Agent"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "height": 146,
+                        "id": "Note:OpenTurkeysSell",
+                        "measured": {
+                            "height": 146,
+                            "width": 320
+                        },
+                        "position": {
+                            "x": 1129,
+                            "y": -30
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 320
+                    }
+                ]
+            },
+            "history": [],
+            "messages": [],
+            "path": [],
+            "retrieval": []
+        },
+    "avatar": "data:image/png;base64,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"
+}
+

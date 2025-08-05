@@ -329,7 +329,7 @@ class OSConnection(DocStoreConnection):
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
                 try:
-                    self.os.update(index=indexName, id=chunkId, body=doc)
+                    self.os.update(index=indexName, id=chunkId, body={"doc":doc})
                     return True
                 except Exception as e:
                     logger.exception(

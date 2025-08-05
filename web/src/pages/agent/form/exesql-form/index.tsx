@@ -20,9 +20,13 @@ import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { ExeSQLOptions } from '../../options';
+import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
+import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { FormSchema, useSubmitForm } from './use-submit-form';
+
+const outputList = buildOutputList(initialExeSqlValues.outputs);
 
 export function ExeSQLFormWidgets({ loading }: { loading: boolean }) {
   const form = useFormContext();
@@ -153,6 +157,9 @@ function ExeSQLForm({ node }: INextOperatorForm) {
         <QueryVariable name="sql"></QueryVariable>
         <ExeSQLFormWidgets loading={loading}></ExeSQLFormWidgets>
       </FormWrapper>
+      <div className="p-5">
+        <Output list={outputList}></Output>
+      </div>
     </Form>
   );
 }

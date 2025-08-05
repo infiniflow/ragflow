@@ -68,7 +68,7 @@ function EmbedDialog({
 
   const generateIframeSrc = useCallback(() => {
     const { visibleAvatar, locale } = values;
-    let src = `${location.origin}/chat/share?shared_id=${token}&from=${from}&auth=${beta}`;
+    let src = `${location.origin}/next-chat/share?shared_id=${token}&from=${from}&auth=${beta}`;
     if (visibleAvatar) {
       src += '&visible_avatar=1';
     }
@@ -139,7 +139,7 @@ function EmbedDialog({
           </Form>
           <div>
             <span>Embed code</span>
-            <HightLightMarkdown dark>{text}</HightLightMarkdown>
+            <HightLightMarkdown>{text}</HightLightMarkdown>
           </div>
           <div className=" font-medium mt-4 mb-1">
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}

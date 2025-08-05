@@ -1,3 +1,4 @@
+import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
@@ -22,6 +23,7 @@ import { z } from 'zod';
 import { initialRetrievalValues } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { useValues } from './use-values';
@@ -92,29 +94,26 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <QueryVariable></QueryVariable>
-          <KnowledgeBaseFormField></KnowledgeBaseFormField>
+          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
-        <FormContainer>
-          <SimilaritySliderFormField
-            vectorSimilarityWeightName="keywords_similarity_weight"
-            isTooltipShown
-          ></SimilaritySliderFormField>
-          <TopNFormField></TopNFormField>
-          <RerankFormFields></RerankFormFields>
-          <EmptyResponseField></EmptyResponseField>
-          <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-          <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-        </FormContainer>
+        <Collapse title={<div>Advanced Settings</div>}>
+          <FormContainer>
+            <SimilaritySliderFormField
+              vectorSimilarityWeightName="keywords_similarity_weight"
+              isTooltipShown
+            ></SimilaritySliderFormField>
+            <TopNFormField></TopNFormField>
+            <RerankFormFields></RerankFormFields>
+            <EmptyResponseField></EmptyResponseField>
+            <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+          </FormContainer>
+        </Collapse>
         <Output list={outputList}></Output>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }
