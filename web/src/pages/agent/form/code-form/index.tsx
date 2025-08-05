@@ -2,6 +2,7 @@ import Editor, { loader } from '@monaco-editor/react';
 import { INextOperatorForm } from '../../interface';
 
 import { FormContainer } from '@/components/form-container';
+import { useIsDarkTheme } from '@/components/theme-provider';
 import {
   Form,
   FormControl,
@@ -46,6 +47,7 @@ function CodeForm({ node }: INextOperatorForm) {
   const formData = node?.data.form as ICodeForm;
   const { t } = useTranslation();
   const values = useValues(node);
+  const isDarkTheme = useIsDarkTheme();
 
   const form = useForm<FormSchemaType>({
     defaultValues: values,
@@ -94,7 +96,7 @@ function CodeForm({ node }: INextOperatorForm) {
               <FormControl>
                 <Editor
                   height={300}
-                  theme="vs-dark"
+                  theme={isDarkTheme ? 'vs-dark' : 'vs'}
                   language={formData.lang}
                   options={{
                     minimap: { enabled: false },

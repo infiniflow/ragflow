@@ -10,7 +10,7 @@ import { useCallback } from 'react';
 import { AgentCard } from './agent-card';
 import { useRenameAgent } from './use-rename-agent';
 
-export default function Agent() {
+export default function Agents() {
   const { data, pagination, setPagination, searchString, handleInputChange } =
     useFetchAgentListByPage();
   const { navigateToAgentTemplates } = useNavigatePage();
