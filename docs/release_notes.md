@@ -39,7 +39,7 @@ From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and
 - Chat histories with Agents available through the management panel.
 - Integration of a new, more robust version of Infinity, enabling the auto-tagging functionality with Infinity as the underlying document engine.
 - An OpenAI-compatible API that supports file reference information.
-- Support for new embedding models, including Kimi K2, Grok 4, and Voyage.
+- Support for new models, including Kimi K2, Grok 4, and Voyage embedding.
 - RAGFlow’s codebase is now mirrored on Gitee.
 - Introduction of a new model provider, Gitee AI.
 
