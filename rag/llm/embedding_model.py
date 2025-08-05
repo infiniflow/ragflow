@@ -38,6 +38,11 @@ from rag.utils import num_tokens_from_string, truncate
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
+        """
+        Constructor for abstract base class.
+        Parameters are accepted for interface consistency but are not stored.
+        Subclasses should implement their own initialization as needed.
+        """
         pass
 
     def encode(self, texts: list):
