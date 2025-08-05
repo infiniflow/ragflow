@@ -18,6 +18,7 @@ import {
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { ScheduleOutlined } from '@ant-design/icons';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -43,6 +44,7 @@ import {
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
+import { ScheduleModal, useScheduleModal } from './schedule-modal';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { VersionDialog } from './version-dialog';
 
@@ -91,7 +93,11 @@ export default function Agent() {
     hideModal: hideVersionDialog,
     showModal: showVersionDialog,
   } = useSetModalState();
-
+  const {
+    visible: scheduleVisible,
+    showModal: showScheduleModal,
+    hideModal: hideScheduleModal,
+  } = useScheduleModal();
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
   const { navigateToAgentLogs } = useNavigatePage();
@@ -163,6 +169,10 @@ export default function Agent() {
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
+              <AgentDropdownMenuItem onClick={showScheduleModal}>
+                <ScheduleOutlined />
+                {t('flow.schedule.title')}
+              </AgentDropdownMenuItem>
               {location.hostname !== 'demo.ragflow.io' && (
                 <>
                   <DropdownMenuSeparator />
@@ -200,6 +210,14 @@ export default function Agent() {
       )}
       {versionDialogVisible && (
         <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+      )}
+      {scheduleVisible && (
+        <ScheduleModal
+          visible={scheduleVisible}
+          hideModal={hideScheduleModal}
+          canvasId={id!}
+          canvasTitle={agentDetail.title}
+        />
       )}
     </section>
   );

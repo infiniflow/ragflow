@@ -171,4 +171,14 @@ export default {
   testMcpServerTool: `${api_host}/mcp_server/test_tool`,
   cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
+
+  // Schedule endpoints
+  createSchedule: `${api_host}/canvas/schedule/create`,
+  listSchedules: `${api_host}/canvas/schedule/list`,
+  updateSchedule: `${api_host}/canvas/schedule/update`,
+  toggleSchedule: `${api_host}/canvas/schedule/toggle`,
+  deleteSchedule: `${api_host}/canvas/schedule/delete`,
+  getFrequencyOptions: `${api_host}/canvas/schedule/frequency-options`,
+  getScheduleHistory: `${api_host}/canvas/schedule/history`,
+  getScheduleStats: `${api_host}/canvas/schedule/stats`,
 };

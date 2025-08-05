@@ -25,6 +25,14 @@ const {
   fetchAgentAvatar,
   fetchAgentLogs,
   fetchExternalAgentInputs,
+  createSchedule,
+  listSchedules,
+  updateSchedule,
+  toggleSchedule,
+  deleteSchedule,
+  getFrequencyOptions,
+  getScheduleHistory,
+  getScheduleStats,
 } = api;
 
 const methods = {
@@ -110,6 +118,38 @@ const methods = {
   },
   fetchExternalAgentInputs: {
     url: fetchExternalAgentInputs,
+    method: 'get',
+  },
+  createSchedule: {
+    url: createSchedule,
+    method: 'post',
+  },
+  listSchedules: {
+    url: listSchedules,
+    method: 'get',
+  },
+  updateSchedule: {
+    url: updateSchedule,
+    method: 'put',
+  },
+  toggleSchedule: {
+    url: toggleSchedule,
+    method: 'post',
+  },
+  deleteSchedule: {
+    url: deleteSchedule,
+    method: 'delete',
+  },
+  getFrequencyOptions: {
+    url: getFrequencyOptions,
+    method: 'get',
+  },
+  getScheduleHistory: {
+    url: getScheduleHistory,
+    method: 'get',
+  },
+  getScheduleStats: {
+    url: getScheduleStats,
     method: 'get',
   },
 } as const;
