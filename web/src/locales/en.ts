@@ -39,6 +39,13 @@ export default {
       nextPage: 'Next',
       add: 'Add',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
+      mcp: {
+        namePlaceholder: 'My MCP Server',
+        nameRequired:
+          'It must be 1–64 characters long and can only contain letters, numbers, hyphens, and underscores.',
+        urlPlaceholder: 'https://api.example.com/v1/mcp',
+        tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
+      },
     },
     login: {
       login: 'Sign in',
