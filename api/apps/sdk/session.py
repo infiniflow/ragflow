@@ -51,6 +51,7 @@ def create(tenant_id, chat_id):
         "name": req.get("name", "New session"),
         "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
         "user_id": req.get("user_id", ""),
+        "reference":[{}],
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -512,16 +513,16 @@ def list_session(tenant_id, chat_id):
             if "prompt" in info:
                 info.pop("prompt")
         conv["chat_id"] = conv.pop("dialog_id")
-        if conv["reference"]:
+        ref_messages = conv["reference"]
+        if ref_messages:
             messages = conv["messages"]
             message_num = 0
-            while message_num < len(messages) and message_num < len(conv["reference"]):
-                if message_num != 0 and messages[message_num]["role"] != "user":
-                    if message_num >= len(conv["reference"]):
-                        break
+            ref_num = 0
+            while message_num < len(messages) and ref_num < len(ref_messages):
+                if messages[message_num]["role"] != "user":
                     chunk_list = []
-                    if "chunks" in conv["reference"][message_num]:
-                        chunks = conv["reference"][message_num]["chunks"]
+                    if "chunks" in ref_messages[ref_num]:
+                        chunks = ref_messages[ref_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
                                 "id": chunk.get("chunk_id", chunk.get("id")),
@@ -535,6 +536,7 @@ def list_session(tenant_id, chat_id):
 
                             chunk_list.append(new_chunk)
                     messages[message_num]["reference"] = chunk_list
+                    ref_num += 1
                 message_num += 1
         del conv["reference"]
     return get_result(data=convs)
