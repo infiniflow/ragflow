@@ -436,14 +436,38 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
             )
         )
 
-    # Get the last user message as the question
     question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
-    if req.get("stream", True):
-        return Response(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", req.get("metadata", {}).get("id", "")), stream=True), mimetype="text/event-stream")
+    stream = req.pop("stream", False)
+    if stream:
+        resp = Response(
+            completionOpenAI(
+                tenant_id,
+                agent_id,
+                question,
+                session_id=req.get("id", req.get("metadata", {}).get("id", "")),
+                stream=True,
+                **req,
+            ),
+            mimetype="text/event-stream",
+        )
+        resp.headers.add_header("Cache-control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+        return resp
     else:
         # For non-streaming, just return the response directly
-        response = next(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", req.get("metadata", {}).get("id", "")), stream=False))
+        response = next(
+            completionOpenAI(
+                tenant_id,
+                agent_id,
+                question,
+                session_id=req.get("id", req.get("metadata", {}).get("id", "")),
+                stream=False,
+                **req,
+            )
+        )
         return jsonify(response)
 
 
@@ -850,10 +874,10 @@ def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
-    return get_result(data={
-        "title": cvs.title,
-        "avatar": cvs.avatar,
-        "inputs": canvas.get_component_input_form("begin")
-    })
-
-
+    return get_result(
+        data={
+            "title": cvs.title,
+            "avatar": cvs.avatar,
+            "inputs": canvas.get_component_input_form("begin"),
+        }
+    )
