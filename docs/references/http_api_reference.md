@@ -1,11 +1,27 @@
 ---
-sidebar_position: 1
+sidebar_position: 4
 slug: /http_api_reference
 ---
 
 # HTTP API
 
 A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
+
+---
+
+## ERROR CODES
+
+---
+
+| Code | Message               | Description                |
+| ---- | --------------------- | -------------------------- |
+| 400  | Bad Request           | Invalid request parameters |
+| 401  | Unauthorized          | Unauthorized access        |
+| 403  | Forbidden             | Access denied              |
+| 404  | Not Found             | Resource not found         |
+| 500  | Internal Server Error | Server internal error      |
+| 1001 | Invalid Chunk ID      | Invalid Chunk ID           |
+| 1002 | Chunk Update Failed   | Chunk update failed        |
 
 ---
 
@@ -38,6 +54,152 @@ This API follows the same request and response format as OpenAI's API. It allows
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/chats_openai/{chat_id}/chat/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+        "model": "model",
+        "messages": [{"role": "user", "content": "Say this is a test!"}],
+        "stream": true
+      }'
+```
+
+##### Request Parameters
+
+- `model` (*Body parameter*) `string`, *Required*  
+  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+
+- `messages` (*Body parameter*) `list[object]`, *Required*  
+  A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
+
+- `stream` (*Body parameter*) `boolean`  
+  Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+#### Response
+
+Stream:
+
+```json
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": "This is a test. If you have any specific questions or need information, feel",
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": null,
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": null
+}
+// omit duplicated information
+{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
+// the last chunk
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": null,
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 225,
+        "total_tokens": 243
+    }
+}
+```
+
+Non-stream:
+
+```json
+{
+    "choices":[
+        {
+            "finish_reason":"stop",
+            "index":0,
+            "logprobs":null,
+            "message":{
+                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
+                "role":"assistant"
+            }
+        }
+    ],
+    "created":1740543499,
+    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "model":"model",
+    "object":"chat.completion",
+    "usage":{
+        "completion_tokens":246,
+        "completion_tokens_details":{
+            "accepted_prediction_tokens":246,
+            "reasoning_tokens":18,
+            "rejected_prediction_tokens":0
+        },
+        "prompt_tokens":18,
+        "total_tokens":264
+    }
+}
+```
+
+Failure:
+
+```json
+{
+  "code": 102,
+  "message": "The last content of this conversation is not from user."
+}
+```
+
+---
+
+### Create agent completion
+
+**POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
+
+Creates a model response for a given chat conversation.
+
+This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/agents_openai/{agent_id}/chat/completions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"model"`: `string`
+  - `"messages"`: `object list`
+  - `"stream"`: `boolean`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents_openai/{agent_id}/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
@@ -199,22 +361,22 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The unique name of the dataset to create. It must adhere to the following requirements:  
-  - Permitted characters include:
-    - English letters (a-z, A-Z)
-    - Digits (0-9)
-    - "_" (underscore)
-  - Must begin with an English letter or underscore.
-  - Maximum 65,535 characters.
-  - Case-insensitive.
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters
+  - Case-insensitive
 
 - `"avatar"`: (*Body parameter*), `string`  
   Base64 encoding of the avatar.
+  - Maximum 65535 characters
 
 - `"description"`: (*Body parameter*), `string`  
   A brief description of the dataset to create.
+  - Maximum 65535 characters
 
 - `"embedding_model"`: (*Body parameter*), `string`  
-  The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
+  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
 
 - `"permission"`: (*Body parameter*), `string`  
   Specifies who can access the dataset to create. Available options:  
@@ -224,35 +386,52 @@ curl --request POST \
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method of the dataset to create. Available options:  
   - `"naive"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
   - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
   - `"qa"`: Q&A
   - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
-  - `"email"`: Email
+  - `"tag"`: Tag
 
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"layout_recognize"`: Defaults to `true`.
-    - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"auto_keywords"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `32`
+    - `"auto_questions"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `10`
+    - `"chunk_token_num"`: `int`
+      - Defaults to `512`
+      - Minimum: `1`
+      - Maximum: `2048`
+    - `"delimiter"`: `string`
+      - Defaults to `"\n"`.
+    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format.
+      - Defaults to `false`
+    - `"layout_recognize"`: `string`
+      - Defaults to `DeepDOC`
+    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+    - `"task_page_size"`: `int` For PDF only.
+      - Defaults to `12`
+      - Minimum: `1`
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`
+    - `"graphrag"`: `object` GRAPHRAG-specific settings.
+      - Defaults to: `{"use_graphrag": false}`
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:  
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -265,33 +444,34 @@ Success:
         "avatar": null,
         "chunk_count": 0,
         "chunk_method": "naive",
-        "create_date": "Thu, 24 Oct 2024 09:14:07 GMT",
-        "create_time": 1729761247434,
-        "created_by": "69736c5e723611efb51b0242ac120007",
+        "create_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "create_time": 1745836841611,
+        "created_by": "3af81804241d11f0a6a79f24fc270c7f",
         "description": null,
         "document_count": 0,
-        "embedding_model": "BAAI/bge-large-zh-v1.5",
-        "id": "527fa74891e811ef9c650242ac120006",
+        "embedding_model": "BAAI/bge-large-zh-v1.5@BAAI",
+        "id": "3b4de7d4241d11f0a6a79f24fc270c7f",
         "language": "English",
-        "name": "test_1",
+        "name": "RAGFlow example",
+        "pagerank": 0,
         "parser_config": {
-            "chunk_token_num": 128,
-            "delimiter": "\\n!?;。；！？",
-            "html4excel": false,
-            "layout_recognize": true,
+            "chunk_token_num": 128, 
+            "delimiter": "\\n!?;。；！？", 
+            "html4excel": false, 
+            "layout_recognize": "DeepDOC", 
             "raptor": {
-                "user_raptor": false
-            }
-        },
+                "use_raptor": false
+                }
+            },
         "permission": "me",
         "similarity_threshold": 0.2,
         "status": "1",
-        "tenant_id": "69736c5e723611efb51b0242ac120007",
+        "tenant_id": "3af81804241d11f0a6a79f24fc270c7f",
         "token_num": 0,
-        "update_date": "Thu, 24 Oct 2024 09:14:07 GMT",
-        "update_time": 1729761247434,
-        "vector_similarity_weight": 0.3
-    }
+        "update_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "update_time": 1745836841611,
+        "vector_similarity_weight": 0.3,
+    },
 }
 ```
 
@@ -299,8 +479,8 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "Duplicated knowledgebase name in creating dataset."
+    "code": 101,
+    "message": "Dataset name 'RAGFlow example' already exists"
 }
 ```
 
@@ -320,7 +500,7 @@ Deletes datasets by ID.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
   - Body:
-    - `"ids"`: `list[string]`
+    - `"ids"`: `list[string]` or `null`
 
 ##### Request example
 
@@ -330,14 +510,17 @@ curl --request DELETE \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-     "ids": ["test_1", "test_2"]
+     "ids": ["d94a8dc02c9711f0930f7fbc369eab6d", "e94a8dc02c9711f0930f7fbc369eab6e"]
      }'
 ```
 
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the datasets to delete. If it is not specified, all datasets will be deleted.
+- `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
+  Specifies the datasets to delete:
+  - If `null`, all datasets will be deleted.
+  - If an array of IDs, only the specified datasets will be deleted.
+  - If an empty array, no datasets will be deleted.
 
 #### Response
 
@@ -375,8 +558,13 @@ Updates configurations for a specified dataset.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
+  - `"avatar"`: `string`
+  - `"description"`: `string`
   - `"embedding_model"`: `string`
-  - `"chunk_method"`: `enum<string>`
+  - `"permission"`: `string`
+  - `"chunk_method"`: `string`
+  - `"pagerank"`: `int`
+  - `"parser_config"`: `object`
 
 ##### Request example
 
@@ -397,24 +585,74 @@ curl --request PUT \
   The ID of the dataset to update.
 - `"name"`: (*Body parameter*), `string`  
   The revised name of the dataset.
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters
+  - Case-insensitive
+- `"avatar"`: (*Body parameter*), `string`  
+  The updated base64 encoding of the avatar.
+  - Maximum 65535 characters
 - `"embedding_model"`: (*Body parameter*), `string`  
   The updated embedding model name.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
+- `"permission"`: (*Body parameter*), `string`  
+  The updated dataset permission. Available options:  
+  - `"me"`: (Default) Only you can manage the dataset.
+  - `"team"`: All team members can manage the dataset.
+- `"pagerank"`: (*Body parameter*), `int`  
+  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  - Default: `0`
+  - Minimum: `0`
+  - Maximum: `100`
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method for the dataset. Available options:  
-  - `"naive"`: General
-  - `"manual`: Manual
+  - `"naive"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
+  - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
   - `"qa"`: Q&A
   - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`:One
-  - `"email"`: Email
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
+  - `"tag"`: Tag
+- `"parser_config"`: (*Body parameter*), `object`  
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+  - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
+    - `"auto_keywords"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `32`
+    - `"auto_questions"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `10`
+    - `"chunk_token_num"`: `int`
+      - Defaults to `512`
+      - Minimum: `1`
+      - Maximum: `2048`
+    - `"delimiter"`: `string`
+      - Defaults to `"\n"`.
+    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format.
+      - Defaults to `false`
+    - `"layout_recognize"`: `string`
+      - Defaults to `DeepDOC`
+    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+    - `"task_page_size"`: `int` For PDF only.
+      - Defaults to `12`
+      - Minimum: `1`
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`
+    - `"graphrag"`: `object` GRAPHRAG-specific settings.
+      - Defaults to: `{"use_graphrag": false}`
+  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`.
+  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
 #### Response
 
@@ -495,10 +733,10 @@ Success:
             "id": "6e211ee0723611efa10a0242ac120007",
             "language": "English",
             "name": "mysql",
-            "chunk_method": "knowledge_graph",
+            "chunk_method": "naive",
             "parser_config": {
                 "chunk_token_num": 8192,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "entity_types": [
                     "organization",
                     "person",
@@ -528,27 +766,132 @@ Failure:
     "message": "The dataset doesn't exist"
 }
 ```
+ ---
 
+## Get dataset's knowledge graph
+
+**GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
+
+Retrieves the knowledge graph of a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "graph": {
+            "directed": false,
+            "edges": [
+                {
+                    "description": "The notice is a document issued to convey risk warnings and operational alerts.<SEP>The notice is a specific instance of a notification document issued under the risk warning framework.",
+                    "keywords": ["9", "8"],
+                    "source": "notice",
+                    "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c"],
+                    "src_id": "xxx",
+                    "target": "xxx",
+                    "tgt_id": "xxx",
+                    "weight": 17.0
+                }
+            ],
+            "graph": {
+                "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c", "8a7eb6424b5c11f0a5281a58e595aa1c"]
+            },
+            "multigraph": false,
+            "nodes": [
+                {
+                    "description": "xxx",
+                    "entity_name": "xxx",
+                    "entity_type": "ORGANIZATION",
+                    "id": "xxx",
+                    "pagerank": 0.10804906590624092,
+                    "rank": 3,
+                    "source_id": ["8a7eb6424b5c11f0a5281a58e595aa1c"]
+                }
+            ]
+        },
+        "mind_map": {}
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The dataset doesn't exist"
+}
+```
 ---
 
-## Error Codes
+## Delete dataset's knowledge graph
 
----
+**DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
-| Code | Message | Description |
-|------|---------|-------------|
-| 400  | Bad Request | Invalid request parameters |
-| 401  | Unauthorized | Unauthorized access |
-| 403  | Forbidden | Access denied |
-| 404  | Not Found | Resource not found |
-| 500  | Internal Server Error | Server internal error |
-| 1001 | Invalid Chunk ID | Invalid Chunk ID |
-| 1002 | Chunk Update Failed | Chunk update failed |
+Removes the knowledge graph of a specified dataset.
 
+#### Request
 
+- Method: DELETE
+- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
 
----
+##### Request example
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The dataset doesn't exist"
+}
+```
 ---
 
 ## FILE MANAGEMENT WITHIN DATASET
@@ -606,11 +949,11 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "run": "UNSTART",
@@ -663,7 +1006,7 @@ curl --request PUT \
      {
           "name": "manual.txt", 
           "chunk_method": "manual", 
-          "parser_config": {"chunk_token_count": 128}
+          "parser_config": {"chunk_token_num": 128}
      }'
 
 ```
@@ -675,7 +1018,7 @@ curl --request PUT \
 - `document_id`: (*Path parameter*)  
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
-- `"meta_fields"`: (*Body parameter*)， `dict[str, Any]` The meta fields of the document.
+- `"meta_fields"`: (*Body parameter*), `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
   - `"naive"`: General
@@ -692,19 +1035,15 @@ curl --request PUT \
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
+    - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -779,14 +1118,14 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
 
 Lists documents in a specified dataset.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -795,7 +1134,7 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -817,6 +1156,10 @@ curl --request GET \
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
+- `create_time_from`: (*Filter parameter*), `integer`
+  Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
+- `create_time_to`: (*Filter parameter*), `integer`
+  Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
 
 #### Response
 
@@ -838,13 +1181,13 @@ Success:
                 "name": "Test_2.txt",
                 "parser_config": {
                     "chunk_token_count": 128,
-                    "delimiter": "\n!?。；！？",
+                    "delimiter": "\n",
                     "layout_recognize": true,
                     "task_page_size": 12
                 },
                 "chunk_method": "naive",
                 "process_begin_at": null,
-                "process_duation": 0.0,
+                "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
                 "run": "0",
@@ -1091,6 +1434,7 @@ curl --request POST \
   The key terms or phrases to tag with the chunk.
 - `"questions"`(*Body parameter*), `list[string]`
   If there is a given question, the embedded chunks will be based on them
+
 #### Response
 
 Success:
@@ -1170,7 +1514,7 @@ Success:
     "data": {
         "chunks": [
             {
-                "available_int": 1,
+                "available": true,
                 "content": "This is a test content.",
                 "docnm_kwd": "1.txt",
                 "document_id": "b330ec2e91ec11efbc510242ac120004",
@@ -1194,15 +1538,15 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
-            "process_duation": 0.54213,
+            "process_duration": 0.54213,
             "progress": 0.0,
             "progress_msg": "Task dispatched...",
             "run": "2",
@@ -1385,6 +1729,7 @@ Retrieves chunks from specified datasets.
   - `"rerank_id"`: `string`  
   - `"keyword"`: `boolean`  
   - `"highlight"`: `boolean`
+  - `"cross_languages"`: `list[string]`  
 
 ##### Request example
 
@@ -1429,6 +1774,8 @@ curl --request POST \
   Specifies whether to enable highlighting of matched terms in the results:  
   - `true`: Enable highlighting of matched terms.
   - `false`: Disable highlighting of matched terms (default).
+- `"cross_languages"`: (*Body parameter*) `list[string]`  
+  The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 
 #### Response
 
@@ -1536,20 +1883,20 @@ curl --request POST \
   - `"top_p"`: `float`  
     Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
-    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
+    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
   - `"frequency penalty"`: `float`  
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow. If it is not explicitly set, a JSON object with the following values will be generated as the default. A `prompt` JSON object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
+  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `6`.
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
     - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
     - The default value is `[{"key": "knowledge", "optional": true}]`.
   - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
-  -  `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
+  - `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
@@ -1772,7 +2119,7 @@ Lists chat assistants.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -1780,7 +2127,7 @@ Lists chat assistants.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -1920,7 +2267,7 @@ Success:
         "id": "4606b4ec87ad11efbc4f0242ac120006",
         "messages": [
             {
-                "content": "Hi! I am your assistant，can I help you?",
+                "content": "Hi! I am your assistant, can I help you?",
                 "role": "assistant"
             }
         ],
@@ -2061,7 +2408,7 @@ Success:
             "id": "578d541e87ad11ef96b90242ac120006",
             "messages": [
                 {
-                    "content": "Hi! I am your assistant，can I help you?",
+                    "content": "Hi! I am your assistant, can I help you?",
                     "role": "assistant"
                 }
             ],
@@ -2148,8 +2495,10 @@ Failure:
 Asks a specified chat assistant a question to start an AI-powered conversation.
 
 :::tip NOTE
+
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
+
   ```json
   data:
   {
@@ -2157,6 +2506,7 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
     "data": true
   }
   ```
+
 :::
 
 #### Request
@@ -2183,6 +2533,7 @@ curl --request POST \
      {
      }'
 ```
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/chats/{chat_id}/completions \
@@ -2214,6 +2565,7 @@ curl --request POST \
 #### Response
 
 Success without `session_id`:
+
 ```json
 data:{
     "code": 0,
@@ -2504,8 +2856,10 @@ Failure:
 Asks a specified agent a question to start an AI-powered conversation.
 
 :::tip NOTE
+
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
+
   ```json
   data:
   {
@@ -2513,6 +2867,7 @@ Asks a specified agent a question to start an AI-powered conversation.
     "data": true
   }
   ```
+
 :::
 
 #### Request
@@ -2529,9 +2884,16 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"user_id"`: `string`(optional)
   - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
+
+:::info IMPORTANT
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+:::
+
 ##### Request example
-If the **Begin** component does not take parameters, the following code will create a session.
-```bash 
+
+- If the **Begin** component does not take parameters, the following code will create a session.
+
+```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
      --header 'Content-Type: application/json' \
@@ -2540,7 +2902,9 @@ curl --request POST \
      {
      }'
 ```
-If the **Begin** component takes parameters, the following code will create a session.
+
+- If the **Begin** component takes parameters, the following code will create a session.  
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2552,7 +2916,9 @@ curl --request POST \
           "file":"How is the weather tomorrow?"
      }'
 ```
+
 The following code will execute the completion process
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2586,7 +2952,9 @@ curl --request POST \
   Parameters specified in the **Begin** component.
 
 #### Response
+
 success without `session_id` provided and with no parameters specified in the **Begin** component:
+
 ```json
 data:{
     "code": 0,
@@ -2641,7 +3009,9 @@ data:{
 }
 data:
 ```
+
 Success with parameters specified in the **Begin** component:
+
 ```json
 data:{
     "code": 0,
@@ -2979,6 +3349,87 @@ Failure:
     "message": "The agent doesn't own the session cbd31e52f73911ef93b232903b842af6"
 }
 ```
+
+---
+
+### Generate related questions
+
+**POST** `/v1/sessions/related_questions`
+
+Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
+
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
+
+![Image](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/login_token.jpg)
+
+:::tip NOTE
+The chat model autonomously determines the number of questions to generate based on the instruction, typically between five and ten.
+:::
+
+#### Request
+
+- Method: POST
+- URL: `/v1/sessions/related_questions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"question"`: `string`
+  - `"industry"`: `string`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/v1/sessions/related_questions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --data '
+     {
+          "question": "What are the key advantages of Neovim over Vim?",
+          "industry": "software_development"
+     }'
+```
+
+##### Request Parameters
+
+- `"question"`: (*Body Parameter*), `string`
+  The original user question.
+- `"industry"`: (*Body Parameter*), `string`
+  Industry of the question.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        "What makes Neovim superior to Vim in terms of features?",
+        "How do the benefits of Neovim compare to those of Vim?",
+        "What advantages does Neovim offer that are not present in Vim?",
+        "In what ways does Neovim outperform Vim in functionality?",
+        "What are the most significant improvements in Neovim compared to Vim?",
+        "What unique advantages does Neovim bring to the table over Vim?",
+        "How does the user experience in Neovim differ from Vim in terms of benefits?",
+        "What are the top reasons to switch from Vim to Neovim?",
+        "What features of Neovim are considered more advanced than those in Vim?"
+    ],
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 401,
+    "data": null,
+    "message": "<Unauthorized '401: Unauthorized'>"
+}
+```
+
 ---
 
 ## AGENT MANAGEMENT
@@ -3091,6 +3542,194 @@ Failure:
 {
     "code": 102,
     "message": "The agent doesn't exist."
+}
+```
+
+---
+
+### Create agent
+
+**POST** `/api/v1/agents`
+
+Create an agent.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/agents`
+- Headers:
+  - `'Content-Type: application/json`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"title"`: `string`
+  - `"description"`: `string`
+  - `"dsl"`: `object`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+         "title": "Test Agent",
+         "description": "A test agent",
+         "dsl": {
+           // ... Canvas DSL here ...
+         }
+     }'
+```
+
+##### Request parameters
+
+- `title`: (*Body parameter*), `string`, *Required*  
+  The title of the agent.
+- `description`: (*Body parameter*), `string`  
+  The description of the agent. Defaults to `None`.
+- `dsl`: (*Body parameter*), `object`, *Required*  
+  The canvas DSL object of the agent.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Agent with title test already exists."
+}
+```
+
+---
+
+### Update agent
+
+**PUT** `/api/v1/agents/{agent_id}`
+
+Update an agent by id.
+
+#### Request
+
+- Method: PUT
+- URL: `/api/v1/agents/{agent_id}`
+- Headers:
+  - `'Content-Type: application/json`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"title"`: `string`
+  - `"description"`: `string`
+  - `"dsl"`: `object`
+
+##### Request example
+
+```bash
+curl --request PUT \
+     --url http://{address}/api/v1/agents/58af890a2a8911f0a71a11b922ed82d6 \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+         "title": "Test Agent",
+         "description": "A test agent",
+         "dsl": {
+           // ... Canvas DSL here ...
+         }
+     }'
+```
+
+##### Request parameters
+
+- `agent_id`: (*Path parameter*), `string`  
+  The id of the agent to be updated.
+- `title`: (*Body parameter*), `string`  
+  The title of the agent.
+- `description`: (*Body parameter*), `string`  
+  The description of the agent.
+- `dsl`: (*Body parameter*), `object`  
+  The canvas DSL object of the agent.
+
+Only specify the parameter you want to change in the request body. If a parameter does not exist or is `None`, it won't be updated.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 103,
+    "message": "Only owner of canvas authorized for this operation."
+}
+```
+
+---
+
+### Delete agent
+
+**DELETE** `/api/v1/agents/{agent_id}`
+
+Delete an agent by id.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/agents/{agent_id}`
+- Headers:
+  - `'Content-Type: application/json`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/58af890a2a8911f0a71a11b922ed82d6 \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{}'
+```
+
+##### Request parameters
+
+- `agent_id`: (*Path parameter*), `string`  
+  The id of the agent to be deleted.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 103,
+    "message": "Only owner of canvas authorized for this operation."
 }
 ```
 

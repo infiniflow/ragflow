@@ -37,6 +37,7 @@ export default {
       embedIntoSite: '嵌入网站',
       previousPage: '上一页',
       nextPage: '下一页',
+      add: '添加',
     },
     login: {
       login: '登录',
@@ -70,6 +71,7 @@ export default {
       fileManager: '文件管理',
       flow: 'Agent',
       search: '搜索',
+      welcome: '欢迎来到',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -103,6 +105,8 @@ export default {
       disabled: '禁用',
       action: '动作',
       parsingStatus: '解析状态',
+      parsingStatusTip:
+        '文本解析的时间取决于诸多因素。如果开启了知识图谱、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
@@ -110,7 +114,7 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
+        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
       vectorSimilarityWeight: '关键字相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
@@ -139,7 +143,7 @@ export default {
       toMessage: '缺少结束页码（不包含）',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。',
+        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dev/select_pdf_parser。',
       taskPageSize: '任务页面大小',
       taskPageSizeMessage: '请输入您的任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
@@ -156,18 +160,18 @@ export default {
       cancel: '取消',
       rerankModel: 'Rerank模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
+      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。如需选用 rerank 模型，建议使用 SaaS 的 rerank 模型服务；如果你倾向使用本地部署的 rerank 模型，请务必确保你使用 docker-compose-gpu.yml 启动 RAGFlow。`,
       topK: 'Top-K',
-      topKTip: `K块将被送入Rerank型号。`,
+      topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
       delimiterTip:
-        '支持多字符作为分隔符，多字符分隔符用 ` 包裹。如配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
       html4excel: '表格转HTML',
-      html4excelTip: `开启后电子表格会被解析为 HTML 表格，每张表格最多 256 行，否则会按行解析为键值对。`,
+      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
       autoKeywords: '自动关键词提取',
-      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。`,
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自动问题提取',
-      autoQuestionsTip: `在查询此类问题时，为每个块提取 N 个问题以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。如果发生错误，此功能不会破坏整个分块过程，除了将空结果添加到原始块。`,
+      autoQuestionsTip: `利用“系统模型设置”中设置的 chat model 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
       setMetaData: '设置元数据',
       pleaseInputJson: '请输入JSON',
@@ -195,11 +199,13 @@ export default {
         '该文档与知识图谱相关联。删除后，相关节点和关系信息将被删除，但图不会立即更新。更新图动作是在解析承载知识图谱提取任务的新文档的过程中执行的。',
       plainText: 'Naive',
       reRankModelWaring: '重排序模型非常耗时。',
+      theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
       name: '知识库名称',
       photo: '知识库图片',
+      photoTip: '你可以上传4MB的文件',
       description: '描述',
       language: '文档语言',
       languageMessage: '请输入语言',
@@ -209,9 +215,11 @@ export default {
       chunkTokenNumber: '建议文本块大小',
       chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
-        '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
-      permissionsTip: '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
-      chunkTokenNumberTip: '建议的生成文本块的 token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
+        '知识库采用的默认嵌入模型。 一旦知识库内已经产生了文本块后，你将无法更改默认的嵌入模型，除非删除知识库内的所有文本块。',
+      permissionsTip:
+        '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
+      chunkTokenNumberTip:
+        '建议的生成文本块的 token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
       chunkMethod: '切片方法',
       chunkMethodTip: '说明位于右侧。',
       upload: '上传',
@@ -225,7 +233,8 @@ export default {
       cancel: '取消',
       methodTitle: '分块方法说明',
       methodExamples: '示例',
-      methodExamplesDescription: '提出以下屏幕截图以促进理解。',
+      methodExamplesDescription:
+        '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -240,7 +249,7 @@ export default {
       我们假设手册具有分层部分结构。 我们使用最低的部分标题作为对文档进行切片的枢轴。
       因此，同一部分中的图和表不会被分割，并且块大小可能会很大。
       </p>`,
-      naive: `<p>支持的文件格式为<b>DOCX、XLSX、XLS (Excel97~2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式为<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
@@ -317,18 +326,19 @@ export default {
 <p>接下来，将分块传输到 LLM 以提取知识图谱和思维导图的节点和关系。</p>
 
 注意您需要指定的条目类型。</p>`,
-      tag: `<p>使用“标签”作为分块方法的知识库应该被其他知识库使用，以将标签添加到其块中，对这些块的查询也将带有标签。</p>
-<p>使用“标签”作为分块方法的知识库<b>不</b>应该参与 RAG 过程。</p>
-<p>此知识库中的块是标签的示例，它们演示了整个标签集以及块和标签之间的相关性。</p>
+      tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
+<p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
+<p>标签集中的每个文本分块是都是相互独立的标签和标签描述的文本对。</p>
 
-<p>此块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
-<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于内容，另一列用于标签，内容列位于标签列之前。可以接受多个工作表，只要列结构正确即可。</p>
+<p>Tag 分块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
+<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
 <p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
-<p>在标签列中，标签之间使用英文 <b>逗号</b>。</p>
-<i>不符合上述规则的文本行将被忽略，并且每对文本将被视为一个不同的块。</i>
+<p>在标签列中，标签之间使用英文逗号分隔。</p>
+<i>不符合上述规则的文本行将被忽略。</i>
 `,
-      useRaptor: '使用召回增强RAPTOR策略',
-      useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
+      useRaptor: '使用召回增强 RAPTOR 策略',
+      useRaptorTip:
+        '为多跳问答任务启用 RAPTOR，详情请见 : https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
@@ -342,14 +352,15 @@ export default {
       maxClusterMessage: '最大聚类数是必填项',
       randomSeed: '随机种子',
       randomSeedMessage: '随机种子是必填项',
-      promptTip: 'LLM提示用于总结。',
-      maxTokenTip: '用于汇总的最大token数。',
-      thresholdTip: '阈值越大，聚类越少。',
-      maxClusterTip: '最大聚类数。',
+      promptTip:
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+      maxTokenTip: '用于设定每个被总结的文本块的最大 token 数。',
+      thresholdTip:
+        '在 RAPTOR 中，数据块会根据它们的语义相似性进行聚类。阈值设定了数据块被分到同一组所需的最小相似度。阈值越高，每个聚类中的数据块越少；阈值越低，则每个聚类中的数据块越多。',
+      maxClusterTip: '最多可创建的聚类数。',
       entityTypes: '实体类型',
       pageRank: '页面排名',
-      pageRankTip: `这用于提高相关性得分。所有检索到的块的相关性得分将加上此数字。
-当您想首先搜索给定的知识库时，请设置比其他知识库更高的 pagerank 得分。`,
+      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dev/set_page_rank。`,
       tagName: '标签',
       frequency: '频次',
       searchTags: '搜索标签',
@@ -358,7 +369,7 @@ export default {
       tagSet: '标签集',
       topnTags: 'Top-N 标签',
       tagSetTip: `
-      <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。 </p>
+      <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。</p>
       <p>对这些文本块的查询也将自动关联相应标签。 </p>
       <p>此功能基于文本相似度，能够为数据集的文本块批量添加更多领域知识，从而显著提高检索准确性。该功能还能提升大量文本块的操作效率。</p>
       <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
@@ -373,7 +384,7 @@ export default {
       addTag: '增加标签',
       useGraphRag: '提取知识图谱',
       useGraphRagTip:
-        '文件分块后，所有块将用于知识图谱生成，这对多跳和复杂问题的推理大有帮助。',
+        '基于知识库内所有切好的文本块构建知识图谱，用以提升多跳和复杂问题回答的正确率。请注意：构建知识图谱将消耗大量 token 和时间。详见 https://ragflow.io/docs/dev/construct_knowledge_graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统`,
@@ -403,6 +414,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mind: '思维导图',
       question: '问题',
       questionTip: `如果有给定的问题，则块的嵌入将基于它们。`,
+      chunkResult: '切片结果',
+      chunkResultTip: `查看用于嵌入和召回的切片段落。`,
+      enable: '启用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新会话',
@@ -413,9 +429,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chat: '聊天',
       newChat: '新建聊天',
       send: '发送',
-      sendPlaceholder: '消息概要助手...',
+      sendPlaceholder: '给助理发送消息...',
       chatConfiguration: '聊天配置',
-      chatConfigurationDescription: '在这里，为你的专业知识库装扮专属助手！ 💕',
+      chatConfigurationDescription: '为你的知识库配置专属聊天助手！ 💕',
       assistantName: '助理姓名',
       assistantNameMessage: '助理姓名是必填项',
       namePlaceholder: '例如 贾维斯简历',
@@ -429,7 +445,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       setAnOpenerTip: '您想如何欢迎您的客户？',
       knowledgeBases: '知识库',
       knowledgeBasesMessage: '请选择',
-      knowledgeBasesTip: '选择关联的知识库。',
+      knowledgeBasesTip:
+        '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
       systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
@@ -437,14 +454,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         以上是知识库。`,
       systemMessage: '请输入',
       systemTip:
-        '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。',
+        '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',
-      variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-      这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
-      “知识”是一个非常特殊的变量，它将用检索到的块填充。
-      “系统提示词”中的所有变量都应该用大括号括起来。`,
+      variableTip: `你可以通过对话 API，并配合变量设置来动态调整大模型的系统提示词。
+      {knowledge}为系统预留变量，代表从指定知识库召回的文本块。
+      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
       add: '新增',
       key: '关键字',
       optional: '可选的',
@@ -452,6 +468,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       model: '模型',
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
+      modelEnabledTools: '可用的工具',
+      modelEnabledToolsTip:
+        '请选择一个或多个可供该模型所使用的工具。仅对支持工具调用的模型生效。',
       freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
@@ -529,17 +548,21 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       useKnowledgeGraphTip:
         '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
       keyword: '关键词分析',
-      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
+      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。对长查询效果较好，但会延长响应时间。`,
       reasoning: '推理',
       reasoningTip:
-        '是否像 Deepseek-R1 / OpenAI o1一样通过推理产生答案。启用后，允许模型在遇到未知情况时将代理搜索过程集成到推理工作流中，自行动态检索外部知识，并通过推理生成最终答案。',
+        '在问答过程中是否启用推理工作流，例如Deepseek-R1或OpenAI o1等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何获取？',
+      crossLanguage: '跨语言搜索',
+      crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
     },
     setting: {
       profile: '概要',
+      avatar: '头像',
+      avatarTip: '这会在你的个人主页展示',
       profileDescription: '在此更新您的照片和个人详细信息。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',
@@ -554,6 +577,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       team: '团队',
       system: '系统',
       logout: '登出',
+      api: 'API',
       username: '用户名',
       usernameMessage: '请输入用户名',
       photo: '头像',
@@ -571,6 +595,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       currentPassword: '当前密码',
       currentPasswordMessage: '请输入当前密码',
       newPassword: '新密码',
+      changePassword: '修改密码',
       newPasswordMessage: '请输入新密码',
       newPasswordDescription: '您的新密码必须超过 8 个字符。',
       confirmPassword: '确认新密码',
@@ -584,28 +609,33 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       apiKeyMessage: '请输入api key（如果是本地部署的模型，请忽略它）',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隐藏模型',
       baseUrl: 'Base-Url',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
       modify: '修改',
-      systemModelSettings: '系统模型设置',
+      systemModelSettings: '设置默认模型',
       chatModel: '聊天模型',
-      chatModelTip: '所有新创建的知识库都会使用默认的聊天LLM。',
+      chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
       ttsModel: 'TTS模型',
-      ttsModelTip: '默认的tts模型会被用于在对话过程中请求语音生成时使用',
+      ttsModelTip:
+        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       embeddingModel: '嵌入模型',
-      embeddingModelTip: '所有新创建的知识库都将使用的默认嵌入模型。',
+      embeddingModelTip:
+        '所有新创建的知识库使用的默认嵌入模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含嵌入模型)；或根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       img2txtModel: 'Img2txt模型',
       img2txtModelTip:
-        '所有新创建的知识库都将使用默认的多模块模型。 它可以描述图片或视频。',
+        '所有新创建的知识库都将使用默认的 img2txt 模型。 它可以描述图片或视频。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       sequence2txtModel: 'Speech2txt模型',
       sequence2txtModelTip:
-        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
+        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       rerankModel: 'Rerank模型',
-      rerankModelTip: `默认的重读模型用于用户问题检索到重读块。`,
+      rerankModelTip: `默认的 reranking 模型。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。`,
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
+      editLlmTitle: '编辑 {{name}} 模型',
+      editModel: '编辑模型',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',
@@ -673,7 +703,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn: `请先在<b>模型提供商</b>中添加嵌入模型和LLM，然后在“系统模型设置”中设置它们。`,
+      modelProvidersWarn: `请先在<b>模型提供商</b>中添加嵌入模型和LLM，然后在“设置默认模型”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -687,6 +717,18 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       sureDelete: '您确定要删除该成员吗？',
       quit: '退出',
       sureQuit: '确定退出加入的团队吗？',
+      secretKey: '密钥',
+      publicKey: '公钥',
+      secretKeyMessage: '请输入私钥',
+      publicKeyMessage: '请输入公钥',
+      hostMessage: '请输入 host',
+      configuration: '配置',
+      langfuseDescription:
+        '跟踪、评估、提示管理和指标，以调试和改进您的 LLM 应用程序。',
+      viewLangfuseSDocumentation: '查看 Langfuse 的文档',
+      view: '查看',
+      modelsToBeAddedTooltip:
+        '如果你的模型供应商在这里没有列出，但是宣称 OpenAI-compatible，可以通过选择卡片 OpenAI-API-compatible 设置相关模型。',
     },
     message: {
       registered: '注册成功',
@@ -747,6 +789,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     flow: {
       flow: '工作流',
       noMoreData: '没有更多数据了',
+      historyversion: '历史版本',
+      version: {
+        details: '版本详情',
+        download: '下载',
+      },
       cite: '引用',
       citeTip: '引用',
       name: '名称',
@@ -755,7 +802,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       examples: '示例',
       to: '下一步',
       msg: '消息',
-      messagePlaceholder: '消息',
+      msgTip: '输出上游组件的变量内容或者自己输入的文本。',
+      messagePlaceholder: '请输入您的消息内容，使用‘/’快速插入变量。',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       addMessage: '新增消息',
@@ -779,7 +827,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
-        '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
+        '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
       switchDescription: `该组件用于根据前面组件的输出评估条件，并相应地引导执行流程。通过定义各种情况并指定操作，或在不满足条件时采取默认操作，实现复杂的分支逻辑。`,
       wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
@@ -815,7 +863,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       news: '新闻',
       messageHistoryWindowSize: '历史消息窗口大小',
       messageHistoryWindowSizeTip:
-        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
+        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
       wikipedia: '维基百科',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
@@ -999,7 +1047,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用该模板',
+      useTemplate: '使用',
       wenCai: '问财',
       queryType: '查询类型',
       wenCaiDescription:
@@ -1102,7 +1150,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       note: '注释',
       noteDescription: '注释',
       notePlaceholder: '请输入注释',
-      invoke: 'Invoke',
+      invoke: 'HTTP 请求',
       invokeDescription:
         '该组件可以调用远程端点调用。将其他组件的输出作为参数或设置常量参数来调用远程函数。',
       url: 'Url',
@@ -1152,7 +1200,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       jsonUploadTypeErrorMessage: '请上传json文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
       iteration: '循环',
-      iterationDescription: `该组件首先将输入以“分隔符”分割成数组，然后依次对数组中的元素执行相同的操作步骤，直到输出所有结果，可以理解为一个任务批处理器。例如在长文本翻译迭代节点中，如果所有内容都输入到LLM节点，可能会达到单次对话的限制，上游节点可以先将长文本分割成多个片段，配合迭代节点对每个片段进行批量翻译，避免达到单次对话的LLM消息限制。`,
+      iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
       delimiterOptions: {
         comma: '逗号',
@@ -1167,6 +1215,77 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      setting: '设置',
+      settings: {
+        agentSetting: 'Agent设置',
+        title: '标题',
+        description: '描述',
+        upload: '上传',
+        photo: '照片',
+        permissions: '权限',
+        permissionsTip: '你可以在这里设置团队访问权限。',
+        me: '仅限自己',
+        team: '团队',
+      },
+      systemPrompt: '系统提示词',
+      prompt: '提示词',
+      promptMessage: '提示词是必填项',
+      promptTip:
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+      knowledgeBasesTip: '选择关联的知识库，或者在下方选择包含知识库ID的变量。',
+      knowledgeBaseVars: '知识库变量',
+      code: '代码',
+      codeDescription: '它允许开发人员编写自定义 Python 逻辑。',
+      inputVariables: '输入变量',
+      addVariable: '新增变量',
+      runningHintText: '正在运行中...🕞',
+      openingSwitch: '开场白开关',
+      openingCopy: '开场白文案',
+      openingSwitchTip: '您的用户将在开始时看到此欢迎消息。',
+      modeTip: '模式定义了工作流的启动方式。',
+      beginInputTip: '通过定义输入参数，此内容可以被后续流程中的其他组件访问。',
+      query: '查询变量',
+      agent: 'Agent',
+      agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
+      maxRecords: '最大记录数',
+      createAgent: 'Create Agent',
+      stringTransform: '文本处理',
+      userFillUp: '等待输入',
+      userFillUpDescription: `此组件会暂停当前的流程并等待用户发送消息，接收到消息之后再进行之后的流程。`,
+
+      codeExec: '代码',
+      tavilySearch: 'Tavily Search',
+      tavilySearchDescription: '通过 Tavily 服务搜索结果',
+      tavilyExtract: 'Tavily Extract',
+      tavilyExtractDescription: 'Tavily Extract',
+      log: '日志',
+      management: '管理',
+      import: '导入',
+      export: '导出',
+      subject: '主题',
+      logTimeline: {
+        begin: '准备开始',
+        userFillUp: '等你输入',
+        agent: '智能体正在思考',
+        retrieval: '查找知识',
+        message: '回复',
+        awaitResponse: '等你输入',
+        switch: '选择最佳路线',
+        iteration: '批量处理',
+        categorize: '信息归类',
+        code: '运行小段代码',
+        textProcessing: '整理文字',
+        tavilySearch: '正在网上搜索',
+        tavilyExtract: '读取网页内容',
+        exeSQL: '查询数据库',
+        google: '正在网上搜索',
+        wikipedia: '搜索维基百科',
+        googleScholar: '学术检索',
+        gitHub: '搜索',
+        email: '发送邮件',
+        httpRequest: '请求接口',
+        wenCai: '查询财务数据',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1176,5 +1295,19 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       knowledge: 'knowledge',
       chat: 'chat',
     },
+    llmTools: {
+      bad_calculator: {
+        name: '计算器',
+        description: '用于计算两个数的和的工具（会给出错误答案）',
+        params: {
+          a: '第一个数',
+          b: '第二个数',
+        },
+      },
+    },
+  },
+  modal: {
+    okText: '确认',
+    cancelText: '取消',
   },
 };

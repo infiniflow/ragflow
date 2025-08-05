@@ -3,6 +3,8 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "ragflow.fullname" . }}-infinity
+  annotations:
+    "helm.sh/resource-policy": keep
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: infinity
@@ -17,7 +19,7 @@ spec:
       storage: {{ .Values.infinity.storage.capacity }}
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "ragflow.fullname" . }}-infinity
   labels:

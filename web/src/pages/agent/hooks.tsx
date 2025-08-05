@@ -5,34 +5,20 @@ import {
   Position,
   ReactFlowInstance,
 } from '@xyflow/react';
-import React, {
-  ChangeEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 // import { shallow } from 'zustand/shallow';
 import { settledModelVariableMap } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
-import {
-  ICategorizeForm,
-  IRelevantForm,
-  ISwitchForm,
-  RAGFlowNodeType,
-} from '@/interfaces/database/flow';
-import { message } from 'antd';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { humanId } from 'human-id';
 import { get, lowerFirst, omit } from 'lodash';
-import trim from 'lodash/trim';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { v4 as uuid } from 'uuid';
 import {
   NodeMap,
   Operator,
   RestrictedUpstreamMap,
-  SwitchElseTo,
+  initialAgentValues,
   initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
@@ -40,6 +26,7 @@ import {
   initialBeginValues,
   initialBingValues,
   initialCategorizeValues,
+  initialCodeValues,
   initialConcentratorValues,
   initialCrawlerValues,
   initialDeepLValues,
@@ -62,8 +49,11 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTavilyExtractValues,
+  initialTavilyValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
@@ -72,7 +62,6 @@ import useGraphStore, { RFState } from './store';
 import {
   buildCategorizeObjectFromList,
   generateNodeNamesWithIncreasingIndex,
-  generateSwitchHandleText,
   getNodeDragHandle,
   getRelativePositionToIterationNode,
   replaceIdWithText,
@@ -86,6 +75,8 @@ const selector = (state: RFState) => ({
   onConnect: state.onConnect,
   setNodes: state.setNodes,
   onSelectionChange: state.onSelectionChange,
+  onEdgeMouseEnter: state.onEdgeMouseEnter,
+  onEdgeMouseLeave: state.onEdgeMouseLeave,
 });
 
 export const useSelectCanvasData = () => {
@@ -141,6 +132,11 @@ export const useInitializeOperatorParams = () => {
       [Operator.Email]: initialEmailValues,
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationValues,
+      [Operator.Code]: initialCodeValues,
+      [Operator.WaitingDialogue]: initialWaitingDialogueValues,
+      [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
+      [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.TavilyExtract]: initialTavilyExtractValues,
     };
   }, [llmId]);
 
@@ -257,7 +253,7 @@ export const useHandleDrop = () => {
     [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
   );
 
-  return { onDrop, onDragOver, setReactFlowInstance };
+  return { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance };
 };
 
 export const useHandleFormValuesChange = (
@@ -292,7 +288,13 @@ export const useHandleFormValuesChange = (
   useEffect(() => {
     const subscription = form?.watch((value, { name, type, values }) => {
       if (id && name) {
-        console.log('🚀 ~ useEffect ~ value:', type, values);
+        console.log(
+          '🚀 ~ useEffect ~ value:',
+          name,
+          type,
+          values,
+          operatorName,
+        );
         let nextValues: any = value;
 
         // Fixed the issue that the related form value does not change after selecting the freedom field of the model
@@ -318,7 +320,10 @@ export const useHandleFormValuesChange = (
             category_description: buildCategorizeObjectFromList(value.items),
           };
         }
-        updateNodeForm(id, nextValues);
+        // Manually triggered form updates are synchronized to the canvas
+        if (type) {
+          updateNodeForm(id, nextValues);
+        }
       }
     });
     return () => subscription?.unsubscribe();
@@ -328,7 +333,7 @@ export const useHandleFormValuesChange = (
 };
 
 export const useValidateConnection = () => {
-  const { edges, getOperatorTypeFromId, getParentIdById } = useGraphStore(
+  const { getOperatorTypeFromId, getParentIdById } = useGraphStore(
     (state) => state,
   );
 
@@ -351,60 +356,22 @@ export const useValidateConnection = () => {
       const isSelfConnected = connection.target === connection.source;
 
       // limit the connection between two nodes to only one connection line in one direction
-      const hasLine = edges.some(
-        (x) => x.source === connection.source && x.target === connection.target,
-      );
+      // const hasLine = edges.some(
+      //   (x) => x.source === connection.source && x.target === connection.target,
+      // );
 
       const ret =
         !isSelfConnected &&
-        !hasLine &&
         RestrictedUpstreamMap[
           getOperatorTypeFromId(connection.source) as Operator
         ]?.every((x) => x !== getOperatorTypeFromId(connection.target)) &&
         isSameNodeChild(connection);
       return ret;
     },
-    [edges, getOperatorTypeFromId, isSameNodeChild],
+    [getOperatorTypeFromId, isSameNodeChild],
   );
 
   return isValidConnection;
-};
-
-export const useHandleNodeNameChange = ({
-  id,
-  data,
-}: {
-  id?: string;
-  data: any;
-}) => {
-  const [name, setName] = useState<string>('');
-  const { updateNodeName, nodes } = useGraphStore((state) => state);
-  const previousName = data?.name;
-
-  const handleNameBlur = useCallback(() => {
-    const existsSameName = nodes.some((x) => x.data.name === name);
-    if (trim(name) === '' || existsSameName) {
-      if (existsSameName && previousName !== name) {
-        message.error('The name cannot be repeated');
-      }
-      setName(previousName);
-      return;
-    }
-
-    if (id) {
-      updateNodeName(id, name);
-    }
-  }, [name, id, updateNodeName, previousName, nodes]);
-
-  const handleNameChange = useCallback((e: ChangeEvent<any>) => {
-    setName(e.target.value);
-  }, []);
-
-  useEffect(() => {
-    setName(previousName);
-  }, [previousName]);
-
-  return { name, handleNameBlur, handleNameChange };
 };
 
 export const useReplaceIdWithName = () => {
@@ -427,121 +394,6 @@ export const useReplaceIdWithText = (output: unknown) => {
     replacedOutput: replaceIdWithText(output, getNameById),
     getNameById,
   };
-};
-
-/**
- *  monitor changes in the data.form field of the categorize and relevant operators
- *  and then synchronize them to the edge
- */
-export const useWatchNodeFormDataChange = () => {
-  const { getNode, nodes, setEdgesByNodeId } = useGraphStore((state) => state);
-
-  const buildCategorizeEdgesByFormData = useCallback(
-    (nodeId: string, form: ICategorizeForm) => {
-      // add
-      // delete
-      // edit
-      const categoryDescription = form.category_description;
-      const downstreamEdges = Object.keys(categoryDescription).reduce<Edge[]>(
-        (pre, sourceHandle) => {
-          const target = categoryDescription[sourceHandle]?.to;
-          if (target) {
-            pre.push({
-              id: uuid(),
-              source: nodeId,
-              target,
-              sourceHandle,
-            });
-          }
-
-          return pre;
-        },
-        [],
-      );
-
-      setEdgesByNodeId(nodeId, downstreamEdges);
-    },
-    [setEdgesByNodeId],
-  );
-
-  const buildRelevantEdgesByFormData = useCallback(
-    (nodeId: string, form: IRelevantForm) => {
-      const downstreamEdges = ['yes', 'no'].reduce<Edge[]>((pre, cur) => {
-        const target = form[cur as keyof IRelevantForm] as string;
-        if (target) {
-          pre.push({ id: uuid(), source: nodeId, target, sourceHandle: cur });
-        }
-
-        return pre;
-      }, []);
-
-      setEdgesByNodeId(nodeId, downstreamEdges);
-    },
-    [setEdgesByNodeId],
-  );
-
-  const buildSwitchEdgesByFormData = useCallback(
-    (nodeId: string, form: ISwitchForm) => {
-      // add
-      // delete
-      // edit
-      const conditions = form.conditions;
-      const downstreamEdges = conditions.reduce<Edge[]>((pre, _, idx) => {
-        const target = conditions[idx]?.to;
-        if (target) {
-          pre.push({
-            id: uuid(),
-            source: nodeId,
-            target,
-            sourceHandle: generateSwitchHandleText(idx),
-          });
-        }
-
-        return pre;
-      }, []);
-
-      // Splice the else condition of the conditional judgment to the edge list
-      const elseTo = form[SwitchElseTo];
-      if (elseTo) {
-        downstreamEdges.push({
-          id: uuid(),
-          source: nodeId,
-          target: elseTo,
-          sourceHandle: SwitchElseTo,
-        });
-      }
-
-      setEdgesByNodeId(nodeId, downstreamEdges);
-    },
-    [setEdgesByNodeId],
-  );
-
-  useEffect(() => {
-    nodes.forEach((node) => {
-      const currentNode = getNode(node.id);
-      const form = currentNode?.data.form ?? {};
-      const operatorType = currentNode?.data.label;
-      switch (operatorType) {
-        case Operator.Relevant:
-          buildRelevantEdgesByFormData(node.id, form as IRelevantForm);
-          break;
-        case Operator.Categorize:
-          buildCategorizeEdgesByFormData(node.id, form as ICategorizeForm);
-          break;
-        case Operator.Switch:
-          buildSwitchEdgesByFormData(node.id, form as ISwitchForm);
-          break;
-        default:
-          break;
-      }
-    });
-  }, [
-    nodes,
-    buildCategorizeEdgesByFormData,
-    getNode,
-    buildRelevantEdgesByFormData,
-    buildSwitchEdgesByFormData,
-  ]);
 };
 
 export const useDuplicateNode = () => {

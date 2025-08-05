@@ -29,6 +29,11 @@ If you are on an ARM platform, follow [this guide](./develop/build_docker_image.
 - RAM &ge; 16 GB;
 - Disk &ge; 50 GB;
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor ([sandbox](https://github.com/infiniflow/ragflow/tree/main/sandbox)) feature of RAGFlow.
+
+:::tip NOTE
+If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
+:::
 
 ## Start up the server
 
@@ -39,7 +44,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.17.2 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.20.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -148,7 +153,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    This change will be reset after you restart Docker. If you forget to update the value the next time you start up the server, you may get a `Can't connect to ES cluster` exception.
    :::
 
-   1.2. If you do not wish to have to run those commands each time you restart Docker, you can update your `%USERPROFILE%.wslconfig` as follows to keep your change permanent and globally for all WSL distributions:
+   1.2. If you prefer not to run those commands every time you restart Docker, you can update your `%USERPROFILE%.wslconfig` as follows to keep your change permanent and global for all WSL distributions:
 
    ```bash
    [wsl2]
@@ -179,13 +184,13 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.17.2
+   $ git checkout -f v0.20.0
    ```
 
 3. Use the pre-built Docker images and start up the server:
 
    :::tip NOTE
-   The command below downloads the `v0.17.2-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.17.2-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2` for the full edition `v0.17.2`.
+   The command below downloads the `v0.20.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.20.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.0` for the full edition `v0.20.0`.
    :::
 
    ```bash
@@ -202,14 +207,27 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 | RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.17.2`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.17.2-slim`      | &approx;2       | ❌                                        | Stable release           |
+| `v0.20.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
+| `v0.20.0-slim`      | &approx;2       | ❌                                        | Stable release           |
 | `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
 | `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
 
 ```mdx-code-block
 </APITable>
 ```
+
+:::danger IMPORTANT
+The embedding models included in `v0.20.0` and `nightly` are:
+
+- BAAI/bge-large-zh-v1.5
+- maidalun1020/bce-embedding-base_v1
+
+These two embedding models are optimized specifically for English and Chinese, so performance will be compromised if you use them to embed documents in other languages.
+:::
+
+:::tip NOTE
+The image size shown refers to the size of the *downloaded* Docker image, which is compressed. When Docker runs the image, it unpacks it, resulting in significantly greater disk usage. For example, a slim edition image will expand to around 7 GB once unpacked.
+:::
 
 4. Check the server status after having the server up and running:
 
@@ -229,7 +247,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
     * Running on all addresses (0.0.0.0)
    ```
 
-   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.  
+:::danger IMPORTANT
+If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.
+:::  
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
@@ -251,8 +271,6 @@ To add and configure an LLM:
 
    ![add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
-   > Each RAGFlow account is able to use **text-embedding-v2** for free, an embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
-
 2. Click on the desired LLM and update the API key accordingly (DeepSeek-V2 in this case):
 
    ![update api key](https://github.com/infiniflow/ragflow/assets/93570324/4e5e13ef-a98d-42e6-bcb1-0c6045fc1666)
@@ -273,7 +291,7 @@ To add and configure an LLM:
 
 ## Create your first knowledge base
 
-You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
+You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD, MDX), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
 
 To create your first knowledge base:
 
@@ -285,7 +303,7 @@ To create your first knowledge base:
 
    ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
 
-3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunk method (template) for your knowledge base. 
+3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your knowledge base. 
 
 :::danger IMPORTANT 
 Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
@@ -302,8 +320,8 @@ Once you have selected an embedding model and used it to parse a file, you are n
    _When the file parsing completes, its parsing status changes to **SUCCESS**._
 
 :::caution NOTE 
-- If your file parsing gets stuck at below 1%, see [this FAQ](https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent).
-- If your file parsing gets stuck at near completion, see [this FAQ](https://ragflow.io/docs/dev/faq#why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
+- If your file parsing gets stuck at below 1%, see [this FAQ](./faq.mdx#why-does-my-document-parsing-stall-at-under-one-percent).
+- If your file parsing gets stuck at near completion, see [this FAQ](./faq.mdx#why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
 :::
 
 ## Intervene with file parsing
@@ -339,16 +357,16 @@ Conversations in RAGFlow are based on a particular knowledge base or multiple kn
 1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue *of your next dialogue*.
    > RAGFlow offer the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
-2. Update **Assistant Setting**:
+2. Update **Assistant settings**:
 
    - Name your assistant and specify your knowledge bases.
    - **Empty response**:
      - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
      - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations.
 
-3. Update **Prompt Engine** or leave it as is for the beginning.
+3. Update **Prompt engine** or leave it as is for the beginning.
 
-4. Update **Model Setting**.
+4. Update **Model settings**.
 
 5. Now, let's start the show:
 

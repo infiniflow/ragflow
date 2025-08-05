@@ -35,11 +35,49 @@ services:
       - ragflow
     restart: on-failure
 
+  opensearch01:
+    container_name: ragflow-opensearch-01
+    profiles:
+      - opensearch
+    image: hub.icert.top/opensearchproject/opensearch:2.19.1
+    volumes:
+      - osdata01:/usr/share/opensearch/data
+    ports:
+      - ${OS_PORT}:9201
+    env_file: .env
+    environment:
+      - node.name=opensearch01
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
+      - bootstrap.memory_lock=false
+      - discovery.type=single-node
+      - plugins.security.disabled=false
+      - plugins.security.ssl.http.enabled=false
+      - plugins.security.ssl.transport.enabled=true
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
+      - TZ=${TIMEZONE}
+      - http.port=9201
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:9201"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: on-failure
+
   infinity:
     container_name: ragflow-infinity
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.0-dev3
+    image: infiniflow/infinity:v0.6.0-dev5
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -65,6 +103,35 @@ services:
       retries: 120
     restart: on-failure
 
+  sandbox-executor-manager:
+    container_name: ragflow-sandbox-executor-manager
+    profiles:
+      - sandbox
+    image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
+    privileged: true
+    ports:
+      - ${SANDBOX_EXECUTOR_MANAGER_PORT-9385}:9385
+    env_file: .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ragflow
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TIMEZONE}
+      - SANDBOX_EXECUTOR_MANAGER_POOL_SIZE=${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-3}
+      - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE:-infiniflow/sandbox-base-python:latest}
+      - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE:-infiniflow/sandbox-base-nodejs:latest}
+      - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
+      - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s}
+    healthcheck:
+      test: ["CMD", "curl", "http://localhost:9385/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
@@ -81,6 +148,7 @@ services:
       --default-authentication-plugin=mysql_native_password
       --tls_version="TLSv1.2,TLSv1.3"
       --init-file /data/application/init.sql
+      --binlog_expire_logs_seconds=604800
     ports:
       - ${MYSQL_PORT}:3306
     volumes:
@@ -96,7 +164,7 @@ services:
     restart: on-failure
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
     container_name: ragflow-minio
     command: server --console-address ":9001" /data
     ports:
@@ -112,6 +180,11 @@ services:
     networks:
       - ragflow
     restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
   redis:
     # swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/valkey/valkey:8
@@ -126,11 +199,19 @@ services:
     networks:
       - ragflow
     restart: on-failure
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s    
 
 
 
 volumes:
   esdata01:
+    driver: local
+  osdata01:
     driver: local
   infinity_data:
     driver: local

@@ -9,8 +9,10 @@ import {
   useUploadNextDocument,
 } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { UploadFile } from 'antd';
+import { TableRowSelection } from 'antd/es/table/interface';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 import { KnowledgeRouteKey } from './constant';
@@ -126,7 +128,7 @@ export const useChangeDocumentParser = (documentId: string) => {
 export const useGetRowSelection = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
-  const rowSelection = {
+  const rowSelection: TableRowSelection<IDocumentInfo> = {
     selectedRowKeys,
     onChange: (newSelectedRowKeys: React.Key[]) => {
       setSelectedRowKeys(newSelectedRowKeys);
@@ -173,7 +175,7 @@ export const useHandleUploadDocument = () => {
         const ret = await uploadDocument(filesPart);
 
         const files = ret?.data || [];
-        const succesfulFilenames = files.map((file: any) => file.name);
+        const successfulFilenames = files.map((file: any) => file.name);
 
         // set status to done or error on files (based on response)
         setFileList(
@@ -183,7 +185,7 @@ export const useHandleUploadDocument = () => {
             }
 
             let newFile = file;
-            newFile.status = succesfulFilenames.includes(file.name)
+            newFile.status = successfulFilenames.includes(file.name)
               ? 'done'
               : 'error';
             newFile.percent = 100;
@@ -195,7 +197,7 @@ export const useHandleUploadDocument = () => {
         return {
           code: ret?.code,
           fileIds: files.map((file: any) => file.id),
-          totalSuccess: succesfulFilenames.length,
+          totalSuccess: successfulFilenames.length,
         };
       };
       const totalFiles = fileList.length;

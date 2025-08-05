@@ -1,4 +1,9 @@
 import { IRenameTag } from '@/interfaces/database/knowledge';
+import {
+  IFetchDocumentListRequestBody,
+  IFetchKnowledgeListRequestBody,
+  IFetchKnowledgeListRequestParams,
+} from '@/interfaces/request/knowledge';
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
@@ -54,7 +59,7 @@ const methods = {
   },
   getList: {
     url: kb_list,
-    method: 'get',
+    method: 'post',
   },
   // document manager
   get_document_list: {
@@ -150,6 +155,10 @@ const methods = {
     url: listTagByKnowledgeIds,
     method: 'get',
   },
+  documentFilter: {
+    url: api.get_dataset_filter,
+    method: 'post',
+  },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
@@ -168,5 +177,22 @@ export const renameTag = (
 export function getKnowledgeGraph(knowledgeId: string) {
   return request.get(api.getKnowledgeGraph(knowledgeId));
 }
+
+export function deleteKnowledgeGraph(knowledgeId: string) {
+  return request.delete(api.getKnowledgeGraph(knowledgeId));
+}
+
+export const listDataset = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchKnowledgeListRequestBody,
+) => request.post(api.kb_list, { data: body || {}, params });
+
+export const listDocument = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchDocumentListRequestBody,
+) => request.post(api.get_document_list, { data: body || {}, params });
+
+export const documentFilter = (kb_id: string) =>
+  request.post(api.get_dataset_filter, { kb_id });
 
 export default kbService;

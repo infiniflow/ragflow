@@ -21,6 +21,7 @@ import {
   ISwitchForm,
   RAGFlowNodeType,
 } from '@/interfaces/database/flow';
+import { setChatVariableEnabledFieldValuePage } from '@/utils/chat';
 import { message } from 'antd';
 import { humanId } from 'human-id';
 import { get, lowerFirst } from 'lodash';
@@ -39,6 +40,7 @@ import {
   initialBeginValues,
   initialBingValues,
   initialCategorizeValues,
+  initialCodeValues,
   initialConcentratorValues,
   initialCrawlerValues,
   initialDeepLValues,
@@ -139,6 +141,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Email]: initialEmailValues,
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationValues,
+      [Operator.Code]: initialCodeValues,
     };
   }, [llmId]);
 
@@ -269,11 +272,13 @@ export const useHandleFormValuesChange = (id?: string) => {
         'parameter' in changedValues &&
         changedValues['parameter'] in settledModelVariableMap
       ) {
+        const enabledValues = setChatVariableEnabledFieldValuePage();
         nextValues = {
           ...values,
           ...settledModelVariableMap[
             changedValues['parameter'] as keyof typeof settledModelVariableMap
           ],
+          ...enabledValues,
         };
       }
       if (id) {

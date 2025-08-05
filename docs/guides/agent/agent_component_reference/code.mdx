@@ -1,0 +1,58 @@
+---
+sidebar_position: 13
+slug: /code_component
+---
+
+# Code component
+
+A component that enables users to integrate Python or JavaScript codes into their Agent for dynamic data processing.
+
+---
+
+## Scenarios
+
+A **Code** component is essential when you need to integrate complex code logic (Python or JavaScript) into your Agent for dynamic data processing.
+
+## Configurations 
+
+### Input
+
+You can specify multiple input sources for the **Code** component. Click **+ Add variable** in the **Input variables** section to include the desired input variables. 
+
+### Code
+
+This field allows you to enter and edit your source code.
+
+#### A Python code example
+
+```Python 
+    def main(arg1: str, arg2: str) -> dict:
+        return {
+            "result": arg1 + arg2,
+        }
+```
+
+#### A JavaScript code example
+
+```JavaScript
+
+    const axios = require('axios');
+    async function main(args) {
+      try {
+        const response = await axios.get('https://github.com/infiniflow/ragflow');
+        console.log('Body:', response.data);
+      } catch (error) {
+        console.error('Error:', error.message);
+      }
+    }
+```
+
+### Return values
+
+You define the output variable(s) of the **Code** component here.
+
+### Output
+
+The defined output variable(s) will be auto-populated here.
+
+

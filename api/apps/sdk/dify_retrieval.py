@@ -1,4 +1,4 @@
-#
+    #
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,9 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from flask import request, jsonify
 
 from api.db import LLMType
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
@@ -70,12 +73,15 @@ def retrieval(tenant_id):
 
         records = []
         for c in ranks["chunks"]:
+            e, doc = DocumentService.get_by_id( c["doc_id"])
             c.pop("vector", None)
+            meta = getattr(doc, 'meta_fields', {})
+            meta["doc_id"] = c["doc_id"]
             records.append({
                 "content": c["content_with_weight"],
                 "score": c["similarity"],
                 "title": c["docnm_kwd"],
-                "metadata": {}
+                "metadata": meta
             })
 
         return jsonify({"records": records})
@@ -85,4 +91,5 @@ def retrieval(tenant_id):
                 message='No chunk found! Check the chunk status please!',
                 code=settings.RetCode.NOT_FOUND
             )
+        logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)

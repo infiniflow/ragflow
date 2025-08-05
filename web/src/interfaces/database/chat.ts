@@ -73,6 +73,8 @@ export interface Message {
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
+  files?: File[];
 }
 
 export interface IReferenceChunk {
@@ -86,6 +88,7 @@ export interface IReferenceChunk {
   vector_similarity: number;
   term_similarity: number;
   positions: number[];
+  doc_type?: string;
 }
 
 export interface IReference {
@@ -94,13 +97,19 @@ export interface IReference {
   total: number;
 }
 
+export interface IReferenceObject {
+  chunks: Record<string, IReferenceChunk>;
+  doc_aggs: Record<string, Docagg>;
+}
+
 export interface IAnswer {
   answer: string;
-  reference: IReference;
+  reference?: IReference;
   conversationId?: string;
   prompt?: string;
   id?: string;
   audio_binary?: string;
+  data?: any;
 }
 
 export interface Docagg {

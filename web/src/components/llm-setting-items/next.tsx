@@ -4,6 +4,8 @@ import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import { camelCase } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { z } from 'zod';
+import { SelectWithSearch } from '../originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -11,103 +13,47 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
-import { Input } from '../ui/input';
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
-import { FormSlider } from '../ui/slider';
-import { Switch } from '../ui/switch';
-
-interface SliderWithInputNumberFormFieldProps {
-  name: string;
-  label: string;
-  checkName: string;
-  max: number;
-  min?: number;
-  step?: number;
-}
-
-function SliderWithInputNumberFormField({
-  name,
-  label,
-  checkName,
-  max,
-  min = 0,
-  step = 1,
-}: SliderWithInputNumberFormFieldProps) {
-  const { control, watch } = useFormContext();
-  const { t } = useTranslate('chat');
-  const disabled = !watch(checkName);
-
-  return (
-    <FormField
-      control={control}
-      name={name}
-      render={({ field }) => (
-        <FormItem>
-          <div className="flex items-center justify-between">
-            <FormLabel>{t(label)}</FormLabel>
-            <FormField
-              control={control}
-              name={checkName}
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Switch
-                      {...field}
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    ></Switch>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <FormControl>
-            <div className="flex w-full  items-center space-x-2">
-              <FormSlider
-                {...field}
-                disabled={disabled}
-                max={max}
-                min={min}
-                step={step}
-              ></FormSlider>
-              <Input
-                type={'number'}
-                className="w-2/5"
-                {...field}
-                disabled={disabled}
-                max={max}
-                min={min}
-                step={step}
-              />
-            </div>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
-}
+import { SliderInputSwitchFormField } from './slider';
+import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
+  options?: any[];
 }
 
-export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
+export const LlmSettingSchema = {
+  llm_id: z.string(),
+  temperature: z.coerce.number(),
+  top_p: z.string(),
+  presence_penalty: z.coerce.number(),
+  frequency_penalty: z.coerce.number(),
+  temperatureEnabled: z.boolean(),
+  topPEnabled: z.boolean(),
+  presencePenaltyEnabled: z.boolean(),
+  frequencyPenaltyEnabled: z.boolean(),
+  maxTokensEnabled: z.boolean(),
+};
+
+export function LlmSettingFieldItems({
+  prefix,
+  options,
+}: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
+
   const modelOptions = useComposeLlmOptionsByModelTypes([
     LlmModelType.Chat,
     LlmModelType.Image2text,
   ]);
+
+  const handleChange = useHandleFreedomChange();
 
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),
@@ -116,13 +62,13 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
 
   const getFieldWithPrefix = useCallback(
     (name: string) => {
-      return `${prefix}.${name}`;
+      return prefix ? `${prefix}.${name}` : name;
     },
     [prefix],
   );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <FormField
         control={form.control}
         name={'llm_id'}
@@ -130,27 +76,10 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           <FormItem>
             <FormLabel>{t('model')}</FormLabel>
             <FormControl>
-              <Select onValueChange={field.onChange} {...field}>
-                <SelectTrigger value={field.value}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelOptions.map((x) => (
-                    <SelectGroup key={x.value}>
-                      <SelectLabel>{x.label}</SelectLabel>
-                      {x.options.map((y) => (
-                        <SelectItem
-                          value={y.value}
-                          key={y.value}
-                          disabled={y.disabled}
-                        >
-                          {y.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SelectWithSearch
+                options={options || modelOptions}
+                {...field}
+              ></SelectWithSearch>
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -163,7 +92,13 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           <FormItem>
             <FormLabel>{t('freedom')}</FormLabel>
             <FormControl>
-              <Select {...field} onValueChange={field.onChange}>
+              <Select
+                {...field}
+                onValueChange={(val) => {
+                  handleChange(val);
+                  field.onChange(val);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -180,40 +115,40 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           </FormItem>
         )}
       />
-      <SliderWithInputNumberFormField
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('temperature')}
         checkName="temperatureEnabled"
         label="temperature"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('top_p')}
         checkName="topPEnabled"
         label="topP"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('presence_penalty')}
         checkName="presencePenaltyEnabled"
         label="presencePenalty"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('frequency_penalty')}
         checkName="frequencyPenaltyEnabled"
         label="frequencyPenalty"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('max_tokens')}
         checkName="maxTokensEnabled"
         label="maxTokens"
         max={128000}
-      ></SliderWithInputNumberFormField>
+      ></SliderInputSwitchFormField>
     </div>
   );
 }

@@ -16,17 +16,11 @@
 
 
 import pytest
-from common import (
-    DOCUMENT_NAME_LIMIT,
-    INVALID_API_TOKEN,
-    batch_upload_documents,
-    create_datasets,
-    list_documnet,
-    update_documnet,
-)
+from common import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN, list_documnets, update_documnet
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,15 +33,14 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_http_api_auth, tmp_path, auth, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = update_documnet(auth, ids[0], document_ids[0], {"name": "auth_test.txt"})
+    def test_invalid_auth(self, auth, expected_code, expected_message):
+        res = update_documnet(auth, "dataset_id", "document_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
-class TestUpdatedDocument:
+class TestDocumentsUpdated:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
         [
@@ -89,17 +82,17 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_name(self, get_http_api_auth, tmp_path, name, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 2, tmp_path)
-        res = update_documnet(get_http_api_auth, ids[0], document_ids[0], {"name": name})
+    def test_name(self, get_http_api_auth, add_documents, name, expected_code, expected_message):
+        dataset_id, document_ids = add_documents
+        res = update_documnet(get_http_api_auth, dataset_id, document_ids[0], {"name": name})
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_documnet(get_http_api_auth, ids[0], {"id": document_ids[0]})
+            res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
             assert res["data"]["docs"][0]["name"] == name
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -111,12 +104,13 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_invalid_document_id(self, get_http_api_auth, document_id, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        res = update_documnet(get_http_api_auth, ids[0], document_id, {"name": "new_name.txt"})
+    def test_invalid_document_id(self, get_http_api_auth, add_documents, document_id, expected_code, expected_message):
+        dataset_id, _ = add_documents
+        res = update_documnet(get_http_api_auth, dataset_id, document_id, {"name": "new_name.txt"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -128,27 +122,27 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_invalid_dataset_id(self, get_http_api_auth, tmp_path, dataset_id, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
+    def test_invalid_dataset_id(self, get_http_api_auth, add_documents, dataset_id, expected_code, expected_message):
+        _, document_ids = add_documents
         res = update_documnet(get_http_api_auth, dataset_id, document_ids[0], {"name": "new_name.txt"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "meta_fields, expected_code, expected_message",
         [({"test": "test"}, 0, ""), ("test", 102, "meta_fields must be a dictionary")],
     )
-    def test_meta_fields(self, get_http_api_auth, tmp_path, meta_fields, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = update_documnet(get_http_api_auth, ids[0], document_ids[0], {"meta_fields": meta_fields})
+    def test_meta_fields(self, get_http_api_auth, add_documents, meta_fields, expected_code, expected_message):
+        dataset_id, document_ids = add_documents
+        res = update_documnet(get_http_api_auth, dataset_id, document_ids[0], {"meta_fields": meta_fields})
         if expected_code == 0:
-            res = list_documnet(get_http_api_auth, ids[0], {"id": document_ids[0]})
+            res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
             assert res["data"]["docs"][0]["meta_fields"] == meta_fields
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, expected_code, expected_message",
         [
@@ -173,72 +167,191 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_chunk_method(self, get_http_api_auth, tmp_path, chunk_method, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = update_documnet(get_http_api_auth, ids[0], document_ids[0], {"chunk_method": chunk_method})
-        print(res)
+    def test_chunk_method(self, get_http_api_auth, add_documents, chunk_method, expected_code, expected_message):
+        dataset_id, document_ids = add_documents
+        res = update_documnet(get_http_api_auth, dataset_id, document_ids[0], {"chunk_method": chunk_method})
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_documnet(get_http_api_auth, ids[0], {"id": document_ids[0]})
-            if chunk_method != "":
-                assert res["data"]["docs"][0]["chunk_method"] == chunk_method
-            else:
+            res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
+            if chunk_method == "":
                 assert res["data"]["docs"][0]["chunk_method"] == "naive"
+            else:
+                assert res["data"]["docs"][0]["chunk_method"] == chunk_method
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
+    @pytest.mark.parametrize(
+        "payload, expected_code, expected_message",
+        [
+            ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
+            pytest.param(
+                {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"create_time": 1},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"created_by": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"dataset_id": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"id": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"location": "ragflow_test.txt"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"process_begin_at": 1},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"process_duration": 1.0},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param({"progress": 1.0}, 102, "Can't change `progress`."),
+            pytest.param(
+                {"progress_msg": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"run": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"size": 1},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"source_type": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"thumbnail": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            ({"token_count": 1}, 102, "Can't change `token_count`."),
+            pytest.param(
+                {"type": "ragflow_test"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"update_date": "Fri, 14 Mar 2025 16:33:17 GMT"},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+            pytest.param(
+                {"update_time": 1},
+                102,
+                "The input parameters are invalid.",
+                marks=pytest.mark.skip(reason="issues/6104"),
+            ),
+        ],
+    )
+    def test_invalid_field(
+        self,
+        get_http_api_auth,
+        add_documents,
+        payload,
+        expected_code,
+        expected_message,
+    ):
+        dataset_id, document_ids = add_documents
+        res = update_documnet(get_http_api_auth, dataset_id, document_ids[0], payload)
+        assert res["code"] == expected_code
+        assert res["message"] == expected_message
+
+
+class TestUpdateDocumentParserConfig:
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, parser_config, expected_code, expected_message",
         [
+            ("naive", {}, 0, ""),
             (
                 "naive",
                 {
                     "chunk_token_num": 128,
                     "layout_recognize": "DeepDOC",
                     "html4excel": False,
-                    "delimiter": "\n!?。；！？",
+                    "delimiter": r"\n",
                     "task_page_size": 12,
                     "raptor": {"use_raptor": False},
                 },
                 0,
                 "",
             ),
-            ("naive", {}, 0, ""),
             pytest.param(
                 "naive",
                 {"chunk_token_num": -1},
                 100,
                 "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": 0},
                 100,
                 "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": 100000000},
                 100,
                 "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": 3.14},
                 102,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": "1024"},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             (
                 "naive",
@@ -259,7 +372,7 @@ class TestUpdatedDocument:
                 {"html4excel": 1},
                 100,
                 "AssertionError('html4excel should be True or False')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             ("naive", {"delimiter": ""}, 0, ""),
             ("naive", {"delimiter": "`##`"}, 0, ""),
@@ -268,42 +381,42 @@ class TestUpdatedDocument:
                 {"delimiter": 1},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": -1},
                 100,
                 "AssertionError('task_page_size should be in range from 1 to 100000000')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": 0},
                 100,
                 "AssertionError('task_page_size should be in range from 1 to 100000000')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": 100000000},
                 100,
                 "AssertionError('task_page_size should be in range from 1 to 100000000')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": 3.14},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": "1024"},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             ("naive", {"raptor": {"use_raptor": True}}, 0, ""),
             ("naive", {"raptor": {"use_raptor": False}}, 0, ""),
@@ -312,242 +425,123 @@ class TestUpdatedDocument:
                 {"invalid_key": "invalid_value"},
                 100,
                 """AssertionError("Abnormal \'parser_config\'. Invalid key: invalid_key")""",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_keywords": -1},
                 100,
                 "AssertionError('auto_keywords should be in range from 0 to 32')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_keywords": 32},
                 100,
                 "AssertionError('auto_keywords should be in range from 0 to 32')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": 3.14},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_keywords": "1024"},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": -1},
                 100,
                 "AssertionError('auto_questions should be in range from 0 to 10')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": 10},
                 100,
                 "AssertionError('auto_questions should be in range from 0 to 10')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": 3.14},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": "1024"},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": -1},
                 100,
                 "AssertionError('topn_tags should be in range from 0 to 10')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": 10},
                 100,
                 "AssertionError('topn_tags should be in range from 0 to 10')",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": 3.14},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": "1024"},
                 100,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6098"),
+                marks=pytest.mark.skip(reason="issues/6098"),
             ),
         ],
     )
     def test_parser_config(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         chunk_method,
         parser_config,
         expected_code,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
+        dataset_id, document_ids = add_documents
         res = update_documnet(
             get_http_api_auth,
-            ids[0],
+            dataset_id,
             document_ids[0],
             {"chunk_method": chunk_method, "parser_config": parser_config},
         )
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_documnet(get_http_api_auth, ids[0], {"id": document_ids[0]})
-            if parser_config != {}:
-                for k, v in parser_config.items():
-                    assert res["data"]["docs"][0]["parser_config"][k] == v
-            else:
+            res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
+            if parser_config == {}:
                 assert res["data"]["docs"][0]["parser_config"] == {
                     "chunk_token_num": 128,
-                    "delimiter": "\\n!?;。；！？",
+                    "delimiter": r"\n",
                     "html4excel": False,
                     "layout_recognize": "DeepDOC",
                     "raptor": {"use_raptor": False},
                 }
+            else:
+                for k, v in parser_config.items():
+                    assert res["data"]["docs"][0]["parser_config"][k] == v
         if expected_code != 0 or expected_message:
             assert res["message"] == expected_message
-
-    @pytest.mark.parametrize(
-        "payload, expected_code, expected_message",
-        [
-            ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
-            pytest.param(
-                {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"create_time": 1},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"created_by": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"dataset_id": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"id": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"location": "ragflow_test.txt"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"process_begin_at": 1},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"process_duation": 1.0},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param({"progress": 1.0}, 102, "Can't change `progress`."),
-            pytest.param(
-                {"progress_msg": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"run": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"size": 1},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"source_type": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"thumbnail": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            ({"token_count": 1}, 102, "Can't change `token_count`."),
-            pytest.param(
-                {"type": "ragflow_test"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"update_date": "Fri, 14 Mar 2025 16:33:17 GMT"},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"update_time": 1},
-                102,
-                "The input parameters are invalid.",
-                marks=pytest.mark.xfail(reason="issues/6104"),
-            ),
-        ],
-    )
-    def test_invalid_field(
-        self,
-        get_http_api_auth,
-        tmp_path,
-        payload,
-        expected_code,
-        expected_message,
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 2, tmp_path)
-        res = update_documnet(get_http_api_auth, ids[0], document_ids[0], payload)
-        assert res["code"] == expected_code
-        assert res["message"] == expected_message

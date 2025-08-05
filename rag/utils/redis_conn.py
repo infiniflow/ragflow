@@ -22,6 +22,7 @@ import valkey as redis
 from rag import settings
 from rag.utils import singleton
 from valkey.lock import Lock
+import trio
 
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
@@ -219,40 +220,54 @@ class RedisDB:
                 logging.exception(
                     "RedisDB.queue_product " + str(queue) + " got exception: " + str(e)
                 )
+                self.__open__()
         return False
 
     def queue_consumer(self, queue_name, group_name, consumer_name, msg_id=b">") -> RedisMsg:
         """https://redis.io/docs/latest/commands/xreadgroup/"""
-        try:
-            group_info = self.REDIS.xinfo_groups(queue_name)
-            if not any(gi["name"] == group_name for gi in group_info):
-                self.REDIS.xgroup_create(queue_name, group_name, id="0", mkstream=True)
-            args = {
-                "groupname": group_name,
-                "consumername": consumer_name,
-                "count": 1,
-                "block": 5,
-                "streams": {queue_name: msg_id},
-            }
-            messages = self.REDIS.xreadgroup(**args)
-            if not messages:
-                return None
-            stream, element_list = messages[0]
-            if not element_list:
-                return None
-            msg_id, payload = element_list[0]
-            res = RedisMsg(self.REDIS, queue_name, group_name, msg_id, payload)
-            return res
-        except Exception as e:
-            if str(e) == 'no such key':
-                pass
-            else:
-                logging.exception(
-                    "RedisDB.queue_consumer "
-                    + str(queue_name)
-                    + " got exception: "
-                    + str(e)
-                )
+        for _ in range(3):
+            try:
+
+                try:
+                    group_info = self.REDIS.xinfo_groups(queue_name)
+                    if not any(gi["name"] == group_name for gi in group_info):
+                        self.REDIS.xgroup_create(queue_name, group_name, id="0", mkstream=True)
+                except redis.exceptions.ResponseError as e:
+                    if "no such key" in str(e).lower():
+                        self.REDIS.xgroup_create(queue_name, group_name, id="0", mkstream=True)
+                    elif "busygroup" in str(e).lower():
+                        logging.warning("Group already exists, continue.")
+                        pass
+                    else:
+                        raise
+
+                args = {
+                    "groupname": group_name,
+                    "consumername": consumer_name,
+                    "count": 1,
+                    "block": 5,
+                    "streams": {queue_name: msg_id},
+                }
+                messages = self.REDIS.xreadgroup(**args)
+                if not messages:
+                    return None
+                stream, element_list = messages[0]
+                if not element_list:
+                    return None
+                msg_id, payload = element_list[0]
+                res = RedisMsg(self.REDIS, queue_name, group_name, msg_id, payload)
+                return res
+            except Exception as e:
+                if str(e) == 'no such key':
+                    pass
+                else:
+                    logging.exception(
+                        "RedisDB.queue_consumer "
+                        + str(queue_name)
+                        + " got exception: "
+                        + str(e)
+                    )
+                    self.__open__()
         return None
 
     def get_unacked_iterator(self, queue_names: list[str], group_name, consumer_name):
@@ -281,16 +296,42 @@ class RedisDB:
             )
             self.__open__()
 
-    def queue_info(self, queue, group_name) -> dict | None:
+    def get_pending_msg(self, queue, group_name):
         try:
-            groups = self.REDIS.xinfo_groups(queue)
-            for group in groups:
-                if group["name"] == group_name:
-                    return group
+            messages = self.REDIS.xpending_range(queue, group_name, '-', '+', 10)
+            return messages
         except Exception as e:
-            logging.warning(
-                "RedisDB.queue_info " + str(queue) + " got exception: " + str(e)
-            )
+            if 'No such key' not in (str(e) or ''):
+                logging.warning(
+                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
+                )
+        return []
+
+    def requeue_msg(self, queue: str, group_name: str, msg_id: str):
+        for _ in range(3):
+            try:
+                messages = self.REDIS.xrange(queue, msg_id, msg_id)
+                if messages:
+                    self.REDIS.xadd(queue, messages[0][1])
+                    self.REDIS.xack(queue, group_name, msg_id)
+            except Exception as e:
+                logging.warning(
+                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
+                )
+                self.__open__()
+
+    def queue_info(self, queue, group_name) -> dict | None:
+        for _ in range(3):
+            try:
+                groups = self.REDIS.xinfo_groups(queue)
+                for group in groups:
+                    if group["name"] == group_name:
+                        return group
+            except Exception as e:
+                logging.warning(
+                    "RedisDB.queue_info " + str(queue) + " got exception: " + str(e)
+                )
+                self.__open__()
         return None
 
     def delete_if_equal(self, key: str, expected_value: str) -> bool:
@@ -299,6 +340,16 @@ class RedisDB:
         Delete a key if its value is equals to the given one, do nothing otherwise.
         """
         return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
+
+    def delete(self, key) -> bool:
+        try:
+            self.REDIS.delete(key)
+            return True
+        except Exception as e:
+            logging.warning("RedisDB.delete " + str(key) + " got exception: " + str(e))
+            self.__open__()
+        return False
+
 
 REDIS_CONN = RedisDB()
 
@@ -317,11 +368,12 @@ class RedisDistributedLock:
         REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
         return self.lock.acquire(token=self.lock_value)
 
+    async def spin_acquire(self):
+        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
+        while True:
+            if self.lock.acquire(token=self.lock_value):
+                break
+            await trio.sleep(10)
+
     def release(self):
-        return self.lock.release()
-
-    def __enter__(self):
-        self.acquire()
-
-    def __exit__(self, exception_type, exception_value, exception_traceback):
-        self.release()
+        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)

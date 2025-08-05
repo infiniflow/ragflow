@@ -23,6 +23,7 @@ const {
   removeSystemToken,
   createSystemToken,
   getSystemConfig,
+  setLangfuseConfig,
 } = api;
 
 const methods = {
@@ -106,9 +107,25 @@ const methods = {
     url: getSystemConfig,
     method: 'get',
   },
+  setLangfuseConfig: {
+    url: setLangfuseConfig,
+    method: 'put',
+  },
+  getLangfuseConfig: {
+    url: setLangfuseConfig,
+    method: 'get',
+  },
+  deleteLangfuseConfig: {
+    url: setLangfuseConfig,
+    method: 'delete',
+  },
 } as const;
 
 const userService = registerServer<keyof typeof methods>(methods, request);
+
+export const getLoginChannels = () => request.get(api.login_channels);
+export const loginWithChannel = (channel: string) =>
+  (window.location.href = api.login_channel(channel));
 
 export const listTenantUser = (tenantId: string) =>
   request.get(api.listTenantUser(tenantId));

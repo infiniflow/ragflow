@@ -1,6 +1,5 @@
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { FormInstance } from 'antd';
-import { UseFormReturn } from 'react-hook-form';
 
 export interface IOperatorForm {
   onValuesChange?(changedValues: any, values: any): void;
@@ -10,7 +9,6 @@ export interface IOperatorForm {
 }
 
 export interface INextOperatorForm {
-  form: UseFormReturn;
   node?: RAGFlowNodeType;
   nodeId?: string;
 }
@@ -35,3 +33,9 @@ export interface BeginQuery {
   name: string;
   options: (number | string | boolean)[];
 }
+
+export type IInputs = {
+  avatar: string;
+  title: string;
+  inputs: Record<string, BeginQuery>;
+};

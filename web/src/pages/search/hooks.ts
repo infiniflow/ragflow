@@ -1,6 +1,9 @@
 import { useFetchMindMap, useFetchRelatedQuestions } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
+import {
+  useTestChunkAllRetrieval,
+  useTestChunkRetrieval,
+} from '@/hooks/knowledge-hooks';
 import {
   useGetPaginationWithRouter,
   useSendMessageWithSse,
@@ -17,8 +20,11 @@ import {
 } from 'react';
 
 export const useSendQuestion = (kbIds: string[]) => {
-  const { send, answer, done } = useSendMessageWithSse(api.ask);
+  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
+    api.ask,
+  );
   const { testChunk, loading } = useTestChunkRetrieval();
+  const { testChunkAll, loading: loadingAll } = useTestChunkAllRetrieval();
   const [sendingLoading, setSendingLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
   const { fetchRelatedQuestions, data: relatedQuestions } =
@@ -86,6 +92,15 @@ export const useSendQuestion = (kbIds: string[]) => {
         page,
         size,
       });
+
+      testChunkAll({
+        kb_id: kbIds,
+        highlight: true,
+        question: q,
+        doc_ids: [],
+        page,
+        size,
+      });
     },
     [sendingLoading, searchStr, kbIds, testChunk, selectedDocumentIds],
   );
@@ -116,6 +131,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     isFirstRender,
     selectedDocumentIds,
     isSearchStrEmpty: isEmpty(trim(searchStr)),
+    stopOutputMessage,
   };
 };
 

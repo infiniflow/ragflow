@@ -1,5 +1,5 @@
 ---
-sidebar_position: 0
+sidebar_position: -1
 slug: /configure_knowledge_base
 ---
 
@@ -22,39 +22,41 @@ _Each time a knowledge base is created, a folder with the same name is generated
 
 ## Configure knowledge base
 
-The following screenshot shows the configuration page of a knowledge base. A proper configuration of your knowledge base is crucial for future AI chats. For example, choosing the wrong embedding model or chunk method would cause unexpected semantic loss or mismatched answers in chats. 
+The following screenshot shows the configuration page of a knowledge base. A proper configuration of your knowledge base is crucial for future AI chats. For example, choosing the wrong embedding model or chunking method would cause unexpected semantic loss or mismatched answers in chats. 
 
 ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
 
 This section covers the following topics:
 
-- Select chunk method
+- Select chunking method
 - Select embedding model
 - Upload file
 - Parse file
 - Intervene with file parsing results
 - Run retrieval testing
 
-### Select chunk method
+### Select chunking method
 
-RAGFlow offers multiple chunking template to facilitate chunking files of different layouts and ensure semantic integrity. In **Chunk method**, you can choose the default template that suits the layouts and formats of your files. The following table shows the descriptions and the compatible file formats of each supported chunk template:
+RAGFlow offers multiple chunking template to facilitate chunking files of different layouts and ensure semantic integrity. In **Chunking method**, you can choose the default template that suits the layouts and formats of your files. The following table shows the descriptions and the compatible file formats of each supported chunk template:
 
 | **Template** | Description                                                           | File format                                                                                   |
 |--------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
-| Q&A          |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| General      | Files are consecutively chunked based on a preset chunk token number. | MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
+| Q&A          |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
+| Resume       | Enterprise edition only. You can also try it out on demo.ragflow.io.  | DOCX, PDF, TXT                                                                                |
 | Manual       |                                                                       | PDF                                                                                           |
-| Table        |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| Table        |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Paper        |                                                                       | PDF                                                                                           |
 | Book         |                                                                       | DOCX, PDF, TXT                                                                                |
 | Laws         |                                                                       | DOCX, PDF, TXT                                                                                |
 | Presentation |                                                                       | PDF, PPTX                                                                                     |
 | Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                                                                      |
-| One          | The entire document is chunked as one.                                | DOCX, XLSX, XLS (Excel97~2003), PDF, TXT                                                      |
+| One          | Each document is chunked in its entirety (as one).                    | DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT                                                      |
+| Tag          | The knowledge base functions as a tag set for the others.             | XLSX, CSV/TXT                                                                                 |
 
-You can also change a file's chunk method on the **Datasets** page.
+You can also change a file's chunking method on the **Datasets** page.
 
-![change chunk method](https://github.com/infiniflow/ragflow/assets/93570324/ac116353-2793-42b2-b181-65e7082bed42)
+![change chunking method](https://github.com/infiniflow/ragflow/assets/93570324/ac116353-2793-42b2-b181-65e7082bed42)
 
 ### Select embedding model
 
@@ -63,15 +65,11 @@ An embedding model converts chunks into embeddings. It cannot be changed once th
 The following embedding models can be deployed locally:
 
 - BAAI/bge-large-zh-v1.5
-- BAAI/bge-base-en-v1.5
-- BAAI/bge-large-en-v1.5
-- BAAI/bge-small-en-v1.5
-- BAAI/bge-small-zh-v1.5
-- jinaai/jina-embeddings-v2-base-en
-- jinaai/jina-embeddings-v2-small-en
-- nomic-ai/nomic-embed-text-v1.5
-- sentence-transformers/all-MiniLM-L6-v2
 - maidalun1020/bce-embedding-base_v1
+
+:::danger IMPORTANT
+These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
+:::
 
 ### Upload file
 
@@ -82,13 +80,13 @@ While uploading files directly to a knowledge base seems more convenient, we *hi
 
 ### Parse file
 
-File parsing is a crucial topic in knowledge base configuration. The meaning of file parsing in RAGFlow is twofold: chunking files based on file layout and building embedding and full-text (keyword) indexes on these chunks. After having selected the chunk method and embedding model, you can start parsing a file:
+File parsing is a crucial topic in knowledge base configuration. The meaning of file parsing in RAGFlow is twofold: chunking files based on file layout and building embedding and full-text (keyword) indexes on these chunks. After having selected the chunking method and embedding model, you can start parsing a file:
 
 ![parse file](https://github.com/infiniflow/ragflow/assets/93570324/5311f166-6426-447f-aa1f-bd488f1cfc7b)
 
 - Click the play button next to **UNSTART** to start file parsing.
 - Click the red-cross icon and then refresh, if your file parsing stalls for a long time. 
-- As shown above, RAGFlow allows you to use a different chunk method for a particular file, offering flexibility beyond the default method. 
+- As shown above, RAGFlow allows you to use a different chunking method for a particular file, offering flexibility beyond the default method. 
 - As shown above, RAGFlow allows you to enable or disable individual files, offering finer control over knowledge base-based AI chats. 
 
 ### Intervene with file parsing results
@@ -130,7 +128,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for knowledge base
 
-As of RAGFlow v0.17.2, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
+As of RAGFlow v0.20.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
 ![search knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/836ae94c-2438-42be-879e-c7ad2a59693e)
 

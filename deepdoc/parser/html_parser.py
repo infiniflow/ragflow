@@ -29,7 +29,6 @@ def get_encoding(file):
 
 class RAGFlowHtmlParser:
     def __call__(self, fnm, binary=None):
-        txt = ""
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -41,7 +40,7 @@ class RAGFlowHtmlParser:
     @classmethod
     def parser_txt(cls, txt):
         if not isinstance(txt, str):
-            raise TypeError("txt type should be str!")
+            raise TypeError("txt type should be string!")
         html_doc = readability.Document(txt)
         title = html_doc.title()
         content = html_text.extract_text(html_doc.summary(html_partial=True))

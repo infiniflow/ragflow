@@ -1,4 +1,5 @@
 import { getLLMIconName, getLlmNameAndFIdByLlmId } from '@/utils/llm-util';
+import { memo } from 'react';
 import { LlmIcon } from '../svg-icon';
 
 interface IProps {
@@ -19,9 +20,9 @@ const LLMLabel = ({ value }: IProps) => {
         height={20}
         size={'small'}
       />
-      {llmName}
+      <span className="flex-1 truncate"> {llmName}</span>
     </div>
   );
 };
 
-export default LLMLabel;
+export default memo(LLMLabel);

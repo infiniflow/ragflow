@@ -16,7 +16,6 @@
 import logging
 import itertools
 import re
-import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -28,7 +27,7 @@ from rag.nlp import is_english
 import editdistance
 from graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.llm.chat_model import Base as CompletionLLM
-from graphrag.utils import perform_variable_replacements, chat_limiter
+from graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
 
 DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_ENTITY_INDEX_DELIMITER = "<|>"
@@ -39,7 +38,7 @@ DEFAULT_RESOLUTION_RESULT_DELIMITER = "&&"
 class EntityResolutionResult:
     """Entity resolution result class definition."""
     graph: nx.Graph
-    removed_entities: list
+    change: GraphChange
 
 
 class EntityResolution(Extractor):
@@ -54,12 +53,8 @@ class EntityResolution(Extractor):
     def __init__(
             self,
             llm_invoker: CompletionLLM,
-            get_entity: Callable | None = None,
-            set_entity: Callable | None = None,
-            get_relation: Callable | None = None,
-            set_relation: Callable | None = None
     ):
-        super().__init__(llm_invoker, get_entity=get_entity, set_entity=set_entity, get_relation=get_relation, set_relation=set_relation)
+        super().__init__(llm_invoker)
         """Init method definition."""
         self._llm = llm_invoker
         self._resolution_prompt = ENTITY_RESOLUTION_PROMPT
@@ -68,7 +63,10 @@ class EntityResolution(Extractor):
         self._resolution_result_delimiter_key = "resolution_result_delimiter"
         self._input_text_key = "input_text"
 
-    async def __call__(self, graph: nx.Graph, prompt_variables: dict[str, Any] | None = None, callback: Callable | None = None) -> EntityResolutionResult:
+    async def __call__(self, graph: nx.Graph,
+                       subgraph_nodes: set[str],
+                       prompt_variables: dict[str, Any] | None = None,
+                       callback: Callable | None = None) -> EntityResolutionResult:
         """Call method definition."""
         if prompt_variables is None:
             prompt_variables = {}
@@ -84,8 +82,8 @@ class EntityResolution(Extractor):
                                                    or DEFAULT_RESOLUTION_RESULT_DELIMITER,
         }
 
-        nodes = graph.nodes
-        entity_types = list(set(graph.nodes[node].get('entity_type', '-') for node in nodes))
+        nodes = sorted(graph.nodes())
+        entity_types = sorted(set(graph.nodes[node].get('entity_type', '-') for node in nodes))
         node_clusters = {entity_type: [] for entity_type in entity_types}
 
         for node in nodes:
@@ -93,70 +91,67 @@ class EntityResolution(Extractor):
 
         candidate_resolution = {entity_type: [] for entity_type in entity_types}
         for k, v in node_clusters.items():
-            candidate_resolution[k] = [(a, b) for a, b in itertools.combinations(v, 2) if self.is_similarity(a, b)]
+            candidate_resolution[k] = [(a, b) for a, b in itertools.combinations(v, 2) if (a in subgraph_nodes or b in subgraph_nodes) and self.is_similarity(a, b)]
         num_candidates = sum([len(candidates) for _, candidates in candidate_resolution.items()])
         callback(msg=f"Identified {num_candidates} candidate pairs")
+        remain_candidates_to_resolve = num_candidates
 
         resolution_result = set()
+        resolution_result_lock = trio.Lock()
+        resolution_batch_size = 100
+        max_concurrent_tasks = 5
+        semaphore = trio.Semaphore(max_concurrent_tasks)
+
+        async def limited_resolve_candidate(candidate_batch, result_set, result_lock):
+            nonlocal remain_candidates_to_resolve, callback
+            async with semaphore:
+                try:
+                    with trio.move_on_after(180) as cancel_scope:
+                        await self._resolve_candidate(candidate_batch, result_set, result_lock)
+                        remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
+                        callback(msg=f"Resolved {len(candidate_batch[1])} pairs, {remain_candidates_to_resolve} are remained to resolve. ")
+                    if cancel_scope.cancelled_caught:
+                        logging.warning(f"Timeout resolving {candidate_batch}, skipping...")
+                        remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
+                        callback(msg=f"Fail to resolved {len(candidate_batch[1])} pairs due to timeout reason, skipped. {remain_candidates_to_resolve} are remained to resolve. ")
+                except Exception as e:
+                    logging.error(f"Error resolving candidate batch: {e}")
+
+
         async with trio.open_nursery() as nursery:
             for candidate_resolution_i in candidate_resolution.items():
                 if not candidate_resolution_i[1]:
                     continue
-                nursery.start_soon(lambda: self._resolve_candidate(candidate_resolution_i, resolution_result))
+                for i in range(0, len(candidate_resolution_i[1]), resolution_batch_size):
+                    candidate_batch = candidate_resolution_i[0], candidate_resolution_i[1][i:i + resolution_batch_size]
+                    nursery.start_soon(limited_resolve_candidate, candidate_batch, resolution_result, resolution_result_lock)
+
         callback(msg=f"Resolved {num_candidates} candidate pairs, {len(resolution_result)} of them are selected to merge.")
 
+        change = GraphChange()
         connect_graph = nx.Graph()
-        removed_entities = []
         connect_graph.add_edges_from(resolution_result)
-        all_entities_data = []
-        all_relationships_data = []
-        all_remove_nodes = []
+
+        async def limited_merge_nodes(graph, nodes, change):
+            async with semaphore:
+                await self._merge_graph_nodes(graph, nodes, change)
 
         async with trio.open_nursery() as nursery:
             for sub_connect_graph in nx.connected_components(connect_graph):
-                sub_connect_graph = connect_graph.subgraph(sub_connect_graph)
-                remove_nodes = list(sub_connect_graph.nodes)
-                keep_node = remove_nodes.pop()
-                all_remove_nodes.append(remove_nodes)
-                nursery.start_soon(lambda: self._merge_nodes(keep_node, self._get_entity_(remove_nodes), all_entities_data))
-                for remove_node in remove_nodes:
-                    removed_entities.append(remove_node)
-                    remove_node_neighbors = graph[remove_node]
-                    remove_node_neighbors = list(remove_node_neighbors)
-                    for remove_node_neighbor in remove_node_neighbors:
-                        rel = self._get_relation_(remove_node, remove_node_neighbor)
-                        if graph.has_edge(remove_node, remove_node_neighbor):
-                            graph.remove_edge(remove_node, remove_node_neighbor)
-                        if remove_node_neighbor == keep_node:
-                            if graph.has_edge(keep_node, remove_node):
-                                graph.remove_edge(keep_node, remove_node)
-                            continue
-                        if not rel:
-                            continue
-                        if graph.has_edge(keep_node, remove_node_neighbor):
-                            nursery.start_soon(lambda: self._merge_edges(keep_node, remove_node_neighbor, [rel], all_relationships_data))
-                        else:
-                            pair = sorted([keep_node, remove_node_neighbor])
-                            graph.add_edge(pair[0], pair[1], weight=rel['weight'])
-                            self._set_relation_(pair[0], pair[1],
-                                            dict(
-                                                    src_id=pair[0],
-                                                    tgt_id=pair[1],
-                                                    weight=rel['weight'],
-                                                    description=rel['description'],
-                                                    keywords=[],
-                                                    source_id=rel.get("source_id", ""),
-                                                    metadata={"created_at": time.time()}
-                                            ))
-                    graph.remove_node(remove_node)
+                merging_nodes = list(sub_connect_graph)
+                nursery.start_soon(limited_merge_nodes, graph, merging_nodes, change)
+
+        # Update pagerank
+        pr = nx.pagerank(graph)
+        for node_name, pagerank in pr.items():
+            graph.nodes[node_name]["pagerank"] = pagerank
 
         return EntityResolutionResult(
             graph=graph,
-            removed_entities=removed_entities
+            change=change,
         )
 
-    async def _resolve_candidate(self, candidate_resolution_i, resolution_result):
-        gen_conf = {"temperature": 0.5}
+    async def _resolve_candidate(self, candidate_resolution_i: tuple[str, list[tuple[str, str]]], resolution_result: set[str], resolution_result_lock: trio.Lock):
         pair_txt = [
             f'When determining whether two {candidate_resolution_i[0]}s are the same, you should only focus on critical properties and overlook noisy factors.\n']
         for index, candidate in enumerate(candidate_resolution_i[1]):
@@ -173,7 +168,16 @@ class EntityResolution(Extractor):
         text = perform_variable_replacements(self._resolution_prompt, variables=variables)
         logging.info(f"Created resolution prompt {len(text)} bytes for {len(candidate_resolution_i[1])} entity pairs of type {candidate_resolution_i[0]}")
         async with chat_limiter:
-            response = await trio.to_thread.run_sync(lambda: self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf))
+            try:
+                with trio.move_on_after(120) as cancel_scope:
+                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], {})
+                if cancel_scope.cancelled_caught:
+                    logging.warning("_resolve_candidate._chat timeout, skipping...")
+                    return
+            except Exception as e:
+                logging.error(f"_resolve_candidate._chat failed: {e}")
+                return
+
         logging.debug(f"_resolve_candidate chat prompt: {text}\nchat response: {response}")
         result = self._process_results(len(candidate_resolution_i[1]), response,
                                        self.prompt_variables.get(self._record_delimiter_key,
@@ -182,8 +186,9 @@ class EntityResolution(Extractor):
                                                             DEFAULT_ENTITY_INDEX_DELIMITER),
                                        self.prompt_variables.get(self._resolution_result_delimiter_key,
                                                             DEFAULT_RESOLUTION_RESULT_DELIMITER))
-        for result_i in result:
-            resolution_result.add(candidate_resolution_i[1][result_i[0] - 1])
+        async with resolution_result_lock:
+            for result_i in result:
+                resolution_result.add(candidate_resolution_i[1][result_i[0] - 1])
 
     def _process_results(
             self,
@@ -212,12 +217,29 @@ class EntityResolution(Extractor):
 
         return ans_list
 
+    def _has_digit_in_2gram_diff(self, a, b):
+        def to_2gram_set(s):
+            return {s[i:i+2] for i in range(len(s) - 1)}
+
+        set_a = to_2gram_set(a)
+        set_b = to_2gram_set(b)
+        diff = set_a ^ set_b
+
+        return any(any(c.isdigit() for c in pair) for pair in diff)
+
     def is_similarity(self, a, b):
+        if self._has_digit_in_2gram_diff(a, b):
+            return False
+
         if is_english(a) and is_english(b):
             if editdistance.eval(a, b) <= min(len(a), len(b)) // 2:
                 return True
+            return False
 
-        if len(set(a) & set(b)) > 1:
-            return True
+        a, b = set(a), set(b)
+        max_l = max(len(a), len(b))
+        if max_l < 4:
+            return len(a & b) > 1
 
-        return False
+        return len(a & b)*1./max_l >= 0.8
+

@@ -1,0 +1,798 @@
+
+{
+    "id": 11,
+    "title": "Customer Review Analysis",
+    "description": "Automatically classify customer reviews using LLM (Large Language Model) and route them via email to the relevant departments.",
+    "canvas_type": "Customer Support",
+    "dsl": {
+		"components": {
+			"Categorize:FourTeamsFold": {
+				"downstream": [
+					"Email:SharpDeerExist",
+					"Email:ChillyBusesDraw"
+				],
+				"obj": {
+					"component_name": "Categorize",
+					"params": {
+						"category_description": {
+							"After-sales issues": {
+								"description": "The negative review is about after-sales issues.",
+								"examples": [
+									"1. The product easily broke down.\n2. I need to change a new one.\n3. It is not the type I ordered."
+								],
+								"to": [
+									"Email:SharpDeerExist"
+								]
+							},
+							"Transportation issue": {
+								"description": "The negative review is about transportation issue.",
+								"examples": [
+									"1. The transportation is delayed too much.\n2. I can't find where is my order now."
+								],
+								"to": [
+									"Email:ChillyBusesDraw"
+								]
+							}
+						},
+						"llm_id": "deepseek-chat@DeepSeek",
+						"message_history_window_size": 1,
+						"outputs": {
+							"category_name": {
+								"type": "string"
+							}
+						},
+						"query": "sys.query",
+						"temperature": 0
+					}
+				},
+				"upstream": [
+					"Categorize:RottenWallsObey"
+				]
+			},
+			"Categorize:RottenWallsObey": {
+				"downstream": [
+					"Categorize:FourTeamsFold",
+					"Email:WickedSymbolsLeave"
+				],
+				"obj": {
+					"component_name": "Categorize",
+					"params": {
+						"category_description": {
+							"Negative review ": {
+								"description": "Negative review to the product.",
+								"examples": [
+									"1. I have issues. \n2. Too many problems.\n3. I don't like it."
+								],
+								"to": [
+									"Categorize:FourTeamsFold"
+								]
+							},
+							"Positive review": {
+								"description": "Positive review to the product.",
+								"examples": [
+									"1. Good, I like it.\n2. It is very helpful.\n3. It makes my work easier."
+								],
+								"to": [
+									"Email:WickedSymbolsLeave"
+								]
+							}
+						},
+						"llm_filter": "all",
+						"llm_id": "deepseek-chat@DeepSeek",
+						"message_history_window_size": 1,
+						"outputs": {
+							"category_name": {
+								"type": "string"
+							}
+						},
+						"query": "sys.query"
+					}
+				},
+				"upstream": [
+					"begin"
+				]
+			},
+			"Email:ChillyBusesDraw": {
+				"downstream": [
+					"StringTransform:FuzzySpiesTrain"
+				],
+				"obj": {
+					"component_name": "Email",
+					"params": {
+						"cc_email": "",
+						"content": "{begin@1}",
+						"email": "",
+						"outputs": {
+							"success": {
+								"type": "boolean",
+								"value": true
+							}
+						},
+						"password": "",
+						"sender_name": "",
+						"smtp_port": 465,
+						"smtp_server": "",
+						"subject": "",
+						"to_email": ""
+					}
+				},
+				"upstream": [
+					"Categorize:FourTeamsFold"
+				]
+			},
+			"Email:SharpDeerExist": {
+				"downstream": [
+					"StringTransform:FuzzySpiesTrain"
+				],
+				"obj": {
+					"component_name": "Email",
+					"params": {
+						"cc_email": "",
+						"content": "{begin@1}",
+						"email": "",
+						"outputs": {
+							"success": {
+								"type": "boolean",
+								"value": true
+							}
+						},
+						"password": "",
+						"sender_name": "",
+						"smtp_port": 465,
+						"smtp_server": "",
+						"subject": "",
+						"to_email": ""
+					}
+				},
+				"upstream": [
+					"Categorize:FourTeamsFold"
+				]
+			},
+			"Email:WickedSymbolsLeave": {
+				"downstream": [
+					"StringTransform:FuzzySpiesTrain"
+				],
+				"obj": {
+					"component_name": "Email",
+					"params": {
+						"cc_email": "",
+						"content": "{begin@1}",
+						"email": "",
+						"outputs": {
+							"success": {
+								"type": "boolean",
+								"value": true
+							}
+						},
+						"password": "",
+						"sender_name": "",
+						"smtp_port": 465,
+						"smtp_server": "",
+						"subject": "",
+						"to_email": ""
+					}
+				},
+				"upstream": [
+					"Categorize:RottenWallsObey"
+				]
+			},
+			"Message:ShaggyAnimalsWin": {
+				"downstream": [],
+				"obj": {
+					"component_name": "Message",
+					"params": {
+						"content": [
+							"{StringTransform:FuzzySpiesTrain@result}"
+						]
+					}
+				},
+				"upstream": [
+					"StringTransform:FuzzySpiesTrain"
+				]
+			},
+			"StringTransform:FuzzySpiesTrain": {
+				"downstream": [
+					"Message:ShaggyAnimalsWin"
+				],
+				"obj": {
+					"component_name": "StringTransform",
+					"params": {
+						"delimiters": [
+							","
+						],
+						"method": "merge",
+						"outputs": {
+							"result": {
+								"type": "string"
+							}
+						},
+						"script": "{Email:WickedSymbolsLeave@success}{Email:SharpDeerExist@success}{Email:ChillyBusesDraw@success}",
+						"split_ref": ""
+					}
+				},
+				"upstream": [
+					"Email:WickedSymbolsLeave",
+					"Email:SharpDeerExist",
+					"Email:ChillyBusesDraw"
+				]
+			},
+			"begin": {
+				"downstream": [
+					"Categorize:RottenWallsObey"
+				],
+				"obj": {
+					"component_name": "Begin",
+					"params": {
+						"enablePrologue": true,
+						"inputs": {
+							"1": {
+								"key": "1",
+								"name": "review",
+								"optional": false,
+								"options": [],
+								"type": "line",
+								"value": "test"
+							}
+						},
+						"mode": "conversational",
+						"prologue": "Hi! I'm your customer review analysis assistant. You can send a review to me.\n"
+					}
+				},
+				"upstream": []
+			}
+		},
+		"globals": {
+			"sys.conversation_turns": 0,
+			"sys.files": [],
+			"sys.query": "",
+			"sys.user_id": ""
+		},
+		"graph": {
+			"edges": [
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__beginstart-Categorize:RottenWallsObeyend",
+					"source": "begin",
+					"sourceHandle": "start",
+					"target": "Categorize:RottenWallsObey",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Categorize:RottenWallsObeyc8aacd5d-eb40-45a2-bc8f-94d016d7f6c0-Categorize:FourTeamsFoldend",
+					"source": "Categorize:RottenWallsObey",
+					"sourceHandle": "c8aacd5d-eb40-45a2-bc8f-94d016d7f6c0",
+					"target": "Categorize:FourTeamsFold",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Categorize:RottenWallsObey16f0d215-18b8-400e-98f2-f3e30aa28ff9-Email:WickedSymbolsLeaveend",
+					"source": "Categorize:RottenWallsObey",
+					"sourceHandle": "16f0d215-18b8-400e-98f2-f3e30aa28ff9",
+					"target": "Email:WickedSymbolsLeave",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Categorize:FourTeamsFolda1f3068c-85d8-4cfa-aa86-ef1f71d2edce-Email:SharpDeerExistend",
+					"source": "Categorize:FourTeamsFold",
+					"sourceHandle": "a1f3068c-85d8-4cfa-aa86-ef1f71d2edce",
+					"target": "Email:SharpDeerExist",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Categorize:FourTeamsFold2fda442d-8580-440c-a947-0df607ca56fe-Email:ChillyBusesDrawend",
+					"source": "Categorize:FourTeamsFold",
+					"sourceHandle": "2fda442d-8580-440c-a947-0df607ca56fe",
+					"target": "Email:ChillyBusesDraw",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Email:WickedSymbolsLeavestart-StringTransform:FuzzySpiesTrainend",
+					"source": "Email:WickedSymbolsLeave",
+					"sourceHandle": "start",
+					"target": "StringTransform:FuzzySpiesTrain",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Email:SharpDeerExiststart-StringTransform:FuzzySpiesTrainend",
+					"markerEnd": "logo",
+					"source": "Email:SharpDeerExist",
+					"sourceHandle": "start",
+					"style": {
+						"stroke": "rgba(91, 93, 106, 1)",
+						"strokeWidth": 1
+					},
+					"target": "StringTransform:FuzzySpiesTrain",
+					"targetHandle": "end",
+					"type": "buttonEdge",
+					"zIndex": 1001
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Email:ChillyBusesDrawstart-StringTransform:FuzzySpiesTrainend",
+					"markerEnd": "logo",
+					"source": "Email:ChillyBusesDraw",
+					"sourceHandle": "start",
+					"style": {
+						"stroke": "rgba(91, 93, 106, 1)",
+						"strokeWidth": 1
+					},
+					"target": "StringTransform:FuzzySpiesTrain",
+					"targetHandle": "end",
+					"type": "buttonEdge",
+					"zIndex": 1001
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__StringTransform:FuzzySpiesTrainstart-Message:ShaggyAnimalsWinend",
+					"source": "StringTransform:FuzzySpiesTrain",
+					"sourceHandle": "start",
+					"target": "Message:ShaggyAnimalsWin",
+					"targetHandle": "end"
+				}
+			],
+			"nodes": [
+				{
+					"data": {
+						"form": {
+							"enablePrologue": true,
+							"inputs": {
+								"1": {
+									"key": "1",
+									"name": "review",
+									"optional": false,
+									"options": [],
+									"type": "line",
+									"value": ""
+								}
+							},
+							"mode": "conversational",
+							"prologue": "Hi! I'm your customer review analysis assistant. You can send a review to me.\n"
+						},
+						"label": "Begin",
+						"name": "begin"
+					},
+					"dragging": false,
+					"id": "begin",
+					"measured": {
+						"height": 76,
+						"width": 200
+					},
+					"position": {
+						"x": 53.79637618636758,
+						"y": 55.73770491803276
+					},
+					"selected": false,
+					"sourcePosition": "left",
+					"targetPosition": "right",
+					"type": "beginNode"
+				},
+				{
+					"data": {
+						"form": {
+							"frequencyPenaltyEnabled": false,
+							"frequency_penalty": 0.5,
+							"items": [
+								{
+									"description": "Positive review to the product.",
+									"examples": [
+										{
+											"value": "1. Good, I like it.\n2. It is very helpful.\n3. It makes my work easier."
+										}
+									],
+									"name": "Positive review",
+									"uuid": "16f0d215-18b8-400e-98f2-f3e30aa28ff9"
+								},
+								{
+									"description": "Negative review to the product.",
+									"examples": [
+										{
+											"value": "1. I have issues. \n2. Too many problems.\n3. I don't like it."
+										}
+									],
+									"name": "Negative review ",
+									"uuid": "c8aacd5d-eb40-45a2-bc8f-94d016d7f6c0"
+								}
+							],
+							"llm_filter": "all",
+							"llm_id": "deepseek-chat@DeepSeek",
+							"maxTokensEnabled": false,
+							"max_tokens": 4096,
+							"message_history_window_size": 1,
+							"outputs": {
+								"category_name": {
+									"type": "string"
+								}
+							},
+							"parameter": "Precise",
+							"presencePenaltyEnabled": false,
+							"presence_penalty": 0.5,
+							"query": "sys.query",
+							"temperature": 0.2,
+							"temperatureEnabled": false,
+							"topPEnabled": false,
+							"top_p": 0.75
+						},
+						"label": "Categorize",
+						"name": "Review categorize"
+					},
+					"dragging": false,
+					"id": "Categorize:RottenWallsObey",
+					"measured": {
+						"height": 140,
+						"width": 200
+					},
+					"position": {
+						"x": 374.0221988829014,
+						"y": 37.350593375729275
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "categorizeNode"
+				},
+				{
+					"data": {
+						"form": {
+							"frequencyPenaltyEnabled": false,
+							"frequency_penalty": 0.7,
+							"items": [
+								{
+									"description": "The negative review is about after-sales issues.",
+									"examples": [
+										{
+											"value": "1. The product easily broke down.\n2. I need to change a new one.\n3. It is not the type I ordered."
+										}
+									],
+									"name": "After-sales issues",
+									"uuid": "a1f3068c-85d8-4cfa-aa86-ef1f71d2edce"
+								},
+								{
+									"description": "The negative review is about transportation issue.",
+									"examples": [
+										{
+											"value": "1. The transportation is delayed too much.\n2. I can't find where is my order now."
+										}
+									],
+									"name": "Transportation issue",
+									"uuid": "2fda442d-8580-440c-a947-0df607ca56fe"
+								}
+							],
+							"llm_id": "deepseek-chat@DeepSeek",
+							"maxTokensEnabled": false,
+							"max_tokens": 256,
+							"message_history_window_size": 1,
+							"outputs": {
+								"category_name": {
+									"type": "string"
+								}
+							},
+							"parameter": "Precise",
+							"presencePenaltyEnabled": false,
+							"presence_penalty": 0.4,
+							"query": "sys.query",
+							"temperature": 0,
+							"temperatureEnabled": true,
+							"topPEnabled": false,
+							"top_p": 0.3
+						},
+						"label": "Categorize",
+						"name": "Negative review categorize"
+					},
+					"dragging": false,
+					"id": "Categorize:FourTeamsFold",
+					"measured": {
+						"height": 140,
+						"width": 200
+					},
+					"position": {
+						"x": 706.0637059431883,
+						"y": 244.46649585736282
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "categorizeNode"
+				},
+				{
+					"data": {
+						"form": {
+							"cc_email": "",
+							"content": "{begin@1}",
+							"email": "",
+							"outputs": {
+								"success": {
+									"type": "boolean",
+									"value": true
+								}
+							},
+							"password": "",
+							"sender_name": "",
+							"smtp_port": 465,
+							"smtp_server": "",
+							"subject": "",
+							"to_email": ""
+						},
+						"label": "Email",
+						"name": "Email: positive "
+					},
+					"dragging": false,
+					"id": "Email:WickedSymbolsLeave",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 1034.9790998533604,
+						"y": -253.19781265954452
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "ragNode"
+				},
+				{
+					"data": {
+						"form": {
+							"cc_email": "",
+							"content": "{begin@1}",
+							"email": "",
+							"outputs": {
+								"success": {
+									"type": "boolean",
+									"value": true
+								}
+							},
+							"password": "",
+							"sender_name": "",
+							"smtp_port": 465,
+							"smtp_server": "",
+							"subject": "",
+							"to_email": ""
+						},
+						"label": "Email",
+						"name": "Email: after-sales"
+					},
+					"dragging": false,
+					"id": "Email:SharpDeerExist",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 1109.6114876248466,
+						"y": 111.37592732297131
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "ragNode"
+				},
+				{
+					"data": {
+						"form": {
+							"cc_email": "",
+							"content": "{begin@1}",
+							"email": "",
+							"outputs": {
+								"success": {
+									"type": "boolean",
+									"value": true
+								}
+							},
+							"password": "",
+							"sender_name": "",
+							"smtp_port": 465,
+							"smtp_server": "",
+							"subject": "",
+							"to_email": ""
+						},
+						"label": "Email",
+						"name": "Email: transportation"
+					},
+					"dragging": false,
+					"id": "Email:ChillyBusesDraw",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 1115.6114876248466,
+						"y": 476.4689932718253
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "ragNode"
+				},
+				{
+					"data": {
+						"form": {
+							"delimiters": [
+								","
+							],
+							"method": "merge",
+							"outputs": {
+								"result": {
+									"type": "string"
+								}
+							},
+							"script": "{Email:WickedSymbolsLeave@success}{Email:SharpDeerExist@success}{Email:ChillyBusesDraw@success}",
+							"split_ref": ""
+						},
+						"label": "StringTransform",
+						"name": "Merge results"
+					},
+					"dragging": false,
+					"id": "StringTransform:FuzzySpiesTrain",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 1696.9790998533604,
+						"y": 112.80218734045546
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "ragNode"
+				},
+				{
+					"data": {
+						"form": {
+							"content": [
+								"{StringTransform:FuzzySpiesTrain@result}"
+							]
+						},
+						"label": "Message",
+						"name": "Message"
+					},
+					"dragging": false,
+					"id": "Message:ShaggyAnimalsWin",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 1960.9013768854911,
+						"y": 112.43528348294187
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "messageNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "Send positive feedback to the company's brand marketing department system"
+						},
+						"label": "Note",
+						"name": "Note_0"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"id": "Note:FancyTownsSing",
+					"measured": {
+						"height": 136,
+						"width": 244
+					},
+					"position": {
+						"x": 1010,
+						"y": -167
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "Send after-sales issues to the product experience department"
+						},
+						"label": "Note",
+						"name": "Note_1"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"id": "Note:SillyLampsDrum",
+					"measured": {
+						"height": 136,
+						"width": 244
+					},
+					"position": {
+						"x": 1108,
+						"y": 195
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "Send negative transportation feedback to the transportation department"
+						},
+						"label": "Note",
+						"name": "Note_2"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"id": "Note:GreenNewsMake",
+					"measured": {
+						"height": 136,
+						"width": 244
+					},
+					"position": {
+						"x": 1119,
+						"y": 574
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "This workflow automatically classifies customer reviews using LLM (Large Language Model) and route them via email to the relevant departments."
+						},
+						"label": "Note",
+						"name": "Workflow Overall Description"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"height": 146,
+					"id": "Note:TangyHairsShow",
+					"measured": {
+						"height": 146,
+						"width": 360
+					},
+					"position": {
+						"x": 55.192937758820676,
+						"y": 185.32156293136785
+					},
+					"resizing": false,
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode",
+					"width": 360
+				}
+			]
+		},
+		"history": [],
+		"messages": [],
+		"path": [],
+		"retrieval": []
+	},
+    "avatar": "data:image/png;base64,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"
+}
+
+

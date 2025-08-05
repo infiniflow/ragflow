@@ -18,8 +18,11 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 import random
 import sys
+import threading
+import time
 
-from api.utils.log_utils import initRootLogger, get_project_base_directory
+from api.utils.api_utils import timeout, is_strong_enough
+from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
@@ -44,10 +47,10 @@ import faulthandler
 import numpy as np
 from peewee import DoesNotExist
 
-from api.db import LLMType, ParserType, TaskStatus
+from api.db import LLMType, ParserType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import TaskService
+from api.db.services.task_service import TaskService, has_canceled
 from api.db.services.file2document_service import File2DocumentService
 from api import settings
 from api.versions import get_ragflow_version
@@ -56,9 +59,9 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
     email, tag
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
+from rag.settings import DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
 from rag.utils import num_tokens_from_string, truncate
-from rag.utils.redis_conn import REDIS_CONN
+from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 
@@ -97,8 +100,21 @@ CURRENT_TASKS = {}
 
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
-task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
+MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
+task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+embed_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+minio_limiter = trio.CapacityLimiter(MAX_CONCURRENT_MINIO)
+kg_limiter = trio.CapacityLimiter(2)
+WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
+stop_event = threading.Event()
+
+
+def signal_handler(sig, frame):
+    logging.info("Received interrupt signal, shutting down...")
+    stop_event.set()
+    time.sleep(1)
+    sys.exit(0)
 
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
@@ -142,7 +158,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     try:
         if prog is not None and prog < 0:
             msg = "[ERROR]" + msg
-        cancel = TaskService.do_cancel(task_id)
+        cancel = has_canceled(task_id)
 
         if cancel:
             msg += " [Canceled]"
@@ -169,9 +185,11 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     except Exception:
         logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
 
+
 async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
+
     svr_queue_names = get_svr_queue_names()
     try:
         if not UNACKED_ITERATOR:
@@ -198,8 +216,7 @@ async def collect():
     canceled = False
     task = TaskService.get_task(msg["id"])
     if task:
-        _, doc = DocumentService.get_by_id(task["doc_id"])
-        canceled = doc.run == TaskStatus.CANCEL.value or doc.progress < 0
+        canceled = has_canceled(task["id"])
     if not task or canceled:
         state = "is unknown" if not task else "has been cancelled"
         FAILED_TASKS += 1
@@ -214,6 +231,7 @@ async def get_storage_binary(bucket, name):
     return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
 
 
+@timeout(60*40, 1)
 async def build_chunks(task, progress_callback):
     if task["size"] > DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
@@ -259,38 +277,55 @@ async def build_chunks(task, progress_callback):
     }
     if task["pagerank"]:
         doc[PAGERANK_FLD] = int(task["pagerank"])
-    el = 0
-    for ck in cks:
-        d = copy.deepcopy(doc)
-        d.update(ck)
-        d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-        d["create_timestamp_flt"] = datetime.now().timestamp()
-        if not d.get("image"):
-            _ = d.pop("image", None)
-            d["img_id"] = ""
-            docs.append(d)
-            continue
+    st = timer()
 
+    @timeout(60)
+    async def upload_to_minio(document, chunk):
         try:
-            output_buffer = BytesIO()
-            if isinstance(d["image"], bytes):
-                output_buffer = BytesIO(d["image"])
-            else:
-                d["image"].save(output_buffer, format='JPEG')
+            d = copy.deepcopy(document)
+            d.update(chunk)
+            d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+            d["create_timestamp_flt"] = datetime.now().timestamp()
+            if not d.get("image"):
+                _ = d.pop("image", None)
+                d["img_id"] = ""
+                docs.append(d)
+                return
 
-            st = timer()
-            await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-            el += timer() - st
+            output_buffer = BytesIO()
+            try:
+                if isinstance(d["image"], bytes):
+                    output_buffer.write(d["image"])
+                    output_buffer.seek(0)
+                else:
+                    # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
+                    if d["image"].mode in ("RGBA", "P"):
+                        converted_image = d["image"].convert("RGB")
+                        d["image"].close()  # Close original image
+                        d["image"] = converted_image
+                    d["image"].save(output_buffer, format='JPEG')
+
+                async with minio_limiter:
+                    await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+                if not isinstance(d["image"], bytes):
+                    d["image"].close()
+                del d["image"]  # Remove image reference
+                docs.append(d)
+            finally:
+                output_buffer.close()  # Ensure BytesIO is always closed
         except Exception:
             logging.exception(
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
             raise
 
-        d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-        del d["image"]
-        docs.append(d)
-    logging.info("MINIO PUT({}):{}".format(task["name"], el))
+    async with trio.open_nursery() as nursery:
+        for ck in cks:
+            nursery.start_soon(upload_to_minio, doc, ck)
+
+    el = timer() - st
+    logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
 
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
@@ -309,7 +344,7 @@ async def build_chunks(task, progress_callback):
             return
         async with trio.open_nursery() as nursery:
             for d in docs:
-                nursery.start_soon(lambda: doc_keyword_extraction(chat_mdl, d, task["parser_config"]["auto_keywords"]))
+                nursery.start_soon(doc_keyword_extraction, chat_mdl, d, task["parser_config"]["auto_keywords"])
         progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("auto_questions", 0):
@@ -328,7 +363,7 @@ async def build_chunks(task, progress_callback):
                 d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         async with trio.open_nursery() as nursery:
             for d in docs:
-                nursery.start_soon(lambda: doc_question_proposal(chat_mdl, d, task["parser_config"]["auto_questions"]))
+                nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
@@ -350,7 +385,11 @@ async def build_chunks(task, progress_callback):
 
         docs_to_tag = []
         for d in docs:
-            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S):
+            task_canceled = has_canceled(task["id"])
+            if task_canceled:
+                progress_callback(-1, msg="Task has been canceled.")
+                return
+            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
                 docs_to_tag.append(d)
@@ -370,7 +409,7 @@ async def build_chunks(task, progress_callback):
                 d[TAG_FLD] = json.loads(cached)
         async with trio.open_nursery() as nursery:
             for d in docs_to_tag:
-                nursery.start_soon(lambda: doc_content_tagging(chat_mdl, d, topn_tags))
+                nursery.start_soon(doc_content_tagging, chat_mdl, d, topn_tags)
         progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     return docs
@@ -381,10 +420,10 @@ def init_kb(row, vector_size: int):
     return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
 
 
+@timeout(60*20)
 async def embedding(docs, mdl, parser_config=None, callback=None):
     if parser_config is None:
         parser_config = {}
-    batch_size = 16
     tts, cnts = [], []
     for d in docs:
         tts.append(d.get("docnm_kwd", "Title"))
@@ -403,8 +442,9 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tk_count += c
 
     cnts_ = np.array([])
-    for i in range(0, len(cnts), batch_size):
-        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + batch_size]]))
+    for i in range(0, len(cnts), EMBEDDING_BATCH_SIZE):
+        async with embed_limiter:
+            vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + EMBEDDING_BATCH_SIZE]]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -412,8 +452,10 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tk_count += c
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
     cnts = cnts_
-
-    title_w = float(parser_config.get("filename_embd_weight", 0.1))
+    filename_embd_weight = parser_config.get("filename_embd_weight", 0.1) # due to the db support none value
+    if not filename_embd_weight:
+        filename_embd_weight = 0.1
+    title_w = float(filename_embd_weight)
     vects = (title_w * tts + (1 - title_w) *
              cnts) if len(tts) == len(cnts) else cnts
 
@@ -426,7 +468,10 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     return tk_count, vector_size
 
 
+@timeout(3600)
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
+    # Pressure test for GraphRAG task
+    await is_strong_enough(chat_mdl, embd_mdl)
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
     for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
@@ -467,6 +512,7 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     return res, tk_count
 
 
+@timeout(60*60, 1)
 async def do_handle_task(task):
     task_id = task["id"]
     task_from_page = task["from_page"]
@@ -491,7 +537,7 @@ async def do_handle_task(task):
         progress_callback(-1, msg=error_message)
         raise Exception(error_message)
 
-    task_canceled = TaskService.do_cancel(task_id)
+    task_canceled = has_canceled(task_id)
     if task_canceled:
         progress_callback(-1, msg="Task has been canceled.")
         return
@@ -499,6 +545,7 @@ async def do_handle_task(task):
     try:
         # bind embedding model
         embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
+        await is_strong_enough(None, embedding_model)
         vts, _ = embedding_model.encode(["ok"])
         vector_size = len(vts[0])
     except Exception as e:
@@ -513,18 +560,23 @@ async def do_handle_task(task):
     if task.get("task_type", "") == "raptor":
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+        await is_strong_enough(chat_model, None)
         # run RAPTOR
-        chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
+        async with kg_limiter:
+            chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
-        graphrag_conf = task_parser_config.get("graphrag", {})
-        if not graphrag_conf.get("use_graphrag", False):
+        if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
+            progress_callback(prog=-1.0, msg="Internal configuration error.")
             return
+        graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+        await is_strong_enough(chat_model, None)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
-        await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
+        async with kg_limiter:
+            await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
         return
     else:
@@ -532,8 +584,6 @@ async def do_handle_task(task):
         start_ts = timer()
         chunks = await build_chunks(task, progress_callback)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
-        if chunks is None:
-            return
         if not chunks:
             progress_callback(1., msg=f"No chunk built from {task_document_name}")
             return
@@ -556,23 +606,41 @@ async def do_handle_task(task):
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
     doc_store_result = ""
-    es_bulk_size = 4
-    for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(task_tenant_id), task_dataset_id))
+
+    async def delete_image(kb_id, chunk_id):
+        try:
+            async with minio_limiter:
+                STORAGE_IMPL.delete(kb_id, chunk_id)
+        except Exception:
+            logging.exception(
+                "Deleting image of chunk {}/{}/{} got exception".format(task["location"], task["name"], chunk_id))
+            raise
+
+    for b in range(0, len(chunks), DOC_BULK_SIZE):
+        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        task_canceled = has_canceled(task_id)
+        if task_canceled:
+            progress_callback(-1, msg="Task has been canceled.")
+            return
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
-        chunk_ids = [chunk["id"] for chunk in chunks[:b + es_bulk_size]]
+        chunk_ids = [chunk["id"] for chunk in chunks[:b + DOC_BULK_SIZE]]
         chunk_ids_str = " ".join(chunk_ids)
         try:
             TaskService.update_chunk_ids(task["id"], chunk_ids_str)
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task['id']} is unknown.")
             doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
+            async with trio.open_nursery() as nursery:
+                for chunk_id in chunk_ids:
+                    nursery.start_soon(delete_image, task_dataset_id, chunk_id)
+            progress_callback(-1, msg=f"Chunk updates failed since task {task['id']} is unknown.")
             return
+
     logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
                                                                                      task_to_page, len(chunks),
                                                                                      timer() - start_ts))
@@ -619,6 +687,7 @@ async def handle_task():
 async def report_status():
     global CONSUMER_NAME, BOOT_AT, PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
     REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
+    redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
     while True:
         try:
             now = datetime.now()
@@ -644,18 +713,41 @@ async def report_status():
             expired = REDIS_CONN.zcount(CONSUMER_NAME, 0, now.timestamp() - 60 * 30)
             if expired > 0:
                 REDIS_CONN.zpopmin(CONSUMER_NAME, expired)
+
+            # clean task executor
+            if redis_lock.acquire():
+                task_executors = REDIS_CONN.smembers("TASKEXE")
+                for consumer_name in task_executors:
+                    if consumer_name == CONSUMER_NAME:
+                        continue
+                    expired = REDIS_CONN.zcount(
+                        consumer_name, now.timestamp() - WORKER_HEARTBEAT_TIMEOUT, now.timestamp() + 10
+                    )
+                    if expired == 0:
+                        logging.info(f"{consumer_name} expired, removed")
+                        REDIS_CONN.srem("TASKEXE", consumer_name)
+                        REDIS_CONN.delete(consumer_name)
         except Exception:
             logging.exception("report_status got exception")
+        finally:
+            redis_lock.release()
         await trio.sleep(30)
+
+
+async def task_manager():
+    try:
+        await handle_task()
+    finally:
+        task_limiter.release()
 
 
 async def main():
     logging.info(r"""
-  ______           __      ______                     __            
+  ______           __      ______                     __
  /_  __/___ ______/ /__   / ____/  _____  _______  __/ /_____  _____
   / / / __ `/ ___/ //_/  / __/ | |/_/ _ \/ ___/ / / / __/ __ \/ ___/
- / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /    
-/_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/                               
+ / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /
+/_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/
     """)
     logging.info(f'TaskExecutor: RAGFlow version: {get_ragflow_version()}')
     settings.init_settings()
@@ -667,14 +759,17 @@ async def main():
     if TRACE_MALLOC_ENABLED:
         start_tracemalloc_and_snapshot(None, None)
 
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     async with trio.open_nursery() as nursery:
         nursery.start_soon(report_status)
-        while True:
-            async with task_limiter:
-                nursery.start_soon(handle_task)
+        while not stop_event.is_set():
+            await task_limiter.acquire()
+            nursery.start_soon(task_manager)
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":
     faulthandler.enable()
-    initRootLogger(CONSUMER_NAME)
+    init_root_logger(CONSUMER_NAME)
     trio.run(main)

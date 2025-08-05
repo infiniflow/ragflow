@@ -9,6 +9,10 @@ Create a general-purpose chatbot.
 
 ---
 
+:::danger DEPRECATED!
+A new version is coming soon.
+:::
+
 Chatbot is one of the most common AI scenarios. However, effectively understanding user queries and responding appropriately remains a challenge. RAGFlow's general-purpose chatbot agent is our attempt to tackle this longstanding issue.  
 
 This chatbot closely resembles the chatbot introduced in [Start an AI chat](../chat/start_chat.md), but with a key difference - it introduces a reflective mechanism that allows it to improve the retrieval from the target knowledge bases by rewriting the user's query.

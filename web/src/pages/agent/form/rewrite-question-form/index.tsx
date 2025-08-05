@@ -1,4 +1,4 @@
-import { NextLLMSelect } from '@/components/llm-select';
+import { NextLLMSelect } from '@/components/llm-select/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import {
   Form,
@@ -10,8 +10,8 @@ import {
 } from '@/components/ui/form';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslation } from 'react-i18next';
-import { GoogleLanguageOptions } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { GoogleLanguageOptions } from '../../options';
 
 const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
   const { t } = useTranslation();

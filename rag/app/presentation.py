@@ -20,6 +20,9 @@ from io import BytesIO
 
 from PIL import Image
 
+from api.db import LLMType
+from api.db.services.llm_service import LLMBundle
+from deepdoc.parser.pdf_parser import VisionParser
 from rag.nlp import tokenize, is_english
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser
@@ -36,11 +39,15 @@ class Ppt(PptParser):
         imgs = []
         with slides.Presentation(BytesIO(fnm)) as presentation:
             for i, slide in enumerate(presentation.slides[from_page: to_page]):
-                buffered = BytesIO()
-                slide.get_thumbnail(
-                    0.5, 0.5).save(
-                    buffered, drawing.imaging.ImageFormat.jpeg)
-                imgs.append(Image.open(buffered))
+                try:
+                    with BytesIO() as buffered:
+                        slide.get_thumbnail(
+                            0.1, 0.1).save(
+                            buffered, drawing.imaging.ImageFormat.jpeg)
+                        buffered.seek(0)
+                        imgs.append(Image.open(buffered).copy())
+                except RuntimeError as e:
+                    raise RuntimeError(f'ppt parse error at page {i+1}, original error: {str(e)}') from e
         assert len(imgs) == len(
             txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
         callback(0.9, "Image extraction finished")
@@ -92,12 +99,14 @@ class PlainPdf(PlainParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, **kwargs):
+          lang="Chinese", callback=None, parser_config=None, **kwargs):
     """
     The supported file formats are pdf, pptx.
     Every page will be treated as a chunk. And the thumbnail of every page will be stored.
     PPT file will be parsed by using this method automatically, setting-up for every PPT file is not necessary.
     """
+    if parser_config is None:
+        parser_config = {}
     eng = lang.lower() == "english"
     doc = {
         "docnm_kwd": filename,
@@ -112,6 +121,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             d = copy.deepcopy(doc)
             pn += from_page
             d["image"] = img
+            d["doc_type_kwd"] = "image"
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]
             d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
@@ -119,11 +129,21 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_recognizer == "DeepDOC":
+            pdf_parser = Pdf()
+            sections = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+        elif layout_recognizer == "Plain Text":
             pdf_parser = PlainParser()
-        for pn, (txt, img) in enumerate(pdf_parser(filename, binary,
-                                                   from_page=from_page, to_page=to_page, callback=callback)):
+            sections, _ = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+        else:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=layout_recognizer, lang=lang)
+            pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
+            sections, _ = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
+                                      callback=callback)
+
+        callback(0.8, "Finish parsing.")
+        for pn, (txt, img) in enumerate(sections):
             d = copy.deepcopy(doc)
             pn += from_page
             if img:

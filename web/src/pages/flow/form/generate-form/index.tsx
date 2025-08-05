@@ -4,9 +4,17 @@ import { PromptEditor } from '@/components/prompt-editor';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Switch } from 'antd';
 import { IOperatorForm } from '../../interface';
+import LLMToolsSelect from '@/components/llm-tools-select';
+import { useState } from 'react';
 
 const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
+
+  const [isCurrentLlmSupportTools, setCurrentLlmSupportTools] = useState(false);
+
+  const onLlmSelectChanged = (_: string, option: any) => {
+    setCurrentLlmSupportTools(option.is_tools);
+  };
 
   return (
     <Form
@@ -21,13 +29,13 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
         label={t('model', { keyPrefix: 'chat' })}
         tooltip={t('modelTip', { keyPrefix: 'chat' })}
       >
-        <LLMSelect></LLMSelect>
+        <LLMSelect onInitialValue={onLlmSelectChanged} onChange={onLlmSelectChanged}></LLMSelect>
       </Form.Item>
       <Form.Item
         name={['prompt']}
         label={t('systemPrompt')}
         initialValue={t('promptText')}
-        tooltip={t('promptTip', { keyPrefix: 'knowledgeConfiguration' })}
+        tooltip={t('promptTip')}
         rules={[
           {
             required: true,
@@ -37,6 +45,13 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
       >
         {/* <Input.TextArea rows={8}></Input.TextArea> */}
         <PromptEditor></PromptEditor>
+      </Form.Item>
+      <Form.Item
+        name={'llm_enabled_tools'}
+        label={t('modelEnabledTools', { keyPrefix: 'chat' })}
+        tooltip={t('modelEnabledToolsTip', { keyPrefix: 'chat' })}
+      >
+        <LLMToolsSelect disabled={!isCurrentLlmSupportTools}></LLMToolsSelect>
       </Form.Item>
       <Form.Item
         name={['cite']}

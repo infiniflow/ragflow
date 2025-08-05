@@ -1,27 +1,51 @@
+import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
 import {
-  Background,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import {
   ConnectionMode,
+  ControlButton,
+  Controls,
   NodeTypes,
   ReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-// import ChatDrawer from '../chat/drawer';
+import { NotebookPen } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ChatSheet } from '../chat/chat-sheet';
+import { AgentBackground } from '../components/background';
+import {
+  AgentChatContext,
+  AgentChatLogContext,
+  AgentInstanceContext,
+} from '../context';
 import FormSheet from '../form-sheet/next';
 import {
   useHandleDrop,
   useSelectCanvasData,
   useValidateConnection,
-  useWatchNodeFormDataChange,
 } from '../hooks';
+import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
-import { useShowDrawer } from '../hooks/use-show-drawer';
-// import RunDrawer from '../run-drawer';
+import { useCacheChatLog } from '../hooks/use-cache-chat-log';
+import { useMoveNote } from '../hooks/use-move-note';
+import {
+  useHideFormSheetOnNodeDeletion,
+  useShowDrawer,
+  useShowLogSheet,
+} from '../hooks/use-show-drawer';
+import { LogSheet } from '../log-sheet';
+import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
+import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
-import { EmailNode } from './node/email-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
@@ -34,8 +58,9 @@ import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
+import { ToolNode } from './node/tool-node';
 
-const nodeTypes: NodeTypes = {
+export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
@@ -50,9 +75,11 @@ const nodeTypes: NodeTypes = {
   keywordNode: KeywordNode,
   invokeNode: InvokeNode,
   templateNode: TemplateNode,
-  emailNode: EmailNode,
+  // emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
+  agentNode: AgentNode,
+  toolNode: ToolNode,
 };
 
 const edgeTypes = {
@@ -64,7 +91,8 @@ interface IProps {
   hideDrawer(): void;
 }
 
-function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
+function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
+  const { t } = useTranslation();
   const {
     nodes,
     edges,
@@ -72,14 +100,16 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     onEdgesChange,
     onNodesChange,
     onSelectionChange,
+    onEdgeMouseEnter,
+    onEdgeMouseLeave,
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
-  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
+  const { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance } =
+    useHandleDrop();
 
   const {
     onNodeClick,
-    onPaneClick,
     clickedNode,
     formDrawerVisible,
     hideFormDrawer,
@@ -90,14 +120,57 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     runVisible,
     hideRunOrChatDrawer,
     showChatModal,
+    showFormDrawer,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
   });
 
+  const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessageById,
+    clearEventList,
+    currentMessageId,
+  } = useCacheChatLog();
+
+  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
+    setCurrentMessageId,
+  });
+  const [lastSendLoading, setLastSendLoading] = useState(false);
+
   const { handleBeforeDelete } = useBeforeDelete();
 
-  useWatchNodeFormDataChange();
+  const { addCanvasNode, addNoteNode } = useAddNode(reactFlowInstance);
+
+  const { ref, showImage, hideImage, imgVisible, mouse } = useMoveNote();
+
+  const { theme } = useTheme();
+
+  const onPaneClick = useCallback(() => {
+    hideFormDrawer();
+    if (imgVisible) {
+      addNoteNode(mouse);
+      hideImage();
+    }
+  }, [addNoteNode, hideFormDrawer, hideImage, imgVisible, mouse]);
+
+  useEffect(() => {
+    if (!chatVisible) {
+      clearEventList();
+    }
+  }, [chatVisible, clearEventList]);
+  const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
+    if (messageId === currentMessageId) {
+      setLastSendLoading(loading);
+    } else {
+      setLastSendLoading(false);
+    }
+  };
+
+  const isDarkTheme = useIsDarkTheme();
+
+  useHideFormSheetOnNodeDeletion({ hideFormDrawer });
 
   return (
     <div className={styles.canvasWrapper}>
@@ -121,63 +194,104 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <ReactFlow
-        connectionMode={ConnectionMode.Loose}
-        nodes={nodes}
-        onNodesChange={onNodesChange}
-        edges={edges}
-        onEdgesChange={onEdgesChange}
-        fitView
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onInit={setReactFlowInstance}
-        onSelectionChange={onSelectionChange}
-        nodeOrigin={[0.5, 0]}
-        isValidConnection={isValidConnection}
-        defaultEdgeOptions={{
-          type: 'buttonEdge',
-          markerEnd: 'logo',
-          style: {
-            strokeWidth: 2,
-            stroke: 'rgb(202 197 245)',
-          },
-          zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
-        }}
-        deleteKeyCode={['Delete', 'Backspace']}
-        onBeforeDelete={handleBeforeDelete}
-      >
-        <Background />
-      </ReactFlow>
+      <AgentInstanceContext.Provider value={{ addCanvasNode, showFormDrawer }}>
+        <ReactFlow
+          connectionMode={ConnectionMode.Loose}
+          nodes={nodes}
+          onNodesChange={onNodesChange}
+          edges={edges}
+          onEdgesChange={onEdgesChange}
+          fitView
+          onConnect={onConnect}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onInit={setReactFlowInstance}
+          onSelectionChange={onSelectionChange}
+          nodeOrigin={[0.5, 0]}
+          isValidConnection={isValidConnection}
+          onEdgeMouseEnter={onEdgeMouseEnter}
+          onEdgeMouseLeave={onEdgeMouseLeave}
+          className="h-full"
+          colorMode={theme}
+          defaultEdgeOptions={{
+            type: 'buttonEdge',
+            markerEnd: 'logo',
+            style: {
+              strokeWidth: 1,
+              stroke: isDarkTheme
+                ? 'rgba(91, 93, 106, 1)'
+                : 'rgba(151, 154, 171, 1)',
+            },
+            zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
+          }}
+          deleteKeyCode={['Delete', 'Backspace']}
+          onBeforeDelete={handleBeforeDelete}
+        >
+          <AgentBackground></AgentBackground>
+          <Controls position={'bottom-center'} orientation="horizontal">
+            <ControlButton>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <NotebookPen className="!fill-none" onClick={showImage} />
+                </TooltipTrigger>
+                <TooltipContent>{t('flow.note')}</TooltipContent>
+              </Tooltip>
+            </ControlButton>
+          </Controls>
+        </ReactFlow>
+      </AgentInstanceContext.Provider>
+      <NotebookPen
+        className={cn('hidden absolute size-6', { block: imgVisible })}
+        ref={ref}
+      ></NotebookPen>
       {formDrawerVisible && (
-        <FormSheet
-          node={clickedNode}
-          visible={formDrawerVisible}
-          hideModal={hideFormDrawer}
-          singleDebugDrawerVisible={singleDebugDrawerVisible}
-          hideSingleDebugDrawer={hideSingleDebugDrawer}
-          showSingleDebugDrawer={showSingleDebugDrawer}
-        ></FormSheet>
+        <AgentInstanceContext.Provider
+          value={{ addCanvasNode, showFormDrawer }}
+        >
+          <FormSheet
+            node={clickedNode}
+            visible={formDrawerVisible}
+            hideModal={hideFormDrawer}
+            chatVisible={chatVisible}
+            singleDebugDrawerVisible={singleDebugDrawerVisible}
+            hideSingleDebugDrawer={hideSingleDebugDrawer}
+            showSingleDebugDrawer={showSingleDebugDrawer}
+          ></FormSheet>
+        </AgentInstanceContext.Provider>
       )}
-      {/* {chatVisible && (
-        <ChatDrawer
-          visible={chatVisible}
-          hideModal={hideRunOrChatDrawer}
-        ></ChatDrawer>
+      {chatVisible && (
+        <AgentChatContext.Provider
+          value={{ showLogSheet, setLastSendLoadingFunc }}
+        >
+          <AgentChatLogContext.Provider
+            value={{ addEventList, setCurrentMessageId }}
+          >
+            <ChatSheet hideModal={hideRunOrChatDrawer}></ChatSheet>
+          </AgentChatLogContext.Provider>
+        </AgentChatContext.Provider>
       )}
-
       {runVisible && (
-        <RunDrawer
+        <RunSheet
           hideModal={hideRunOrChatDrawer}
           showModal={showChatModal}
-        ></RunDrawer>
-      )} */}
+        ></RunSheet>
+      )}
+      {logSheetVisible && (
+        <LogSheet
+          hideModal={hideLogSheet}
+          currentEventListWithoutMessageById={
+            currentEventListWithoutMessageById
+          }
+          currentMessageId={currentMessageId}
+          sendLoading={lastSendLoading}
+        ></LogSheet>
+      )}
     </div>
   );
 }
 
-export default FlowCanvas;
+export default AgentCanvas;

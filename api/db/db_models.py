@@ -13,11 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import hashlib
 import inspect
 import logging
 import operator
 import os
 import sys
+import time
 import typing
 from enum import Enum
 from functools import wraps
@@ -241,8 +243,51 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
+class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop('max_retries', 5)
+        self.retry_delay = kwargs.pop('retry_delay', 1)
+        super().__init__(*args, **kwargs)
+
+    def execute_sql(self, sql, params=None, commit=True):
+        from peewee import OperationalError
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().execute_sql(sql, params, commit)
+            except OperationalError as e:
+                if e.args[0] in (2013, 2006) and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection (attempt {attempt+1}/{self.max_retries}): {e}"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    logging.error(f"DB execution failure: {e}")
+                    raise
+        return None
+
+    def _handle_connection_loss(self):
+        self.close_all()
+        self.connect()
+
+    def begin(self):
+        from peewee import OperationalError
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().begin()
+            except OperationalError as e:
+                if e.args[0] in (2013, 2006) and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    raise
+
+
 class PooledDatabase(Enum):
-    MYSQL = PooledMySQLDatabase
+    MYSQL = RetryingPooledMySQLDatabase
     POSTGRES = PooledPostgresqlDatabase
 
 
@@ -260,14 +305,57 @@ class BaseDataBase:
         logging.info("init database on cluster mode successfully")
 
 
+def with_retry(max_retries=3, retry_delay=1.0):
+    """Decorator: Add retry mechanism to database operations
+
+    Args:
+        max_retries (int): maximum number of retries
+        retry_delay (float): initial retry delay (seconds), will increase exponentially
+
+    Returns:
+        decorated function
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for retry in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    # get self and method name for logging
+                    self_obj = args[0] if args else None
+                    func_name = func.__name__
+                    lock_name = getattr(self_obj, "lock_name", "unknown") if self_obj else "unknown"
+
+                    if retry < max_retries - 1:
+                        current_delay = retry_delay * (2**retry)
+                        logging.warning(f"{func_name} {lock_name} failed: {str(e)}, retrying ({retry + 1}/{max_retries})")
+                        time.sleep(current_delay)
+                    else:
+                        logging.error(f"{func_name} {lock_name} failed after all attempts: {str(e)}")
+
+            if last_exception:
+                raise last_exception
+            return False
+
+        return wrapper
+
+    return decorator
+
+
 class PostgresDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
+        self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31 - 1)
         self.timeout = int(timeout)
         self.db = db if db else DB
 
+    @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
-        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", self.timeout)
+        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
         ret = cursor.fetchone()
         if ret[0] == 0:
             raise Exception(f"acquire postgres lock {self.lock_name} timeout")
@@ -276,8 +364,9 @@ class PostgresDatabaseLock:
         else:
             raise Exception(f"failed to acquire lock {self.lock_name}")
 
+    @with_retry(max_retries=3, retry_delay=1.0)
     def unlock(self):
-        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", self.timeout)
+        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", (self.lock_id,))
         ret = cursor.fetchone()
         if ret[0] == 0:
             raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
@@ -287,12 +376,12 @@ class PostgresDatabaseLock:
             raise Exception(f"postgres lock {self.lock_name} does not exist")
 
     def __enter__(self):
-        if isinstance(self.db, PostgresDatabaseLock):
+        if isinstance(self.db, PooledPostgresqlDatabase):
             self.lock()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self.db, PostgresDatabaseLock):
+        if isinstance(self.db, PooledPostgresqlDatabase):
             self.unlock()
 
     def __call__(self, func):
@@ -310,6 +399,7 @@ class MysqlDatabaseLock:
         self.timeout = int(timeout)
         self.db = db if db else DB
 
+    @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
         # SQL parameters only support %s format placeholders
         cursor = self.db.execute_sql("SELECT GET_LOCK(%s, %s)", (self.lock_name, self.timeout))
@@ -321,6 +411,7 @@ class MysqlDatabaseLock:
         else:
             raise Exception(f"failed to acquire lock {self.lock_name}")
 
+    @with_retry(max_retries=3, retry_delay=1.0)
     def unlock(self):
         cursor = self.db.execute_sql("SELECT RELEASE_LOCK(%s)", (self.lock_name,))
         ret = cursor.fetchone()
@@ -372,6 +463,7 @@ class DataBaseModel(BaseModel):
 
 
 @DB.connection_context()
+@DB.lock("init_database_tables", 60)
 def init_database_tables(alter_fields=[]):
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
     table_objs = []
@@ -379,13 +471,18 @@ def init_database_tables(alter_fields=[]):
     for name, obj in members:
         if obj != DataBaseModel and issubclass(obj, DataBaseModel):
             table_objs.append(obj)
-            logging.debug(f"start create table {obj.__name__}")
-            try:
-                obj.create_table()
-                logging.debug(f"create table success: {obj.__name__}")
-            except Exception as e:
-                logging.exception(e)
-                create_failed_list.append(obj.__name__)
+
+            if not obj.table_exists():
+                logging.debug(f"start create table {obj.__name__}")
+                try:
+                    obj.create_table(safe=True)
+                    logging.debug(f"create table success: {obj.__name__}")
+                except Exception as e:
+                    logging.exception(e)
+                    create_failed_list.append(obj.__name__)
+            else:
+                logging.debug(f"table {obj.__name__} already exists, skip creation.")
+
     if create_failed_list:
         logging.error(f"create tables failed: {create_failed_list}")
         raise Exception(f"create tables failed: {create_failed_list}")
@@ -492,6 +589,7 @@ class LLM(DataBaseModel):
     max_tokens = IntegerField(default=0)
 
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, Chat, 32k...", index=True)
+    is_tools = BooleanField(null=False, help_text="support tools", default=False)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -524,9 +622,7 @@ class TenantLangfuse(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, primary_key=True)
     secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY", index=True)
     public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY", index=True)
-    host = CharField(max_length=128, null=False, help_text="host", index=True)
-    # max_tokens = IntegerField(default=8192, index=True)
-    # used_tokens = IntegerField(default=0, index=True)
+    host = CharField(max_length=128, null=False, help_text="HOST", index=True)
 
     def __str__(self):
         return "Langfuse host" + self.host
@@ -580,8 +676,9 @@ class Document(DataBaseModel):
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0)
     meta_fields = JSONField(null=True, default={})
+    suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -623,7 +720,7 @@ class Task(DataBaseModel):
     priority = IntegerField(default=0)
 
     begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0)
 
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(null=True, help_text="process message", default="")
@@ -702,6 +799,7 @@ class API4Conversation(DataBaseModel):
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
     thumb_up = IntegerField(default=0, index=True)
+    errors = TextField(null=True, help_text="errors")
 
     class Meta:
         db_table = "api_4_conversation"
@@ -747,91 +845,174 @@ class UserCanvasVersion(DataBaseModel):
         db_table = "user_canvas_version"
 
 
-def migrate_db():
-    with DB.transaction():
-        migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
-        try:
-            migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("dialog", "top_k", IntegerField(default=1024)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "retry_count", IntegerField(default=0)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(max_length=32, null=True, index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("tenant_llm", "max_tokens", IntegerField(default=8192, index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_4_conversation", "dsl", JSONField(null=True, default={})))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("knowledgebase", "pagerank", IntegerField(default=0, index=False)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_token", "beta", CharField(max_length=255, null=True, index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "digest", TextField(null=True, help_text="task digest", default="")))
-        except Exception:
-            pass
+class MCPServer(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=255, null=False, help_text="MCP Server name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    url = CharField(max_length=2048, null=False, help_text="MCP Server URL")
+    server_type = CharField(max_length=32, null=False, help_text="MCP Server type")
+    description = TextField(null=True, help_text="MCP Server description")
+    variables = JSONField(null=True, default=dict, help_text="MCP Server variables")
+    headers = JSONField(null=True, default=dict, help_text="MCP Server additional request headers")
 
-        try:
-            migrate(migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default="")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("document", "meta_fields", JSONField(null=True, default={})))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "task_type", CharField(max_length=32, null=False, default="")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "priority", IntegerField(default=0)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
-        except Exception:
-            pass
+    class Meta:
+        db_table = "mcp_server"
+
+
+class Search(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    avatar = TextField(null=True, help_text="avatar base64 string")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Search name", index=True)
+    description = TextField(null=True, help_text="KB description")
+    created_by = CharField(max_length=32, null=False, index=True)
+    search_config = JSONField(
+        null=False,
+        default={
+            "kb_ids": [],
+            "doc_ids": [],
+            "similarity_threshold": 0.0,
+            "vector_similarity_weight": 0.3,
+            "use_kg": False,
+            # rerank settings
+            "rerank_id": "",
+            "top_k": 1024,
+            # chat settings
+            "summary": False,
+            "chat_id": "",
+            "llm_setting": {
+                "temperature": 0.1,
+                "top_p": 0.3,
+                "frequency_penalty": 0.7,
+                "presence_penalty": 0.4,
+            },
+            "chat_settingcross_languages": [],
+            "highlight": False,
+            "keyword": False,
+            "web_search": False,
+            "related_search": False,
+            "query_mindmap": False,
+        },
+    )
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "search"
+
+
+def migrate_db():
+    logging.disable(logging.ERROR)
+    migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
+    try:
+        migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("dialog", "top_k", IntegerField(default=1024)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "retry_count", IntegerField(default=0)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(max_length=32, null=True, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant_llm", "max_tokens", IntegerField(default=8192, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "dsl", JSONField(null=True, default={})))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "pagerank", IntegerField(default=0, index=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_token", "beta", CharField(max_length=255, null=True, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "digest", TextField(null=True, help_text="task digest", default="")))
+    except Exception:
+        pass
+
+    try:
+        migrate(migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default="")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("document", "meta_fields", JSONField(null=True, default={})))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "task_type", CharField(max_length=32, null=False, default="")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "priority", IntegerField(default=0)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.rename_column("task", "process_duation", "process_duration"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.rename_column("document", "process_duation", "process_duration"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "errors", TextField(null=True, help_text="errors")))
+    except Exception:
+        pass
+    logging.disable(logging.NOTSET)

@@ -14,9 +14,8 @@
 #  limitations under the License.
 #
 
-from .document import Document
-
 from .base import Base
+from .document import Document
 
 
 class DataSet(Base):
@@ -43,11 +42,13 @@ class DataSet(Base):
         super().__init__(rag, res_dict)
 
     def update(self, update_message: dict):
-        res = self.put(f'/datasets/{self.id}',
-                       update_message)
+        res = self.put(f"/datasets/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
+
+        self._update_from_dict(self.rag, res.get("data", {}))
+        return self
 
     def upload_documents(self, document_list: list[dict]):
         url = f"/datasets/{self.id}/documents"
@@ -62,11 +63,30 @@ class DataSet(Base):
             return doc_list
         raise Exception(res.get("message"))
 
-    def list_documents(self, id: str | None = None, keywords: str | None = None, page: int = 1, page_size: int = 30,
-                       orderby: str = "create_time", desc: bool = True):
-        res = self.get(f"/datasets/{self.id}/documents",
-                       params={"id": id, "keywords": keywords, "page": page, "page_size": page_size, "orderby": orderby,
-                               "desc": desc})
+    def list_documents(
+        self,
+        id: str | None = None,
+        name: str | None = None,
+        keywords: str | None = None,
+        page: int = 1,
+        page_size: int = 30,
+        orderby: str = "create_time",
+        desc: bool = True,
+        create_time_from: int = 0,
+        create_time_to: int = 0,
+    ):
+        params = {
+            "id": id,
+            "name": name,
+            "keywords": keywords,
+            "page": page,
+            "page_size": page_size,
+            "orderby": orderby,
+            "desc": desc,
+            "create_time_from": create_time_from,
+            "create_time_to": create_time_to,
+        }
+        res = self.get(f"/datasets/{self.id}/documents", params=params)
         res = res.json()
         documents = []
         if res.get("code") == 0:

@@ -18,7 +18,7 @@ import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flex, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const useFetchLlmList = (
@@ -71,13 +71,14 @@ function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
     ),
     value: `${x.llm_name}@${x.fid}`,
     disabled: !x.available,
+    is_tools: x.is_tools,
   };
 }
 
 export const useSelectLlmOptionsByModelType = () => {
   const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
 
-  const groupImage2TextOptions = () => {
+  const groupImage2TextOptions = useCallback(() => {
     const modelType = LlmModelType.Image2text;
     const modelTag = modelType.toUpperCase();
 
@@ -96,27 +97,32 @@ export const useSelectLlmOptionsByModelType = () => {
         };
       })
       .filter((x) => x.options.length > 0);
-  };
+  }, [llmInfo]);
 
-  const groupOptionsByModelType = (modelType: LlmModelType) => {
-    return Object.entries(llmInfo)
-      .filter(([, value]) =>
-        modelType ? value.some((x) => x.model_type.includes(modelType)) : true,
-      )
-      .map(([key, value]) => {
-        return {
-          label: key,
-          options: value
-            .filter(
-              (x) =>
-                (modelType ? x.model_type.includes(modelType) : true) &&
-                x.available,
-            )
-            .map(buildLlmOptionsWithIcon),
-        };
-      })
-      .filter((x) => x.options.length > 0);
-  };
+  const groupOptionsByModelType = useCallback(
+    (modelType: LlmModelType) => {
+      return Object.entries(llmInfo)
+        .filter(([, value]) =>
+          modelType
+            ? value.some((x) => x.model_type.includes(modelType))
+            : true,
+        )
+        .map(([key, value]) => {
+          return {
+            label: key,
+            options: value
+              .filter(
+                (x) =>
+                  (modelType ? x.model_type.includes(modelType) : true) &&
+                  x.available,
+              )
+              .map(buildLlmOptionsWithIcon),
+          };
+        })
+        .filter((x) => x.options.length > 0);
+    },
+    [llmInfo],
+  );
 
   return {
     [LlmModelType.Chat]: groupOptionsByModelType(LlmModelType.Chat),
@@ -137,7 +143,12 @@ export const useComposeLlmOptionsByModelTypes = (
 
   return modelTypes.reduce<
     (DefaultOptionType & {
-      options: { label: JSX.Element; value: string; disabled: boolean }[];
+      options: {
+        label: JSX.Element;
+        value: string;
+        disabled: boolean;
+        is_tools: boolean;
+      }[];
     })[]
   >((pre, cur) => {
     const options = allOptions[cur];
@@ -180,6 +191,23 @@ export const useFetchMyLlmList = (): ResponseGetType<
     gcTime: 0,
     queryFn: async () => {
       const { data } = await userService.my_llm();
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchMyLlmListDetailed = (): ResponseGetType<
+  Record<string, any>
+> => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['myLlmListDetailed'],
+    initialData: {},
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await userService.my_llm({ include_details: true });
 
       return data?.data ?? {};
     },
@@ -238,6 +266,7 @@ export const useSaveApiKey = () => {
       if (data.code === 0) {
         message.success(t('message.modified'));
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
       }
       return data.code;
@@ -289,6 +318,7 @@ export const useAddLlm = () => {
       const { data } = await userService.add_llm(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.modified'));
       }
@@ -312,6 +342,7 @@ export const useDeleteLlm = () => {
       const { data } = await userService.delete_llm(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }
@@ -335,6 +366,7 @@ export const useDeleteFactory = () => {
       const { data } = await userService.deleteFactory(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
+        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }

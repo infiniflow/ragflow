@@ -1,168 +1,214 @@
-import { Authorization } from '@/constants/authorization';
-import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetSelectedRecord } from '@/hooks/logic-hooks';
-import { useHandleSubmittable } from '@/hooks/login-hooks';
-import api from '@/utils/api';
-import { getAuthorization } from '@/utils/authorization-util';
-import { UploadOutlined } from '@ant-design/icons';
+import { ButtonLoading } from '@/components/ui/button';
 import {
-  Button,
   Form,
-  FormItemProps,
-  Input,
-  InputNumber,
-  Select,
-  Switch,
-  Upload,
-} from 'antd';
-import { UploadChangeParam, UploadFile } from 'antd/es/upload';
-import { pick } from 'lodash';
-import { Link } from 'lucide-react';
-import React, { useCallback, useState } from 'react';
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { RAGFlowSelect } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { IMessage } from '@/pages/chat/interface';
+import { zodResolver } from '@hookform/resolvers/zod';
+import React, { ReactNode, useCallback, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
 import { BeginQueryType } from '../constant';
 import { BeginQuery } from '../interface';
-import { PopoverForm } from './popover-form';
+import { FileUploadDirectUpload } from './uploader';
 
-import styles from './index.less';
+const StringFields = [
+  BeginQueryType.Line,
+  BeginQueryType.Paragraph,
+  BeginQueryType.Options,
+];
 
 interface IProps {
   parameters: BeginQuery[];
+  message?: IMessage;
   ok(parameters: any[]): void;
   isNext?: boolean;
   loading?: boolean;
   submitButtonDisabled?: boolean;
+  btnText?: ReactNode;
 }
 
 const DebugContent = ({
   parameters,
+  message,
   ok,
   isNext = true,
   loading = false,
   submitButtonDisabled = false,
+  btnText,
 }: IProps) => {
   const { t } = useTranslation();
-  const [form] = Form.useForm();
-  const {
-    visible,
-    hideModal: hidePopover,
-    switchVisible,
-    showModal: showPopover,
-  } = useSetModalState();
-  const { setRecord, currentRecord } = useSetSelectedRecord<number>();
-  const { submittable } = useHandleSubmittable(form);
-  const [isUploading, setIsUploading] = useState(false);
 
-  const handleShowPopover = useCallback(
-    (idx: number) => () => {
-      setRecord(idx);
-      showPopover();
-    },
-    [setRecord, showPopover],
-  );
-
-  const normFile = (e: any) => {
-    if (Array.isArray(e)) {
-      return e;
-    }
-    return e?.fileList;
-  };
-
-  const onChange = useCallback(
-    (optional: boolean) =>
-      ({ fileList }: UploadChangeParam<UploadFile>) => {
-        if (!optional) {
-          setIsUploading(fileList.some((x) => x.status === 'uploading'));
+  const formSchemaValues = useMemo(() => {
+    const obj = parameters.reduce<{
+      schema: Record<string, z.ZodType>;
+      values: Record<string, any>;
+    }>(
+      (pre, cur, idx) => {
+        const type = cur.type;
+        let fieldSchema;
+        let value;
+        if (StringFields.some((x) => x === type)) {
+          fieldSchema = z.string().trim().min(1);
+        } else if (type === BeginQueryType.Boolean) {
+          fieldSchema = z.boolean();
+          value = false;
+        } else if (type === BeginQueryType.Integer || type === 'float') {
+          fieldSchema = z.coerce.number();
+        } else {
+          fieldSchema = z.record(z.any());
         }
+
+        if (cur.optional) {
+          fieldSchema = fieldSchema.optional();
+        }
+
+        const index = idx.toString();
+
+        pre.schema[index] = fieldSchema;
+        pre.values[index] = value;
+
+        return pre;
       },
-    [],
-  );
+      { schema: {}, values: {} },
+    );
+
+    return { schema: z.object(obj.schema), values: obj.values };
+  }, [parameters]);
+
+  const form = useForm<z.infer<typeof formSchemaValues.schema>>({
+    defaultValues: formSchemaValues.values,
+    resolver: zodResolver(formSchemaValues.schema),
+  });
+
+  const submittable = true;
 
   const renderWidget = useCallback(
-    (q: BeginQuery, idx: number) => {
-      const props: FormItemProps & { key: number } = {
+    (q: BeginQuery, idx: string) => {
+      const props = {
         key: idx,
         label: q.name ?? q.key,
         name: idx,
       };
-      if (q.optional === false) {
-        props.rules = [{ required: true }];
-      }
-
-      const urlList: { url: string; result: string }[] =
-        form.getFieldValue(idx) || [];
 
       const BeginQueryTypeMap = {
         [BeginQueryType.Line]: (
-          <Form.Item {...props}>
-            <Input></Input>
-          </Form.Item>
+          <FormField
+            control={form.control}
+            name={props.name}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{props.label}</FormLabel>
+                <FormControl>
+                  <Input {...field}></Input>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         ),
         [BeginQueryType.Paragraph]: (
-          <Form.Item {...props}>
-            <Input.TextArea rows={1}></Input.TextArea>
-          </Form.Item>
+          <FormField
+            control={form.control}
+            name={props.name}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{props.label}</FormLabel>
+                <FormControl>
+                  <Textarea rows={1} {...field}></Textarea>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         ),
         [BeginQueryType.Options]: (
-          <Form.Item {...props}>
-            <Select
-              allowClear
-              options={q.options?.map((x) => ({ label: x, value: x })) ?? []}
-            ></Select>
-          </Form.Item>
+          <FormField
+            control={form.control}
+            name={props.name}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{props.label}</FormLabel>
+                <FormControl>
+                  <RAGFlowSelect
+                    allowClear
+                    options={
+                      q.options?.map((x) => ({
+                        label: x,
+                        value: x as string,
+                      })) ?? []
+                    }
+                    {...field}
+                  ></RAGFlowSelect>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         ),
         [BeginQueryType.File]: (
           <React.Fragment key={idx}>
-            <Form.Item label={q.name ?? q.key} required={!q.optional}>
-              <div className="relative">
-                <Form.Item
-                  {...props}
-                  valuePropName="fileList"
-                  getValueFromEvent={normFile}
-                  noStyle
-                >
-                  <Upload
-                    name="file"
-                    action={api.parse}
-                    multiple
-                    headers={{ [Authorization]: getAuthorization() }}
-                    onChange={onChange(q.optional)}
-                  >
-                    <Button icon={<UploadOutlined />}>
-                      {t('common.upload')}
-                    </Button>
-                  </Upload>
-                </Form.Item>
-                <Form.Item
-                  {...pick(props, ['key', 'label', 'rules'])}
-                  required={!q.optional}
-                  className={urlList.length > 0 ? 'mb-1' : ''}
-                  noStyle
-                >
-                  <PopoverForm visible={visible} switchVisible={switchVisible}>
-                    <Button
-                      onClick={handleShowPopover(idx)}
-                      className="absolute left-1/2 top-0"
-                      icon={<Link className="size-3" />}
-                    >
-                      {t('flow.pasteFileLink')}
-                    </Button>
-                  </PopoverForm>
-                </Form.Item>
-              </div>
-            </Form.Item>
-            <Form.Item name={idx} noStyle {...pick(props, ['rules'])} />
+            <FormField
+              control={form.control}
+              name={props.name}
+              render={({ field }) => (
+                <div className="space-y-6">
+                  <FormItem className="w-full">
+                    <FormLabel>{t('assistantAvatar')}</FormLabel>
+                    <FormControl>
+                      <FileUploadDirectUpload
+                        value={field.value}
+                        onChange={field.onChange}
+                      ></FileUploadDirectUpload>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                </div>
+              )}
+            />
           </React.Fragment>
         ),
         [BeginQueryType.Integer]: (
-          <Form.Item {...props}>
-            <InputNumber></InputNumber>
-          </Form.Item>
+          <FormField
+            control={form.control}
+            name={props.name}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{props.label}</FormLabel>
+                <FormControl>
+                  <Input type="number" {...field}></Input>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         ),
         [BeginQueryType.Boolean]: (
-          <Form.Item valuePropName={'checked'} {...props}>
-            <Switch></Switch>
-          </Form.Item>
+          <FormField
+            control={form.control}
+            name={props.name}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{props.label}</FormLabel>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  ></Switch>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         ),
       };
 
@@ -171,66 +217,42 @@ const DebugContent = ({
         BeginQueryTypeMap[BeginQueryType.Paragraph]
       );
     },
-    [form, handleShowPopover, onChange, switchVisible, t, visible],
+    [form, t],
   );
 
-  const onOk = useCallback(async () => {
-    const values = await form.validateFields();
-    const nextValues = Object.entries(values).map(([key, value]) => {
-      const item = parameters[Number(key)];
-      let nextValue = value;
-      if (Array.isArray(value)) {
-        nextValue = ``;
+  const onSubmit = useCallback(
+    (values: z.infer<typeof formSchemaValues.schema>) => {
+      const nextValues = Object.entries(values).map(([key, value]) => {
+        const item = parameters[Number(key)];
+        return { ...item, value };
+      });
 
-        value.forEach((x) => {
-          nextValue +=
-            x?.originFileObj instanceof File
-              ? `${x.name}\n${x.response?.data}\n----\n`
-              : `${x.url}\n${x.result}\n----\n`;
-        });
-      }
-      return { ...item, value: nextValue };
-    });
-
-    ok(nextValues);
-  }, [form, ok, parameters]);
-
+      ok(nextValues);
+    },
+    [formSchemaValues, ok, parameters],
+  );
   return (
     <>
-      <section className={styles.formWrapper}>
-        <Form.Provider
-          onFormFinish={(name, { values, forms }) => {
-            if (name === 'urlForm') {
-              const { basicForm } = forms;
-              const urlInfo = basicForm.getFieldValue(currentRecord) || [];
-              basicForm.setFieldsValue({
-                [currentRecord]: [...urlInfo, { ...values, name: values.url }],
-              });
-              hidePopover();
-            }
-          }}
-        >
-          <Form
-            name="basicForm"
-            autoComplete="off"
-            layout={'vertical'}
-            form={form}
-          >
+      <section>
+        {message?.data?.tips && <div className="mb-2">{message.data.tips}</div>}
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {parameters.map((x, idx) => {
-              return renderWidget(x, idx);
+              return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
             })}
-          </Form>
-        </Form.Provider>
+            <div>
+              <ButtonLoading
+                type="submit"
+                loading={loading}
+                disabled={!submittable || submitButtonDisabled}
+                className="w-full mt-1"
+              >
+                {btnText || t(isNext ? 'common.next' : 'flow.run')}
+              </ButtonLoading>
+            </div>
+          </form>
+        </Form>
       </section>
-      <Button
-        type={'primary'}
-        block
-        onClick={onOk}
-        loading={loading}
-        disabled={!submittable || isUploading || submitButtonDisabled}
-      >
-        {t(isNext ? 'common.next' : 'flow.run')}
-      </Button>
     </>
   );
 };
