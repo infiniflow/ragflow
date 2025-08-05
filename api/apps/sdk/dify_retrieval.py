@@ -1,4 +1,4 @@
-#
+    #
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,11 +75,13 @@ def retrieval(tenant_id):
         for c in ranks["chunks"]:
             e, doc = DocumentService.get_by_id( c["doc_id"])
             c.pop("vector", None)
+            meta = getattr(doc, 'meta_fields', {})
+            meta["doc_id"] = c["doc_id"]
             records.append({
                 "content": c["content_with_weight"],
                 "score": c["similarity"],
                 "title": c["docnm_kwd"],
-                "metadata": getattr(doc, 'meta_fields', {})
+                "metadata": meta
             })
 
         return jsonify({"records": records})
