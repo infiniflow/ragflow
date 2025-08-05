@@ -522,6 +522,7 @@ class GeminiCV(Base):
     def chat_streamly(self, system, history, gen_conf, images=[]):
         from transformers import GenerationConfig
         ans = ""
+        response = None
         try:
             response = self.model.generate_content(
                 self._form_history(system, history, images),
@@ -534,11 +535,14 @@ class GeminiCV(Base):
                     continue
                 ans = resp.text
                 yield ans
-            yield response._chunks[-1].usage_metadata.total_token_count
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
-            yield 0
 
+        if response and hasattr(response, "usage_metadata") and hasattr(response.usage_metadata, "total_token_count"):
+            yield response.usage_metadata.total_token_count
+        else:
+            yield 0
+            
 
 class NvidiaCV(Base):
     _FACTORY_NAME = "NVIDIA"
@@ -620,15 +624,18 @@ class NvidiaCV(Base):
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf, images=[], **kwargs):
+        total_tokens = 0
         try:
             response = self._request(self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
+            if "usage" in response and "total_tokens" in response["usage"]:
+                total_tokens += response["usage"]["total_tokens"]
             for resp in cnt:
                 yield resp
         except Exception as e:
             yield "\n**ERROR**: " + str(e)
 
-        yield response["usage"]["total_tokens"]
+        yield total_tokens
 
 
 class AnthropicCV(Base):
