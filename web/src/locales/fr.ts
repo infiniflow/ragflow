@@ -349,7 +349,6 @@ export default {
       system: 'Prompt système',
       systemInitialValue: `Vous êtes un assistant intelligent. Veuillez résumer le contenu de la base de connaissances pour répondre à la question. Veuillez lister les données de la base de connaissances et répondre en détail. Lorsque tout le contenu de la base de connaissances est sans rapport avec la question, votre réponse doit inclure la phrase "La réponse que vous cherchez ne se trouve pas dans la base de connaissances !" Les réponses doivent prendre en compte l’historique de la discussion.
       Voici la base de connaissances : {knowledge}
-      }
       Ce qui précède est la base de connaissances.`,
       systemMessage: 'Veuillez saisir !',
       systemTip:
