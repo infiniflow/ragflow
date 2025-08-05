@@ -29,6 +29,10 @@ from rag.utils import num_tokens_from_string
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
+        """
+        Abstract base class constructor.
+        Parameters are not stored; initialization is left to subclasses.
+        """
         pass
 
     def transcription(self, audio, **kwargs):
