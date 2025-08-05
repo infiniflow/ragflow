@@ -198,12 +198,14 @@ export const useSendAgentMessage = (
   const prologue = useGetBeginNodePrologue();
   const {
     derivedMessages,
-    ref,
+    scrollRef,
+    messageContainerRef,
     removeLatestMessage,
     removeMessageById,
     addNewestOneQuestion,
     addNewestOneAnswer,
     removeAllMessages,
+    scrollToBottom,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
@@ -303,7 +305,18 @@ export const useSendAgentMessage = (
       });
     }
     addNewestOneQuestion({ ...msgBody, files: fileList });
-  }, [value, done, addNewestOneQuestion, fileList, setValue, sendMessage]);
+    setTimeout(() => {
+      scrollToBottom();
+    }, 100);
+  }, [
+    value,
+    done,
+    addNewestOneQuestion,
+    fileList,
+    setValue,
+    sendMessage,
+    scrollToBottom,
+  ]);
 
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
@@ -337,7 +350,8 @@ export const useSendAgentMessage = (
     value,
     sendLoading: !done,
     derivedMessages,
-    ref,
+    scrollRef,
+    messageContainerRef,
     handlePressEnter,
     handleInputChange,
     removeMessageById,
