@@ -27,13 +27,16 @@ export const useFetchFrequencyOptions = () => {
   return { data, loading: isLoading };
 };
 
-export const useFetchSchedules = (page = 1, pageSize = 20, keywords = '') => {
+export const useFetchSchedules = (canvas_id='', page = 1, pageSize = 20, keywords = '') => {
+  console.log('Fetching schedules for canvas:', canvas_id, 'Page:', page, 'PageSize:', pageSize, 'Keywords:', keywords);
+  
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['schedules', page, pageSize, keywords],
+    queryKey: ['schedules', canvas_id, page, pageSize, keywords],
     queryFn: async () => {
       const { data } = await agentService.listSchedules({
         page,
         page_size: pageSize,
+        canvas_id,
         keywords,
       });
       return data?.data ?? { schedules: [], total: 0 };
