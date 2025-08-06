@@ -175,10 +175,10 @@ export default {
   // Schedule endpoints
   createSchedule: `${api_host}/canvas/schedule/create`,
   listSchedules: `${api_host}/canvas/schedule/list`,
-  updateSchedule: `${api_host}/canvas/schedule/update`,
-  toggleSchedule: `${api_host}/canvas/schedule/toggle`,
-  deleteSchedule: `${api_host}/canvas/schedule/delete`,
+  updateSchedule: (id: string) => `${api_host}/canvas/schedule/update/${id}`,
+  toggleSchedule: (id: string) => `${api_host}/canvas/schedule/toggle/${id}`,
+  deleteSchedule: (id: string) => `${api_host}/canvas/schedule/delete/${id}`,
   getFrequencyOptions: `${api_host}/canvas/schedule/frequency-options`,
-  getScheduleHistory: `${api_host}/canvas/schedule/history`,
-  getScheduleStats: `${api_host}/canvas/schedule/stats`,
+  getScheduleHistory: (id: string) => `${api_host}/canvas/schedule/history/${id}`,
+  getScheduleStats: (id: string) => `${api_host}/canvas/schedule/stats/${id}`,
 };

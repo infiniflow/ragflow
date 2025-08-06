@@ -156,6 +156,27 @@ const methods = {
 
 const agentService = registerNextServer<keyof typeof methods>(methods);
 
+// Custom methods for parameterized URLs
+export const updateScheduleById = (data: any, id: string) => {
+  return request.put(updateSchedule(id), data);
+};
+
+export const toggleScheduleById = (data: any, id: string) => {
+  return request.post(toggleSchedule(id), data);
+};
+
+export const deleteScheduleById = (data: any, id: string) => {
+  return request.delete(deleteSchedule(id), data);
+};
+
+export const getScheduleHistoryById = (params: any, id: string) => {
+  return request.get(getScheduleHistory(id), { params });
+};
+
+export const getScheduleStatsById = (params: any, id: string) => {
+  return request.get(getScheduleStats(id), { params });
+};
+
 export const fetchTrace = (data: { canvas_id: string; message_id: string }) => {
   return request.get(methods.trace.url, { params: data });
 };
