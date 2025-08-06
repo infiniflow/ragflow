@@ -168,18 +168,15 @@ function ScheduleFormModal({
   const handleSave = useCallback(
     async (values: z.infer<typeof scheduleFormSchema>) => {
       try {
-        console.log('=== HANDLE SAVE START ===');
-        console.log('Form values:', values);
-        console.log('Current form state:', form.getValues());
-        console.log('Form errors:', form.formState.errors);
-        console.log('editingSchedule:', editingSchedule);
+
+
+
+
+
 
         // Ensure frequency_type is always present - get from form if missing
         const formFrequencyType = form.getValues('frequency_type');
         if (!values.frequency_type && !formFrequencyType) {
-          console.error(
-            'frequency_type is missing from form values and form state',
-          );
           form.setError('frequency_type', {
             message: 'Frequency type is required',
           });
