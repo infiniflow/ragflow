@@ -1051,30 +1051,25 @@ class BedrockChat(Base):
                 # Handle different response formats
                 if "contentBlockDelta" in event:
                     delta = event["contentBlockDelta"].get("delta", {})
-                    # 先兼容 text (Amazon Nova等标准格式)
                     if "text" in delta:
                         text = delta["text"]
                         if text:
                             ans = text
                             yield ans
-                    # 再兼容 DeepSeek 的 reasoningContent
                     elif "reasoningContent" in delta and "text" in delta["reasoningContent"]:
                         reasoning_text = delta["reasoningContent"]["text"]
                         if reasoning_text:
                             ans = reasoning_text
                             yield ans
-                    # 兼容SDK_UNKNOWN_MEMBER但无法直接提取内容的情况
                     elif "SDK_UNKNOWN_MEMBER" in delta:
                         unknown_member = delta["SDK_UNKNOWN_MEMBER"]
                         if unknown_member.get("name") == "reasoningContent":
                             logging.debug(f"[BedrockChat] Found reasoningContent in SDK_UNKNOWN_MEMBER: {unknown_member}")
-                            # 这里无法直接获取text内容，需要从原始响应中解析
                             continue
                     else:
                         logging.debug(f"[BedrockChat] Unknown delta format: {delta}")
                         continue
                 elif "reasoningContent" in event.get("delta", {}):
-                    # 直接处理reasoningContent格式
                     reasoning_text = event["delta"]["reasoningContent"].get("text", "")
                     if reasoning_text:
                         ans = reasoning_text
