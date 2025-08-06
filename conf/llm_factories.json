@@ -3267,45 +3267,52 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "claude-opus-4-20250514",
-                    "tags": "LLM,IMAGE2TEXT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "image2text",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "claude-sonnet-4-20250514",
-                    "tags": "LLM,IMAGE2TEXT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "image2text",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "claude-3-7-sonnet-20250219",
-                    "tags": "LLM,IMAGE2TEXT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "image2text",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "claude-3-5-sonnet-20241022",
-                    "tags": "LLM,IMAGE2TEXT,200k",
+                    "llm_name": "claude-opus-4-1-20250805",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "claude-3-opus-20240229",
-                    "tags": "LLM,IMAGE2TEXT,200k",
+                    "llm_name": "claude-opus-4-20250514",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-sonnet-4-20250514",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-7-sonnet-20250219",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-5-sonnet-20241022",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-5-haiku-20241022",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "claude-3-haiku-20240307",
-                    "tags": "LLM,IMAGE2TEXT,200k",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
-                    "model_type": "image2text",
+                    "model_type": "chat",
                     "is_tools": true
                 }
             ]
