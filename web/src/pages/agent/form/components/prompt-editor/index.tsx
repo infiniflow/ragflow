@@ -26,6 +26,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { Variable } from 'lucide-react';
 import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PasteHandlerPlugin } from './paste-handler-plugin';
 import theme from './theme';
 import { VariableNode } from './variable-node';
 import { VariableOnChangePlugin } from './variable-on-change-plugin';
@@ -172,6 +173,7 @@ export function PromptEditor({
           ErrorBoundary={LexicalErrorBoundary}
         />
         <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
+        <PasteHandlerPlugin />
         <VariableOnChangePlugin
           onChange={onValueChange}
         ></VariableOnChangePlugin>
