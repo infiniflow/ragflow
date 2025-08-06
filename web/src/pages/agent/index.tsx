@@ -46,6 +46,7 @@ import {
 import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { ScheduleModal, useScheduleModal } from './schedule-modal';
 import { UploadAgentDialog } from './upload-agent-dialog';
+import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 
 function AgentDropdownMenuItem({
@@ -68,8 +69,7 @@ export default function Agent() {
     showModal: showChatDrawer,
   } = useSetModalState();
   const { t } = useTranslation();
-
-  // const openDocument = useOpenDocument();
+  useAgentHistoryManager();
   const {
     handleExportJson,
     handleImportJson,

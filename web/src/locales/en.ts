@@ -562,6 +562,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
+      createChat: 'Create chat',
     },
     setting: {
       profile: 'Profile',
