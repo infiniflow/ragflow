@@ -1345,7 +1345,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         currentlyRunning: 'Currently running',
         currentlyRunningDesc: 'The schedule is currently executing.',
         running: 'Running',
-        failed:"Failed",
+        failed: "Failed",
       },
       common: {
         action: 'Action',
