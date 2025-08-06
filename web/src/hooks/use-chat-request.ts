@@ -1,12 +1,12 @@
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
 import { IDialog } from '@/interfaces/database/chat';
-import chatService from '@/services/chat-service';
+import chatService from '@/services/next-chat-service ';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { history, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -16,6 +16,7 @@ export const enum ChatApiAction {
   FetchDialogList = 'fetchDialogList',
   RemoveDialog = 'removeDialog',
   SetDialog = 'setDialog',
+  FetchDialog = 'fetchDialog',
 }
 
 export const useGetChatSearchParams = () => {
@@ -52,9 +53,7 @@ export const useClickDialogCard = () => {
   return { handleClickDialog };
 };
 
-export const useFetchDialogList = (pureFetch = false) => {
-  const { handleClickDialog } = useClickDialogCard();
-  const { dialogId } = useGetChatSearchParams();
+export const useFetchDialogList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
@@ -63,7 +62,7 @@ export const useFetchDialogList = (pureFetch = false) => {
     data,
     isFetching: loading,
     refetch,
-  } = useQuery<IDialog[]>({
+  } = useQuery<{ dialogs: IDialog[]; total: number }>({
     queryKey: [
       ChatApiAction.FetchDialogList,
       {
@@ -71,27 +70,17 @@ export const useFetchDialogList = (pureFetch = false) => {
         ...pagination,
       },
     ],
-    initialData: [],
+    initialData: { dialogs: [], total: 0 },
     gcTime: 0,
     refetchOnWindowFocus: false,
-    queryFn: async (...params) => {
-      console.log('🚀 ~ queryFn: ~ params:', params);
-      const { data } = await chatService.listDialog();
+    queryFn: async () => {
+      const { data } = await chatService.listDialog({
+        keywords: debouncedSearchString,
+        page_size: pagination.pageSize,
+        page: pagination.current,
+      });
 
-      if (data.code === 0) {
-        const list: IDialog[] = data.data;
-        if (!pureFetch) {
-          if (list.length > 0) {
-            if (list.every((x) => x.id !== dialogId)) {
-              handleClickDialog(data.data[0].id);
-            }
-          } else {
-            history.push('/chat');
-          }
-        }
-      }
-
-      return data?.data ?? [];
+      return data?.data ?? { dialogs: [], total: 0 };
     },
   });
 
@@ -147,17 +136,14 @@ export const useSetDialog = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [ChatApiAction.SetDialog],
-    mutationFn: async (params: IDialog) => {
+    mutationFn: async (params: Partial<IDialog>) => {
       const { data } = await chatService.setDialog(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({
           exact: false,
-          queryKey: ['fetchDialogList'],
+          queryKey: [ChatApiAction.FetchDialogList],
         });
 
-        queryClient.invalidateQueries({
-          queryKey: ['fetchDialog'],
-        });
         message.success(
           t(`message.${params.dialog_id ? 'modified' : 'created'}`),
         );
@@ -167,4 +153,30 @@ export const useSetDialog = () => {
   });
 
   return { data, loading, setDialog: mutateAsync };
+};
+
+export const useFetchDialog = () => {
+  const { id } = useParams();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IDialog>({
+    queryKey: [ChatApiAction.FetchDialog, id],
+    gcTime: 0,
+    initialData: {} as IDialog,
+    enabled: !!id,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.getDialog(
+        { params: { dialogId: id } },
+        true,
+      );
+
+      return data?.data ?? ({} as IDialog);
+    },
+  });
+
+  return { data, loading, refetch };
 };
