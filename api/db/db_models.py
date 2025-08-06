@@ -944,18 +944,6 @@ class Search(DataBaseModel):
 
 
 
-class ScheduleAgentRun(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    schedule_id = CharField(max_length=32, null=False, help_text="schedule agent id", index=True)
-    started_at = DateTimeField(null=False, help_text="execution start datetime", index=True)
-    finished_at = DateTimeField(null=True, help_text="execution finish datetime", index=True)
-    success = BooleanField(null=True, help_text="execution result", index=True)
-    error_message = TextField(null=True, help_text="error message if failed")
-    conversation_id = CharField(max_length=32, null=True, help_text="conversation id from execution", index=True)
-    
-    class Meta:
-        db_table = "schedule_agent_run"
-
         
 
 def migrate_db():
