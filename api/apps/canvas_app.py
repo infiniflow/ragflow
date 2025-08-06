@@ -506,7 +506,7 @@ def create_schedule():
         return server_error_response(e)
 
 @manager.route('/schedule/update', methods=['POST'])  # type: ignore # noqa: F821
-@validate_request("frequency_type","id")
+@validate_request("frequency_type", "id")
 @login_required
 def update_schedule():
     req = request.json
