@@ -655,7 +655,6 @@ def concat_img(img1, img2):
     new_image.paste(img1, (0, 0))
     new_image.paste(img2, (0, height1))
     img1.close()
-    img2.close()
     return new_image
 
 
