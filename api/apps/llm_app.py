@@ -24,7 +24,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from api.utils.base64_image import test_image_base64
+from api.utils.base64_image import test_image_base64, test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 
 
@@ -256,7 +256,7 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            image_data = base64.b64decode(test_image_base64)
+            image_data = test_image
             m, tc = mdl.describe(image_data)
             if not m and not tc:
                 raise Exception(m)
