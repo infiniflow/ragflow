@@ -173,12 +173,14 @@ export default {
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
 
   // Schedule endpoints
-  createSchedule: `${api_host}/canvas/schedule/create`,
-  listSchedules: `${api_host}/canvas/schedule/list`,
-  updateSchedule: (id: string) => `${api_host}/canvas/schedule/update/${id}`,
+  createSchedule: () => `${api_host}/canvas/schedule/create`,
+  listSchedules: ({ page, page_size: pageSize, canvas_id, keywords }: any) =>
+    `${api_host}/canvas/schedule/list?page=${page}&page_size=${pageSize}&canvas_id=${canvas_id}&keywords=${keywords}`,
+  updateSchedule: () => `${api_host}/canvas/schedule/update`,
   toggleSchedule: (id: string) => `${api_host}/canvas/schedule/toggle/${id}`,
   deleteSchedule: (id: string) => `${api_host}/canvas/schedule/delete/${id}`,
-  getFrequencyOptions: `${api_host}/canvas/schedule/frequency-options`,
-  getScheduleHistory: (id: string) => `${api_host}/canvas/schedule/history/${id}`,
+  getFrequencyOptions: () => `${api_host}/canvas/schedule/frequency-options`,
+  getScheduleHistory: (id: string) =>
+    `${api_host}/canvas/schedule/history/${id}`,
   getScheduleStats: (id: string) => `${api_host}/canvas/schedule/stats/${id}`,
 };

@@ -1,3 +1,70 @@
+import { Calendar } from '@/components/originui/calendar';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Switch } from '@/components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   useCreateSchedule,
@@ -15,6 +82,7 @@ import {
   IScheduleRun,
   IScheduleStats,
 } from '@/interfaces/database/schedule';
+import { cn } from '@/lib/utils';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -24,31 +92,13 @@ import {
   HistoryOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Separator } from '@/components/ui/separator';
-import { Label } from '@/components/ui/label';
-import { Calendar, } from '@/components/originui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { cn } from '@/lib/utils';
-import { CalendarIcon, Clock, Loader2 } from 'lucide-react';
+import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
+import { CalendarIcon, Clock, Loader2 } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
 // Configure dayjs plugins
@@ -63,11 +113,6 @@ const scheduleFormSchema = z.object({
   execute_date: z.date().optional(),
   days_of_week: z.array(z.number()).optional(),
   day_of_month: z.number().optional(),
-}).refine((data) => {
-  // Add dynamic validation based on frequency_type
-  return true; // We'll handle this in the component
-}, {
-  message: "Invalid schedule configuration"
 });
 
 interface ScheduleFormModalProps {
@@ -111,7 +156,6 @@ function ScheduleFormModal({
 
   const frequencyType = form.watch('frequency_type');
 
-
   const getRequiredFields = useCallback(() => {
     if (!frequencyOptions?.frequency_types || !frequencyType) return [];
 
@@ -121,87 +165,113 @@ function ScheduleFormModal({
     return option?.required_fields || [];
   }, [frequencyOptions, frequencyType]);
 
-  const handleSave = useCallback(async (values: z.infer<typeof scheduleFormSchema>) => {
-    try {
-      console.log('=== HANDLE SAVE START ===');
-      console.log('Form values:', values);
-      console.log('Current form state:', form.getValues());
-      console.log('Form errors:', form.formState.errors);
-      console.log('editingSchedule:', editingSchedule);
-      
-      // Ensure frequency_type is always present
-      if (!values.frequency_type) {
-        console.error('frequency_type is missing from form values');
-        console.log('Trying to get from form directly:', form.getValues('frequency_type'));
-        
-        // Try to get the value directly from form state
-        const currentFrequencyType = form.getValues('frequency_type');
-        if (currentFrequencyType) {
-          values.frequency_type = currentFrequencyType;
-          console.log('Retrieved frequency_type from form state:', currentFrequencyType);
-        } else {
-          console.error('frequency_type is completely missing, aborting save');
+  const handleSave = useCallback(
+    async (values: z.infer<typeof scheduleFormSchema>) => {
+      try {
+        console.log('=== HANDLE SAVE START ===');
+        console.log('Form values:', values);
+        console.log('Current form state:', form.getValues());
+        console.log('Form errors:', form.formState.errors);
+        console.log('editingSchedule:', editingSchedule);
+
+        // Ensure frequency_type is always present - get from form if missing
+        const formFrequencyType = form.getValues('frequency_type');
+        if (!values.frequency_type && !formFrequencyType) {
+          console.error(
+            'frequency_type is missing from form values and form state',
+          );
+          form.setError('frequency_type', {
+            message: 'Frequency type is required',
+          });
           return;
         }
+
+        // Use the value from form state if not in values
+        const finalFrequencyType = values.frequency_type || formFrequencyType;
+
+        const payload: ICreateScheduleRequest = {
+          canvas_id: canvasId,
+          name: values.name.trim(),
+          description: values.description?.trim() || '',
+          frequency_type: finalFrequencyType,
+        };
+
+        // Get required fields for current frequency type
+        const currentRequiredFields = getRequiredFields();
+        console.log('Required fields:', currentRequiredFields);
+
+        // Handle time conversion
+        if (
+          currentRequiredFields.includes('execute_time') &&
+          values.execute_time
+        ) {
+          payload.execute_time = dayjs(values.execute_time).format('HH:mm:ss');
+        }
+
+        // Handle date conversion
+        if (
+          currentRequiredFields.includes('execute_date') &&
+          values.execute_date
+        ) {
+          payload.execute_date = dayjs(values.execute_date).toISOString();
+        }
+
+        // Handle days of week
+        if (
+          currentRequiredFields.includes('days_of_week') &&
+          values.days_of_week &&
+          values.days_of_week.length > 0
+        ) {
+          payload.days_of_week = values.days_of_week;
+        }
+
+        // Handle day of month
+        if (
+          currentRequiredFields.includes('day_of_month') &&
+          values.day_of_month
+        ) {
+          payload.day_of_month = values.day_of_month;
+        }
+
+        console.log('Final payload:', payload);
+
+        if (editingSchedule) {
+          const updatePayload = { id: editingSchedule.id, ...payload };
+          console.log('Update payload:', updatePayload);
+          await updateSchedule(updatePayload);
+        } else {
+          await createSchedule(payload);
+        }
+
+        form.reset();
+        onSave();
+      } catch (error) {
+        console.error('Save failed:', error);
       }
-
-      const payload: ICreateScheduleRequest = {
-        canvas_id: canvasId,
-        name: values.name.trim(),
-        description: values.description?.trim() || '',
-        frequency_type: values.frequency_type,
-      };
-
-      // Get required fields for current frequency type
-      const currentRequiredFields = getRequiredFields();
-      console.log('Required fields:', currentRequiredFields);
-
-      // Handle time conversion
-      if (currentRequiredFields.includes('execute_time') && values.execute_time) {
-        payload.execute_time = dayjs(values.execute_time).format('HH:mm:ss');
-      }
-
-      // Handle date conversion
-      if (currentRequiredFields.includes('execute_date') && values.execute_date) {
-        payload.execute_date = dayjs(values.execute_date).toISOString();
-      }
-
-      // Handle days of week
-      if (currentRequiredFields.includes('days_of_week') && values.days_of_week && values.days_of_week.length > 0) {
-        payload.days_of_week = values.days_of_week;
-      }
-
-      // Handle day of month
-      if (currentRequiredFields.includes('day_of_month') && values.day_of_month) {
-        payload.day_of_month = values.day_of_month;
-      }
-
-      console.log('Final payload:', payload);
-
-      if (editingSchedule) {
-        const updatePayload = { id: editingSchedule.id, ...payload };
-        console.log('Update payload:', updatePayload);
-        await updateSchedule(updatePayload);
-      } else {
-        await createSchedule(payload);
-      }
-
-      form.reset();
-      onSave();
-    } catch (error) {
-      console.error('Save failed:', error);
-    }
-  }, [canvasId, editingSchedule, createSchedule, updateSchedule, onSave, form, getRequiredFields]);
+    },
+    [
+      canvasId,
+      editingSchedule,
+      createSchedule,
+      updateSchedule,
+      onSave,
+      form,
+      getRequiredFields,
+    ],
+  );
   // Set form values when editing schedule changes
   React.useEffect(() => {
     console.log('=== FORM EFFECT START ===');
     console.log('visible:', visible);
     console.log('editingSchedule:', editingSchedule);
-    console.log('frequencyOptions loaded:', !!frequencyOptions?.frequency_types);
-    
+    console.log(
+      'frequencyOptions loaded:',
+      !!frequencyOptions?.frequency_types,
+    );
+
     if (visible && editingSchedule && frequencyOptions?.frequency_types) {
       console.log('Setting form values for editing:', editingSchedule);
-      
+
       const formData: any = {
         name: editingSchedule.name || '',
         description: editingSchedule.description || '',
@@ -225,7 +295,10 @@ function ScheduleFormModal({
             .second(seconds)
             .toDate();
         } catch (error) {
-          console.warn('Failed to parse execute_time:', editingSchedule.execute_time);
+          console.warn(
+            'Failed to parse execute_time:',
+            editingSchedule.execute_time,
+          );
           formData.execute_time = dayjs().toDate();
         }
       }
@@ -235,7 +308,10 @@ function ScheduleFormModal({
         try {
           formData.execute_date = dayjs(editingSchedule.execute_date).toDate();
         } catch (error) {
-          console.warn('Failed to parse execute_date:', editingSchedule.execute_date);
+          console.warn(
+            'Failed to parse execute_date:',
+            editingSchedule.execute_date,
+          );
           formData.execute_date = dayjs().toDate();
         }
       }
@@ -244,11 +320,14 @@ function ScheduleFormModal({
 
       // Reset form with proper values
       form.reset(formData);
-      
+
       // Trigger validation after form reset
       setTimeout(() => {
         console.log('Form values after reset:', form.getValues());
-        console.log('frequency_type after reset:', form.getValues('frequency_type'));
+        console.log(
+          'frequency_type after reset:',
+          form.getValues('frequency_type'),
+        );
         form.trigger();
       }, 200);
     } else if (visible && !editingSchedule) {
@@ -263,7 +342,7 @@ function ScheduleFormModal({
         days_of_week: [],
         day_of_month: undefined,
       };
-      
+
       console.log('Setting default form data:', defaultData);
       form.reset(defaultData);
       setTimeout(() => {
@@ -282,7 +361,7 @@ function ScheduleFormModal({
             {editingSchedule ? t('schedule.edit') : t('schedule.create')}
           </DialogTitle>
         </DialogHeader>
-        
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSave)} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
@@ -293,13 +372,16 @@ function ScheduleFormModal({
                   <FormItem>
                     <FormLabel>{t('schedule.name')}</FormLabel>
                     <FormControl>
-                      <Input placeholder={t('schedule.namePlaceholder')} {...field} />
+                      <Input
+                        placeholder={t('schedule.namePlaceholder')}
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="frequency_type"
@@ -309,7 +391,9 @@ function ScheduleFormModal({
                     <FormItem>
                       <FormLabel>{t('schedule.frequency')}</FormLabel>
                       <Select
-                        disabled={loadingOptions || !frequencyOptions?.frequency_types}
+                        disabled={
+                          loadingOptions || !frequencyOptions?.frequency_types
+                        }
                         onValueChange={(value) => {
                           console.log('Frequency type changed to:', value);
                           field.onChange(value);
@@ -318,14 +402,18 @@ function ScheduleFormModal({
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder={t('schedule.frequencyPlaceholder')} />
+                            <SelectValue
+                              placeholder={t('schedule.frequencyPlaceholder')}
+                            />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {frequencyOptions?.frequency_types?.map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               <div className="py-1">
-                                <div className="font-medium text-sm">{option.label}</div>
+                                <div className="font-medium text-sm">
+                                  {option.label}
+                                </div>
                                 <div className="text-xs text-muted-foreground mt-1 leading-tight">
                                   {option.description}
                                 </div>
@@ -361,27 +449,39 @@ function ScheduleFormModal({
             />
 
             {requiredFields.includes('execute_time') && (
-              <div className={cn("grid gap-4", requiredFields.includes('execute_date') ? "grid-cols-2" : "grid-cols-1")}>
+              <div
+                className={cn(
+                  'grid gap-4',
+                  requiredFields.includes('execute_date')
+                    ? 'grid-cols-2'
+                    : 'grid-cols-1',
+                )}
+              >
                 <FormField
                   control={form.control}
                   name="execute_time"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{t('schedule.executeTime')}</FormLabel>
-                      <Popover open={timePickerOpen} onOpenChange={setTimePickerOpen}>
+                      <Popover
+                        open={timePickerOpen}
+                        onOpenChange={setTimePickerOpen}
+                      >
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
                               variant="outline"
                               className={cn(
-                                "w-full pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
+                                'w-full pl-3 text-left font-normal',
+                                !field.value && 'text-muted-foreground',
                               )}
                             >
                               {field.value ? (
                                 dayjs(field.value).format('HH:mm:ss')
                               ) : (
-                                <span>{t('schedule.executeTimePlaceholder')}</span>
+                                <span>
+                                  {t('schedule.executeTimePlaceholder')}
+                                </span>
                               )}
                               <Clock className="ml-auto h-4 w-4 opacity-50" />
                             </Button>
@@ -392,10 +492,15 @@ function ScheduleFormModal({
                             <Input
                               type="time"
                               step="1"
-                              value={field.value ? dayjs(field.value).format('HH:mm:ss') : ''}
+                              value={
+                                field.value
+                                  ? dayjs(field.value).format('HH:mm:ss')
+                                  : ''
+                              }
                               onChange={(e) => {
                                 if (e.target.value) {
-                                  const [hours, minutes, seconds] = e.target.value.split(':');
+                                  const [hours, minutes, seconds] =
+                                    e.target.value.split(':');
                                   const newTime = dayjs()
                                     .hour(parseInt(hours))
                                     .minute(parseInt(minutes))
@@ -412,7 +517,7 @@ function ScheduleFormModal({
                     </FormItem>
                   )}
                 />
-                
+
                 {requiredFields.includes('execute_date') && (
                   <FormField
                     control={form.control}
@@ -420,20 +525,25 @@ function ScheduleFormModal({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{t('schedule.executeDate')}</FormLabel>
-                        <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                        <Popover
+                          open={datePickerOpen}
+                          onOpenChange={setDatePickerOpen}
+                        >
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
                                 variant="outline"
                                 className={cn(
-                                  "w-full pl-3 text-left font-normal",
-                                  !field.value && "text-muted-foreground"
+                                  'w-full pl-3 text-left font-normal',
+                                  !field.value && 'text-muted-foreground',
                                 )}
                               >
                                 {field.value ? (
                                   dayjs(field.value).format('YYYY-MM-DD')
                                 ) : (
-                                  <span>{t('schedule.executeDatePlaceholder')}</span>
+                                  <span>
+                                    {t('schedule.executeDatePlaceholder')}
+                                  </span>
                                 )}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               </Button>
@@ -447,7 +557,9 @@ function ScheduleFormModal({
                                 field.onChange(date);
                                 setDatePickerOpen(false);
                               }}
-                              disabled={(date) => date < dayjs().startOf('day').toDate()}
+                              disabled={(date) =>
+                                date < dayjs().startOf('day').toDate()
+                              }
                               initialFocus
                             />
                           </PopoverContent>
@@ -472,12 +584,18 @@ function ScheduleFormModal({
                         <Button
                           key={day.value}
                           type="button"
-                          variant={field.value?.includes(day.value) ? "default" : "outline"}
+                          variant={
+                            field.value?.includes(day.value)
+                              ? 'default'
+                              : 'outline'
+                          }
                           size="sm"
                           onClick={() => {
                             const currentValues = field.value || [];
                             if (currentValues.includes(day.value)) {
-                              field.onChange(currentValues.filter(v => v !== day.value));
+                              field.onChange(
+                                currentValues.filter((v) => v !== day.value),
+                              );
                             } else {
                               field.onChange([...currentValues, day.value]);
                             }
@@ -506,15 +624,19 @@ function ScheduleFormModal({
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder={t('schedule.dayOfMonthPlaceholder')} />
+                          <SelectValue
+                            placeholder={t('schedule.dayOfMonthPlaceholder')}
+                          />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                          <SelectItem key={day} value={day.toString()}>
-                            {day}
-                          </SelectItem>
-                        ))}
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(
+                          (day) => (
+                            <SelectItem key={day} value={day.toString()}>
+                              {day}
+                            </SelectItem>
+                          ),
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -537,7 +659,9 @@ function ScheduleFormModal({
                   console.log('Form errors:', form.formState.errors);
                 }}
               >
-                {(creating || updating) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {(creating || updating) && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 {editingSchedule ? t('common.update') : t('common.create')}
               </Button>
             </DialogFooter>
@@ -642,25 +766,23 @@ function ScheduleRunDrawer({
   return (
     <Sheet open={visible} onOpenChange={onClose}>
       <SheetContent className="w-full max-w-4xl">
-        <SheetHeader>
-          <div className="flex items-center justify-between">
-            <SheetTitle>
-              {t('schedule.runInfo')} - {schedule?.name}
-            </SheetTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={loadingStats || loadingHistory}
-            >
-              {(loadingStats || loadingHistory) ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ReloadOutlined className="h-4 w-4" />
-              )}
-              {t('common.refresh')}
-            </Button>
-          </div>
+        <SheetHeader className="flex flex-row items-center justify-between">
+          <SheetTitle>
+            {t('schedule.runInfo')} - {schedule?.name}
+          </SheetTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loadingStats || loadingHistory}
+          >
+            {loadingStats || loadingHistory ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ReloadOutlined className="h-4 w-4" />
+            )}
+            {t('common.refresh')}
+          </Button>
         </SheetHeader>
 
         {schedule && (
@@ -704,7 +826,9 @@ function ScheduleRunDrawer({
                       </div>
                       <div className="text-center">
                         <Badge
-                          variant={stats.is_currently_running ? "default" : "secondary"}
+                          variant={
+                            stats.is_currently_running ? 'default' : 'secondary'
+                          }
                         >
                           {stats.is_currently_running
                             ? t('schedule.running')
@@ -720,9 +844,13 @@ function ScheduleRunDrawer({
                       <>
                         <Separator className="my-4" />
                         <div>
-                          <span className="font-medium">{t('schedule.lastSuccessfulRun')}: </span>
+                          <span className="font-medium">
+                            {t('schedule.lastSuccessfulRun')}:{' '}
+                          </span>
                           <span className="text-muted-foreground">
-                            {formatDateTime(stats.last_successful_run.started_at)}
+                            {formatDateTime(
+                              stats.last_successful_run.started_at,
+                            )}
                           </span>
                         </div>
                       </>
@@ -738,8 +866,12 @@ function ScheduleRunDrawer({
                 <div className="flex items-center">
                   <ClockCircleOutlined className="h-4 w-4 text-blue-600 mr-2" />
                   <div>
-                    <div className="font-medium text-blue-900">{t('schedule.currentlyRunning')}</div>
-                    <div className="text-sm text-blue-700">{t('schedule.currentlyRunningDesc')}</div>
+                    <div className="font-medium text-blue-900">
+                      {t('schedule.currentlyRunning')}
+                    </div>
+                    <div className="text-sm text-blue-700">
+                      {t('schedule.currentlyRunningDesc')}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -770,12 +902,21 @@ function ScheduleRunDrawer({
                       <TableBody>
                         {history?.map((run: IScheduleRun) => (
                           <TableRow key={run.id}>
-                            <TableCell>{formatDateTime(run.started_at)}</TableCell>
                             <TableCell>
-                              {run.finished_at ? formatDateTime(run.finished_at) : t('schedule.running')}
+                              {formatDateTime(run.started_at)}
                             </TableCell>
                             <TableCell>
-                              {formatDuration(calculateDuration(run.started_at, run.finished_at))}
+                              {run.finished_at
+                                ? formatDateTime(run.finished_at)
+                                : t('schedule.running')}
+                            </TableCell>
+                            <TableCell>
+                              {formatDuration(
+                                calculateDuration(
+                                  run.started_at,
+                                  run.finished_at,
+                                ),
+                              )}
                             </TableCell>
                             <TableCell>{getStatusBadge(run)}</TableCell>
                             <TableCell>
@@ -785,7 +926,9 @@ function ScheduleRunDrawer({
                                     <TooltipTrigger asChild>
                                       <span className="text-red-600 text-xs cursor-pointer">
                                         {run.error_message.slice(0, 30)}
-                                        {run.error_message.length > 30 ? '...' : ''}
+                                        {run.error_message.length > 30
+                                          ? '...'
+                                          : ''}
                                       </span>
                                     </TooltipTrigger>
                                     <TooltipContent>
@@ -826,13 +969,22 @@ export function ScheduleModal({
   canvasTitle,
 }: ScheduleModalProps) {
   const { t } = useTranslate('flow');
-  const [editingSchedule, setEditingSchedule] = useState<ISchedule | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<ISchedule | null>(
+    null,
+  );
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [runDrawerVisible, setRunDrawerVisible] = useState(false);
-  const [selectedSchedule, setSelectedSchedule] = useState<ISchedule | null>(null);
+  const [selectedSchedule, setSelectedSchedule] = useState<ISchedule | null>(
+    null,
+  );
 
-  const { data: frequencyOptions, loading: loadingOptions } = useFetchFrequencyOptions();
-  const { schedules, total, loading: loadingSchedules, refetch } = useFetchSchedules(canvasId);
+  const { data: frequencyOptions, loading: loadingOptions } =
+    useFetchFrequencyOptions();
+  const {
+    schedules,
+    loading: loadingSchedules,
+    refetch,
+  } = useFetchSchedules(canvasId);
   const { toggleSchedule, loading: toggling } = useToggleSchedule();
   const { deleteSchedule, loading: deleting } = useDeleteSchedule();
 
@@ -906,17 +1058,14 @@ export function ScheduleModal({
           <DialogHeader>
             <DialogTitle>{t('schedule.title')}</DialogTitle>
           </DialogHeader>
-          
+
           <Card>
             <CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle>
                   {t('schedule.for')} {canvasTitle}
                 </CardTitle>
-                <Button
-                  onClick={handleCreateNew}
-                  disabled={!frequencyOptions}
-                >
+                <Button onClick={handleCreateNew} disabled={!frequencyOptions}>
                   {t('schedule.create')}
                 </Button>
               </div>
@@ -934,7 +1083,9 @@ export function ScheduleModal({
                         <TableHead>{t('schedule.name')}</TableHead>
                         <TableHead>{t('schedule.frequency')}</TableHead>
                         <TableHead>{t('schedule.status')}</TableHead>
-                        <TableHead className="w-[120px]">{t('common.action')}</TableHead>
+                        <TableHead className="w-[120px]">
+                          {t('common.action')}
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -956,10 +1107,12 @@ export function ScheduleModal({
                                 return record.frequency_type;
                               }
 
-                              const option = frequencyOptions.frequency_types.find(
-                                (t) => t.value === record.frequency_type,
-                              );
-                              let details = option?.label || record.frequency_type;
+                              const option =
+                                frequencyOptions.frequency_types.find(
+                                  (t) => t.value === record.frequency_type,
+                                );
+                              let details =
+                                option?.label || record.frequency_type;
 
                               if (
                                 record.frequency_type === 'weekly' &&
@@ -969,13 +1122,17 @@ export function ScheduleModal({
                                 const dayNames = record.days_of_week
                                   .map(
                                     (day) =>
-                                      frequencyOptions.days_of_week.find((d) => d.value === day)
-                                        ?.label,
+                                      frequencyOptions.days_of_week.find(
+                                        (d) => d.value === day,
+                                      )?.label,
                                   )
                                   .filter(Boolean)
                                   .join(', ');
                                 details += ` (${dayNames})`;
-                              } else if (record.frequency_type === 'monthly' && record.day_of_month) {
+                              } else if (
+                                record.frequency_type === 'monthly' &&
+                                record.day_of_month
+                              ) {
                                 details += ` (${t('schedule.day')} ${record.day_of_month})`;
                               }
 
@@ -994,7 +1151,9 @@ export function ScheduleModal({
                                 disabled={toggling}
                               />
                               <Label className="text-sm">
-                                {record.enabled ? t('schedule.enabled') : t('schedule.disabled')}
+                                {record.enabled
+                                  ? t('schedule.enabled')
+                                  : t('schedule.disabled')}
                               </Label>
                             </div>
                           </TableCell>
@@ -1016,7 +1175,7 @@ export function ScheduleModal({
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-                              
+
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -1033,7 +1192,7 @@ export function ScheduleModal({
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-                              
+
                               <AlertDialog>
                                 <TooltipProvider>
                                   <Tooltip>
@@ -1055,14 +1214,21 @@ export function ScheduleModal({
                                 </TooltipProvider>
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
-                                    <AlertDialogTitle>{t('schedule.deleteConfirm')}</AlertDialogTitle>
+                                    <AlertDialogTitle>
+                                      {t('schedule.deleteConfirm')}
+                                    </AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This action cannot be undone. This will permanently delete the schedule.
+                                      This action cannot be undone. This will
+                                      permanently delete the schedule.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
-                                    <AlertDialogCancel>{t('common.no')}</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDelete(record.id)}>
+                                    <AlertDialogCancel>
+                                      {t('common.no')}
+                                    </AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleDelete(record.id)}
+                                    >
                                       {t('common.yes')}
                                     </AlertDialogAction>
                                   </AlertDialogFooter>

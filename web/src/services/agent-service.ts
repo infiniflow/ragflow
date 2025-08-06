@@ -130,7 +130,7 @@ const methods = {
   },
   updateSchedule: {
     url: updateSchedule,
-    method: 'put',
+    method: 'post',
   },
   toggleSchedule: {
     url: toggleSchedule,
@@ -156,10 +156,7 @@ const methods = {
 
 const agentService = registerNextServer<keyof typeof methods>(methods);
 
-// Custom methods for parameterized URLs
-export const updateScheduleById = (data: any, id: string) => {
-  return request.put(updateSchedule(id), data);
-};
+
 
 export const toggleScheduleById = (data: any, id: string) => {
   return request.post(toggleSchedule(id), data);

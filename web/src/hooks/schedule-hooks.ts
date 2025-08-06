@@ -4,11 +4,10 @@ import {
   IUpdateScheduleRequest,
 } from '@/interfaces/database/schedule';
 import agentService, {
-  updateScheduleById,
-  toggleScheduleById,
   deleteScheduleById,
   getScheduleHistoryById,
   getScheduleStatsById,
+  toggleScheduleById,
 } from '@/services/agent-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
@@ -27,9 +26,12 @@ export const useFetchFrequencyOptions = () => {
   return { data, loading: isLoading };
 };
 
-export const useFetchSchedules = (canvas_id='', page = 1, pageSize = 20, keywords = '') => {
-  console.log('Fetching schedules for canvas:', canvas_id, 'Page:', page, 'PageSize:', pageSize, 'Keywords:', keywords);
-  
+export const useFetchSchedules = (
+  canvas_id = '',
+  page = 1,
+  pageSize = 20,
+  keywords = '',
+) => {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['schedules', canvas_id, page, pageSize, keywords],
     queryFn: async () => {
@@ -79,11 +81,9 @@ export const useUpdateSchedule = () => {
   const { t } = useTranslation();
 
   const { mutateAsync, isPending } = useMutation({
-    mutationFn: async ({
-      id,
-      ...params
-    }: IUpdateScheduleRequest & { id: string }) => {
-      const { data } = await updateScheduleById(params, id);
+    mutationFn: async (params: IUpdateScheduleRequest) => {
+
+      const { data } = await agentService.updateSchedule(params);
       return data;
     },
     onSuccess: () => {
@@ -91,6 +91,7 @@ export const useUpdateSchedule = () => {
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
     },
     onError: (error: any) => {
+      console.error('Update schedule error:', error);
       message.error(
         error?.response?.data?.message || t('flow.schedule.updateError'),
       );

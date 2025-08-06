@@ -505,12 +505,14 @@ def create_schedule():
     except Exception as e:
         return server_error_response(e)
 
-@manager.route('/schedule/update/<schedule_id>', methods=['PUT'])  # type: ignore # noqa: F821
-@validate_request("frequency_type")
+@manager.route('/schedule/update', methods=['POST'])  # type: ignore # noqa: F821
+@validate_request("frequency_type","id")
 @login_required
-def update_schedule(schedule_id):
+def update_schedule():
     req = request.json
-    
+    schedule_id = req.get("id")
+    if not schedule_id:
+        return get_data_error_result(message="Schedule ID is required for update")    
     try:
         ScheduleAgentService.validate_schedule_data(**req)
 

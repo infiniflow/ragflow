@@ -1309,6 +1309,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         enabled: 'Enabled',
         disabled: 'Disabled',
         toggleSuccess: 'Schedule status updated successfully',
+        updateError: 'Failed to update schedule',
         description: 'Description',
         descriptionPlaceholder: 'Please enter a description',
         executeTime: 'Execute time',
@@ -1344,6 +1345,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         currentlyRunning: 'Currently running',
         currentlyRunningDesc: 'The schedule is currently executing.',
         running: 'Running',
+        failed:"Failed",
       },
       common: {
         action: 'Action',
