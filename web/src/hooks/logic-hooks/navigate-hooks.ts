@@ -35,9 +35,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Chats);
   }, [navigate]);
 
-  const navigateToChat = useCallback(() => {
-    navigate(Routes.Chat);
-  }, [navigate]);
+  const navigateToChat = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Chat}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToAgents = useCallback(() => {
     navigate(Routes.Agents);
