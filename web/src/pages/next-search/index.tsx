@@ -13,9 +13,7 @@ export default function SearchPage() {
           <Button variant={'icon'} size={'icon'}>
             <EllipsisVertical />
           </Button>
-          <Button variant={'tertiary'} size={'sm'}>
-            Publish
-          </Button>
+          <Button size={'sm'}>Publish</Button>
         </div>
       </PageHeader>
     </section>

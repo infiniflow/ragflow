@@ -98,10 +98,7 @@ export default function TestingForm({
             <FormItem>
               <FormLabel>{t('knowledgeDetails.testText')}</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  className="bg-colors-background-inverse-weak"
-                ></Textarea>
+                <Textarea {...field}></Textarea>
               </FormControl>
 
               <FormMessage />

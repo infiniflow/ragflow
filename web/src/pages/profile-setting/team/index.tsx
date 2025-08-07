@@ -32,7 +32,7 @@ const TeamManagement = () => {
       <div className=" mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold">Team management</h1>
-          <Button variant={'tertiary'} size={'sm'}>
+          <Button size={'sm'}>
             <Plus className="mr-2 h-4 w-4" />
             Create team
           </Button>
@@ -46,7 +46,7 @@ const TeamManagement = () => {
             </Button>
           </div>
 
-          <Card className="border-0 p-6 mb-6 bg-colors-background-inverse-weak">
+          <Card className="border-0 p-6 mb-6">
             <div className="grid grid-cols-3 gap-8">
               <div>
                 <p className="text-sm text-gray-400 mb-2">Project</p>
@@ -63,7 +63,7 @@ const TeamManagement = () => {
             </div>
           </Card>
 
-          <Card className="border-0 p-6 bg-colors-background-inverse-weak">
+          <Card className="border-0 p-6">
             <Table>
               <TableBody>
                 {teamMembers.map((member, idx) => (

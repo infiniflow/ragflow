@@ -15,7 +15,7 @@ export function SearchCard({ data }: IProps) {
   const { navigateToSearch } = useNavigatePage();
 
   return (
-    <Card className="bg-colors-background-inverse-weak  border-colors-outline-neutral-standard">
+    <Card className="border-colors-outline-neutral-standard">
       <CardContent className="p-4 flex gap-2 items-start group">
         <div className="flex justify-between mb-4">
           <RAGFlowAvatar

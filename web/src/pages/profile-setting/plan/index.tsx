@@ -79,20 +79,20 @@ export default function Plan() {
   return (
     <section className="p-8">
       <h1 className="text-3xl font-bold mb-6">Plan & balance</h1>
-      <Card className="border-0 p-6 mb-6 bg-colors-background-inverse-weak divide-y divide-colors-outline-neutral-strong">
+      <Card className="border-0 p-6 mb-6  divide-y divide-colors-outline-neutral-strong">
         <div className="pb-2 flex justify-between text-xl">
           <span className="font-bold ">Balance</span>
           <span className="font-medium">$ 100.00</span>
         </div>
         <div className="flex items-center justify-between pt-3">
           <span>The value equals to 1,000 tokens or 10.00 GBs of storage</span>
-          <Button variant={'tertiary'} size={'sm'}>
+          <Button size={'sm'}>
             <LogOut />
             Recharge
           </Button>
         </div>
       </Card>
-      <Card className="pt-6 bg-colors-background-inverse-weak">
+      <Card className="pt-6 ">
         <CardContent className="space-y-4">
           <div className="font-bold text-xl">Upgrade to access</div>
           <section className="grid grid-cols-2 gap-3">
@@ -107,7 +107,7 @@ export default function Plan() {
             options={options}
             value={val}
             onChange={handleChange}
-            className="bg-colors-background-inverse-standard inline-flex"
+            className="inline-flex"
           ></Segmented>
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             {pricingData.map((plan, index) => (

@@ -93,7 +93,7 @@ export default function ChunkMethodCard() {
   const form = useFormContext();
 
   return (
-    <Card className="border-0 p-6 mb-8 bg-colors-background-inverse-weak flex">
+    <Card className="border-0 p-6 mb-8 flex">
       <div className="w-2/5">
         <FormField
           control={form.control}
@@ -103,7 +103,7 @@ export default function ChunkMethodCard() {
               <FormLabel>{t('chunkMethod')}</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger className="bg-colors-background-inverse-weak">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select a verified email to display" />
                   </SelectTrigger>
                 </FormControl>

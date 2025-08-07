@@ -19,7 +19,7 @@ export function TemplateCard({ data, showModal, isCreate = false }: IProps) {
     showModal(data);
   }, [data, showModal]);
   return (
-    <Card className="bg-colors-background-inverse-weak  border-colors-outline-neutral-standard group relative min-h-40">
+    <Card className="border-colors-outline-neutral-standard group relative min-h-40">
       <CardContent className="p-4 ">
         {isCreate && (
           <div
