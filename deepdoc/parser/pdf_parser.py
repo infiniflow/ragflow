@@ -1177,7 +1177,7 @@ class RAGFlowPdfParser:
             imgs.append(
                 self.page_images[pns[0]].crop((left * ZM, top * ZM,
                                                right *
-                                               ZM, min(
+                                               ZM, max(
                                                    bottom, self.page_images[pns[0]].size[1])
                                                ))
             )
