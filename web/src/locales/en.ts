@@ -39,6 +39,13 @@ export default {
       nextPage: 'Next',
       add: 'Add',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
+      mcp: {
+        namePlaceholder: 'My MCP Server',
+        nameRequired:
+          'It must be 1–64 characters long and can only contain letters, numbers, hyphens, and underscores.',
+        urlPlaceholder: 'https://api.example.com/v1/mcp',
+        tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
+      },
     },
     login: {
       login: 'Sign in',
@@ -555,6 +562,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
+      createChat: 'Create chat',
     },
     setting: {
       profile: 'Profile',

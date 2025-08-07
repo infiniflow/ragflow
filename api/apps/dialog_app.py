@@ -32,7 +32,8 @@ from api.utils.api_utils import get_json_result
 @login_required
 def set_dialog():
     req = request.json
-    dialog_id = req.get("dialog_id")
+    dialog_id = req.get("dialog_id", "")
+    is_create = not dialog_id
     name = req.get("name", "New Dialog")
     if not isinstance(name, str):
         return get_data_error_result(message="Dialog name must be string.")
@@ -52,15 +53,16 @@ def set_dialog():
     llm_setting = req.get("llm_setting", {})
     prompt_config = req["prompt_config"]
 
-    if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config['system']:
-        return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no knowledge base/Tavily used here.")
+    if not is_create:
+        if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config['system']:
+            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no knowledge base/Tavily used here.")
 
-    for p in prompt_config["parameters"]:
-        if p["optional"]:
-            continue
-        if prompt_config["system"].find("{%s}" % p["key"]) < 0:
-            return get_data_error_result(
-                message="Parameter '{}' is not used".format(p["key"]))
+        for p in prompt_config["parameters"]:
+            if p["optional"]:
+                continue
+            if prompt_config["system"].find("{%s}" % p["key"]) < 0:
+                return get_data_error_result(
+                    message="Parameter '{}' is not used".format(p["key"]))
 
     try:
         e, tenant = TenantService.get_by_id(current_user.id)
@@ -149,6 +151,43 @@ def list_dialogs():
         for d in diags:
             d["kb_ids"], d["kb_names"] = get_kb_names(d["kb_ids"])
         return get_json_result(data=diags)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/next', methods=['POST'])  # noqa: F821
+@login_required
+def list_dialogs_next():
+    keywords = request.args.get("keywords", "")
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
+    parser_id = request.args.get("parser_id")
+    orderby = request.args.get("orderby", "create_time")
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
+
+    req = request.get_json()
+    owner_ids = req.get("owner_ids", [])
+    try:
+        if not owner_ids:
+            # tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+            # tenants = [tenant["tenant_id"] for tenant in tenants]
+            tenants = [] # keep it here
+            dialogs, total = DialogService.get_by_tenant_ids(
+                tenants, current_user.id, page_number,
+                items_per_page, orderby, desc, keywords, parser_id)
+        else:
+            tenants = owner_ids
+            dialogs, total = DialogService.get_by_tenant_ids(
+                tenants, current_user.id, 0,
+                0, orderby, desc, keywords, parser_id)
+            dialogs = [dialog for dialog in dialogs if dialog["tenant_id"] in tenants]
+            total = len(dialogs)
+            if page_number and items_per_page:
+                dialogs = dialogs[(page_number-1)*items_per_page:page_number*items_per_page]
+        return get_json_result(data={"dialogs": dialogs, "total": total})
     except Exception as e:
         return server_error_response(e)
 

@@ -6,6 +6,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { VariableType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { DynamicOutput } from './dynamic-output';
@@ -39,12 +40,7 @@ function IterationForm({ node }: INextOperatorForm) {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <QueryVariable
             name="items_ref"
@@ -53,7 +49,7 @@ function IterationForm({ node }: INextOperatorForm) {
         </FormContainer>
         <DynamicOutput node={node}></DynamicOutput>
         <Output list={outputList}></Output>
-      </form>
+      </FormWrapper>
     </Form>
   );
 }
