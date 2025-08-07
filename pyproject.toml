@@ -24,7 +24,7 @@ dependencies = [
     "chardet==5.2.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "Crawl4AI==0.3.8",
+    "Crawl4AI>=0.3.8",
     "dashscope==1.20.11",
     "deepl==1.18.0",
     "demjson3==3.0.6",
@@ -43,7 +43,7 @@ dependencies = [
     "groq==0.9.0",
     "hanziconv==0.3.2",
     "html-text==0.6.2",
-    "httpx==0.27.0",
+    "httpx==0.27.2",
     "huggingface-hub>=0.25.0,<0.26.0",
     "infinity-sdk==0.6.0-dev4",
     "infinity-emb>=0.0.66,<0.0.67",
@@ -58,7 +58,7 @@ dependencies = [
     "ollama==0.2.1",
     "onnxruntime==1.19.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",
     "onnxruntime-gpu==1.19.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",
-    "openai==1.45.0",
+    "openai>=1.45.0",
     "opencv-python==4.10.0.84",
     "opencv-python-headless==4.10.0.84",
     "openpyxl>=3.1.0,<4.0.0",
@@ -128,6 +128,7 @@ dependencies = [
     "opensearch-py==2.7.1",
     "pluginlib==0.9.4",
     "click>=8.1.8",
+    "litellm>=1.74.15.post1",
 ]
 
 [project.optional-dependencies]
