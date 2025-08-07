@@ -98,13 +98,13 @@ export default function DatasetSettings() {
                 setCurrentTab(val);
               }}
             >
-              <TabsList className="grid bg-background grid-cols-2 rounded-none bg-[#161618]">
+              <TabsList className="grid bg-transparent grid-cols-2 rounded-none text-foreground">
                 <TabsTrigger
                   value="generalForm"
                   className="group bg-transparent p-0 !border-transparent"
                 >
-                  <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
-                    <span className="h-full group-data-[state=active]:border-b-2 border-white	">
+                  <div className="flex w-full h-full justify-center	items-center">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-foreground	">
                       General
                     </span>
                   </div>
@@ -113,8 +113,8 @@ export default function DatasetSettings() {
                   value="chunkMethodForm"
                   className="group bg-transparent p-0 !border-transparent"
                 >
-                  <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
-                    <span className="h-full group-data-[state=active]:border-b-2 border-white	">
+                  <div className="flex w-full h-full justify-center	items-center">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-foreground	">
                       Chunk Method
                     </span>
                   </div>

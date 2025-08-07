@@ -1376,5 +1376,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       addMCP: 'Add MCP',
       editMCP: 'Edit MCP',
     },
+    search: {
+      createSearch: 'Create Search',
+    },
   },
 };

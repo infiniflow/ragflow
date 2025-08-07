@@ -1310,4 +1310,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     okText: '确认',
     cancelText: '取消',
   },
+  search: {
+    createSearch: '新建查询',
+  },
 };

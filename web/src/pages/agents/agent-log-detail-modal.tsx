@@ -1,5 +1,5 @@
 import MessageItem from '@/components/next-message-item';
-import { Modal } from '@/components/ui/modal';
+import { Modal } from '@/components/ui/modal/modal';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { IAgentLogMessage } from '@/interfaces/database/agent';

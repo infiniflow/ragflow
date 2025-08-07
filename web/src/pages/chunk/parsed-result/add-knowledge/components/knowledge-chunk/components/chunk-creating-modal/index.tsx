@@ -13,7 +13,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
-import { Modal } from '@/components/ui/modal';
+import { Modal } from '@/components/ui/modal/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
