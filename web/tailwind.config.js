@@ -58,6 +58,28 @@ module.exports = {
         'dot-green': 'var(--dot-green)',
         'dot-red': 'var(--dot-red)',
 
+        /* design colors */
+
+        'bg-base': 'var(--bg-base)',
+        'bg-card': 'var(--bg-card)',
+        'text-primary': 'var(--text-primary)',
+        'text-disabled': 'var(--text-disabled)',
+        'text-input-tip': 'var(--text-input-tip)',
+        'border-default': 'var(--border-default)',
+        'border-accent': 'var(--border-accent)',
+        'border-button': 'var(--border-button)',
+        'accent-primary': 'var(--accent-primary)',
+        'bg-accent': 'var(--bg-accent)',
+        'state--success': 'var(--state--success)',
+        'state--warning': 'var(--state--warning)',
+        'state--error': 'var(--state--error)',
+        'team-group': 'var(--team-group)',
+        'team-member': 'var(--team-member)',
+        'team-department': 'var(--team-department)',
+        'bg-group': 'var(--bg-group)',
+        'bg-member': 'var(--bg-member)',
+        'bg-department': 'var(--bg-department)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

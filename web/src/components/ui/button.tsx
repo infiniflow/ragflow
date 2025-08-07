@@ -15,8 +15,7 @@ const buttonVariants = cva(
           'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline:
           'border border-text-sub-title-invert bg-transparent hover:bg-accent hover:text-accent-foreground',
-        secondary:
-          'bg-background-card text-secondary-foreground hover:bg-secondary/80',
+        secondary: 'bg-bg-card text-secondary-foreground hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
         tertiary:
@@ -52,7 +51,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(
-          'bg-background-card',
+          'bg-bg-card',
           buttonVariants({ variant, size, className }),
         )}
         ref={ref}
