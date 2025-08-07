@@ -231,7 +231,7 @@ async def get_storage_binary(bucket, name):
     return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
 
 
-@timeout(60*40, 1)
+@timeout(60*80, 1)
 async def build_chunks(task, progress_callback):
     if task["size"] > DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
