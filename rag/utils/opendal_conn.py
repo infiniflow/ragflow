@@ -23,7 +23,7 @@ SET GLOBAL max_allowed_packet={}
 def get_opendal_config():
     try:
         opendal_config = get_base_config('opendal', {})
-        if opendal_config.get("scheme") == 'mysql':
+        if opendal_config.get("scheme", "mysql") == 'mysql':
             mysql_config = get_base_config('mysql', {})
             max_packet = mysql_config.get("max_allowed_packet", 134217728)
             kwargs = {
@@ -33,7 +33,7 @@ def get_opendal_config():
                 "user": mysql_config.get("user", "root"),
                 "password": mysql_config.get("password", ""),
                 "database": mysql_config.get("name", "test_open_dal"),
-                "table": opendal_config.get("config").get("oss_table", "opendal_storage"),
+                "table": opendal_config.get("config", {}).get("oss_table", "opendal_storage"),
                 "max_allowed_packet": str(max_packet)
             }
             kwargs["connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
