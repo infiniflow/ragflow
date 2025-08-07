@@ -135,7 +135,7 @@ const ToolTimelineItem = ({
                 <Accordion
                   type="single"
                   collapsible
-                  className="bg-background-card px-3"
+                  className="bg-bg-card px-3"
                 >
                   <AccordionItem value={idx.toString()}>
                     <AccordionTrigger

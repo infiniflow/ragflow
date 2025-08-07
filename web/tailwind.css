@@ -93,6 +93,38 @@
     --input-border: rgba(22, 22, 24, 0.2);
     --dot-green: rgba(59, 160, 92, 1);
     --dot-red: rgba(216, 73, 75, 1);
+
+    /* design colors */
+
+    --bg-base: #f6f6f7;
+    /* card color , dividing line */
+    --bg-card: rgba(0, 0, 0, 0.05);
+    /* Button ,Body text, Input completed text */
+    --text-primary: #161618;
+    --text-secondary: #75787a;
+    --text-disabled: #b2b5b7;
+    /* input placeholder color */
+    --text-input-tip: #b2b5b7;
+    /* Input  default color */
+    --border-default: rgba(0, 0, 0, 0.2);
+    /* Input accent color */
+    --border-accent: #000000;
+    --border-button: rgba(0, 0, 0, 0.1);
+    /* Regulators, parsing, switches, variables */
+    --accent-primary: #4ca4e7;
+    /* Output Variables Box */
+    --bg-accent: rgba(76, 164, 231, 0.05);
+
+    --state--success: #3ba05c;
+    --state--warning: #faad14;
+    --state-error: #d8494b;
+
+    --team-group: #5ab77e;
+    --team-member: #5c96c8;
+    --team-department: #8866d3;
+    --bg-group: rgba(90, 183, 126, 0.1);
+    --bg-member: rgba(92, 150, 200, 0.1);
+    --bg-department: rgba(136, 102, 211, 0.1);
   }
 
   .dark {
@@ -207,6 +239,18 @@
 
     --dot-green: rgba(59, 160, 92, 1);
     --dot-red: rgba(216, 73, 75, 1);
+
+    /* design colors */
+
+    --bg-base: #161618;
+    --bg-card: rgba(255, 255, 255, 0.05);
+    --text-primary: #f6f6f7;
+    --text-secondary: #b2b5b7;
+    --text-disabled: #75787a;
+    --text-input-tip: #75787a;
+    --border-default: rgba(255, 255, 255, 0.2);
+    --border-accent: #ffffff;
+    --border-button: rgba(255, 255, 255, 0.1);
   }
 }
 

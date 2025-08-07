@@ -145,7 +145,7 @@ function EmbedDialog({
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
             <span className="ml-1 inline-block">ID</span>
           </div>
-          <div className="bg-background-card rounded-lg flex justify-between p-2">
+          <div className="bg-bg-card rounded-lg flex justify-between p-2">
             <span>{token} </span>
             <CopyToClipboard text={token}></CopyToClipboard>
           </div>

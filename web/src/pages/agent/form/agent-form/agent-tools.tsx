@@ -36,7 +36,7 @@ export function ToolCard({
       <li
         {...props}
         className={cn(
-          'flex bg-background-card p-1 rounded-sm justify-between',
+          'flex bg-bg-card p-1 rounded-sm justify-between',
           className,
         )}
       >

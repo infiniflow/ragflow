@@ -226,7 +226,7 @@ function MessageItem({
                   ? styles.messageTextDark
                   : styles.messageText]: isAssistant,
                 [styles.messageUserText]: !isAssistant,
-                'bg-background-card': !isAssistant,
+                'bg-bg-card': !isAssistant,
               })}
             >
               {item.data ? (

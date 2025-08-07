@@ -31,13 +31,13 @@ export function InnerCategorizeNode({
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
 
         <section className="flex flex-col gap-2">
-          <div className={'bg-background-card rounded-sm px-1'}>
+          <div className={'bg-bg-card rounded-sm px-1'}>
             <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
           </div>
           {positions.map((position) => {
             return (
               <div key={position.uuid}>
-                <div className={'bg-background-card rounded-sm p-1 truncate'}>
+                <div className={'bg-bg-card rounded-sm p-1 truncate'}>
                   {position.name}
                 </div>
                 <CommonHandle
