@@ -101,7 +101,7 @@ function InnerAgentNode({
             type="source"
             position={Position.Right}
             isConnectable={isConnectable}
-            className="!bg-text-delete-red"
+            className="!bg-state-error"
             style={{ ...RightHandleStyle, top: 94 }}
             nodeId={id}
             id={NodeHandleId.AgentException}

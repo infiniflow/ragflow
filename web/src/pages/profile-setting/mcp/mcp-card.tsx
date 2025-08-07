@@ -36,7 +36,7 @@ export function McpCard({
     <Card key={data.id} className="w-64">
       <CardContent className="p-2.5 pt-2 group">
         <section className="flex justify-between pb-2">
-          <h3 className="text-lg font-semibold line-clamp-1">{data.name}</h3>
+          <h3 className="text-lg font-semibold truncate flex-1">{data.name}</h3>
           <div className="space-x-4">
             <McpDropdown mcpId={data.id} showEditModal={showEditModal}>
               <MoreButton></MoreButton>

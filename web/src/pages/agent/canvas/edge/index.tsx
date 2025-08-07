@@ -108,7 +108,7 @@ function InnerButtonEdge({
         >
           <button
             className={cn(
-              'size-3.5 border border-text-delete-red text-text-delete-red rounded-full leading-none',
+              'size-3.5 border border-state-error text-state-error rounded-full leading-none',
               'invisible',
               { visible },
             )}
