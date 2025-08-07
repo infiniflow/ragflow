@@ -27,6 +27,7 @@ import {
   LaptopMinimalCheck,
   Logs,
   ScreenShare,
+  Settings,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
@@ -43,6 +44,7 @@ import {
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
+import { SettingDialog } from './setting-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
@@ -90,6 +92,12 @@ export default function Agent() {
     visible: versionDialogVisible,
     hideModal: hideVersionDialog,
     showModal: showVersionDialog,
+  } = useSetModalState();
+
+  const {
+    visible: settingDialogVisible,
+    hideModal: hideSettingDialog,
+    showModal: showSettingDialog,
   } = useSetModalState();
 
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
@@ -149,11 +157,6 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {/* <AgentDropdownMenuItem onClick={openDocument}>
-                <Key />
-                API
-              </AgentDropdownMenuItem> */}
-              {/* <DropdownMenuSeparator /> */}
               <AgentDropdownMenuItem onClick={handleImportJson}>
                 <Download />
                 {t('flow.import')}
@@ -162,6 +165,11 @@ export default function Agent() {
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
+              </AgentDropdownMenuItem>
+              <DropdownMenuSeparator />
+              <AgentDropdownMenuItem onClick={showSettingDialog}>
+                <Settings />
+                {t('flow.setting')}
               </AgentDropdownMenuItem>
               {location.hostname !== 'demo.ragflow.io' && (
                 <>
@@ -200,6 +208,9 @@ export default function Agent() {
       )}
       {versionDialogVisible && (
         <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+      )}
+      {settingDialogVisible && (
+        <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
       )}
     </section>
   );
