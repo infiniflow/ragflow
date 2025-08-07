@@ -17,8 +17,11 @@ import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchAgent } from '@/hooks/use-agent-request';
+import { transformBase64ToFile } from '@/utils/file-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CloudUpload, X } from 'lucide-react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 
 const formSchema = z.object({
@@ -38,6 +41,7 @@ type SettingFormProps = {
 
 export function SettingForm({ submit }: SettingFormProps) {
   const { t } = useTranslate('flow.settings');
+  const { data } = useFetchAgent();
 
   const form = useForm<SettingFormSchemaType>({
     resolver: zodResolver(formSchema),
@@ -46,6 +50,15 @@ export function SettingForm({ submit }: SettingFormProps) {
       permission: 'me',
     },
   });
+
+  useEffect(() => {
+    form.reset({
+      title: data?.title,
+      description: data?.description,
+      avatar: data.avatar ? [transformBase64ToFile(data.avatar)] : [],
+      permission: data?.permission,
+    });
+  }, [data, form]);
 
   return (
     <Form {...form}>
@@ -110,14 +123,17 @@ export function SettingForm({ submit }: SettingFormProps) {
           {(field) => (
             <RadioGroup
               onValueChange={field.onChange}
-              defaultValue={field.value}
+              value={field.value}
               className="flex"
             >
               <FormItem className="flex items-center gap-3">
                 <FormControl>
                   <RadioGroupItem value="me" id="me" />
                 </FormControl>
-                <FormLabel className="font-normal !m-0" htmlFor="me">
+                <FormLabel
+                  className="font-normal !m-0 cursor-pointer"
+                  htmlFor="me"
+                >
                   {t('me')}
                 </FormLabel>
               </FormItem>
@@ -126,7 +142,10 @@ export function SettingForm({ submit }: SettingFormProps) {
                 <FormControl>
                   <RadioGroupItem value="team" id="team" />
                 </FormControl>
-                <FormLabel className="font-normal !m-0" htmlFor="team">
+                <FormLabel
+                  className="font-normal !m-0 cursor-pointer"
+                  htmlFor="team"
+                >
                   {t('team')}
                 </FormLabel>
               </FormItem>
