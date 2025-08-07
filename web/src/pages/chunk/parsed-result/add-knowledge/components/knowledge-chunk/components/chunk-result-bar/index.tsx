@@ -61,7 +61,7 @@ export default ({
   };
   return (
     <div className="flex pr-[25px]">
-      <div className="flex items-center gap-4 bg-background-card text-muted w-fit h-[35px] rounded-md px-4 py-2 text-base">
+      <div className="flex items-center gap-4 bg-background-card text-muted-foreground w-fit h-[35px] rounded-md px-4 py-2">
         {textSelectOptions.map((option) => (
           <div
             key={option.value}
