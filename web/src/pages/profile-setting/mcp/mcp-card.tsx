@@ -52,10 +52,10 @@ export function McpCard({
         </section>
         <div className="flex justify-between items-end">
           <div className="w-full">
-            <div className="text-base font-semibold mb-3 line-clamp-1 text-text-sub-title">
+            <div className="text-base font-semibold mb-3 line-clamp-1 text-text-secondary">
               {toolLength} cached tools
             </div>
-            <p className="text-sm text-text-sub-title">
+            <p className="text-sm text-text-secondary">
               {formatDate(data.update_date)}
             </p>
           </div>

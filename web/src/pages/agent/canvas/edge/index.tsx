@@ -90,7 +90,7 @@ function InnerButtonEdge({
         path={edgePath}
         markerEnd={markerEnd}
         style={{ ...style, ...selectedStyle, ...highlightStyle }}
-        className="text-text-sub-title"
+        className="text-text-secondary"
       />
 
       <EdgeLabelRenderer>

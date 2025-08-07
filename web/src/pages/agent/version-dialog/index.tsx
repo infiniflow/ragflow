@@ -92,7 +92,7 @@ export function VersionDialog({
                   <section className="flex justify-between">
                     <div>
                       <div className="pb-1 truncate">{agent?.title}</div>
-                      <p className="text-text-sub-title text-xs">
+                      <p className="text-text-secondary text-xs">
                         Created: {formatDate(agent?.create_date)}
                       </p>
                     </div>

@@ -157,13 +157,13 @@ const ToolTimelineItem = ({
                             ] ?? changeToolName(tool.tool_name)}
                           </span>
                         )}
-                        <span className="text-text-sub-title text-xs">
+                        <span className="text-text-secondary text-xs">
                           {/* 0:00
                           {x.data.elapsed_time?.toString().slice(0, 6)} */}
                         </span>
                         <span
                           className={cn(
-                            'border-background  -end-1 -top-1 size-2 rounded-full bg-dot-green',
+                            'border-background  -end-1 -top-1 size-2 rounded-full bg-state--success',
                           )}
                         >
                           <span className="sr-only">Online</span>

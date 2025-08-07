@@ -51,12 +51,9 @@ module.exports = {
         'background-header-bar': 'var(--background-header-bar)',
         'background-card': 'var(--background-card)',
         'background-note': 'var(--background-note)',
-        'background-checked': 'var(--background-checked)',
         'background-highlight': 'var(--background-highlight)',
 
         'input-border': 'var(--input-border)',
-        'dot-green': 'var(--dot-green)',
-        'dot-red': 'var(--dot-red)',
 
         /* design colors */
 
