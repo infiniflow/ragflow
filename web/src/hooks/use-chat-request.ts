@@ -271,9 +271,14 @@ export const useFetchConversation = () => {
         isNew !== 'true' &&
         isConversationIdExist(sharedId || conversationId)
       ) {
-        const { data } = await chatService.getConversation({
-          conversationId: conversationId || sharedId,
-        });
+        const { data } = await chatService.getConversation(
+          {
+            params: {
+              conversationId: conversationId || sharedId,
+            },
+          },
+          true,
+        );
 
         const conversation = data?.data ?? {};
 
