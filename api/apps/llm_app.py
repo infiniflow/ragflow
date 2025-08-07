@@ -81,7 +81,7 @@ def set_api_key():
                     raise Exception(m)
                 chat_passed = True
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(
                     e)
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
             assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
@@ -94,7 +94,7 @@ def set_api_key():
                 rerank_passed = True
                 logging.debug(f'passed model rerank {llm.llm_name}')
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(
                     e)
         if any([embd_passed, chat_passed, rerank_passed]):
             msg = ''
@@ -229,7 +229,7 @@ def add_llm():
             if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         assert factory in RerankModel, f"RE-rank model from {factory} is not supported yet."
@@ -243,9 +243,9 @@ def add_llm():
             if len(arr) == 0:
                 raise Exception("Not known.")
         except KeyError:
-            msg += f"{factory} dose not support this model({mdl_nm})"
+            msg += f"{factory} dose not support this model({factory}/{mdl_nm})"
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
@@ -260,7 +260,7 @@ def add_llm():
             if not m and not tc:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(e)
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         assert factory in TTSModel, f"TTS model from {factory} is not supported yet."
         mdl = TTSModel[factory](
@@ -270,7 +270,7 @@ def add_llm():
             for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(e)
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
     else:
         # TODO: check other type of models
         pass
@@ -356,8 +356,6 @@ def my_llms():
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
-
-
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
