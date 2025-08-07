@@ -48,7 +48,7 @@ const ConditionBlock = ({
         {items.map((x, idx) => (
           <div key={idx}>
             <section className="flex justify-between gap-2 items-center text-xs p-1">
-              <div className="flex-1 truncate text-background-checked">
+              <div className="flex-1 truncate text-accent-primary">
                 {getLabel(x?.cpn_id)}
               </div>
               <span>{renderOperatorIcon(x?.operator)}</span>
@@ -81,11 +81,11 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
                 <section className="flex flex-col text-xs">
                   <div className="text-right">
                     <span>{getConditionKey(idx, positions.length)}</span>
-                    <div className="text-text-sub-title">
+                    <div className="text-text-secondary">
                       {idx < positions.length - 1 && position.text}
                     </div>
                   </div>
-                  <span className="text-background-checked">
+                  <span className="text-accent-primary">
                     {idx < positions.length - 1 &&
                       position.condition?.logical_operator?.toUpperCase()}
                   </span>

@@ -65,7 +65,7 @@ export function TestingResult({
   return (
     <div className="p-4 flex-1">
       <div className="flex justify-between pb-2.5">
-        <span className="text-text-title font-semibold text-2xl">
+        <span className="text-text-primary font-semibold text-2xl">
           Test results
         </span>
         <FilterPopover

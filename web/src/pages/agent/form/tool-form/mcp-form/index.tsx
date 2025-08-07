@@ -46,7 +46,7 @@ function MCPForm() {
           </CardHeader>
           <CardContent className="p-0 text-sm">
             <span className="pr-2"> URL:</span>
-            <a href={data.url} className="text-background-checked">
+            <a href={data.url} className="text-accent-primary">
               {data.url}
             </a>
           </CardContent>

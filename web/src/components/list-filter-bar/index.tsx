@@ -27,7 +27,7 @@ export const FilterButton = React.forwardRef<
     <Button variant="secondary" {...props} ref={ref}>
       <span
         className={cn({
-          'text-text-title': count > 0,
+          'text-text-primary': count > 0,
           'text-text-sub-title-invert': count === 0,
         })}
       >

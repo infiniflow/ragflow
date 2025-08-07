@@ -43,7 +43,7 @@ export function McpDropdown({
         <DropdownMenuSeparator />
         <ConfirmDeleteDialog onOk={handleDelete}>
           <DropdownMenuItem
-            className="text-text-delete-red"
+            className="text-state-error"
             onSelect={(e) => {
               e.preventDefault();
             }}

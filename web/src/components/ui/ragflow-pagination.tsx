@@ -150,7 +150,7 @@ export function RAGFlowPagination({
               <PaginationItem
                 key={page}
                 className={cn({
-                  ['bg-background-header-bar rounded-md text-text-title']:
+                  ['bg-bg-card rounded-md text-text-primary']:
                     currentPage === page,
                 })}
               >
@@ -174,7 +174,7 @@ export function RAGFlowPagination({
           options={sizeChangerOptions}
           value={currentPageSize}
           onChange={handlePageSizeChange}
-          triggerClassName="bg-background-header-bar"
+          triggerClassName="bg-bg-card"
         ></RAGFlowSelect>
       )}
     </section>

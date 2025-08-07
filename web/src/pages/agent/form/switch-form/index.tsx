@@ -143,7 +143,7 @@ function ConditionCards({
                         <SelectWithSearch
                           {...field}
                           options={finalOptions}
-                          triggerClassName="text-background-checked bg-transparent border-none truncate"
+                          triggerClassName="text-accent-primary bg-transparent border-none truncate"
                         ></SelectWithSearch>
                       </FormControl>
                       <FormMessage />
@@ -260,7 +260,7 @@ function SwitchForm({ node }: IOperatorForm) {
               <div className="flex justify-between items-center">
                 <section>
                   <span>{index === 0 ? 'IF' : 'ELSEIF'}</span>
-                  <div className="text-text-sub-title">Case {index + 1}</div>
+                  <div className="text-text-secondary">Case {index + 1}</div>
                 </section>
                 {index !== 0 && (
                   <Button

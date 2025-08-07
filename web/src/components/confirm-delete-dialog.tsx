@@ -52,7 +52,7 @@ export function ConfirmDeleteDialog({
             {t('common.cancel')}
           </AlertDialogCancel>
           <AlertDialogAction
-            className="bg-text-delete-red text-text-title"
+            className="bg-state-error text-text-primary"
             onClick={onOk}
           >
             {t('common.ok')}

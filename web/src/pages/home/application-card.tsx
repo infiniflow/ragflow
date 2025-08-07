@@ -25,7 +25,7 @@ export function ApplicationCard({ app }: ApplicationCardProps) {
             <h3 className="text-sm font-normal line-clamp-1 mb-1">
               {app.title}
             </h3>
-            <p className="text-xs font-normal text-text-sub-title">
+            <p className="text-xs font-normal text-text-secondary">
               {formatDate(app.update_time)}
             </p>
           </div>
@@ -44,7 +44,7 @@ export type SeeAllAppCardProps = {
 export function SeeAllAppCard({ click }: SeeAllAppCardProps) {
   return (
     <Card className="w-64 min-h-[76px]" onClick={click}>
-      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-sub-title">
+      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
         See All <ChevronRight className="size-4" />
       </CardContent>
     </Card>

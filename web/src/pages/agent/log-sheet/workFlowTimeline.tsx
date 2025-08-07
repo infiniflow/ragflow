@@ -211,7 +211,7 @@ export const WorkFlowTimeline = ({
             >
               <TimelineHeader>
                 <TimelineSeparator
-                  className="group-data-[orientation=vertical]/timeline:-left-7 group-data-[orientation=vertical]/timeline:h-[calc(100%-1.5rem-0.25rem)] group-data-[orientation=vertical]/timeline:translate-y-6.5 top-6 bg-background-checked"
+                  className="group-data-[orientation=vertical]/timeline:-left-7 group-data-[orientation=vertical]/timeline:h-[calc(100%-1.5rem-0.25rem)] group-data-[orientation=vertical]/timeline:translate-y-6.5 top-6 bg-accent-primary"
                   style={{
                     background:
                       x.data.component_type === 'Agent'
@@ -271,14 +271,14 @@ export const WorkFlowTimeline = ({
                               ] ??
                                 nodeLabel)}
                           </span>
-                          <span className="text-text-sub-title text-xs">
+                          <span className="text-text-secondary text-xs">
                             {x.data.elapsed_time?.toString().slice(0, 6)}
                           </span>
                           <span
                             className={cn(
                               'border-background  -end-1 -top-1 size-2 rounded-full',
-                              { 'bg-dot-green': isEmpty(x.data.error) },
-                              { 'bg-dot-red': !isEmpty(x.data.error) },
+                              { 'bg-state--success': isEmpty(x.data.error) },
+                              { 'bg-state--error': !isEmpty(x.data.error) },
                             )}
                           >
                             <span className="sr-only">Online</span>

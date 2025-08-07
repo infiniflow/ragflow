@@ -61,7 +61,6 @@
     --colors-text-inverse-strong: rgba(255, 255, 255, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
     --colors-text-inverse-weak: rgba(184, 181, 203, 1);
-    --text-delete-red: rgba(216, 73, 75, 1);
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -87,12 +86,9 @@
 
     --background-note: rgba(22, 22, 24, 0.1);
 
-    --background-checked: rgba(76, 164, 231, 1);
     --background-highlight: rgba(76, 164, 231, 0.1);
 
     --input-border: rgba(22, 22, 24, 0.2);
-    --dot-green: rgba(59, 160, 92, 1);
-    --dot-red: rgba(216, 73, 75, 1);
 
     /* design colors */
 
@@ -115,8 +111,8 @@
     /* Output Variables Box */
     --bg-accent: rgba(76, 164, 231, 0.05);
 
-    --state--success: #3ba05c;
-    --state--warning: #faad14;
+    --state-success: #3ba05c;
+    --state-warning: #faad14;
     --state-error: #d8494b;
 
     --team-group: #5ab77e;
@@ -211,7 +207,6 @@
     --colors-text-inverse-strong: rgba(17, 16, 23, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
     --colors-text-inverse-weak: rgba(84, 80, 106, 1);
-    --text-delete-red: rgba(216, 73, 75, 1);
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -231,14 +226,10 @@
 
     --background-card: rgba(255, 255, 255, 0.05);
     --background-note: rgba(255, 255, 255, 0.05);
-    --background-checked: rgba(76, 164, 231, 1);
 
     --background-highlight: rgba(76, 164, 231, 0.1);
 
     --input-border: rgba(255, 255, 255, 0.2);
-
-    --dot-green: rgba(59, 160, 92, 1);
-    --dot-red: rgba(216, 73, 75, 1);
 
     /* design colors */
 
@@ -259,7 +250,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-text-title-invert text-foreground;
+    @apply bg-bg-base text-text-primary;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;

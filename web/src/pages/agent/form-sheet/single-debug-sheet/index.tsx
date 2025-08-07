@@ -64,7 +64,7 @@ const SingleDebugSheet = ({
           {!isEmpty(data) ? (
             <div
               className={cn('mt-4 rounded-md border', {
-                [`border-text-delete-red`]: !isEmpty(data._ERROR),
+                [`border-state-error`]: !isEmpty(data._ERROR),
               })}
             >
               <div className="flex justify-between p-2">

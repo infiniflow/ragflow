@@ -25,7 +25,7 @@ export function InnerUploadedMessageFiles({ files = [] }: IProps) {
           )}
           <div className="text-xs max-w-20">
             <div className="truncate">{file.name}</div>
-            <p className="text-text-sub-title pt-1">{formatBytes(file.size)}</p>
+            <p className="text-text-secondary pt-1">{formatBytes(file.size)}</p>
           </div>
         </div>
       ))}

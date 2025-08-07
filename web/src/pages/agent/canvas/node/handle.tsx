@@ -28,7 +28,7 @@ export function CommonHandle({
       <Handle
         {...props}
         className={cn(
-          'inline-flex justify-center items-center !bg-background-checked !size-4 !rounded-sm !border-none ',
+          'inline-flex justify-center items-center !bg-accent-primary !size-4 !rounded-sm !border-none ',
           className,
         )}
         onClick={(e) => {

@@ -75,7 +75,7 @@ export function DynamicOutputForm({ node }: IProps) {
                 </FormItem>
               )}
             />
-            <Separator className="w-3 text-text-sub-title" />
+            <Separator className="w-3 text-text-secondary" />
             <FormField
               control={form.control}
               name={`${name}.${index}.ref`}
@@ -114,7 +114,7 @@ export function DynamicOutputForm({ node }: IProps) {
 }
 
 export function VariableTitle({ title }: { title: ReactNode }) {
-  return <div className="font-medium text-text-title pb-2">{title}</div>;
+  return <div className="font-medium text-text-primary pb-2">{title}</div>;
 }
 
 export function DynamicOutput({ node }: IProps) {
