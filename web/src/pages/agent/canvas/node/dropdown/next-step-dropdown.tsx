@@ -68,7 +68,7 @@ function AccordionOperators() {
   return (
     <Accordion
       type="multiple"
-      className="px-2 text-text-title max-h-[45vh] overflow-auto"
+      className="px-2 text-text-primary max-h-[45vh] overflow-auto"
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">

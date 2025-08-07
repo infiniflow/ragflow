@@ -114,7 +114,7 @@ export default function Agent() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div className="text-xs text-text-sub-title translate-y-3">
+          <div className="text-xs text-text-secondary translate-y-3">
             {t('flow.autosaved')} {time}
           </div>
         </section>

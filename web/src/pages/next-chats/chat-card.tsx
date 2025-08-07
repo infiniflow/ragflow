@@ -34,8 +34,8 @@ export function ChatCard({ data, showChatRenameModal }: IProps) {
             <h3 className="text-lg font-semibold mb-2 line-clamp-1 truncate">
               {data.name}
             </h3>
-            <p className="text-xs text-text-sub-title">{data.description}</p>
-            <p className="text-xs text-text-sub-title">
+            <p className="text-xs text-text-secondary">{data.description}</p>
+            <p className="text-xs text-text-secondary">
               {formatDate(data.update_time)}
             </p>
           </div>

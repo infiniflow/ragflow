@@ -44,7 +44,7 @@ export default function RetrievalTesting() {
         <section className="flex divide-x h-full">
           <div className="p-4 flex-1">
             <div className="flex justify-between pb-2.5">
-              <span className="text-text-title font-semibold text-2xl">
+              <span className="text-text-primary font-semibold text-2xl">
                 Test setting
               </span>
               {/* <Button variant={'outline'} onClick={addCount}>

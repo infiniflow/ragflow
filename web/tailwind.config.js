@@ -40,7 +40,6 @@ module.exports = {
         'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
         'colors-text-persist-light': 'var(--colors-text-persist-light)',
         'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
-        'text-delete-red': 'var(--text-delete-red)',
 
         'background-badge': 'var(--background-badge)',
         'text-badge': 'var(--text-badge)',
@@ -51,12 +50,9 @@ module.exports = {
         'background-header-bar': 'var(--background-header-bar)',
         'background-card': 'var(--background-card)',
         'background-note': 'var(--background-note)',
-        'background-checked': 'var(--background-checked)',
         'background-highlight': 'var(--background-highlight)',
 
         'input-border': 'var(--input-border)',
-        'dot-green': 'var(--dot-green)',
-        'dot-red': 'var(--dot-red)',
 
         /* design colors */
 
@@ -70,9 +66,9 @@ module.exports = {
         'border-button': 'var(--border-button)',
         'accent-primary': 'var(--accent-primary)',
         'bg-accent': 'var(--bg-accent)',
-        'state--success': 'var(--state--success)',
-        'state--warning': 'var(--state--warning)',
-        'state--error': 'var(--state--error)',
+        'state-success': 'var(--state-success)',
+        'state-warning': 'var(--state-warning)',
+        'state-error': 'var(--state-error)',
         'team-group': 'var(--team-group)',
         'team-member': 'var(--team-member)',
         'team-department': 'var(--team-department)',

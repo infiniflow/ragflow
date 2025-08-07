@@ -316,6 +316,7 @@ const SidebarRail = React.forwardRef<
         '[[data-side=right][data-collapsible=offcanvas]_&]:-left-2',
         className,
       )}
+      type="button"
       {...props}
     />
   );

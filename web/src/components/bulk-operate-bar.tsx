@@ -40,7 +40,7 @@ export function BulkOperateBar({
           {list.map((x) => (
             <li
               key={x.id}
-              className={cn({ ['text-text-delete-red']: isDeleteItem(x.id) })}
+              className={cn({ ['text-state-error']: isDeleteItem(x.id) })}
             >
               <ConfirmDeleteDialog
                 hidden={!isDeleteItem(x.id)}

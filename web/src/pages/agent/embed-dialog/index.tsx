@@ -100,7 +100,7 @@ function EmbedDialog({
             {t('embedIntoSite', { keyPrefix: 'common' })}
           </DialogTitle>
         </DialogHeader>
-        <section className="w-full overflow-auto space-y-5 text-sm text-text-sub-title">
+        <section className="w-full overflow-auto space-y-5 text-sm text-text-secondary">
           <Form {...form}>
             <form className="space-y-5">
               <FormField
@@ -150,7 +150,7 @@ function EmbedDialog({
             <CopyToClipboard text={token}></CopyToClipboard>
           </div>
           <a
-            className="cursor-pointer text-background-checked inline-block"
+            className="cursor-pointer text-accent-primary inline-block"
             href={
               isAgent
                 ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-agent'
