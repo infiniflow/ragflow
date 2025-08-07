@@ -31,7 +31,7 @@ class RAGFlowS3:
         self.access_key = self.s3_config.get('access_key', None)
         self.secret_key = self.s3_config.get('secret_key', None)
         self.session_token = self.s3_config.get('session_token', None)
-        self.region = self.s3_config.get('region', None)
+        self.region_name = self.s3_config.get('region_name', None)
         self.endpoint_url = self.s3_config.get('endpoint_url', None)
         self.signature_version = self.s3_config.get('signature_version', None)
         self.addressing_style = self.s3_config.get('addressing_style', None)
@@ -76,8 +76,8 @@ class RAGFlowS3:
                     'aws_secret_access_key': self.secret_key,
                     'aws_session_token': self.session_token,
                 }
-            if self.region:
-                s3_params['region_name'] = self.region
+            if self.region_name:
+                s3_params['region_name'] = self.region_name
             if self.endpoint_url:
                 s3_params['endpoint_url'] = self.endpoint_url
             if self.signature_version:
@@ -89,7 +89,7 @@ class RAGFlowS3:
             
             self.conn = [boto3.client('s3', **s3_params)]
         except Exception:
-            logging.exception(f"Fail to connect at region {self.region} or endpoint {self.endpoint_url}")
+            logging.exception(f"Fail to connect at region {self.region_name} or endpoint {self.endpoint_url}")
 
     def __close__(self):
         del self.conn[0]
