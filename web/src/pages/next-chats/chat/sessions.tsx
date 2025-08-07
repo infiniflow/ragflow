@@ -40,7 +40,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
             key={x.id}
             onClick={handleCardClick(x.id, x.is_new)}
             className={cn('cursor-pointer bg-transparent', {
-              'bg-background-card': conversationId === x.id,
+              'bg-bg-card': conversationId === x.id,
             })}
           >
             <CardContent className="px-3 py-2 flex justify-between items-center group">

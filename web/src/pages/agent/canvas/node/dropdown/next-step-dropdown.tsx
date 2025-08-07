@@ -42,7 +42,7 @@ function OperatorItemList({ operators }: OperatorItemProps) {
             <TooltipTrigger asChild>
               <DropdownMenuItem
                 key={x}
-                className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start"
+                className="hover:bg-bg-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start"
                 onClick={addCanvasNode(x, {
                   nodeId,
                   id,

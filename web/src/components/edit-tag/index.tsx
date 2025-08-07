@@ -58,7 +58,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
         <HoverCardTrigger>
           <div
             key={tag}
-            className="w-fit flex items-center justify-center gap-2 border-dashed border px-1 rounded-sm bg-background-card"
+            className="w-fit flex items-center justify-center gap-2 border-dashed border px-1 rounded-sm bg-bg-card"
           >
             <div className="flex gap-2 items-center">
               <div className="max-w-80 overflow-hidden text-ellipsis">
@@ -90,7 +90,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
         <Input
           ref={inputRef}
           type="text"
-          className="h-8 bg-background-card"
+          className="h-8 bg-bg-card"
           value={inputValue}
           onChange={handleInputChange}
           onBlur={handleInputConfirm}
@@ -103,7 +103,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
       ) : (
         <Button
           variant="dashed"
-          className="w-fit flex items-center justify-center gap-2 bg-background-card"
+          className="w-fit flex items-center justify-center gap-2 bg-bg-card"
           onClick={showInput}
           style={tagPlusStyle}
         >

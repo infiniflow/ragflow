@@ -133,7 +133,7 @@ function ConditionCards({
                 },
               )}
             >
-              <section className="p-2 bg-background-card flex justify-between items-center">
+              <section className="p-2 bg-bg-card flex justify-between items-center">
                 <FormField
                   control={form.control}
                   name={`${name}.${index}.cpn_id`}
