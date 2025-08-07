@@ -1,15 +1,19 @@
 // src/components/ui/modal.tsx
+import { cn } from '@/lib/utils';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Loader, X } from 'lucide-react';
 import { FC, ReactNode, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { createPortalModal } from './modal-manage';
 
-interface ModalProps {
+export interface ModalProps {
   open: boolean;
   onOpenChange?: (open: boolean) => void;
   title?: ReactNode;
+  titleClassName?: string;
   children: ReactNode;
   footer?: ReactNode;
+  footerClassName?: string;
   showfooter?: boolean;
   className?: string;
   size?: 'small' | 'default' | 'large';
@@ -24,13 +28,19 @@ interface ModalProps {
   onOk?: () => void;
   onCancel?: () => void;
 }
+export interface ModalType extends FC<ModalProps> {
+  show: typeof modalIns.show;
+  hide: typeof modalIns.hide;
+}
 
-export const Modal: FC<ModalProps> = ({
+const Modal: ModalType = ({
   open,
   onOpenChange,
   title,
+  titleClassName,
   children,
   footer,
+  footerClassName,
   showfooter = true,
   className = '',
   size = 'default',
@@ -74,6 +84,7 @@ export const Modal: FC<ModalProps> = ({
   }, [onOpenChange, onOk]);
   const handleChange = (open: boolean) => {
     onOpenChange?.(open);
+    console.log('open', open, onOpenChange);
     if (open) {
       handleOk();
     }
@@ -113,7 +124,12 @@ export const Modal: FC<ModalProps> = ({
       );
     }
     return (
-      <div className="flex items-center justify-end border-t border-border px-6 py-4">
+      <div
+        className={cn(
+          'flex items-center justify-end px-6 py-4',
+          footerClassName,
+        )}
+      >
         {footerTemp}
       </div>
     );
@@ -126,6 +142,7 @@ export const Modal: FC<ModalProps> = ({
     handleCancel,
     handleOk,
     showfooter,
+    footerClassName,
   ]);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
@@ -139,11 +156,23 @@ export const Modal: FC<ModalProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}
-            {title && (
-              <div className="flex items-center justify-between border-b border-border px-6 py-4">
-                <DialogPrimitive.Title className="text-lg font-medium text-foreground">
-                  {title}
-                </DialogPrimitive.Title>
+            {(title || closable) && (
+              <div
+                className={cn(
+                  'flex items-center px-6 py-4',
+                  {
+                    'justify-end': closable && !title,
+                    'justify-between': closable && title,
+                    'justify-start': !closable,
+                  },
+                  titleClassName,
+                )}
+              >
+                {title && (
+                  <DialogPrimitive.Title className="text-lg font-medium text-foreground">
+                    {title}
+                  </DialogPrimitive.Title>
+                )}
                 {closable && (
                   <DialogPrimitive.Close asChild>
                     <button
@@ -156,13 +185,9 @@ export const Modal: FC<ModalProps> = ({
                 )}
               </div>
             )}
-            {/* title */}
-            {!title && (
-              <DialogPrimitive.Title className="text-lg font-medium text-foreground"></DialogPrimitive.Title>
-            )}
 
             {/* content */}
-            <div className="p-6 overflow-y-auto max-h-[80vh] focus-visible:!outline-none">
+            <div className="py-2 px-6 overflow-y-auto max-h-[80vh] focus-visible:!outline-none">
               {destroyOnClose && !open ? null : children}
             </div>
 
@@ -175,43 +200,13 @@ export const Modal: FC<ModalProps> = ({
   );
 };
 
-// example usage
-/*
-import { Modal } from '@/components/ui/modal';
+let modalIns = createPortalModal();
+Modal.show = modalIns
+  ? modalIns.show
+  : () => {
+      modalIns = createPortalModal();
+      return modalIns.show;
+    };
+Modal.hide = modalIns.hide;
 
-function Demo() {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div>
-      <button onClick={() => setOpen(true)}>open modal</button>
-      
-      <Modal
-        open={open}
-        onOpenChange={setOpen}
-        title="title"
-        footer={
-          <div className="flex gap-2">
-            <button onClick={() => setOpen(false)} className="px-4 py-2 border rounded-md">
-              cancel
-            </button>
-            <button onClick={() => setOpen(false)} className="px-4 py-2 bg-primary text-white rounded-md">
-              ok
-            </button>
-          </div>
-        }
-      >
-        <div className="py-4">弹窗内容区域</div>
-      </Modal>
-      <Modal
-        title={'modal-title'}
-        onOk={handleOk}
-        confirmLoading={loading}
-        destroyOnClose
-      >
-        <div className="py-4">弹窗内容区域</div>
-      </Modal>
-    </div>
-  );
-}
-*/
+export { Modal };
