@@ -18,6 +18,7 @@ import {
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { ScheduleOutlined } from '@ant-design/icons';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -44,6 +45,7 @@ import {
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
+import { ScheduleModal, useScheduleModal } from './schedule-modal';
 import { SettingDialog } from './setting-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useAgentHistoryManager } from './use-agent-history-manager';
@@ -93,6 +95,11 @@ export default function Agent() {
     hideModal: hideVersionDialog,
     showModal: showVersionDialog,
   } = useSetModalState();
+  const {
+    visible: scheduleVisible,
+    showModal: showScheduleModal,
+    hideModal: hideScheduleModal,
+  } = useScheduleModal();
 
   const {
     visible: settingDialogVisible,
@@ -166,6 +173,10 @@ export default function Agent() {
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
+              <AgentDropdownMenuItem onClick={showScheduleModal}>
+                <ScheduleOutlined />
+                {t('flow.schedule.title')}
+              </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={showSettingDialog}>
                 <Settings />
@@ -209,6 +220,13 @@ export default function Agent() {
       {versionDialogVisible && (
         <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
       )}
+      {scheduleVisible && (
+        <ScheduleModal
+          visible={scheduleVisible}
+          hideModal={hideScheduleModal}
+          canvasId={id!}
+          canvasTitle={agentDetail.title}
+        />
       {settingDialogVisible && (
         <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
       )}
