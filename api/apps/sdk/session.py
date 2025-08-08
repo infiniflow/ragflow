@@ -862,5 +862,6 @@ def begin_inputs(tenant_id, agent_id):
             "title": cvs.title,
             "avatar": cvs.avatar,
             "inputs": canvas.get_component_input_form("begin"),
+            "prologue": canvas.get_prologue()
         }
     )
