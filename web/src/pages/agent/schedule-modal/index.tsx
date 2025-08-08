@@ -195,7 +195,6 @@ function ScheduleFormModal({
 
         // Get required fields for current frequency type
         const currentRequiredFields = getRequiredFields();
-        console.log('Required fields:', currentRequiredFields);
 
         // Handle time conversion
         if (
