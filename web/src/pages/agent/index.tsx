@@ -28,6 +28,7 @@ import {
   LaptopMinimalCheck,
   Logs,
   ScreenShare,
+  Settings,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
@@ -45,6 +46,7 @@ import {
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { ScheduleModal, useScheduleModal } from './schedule-modal';
+import { SettingDialog } from './setting-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
@@ -98,6 +100,13 @@ export default function Agent() {
     showModal: showScheduleModal,
     hideModal: hideScheduleModal,
   } = useScheduleModal();
+
+  const {
+    visible: settingDialogVisible,
+    hideModal: hideSettingDialog,
+    showModal: showSettingDialog,
+  } = useSetModalState();
+
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
   const { navigateToAgentLogs } = useNavigatePage();
@@ -120,7 +129,7 @@ export default function Agent() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div className="text-xs text-text-sub-title translate-y-3">
+          <div className="text-xs text-text-secondary translate-y-3">
             {t('flow.autosaved')} {time}
           </div>
         </section>
@@ -155,11 +164,6 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {/* <AgentDropdownMenuItem onClick={openDocument}>
-                <Key />
-                API
-              </AgentDropdownMenuItem> */}
-              {/* <DropdownMenuSeparator /> */}
               <AgentDropdownMenuItem onClick={handleImportJson}>
                 <Download />
                 {t('flow.import')}
@@ -172,6 +176,11 @@ export default function Agent() {
               <AgentDropdownMenuItem onClick={showScheduleModal}>
                 <ScheduleOutlined />
                 {t('flow.schedule.title')}
+              </AgentDropdownMenuItem>
+              <DropdownMenuSeparator />
+              <AgentDropdownMenuItem onClick={showSettingDialog}>
+                <Settings />
+                {t('flow.setting')}
               </AgentDropdownMenuItem>
               {location.hostname !== 'demo.ragflow.io' && (
                 <>
@@ -218,6 +227,8 @@ export default function Agent() {
           canvasId={id!}
           canvasTitle={agentDetail.title}
         />
+      {settingDialogVisible && (
+        <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
       )}
     </section>
   );

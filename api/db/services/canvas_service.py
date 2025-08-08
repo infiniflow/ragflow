@@ -121,9 +121,21 @@ class UserCanvasService(CommonService):
         agents = agents.paginate(page_number, items_per_page)
         return list(agents.dicts()), count
 
+    @classmethod
+    @DB.connection_context()
+    def accessible(cls, canvas_id, tenant_id):
+        from api.db.services.user_service import UserTenantService
+        e, c = UserCanvasService.get_by_tenant_id(canvas_id)
+        if not e:
+            return False
+
+        tids = [t.tenant_id for t in UserTenantService.query(user_id=tenant_id)]
+        if c["user_id"] != canvas_id and c["user_id"]  not in tids:
+            return False
+        return True
 
 def completion(tenant_id, agent_id, session_id=None, **kwargs):
-    query = kwargs.get("query", "")
+    query = kwargs.get("query", "") or kwargs.get("question", "")
     files = kwargs.get("files", [])
     inputs = kwargs.get("inputs", {})
     user_id = kwargs.get("user_id", "")
@@ -172,6 +184,7 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
     conv.reference = canvas.get_reference()
     conv.errors = canvas.error
+    conv.dsl = str(canvas)
     conv = conv.to_dict()
     API4ConversationService.append_message(conv["id"], conv)
 

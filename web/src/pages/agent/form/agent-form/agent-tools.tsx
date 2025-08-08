@@ -36,7 +36,7 @@ export function ToolCard({
       <li
         {...props}
         className={cn(
-          'flex bg-background-card p-1 rounded-sm justify-between',
+          'flex bg-bg-card p-1 rounded-sm justify-between',
           className,
         )}
       >
@@ -71,7 +71,7 @@ function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
   }, [deleteRecord, record]);
 
   return (
-    <div className="flex items-center gap-2 text-text-sub-title">
+    <div className="flex items-center gap-2 text-text-secondary">
       <PencilLine
         className="size-4 cursor-pointer"
         data-tool={record}
@@ -106,7 +106,7 @@ export function AgentTools() {
 
   return (
     <section className="space-y-2.5">
-      <span className="text-text-sub-title">Tools</span>
+      <span className="text-text-secondary">Tools</span>
       <ul className="space-y-2">
         {toolNames.map((x) => (
           <ToolCard key={x}>
@@ -160,7 +160,7 @@ export function Agents({ node }: INextOperatorForm) {
 
   return (
     <section className="space-y-2.5">
-      <span className="text-text-sub-title">Agents</span>
+      <span className="text-text-secondary">Agents</span>
       <ul className="space-y-2">
         {subBottomAgentNodeIds.map((id) => {
           const currentNode = getNode(id);

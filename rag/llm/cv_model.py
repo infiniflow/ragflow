@@ -60,7 +60,7 @@ class Base(ABC):
         if not images:
             return text
 
-        if isinstance(images, str):
+        if isinstance(images, str) or "bytes" in type(images).__name__:
             images = [images]
 
         pmpt = [{"type": "text", "text": text}]
