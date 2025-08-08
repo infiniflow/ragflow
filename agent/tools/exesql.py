@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+import re
 from abc import ABC
 import pandas as pd
 import pymysql
@@ -109,7 +110,7 @@ class ExeSQL(ToolBase, ABC):
             single_sql = single_sql.replace('```','')
             if not single_sql:
                 continue
-
+            single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
             cursor.execute(single_sql)
             if cursor.rowcount == 0:
                 sql_res.append({"content": "No record in the database!"})
