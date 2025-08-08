@@ -173,7 +173,6 @@ function ScheduleFormModal({
 
 
 
-
         // Ensure frequency_type is always present - get from form if missing
         const formFrequencyType = form.getValues('frequency_type');
         if (!values.frequency_type && !formFrequencyType) {
