@@ -59,6 +59,7 @@ module.exports = {
         'bg-base': 'var(--bg-base)',
         'bg-card': 'var(--bg-card)',
         'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
         'text-disabled': 'var(--text-disabled)',
         'text-input-tip': 'var(--text-input-tip)',
         'border-default': 'var(--border-default)',
