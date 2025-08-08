@@ -72,9 +72,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Searches);
   }, [navigate]);
 
-  const navigateToSearch = useCallback(() => {
-    navigate(Routes.Search);
-  }, [navigate]);
+  const navigateToSearch = useCallback(
+    (id: string) => {
+      navigate(`${Routes.Search}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToChunkParsedResult = useCallback(
     (id: string, knowledgeId?: string) => () => {

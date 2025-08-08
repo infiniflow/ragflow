@@ -23,8 +23,8 @@ const getColorForName = (name: string): { from: string; to: string } => {
   const hue = hash % 360;
 
   return {
-    from: `hsl(${hue}, 70%, 80%)`,
-    to: `hsl(${hue}, 60%, 30%)`,
+    to: `hsl(${hue}, 70%, 80%)`,
+    from: `hsl(${hue}, 60%, 30%)`,
   };
 };
 export const RAGFlowAvatar = memo(
