@@ -227,7 +227,6 @@ class TenantLLMService(CommonService):
 
         for llm in TenantLLMService.query(llm_name=llm_id):
             return llm.model_type
-
         for llm in LLMService.query(llm_name=llm_id):
             return llm.model_type
 
