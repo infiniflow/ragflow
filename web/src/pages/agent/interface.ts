@@ -38,4 +38,5 @@ export type IInputs = {
   avatar: string;
   title: string;
   inputs: Record<string, BeginQuery>;
+  prologue: string;
 };

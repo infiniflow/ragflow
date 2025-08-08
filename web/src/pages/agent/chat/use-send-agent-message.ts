@@ -361,5 +361,6 @@ export const useSendAgentMessage = (
     resetSession,
     findReferenceByMessageId,
     appendUploadResponseList,
+    addNewestOneAnswer,
   };
 };
