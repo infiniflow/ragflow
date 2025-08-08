@@ -80,6 +80,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 08-08-2025 Suporta a mais recente série GPT-5 da OpenAI.
 - 04-08-2025 Suporta novos modelos, incluindo Kimi K2 e Grok 4.
 - 01-08-2025 Suporta fluxo de trabalho agente e MCP.
 - 23-05-2025 Adicione o componente executor de código Python/JS ao Agente.

@@ -83,6 +83,7 @@
 
 ## 🔥 近期更新
 
+- 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型.
 - 2025-08-04 新增对 Kimi K2 和 Grok 4 等模型的支持.
 - 2025-08-01 支持 agentic workflow 和 MCP。
 - 2025-05-23 Agent 新增 Python/JS 代码执行器组件。
