@@ -28,7 +28,7 @@ Released on August 8, 2025.
 
 ### New Features
 
-- The **Retrieval** components now support the dynamic specification of knowledge base names using variables.
+- The **Retrieval** component now supports the dynamic specification of knowledge base names using variables.
 - The user interface now includes a French language option.
 
 ### Added Models
@@ -44,7 +44,7 @@ Released on August 8, 2025.
 
 ### Fixed Issues
 
-- The Agent component was unable to invoke models installed via vLLM.
+- The **Agent** component was unable to invoke models installed via vLLM.
 - Agents could not be shared with the team.
 - Embedding an Agent into a webpage was not functioning properly.
 
