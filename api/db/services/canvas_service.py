@@ -123,7 +123,7 @@ class UserCanvasService(CommonService):
 
 
 def completion(tenant_id, agent_id, session_id=None, **kwargs):
-    query = kwargs.get("query", "")
+    query = kwargs.get("query", "") or kwargs.get("question", "")
     files = kwargs.get("files", [])
     inputs = kwargs.get("inputs", {})
     user_id = kwargs.get("user_id", "")
