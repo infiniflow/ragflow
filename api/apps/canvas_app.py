@@ -102,7 +102,7 @@ def save():
 def get(canvas_id):
     e, c = UserCanvasService.get_by_tenant_id(canvas_id)
     tids = [t.tenant_id for t in UserTenantService.query(user_id=current_user.id)]
-    if not e or c["user_id"] != current_user.id or c["user_id"]  not in tids:
+    if not e or (c["user_id"] != current_user.id and c["user_id"]  not in tids):
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)
 
