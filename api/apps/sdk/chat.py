@@ -139,7 +139,7 @@ def create(tenant_id):
     res["llm"] = res.pop("llm_setting")
     res["llm"]["model_name"] = res.pop("llm_id")
     del res["kb_ids"]
-    res["dataset_ids"] = req["dataset_ids"]
+    res["dataset_ids"] = req.get("dataset_ids", [])
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
