@@ -90,7 +90,7 @@ def save():
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
-    # save version    
+    # save version
     UserCanvasVersionService.insert( user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
     UserCanvasVersionService.delete_all_versions(req["id"])
     return get_json_result(data=req)
@@ -347,7 +347,7 @@ def test_db_connect():
         if req["db_type"] != 'mssql':
             db.connect()
         db.close()
-        
+
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
@@ -369,7 +369,7 @@ def getlistversion(canvas_id):
 @login_required
 def getversion( version_id):
     try:
-      
+
         e, version = UserCanvasVersionService.get_by_id(version_id)
         if version:
             return get_json_result(data=version.to_dict())
@@ -379,7 +379,7 @@ def getversion( version_id):
 
 @manager.route('/listteam', methods=['GET'])  # noqa: F821
 @login_required
-def list_kbs():
+def list_canvas():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 150))
@@ -387,10 +387,10 @@ def list_kbs():
     desc = request.args.get("desc", True)
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        kbs, total = UserCanvasService.get_by_tenant_ids(
+        canvas, total = UserCanvasService.get_by_tenant_ids(
             [m["tenant_id"] for m in tenants], current_user.id, page_number,
             items_per_page, orderby, desc, keywords)
-        return get_json_result(data={"kbs": kbs, "total": total})
+        return get_json_result(data={"canvas": canvas, "total": total})
     except Exception as e:
         return server_error_response(e)
 
