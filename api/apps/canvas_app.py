@@ -28,7 +28,7 @@ from api.db import FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.user_service import TenantService
+from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
 from api.utils import get_uuid
@@ -101,7 +101,8 @@ def save():
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_tenant_id(canvas_id)
-    if not e or c["user_id"] != current_user.id:
+    tids = [t.tenant_id for t in UserTenantService.query(user_id=current_user.id)]
+    if not e or (c["user_id"] != current_user.id and c["user_id"]  not in tids):
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)
 

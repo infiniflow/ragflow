@@ -172,6 +172,7 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
     conv.reference = canvas.get_reference()
     conv.errors = canvas.error
+    conv.dsl = str(canvas)
     conv = conv.to_dict()
     API4ConversationService.append_message(conv["id"], conv)
 
