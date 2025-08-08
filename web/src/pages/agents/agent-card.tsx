@@ -1,5 +1,6 @@
 import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IFlow } from '@/interfaces/database/flow';
@@ -24,6 +25,7 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
               avatar={data.avatar}
               name={data.title || 'CN'}
             ></RAGFlowAvatar>
+            <SharedBadge>{data.nickname}</SharedBadge>
           </div>
           <AgentDropdown
             showAgentRenameModal={showAgentRenameModal}
