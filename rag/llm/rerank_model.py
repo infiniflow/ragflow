@@ -33,7 +33,11 @@ from api.utils.log_utils import log_exception
 from rag.utils import num_tokens_from_string, truncate
 
 class Base(ABC):
-    def __init__(self, key, model_name):
+    def __init__(self, key, model_name, **kwargs):
+        """
+        Abstract base class constructor.
+        Parameters are not stored; initialization is left to subclasses.
+        """
         pass
 
     def similarity(self, query: str, texts: list):
@@ -315,7 +319,7 @@ class NvidiaRerank(Base):
 class LmStudioRerank(Base):
     _FACTORY_NAME = "LM-Studio"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, **kwargs):
         pass
 
     def similarity(self, query: str, texts: list):
@@ -396,7 +400,7 @@ class CoHereRerank(Base):
 class TogetherAIRerank(Base):
     _FACTORY_NAME = "TogetherAI"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, **kwargs):
         pass
 
     def similarity(self, query: str, texts: list):

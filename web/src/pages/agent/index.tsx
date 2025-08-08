@@ -44,6 +44,7 @@ import {
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
+import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 
 function AgentDropdownMenuItem({
@@ -66,8 +67,7 @@ export default function Agent() {
     showModal: showChatDrawer,
   } = useSetModalState();
   const { t } = useTranslation();
-
-  // const openDocument = useOpenDocument();
+  useAgentHistoryManager();
   const {
     handleExportJson,
     handleImportJson,
@@ -114,7 +114,7 @@ export default function Agent() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div className="text-xs text-text-sub-title translate-y-3">
+          <div className="text-xs text-text-secondary translate-y-3">
             {t('flow.autosaved')} {time}
           </div>
         </section>

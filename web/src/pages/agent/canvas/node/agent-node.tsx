@@ -83,13 +83,13 @@ function InnerAgentNode({
         ></Handle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="flex flex-col gap-2">
-          <div className={'bg-background-card rounded-sm p-1'}>
+          <div className={'bg-bg-card rounded-sm p-1'}>
             <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
           </div>
           {(isGotoMethod ||
             exceptionMethod === AgentExceptionMethod.Comment) && (
-            <div className="bg-background-card rounded-sm p-1 flex justify-between gap-2">
-              <span className="text-text-sub-title">On Failure</span>
+            <div className="bg-bg-card rounded-sm p-1 flex justify-between gap-2">
+              <span className="text-text-secondary">On Failure</span>
               <span className="truncate flex-1 text-right">
                 {t(`flow.${exceptionMethod}`)}
               </span>
@@ -101,7 +101,7 @@ function InnerAgentNode({
             type="source"
             position={Position.Right}
             isConnectable={isConnectable}
-            className="!bg-text-delete-red"
+            className="!bg-state-error"
             style={{ ...RightHandleStyle, top: 94 }}
             nodeId={id}
             id={NodeHandleId.AgentException}

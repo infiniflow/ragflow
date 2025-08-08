@@ -34,16 +34,16 @@ From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and
 
 - Unified orchestration of both Agents and Workflows.
 - A comprehensive refactor of the Agent, greatly enhancing its capabilities and usability, with support for Multi-Agent configurations, planning and reflection, and visual functionalities.
-- Fully realized MCP functionality, allowing for MCP Server import, Agents functioning as MCP Clients, and RAGFlow itself operating as an MCP Server.
+- Fully implemented MCP functionality, allowing for MCP Server import, Agents functioning as MCP Clients, and RAGFlow itself operating as an MCP Server.
 - Access to runtime logs for Agents.
 - Chat histories with Agents available through the management panel.
 - Integration of a new, more robust version of Infinity, enabling the auto-tagging functionality with Infinity as the underlying document engine.
 - An OpenAI-compatible API that supports file reference information.
-- Support for new embedding models, including Kimi K2, Grok 4, and Voyage.
+- Support for new models, including Kimi K2, Grok 4, and Voyage embedding.
 - RAGFlow’s codebase is now mirrored on Gitee.
 - Introduction of a new model provider, Gitee AI.
 
-### New agent templates
+### New agent templates introduced
 
 - Multi-Agent based Deep Research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
 - An intelligent Q&A chatbot leveraging internal knowledge bases, designed for customer service and training scenarios.

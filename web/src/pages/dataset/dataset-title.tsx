@@ -9,7 +9,7 @@ export function TopTitle({ title, description }: TopTitleProps) {
   return (
     <div className="pb-5">
       <div className="text-2xl font-semibold">{title}</div>
-      <p className="text-text-sub-title pt-2">{description}</p>
+      <p className="text-text-secondary pt-2">{description}</p>
     </div>
   );
 }

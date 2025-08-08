@@ -33,9 +33,9 @@ export default function McpServer() {
 
   return (
     <section className="p-4 w-full">
-      <div className="text-text-title text-2xl">MCP Servers</div>
+      <div className="text-text-primary text-2xl">MCP Servers</div>
       <section className="flex items-center justify-between pb-5">
-        <div className="text-text-sub-title">
+        <div className="text-text-secondary">
           Customize the list of MCP servers
         </div>
         <div className="flex gap-5">

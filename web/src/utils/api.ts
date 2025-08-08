@@ -108,6 +108,9 @@ export default {
   completeExternalConversation: `${api_host}/api/completion`,
   uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
+  // next chat
+  listNextDialog: `${api_host}/dialog/next`,
+
   // file manager
   listFile: `${api_host}/file/list`,
   uploadFile: `${api_host}/file/upload`,
