@@ -82,18 +82,14 @@ class Excel(ExcelParser):
             return self._parse_simple_headers(rows)
 
     def _has_complex_header_structure(self, ws, rows):
-        if len(rows) < 2:
+        if len(rows) < 1:
             return False
         merged_ranges = list(ws.merged_cells.ranges)
-        has_merged_cells = len(merged_ranges) > 0
-        potential_header_rows = 0
-        max_check_rows = min(3, len(rows))
-        for i in range(max_check_rows):
-            if self._row_looks_like_header(rows[i]):
-                potential_header_rows += 1
-            else:
-                break
-        return has_merged_cells and potential_header_rows > 1
+        # 检查前两行是否涉及合并单元格
+        for rng in merged_ranges:
+            if rng.min_row <= 2:  # 只要合并区域涉及第1或第2行
+                return True
+        return False
 
     def _row_looks_like_header(self, row):
         header_like_cells = 0
