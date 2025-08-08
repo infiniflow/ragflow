@@ -48,6 +48,7 @@ export const enum AgentApiAction {
   FetchVersion = 'fetchVersion',
   FetchAgentAvatar = 'fetchAgentAvatar',
   FetchExternalAgentInputs = 'fetchExternalAgentInputs',
+  SetAgentSetting = 'setAgentSetting',
 }
 
 export const EmptyDsl = {
@@ -612,4 +613,31 @@ export const useFetchExternalAgentInputs = () => {
   });
 
   return { data, loading, refetch };
+};
+
+export const useSetAgentSetting = () => {
+  const { id } = useParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.SetAgentSetting],
+    mutationFn: async (params: any) => {
+      const ret = await agentService.settingCanvas({ id, ...params });
+      if (ret?.data?.code === 0) {
+        message.success('success');
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentDetail],
+        });
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret?.data?.code;
+    },
+  });
+
+  return { data, loading, setAgentSetting: mutateAsync };
 };
