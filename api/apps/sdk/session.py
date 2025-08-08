@@ -833,30 +833,44 @@ def chatbot_completions(dialog_id):
 
 
 @manager.route("/agentbots/<agent_id>/completions", methods=["POST"])  # noqa: F821
-@token_required
-def agent_bot_completions(tenant_id, agent_id):
+def agent_bot_completions(agent_id):
     req = request.json
 
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
     if req.get("stream", True):
-        resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
+        resp = Response(agent_completion(objs[0].tenant_id, agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    for answer in agent_completion(tenant_id, agent_id, **req):
+    for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
 
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
-@token_required
-def begin_inputs(tenant_id, agent_id):
+def begin_inputs(agent_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
-    canvas = Canvas(json.dumps(cvs.dsl), tenant_id)
+    canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
     return get_result(
         data={
             "title": cvs.title,
