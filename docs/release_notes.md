@@ -22,6 +22,32 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
+## v0.20.1
+
+Released on August 8, 2025.
+
+### New Features
+
+- The **Retrieval** component now supports the dynamic specification of knowledge base names using variables.
+- The user interface now includes a French language option.
+
+### Added Models
+
+- ChatGPT 5
+- Claude 4.1
+
+### New agent Templates (both workflow and agentic)
+
+- SQL Assistant Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
+- Choose Your Knowledge Base Workflow: Lets users select a knowledge base to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+
+### Fixed Issues
+
+- The **Agent** component was unable to invoke models installed via vLLM.
+- Agents could not be shared with the team.
+- Embedding an Agent into a webpage was not functioning properly.
+
 ## v0.20.0
 
 Released on August 4, 2025.
