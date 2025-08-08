@@ -2,7 +2,7 @@
     "id": 19,
     "title": "Choose Your Knowledge Base Agent",
     "description": "Select your desired knowledge base from the dropdown menu. The Agent will only retrieve from the selected knowledge base and use this content  to generate responses.",
-    "canvas_type": "Other", 
+    "canvas_type": "Agent", 
     "dsl": {
 		"components": {
 			"Agent:BraveParksJoke": {
