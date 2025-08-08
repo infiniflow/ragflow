@@ -15,7 +15,6 @@
 #
 import logging
 import json
-import base64
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
@@ -24,7 +23,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from api.utils.base64_image import test_image_base64
+from api.utils.base64_image import test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 
 
@@ -82,7 +81,7 @@ def set_api_key():
                     raise Exception(m)
                 chat_passed = True
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(
                     e)
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
             assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
@@ -95,7 +94,7 @@ def set_api_key():
                 rerank_passed = True
                 logging.debug(f'passed model rerank {llm.llm_name}')
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(
                     e)
         if any([embd_passed, chat_passed, rerank_passed]):
             msg = ''
@@ -230,7 +229,7 @@ def add_llm():
             if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         assert factory in RerankModel, f"RE-rank model from {factory} is not supported yet."
@@ -244,9 +243,9 @@ def add_llm():
             if len(arr) == 0:
                 raise Exception("Not known.")
         except KeyError:
-            msg += f"{factory} dose not support this model({mdl_nm})"
+            msg += f"{factory} dose not support this model({factory}/{mdl_nm})"
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
@@ -256,12 +255,12 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            image_data = base64.b64decode(test_image_base64)
+            image_data = test_image
             m, tc = mdl.describe(image_data)
             if not m and not tc:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(e)
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         assert factory in TTSModel, f"TTS model from {factory} is not supported yet."
         mdl = TTSModel[factory](
@@ -271,7 +270,7 @@ def add_llm():
             for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(e)
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
     else:
         # TODO: check other type of models
         pass
@@ -357,8 +356,6 @@ def my_llms():
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
-
-
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821

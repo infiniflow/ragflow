@@ -611,6 +611,10 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                 if re.match(f"^{dels}$", sub_sec):
                     continue
                 add_chunk(sub_sec, image)
+        
+        for img in images:
+            if isinstance(img, Image.Image):
+                img.close()
 
     return cks, result_images
 
@@ -642,7 +646,6 @@ def concat_img(img1, img2):
         pixel_data1 = img1.tobytes()
         pixel_data2 = img2.tobytes()
         if pixel_data1 == pixel_data2:
-            img2.close()
             return img1
 
     width1, height1 = img1.size
@@ -654,8 +657,6 @@ def concat_img(img1, img2):
 
     new_image.paste(img1, (0, 0))
     new_image.paste(img2, (0, height1))
-    img1.close()
-    img2.close()
     return new_image
 
 

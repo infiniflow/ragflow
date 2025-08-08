@@ -36,7 +36,7 @@ export function McpCard({
     <Card key={data.id} className="w-64">
       <CardContent className="p-2.5 pt-2 group">
         <section className="flex justify-between pb-2">
-          <h3 className="text-lg font-semibold line-clamp-1">{data.name}</h3>
+          <h3 className="text-lg font-semibold truncate flex-1">{data.name}</h3>
           <div className="space-x-4">
             <McpDropdown mcpId={data.id} showEditModal={showEditModal}>
               <MoreButton></MoreButton>
@@ -52,10 +52,10 @@ export function McpCard({
         </section>
         <div className="flex justify-between items-end">
           <div className="w-full">
-            <div className="text-base font-semibold mb-3 line-clamp-1 text-text-sub-title">
+            <div className="text-base font-semibold mb-3 line-clamp-1 text-text-secondary">
               {toolLength} cached tools
             </div>
-            <p className="text-sm text-text-sub-title">
+            <p className="text-sm text-text-secondary">
               {formatDate(data.update_date)}
             </p>
           </div>

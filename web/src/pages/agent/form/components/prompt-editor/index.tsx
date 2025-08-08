@@ -26,6 +26,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { Variable } from 'lucide-react';
 import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PasteHandlerPlugin } from './paste-handler-plugin';
 import theme from './theme';
 import { VariableNode } from './variable-node';
 import { VariableOnChangePlugin } from './variable-on-change-plugin';
@@ -159,7 +160,7 @@ export function PromptEditor({
           placeholder={
             <div
               className={cn(
-                'absolute top-1 left-2 text-text-sub-title pointer-events-none',
+                'absolute top-1 left-2 text-text-secondary pointer-events-none',
                 {
                   'truncate w-[90%]': !multiLine,
                 },
@@ -172,6 +173,7 @@ export function PromptEditor({
           ErrorBoundary={LexicalErrorBoundary}
         />
         <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
+        <PasteHandlerPlugin />
         <VariableOnChangePlugin
           onChange={onValueChange}
         ></VariableOnChangePlugin>
