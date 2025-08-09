@@ -7,6 +7,34 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "gpt-5",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-mini",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-nano",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-chat-latest",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
                     "llm_name": "gpt-4.1",
                     "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1047576,
