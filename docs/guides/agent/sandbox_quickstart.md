@@ -63,7 +63,7 @@ docker build -t sandbox-executor-manager:latest ./executor_manager
 3. Add the following entry to your /etc/hosts file to resolve the executor manager service:
 
 ```bash
-127.0.0.1 sandbox-executor-manager
+127.0.0.1 es01 infinity mysql minio redis sandbox-executor-manager
 ```
 
 4. Start the RAGFlow service as usual.
