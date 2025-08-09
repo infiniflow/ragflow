@@ -34,7 +34,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_result, token_required, validate_request
-from rag.prompts import chunks_format
+from rag.prompts.prompts import chunks_format
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821

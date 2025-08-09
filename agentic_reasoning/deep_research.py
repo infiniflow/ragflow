@@ -20,7 +20,7 @@ from agentic_reasoning.prompts import BEGIN_SEARCH_QUERY, BEGIN_SEARCH_RESULT, E
     END_SEARCH_QUERY, REASON_PROMPT, RELEVANT_EXTRACTION_PROMPT
 from api.db.services.llm_service import LLMBundle
 from rag.nlp import extract_between
-from rag.prompts import kb_prompt
+from rag.prompts.prompts import kb_prompt
 from rag.utils.tavily_conn import Tavily
 
 
