@@ -160,6 +160,7 @@ class Base(ABC):
         return ans + LENGTH_NOTIFICATION_EN
 
     def _exceptions(self, e, attempt):
+        from api.utils.dynamic_config import set_high_timeout
         logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
@@ -171,6 +172,7 @@ class Base(ABC):
         if not should_retry:
             return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
+        set_high_timeout()
         delay = self._get_delay()
         logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
         time.sleep(delay)
@@ -1052,7 +1054,7 @@ class BedrockChat(Base):
                     yield ans
 
         except (ClientError, Exception) as e:
-            yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
+            yield ans + "\n**ERROR**: " + str(e)
 
         yield num_tokens_from_string(ans)
 

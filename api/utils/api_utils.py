@@ -719,14 +719,15 @@ async def is_strong_enough(chat_model, embedding_model):
     if isinstance(count, int) and count <= 0:
         return
 
-    @timeout(60, 2)
+    from .dynamic_config import TIMEOUT_SECONDS, TIMEOUT_ATTEMPTS, FAIL_AFTER_EMBEDDING, FAIL_AFTER_CHAT
+    @timeout(TIMEOUT_SECONDS, TIMEOUT_ATTEMPTS)
     async def _is_strong_enough():
         nonlocal chat_model, embedding_model
         if embedding_model:
-            with trio.fail_after(10):
+            with trio.fail_after(FAIL_AFTER_EMBEDDING):
                 _ = await trio.to_thread.run_sync(lambda: embedding_model.encode(["Are you strong enough!?"]))
         if chat_model:
-            with trio.fail_after(30):
+            with trio.fail_after(FAIL_AFTER_CHAT):
                 res = await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}], {}))
             if res.find("**ERROR**") >= 0:
                 raise Exception(res)
