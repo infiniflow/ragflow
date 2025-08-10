@@ -12,6 +12,7 @@
 #
 
 import logging
+import re
 import sys
 from io import BytesIO
 
@@ -20,6 +21,8 @@ from openpyxl import Workbook, load_workbook
 
 from rag.nlp import find_codec
 
+# copied from `/openpyxl/cell/cell.py`
+ILLEGAL_CHARACTERS_RE = re.compile(r'[\000-\010]|[\013-\014]|[\016-\037]')
 
 class RAGFlowExcelParser:
 
@@ -66,6 +69,7 @@ class RAGFlowExcelParser:
 
         for row_num, row in enumerate(df.values, 2):
             for col_num, value in enumerate(row, 1):
+                value = re.sub(ILLEGAL_CHARACTERS_RE, ' ', str(value))
                 ws.cell(row=row_num, column=col_num, value=value)
 
         return wb
