@@ -35,7 +35,7 @@ from openai.lib.azure import AzureOpenAI
 from strenum import StrEnum
 from zhipuai import ZhipuAI
 
-from rag.llm import FACTORY_DEFAULT_BASE_URL, SupportedLiteLLMProvider
+from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
 
@@ -64,13 +64,6 @@ class ReActMode(StrEnum):
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
-
-LITELLM_PROVIDER_PREFIX = {
-    SupportedLiteLLMProvider.Tongyi_Qianwen: "dashscope/",
-    SupportedLiteLLMProvider.Dashscope: "dashscope/",
-    SupportedLiteLLMProvider.Bedrock: "bedrock/",
-    SupportedLiteLLMProvider.Moonshot: "moonshot/",
-}
 
 
 class ToolCallSession(Protocol):
@@ -605,14 +598,14 @@ class BaiChuanChat(Base):
         yield total_tokens
 
 
-class xAIChat(Base):
-    _FACTORY_NAME = "xAI"
-
-    def __init__(self, key, model_name="grok-3", base_url=None, **kwargs):
-        if not base_url:
-            base_url = "https://api.x.ai/v1"
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-        return
+# class xAIChat(Base):
+#     _FACTORY_NAME = "xAI"
+#
+#     def __init__(self, key, model_name="grok-3", base_url=None, **kwargs):
+#         if not base_url:
+#             base_url = "https://api.x.ai/v1"
+#         super().__init__(key, model_name, base_url=base_url, **kwargs)
+#         return
 
 
 class ZhipuChat(Base):
@@ -1651,7 +1644,7 @@ class Ai302Chat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
@@ -1735,7 +1728,12 @@ class LiteLLMBase(ABC):
                     "aws_region_name": self.bedrock_region,
                 }
             )
-        response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
+        response = litellm.completion(
+            **completion_args,
+            drop_params=True,
+            timeout=self.timeout,
+            mock_response="It's simple to use and easy to get started",
+        )
         # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
@@ -1772,7 +1770,12 @@ class LiteLLMBase(ABC):
         if stop:
             completion_args["stop"] = stop
 
-        response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
+        response = litellm.completion(
+            **completion_args,
+            drop_params=True,
+            timeout=self.timeout,
+            mock_response="It's simple to use and easy to get started",
+        )
 
         for resp in response:
             if not hasattr(resp, "choices") or not resp.choices:
@@ -1899,7 +1902,12 @@ class LiteLLMBase(ABC):
 
                     print("------------------------", flush=True)
                     print(f"{completion_args=}", flush=True)
-                    response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
+                    response = litellm.completion(
+                        **completion_args,
+                        drop_params=True,
+                        timeout=self.timeout,
+                        mock_response="It's simple to use and easy to get started",
+                    )
 
                     tk_count += self.total_token_count(response)
 
@@ -2014,7 +2022,12 @@ class LiteLLMBase(ABC):
                             }
                         )
 
-                    response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
+                    response = litellm.completion(
+                        **completion_args,
+                        drop_params=True,
+                        timeout=self.timeout,
+                        mock_response="It's simple to use and easy to get started",
+                    )
 
                     final_tool_calls = {}
                     answer = ""
@@ -2106,7 +2119,12 @@ class LiteLLMBase(ABC):
                         }
                     )
 
-                response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
+                response = litellm.completion(
+                    **completion_args,
+                    drop_params=True,
+                    timeout=self.timeout,
+                    mock_response="It's simple to use and easy to get started",
+                )
 
                 for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:

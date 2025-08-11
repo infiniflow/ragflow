@@ -27,12 +27,23 @@ class SupportedLiteLLMProvider(StrEnum):
     Dashscope = "Dashscope"
     Bedrock = "Bedrock"
     Moonshot = "Moonshot"
+    xAI = "xAI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Tongyi_Qianwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
+    SupportedLiteLLMProvider.xAI: "https://api.x.ai/v1",
+}
+
+
+LITELLM_PROVIDER_PREFIX = {
+    SupportedLiteLLMProvider.Tongyi_Qianwen: "dashscope/",
+    SupportedLiteLLMProvider.Dashscope: "dashscope/",
+    SupportedLiteLLMProvider.Bedrock: "bedrock/",
+    SupportedLiteLLMProvider.Moonshot: "moonshot/",
+    SupportedLiteLLMProvider.xAI: "xai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
