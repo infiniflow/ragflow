@@ -35,6 +35,7 @@ class SupportedLiteLLMProvider(StrEnum):
     DeepSeek = "DeepSeek"
     Nvidia = "NVIDIA"
     TogetherAI = "TogetherAI"
+    Anthropic = "Anthropic"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -49,6 +50,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.DeepSeek: "https://api.deepseek.com/v1",
     SupportedLiteLLMProvider.Nvidia: "https://integrate.api.nvidia.com/v1",
     SupportedLiteLLMProvider.TogetherAI: "https://api.together.xyz/v1",
+    SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com",
 }
 
 
@@ -65,6 +67,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.DeepSeek: "deepseek/",
     SupportedLiteLLMProvider.Nvidia: "nvidia_nim/",
     SupportedLiteLLMProvider.TogetherAI: "together_ai/",
+    SupportedLiteLLMProvider.Anthropic: "",  # don't need a prefix
 }
 
 ChatModel = globals().get("ChatModel", {})

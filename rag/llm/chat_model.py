@@ -1245,15 +1245,6 @@ class BaiduYiyanChat(Base):
         yield total_tokens
 
 
-class AnthropicChat(Base):
-    _FACTORY_NAME = "Anthropic"
-
-    def __init__(self, key, model_name, base_url="https://api.anthropic.com/v1/", **kwargs):
-        if not base_url:
-            base_url = "https://api.anthropic.com/v1/"
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
 
@@ -1414,7 +1405,7 @@ class Ai302Chat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
