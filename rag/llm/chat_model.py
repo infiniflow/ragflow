@@ -993,15 +993,6 @@ class LeptonAIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-# class TogetherAIChat(Base):
-#     _FACTORY_NAME = "TogetherAI"
-#
-#     def __init__(self, key, model_name, base_url="https://api.together.xyz/v1", **kwargs):
-#         if not base_url:
-#             base_url = "https://api.together.xyz/v1"
-#         super().__init__(key, model_name, base_url, **kwargs)
-
-
 class PerfXCloudChat(Base):
     _FACTORY_NAME = "PerfXCloud"
 
