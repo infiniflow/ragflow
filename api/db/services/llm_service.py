@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import inspect
 import logging
 import re
 from functools import partial
@@ -382,7 +383,21 @@ class LLMBundle:
         if self.is_tools and self.mdl.is_tools:
             chat_partial = partial(self.mdl.chat_with_tools, system, history, gen_conf)
 
-        txt, used_tokens = chat_partial(**kwargs)
+        func = chat_partial.func
+        sig = inspect.signature(func)
+        keyword_args = []
+        support_var_args = False
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD or param.kind == inspect.Parameter.VAR_POSITIONAL:
+                support_var_args = True
+            elif param.kind == inspect.Parameter.KEYWORD_ONLY:
+                keyword_args.append(param.name)
+
+        use_kwargs = kwargs
+        if not support_var_args:
+            use_kwargs = {k: v for k, v in kwargs.items() if k in keyword_args}
+
+        txt, used_tokens = chat_partial(**use_kwargs)
         txt = self._remove_reasoning_content(txt)
 
         if not self.verbose_tool_use:
