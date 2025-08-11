@@ -231,7 +231,7 @@ async def get_storage_binary(bucket, name):
     return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
 
 
-@timeout(60*40, 1)
+@timeout(60*80, 1)
 async def build_chunks(task, progress_callback):
     if task["size"] > DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
@@ -304,7 +304,11 @@ async def build_chunks(task, progress_callback):
                         converted_image = d["image"].convert("RGB")
                         d["image"].close()  # Close original image
                         d["image"] = converted_image
-                    d["image"].save(output_buffer, format='JPEG')
+                    try:
+                        d["image"].save(output_buffer, format='JPEG')
+                    except OSError as e:
+                        logging.warning(
+                            "Saving image of chunk {}/{}/{} got exception, ignore: {}".format(task["location"], task["name"], d["id"], str(e)))
 
                 async with minio_limiter:
                     await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))

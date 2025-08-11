@@ -2,11 +2,13 @@ import { FileUploadProps } from '@/components/file-upload';
 import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
 import {
+  DSL,
   IAgentLogsRequest,
   IAgentLogsResponse,
+  IFlow,
+  IFlowTemplate,
   ITraceData,
 } from '@/interfaces/database/agent';
-import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
@@ -48,6 +50,7 @@ export const enum AgentApiAction {
   FetchVersion = 'fetchVersion',
   FetchAgentAvatar = 'fetchAgentAvatar',
   FetchExternalAgentInputs = 'fetchExternalAgentInputs',
+  SetAgentSetting = 'setAgentSetting',
 }
 
 export const EmptyDsl = {
@@ -121,7 +124,7 @@ export const useFetchAgentListByPage = () => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const { data, isFetching: loading } = useQuery<{
-    kbs: IFlow[];
+    canvas: IFlow[];
     total: number;
   }>({
     queryKey: [
@@ -131,7 +134,7 @@ export const useFetchAgentListByPage = () => {
         ...pagination,
       },
     ],
-    initialData: { kbs: [], total: 0 },
+    initialData: { canvas: [], total: 0 },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await agentService.listCanvasTeam(
@@ -145,7 +148,7 @@ export const useFetchAgentListByPage = () => {
         true,
       );
 
-      return data?.data ?? [];
+      return data?.data;
     },
   });
 
@@ -158,7 +161,7 @@ export const useFetchAgentListByPage = () => {
   );
 
   return {
-    data: data.kbs,
+    data: data.canvas,
     loading,
     searchString,
     handleInputChange: onInputChange,
@@ -365,16 +368,7 @@ export const useUploadCanvasFileWithProgress = (
           {
             url: api.uploadAgentFile(identifier || id),
             data: formData,
-            onUploadProgress: ({
-              loaded,
-              total,
-              progress,
-              bytes,
-              estimated,
-              rate,
-              upload,
-              lengthComputable,
-            }) => {
+            onUploadProgress: ({ progress }) => {
               files.forEach((file) => {
                 onProgress(file, (progress || 0) * 100);
               });
@@ -612,4 +606,31 @@ export const useFetchExternalAgentInputs = () => {
   });
 
   return { data, loading, refetch };
+};
+
+export const useSetAgentSetting = () => {
+  const { id } = useParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.SetAgentSetting],
+    mutationFn: async (params: any) => {
+      const ret = await agentService.settingCanvas({ id, ...params });
+      if (ret?.data?.code === 0) {
+        message.success('success');
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentDetail],
+        });
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret?.data?.code;
+    },
+  });
+
+  return { data, loading, setAgentSetting: mutateAsync };
 };

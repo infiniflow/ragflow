@@ -693,6 +693,7 @@ class TestDatasetUpdate:
             client,
             {
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         dataset.update({"chunk_method": "qa"})
@@ -708,6 +709,7 @@ class TestDatasetUpdate:
             client,
             {
                 "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": None})

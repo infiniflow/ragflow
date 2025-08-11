@@ -19,7 +19,7 @@ import {
   JsonViewer,
   toLowerCaseStringAndDeleteChar,
   typeMap,
-} from './workFlowTimeline';
+} from './workflow-timeline';
 type IToolIcon =
   | Operator.ArXiv
   | Operator.GitHub
@@ -135,7 +135,7 @@ const ToolTimelineItem = ({
                 <Accordion
                   type="single"
                   collapsible
-                  className="bg-background-card px-3"
+                  className="bg-bg-card px-3"
                 >
                   <AccordionItem value={idx.toString()}>
                     <AccordionTrigger
@@ -157,13 +157,13 @@ const ToolTimelineItem = ({
                             ] ?? changeToolName(tool.tool_name)}
                           </span>
                         )}
-                        <span className="text-text-sub-title text-xs">
+                        <span className="text-text-secondary text-xs">
                           {/* 0:00
                           {x.data.elapsed_time?.toString().slice(0, 6)} */}
                         </span>
                         <span
                           className={cn(
-                            'border-background  -end-1 -top-1 size-2 rounded-full bg-dot-green',
+                            'border-background  -end-1 -top-1 size-2 rounded-full bg-state--success',
                           )}
                         >
                           <span className="sr-only">Online</span>

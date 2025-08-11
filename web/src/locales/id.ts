@@ -203,7 +203,7 @@ export default {
           Karena buku panjang dan tidak semua bagian berguna, jika itu adalah PDF,
           silakan atur <i>rentang halaman</i> untuk setiap buku untuk menghilangkan efek negatif dan menghemat waktu komputasi untuk analisis.</p>`,
       laws: `<p>Format file yang didukung adalah <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-          Dokumen hukum memiliki format penulisan yang sangat ketat. Kami menggunakan fitur teks untuk mendeteksi titik pemisah. 
+          Dokumen hukum memiliki format penulisan yang sangat ketat. Kami menggunakan fitur teks untuk mendeteksi titik pemisah.
           </p><p>
           Granularitas potongan konsisten dengan 'ARTIKEL', dan semua teks tingkat atas akan disertakan dalam potongan.
           </p>`,
@@ -218,9 +218,9 @@ export default {
           <li>Selanjutnya, potongan berturut-turut ini digabungkan menjadi potongan yang jumlah tokennya tidak lebih dari 'Jumlah token'.</li></p>`,
       paper: `<p>Hanya file <b>PDF</b> yang didukung.</p><p>
           Jika model kami bekerja dengan baik, makalah akan dipotong berdasarkan bagiannya, seperti <i>abstrak, 1.1, 1.2</i>, dll. </p><p>
-          Manfaat dari melakukan ini adalah LLM dapat lebih baik merangkum konten bagian yang relevan dalam makalah, 
-          menghasilkan jawaban yang lebih komprehensif yang membantu pembaca lebih memahami makalah. 
-          Kelemahannya adalah meningkatkan konteks percakapan LLM dan menambah biaya komputasi, 
+          Manfaat dari melakukan ini adalah LLM dapat lebih baik merangkum konten bagian yang relevan dalam makalah,
+          menghasilkan jawaban yang lebih komprehensif yang membantu pembaca lebih memahami makalah.
+          Kelemahannya adalah meningkatkan konteks percakapan LLM dan menambah biaya komputasi,
           jadi selama percakapan, Anda dapat mempertimbangkan untuk mengurangi pengaturan ‘<b>topN</b>’.</p>`,
       presentation: `<p>Format file yang didukung adalah <b>PDF</b>, <b>PPTX</b>.</p><p>
           Setiap halaman akan diperlakukan sebagai potongan. Dan thumbnail setiap halaman akan disimpan.</p><p>
@@ -249,7 +249,7 @@ export default {
           </p><p>
           Resume datang dalam berbagai format, seperti kepribadian seseorang, tetapi kita sering harus mengaturnya menjadi data terstruktur yang memudahkan pencarian.
           </p><p>
-          Alih-alih memotong resume, kami memparsing resume menjadi data terstruktur. Sebagai HR, Anda dapat membuang semua resume yang Anda miliki, 
+          Alih-alih memotong resume, kami memparsing resume menjadi data terstruktur. Sebagai HR, Anda dapat membuang semua resume yang Anda miliki,
           maka Anda dapat mencantumkan semua kandidat yang memenuhi kualifikasi hanya dengan berbicara dengan <i>'assistxsuite'</i>.
           </p>
           `,
@@ -283,11 +283,11 @@ export default {
         Jika Anda ingin merangkum sesuatu yang membutuhkan semua konteks dari sebuah artikel dan panjang konteks LLM yang dipilih mencakup panjang dokumen, Anda dapat mencoba metode ini.
         </p>`,
       knowledgeGraph: `<p>Format file yang didukung adalah <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
-    
+
     <p>Setelah file dipotong, digunakan potongan untuk mengekstrak grafik pengetahuan dan peta pikiran dari seluruh dokumen. Metode ini menerapkan cara naif untuk memotong file:
     Teks berturut-turut akan dipotong menjadi potongan masing-masing yang berjumlah sekitar 512 token.</p>
     <p>Selanjutnya, potongan akan dikirim ke LLM untuk mengekstrak node dan hubungan dari grafik pengetahuan, dan peta pikiran.</p>
-    
+
     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
@@ -558,13 +558,41 @@ export default {
       bedrockSKMessage: 'Silakan masukkan SECRET KEY Anda',
       bedrockRegion: 'Wilayah AWS',
       bedrockRegionMessage: 'Silakan pilih!',
+      'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
+      'us-west-1': 'US West (N. California)',
       'us-west-2': 'US West (Oregon)',
+      'af-south-1': 'Africa (Cape Town)',
+      'ap-east-1': 'Asia Pacific (Hong Kong)',
+      'ap-south-2': 'Asia Pacific (Hyderabad)',
+      'ap-southeast-3': 'Asia Pacific (Jakarta)',
+      'ap-southeast-5': 'Asia Pacific (Malaysia)',
+      'ap-southeast-4': 'Asia Pacific (Melbourne)',
+      'ap-south-1': 'Asia Pacific (Mumbai)',
+      'ap-northeast-3': 'Asia Pacific (Osaka)',
+      'ap-northeast-2': 'Asia Pacific (Seoul)',
       'ap-southeast-1': 'Asia Pacific (Singapore)',
-      'ap-northeast-1': 'Asia Pacific (Tokyo)',
-      'eu-central-1': 'Europe (Frankfurt)',
-      'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': 'Asia Pacific (Sydney)',
+      'ap-east-2': 'Asia Pacific (Taipei)',
+      'ap-southeast-7': 'Asia Pacific (Thailand)',
+      'ap-northeast-1': 'Asia Pacific (Tokyo)',
+      'ca-central-1': 'Canada (Central)',
+      'ca-west-1': 'Canada West (Calgary)',
+      'eu-central-1': 'Europe (Frankfurt)',
+      'eu-west-1': 'Europe (Ireland)',
+      'eu-west-2': 'Europe (London)',
+      'eu-south-1': 'Europe (Milan)',
+      'eu-west-3': 'Europe (Paris)',
+      'eu-south-2': 'Europe (Spain)',
+      'eu-north-1': 'Europe (Stockholm)',
+      'eu-central-2': 'Europe (Zurich)',
+      'il-central-1': 'Israel (Tel Aviv)',
+      'mx-central-1': 'Mexico (Central)',
+      'me-south-1': 'Middle East (Bahrain)',
+      'me-central-1': 'Middle East (UAE)',
+      'sa-east-1': 'South America (São Paulo)',
+      'us-gov-east-1': 'AWS GovCloud (US-East)',
+      'us-gov-west-1': 'AWS GovCloud (US-West)',
       addHunyuanSID: 'Hunyuan Secret ID',
       HunyuanSIDMessage: 'Silakan masukkan Secret ID Anda',
       addHunyuanSK: 'Hunyuan Secret Key',

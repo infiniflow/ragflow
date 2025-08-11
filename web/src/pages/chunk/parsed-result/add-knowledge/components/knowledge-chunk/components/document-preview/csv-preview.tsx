@@ -36,7 +36,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = () => {
         const res = await request(url, {
           method: 'GET',
           responseType: 'blob',
-          onError: (err) => {
+          onError: () => {
             message.error('file load failed');
             setIsLoading(false);
           },
@@ -84,7 +84,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = () => {
               {data.headers.map((header, index) => (
                 <th
                   key={`header-${index}`}
-                  className="px-6 py-3 text-left text-sm font-medium text-text-title"
+                  className="px-6 py-3 text-left text-sm font-medium text-text-primary"
                 >
                   {header}
                 </th>
