@@ -34,6 +34,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Gemini = "Gemini"
     DeepSeek = "DeepSeek"
     Nvidia = "NVIDIA"
+    TogetherAI = "TogetherAI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -47,6 +48,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Gemini: "https://generativelanguage.googleapis.com",
     SupportedLiteLLMProvider.DeepSeek: "https://api.deepseek.com/v1",
     SupportedLiteLLMProvider.Nvidia: "https://integrate.api.nvidia.com/v1",
+    SupportedLiteLLMProvider.TogetherAI: "https://api.together.xyz/v1",
 }
 
 
@@ -61,7 +63,8 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Cohere: "",  # don't need a prefix
     SupportedLiteLLMProvider.Gemini: "gemini/",
     SupportedLiteLLMProvider.DeepSeek: "deepseek/",
-    SupportedLiteLLMProvider.Nvidia: "/nvidia_nim/",
+    SupportedLiteLLMProvider.Nvidia: "nvidia_nim/",
+    SupportedLiteLLMProvider.TogetherAI: "together_ai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
