@@ -1401,15 +1401,10 @@ class LiteLLMBase(ABC):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
         self.provider = kwargs.get("provider", "")
-        print(f"{kwargs.get('provider', '')=}", flush=True)
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
-        print(f"{self.model_name=}", flush=True)
-        print(f"{self.provider=}", flush=True)
         self.api_key = key
-        print(f"{self.api_key=}", flush=True)
         self.base_url = base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")
-        print(f"{self.base_url=}", flush=True)
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -1484,7 +1479,6 @@ class LiteLLMBase(ABC):
             **completion_args,
             drop_params=True,
             timeout=self.timeout,
-            mock_response="It's simple to use and easy to get started",
         )
         # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
@@ -1526,7 +1520,6 @@ class LiteLLMBase(ABC):
             **completion_args,
             drop_params=True,
             timeout=self.timeout,
-            mock_response="It's simple to use and easy to get started",
         )
 
         for resp in response:
@@ -1652,13 +1645,10 @@ class LiteLLMBase(ABC):
                             }
                         )
 
-                    print("------------------------", flush=True)
-                    print(f"{completion_args=}", flush=True)
                     response = litellm.completion(
                         **completion_args,
                         drop_params=True,
                         timeout=self.timeout,
-                        mock_response="It's simple to use and easy to get started",
                     )
 
                     tk_count += self.total_token_count(response)
@@ -1713,8 +1703,6 @@ class LiteLLMBase(ABC):
         for attempt in range(self.max_retries + 1):
             try:
                 response = self._chat(history, gen_conf, **kwargs)
-                print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@", flush=True)
-                print(f"{response}", flush=True)
                 return response
             except Exception as e:
                 e = self._exceptions(e, attempt)
@@ -1778,7 +1766,6 @@ class LiteLLMBase(ABC):
                         **completion_args,
                         drop_params=True,
                         timeout=self.timeout,
-                        mock_response="It's simple to use and easy to get started",
                     )
 
                     final_tool_calls = {}
@@ -1875,7 +1862,6 @@ class LiteLLMBase(ABC):
                     **completion_args,
                     drop_params=True,
                     timeout=self.timeout,
-                    mock_response="It's simple to use and easy to get started",
                 )
 
                 for resp in response:
@@ -1911,8 +1897,6 @@ class LiteLLMBase(ABC):
         total_tokens = 0
         try:
             for delta_ans, tol in self._chat_streamly(history, gen_conf, **kwargs):
-                print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@", flush=True)
-                print(f"{delta_ans}", flush=True)
                 yield delta_ans
                 total_tokens += tol
         except openai.APIError as e:
