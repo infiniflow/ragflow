@@ -1073,83 +1073,6 @@ class PPIOChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class CoHereChat(Base):
-    _FACTORY_NAME = "Cohere"
-
-    def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        from cohere import Client
-
-        self.client = Client(api_key=key)
-        self.model_name = model_name
-
-    def _clean_conf(self, gen_conf):
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        if "top_p" in gen_conf:
-            gen_conf["p"] = gen_conf.pop("top_p")
-        if "frequency_penalty" in gen_conf and "presence_penalty" in gen_conf:
-            gen_conf.pop("presence_penalty")
-        return gen_conf
-
-    def _chat(self, history, gen_conf):
-        hist = []
-        for item in history:
-            hist.append(deepcopy(item))
-            item = hist[-1]
-            if "role" in item and item["role"] == "user":
-                item["role"] = "USER"
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "CHATBOT"
-            if "content" in item:
-                item["message"] = item.pop("content")
-        mes = hist.pop()["message"]
-        response = self.client.chat(model=self.model_name, chat_history=hist, message=mes, **gen_conf)
-        ans = response.text
-        if response.finish_reason == "MAX_TOKENS":
-            ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-        return (
-            ans,
-            response.meta.tokens.input_tokens + response.meta.tokens.output_tokens,
-        )
-
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
-            history.insert(0, {"role": "system", "content": system})
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        if "top_p" in gen_conf:
-            gen_conf["p"] = gen_conf.pop("top_p")
-        if "frequency_penalty" in gen_conf and "presence_penalty" in gen_conf:
-            gen_conf.pop("presence_penalty")
-        for item in history:
-            if "role" in item and item["role"] == "user":
-                item["role"] = "USER"
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "CHATBOT"
-            if "content" in item:
-                item["message"] = item.pop("content")
-        mes = history.pop()["message"]
-        ans = ""
-        total_tokens = 0
-        try:
-            response = self.client.chat_stream(model=self.model_name, chat_history=history, message=mes, **gen_conf)
-            for resp in response:
-                if resp.event_type == "text-generation":
-                    ans = resp.text
-                    total_tokens += num_tokens_from_string(resp.text)
-                elif resp.event_type == "stream-end":
-                    if resp.finish_reason == "MAX_TOKENS":
-                        ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-                yield ans
-
-        except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
-
-        yield total_tokens
-
-
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
@@ -1580,7 +1503,7 @@ class Ai302Chat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))

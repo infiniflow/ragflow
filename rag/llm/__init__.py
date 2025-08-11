@@ -30,6 +30,7 @@ class SupportedLiteLLMProvider(StrEnum):
     xAI = "xAI"
     DeepInfra = "DeepInfra"
     Groq = "Groq"
+    Cohere = "Cohere"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -39,6 +40,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.xAI: "https://api.x.ai/v1",
     SupportedLiteLLMProvider.DeepInfra: "https://api.deepinfra.com/v1/openai",
     SupportedLiteLLMProvider.Groq: "https://api.groq.com/openai/v1",
+    SupportedLiteLLMProvider.Cohere: "https://api.cohere.ai/v1",
 }
 
 
@@ -50,6 +52,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.xAI: "xai/",
     SupportedLiteLLMProvider.DeepInfra: "deepinfra/",
     SupportedLiteLLMProvider.Groq: "groq/",
+    SupportedLiteLLMProvider.Cohere: "",  # don't need a prefix
 }
 
 ChatModel = globals().get("ChatModel", {})
