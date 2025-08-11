@@ -9,8 +9,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.1-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.1`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1`
 :::
 
 :::danger IMPORTANT
@@ -33,10 +33,10 @@ Released on August 8, 2025.
 
 ### Added Models
 
-- ChatGPT 5
+- GPT-5
 - Claude 4.1
 
-### New agent Templates (both workflow and agentic)
+### New agent templates (both workflow and agentic)
 
 - SQL Assistant Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
 - Choose Your Knowledge Base Workflow: Lets users select a knowledge base to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
