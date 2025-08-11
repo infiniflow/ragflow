@@ -504,7 +504,7 @@ class MistralEmbed(Base):
                 return np.array(res.data[0].embedding), self.total_token_count(res)
             except Exception as _e:
                 from api.utils.dynamic_config import set_high_timeout
-                set_high_timeout()  # 只要異常就調高 timeout
+                set_high_timeout()
                 if retry_max == 1:
                     log_exception(_e)
                 delay = random.randint(20, 60)
