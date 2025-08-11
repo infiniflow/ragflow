@@ -225,10 +225,11 @@ class TenantLLMService(CommonService):
                 if llm_id == llm["llm_name"]:
                     return llm["model_type"].split(",")[-1]
 
-        for llm in TenantLLMService.query(llm_name=llm_id):
+        for llm in LLMService.query(llm_name=llm_id):
             return llm.model_type
 
-        for llm in LLMService.query(llm_name=llm_id):
+        llm = TenantLLMService.get_or_none(llm_name=llm_id)
+        if llm:
             return llm.model_type
         for llm in TenantLLMService.query(llm_name=llm_id):
             return llm.model_type
