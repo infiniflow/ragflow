@@ -151,4 +151,4 @@ class TestUpdatedChunk:
 
         with pytest.raises(Exception) as excinfo:
             chunks[0].update({})
-        assert f"Can't find this chunk {chunks[0].id}" in str(excinfo.value), str(excinfo.value)
+        assert f"You don't own the document {chunks[0].document_id}" in str(excinfo.value), str(excinfo.value)
