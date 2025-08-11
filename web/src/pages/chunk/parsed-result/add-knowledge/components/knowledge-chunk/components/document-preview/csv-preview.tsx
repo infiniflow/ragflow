@@ -36,7 +36,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = () => {
         const res = await request(url, {
           method: 'GET',
           responseType: 'blob',
-          onError: (err) => {
+          onError: () => {
             message.error('file load failed');
             setIsLoading(false);
           },

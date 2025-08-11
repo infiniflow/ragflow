@@ -3,7 +3,7 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { IFlow } from '@/interfaces/database/flow';
+import { IFlow } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
 import { AgentDropdown } from './agent-dropdown';
 import { useRenameAgent } from './use-rename-agent';

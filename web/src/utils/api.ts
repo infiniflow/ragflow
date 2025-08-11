@@ -174,4 +174,10 @@ export default {
   testMcpServerTool: `${api_host}/mcp_server/test_tool`,
   cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
+
+  // next-search
+  createSearch: `${api_host}/search/create`,
+  getSearchList: `${api_host}/search/list`,
+  deleteSearch: `${api_host}/search/rm`,
+  getSearchDetail: `${api_host}/search/detail`,
 };

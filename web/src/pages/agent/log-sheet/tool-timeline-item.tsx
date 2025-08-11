@@ -19,7 +19,7 @@ import {
   JsonViewer,
   toLowerCaseStringAndDeleteChar,
   typeMap,
-} from './workFlowTimeline';
+} from './workflow-timeline';
 type IToolIcon =
   | Operator.ArXiv
   | Operator.GitHub
