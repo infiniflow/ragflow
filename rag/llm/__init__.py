@@ -19,12 +19,27 @@
 import importlib
 import inspect
 
+from strenum import StrEnum
+
+
+class SupportedLiteLLMProvider(StrEnum):
+    Tongyi_Qianwen = "Tongyi-Qianwen"
+    Dashscope = "Dashscope"
+    Bedrock = "Bedrock"
+
+
+FACTORY_DEFAULT_BASE_URL = {
+    SupportedLiteLLMProvider.Tongyi_Qianwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+}
+
 ChatModel = globals().get("ChatModel", {})
 CvModel = globals().get("CvModel", {})
 EmbeddingModel = globals().get("EmbeddingModel", {})
 RerankModel = globals().get("RerankModel", {})
 Seq2txtModel = globals().get("Seq2txtModel", {})
 TTSModel = globals().get("TTSModel", {})
+
 
 MODULE_MAPPING = {
     "chat_model": ChatModel,

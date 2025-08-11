@@ -35,6 +35,7 @@ from openai.lib.azure import AzureOpenAI
 from strenum import StrEnum
 from zhipuai import ZhipuAI
 
+from rag.llm import FACTORY_DEFAULT_BASE_URL, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
 
@@ -65,7 +66,9 @@ LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小�
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 LITELLM_PROVIDER_PREFIX = {
-    "Tongyi-Qianwen": "dashscope/",
+    SupportedLiteLLMProvider.Tongyi_Qianwen: "dashscope/",
+    SupportedLiteLLMProvider.Dashscope: "dashscope/",
+    SupportedLiteLLMProvider.Bedrock: "bedrock/",
 }
 
 
@@ -620,17 +623,6 @@ class xAIChat(Base):
         return
 
 
-# class QWenChat(LiteLLMBase):
-#     _FACTORY_NAME = "Tongyi-Qianwen"
-#     _LITELLM_PROVIDER = "dashscope"
-#
-#     def __init__(self, key, model_name=Generation.Models.qwen_turbo, base_url=None, **kwargs):
-#         if not base_url:
-#             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-#         super().__init__(key, model_name.strip(), provider=self._LITELLM_PROVIDER, base_url=base_url, **kwargs)
-#         return
-
-
 class ZhipuChat(Base):
     _FACTORY_NAME = "ZHIPU-AI"
 
@@ -974,90 +966,6 @@ class MistralChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
-
-
-class BedrockChat(Base):
-    _FACTORY_NAME = "Bedrock"
-
-    def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        import boto3
-
-        self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
-        self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
-        self.bedrock_region = json.loads(key).get("bedrock_region", "")
-        self.model_name = model_name
-
-        if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
-            # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
-            self.client = boto3.client("bedrock-runtime")
-        else:
-            self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
-
-    def _clean_conf(self, gen_conf):
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature"]:
-                del gen_conf[k]
-        return gen_conf
-
-    def _chat(self, history, gen_conf={}, **kwargs):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        hist = []
-        for item in history:
-            if item["role"] == "system":
-                continue
-            hist.append(deepcopy(item))
-            if not isinstance(hist[-1]["content"], list) and not isinstance(hist[-1]["content"], tuple):
-                hist[-1]["content"] = [{"text": hist[-1]["content"]}]
-        # Send the message to the model, using a basic inference configuration.
-        response = self.client.converse(
-            modelId=self.model_name,
-            messages=hist,
-            inferenceConfig=gen_conf,
-            system=[{"text": (system if system else "Answer the user's message.")}],
-        )
-
-        # Extract and print the response text.
-        ans = response["output"]["message"]["content"][0]["text"]
-        return ans, num_tokens_from_string(ans)
-
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        from botocore.exceptions import ClientError
-
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature"]:
-                del gen_conf[k]
-        for item in history:
-            if not isinstance(item["content"], list) and not isinstance(item["content"], tuple):
-                item["content"] = [{"text": item["content"]}]
-
-        if self.model_name.split(".")[0] == "ai21":
-            try:
-                response = self.client.converse(modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}])
-                ans = response["output"]["message"]["content"][0]["text"]
-                return ans, num_tokens_from_string(ans)
-
-            except (ClientError, Exception) as e:
-                return f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}", 0
-
-        ans = ""
-        try:
-            # Send the message to the model, using a basic inference configuration.
-            streaming_response = self.client.converse_stream(
-                modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}]
-            )
-
-            # Extract and print the streamed response text in real-time.
-            for resp in streaming_response["stream"]:
-                if "contentBlockDelta" in resp:
-                    ans = resp["contentBlockDelta"]["delta"]["text"]
-                    yield ans
-
-        except (ClientError, Exception) as e:
-            yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
-
-        yield num_tokens_from_string(ans)
 
 
 class GeminiChat(Base):
@@ -1751,7 +1659,7 @@ class Ai302Chat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
@@ -1762,7 +1670,9 @@ class LiteLLMBase(ABC):
         print(f"{self.model_name=}", flush=True)
         print(f"{self.provider=}", flush=True)
         self.api_key = key
-        self.base_url = base_url
+        print(f"{self.api_key=}", flush=True)
+        self.base_url = base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")
+        print(f"{self.base_url=}", flush=True)
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -1770,6 +1680,14 @@ class LiteLLMBase(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+
+        # Factory specific fields
+        if self.provider == SupportedLiteLLMProvider.Tongyi_Qianwen:
+            self.provider = "dashscope"
+        elif self.provider == SupportedLiteLLMProvider.Bedrock:
+            self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
+            self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
+            self.bedrock_region = json.loads(key).get("bedrock_region", "")
 
     def _get_delay(self):
         """Calculate retry delay time"""
@@ -1815,7 +1733,17 @@ class LiteLLMBase(ABC):
             "api_base": self.base_url,
             **gen_conf,
         }
-        response = litellm.completion(**completion_args, provider=self.provider, drop_params=True, timeout=self.timeout)
+        if self.provider == SupportedLiteLLMProvider.Bedrock:
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
+            completion_args.update(
+                {
+                    "aws_access_key_id": self.bedrock_ak,
+                    "aws_secret_access_key": self.bedrock_sk,
+                    "aws_region_name": self.bedrock_region,
+                }
+            )
+        response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
         # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
@@ -1838,11 +1766,21 @@ class LiteLLMBase(ABC):
             "api_base": self.base_url,
             **gen_conf,
         }
+        if self.provider == SupportedLiteLLMProvider.Bedrock:
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
+            completion_args.update(
+                {
+                    "aws_access_key_id": self.bedrock_ak,
+                    "aws_secret_access_key": self.bedrock_sk,
+                    "aws_region_name": self.bedrock_region,
+                }
+            )
         stop = kwargs.get("stop")
         if stop:
             completion_args["stop"] = stop
 
-        response = litellm.completion(**completion_args, provider=self.provider, drop_params=True, timeout=self.timeout)
+        response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
 
         for resp in response:
             if not hasattr(resp, "choices") or not resp.choices:
@@ -1956,7 +1894,20 @@ class LiteLLMBase(ABC):
                         "api_base": self.base_url,
                         **gen_conf,
                     }
-                    response = litellm.completion(**completion_args, provider=self.provider, drop_params=True, timeout=self.timeout)
+                    if self.provider == SupportedLiteLLMProvider.Bedrock:
+                        completion_args.pop("api_key", None)
+                        completion_args.pop("api_base", None)
+                        completion_args.update(
+                            {
+                                "aws_access_key_id": self.bedrock_ak,
+                                "aws_secret_access_key": self.bedrock_sk,
+                                "aws_region_name": self.bedrock_region,
+                            }
+                        )
+
+                    print("------------------------", flush=True)
+                    print(f"{completion_args=}", flush=True)
+                    response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
 
                     tk_count += self.total_token_count(response)
 
@@ -2060,7 +2011,18 @@ class LiteLLMBase(ABC):
                         "api_base": self.base_url,
                         **gen_conf,
                     }
-                    response = litellm.completion(**completion_args, provider=self.provider, drop_params=True, timeout=self.timeout)
+                    if self.provider == SupportedLiteLLMProvider.Bedrock:
+                        completion_args.pop("api_key", None)
+                        completion_args.pop("api_base", None)
+                        completion_args.update(
+                            {
+                                "aws_access_key_id": self.bedrock_ak,
+                                "aws_secret_access_key": self.bedrock_sk,
+                                "aws_region_name": self.bedrock_region,
+                            }
+                        )
+
+                    response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
 
                     final_tool_calls = {}
                     answer = ""
@@ -2141,7 +2103,18 @@ class LiteLLMBase(ABC):
                     "api_base": self.base_url,
                     **gen_conf,
                 }
-                response = litellm.completion(**completion_args, provider=self.provider, drop_params=True, timeout=self.timeout)
+                if self.provider == SupportedLiteLLMProvider.Bedrock:
+                    completion_args.pop("api_key", None)
+                    completion_args.pop("api_base", None)
+                    completion_args.update(
+                        {
+                            "aws_access_key_id": self.bedrock_ak,
+                            "aws_secret_access_key": self.bedrock_sk,
+                            "aws_region_name": self.bedrock_region,
+                        }
+                    )
+
+                response = litellm.completion(**completion_args, drop_params=True, timeout=self.timeout)
 
                 for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:
