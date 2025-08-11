@@ -28,6 +28,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Bedrock = "Bedrock"
     Moonshot = "Moonshot"
     xAI = "xAI"
+    DeepInfra = "DeepInfra"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -35,6 +36,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
     SupportedLiteLLMProvider.xAI: "https://api.x.ai/v1",
+    SupportedLiteLLMProvider.DeepInfra: "https://api.deepinfra.com/v1/openai",
 }
 
 
@@ -44,6 +46,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Bedrock: "bedrock/",
     SupportedLiteLLMProvider.Moonshot: "moonshot/",
     SupportedLiteLLMProvider.xAI: "xai/",
+    SupportedLiteLLMProvider.DeepInfra: "deepinfra/",
 }
 
 ChatModel = globals().get("ChatModel", {})

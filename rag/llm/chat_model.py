@@ -598,16 +598,6 @@ class BaiChuanChat(Base):
         yield total_tokens
 
 
-# class xAIChat(Base):
-#     _FACTORY_NAME = "xAI"
-#
-#     def __init__(self, key, model_name="grok-3", base_url=None, **kwargs):
-#         if not base_url:
-#             base_url = "https://api.x.ai/v1"
-#         super().__init__(key, model_name, base_url=base_url, **kwargs)
-#         return
-
-
 class ZhipuChat(Base):
     _FACTORY_NAME = "ZHIPU-AI"
 
@@ -1625,15 +1615,6 @@ class GPUStackChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class DeepInfraChat(Base):
-    _FACTORY_NAME = "DeepInfra"
-
-    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.deepinfra.com/v1/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class Ai302Chat(Base):
     _FACTORY_NAME = "302.AI"
 
@@ -1644,7 +1625,7 @@ class Ai302Chat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
