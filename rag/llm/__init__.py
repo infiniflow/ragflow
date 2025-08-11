@@ -29,6 +29,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Moonshot = "Moonshot"
     xAI = "xAI"
     DeepInfra = "DeepInfra"
+    Groq = "Groq"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -37,6 +38,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
     SupportedLiteLLMProvider.xAI: "https://api.x.ai/v1",
     SupportedLiteLLMProvider.DeepInfra: "https://api.deepinfra.com/v1/openai",
+    SupportedLiteLLMProvider.Groq: "https://api.groq.com/openai/v1",
 }
 
 
@@ -47,6 +49,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Moonshot: "moonshot/",
     SupportedLiteLLMProvider.xAI: "xai/",
     SupportedLiteLLMProvider.DeepInfra: "deepinfra/",
+    SupportedLiteLLMProvider.Groq: "groq/",
 }
 
 ChatModel = globals().get("ChatModel", {})
