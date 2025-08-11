@@ -31,6 +31,7 @@ class SupportedLiteLLMProvider(StrEnum):
     DeepInfra = "DeepInfra"
     Groq = "Groq"
     Cohere = "Cohere"
+    Gemini = "Gemini"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -41,6 +42,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.DeepInfra: "https://api.deepinfra.com/v1/openai",
     SupportedLiteLLMProvider.Groq: "https://api.groq.com/openai/v1",
     SupportedLiteLLMProvider.Cohere: "https://api.cohere.ai/v1",
+    SupportedLiteLLMProvider.Gemini: "https://generativelanguage.googleapis.com",
 }
 
 
@@ -53,6 +55,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.DeepInfra: "deepinfra/",
     SupportedLiteLLMProvider.Groq: "groq/",
     SupportedLiteLLMProvider.Cohere: "",  # don't need a prefix
+    SupportedLiteLLMProvider.Gemini: "gemini/",
 }
 
 ChatModel = globals().get("ChatModel", {})
