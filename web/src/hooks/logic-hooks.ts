@@ -27,7 +27,7 @@ import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
 
-function usePrevious<T>(value: T) {
+export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
   useEffect(() => {
     ref.current = value;
