@@ -1054,7 +1054,7 @@ class BedrockChat(Base):
                     yield ans
 
         except (ClientError, Exception) as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
 
         yield num_tokens_from_string(ans)
 
