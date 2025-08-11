@@ -226,17 +226,20 @@ class Docx(DocxParser):
             for r in tb.rows:
                 html += "<tr>"
                 i = 0
-                while i < len(r.cells):
-                    span = 1
-                    c = r.cells[i]
-                    for j in range(i + 1, len(r.cells)):
-                        if c.text == r.cells[j].text:
-                            span += 1
-                            i = j
-                        else:
-                            break
-                    i += 1
-                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                try:
+                    while i < len(r.cells):
+                        span = 1
+                        c = r.cells[i]
+                        for j in range(i + 1, len(r.cells)):
+                            if c.text == r.cells[j].text:
+                                span += 1
+                                i = j
+                            else:
+                                break
+                        i += 1
+                        html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                except Exception as e:
+                    logging.warning(f"Error parsing table, ignore: {e}")
                 html += "</tr>"
             html += "</table>"
             tbls.append(((None, html), ""))
