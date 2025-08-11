@@ -368,16 +368,7 @@ export const useUploadCanvasFileWithProgress = (
           {
             url: api.uploadAgentFile(identifier || id),
             data: formData,
-            onUploadProgress: ({
-              loaded,
-              total,
-              progress,
-              bytes,
-              estimated,
-              rate,
-              upload,
-              lengthComputable,
-            }) => {
+            onUploadProgress: ({ progress }) => {
               files.forEach((file) => {
                 onProgress(file, (progress || 0) * 100);
               });
