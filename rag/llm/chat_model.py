@@ -503,15 +503,6 @@ class ModelScopeChat(Base):
         super().__init__(key, model_name.split("___")[0], base_url, **kwargs)
 
 
-class DeepSeekChat(Base):
-    _FACTORY_NAME = "DeepSeek"
-
-    def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.deepseek.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class AzureChat(Base):
     _FACTORY_NAME = "Azure-OpenAI"
 
@@ -1432,7 +1423,7 @@ class Ai302Chat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
