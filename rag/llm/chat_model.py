@@ -69,6 +69,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Tongyi_Qianwen: "dashscope/",
     SupportedLiteLLMProvider.Dashscope: "dashscope/",
     SupportedLiteLLMProvider.Bedrock: "bedrock/",
+    SupportedLiteLLMProvider.Moonshot: "moonshot/",
 }
 
 
@@ -477,15 +478,6 @@ class GptTurbo(Base):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
-
-
-class MoonshotChat(Base):
-    _FACTORY_NAME = "Moonshot"
-
-    def __init__(self, key, model_name="moonshot-v1-8k", base_url="https://api.moonshot.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.moonshot.cn/v1"
-        super().__init__(key, model_name, base_url)
 
 
 class XinferenceChat(Base):
@@ -1659,7 +1651,7 @@ class Ai302Chat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
