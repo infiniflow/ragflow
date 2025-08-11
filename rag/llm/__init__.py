@@ -41,19 +41,25 @@ for module_name, mapping_dict in MODULE_MAPPING.items():
     full_module_name = f"{package_name}.{module_name}"
     module = importlib.import_module(full_module_name)
 
-    base_classes = {}
+    base_class = None
+    lite_llm_base_class = None
     for name, obj in inspect.getmembers(module):
-        if inspect.isclass(obj) and (name == "Base" or name == "LiteLLMBase"):
-            base_classes[name] = obj
-    if not base_classes:
-        continue
+        if inspect.isclass(obj):
+            if name == "Base":
+                base_class = obj
+            elif name == "LiteLLMBase":
+                lite_llm_base_class = obj
+                assert hasattr(obj, "_FACTORY_NAME"), "LiteLLMbase should have _FACTORY_NAME field."
+                if hasattr(obj, "_FACTORY_NAME"):
+                    if isinstance(obj._FACTORY_NAME, list):
+                        for factory_name in obj._FACTORY_NAME:
+                            mapping_dict[factory_name] = obj
+                    else:
+                        mapping_dict[obj._FACTORY_NAME] = obj
 
-    for _, obj in inspect.getmembers(module):
-        if not inspect.isclass(obj):
-            continue
-
-        for base_name, base_class in base_classes.items():
-            if issubclass(obj, base_class) and obj is not base_class and hasattr(obj, "_FACTORY_NAME"):
+    if base_class is not None:
+        for _, obj in inspect.getmembers(module):
+            if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class and hasattr(obj, "_FACTORY_NAME"):
                 if isinstance(obj._FACTORY_NAME, list):
                     for factory_name in obj._FACTORY_NAME:
                         mapping_dict[factory_name] = obj
