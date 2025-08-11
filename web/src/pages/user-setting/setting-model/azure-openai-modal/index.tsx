@@ -46,7 +46,7 @@ const AzureOpenAIModal = ({
       { value: 'image2text', label: 'image2text' },
     ],
   };
-  const getOptions = (factory: string) => {
+  const getOptions = () => {
     return optionsMap.Default;
   };
   const handleKeyDown = async (e: React.KeyboardEvent) => {
@@ -132,7 +132,7 @@ const AzureOpenAIModal = ({
               type: 'number',
               message: t('maxTokensInvalidMessage'),
             },
-            ({ getFieldValue }) => ({
+            ({}) => ({
               validator(_, value) {
                 if (value < 0) {
                   return Promise.reject(new Error(t('maxTokensMinMessage')));

@@ -34,7 +34,6 @@ import { CircleHelp } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
-import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
 import AzureOpenAIModal from './azure-openai-modal';
 import BedrockModal from './bedrock-modal';
@@ -58,6 +57,7 @@ import {
 } from './hooks';
 import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
+import TencentCloudModal from './next-tencent-modal';
 import OllamaModal from './ollama-modal';
 import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';

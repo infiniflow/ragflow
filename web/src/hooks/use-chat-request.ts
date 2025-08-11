@@ -5,7 +5,7 @@ import { IAskRequestBody } from '@/interfaces/request/chat';
 import { IClientConversation } from '@/pages/next-chats/chat/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import { isConversationIdExist } from '@/pages/next-chats/utils';
-import chatService from '@/services/next-chat-service ';
+import chatService from '@/services/next-chat-service';
 import { buildMessageListWithUuid, getConversationId } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';

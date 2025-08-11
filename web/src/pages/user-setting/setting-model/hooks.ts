@@ -114,7 +114,6 @@ export const useSubmitOllama = () => {
   const [initialValues, setInitialValues] = useState<
     Partial<IAddLlmRequestBody> | undefined
   >();
-  const [originalModelName, setOriginalModelName] = useState<string>('');
   const { addLlm, loading } = useAddLlm();
   const {
     visible: llmAddingVisible,

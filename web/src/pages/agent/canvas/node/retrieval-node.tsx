@@ -4,7 +4,7 @@ import { IRetrievalNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
 import { NodeHandleId } from '../../constant';
 import { useGetVariableLabelByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle } from './handle';
@@ -21,18 +21,7 @@ function InnerRetrievalNode({
   selected,
 }: NodeProps<IRetrievalNode>) {
   const knowledgeBaseIds: string[] = get(data, 'form.kb_ids', []);
-  console.log('🚀 ~ InnerRetrievalNode ~ knowledgeBaseIds:', knowledgeBaseIds);
   const { list: knowledgeList } = useFetchKnowledgeList(true);
-  const knowledgeBases = useMemo(() => {
-    return knowledgeBaseIds.map((x) => {
-      const item = knowledgeList.find((y) => x === y.id);
-      return {
-        name: item?.name,
-        avatar: item?.avatar,
-        id: x,
-      };
-    });
-  }, [knowledgeList, knowledgeBaseIds]);
 
   const getLabel = useGetVariableLabelByValue(id);
 

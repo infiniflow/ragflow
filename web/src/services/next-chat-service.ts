@@ -4,7 +4,7 @@ import { registerNextServer } from '@/utils/register-server';
 const {
   getDialog,
   setDialog,
-  listDialog,
+  // listDialog,
   removeDialog,
   getConversation,
   getConversationSSE,

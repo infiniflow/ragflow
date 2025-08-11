@@ -147,7 +147,7 @@ export const useHandleUploadDocument = () => {
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const { uploadDocument, loading } = useUploadNextDocument();
-  const { runDocumentByIds, loading: _ } = useRunNextDocument();
+  const { runDocumentByIds } = useRunNextDocument();
 
   const onDocumentUploadOk = useCallback(
     async ({

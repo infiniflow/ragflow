@@ -28,7 +28,7 @@ import JsonView from 'react18-json-view';
 import { Operator } from '../constant';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import OperatorIcon from '../operator-icon';
-import ToolTimelineItem from './toolTimelineItem';
+import ToolTimelineItem from './tool-timeline-item';
 type LogFlowTimelineProps = Pick<
   ReturnType<typeof useCacheChatLog>,
   'currentEventListWithoutMessage' | 'currentMessageId'

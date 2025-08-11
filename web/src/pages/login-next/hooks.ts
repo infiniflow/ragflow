@@ -11,6 +11,7 @@ export enum Step {
 
 export const useSwitchStep = (step: Step) => {
   const [_, setSearchParams] = useSearchParams();
+  console.log('🚀 ~ useSwitchStep ~ _:', _);
   const switchStep = useCallback(() => {
     setSearchParams(new URLSearchParams({ step: step.toString() }));
   }, [setSearchParams, step]);
