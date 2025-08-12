@@ -216,16 +216,17 @@ export function InnerNextStepDropdown({
 
   useEffect(() => {
     if (position && hideModal) {
-      const handleClickOutside = (event: MouseEvent) => {
-        if (
-          dropdownRef.current &&
-          !dropdownRef.current.contains(event.target as Node)
-        ) {
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
           hideModal();
         }
       };
 
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+      };
     }
   }, [position, hideModal]);
 
@@ -238,6 +239,7 @@ export function InnerNextStepDropdown({
           left: position.x,
           top: position.y + 10,
           zIndex: 1000,
+          cursor: 'default',
         }}
         onClick={(e) => e.stopPropagation()}
       >

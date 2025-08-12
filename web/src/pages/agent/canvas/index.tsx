@@ -153,14 +153,6 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   const { theme } = useTheme();
 
-  const onPaneClick = useCallback(() => {
-    hideFormDrawer();
-    if (imgVisible) {
-      addNoteNode(mouse);
-      hideImage();
-    }
-  }, [addNoteNode, hideFormDrawer, hideImage, imgVisible, mouse]);
-
   useEffect(() => {
     if (!chatVisible) {
       clearEventList();
@@ -187,6 +179,27 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     handleId: string;
   } | null>(null);
 
+  const preventCloseRef = useRef(false);
+
+  const onPaneClick = useCallback(() => {
+    hideFormDrawer();
+    if (visible && !preventCloseRef.current) {
+      hideModal();
+    }
+    if (imgVisible) {
+      addNoteNode(mouse);
+      hideImage();
+    }
+  }, [
+    hideFormDrawer,
+    visible,
+    hideModal,
+    imgVisible,
+    addNoteNode,
+    mouse,
+    hideImage,
+  ]);
+
   const onConnect = (connection: Connection) => {
     originalOnConnect(connection);
     isConnectedRef.current = true;
@@ -211,6 +224,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       setDropdownPosition({ x: clientX, y: clientY });
       if (!isConnectedRef.current) {
         showModal();
+        // 设置防关闭标志
+        preventCloseRef.current = true;
+        // 延迟重置标志，给用户时间与下拉菜单交互
+        setTimeout(() => {
+          preventCloseRef.current = false;
+        }, 500);
       }
     }
   };
