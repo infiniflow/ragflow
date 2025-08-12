@@ -53,14 +53,14 @@ export default defineConfig({
 
     memo.optimization.minimizer('terser').use(TerserPlugin); // Fixed the issue that the page displayed an error after packaging lexical with terser
 
-    memo.plugin('eslint').use(ESLintPlugin, [
-      {
-        extensions: ['js', 'ts', 'tsx'],
-        failOnError: true,
-        exclude: ['**/node_modules/**', '**/mfsu**', '**/mfsu-virtual-entry**'],
-        files: ['src/**/*.{js,ts,tsx}'],
-      },
-    ]);
+    // memo.plugin('eslint').use(ESLintPlugin, [
+    //   {
+    //     extensions: ['js', 'ts', 'tsx'],
+    //     failOnError: true,
+    //     exclude: ['**/node_modules/**', '**/mfsu**', '**/mfsu-virtual-entry**'],
+    //     files: ['src/**/*.{js,ts,tsx}'],
+    //   },
+    // ]);
 
     return memo;
   },

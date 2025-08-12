@@ -44,6 +44,7 @@ export default {
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+  getMeta: `${api_host}/kb/get_meta`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,

@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { PanelRightClose } from 'lucide-react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
@@ -7,7 +8,8 @@ import { ChatModelSettings } from './chat-model-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { useChatSettingSchema } from './use-chat-setting-schema';
 
-export function ChatSettings() {
+type ChatSettingsProps = { switchSettingVisible(): void };
+export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   const formSchema = useChatSettingSchema();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -33,11 +35,18 @@ export function ChatSettings() {
   }
 
   return (
-    <section className="py-6">
+    <section className="p-5  w-[400px] max-w-[20%]">
+      <div className="flex justify-between items-center text-base">
+        Chat Settings
+        <PanelRightClose
+          className="size-4 cursor-pointer"
+          onClick={switchSettingVisible}
+        />
+      </div>
       <FormProvider {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="space-y-6 overflow-auto max-h-[88vh] pr-4"
+          className="space-y-6 overflow-auto max-h-[87vh] pr-4"
         >
           <ChatBasicSetting></ChatBasicSetting>
           <ChatPromptEngine></ChatPromptEngine>
