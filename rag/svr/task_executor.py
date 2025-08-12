@@ -444,7 +444,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
         tk_count += c
 
-    @timeout(5)
+    @timeout(60)
     def batch_encode(txts):
         nonlocal mdl
         return mdl.encode([truncate(c, mdl.max_length-10) for c in txts])

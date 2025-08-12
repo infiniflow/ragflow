@@ -576,6 +576,25 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_meta_by_kbs(cls, kb_ids):
+        fields = [
+            cls.model.id,
+            cls.model.meta_fields,
+        ]
+        meta = {}
+        for r in cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids)):
+            doc_id = r.id
+            for k,v in r.meta_fields.items():
+                if k not in meta:
+                    meta[k] = {}
+                v = str(v)
+                if v not in meta[k]:
+                    meta[k][v] = []
+                meta[k][v].append(doc_id)
+        return meta
+
+    @classmethod
+    @DB.connection_context()
     def update_progress(cls):
         docs = cls.get_unfinished_docs()
         for d in docs:
