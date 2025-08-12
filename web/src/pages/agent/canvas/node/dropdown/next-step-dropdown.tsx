@@ -239,7 +239,6 @@ export function InnerNextStepDropdown({
           left: position.x,
           top: position.y + 10,
           zIndex: 1000,
-          cursor: 'default',
         }}
         onClick={(e) => e.stopPropagation()}
       >

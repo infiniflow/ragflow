@@ -27,6 +27,7 @@ import {
   AgentInstanceContext,
   HandleContext,
 } from '../context';
+
 import FormSheet from '../form-sheet/next';
 import {
   useHandleDrop,
@@ -37,6 +38,7 @@ import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useMoveNote } from '../hooks/use-move-note';
+import { useDropdownManager } from './context';
 
 import {
   useHideFormSheetOnNodeDeletion,
@@ -181,10 +183,13 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   const preventCloseRef = useRef(false);
 
+  const { setActiveDropdown, clearActiveDropdown } = useDropdownManager();
+
   const onPaneClick = useCallback(() => {
     hideFormDrawer();
     if (visible && !preventCloseRef.current) {
       hideModal();
+      clearActiveDropdown();
     }
     if (imgVisible) {
       addNoteNode(mouse);
@@ -198,6 +203,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     addNoteNode,
     mouse,
     hideImage,
+    clearActiveDropdown,
   ]);
 
   const onConnect = (connection: Connection) => {
@@ -223,13 +229,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       const { clientX, clientY } = event;
       setDropdownPosition({ x: clientX, y: clientY });
       if (!isConnectedRef.current) {
+        setActiveDropdown('drag');
         showModal();
-        // 设置防关闭标志
         preventCloseRef.current = true;
-        // 延迟重置标志，给用户时间与下拉菜单交互
         setTimeout(() => {
           preventCloseRef.current = false;
-        }, 500);
+        }, 300);
       }
     }
   };
@@ -318,7 +323,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
             }}
           >
             <InnerNextStepDropdown
-              hideModal={hideModal}
+              hideModal={() => {
+                hideModal();
+                clearActiveDropdown();
+              }}
               position={dropdownPosition}
             >
               <span></span>
