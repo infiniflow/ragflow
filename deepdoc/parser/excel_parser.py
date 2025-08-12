@@ -12,6 +12,7 @@
 #
 
 import logging
+import re
 import sys
 from io import BytesIO
 
@@ -20,6 +21,8 @@ from openpyxl import Workbook, load_workbook
 
 from rag.nlp import find_codec
 
+# copied from `/openpyxl/cell/cell.py`
+ILLEGAL_CHARACTERS_RE = re.compile(r'[\000-\010]|[\013-\014]|[\016-\037]')
 
 class RAGFlowExcelParser:
 
@@ -62,7 +65,17 @@ class RAGFlowExcelParser:
                 raise Exception(f"pandas.read_excel error: {e_pandas}, original openpyxl error: {e}")
 
     @staticmethod
+    def _clean_dataframe(df: pd.DataFrame):
+        def clean_string(s):
+            if isinstance(s, str):
+                return ILLEGAL_CHARACTERS_RE.sub(" ", s)
+            return s
+
+        return df.apply(lambda col: col.map(clean_string))
+
+    @staticmethod
     def _dataframe_to_workbook(df):
+        df = RAGFlowExcelParser._clean_dataframe(df)
         wb = Workbook()
         ws = wb.active
         ws.title = "Data"
