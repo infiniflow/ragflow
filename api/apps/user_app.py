@@ -25,10 +25,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from api import settings
 from api.apps.auth import get_auth_client
-from api.db import FileType, UserTenantRole
+from api.db import FileType, LLMType, UserTenantRole
 from api.db.db_models import TenantLLM
 from api.db.services.file_service import FileService
-from api.db.services.llm_service import LLMService, TenantLLMService
+from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils import (
     current_timestamp,
@@ -620,18 +620,70 @@ def user_register(user_id, user):
         "location": "",
     }
     tenant_llm = []
-    for llm in LLMService.query(fid=settings.LLM_FACTORY):
+
+    tenant_llm.append(
+        {
+            "tenant_id": user_id,
+            "llm_factory": settings.CHAT_CFG["factory"],
+            "llm_name": settings.CHAT_CFG["model"],
+            "model_type": LLMType.CHAT,
+            "api_key": settings.CHAT_CFG["api_key"],
+            "api_base": settings.CHAT_CFG["base_url"],
+            "max_tokens": 8192,
+        }
+    )
+
+    tenant_llm.append(
+        {
+            "tenant_id": user_id,
+            "llm_factory": settings.EMBEDDING_CFG["factory"],
+            "llm_name": settings.EMBEDDING_CFG["model"],
+            "model_type": LLMType.EMBEDDING,
+            "api_key": settings.EMBEDDING_CFG["api_key"],
+            "api_base": settings.EMBEDDING_CFG["base_url"],
+            "max_tokens": 1024,
+        }
+    )
+
+    if settings.ASR_CFG["model"]:
         tenant_llm.append(
             {
                 "tenant_id": user_id,
-                "llm_factory": settings.LLM_FACTORY,
-                "llm_name": llm.llm_name,
-                "model_type": llm.model_type,
-                "api_key": settings.API_KEY,
-                "api_base": settings.LLM_BASE_URL,
-                "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
+                "llm_factory": settings.ASR_CFG["factory"],
+                "llm_name": settings.ASR_CFG["model"],
+                "model_type": LLMType.SPEECH2TEXT,
+                "api_key": settings.ASR_CFG["api_key"],
+                "api_base": settings.ASR_CFG["base_url"],
+                "max_tokens": 8192,
             }
         )
+
+    if settings.IMAGE2TEXT_CFG["model"]:
+        tenant_llm.append(
+            {
+                "tenant_id": user_id,
+                "llm_factory": settings.IMAGE2TEXT_CFG["factory"],
+                "llm_name": settings.IMAGE2TEXT_CFG["model"],
+                "model_type": LLMType.IMAGE2TEXT,
+                "api_key": settings.IMAGE2TEXT_CFG["api_key"],
+                "api_base": settings.IMAGE2TEXT_CFG["base_url"],
+                "max_tokens": 8192,
+            }
+        )
+
+    if settings.RERANK_CFG["model"]:
+        tenant_llm.append(
+            {
+                "tenant_id": user_id,
+                "llm_factory": settings.RERANK_CFG["factory"],
+                "llm_name": settings.RERANK_CFG["model"],
+                "model_type": LLMType.RERANK,
+                "api_key": settings.RERANK_CFG["api_key"],
+                "api_base": settings.RERANK_CFG["base_url"],
+                "max_tokens": 8192,
+            }
+        )
+
     if settings.LIGHTEN != 1:
         for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
             mdlnm, fid = TenantLLMService.split_model_name_and_factory(buildin_embedding_model)

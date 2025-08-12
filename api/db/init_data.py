@@ -63,12 +63,72 @@ def init_superuser():
         "invited_by": user_info["id"],
         "role": UserTenantRole.OWNER
     }
+
+    user_id = user_info
     tenant_llm = []
-    for llm in LLMService.query(fid=settings.LLM_FACTORY):
+
+    tenant_llm.append(
+        {
+            "tenant_id": user_id,
+            "llm_factory": settings.CHAT_CFG["factory"],
+            "llm_name": settings.CHAT_CFG["model"],
+            "model_type": LLMType.CHAT,
+            "api_key": settings.CHAT_CFG["api_key"],
+            "api_base": settings.CHAT_CFG["base_url"],
+            "max_tokens": 8192,
+        }
+    )
+
+    tenant_llm.append(
+        {
+            "tenant_id": user_id,
+            "llm_factory": settings.EMBEDDING_CFG["factory"],
+            "llm_name": settings.EMBEDDING_CFG["model"],
+            "model_type": LLMType.EMBEDDING,
+            "api_key": settings.EMBEDDING_CFG["api_key"],
+            "api_base": settings.EMBEDDING_CFG["base_url"],
+            "max_tokens": 1024,
+        }
+    )
+
+    if settings.ASR_CFG["model"]:
         tenant_llm.append(
-            {"tenant_id": user_info["id"], "llm_factory": settings.LLM_FACTORY, "llm_name": llm.llm_name,
-             "model_type": llm.model_type,
-             "api_key": settings.API_KEY, "api_base": settings.LLM_BASE_URL})
+            {
+                "tenant_id": user_id,
+                "llm_factory": settings.ASR_CFG["factory"],
+                "llm_name": settings.ASR_CFG["model"],
+                "model_type": LLMType.SPEECH2TEXT,
+                "api_key": settings.ASR_CFG["api_key"],
+                "api_base": settings.ASR_CFG["base_url"],
+                "max_tokens": 8192,
+            }
+        )
+
+    if settings.IMAGE2TEXT_CFG["model"]:
+        tenant_llm.append(
+            {
+                "tenant_id": user_id,
+                "llm_factory": settings.IMAGE2TEXT_CFG["factory"],
+                "llm_name": settings.IMAGE2TEXT_CFG["model"],
+                "model_type": LLMType.IMAGE2TEXT,
+                "api_key": settings.IMAGE2TEXT_CFG["api_key"],
+                "api_base": settings.IMAGE2TEXT_CFG["base_url"],
+                "max_tokens": 8192,
+            }
+        )
+
+    if settings.RERANK_CFG["model"]:
+        tenant_llm.append(
+            {
+                "tenant_id": user_id,
+                "llm_factory": settings.RERANK_CFG["factory"],
+                "llm_name": settings.RERANK_CFG["model"],
+                "model_type": LLMType.RERANK,
+                "api_key": settings.RERANK_CFG["api_key"],
+                "api_base": settings.RERANK_CFG["base_url"],
+                "max_tokens": 8192,
+            }
+        )
 
     if not UserService.save(**user_info):
         logging.error("can't init admin.")
@@ -103,7 +163,7 @@ def init_llm_factory():
     except Exception:
         pass
 
-    factory_llm_infos = settings.FACTORY_LLM_INFOS    
+    factory_llm_infos = settings.FACTORY_LLM_INFOS
     for factory_llm_info in factory_llm_infos:
         info = deepcopy(factory_llm_info)
         llm_infos = info.pop("llm")
