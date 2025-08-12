@@ -2,6 +2,7 @@ import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { SearchInput } from '@/components/ui/input';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchDialog,
@@ -9,7 +10,7 @@ import {
 } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
 import { PanelLeftClose, PanelRightClose, Plus } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
 
@@ -25,6 +26,7 @@ export function Sessions({
     useSelectDerivedConversationList();
   const { data } = useFetchDialog();
   const { visible, switchVisible } = useSetModalState(true);
+  const [searchStr, setSearchStr] = useState('');
 
   const handleCardClick = useCallback(
     (conversationId: string, isNew: boolean) => () => {
@@ -61,10 +63,16 @@ export function Sessions({
         />
       </section>
       <div className="flex justify-between items-center mb-4 pt-10">
-        <span className="text-xl font-bold">Conversations</span>
+        <span className="text-base font-bold">Conversations</span>
         <Button variant={'ghost'} onClick={addTemporaryConversation}>
           <Plus></Plus>
         </Button>
+      </div>
+      <div className="pb-4">
+        <SearchInput
+          onChange={(e) => setSearchStr(e.target.value)}
+          value={searchStr}
+        ></SearchInput>
       </div>
       <div className="space-y-4 flex-1 overflow-auto">
         {conversationList.map((x) => (
