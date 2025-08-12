@@ -141,6 +141,7 @@ class TenantLLMService(CommonService):
     @DB.connection_context()
     def model_instance(cls, tenant_id, llm_type, llm_name=None, lang="Chinese", **kwargs):
         model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
+        kwargs.update({"provider": model_config["llm_factory"]})
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
