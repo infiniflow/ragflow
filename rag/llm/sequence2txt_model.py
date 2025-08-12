@@ -46,7 +46,7 @@ class Base(ABC):
 
 
 class GPTSeq2txt(Base):
-    def __init__(self, key, model_name="whisper-1", base_url="https://api.openai.com/v1"):
+    def __init__(self, key, model_name="whisper-1", base_url="https://api.openai.com/v1", lang="Chinese"):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
