@@ -1,5 +1,6 @@
 import { useFetchKnowledgeMetadata } from '@/hooks/use-knowledge-request';
 import { SwitchOperatorOptions } from '@/pages/agent/constant';
+import { useBuildSwitchOperatorOptions } from '@/pages/agent/form/switch-form';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   Button,
@@ -12,9 +13,12 @@ import {
   Space,
 } from 'antd';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function MetadataFilterConditions({ kbIds }: { kbIds: string[] }) {
   const metadata = useFetchKnowledgeMetadata(kbIds);
+  const { t } = useTranslation();
+  const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
   const renderItems = useCallback(
     (add: FormListOperation['add']) => {
@@ -50,22 +54,22 @@ export function MetadataFilterConditions({ kbIds }: { kbIds: string[] }) {
               <Form.Item
                 {...restField}
                 name={[name, 'key']}
-                rules={[{ required: true, message: 'Missing first name' }]}
+                rules={[{ required: true, message: t('common.pleaseInput') }]}
               >
-                <Input placeholder="First Name" />
+                <Input placeholder={t('common.pleaseInput')} />
               </Form.Item>
               <Form.Item {...restField} name={[name, 'op']} className="w-20">
                 <Select
-                  options={SwitchOperatorOptions}
+                  options={switchOperatorOptions}
                   popupMatchSelectWidth={false}
                 />
               </Form.Item>
               <Form.Item
                 {...restField}
                 name={[name, 'value']}
-                rules={[{ required: true, message: 'Missing last name' }]}
+                rules={[{ required: true, message: t('common.pleaseInput') }]}
               >
-                <Input placeholder="Last Name" />
+                <Input placeholder={t('common.pleaseInput')} />
               </Form.Item>
               <MinusCircleOutlined onClick={() => remove(name)} />
             </Space>
@@ -73,7 +77,7 @@ export function MetadataFilterConditions({ kbIds }: { kbIds: string[] }) {
           <Form.Item>
             <Dropdown trigger={['click']} menu={{ items: renderItems(add) }}>
               <Button type="dashed" block icon={<PlusOutlined />}>
-                Add Condition
+                {t('chat.addCondition')}
               </Button>
             </Dropdown>
           </Form.Item>
