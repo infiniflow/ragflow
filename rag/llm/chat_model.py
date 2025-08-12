@@ -1457,7 +1457,7 @@ class LiteLLMBase(ABC):
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
-        completion_args = self._construct_completion_args(histroy=history, **gen_conf)
+        completion_args = self._construct_completion_args(history=history, **gen_conf)
         response = litellm.completion(
             **completion_args,
             drop_params=True,
@@ -1477,7 +1477,7 @@ class LiteLLMBase(ABC):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
-        completion_args = self._construct_completion_args(histroy=history, **gen_conf)
+        completion_args = self._construct_completion_args(history=history, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
             completion_args["stop"] = stop
@@ -1612,7 +1612,7 @@ class LiteLLMBase(ABC):
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
 
-                    completion_args = self._construct_completion_args(histroy=history, **gen_conf)
+                    completion_args = self._construct_completion_args(history=history, **gen_conf)
                     response = litellm.completion(
                         **completion_args,
                         drop_params=True,
@@ -1709,7 +1709,7 @@ class LiteLLMBase(ABC):
                     reasoning_start = False
                     logging.info(f"{tools=}")
 
-                    completion_args = self._construct_completion_args(histroy=history, **gen_conf)
+                    completion_args = self._construct_completion_args(history=history, **gen_conf)
                     response = litellm.completion(
                         **completion_args,
                         drop_params=True,
@@ -1787,7 +1787,7 @@ class LiteLLMBase(ABC):
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                completion_args = self._construct_completion_args(histroy=history, **gen_conf)
+                completion_args = self._construct_completion_args(history=history, **gen_conf)
                 response = litellm.completion(
                     **completion_args,
                     drop_params=True,
