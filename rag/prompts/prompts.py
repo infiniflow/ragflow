@@ -428,6 +428,6 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
         ans = json_repair.loads(ans)
         assert isinstance(ans, list), ans
         return ans
-    except:
+    except Exception:
         logging.exception(f"Loading json failure: {ans}")
     return []

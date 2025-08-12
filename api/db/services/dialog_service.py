@@ -260,7 +260,7 @@ def meta_filter(metas: dict, filters: list[dict]):
             try:
                 input = float(input)
                 value = float(value)
-            except:
+            except Exception:
                 input = str(input)
                 value = str(value)
 
@@ -281,7 +281,7 @@ def meta_filter(metas: dict, filters: list[dict]):
                 try:
                     if all(conds):
                         doc_ids.extend(docids)
-                except:
+                except Exception:
                     pass
 
     for k, v2docs in metas.items():
