@@ -50,8 +50,14 @@ class RAGFlowExcelParser:
             logging.info(f"openpyxl load error: {e}, try pandas instead")
             try:
                 file_like_object.seek(0)
-                df = pd.read_excel(file_like_object)
-                return RAGFlowExcelParser._dataframe_to_workbook(df)
+                try:
+                    df = pd.read_excel(file_like_object)
+                    return RAGFlowExcelParser._dataframe_to_workbook(df)
+                except Exception as ex:
+                    logging.info(f"pandas with default engine load error: {ex}, try calamine instead")
+                    file_like_object.seek(0)
+                    df = pd.read_excel(file_like_object, engine='calamine')
+                    return RAGFlowExcelParser._dataframe_to_workbook(df)
             except Exception as e_pandas:
                 raise Exception(f"pandas.read_excel error: {e_pandas}, original openpyxl error: {e}")
 
