@@ -471,7 +471,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
         'Please select one or more tools for the chat model to use. It takes no effect for models not supporting tool call.',
-      freedom: 'Freedom',
+      freedom: 'Creativity',
       improvise: 'Improvise',
       precise: 'Precise',
       balance: 'Balance',
