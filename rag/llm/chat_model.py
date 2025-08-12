@@ -1414,9 +1414,7 @@ class LiteLLMBase(ABC):
         self.toolcall_sessions = {}
 
         # Factory specific fields
-        if self.provider == SupportedLiteLLMProvider.Tongyi_Qianwen:
-            self.provider = "dashscope"
-        elif self.provider == SupportedLiteLLMProvider.Bedrock:
+        if self.provider == SupportedLiteLLMProvider.Bedrock:
             self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
             self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
             self.bedrock_region = json.loads(key).get("bedrock_region", "")
@@ -1595,6 +1593,7 @@ class LiteLLMBase(ABC):
                     "aws_region_name": self.bedrock_region,
                 }
             )
+        return completion_args
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
