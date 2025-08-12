@@ -563,6 +563,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       crossLanguage: 'Cross-language search',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
       createChat: 'Create chat',
+      metadata: 'Metadata',
+      metadataTip: 'Metadata',
+      conditions: 'Conditions',
     },
     setting: {
       profile: 'Profile',
