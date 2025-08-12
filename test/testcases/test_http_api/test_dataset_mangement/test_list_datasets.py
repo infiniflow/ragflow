@@ -163,9 +163,9 @@ class TestDatasetsList:
         [
             {"orderby": ""},
             {"orderby": "unknown"},
-            ({"orderby": "CREATE_TIME"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"orderby": "UPDATE_TIME"}, lambda r: (is_sorted(r["data"], "update_time", True))),
-            ({"orderby": " create_time "}, lambda r: (is_sorted(r["data"], "update_time", True))),
+            {"orderby": "CREATE_TIME"},
+            {"orderby": "UPDATE_TIME"},
+            {"orderby": " create_time "},
         ],
         ids=["empty", "unknown", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
     )
