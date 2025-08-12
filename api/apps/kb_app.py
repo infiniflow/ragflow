@@ -351,6 +351,7 @@ def knowledge_graph(kb_id):
             obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
     return get_json_result(data=obj)
 
+
 @manager.route('/<kb_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
 @login_required
 def delete_knowledge_graph(kb_id):
@@ -364,3 +365,17 @@ def delete_knowledge_graph(kb_id):
     settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
 
     return get_json_result(data=True)
+
+
+@manager.route("/get_meta", methods=["GET"])  # noqa: F821
+@login_required
+def get_meta():
+    kb_ids = request.args.get("kb_ids", "").split(",")
+    for kb_id in kb_ids:
+        if not KnowledgebaseService.accessible(kb_id, current_user.id):
+            return get_json_result(
+                data=False,
+                message='No authorization.',
+                code=settings.RetCode.AUTHENTICATION_ERROR
+            )
+    return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
