@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import re
-from typing import Any
+from typing import Any, Generator
 
 import json_repair
 from copy import deepcopy
@@ -154,7 +154,7 @@ class LLM(ComponentBase):
             return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
         return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
-    def _generate_streamly(self, msg:list[dict], **kwargs) -> str:
+    def _generate_streamly(self, msg:list[dict], **kwargs) -> Generator[str, None, None]:
         ans = ""
         last_idx = 0
         endswith_think = False
