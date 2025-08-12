@@ -208,6 +208,10 @@ export const MultiSelect = React.forwardRef<
     const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
     const [isAnimating, setIsAnimating] = React.useState(false);
 
+    React.useEffect(() => {
+      setSelectedValues(defaultValue);
+    }, [defaultValue]);
+
     const flatOptions = React.useMemo(() => {
       return options.flatMap((option) =>
         'options' in option ? option.options : [option],
