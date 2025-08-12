@@ -160,13 +160,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       setWidth0('w-[440px]');
     }
   }, [open]);
-
   useEffect(() => {
     if (!avatarFile) {
       setAvatarBase64Str(data?.avatar);
     }
   }, [avatarFile, data?.avatar]);
-
   useEffect(() => {
     if (avatarFile) {
       (async () => {

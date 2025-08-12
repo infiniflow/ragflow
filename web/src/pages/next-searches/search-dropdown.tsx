@@ -3,51 +3,37 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useDeleteAgent } from '@/hooks/use-agent-request';
-import { IFlow } from '@/interfaces/database/agent';
-import { PenLine, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useRenameAgent } from './use-rename-agent';
+import { ISearchAppProps, useDeleteSearch } from './hooks';
 
-export function AgentDropdown({
+export function SearchDropdown({
   children,
-  showAgentRenameModal,
-  agent: agent,
-}: PropsWithChildren &
-  Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'> & {
-    agent: IFlow;
-  }) {
+  dataset,
+}: PropsWithChildren & {
+  dataset: ISearchAppProps;
+}) {
   const { t } = useTranslation();
-  const { deleteAgent } = useDeleteAgent();
-
-  const handleShowAgentRenameModal: MouseEventHandler<HTMLDivElement> =
-    useCallback(
-      (e) => {
-        e.stopPropagation();
-        showAgentRenameModal(agent);
-      },
-      [agent, showAgentRenameModal],
-    );
+  const { deleteSearch } = useDeleteSearch();
 
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
-    deleteAgent([agent.id]);
-  }, [agent.id, deleteAgent]);
+    deleteSearch({ search_id: dataset.id });
+  }, [dataset.id, deleteSearch]);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem onClick={handleShowAgentRenameModal}>
+        {/* <DropdownMenuItem onClick={handleShowDatasetRenameModal}>
           {t('common.rename')} <PenLine />
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator /> */}
         <ConfirmDeleteDialog onOk={handleDelete}>
           <DropdownMenuItem
-            className="text-state-error"
+            className="text-text-delete-red"
             onSelect={(e) => {
               e.preventDefault();
             }}

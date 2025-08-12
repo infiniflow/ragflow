@@ -17,7 +17,7 @@ import base64
 import logging
 import os
 from abc import ABC
-from enum import StrEnum
+from strenum import StrEnum
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
