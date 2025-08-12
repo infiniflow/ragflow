@@ -24,7 +24,6 @@ class Chat(Base):
         self.id = ""
         self.name = "assistant"
         self.avatar = "path/to/avatar"
-        self.dataset_ids = ["kb1"]
         self.llm = Chat.LLM(rag, {})
         self.prompt = Chat.Prompt(rag, {})
         super().__init__(rag, res_dict)

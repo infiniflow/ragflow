@@ -335,13 +335,13 @@ def form_history(history, limit=-6):
     return context
 
 
-def analyze_task(chat_mdl, task_name, tools_description: list[dict]):
+def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict]):
     tools_desc = tool_schema(tools_description)
     context = ""
 
     template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_USER)
-
-    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": template.render(task=task_name, context=context, tools_desc=tools_desc)}], {})
+    context = template.render(task=task_name, context=context, agent_prompt=prompt, tools_desc=tools_desc)
+    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": context}], {})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)

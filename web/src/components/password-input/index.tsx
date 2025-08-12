@@ -1,7 +1,6 @@
 import { Input } from '@/components/originui/input';
-import { useTranslate } from '@/hooks/common-hooks';
 import { EyeIcon, EyeOffIcon } from 'lucide-react';
-import { ChangeEvent, LegacyRef, forwardRef, useId, useState } from 'react';
+import { ChangeEvent, forwardRef, useId, useState } from 'react';
 
 type PropType = {
   name: string;
@@ -10,16 +9,11 @@ type PropType = {
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
 };
 
-function PasswordInput(
-  props: PropType,
-  ref: LegacyRef<HTMLInputElement> | undefined,
-) {
+function PasswordInput(props: PropType) {
   const id = useId();
   const [isVisible, setIsVisible] = useState<boolean>(false);
 
   const toggleVisibility = () => setIsVisible((prevState) => !prevState);
-
-  const { t } = useTranslate('setting');
 
   return (
     <div className="*:not-first:mt-2 w-full">

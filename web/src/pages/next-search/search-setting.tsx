@@ -116,8 +116,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       })();
     }
   }, [avatarFile]);
-  const { list: datasetListOrigin, loading: datasetLoading } =
-    useFetchKnowledgeList();
+  const { list: datasetListOrigin } = useFetchKnowledgeList();
 
   useEffect(() => {
     const datasetListMap = datasetListOrigin.map((item: IKnowledge) => {
