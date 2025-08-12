@@ -243,7 +243,7 @@ class DocumentService(CommonService):
         from api.db.services.task_service import TaskService
         cls.clear_chunk_num(doc.id)
         try:
-            TaskService.filter_delete(Task.doc_id == doc.id)
+            TaskService.filter_delete([Task.doc_id == doc.id])
             page = 0
             page_size = 1000
             all_chunk_ids = []
