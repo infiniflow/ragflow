@@ -10,9 +10,9 @@ import translation_fr from './fr';
 import translation_id from './id';
 import translation_ja from './ja';
 import translation_pt_br from './pt-br';
+import translation_ru from './ru';
 import { createTranslationTable, flattenObject } from './until';
 import translation_vi from './vi';
-import translation_ru from './ru';
 import translation_zh from './zh';
 import translation_zh_traditional from './zh-traditional';
 
