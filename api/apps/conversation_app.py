@@ -187,14 +187,7 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        else:
-            for ref in conv.reference:
-                if isinstance(ref, list):
-                    continue
-                ref["chunks"] = chunks_format(ref)
-
-        if not conv.reference:
-            conv.reference = []
+        conv.reference = [r for r in conv.reference if r]
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def stream():
