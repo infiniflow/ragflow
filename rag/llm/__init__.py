@@ -42,15 +42,6 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Tongyi_Qianwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
-    SupportedLiteLLMProvider.xAI: "https://api.x.ai/v1",
-    SupportedLiteLLMProvider.DeepInfra: "https://api.deepinfra.com/v1/openai",
-    SupportedLiteLLMProvider.Groq: "https://api.groq.com/openai/v1",
-    SupportedLiteLLMProvider.Cohere: "https://api.cohere.ai/v1",
-    SupportedLiteLLMProvider.Gemini: "https://generativelanguage.googleapis.com",
-    SupportedLiteLLMProvider.DeepSeek: "https://api.deepseek.com/v1",
-    SupportedLiteLLMProvider.Nvidia: "https://integrate.api.nvidia.com/v1",
-    SupportedLiteLLMProvider.TogetherAI: "https://api.together.xyz/v1",
-    SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com",
 }
 
 

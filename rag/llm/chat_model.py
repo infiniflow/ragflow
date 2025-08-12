@@ -1457,24 +1457,7 @@ class LiteLLMBase(ABC):
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
-        completion_args = {
-            "model": self.model_name,
-            "messages": history,
-            "stream": False,
-            "api_key": self.api_key,
-            "api_base": self.base_url,
-            **gen_conf,
-        }
-        if self.provider == SupportedLiteLLMProvider.Bedrock:
-            completion_args.pop("api_key", None)
-            completion_args.pop("api_base", None)
-            completion_args.update(
-                {
-                    "aws_access_key_id": self.bedrock_ak,
-                    "aws_secret_access_key": self.bedrock_sk,
-                    "aws_region_name": self.bedrock_region,
-                }
-            )
+        completion_args = self._construct_completion_args(histroy=history, **gen_conf)
         response = litellm.completion(
             **completion_args,
             drop_params=True,
@@ -1494,28 +1477,10 @@ class LiteLLMBase(ABC):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
-        completion_args = {
-            "model": self.model_name,
-            "messages": history,
-            "stream": True,
-            "api_key": self.api_key,
-            "api_base": self.base_url,
-            **gen_conf,
-        }
-        if self.provider == SupportedLiteLLMProvider.Bedrock:
-            completion_args.pop("api_key", None)
-            completion_args.pop("api_base", None)
-            completion_args.update(
-                {
-                    "aws_access_key_id": self.bedrock_ak,
-                    "aws_secret_access_key": self.bedrock_sk,
-                    "aws_region_name": self.bedrock_region,
-                }
-            )
+        completion_args = self._construct_completion_args(histroy=history, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
             completion_args["stop"] = stop
-
         response = litellm.completion(
             **completion_args,
             drop_params=True,
@@ -1608,6 +1573,29 @@ class LiteLLMBase(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
+    def _construct_completion_args(self, history, **kwargs):
+        completion_args = {
+            "model": self.model_name,
+            "messages": history,
+            "stream": False,
+            "tools": self.tools,
+            "tool_choice": "auto",
+            "api_key": self.api_key,
+            **kwargs,
+        }
+        if self.provider in SupportedLiteLLMProvider:
+            completion_args.update({"api_base": self.base_url})
+        elif self.provider == SupportedLiteLLMProvider.Bedrock:
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
+            completion_args.update(
+                {
+                    "aws_access_key_id": self.bedrock_ak,
+                    "aws_secret_access_key": self.bedrock_sk,
+                    "aws_region_name": self.bedrock_region,
+                }
+            )
+
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         if system:
@@ -1624,27 +1612,7 @@ class LiteLLMBase(ABC):
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
 
-                    completion_args = {
-                        "model": self.model_name,
-                        "messages": history,
-                        "stream": False,
-                        "tools": self.tools,
-                        "tool_choice": "auto",
-                        "api_key": self.api_key,
-                        "api_base": self.base_url,
-                        **gen_conf,
-                    }
-                    if self.provider == SupportedLiteLLMProvider.Bedrock:
-                        completion_args.pop("api_key", None)
-                        completion_args.pop("api_base", None)
-                        completion_args.update(
-                            {
-                                "aws_access_key_id": self.bedrock_ak,
-                                "aws_secret_access_key": self.bedrock_sk,
-                                "aws_region_name": self.bedrock_region,
-                            }
-                        )
-
+                    completion_args = self._construct_completion_args(histroy=history, **gen_conf)
                     response = litellm.completion(
                         **completion_args,
                         drop_params=True,
@@ -1741,27 +1709,7 @@ class LiteLLMBase(ABC):
                     reasoning_start = False
                     logging.info(f"{tools=}")
 
-                    completion_args = {
-                        "model": self.model_name,
-                        "messages": history,
-                        "stream": True,
-                        "tools": self.tools,
-                        "tool_choice": "auto",
-                        "api_key": self.api_key,
-                        "api_base": self.base_url,
-                        **gen_conf,
-                    }
-                    if self.provider == SupportedLiteLLMProvider.Bedrock:
-                        completion_args.pop("api_key", None)
-                        completion_args.pop("api_base", None)
-                        completion_args.update(
-                            {
-                                "aws_access_key_id": self.bedrock_ak,
-                                "aws_secret_access_key": self.bedrock_sk,
-                                "aws_region_name": self.bedrock_region,
-                            }
-                        )
-
+                    completion_args = self._construct_completion_args(histroy=history, **gen_conf)
                     response = litellm.completion(
                         **completion_args,
                         drop_params=True,
@@ -1839,25 +1787,7 @@ class LiteLLMBase(ABC):
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                completion_args = {
-                    "model": self.model_name,
-                    "messages": history,
-                    "stream": True,
-                    "api_key": self.api_key,
-                    "api_base": self.base_url,
-                    **gen_conf,
-                }
-                if self.provider == SupportedLiteLLMProvider.Bedrock:
-                    completion_args.pop("api_key", None)
-                    completion_args.pop("api_base", None)
-                    completion_args.update(
-                        {
-                            "aws_access_key_id": self.bedrock_ak,
-                            "aws_secret_access_key": self.bedrock_sk,
-                            "aws_region_name": self.bedrock_region,
-                        }
-                    )
-
+                completion_args = self._construct_completion_args(histroy=history, **gen_conf)
                 response = litellm.completion(
                     **completion_args,
                     drop_params=True,
