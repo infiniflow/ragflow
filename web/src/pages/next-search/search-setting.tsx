@@ -1,5 +1,6 @@
 // src/pages/next-search/search-setting.tsx
 
+import { Input } from '@/components/originui/input';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
@@ -11,29 +12,35 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   MultiSelect,
   MultiSelectOptionType,
 } from '@/components/ui/multi-select';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import {
+  useComposeLlmOptionsByModelTypes,
+  useSelectLlmOptionsByModelType,
+} from '@/hooks/llm-hooks';
+import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
 import { transformFile2Base64 } from '@/utils/file-util';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { PanelRightClose, Pencil, Upload } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { ISearchAppDetailProps } from '../next-searches/hooks';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { z } from 'zod';
+import { LlmModelType, ModelVariableType } from '../dataset/dataset/constant';
+import {
+  ISearchAppDetailProps,
+  IUpdateSearchProps,
+  useUpdateSearch,
+} from '../next-searches/hooks';
+import { LlmSettingFieldItems } from './search-setting-aisummery-config';
 
 interface SearchSettingProps {
   open: boolean;
@@ -41,7 +48,52 @@ interface SearchSettingProps {
   className?: string;
   data: ISearchAppDetailProps;
 }
+const SearchSettingFormSchema = z
+  .object({
+    search_id: z.string().optional(),
+    name: z.string().min(1, 'Name is required'),
+    avatar: z.string().optional(),
+    description: z.string().optional(),
+    search_config: z.object({
+      kb_ids: z.array(z.string()).min(1, 'At least one dataset is required'),
+      vector_similarity_weight: z.number().min(0).max(100),
+      web_search: z.boolean(),
+      similarity_threshold: z.number(),
+      use_kg: z.boolean(),
+      rerank_id: z.string(),
+      use_rerank: z.boolean(),
+      top_k: z.number(),
+      summary: z.boolean(),
+      llm_setting: z.object({
+        llm_id: z.string(),
+        parameter: z.string(),
+        temperature: z.number(),
+        top_p: z.union([z.string(), z.number()]),
+        frequency_penalty: z.number(),
+        presence_penalty: z.number(),
+      }),
+      related_search: z.boolean(),
+      query_mindmap: z.boolean(),
+    }),
+  })
+  .superRefine((data, ctx) => {
+    if (data.search_config.use_rerank && !data.search_config.rerank_id) {
+      ctx.addIssue({
+        path: ['search_config', 'rerank_id'],
+        message: 'Rerank model is required when rerank is enabled',
+        code: z.ZodIssueCode.custom,
+      });
+    }
 
+    if (data.search_config.summary && !data.search_config.llm_setting?.llm_id) {
+      ctx.addIssue({
+        path: ['search_config', 'llm_setting', 'llm_id'],
+        message: 'Model is required when AI Summary is enabled',
+        code: z.ZodIssueCode.custom,
+      });
+    }
+  });
+type SearchSettingFormData = z.infer<typeof SearchSettingFormSchema>;
 const SearchSetting: React.FC<SearchSettingProps> = ({
   open = false,
   setOpen,
@@ -49,51 +101,56 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   data,
 }) => {
   const [width0, setWidth0] = useState('w-[440px]');
-  //  "avatar": null,
-  // "created_by": "c3fb861af27a11efa69751e139332ced",
-  // "description": "My first search app",
-  // "id": "22e874584b4511f0aa1ac57b9ea5a68b",
-  // "name": "updated search app",
-  // "search_config": {
-  //     "cross_languages": [],
-  //     "doc_ids": [],
-  //     "highlight": false,
-  //     "kb_ids": [],
-  //     "keyword": false,
-  //     "query_mindmap": false,
-  //     "related_search": false,
-  //     "rerank_id": "",
-  //     "similarity_threshold": 0.5,
-  //     "summary": false,
-  //     "top_k": 1024,
-  //     "use_kg": true,
-  //     "vector_similarity_weight": 0.3,
-  //     "web_search": false
-  // },
-  // "tenant_id": "c3fb861af27a11efa69751e139332ced",
-  // "update_time": 1750144129641
-  const formMethods = useForm({
-    defaultValues: {
-      id: '',
-      name: '',
-      avatar: '',
-      description: 'You are an intelligent assistant.',
-      datasets: '',
-      keywordSimilarityWeight: 20,
-      rerankModel: false,
-      aiSummary: false,
-      topK: true,
-      searchMethod: '',
-      model: '',
-      enableWebSearch: false,
-      enableRelatedSearch: true,
-      showQueryMindmap: true,
-    },
+  const { search_config } = data || {};
+  const { llm_setting } = search_config || {};
+  const formMethods = useForm<SearchSettingFormData>({
+    resolver: zodResolver(SearchSettingFormSchema),
   });
+
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
   const [datasetList, setDatasetList] = useState<MultiSelectOptionType[]>([]);
   const [datasetSelectEmbdId, setDatasetSelectEmbdId] = useState('');
+
+  const resetForm = useCallback(() => {
+    formMethods.reset({
+      search_id: data?.id,
+      name: data?.name || '',
+      avatar: data?.avatar || '',
+      description: data?.description || 'You are an intelligent assistant.',
+      search_config: {
+        kb_ids: search_config?.kb_ids || [],
+        vector_similarity_weight: search_config?.vector_similarity_weight || 20,
+        web_search: search_config?.web_search || false,
+        doc_ids: [],
+        similarity_threshold: 0.0,
+        use_kg: false,
+        rerank_id: search_config?.rerank_id || '',
+        use_rerank: search_config?.rerank_id ? true : false,
+        top_k: search_config?.top_k || 1024,
+        summary: search_config?.summary || false,
+        chat_id: '',
+        llm_setting: {
+          llm_id: llm_setting?.llm_id || '',
+          parameter: llm_setting?.parameter || ModelVariableType.Improvise,
+          temperature: llm_setting?.temperature || 0.8,
+          top_p: llm_setting?.top_p || 0.9,
+          frequency_penalty: llm_setting?.frequency_penalty || 0.1,
+          presence_penalty: llm_setting?.presence_penalty || 0.1,
+        },
+        chat_settingcross_languages: [],
+        highlight: false,
+        keyword: false,
+        related_search: search_config?.related_search || false,
+        query_mindmap: search_config?.query_mindmap || false,
+      },
+    });
+  }, [data, search_config, llm_setting, formMethods]);
+
+  useEffect(() => {
+    resetForm();
+  }, [resetForm]);
+
   useEffect(() => {
     if (!open) {
       setTimeout(() => {
@@ -116,7 +173,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       })();
     }
   }, [avatarFile]);
-  const { list: datasetListOrigin } = useFetchKnowledgeList();
+  const { list: datasetListOrigin, loading: datasetLoading } =
+    useFetchKnowledgeList();
 
   useEffect(() => {
     const datasetListMap = datasetListOrigin.map((item: IKnowledge) => {
@@ -143,7 +201,44 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     } else {
       setDatasetSelectEmbdId('');
     }
+    formMethods.setValue('search_config.kb_ids', value);
     onChange?.(value);
+  };
+
+  const allOptions = useSelectLlmOptionsByModelType();
+  const rerankModelOptions = useMemo(() => {
+    return allOptions[LlmModelType.Rerank];
+  }, [allOptions]);
+
+  const aiSummeryModelOptions = useComposeLlmOptionsByModelTypes([
+    LlmModelType.Chat,
+    LlmModelType.Image2text,
+  ]);
+
+  const rerankModelDisabled = useWatch({
+    control: formMethods.control,
+    name: 'search_config.use_rerank',
+  });
+  const aiSummaryDisabled = useWatch({
+    control: formMethods.control,
+    name: 'search_config.summary',
+  });
+
+  const { updateSearch, isLoading: isUpdating } = useUpdateSearch();
+  const { data: systemSetting } = useFetchTenantInfo();
+  const onSubmit = async (
+    formData: IUpdateSearchProps & { tenant_id: string },
+  ) => {
+    try {
+      await updateSearch({
+        ...formData,
+        tenant_id: systemSetting.tenant_id,
+        avatar: avatarBase64Str,
+      });
+      setOpen(false); // 关闭弹窗
+    } catch (error) {
+      console.error('Failed to update search:', error);
+    }
   };
   return (
     <div
@@ -156,7 +251,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         width0,
         className,
       )}
-      style={{ height: 'calc(100dvh - 170px)' }}
+      style={{ maxHeight: 'calc(100dvh - 170px)' }}
     >
       <div className="flex justify-between items-center text-base mb-8">
         <div className="text-text-primary">Search Settings</div>
@@ -168,19 +263,26 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         </div>
       </div>
       <div
-        style={{ height: 'calc(100dvh - 270px)' }}
+        style={{ maxHeight: 'calc(100dvh - 270px)' }}
         className="overflow-y-auto scrollbar-auto p-1 text-text-secondary"
       >
         <Form {...formMethods}>
           <form
-            onSubmit={formMethods.handleSubmit((data) => console.log(data))}
+            onSubmit={formMethods.handleSubmit(
+              (data) => {
+                console.log('Form submitted with data:', data);
+                onSubmit(data as IUpdateSearchProps);
+              },
+              (errors) => {
+                console.log('Validation errors:', errors);
+              },
+            )}
             className="space-y-6"
           >
             {/* Name */}
             <FormField
               control={formMethods.control}
               name="name"
-              rules={{ required: 'Name is required' }}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
@@ -225,13 +327,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                           </div>
                         </div>
                       )}
-                      <Input
+                      <input
                         placeholder=""
                         // {...field}
                         type="file"
                         title=""
                         accept="image/*"
-                        className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
+                        className="absolute w-[64px] top-0 left-0 h-full opacity-0 cursor-pointer"
                         onChange={(ev) => {
                           const file = ev.target?.files?.[0];
                           if (
@@ -257,11 +359,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Description"
-                      {...field}
-                      defaultValue="You are an intelligent assistant."
-                    />
+                    <Input placeholder="Description" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -271,7 +369,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             {/* Datasets */}
             <FormField
               control={formMethods.control}
-              name="datasets"
+              name="search_config.kb_ids"
               rules={{ required: 'Datasets is required' }}
               render={({ field }) => (
                 <FormItem>
@@ -288,6 +386,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       placeholder={t('chat.knowledgeBasesMessage')}
                       variant="inverted"
                       maxCount={10}
+                      defaultValue={field.value}
                       {...field}
                     />
                   </FormControl>
@@ -299,10 +398,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             {/* Keyword Similarity Weight */}
             <FormField
               control={formMethods.control}
-              name="keywordSimilarityWeight"
+              name="search_config.vector_similarity_weight"
               render={({ field }) => (
                 <FormItem className="flex flex-col">
-                  <FormLabel>Keyword Similarity Weight</FormLabel>
+                  <FormLabel>
+                    <span className="text-destructive mr-1"> *</span>Keyword
+                    Similarity Weight
+                  </FormLabel>
                   <FormControl>
                     <div className="flex justify-between items-center">
                       <SingleFormSlider
@@ -324,7 +426,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}
-              name="rerankModel"
+              name="search_config.use_rerank"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                   <FormControl>
@@ -337,11 +439,60 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
+            {rerankModelDisabled && (
+              <>
+                <FormField
+                  control={formMethods.control}
+                  name={'search_config.rerank_id'}
+                  // rules={{ required: 'Model is required' }}
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>
+                        <span className="text-destructive mr-1"> *</span>Model
+                      </FormLabel>
+                      <FormControl>
+                        <RAGFlowSelect
+                          {...field}
+                          options={rerankModelOptions}
+                          // disabled={disabled}
+                          placeholder={'model'}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={formMethods.control}
+                  name="search_config.top_k"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Top K</FormLabel>
+                      <FormControl>
+                        <div className="flex justify-between items-center">
+                          <SingleFormSlider
+                            max={100}
+                            step={1}
+                            value={field.value as number}
+                            onChange={(values) => field.onChange(values)}
+                          ></SingleFormSlider>
+                          <Label className="w-10 h-6 bg-bg-card flex justify-center items-center rounded-lg ml-20">
+                            {field.value}
+                          </Label>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
 
             {/* AI Summary */}
             <FormField
               control={formMethods.control}
-              name="aiSummary"
+              name="search_config.summary"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                   <FormControl>
@@ -351,93 +502,21 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                     />
                   </FormControl>
                   <FormLabel>AI Summary</FormLabel>
-                  <Label className="text-sm text-muted-foreground">
-                    默认不打开
-                  </Label>
                 </FormItem>
               )}
             />
 
-            {/* Top K */}
-            <FormField
-              control={formMethods.control}
-              name="topK"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <FormLabel>Top K</FormLabel>
-                </FormItem>
-              )}
-            />
-
-            {/* Search Method */}
-            <FormField
-              control={formMethods.control}
-              name="searchMethod"
-              rules={{ required: 'Search Method is required' }}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>Search
-                    Method
-                  </FormLabel>
-                  <FormControl>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select search method..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="method1">Method 1</SelectItem>
-                        <SelectItem value="method2">Method 2</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Model */}
-            <FormField
-              control={formMethods.control}
-              name="model"
-              rules={{ required: 'Model is required' }}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>Model
-                  </FormLabel>
-                  <FormControl>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select model..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="model1">Model 1</SelectItem>
-                        <SelectItem value="model2">Model 2</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {aiSummaryDisabled && (
+              <LlmSettingFieldItems
+                prefix="search_config.llm_setting"
+                options={aiSummeryModelOptions}
+              ></LlmSettingFieldItems>
+            )}
 
             {/* Feature Controls */}
             <FormField
               control={formMethods.control}
-              name="enableWebSearch"
+              name="search_config.web_search"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                   <FormControl>
@@ -453,7 +532,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
 
             <FormField
               control={formMethods.control}
-              name="enableRelatedSearch"
+              name="search_config.related_search"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                   <FormControl>
@@ -469,7 +548,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
 
             <FormField
               control={formMethods.control}
-              name="showQueryMindmap"
+              name="search_config.query_mindmap"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                   <FormControl>
@@ -483,7 +562,18 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               )}
             />
             {/* Submit Button */}
-            <div className="flex justify-end">
+            <div className="flex justify-end"></div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="reset"
+                variant={'transparent'}
+                onClick={() => {
+                  resetForm();
+                  setOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
               <Button type="submit">Confirm</Button>
             </div>
           </form>

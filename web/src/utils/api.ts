@@ -181,4 +181,5 @@ export default {
   getSearchList: `${api_host}/search/list`,
   deleteSearch: `${api_host}/search/rm`,
   getSearchDetail: `${api_host}/search/detail`,
+  updateSearchSetting: `${api_host}/search/update`,
 };
