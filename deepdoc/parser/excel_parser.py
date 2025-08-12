@@ -59,7 +59,17 @@ class RAGFlowExcelParser:
                 raise Exception(f"pandas.read_excel error: {e_pandas}, original openpyxl error: {e}")
 
     @staticmethod
+    def _clean_dataframe(df: pd.DataFrame):
+        def clean_string(s):
+            if isinstance(s, str):
+                return ILLEGAL_CHARACTERS_RE.sub(" ", s)
+            return s
+
+        return df.apply(lambda col: col.map(clean_string))
+
+    @staticmethod
     def _dataframe_to_workbook(df):
+        df = RAGFlowExcelParser._clean_dataframe(df)
         wb = Workbook()
         ws = wb.active
         ws.title = "Data"
@@ -69,7 +79,6 @@ class RAGFlowExcelParser:
 
         for row_num, row in enumerate(df.values, 2):
             for col_num, value in enumerate(row, 1):
-                value = re.sub(ILLEGAL_CHARACTERS_RE, ' ', str(value))
                 ws.cell(row=row_num, column=col_num, value=value)
 
         return wb
