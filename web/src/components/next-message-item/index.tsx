@@ -17,7 +17,7 @@ import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
-import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workFlowTimeline';
+import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
 import { IMessage } from '@/pages/chat/interface';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';

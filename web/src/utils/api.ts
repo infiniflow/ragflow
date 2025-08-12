@@ -44,6 +44,7 @@ export default {
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+  getMeta: `${api_host}/kb/get_meta`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -180,4 +181,5 @@ export default {
   getSearchList: `${api_host}/search/list`,
   deleteSearch: `${api_host}/search/rm`,
   getSearchDetail: `${api_host}/search/detail`,
+  updateSearchSetting: `${api_host}/search/update`,
 };

@@ -681,6 +681,11 @@ def set_meta():
         return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
     try:
         meta = json.loads(req["meta"])
+        if not isinstance(meta, dict):
+            return get_json_result(data=False, message="Only dictionary type supported.", code=settings.RetCode.ARGUMENT_ERROR)
+        for k,v in meta.items():
+            if not isinstance(v, str) and not isinstance(v, int) and not isinstance(v, float):
+                return get_json_result(data=False, message=f"The type is not supported: {v}", code=settings.RetCode.ARGUMENT_ERROR)
     except Exception as e:
         return get_json_result(data=False, message=f"Json syntax error: {e}", code=settings.RetCode.ARGUMENT_ERROR)
     if not isinstance(meta, dict):

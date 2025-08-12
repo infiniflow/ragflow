@@ -13,8 +13,7 @@ import { LanguageList, LanguageMap, ThemeEnum } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
-import { useFetchUserInfo, useListTenant } from '@/hooks/user-setting-hooks';
-import { TenantRole } from '@/pages/user-setting/constants';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { Routes } from '@/routes';
 import { camelCase } from 'lodash';
 import {
@@ -55,11 +54,11 @@ export function Header() {
     changeLanguage(key);
   };
 
-  const { data } = useListTenant();
+  // const { data } = useListTenant();
 
-  const showBell = useMemo(() => {
-    return data.some((x) => x.role === TenantRole.Invite);
-  }, [data]);
+  // const showBell = useMemo(() => {
+  //   return data.some((x) => x.role === TenantRole.Invite);
+  // }, [data]);
 
   const items = LanguageList.map((x) => ({
     key: x,
@@ -70,9 +69,9 @@ export function Header() {
     setTheme(theme === ThemeEnum.Dark ? ThemeEnum.Light : ThemeEnum.Dark);
   }, [setTheme, theme]);
 
-  const handleBellClick = useCallback(() => {
-    navigate('/user-setting/team');
-  }, [navigate]);
+  // const handleBellClick = useCallback(() => {
+  //   navigate('/user-setting/team');
+  // }, [navigate]);
 
   const tagsData = useMemo(
     () => [

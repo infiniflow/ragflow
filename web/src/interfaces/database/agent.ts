@@ -73,6 +73,7 @@ export declare interface IFlow {
   user_id: string;
   permission: string;
   nickname: string;
+  operator_permission: number;
 }
 
 export interface IFlowTemplate {

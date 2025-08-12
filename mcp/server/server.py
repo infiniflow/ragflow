@@ -180,7 +180,7 @@ async def list_tools(*, connector) -> list[types.Tool]:
     return [
         types.Tool(
             name="ragflow_retrieval",
-            description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question, using the specified dataset_ids and optionally document_ids. Below is the list of all available datasets, including their descriptions and IDs. If you're unsure which datasets are relevant to the question, simply pass all dataset IDs to the function."
+            description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question. You can optionally specify dataset_ids to search only specific datasets, or omit dataset_ids entirely to search across ALL available datasets. You can also optionally specify document_ids to search within specific documents. When dataset_ids is not provided or is empty, the system will automatically search across all available datasets. Below is the list of all available datasets, including their descriptions and IDs:"
             + dataset_description,
             inputSchema={
                 "type": "object",
@@ -188,14 +188,16 @@ async def list_tools(*, connector) -> list[types.Tool]:
                     "dataset_ids": {
                         "type": "array",
                         "items": {"type": "string"},
+                        "description": "Optional array of dataset IDs to search. If not provided or empty, all datasets will be searched."
                     },
                     "document_ids": {
                         "type": "array",
                         "items": {"type": "string"},
+                        "description": "Optional array of document IDs to search within."
                     },
-                    "question": {"type": "string"},
+                    "question": {"type": "string", "description": "The question or query to search for."},
                 },
-                "required": ["dataset_ids", "question"],
+                "required": ["question"],
             },
         ),
     ]
@@ -206,8 +208,26 @@ async def list_tools(*, connector) -> list[types.Tool]:
 async def call_tool(name: str, arguments: dict, *, connector) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     if name == "ragflow_retrieval":
         document_ids = arguments.get("document_ids", [])
+        dataset_ids = arguments.get("dataset_ids", [])
+        
+        # If no dataset_ids provided or empty list, get all available dataset IDs
+        if not dataset_ids:
+            dataset_list_str = connector.list_datasets()
+            dataset_ids = []
+            
+            # Parse the dataset list to extract IDs
+            if dataset_list_str:
+                for line in dataset_list_str.strip().split('\n'):
+                    if line.strip():
+                        try:
+                            dataset_info = json.loads(line.strip())
+                            dataset_ids.append(dataset_info["id"])
+                        except (json.JSONDecodeError, KeyError):
+                            # Skip malformed lines
+                            continue
+        
         return connector.retrieval(
-            dataset_ids=arguments["dataset_ids"],
+            dataset_ids=dataset_ids,
             document_ids=document_ids,
             question=arguments["question"],
         )
