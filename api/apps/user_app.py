@@ -25,10 +25,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from api import settings
 from api.apps.auth import get_auth_client
-from api.db import FileType, LLMType, UserTenantRole
+from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
 from api.db.services.file_service import FileService
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import LLMService, TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils import (
     current_timestamp,
@@ -621,68 +621,33 @@ def user_register(user_id, user):
     }
     tenant_llm = []
 
-    tenant_llm.append(
-        {
-            "tenant_id": user_id,
-            "llm_factory": settings.CHAT_CFG["factory"],
-            "llm_name": settings.CHAT_CFG["model"],
-            "model_type": LLMType.CHAT,
-            "api_key": settings.CHAT_CFG["api_key"],
-            "api_base": settings.CHAT_CFG["base_url"],
-            "max_tokens": 8192,
-        }
-    )
+    seen = set()
+    factory_configs = []
+    for factory_config in [
+        settings.CHAT_CFG,
+        settings.EMBEDDING_CFG,
+        settings.ASR_CFG,
+        settings.IMAGE2TEXT_CFG,
+        settings.RERANK_CFG,
+    ]:
+        factory_name = factory_config["factory"]
+        if factory_name not in seen:
+            seen.add(factory_name)
+            factory_configs.append(factory_config)
 
-    tenant_llm.append(
-        {
-            "tenant_id": user_id,
-            "llm_factory": settings.EMBEDDING_CFG["factory"],
-            "llm_name": settings.EMBEDDING_CFG["model"],
-            "model_type": LLMType.EMBEDDING,
-            "api_key": settings.EMBEDDING_CFG["api_key"],
-            "api_base": settings.EMBEDDING_CFG["base_url"],
-            "max_tokens": 1024,
-        }
-    )
-
-    if settings.ASR_CFG["model"]:
-        tenant_llm.append(
-            {
-                "tenant_id": user_id,
-                "llm_factory": settings.ASR_CFG["factory"],
-                "llm_name": settings.ASR_CFG["model"],
-                "model_type": LLMType.SPEECH2TEXT,
-                "api_key": settings.ASR_CFG["api_key"],
-                "api_base": settings.ASR_CFG["base_url"],
-                "max_tokens": 8192,
-            }
-        )
-
-    if settings.IMAGE2TEXT_CFG["model"]:
-        tenant_llm.append(
-            {
-                "tenant_id": user_id,
-                "llm_factory": settings.IMAGE2TEXT_CFG["factory"],
-                "llm_name": settings.IMAGE2TEXT_CFG["model"],
-                "model_type": LLMType.IMAGE2TEXT,
-                "api_key": settings.IMAGE2TEXT_CFG["api_key"],
-                "api_base": settings.IMAGE2TEXT_CFG["base_url"],
-                "max_tokens": 8192,
-            }
-        )
-
-    if settings.RERANK_CFG["model"]:
-        tenant_llm.append(
-            {
-                "tenant_id": user_id,
-                "llm_factory": settings.RERANK_CFG["factory"],
-                "llm_name": settings.RERANK_CFG["model"],
-                "model_type": LLMType.RERANK,
-                "api_key": settings.RERANK_CFG["api_key"],
-                "api_base": settings.RERANK_CFG["base_url"],
-                "max_tokens": 8192,
-            }
-        )
+    for factory_config in factory_configs:
+        for llm in LLMService.query(fid=factory_config["factory"]):
+            tenant_llm.append(
+                {
+                    "tenant_id": user_id,
+                    "llm_factory": factory_config["factory"],
+                    "llm_name": llm.llm_name,
+                    "model_type": llm.model_type,
+                    "api_key": factory_config["api_key"],
+                    "api_base": factory_config["base_url"],
+                    "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
+                }
+            )
 
     if settings.LIGHTEN != 1:
         for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
@@ -698,6 +663,13 @@ def user_register(user_id, user):
                     "max_tokens": 1024 if buildin_embedding_model == "BAAI/bge-large-zh-v1.5@BAAI" else 512,
                 }
             )
+
+    unique = {}
+    for item in tenant_llm:
+        key = (item["tenant_id"], item["llm_factory"], item["llm_name"])
+        if key not in unique:
+            unique[key] = item
+    tenant_llm = list(unique.values())
 
     if not UserService.save(**user):
         return
