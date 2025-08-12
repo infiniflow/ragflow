@@ -558,6 +558,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
+      metadata: '元数据',
+      metadataTip:
+        '元数据过滤是使用元数据属性（例如标签、类别或访问权限）来优化和控制系统内相关信息检索的过程。',
+      conditions: '条件',
+      addCondition: '增加条件',
+      meta: {
+        disabled: '禁用',
+        automatic: '自动',
+        manual: '手动',
+      },
     },
     setting: {
       profile: '概要',

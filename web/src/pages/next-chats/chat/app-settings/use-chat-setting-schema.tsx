@@ -1,3 +1,4 @@
+import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { useTranslate } from '@/hooks/common-hooks';
 import { z } from 'zod';
 
@@ -31,6 +32,7 @@ export function useChatSettingSchema() {
     top_n: z.number(),
     vector_similarity_weight: z.number(),
     top_k: z.number(),
+    llm_setting: z.object(LlmSettingSchema),
   });
 
   return formSchema;
