@@ -1,7 +1,7 @@
 {
     "id": 20,
     "title": "Report Agent Using Knowledge Base",
-    "description": "A report generation assistant using local knowledge base, with advanced capabilities in task planning, reasoning, and reflective analysis. ",
+    "description": "A report generation assistant using local knowledge base, with advanced capabilities in task planning, reasoning, and reflective analysis. Recommended for academic research paper Q&A",
     "canvas_type": "Agent",
     "dsl": {
         "components": {
