@@ -18,8 +18,6 @@ import logging
 import re
 from functools import partial
 from typing import Generator
-from langfuse import Langfuse
-
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant, TenantLLMService
