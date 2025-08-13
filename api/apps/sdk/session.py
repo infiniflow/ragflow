@@ -16,20 +16,17 @@
 import json
 import re
 import time
-
 import tiktoken
 from flask import Response, jsonify, request
-
 from agent.canvas import Canvas
 from api.db import LLMType, StatusEnum
-from api.db.db_models import API4Conversation, APIToken
+from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService, completionOpenAI
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
 from api.db.services.dialog_service import DialogService, ask, chat
-from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.utils import get_uuid
