@@ -874,6 +874,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       messageHistoryWindowSize: '历史消息窗口大小',
       messageHistoryWindowSizeTip:
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
+      historyIndependent: '独立历史',
+      historyIndependentTip:
+        '启用此代理的独立历史记录。启用后，此代理将拥有与其他代理分离的自己的对话历史，防止多代理工作流中的上下文污染。',
       wikipedia: '维基百科',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',

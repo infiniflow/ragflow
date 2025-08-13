@@ -915,6 +915,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       messageHistoryWindowSize: 'Message window size',
       messageHistoryWindowSizeTip:
         'The window size of conversation history visible to the LLM. Larger is better, but be mindful of the maximum token limit of LLM.',
+      historyIndependent: 'Independent history',
+      historyIndependentTip:
+        'Enable independent history for this agent. When enabled, this agent will have its own conversation history separate from other agents, preventing context pollution in multi-agent workflows.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:

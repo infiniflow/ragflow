@@ -84,7 +84,14 @@ function InnerAgentNode({
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="flex flex-col gap-2">
           <div className={'bg-bg-card rounded-sm p-1'}>
-            <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
+            <div className="flex items-center justify-between">
+              <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
+              {get(data, 'form.history_independent', false) && (
+                <div className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded-full" title="Independent History">
+                  🗂️
+                </div>
+              )}
+            </div>
           </div>
           {(isGotoMethod ||
             exceptionMethod === AgentExceptionMethod.Comment) && (

@@ -15,6 +15,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -55,6 +56,7 @@ const FormSchema = z.object({
   //   )
   //   .optional(),
   message_history_window_size: z.coerce.number(),
+  history_independent: z.boolean().optional(),
   tools: z
     .array(
       z.object({
@@ -184,6 +186,23 @@ function AgentForm({ node }: INextOperatorForm) {
         <Collapse title={<div>Advanced Settings</div>}>
           <FormContainer>
             <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
+            <FormField
+              control={form.control}
+              name={`history_independent`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel tooltip={t('flow.historyIndependentTip')}>
+                    {t('flow.historyIndependent')}
+                  </FormLabel>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name={`max_retries`}

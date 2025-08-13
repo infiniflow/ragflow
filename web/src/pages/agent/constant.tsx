@@ -642,6 +642,7 @@ export const initialAgentValues = {
 </instructions>`,
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
+  history_independent: false,
   max_retries: 3,
   delay_after_error: 1,
   visual_files_var: '',

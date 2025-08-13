@@ -74,6 +74,7 @@ class Canvas:
     def __init__(self, dsl: str, tenant_id=None, task_id=None):
         self.path = []
         self.history = []
+        self.agent_histories = {}
         self.components = {}
         self.error = ""
         self.globals = {
@@ -135,6 +136,11 @@ class Canvas:
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
 
+        self.agent_histories = self.dsl.get("agent_histories", {})
+        for k, cpn in self.components.items():
+            if cpn["obj"].component_name.lower() == "llm" and k not in self.agent_histories:
+                self.agent_histories[k] = []
+
     def __str__(self):
         self.dsl["path"] = self.path
         self.dsl["history"] = self.history
@@ -142,6 +148,7 @@ class Canvas:
         self.dsl["task_id"] = self.task_id
         self.dsl["retrieval"] = self.retrieval
         self.dsl["memory"] = self.memory
+        self.dsl["agent_histories"] = self.agent_histories
         dsl = {
             "components": {}
         }
@@ -166,6 +173,7 @@ class Canvas:
             self.history = []
             self.retrieval = []
             self.memory = []
+            self.agent_histories = {}
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
 
@@ -535,4 +543,24 @@ class Canvas:
 
     def get_component_thoughts(self, cpn_id) -> str:
         return self.components.get(cpn_id)["obj"].thoughts()
+
+    def add_agent_history(self, agent_id: str, role: str, content: Any):
+        if agent_id not in self.agent_histories:
+            self.agent_histories[agent_id] = []
+        self.agent_histories[agent_id].append({"role": role, "content": content})
+
+    def get_agent_history(self, agent_id: str, window_size: int = -1) -> list:
+        if agent_id not in self.agent_histories:
+            return []
+        
+        if window_size <= 0:
+            return self.agent_histories[agent_id]
+        return self.agent_histories[agent_id][window_size * -1:]
+
+    def reset_agent_history(self, agent_id: str):
+        if agent_id in self.agent_histories:
+            self.agent_histories[agent_id] = []
+
+    def get_all_agent_histories(self) -> dict:
+        return self.agent_histories
 

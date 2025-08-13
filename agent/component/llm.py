@@ -139,7 +139,11 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
+        # 根据history_independent参数选择历史记录来源
+        if hasattr(self._param, 'history_independent') and self._param.history_independent:
+            msg = self._canvas.get_agent_history(self._id, self._param.message_history_window_size)[:-1]
+        else:
+            msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
         msg.extend(deepcopy(self._param.prompts))
         prompt = self.string_format(prompt, args)
         for m in msg:
@@ -236,6 +240,8 @@ class LLM(ComponentBase):
                 error = ans
                 continue
             self.set_output("content", ans)
+            if hasattr(self._param, 'history_independent') and self._param.history_independent:
+                self._save_memory_to_history(msg[-1]["content"], ans)
             break
 
         if error:
@@ -258,6 +264,12 @@ class LLM(ComponentBase):
             yield ans
             answer += ans
         self.set_output("content", answer)
+        if hasattr(self._param, 'history_independent') and self._param.history_independent:
+            self._save_memory_to_history(msg[-1]["content"], answer)
+
+    def _save_memory_to_history(self, user_input: str, assistant_response: str):
+        self._canvas.add_agent_history(self._id, "user", user_input)
+        self._canvas.add_agent_history(self._id, "assistant", assistant_response)
 
     def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str):
         summ = tool_call_summary(self.chat_mdl, func_name, params, results)

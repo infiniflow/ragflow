@@ -46,6 +46,7 @@ class ComponentParamBase(ABC):
         self.exception_default_value = None
         self.exception_goto = None
         self.debug_inputs = {}
+        self.history_independent = False
 
     def set_name(self, name: str):
         self._name = name
