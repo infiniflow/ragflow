@@ -11,16 +11,16 @@ import { buildMessageUuidWithRole } from '@/utils/chat';
 import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
-} from '../hooks/use-button-disabled';
-import { useCreateConversationBeforeUploadDocument } from '../hooks/use-create-conversation';
-import { useSendMessage } from '../hooks/use-send-chat-message';
-import { buildMessageItemReference } from '../utils';
+} from '../../hooks/use-button-disabled';
+import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
+import { useSendMessage } from '../../hooks/use-send-chat-message';
+import { buildMessageItemReference } from '../../utils';
 
 interface IProps {
   controller: AbortController;
 }
 
-export function ChatBox({ controller }: IProps) {
+export function SingleChatBox({ controller }: IProps) {
   const {
     value,
     // scrollRef,
@@ -43,7 +43,7 @@ export function ChatBox({ controller }: IProps) {
   const sendDisabled = useSendButtonDisabled(value);
 
   return (
-    <section className="border-x  flex flex-col p-5 flex-1 min-w-0">
+    <section className="flex flex-col p-5 h-full">
       <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
         <div className="w-full">
           {derivedMessages?.map((message, i) => {
