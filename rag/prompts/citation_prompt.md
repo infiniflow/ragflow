@@ -106,3 +106,4 @@ REMEMBER:
 - Each citation supports the ENTIRE sentence
 - When in doubt, ask: "Would a fact-checker need to verify this?"
 - Place citations at sentence end, before punctuation
+- Format likes this is FORBIDDEN: [ID:0, ID:5, ID:...]. It MUST be seperated like, [ID:0][ID:5]...

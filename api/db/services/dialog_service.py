@@ -365,8 +365,12 @@ def chat(dialog, messages, stream=True, **kwargs):
         if dialog.meta_data_filter.get("method") == "auto":
             filters = gen_meta_filter(chat_mdl, metas, questions[-1])
             attachments.extend(meta_filter(metas, filters))
+            if not attachments:
+                attachments = None
         elif dialog.meta_data_filter.get("method") == "manual":
             attachments.extend(meta_filter(metas, dialog.meta_data_filter["manual"]))
+            if not attachments:
+                attachments = None
 
     if prompt_config.get("keyword", False):
         questions[-1] += keyword_extraction(chat_mdl, questions[-1])
@@ -375,17 +379,16 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     thought = ""
     kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
+    knowledges = []
 
-    if "knowledge" not in [p["key"] for p in prompt_config["parameters"]]:
-        knowledges = []
-    else:
+    if attachments is not None and "knowledge" in [p["key"] for p in prompt_config["parameters"]]:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
         if prompt_config.get("reasoning", False):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
-                partial(retriever.retrieval, embd_mdl=embd_mdl, tenant_ids=tenant_ids, kb_ids=dialog.kb_ids, page=1, page_size=dialog.top_n, similarity_threshold=0.2, vector_similarity_weight=0.3),
+                partial(retriever.retrieval, embd_mdl=embd_mdl, tenant_ids=tenant_ids, kb_ids=dialog.kb_ids, page=1, page_size=dialog.top_n, similarity_threshold=0.2, vector_similarity_weight=0.3, doc_ids=attachments),
             )
 
             for think in reasoner.thinking(kbinfos, " ".join(questions)):
