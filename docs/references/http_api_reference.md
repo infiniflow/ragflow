@@ -999,7 +999,7 @@ Updates configurations for a specified document.
 
 ```bash
 curl --request PUT \
-     --url http://{address}/api/v1/datasets/{dataset_id}/info/{document_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --header 'Content-Type: application/json' \
      --data '
@@ -2981,11 +2981,25 @@ curl --request POST \
         "question": "Hello",
         "stream": false,
         "inputs": {
-            "var1": {
-                "value": "I am var1"
+            "line_var": {
+                "type": "line",
+                "value": "I am line_var"
             },
-            "var2": {
-                "value": "I am var2"
+            "int_var": {
+                "type": "integer",
+                "value": 1
+            },
+            "paragraph_var": {
+                "type": "paragraph",
+                "value": "a\nb\nc"
+            },
+            "option_var": {
+                "type": "options",
+                "value": "option 2"
+            },
+            "boolean_var": {
+                "type": "boolean",
+                "value": true
             }
         }
     }'
