@@ -79,90 +79,70 @@ curl --request POST \
 Stream:
 
 ```json
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+data:{
+    "id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728",
     "choices": [
         {
             "delta": {
-                "content": "This is a test. If you have any specific questions or need information, feel",
+                "content": "Hello! It seems like you're just greeting me. If you have a specific",
                 "role": "assistant",
                 "function_call": null,
-                "tool_calls": null
+                "tool_calls": null,
+                "reasoning_content": null
             },
             "finish_reason": null,
             "index": 0,
             "logprobs": null
         }
     ],
-    "created": 1740543996,
+    "created": 1755084508,
     "model": "model",
     "object": "chat.completion.chunk",
     "system_fingerprint": "",
     "usage": null
 }
-// omit duplicated information
-{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
-// the last chunk
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
-    "choices": [
-        {
-            "delta": {
-                "content": null,
-                "role": "assistant",
-                "function_call": null,
-                "tool_calls": null
-            },
-            "finish_reason": "stop",
-            "index": 0,
-            "logprobs": null
-        }
-    ],
-    "created": 1740543996,
-    "model": "model",
-    "object": "chat.completion.chunk",
-    "system_fingerprint": "",
-    "usage": {
-        "prompt_tokens": 18,
-        "completion_tokens": 225,
-        "total_tokens": 243
-    }
-}
+
+data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": " question or need information, feel free to ask, and I'll do my best", "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": null, "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": null}
+
+data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": " to assist you based on the knowledge base provided.", "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": null, "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": null}
+
+data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": null, "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": "stop", "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": {"prompt_tokens": 5, "completion_tokens": 188, "total_tokens": 193}}
+
+data:[DONE]
 ```
 
 Non-stream:
 
 ```json
 {
-    "choices":[
+    "choices": [
         {
-            "finish_reason":"stop",
-            "index":0,
-            "logprobs":null,
-            "message":{
-                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
-                "role":"assistant"
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "Hello! I'm your smart assistant. What can I do for you?",
+                "role": "assistant"
             }
         }
     ],
-    "created":1740543499,
-    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
-    "model":"model",
-    "object":"chat.completion",
-    "usage":{
-        "completion_tokens":246,
-        "completion_tokens_details":{
-            "accepted_prediction_tokens":246,
-            "reasoning_tokens":18,
-            "rejected_prediction_tokens":0
+    "created": 1755084403,
+    "id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728",
+    "model": "model",
+    "object": "chat.completion",
+    "usage": {
+        "completion_tokens": 55,
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": 55,
+            "reasoning_tokens": 5,
+            "rejected_prediction_tokens": 0
         },
-        "prompt_tokens":18,
-        "total_tokens":264
+        "prompt_tokens": 5,
+        "total_tokens": 60
     }
 }
 ```
+
 
 Failure:
 
@@ -225,90 +205,73 @@ curl --request POST \
 Stream:
 
 ```json
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+data: {
+    "id": "5fa65c94-e316-4954-800a-06dfd5827052",
+    "object": "chat.completion.chunk",
+    "model": "99ee29d6783511f09c921a6272e682d8",
     "choices": [
         {
             "delta": {
-                "content": "This is a test. If you have any specific questions or need information, feel",
-                "role": "assistant",
-                "function_call": null,
-                "tool_calls": null
+                "content": "Hello"
             },
             "finish_reason": null,
-            "index": 0,
-            "logprobs": null
+            "index": 0
         }
-    ],
-    "created": 1740543996,
-    "model": "model",
-    "object": "chat.completion.chunk",
-    "system_fingerprint": "",
-    "usage": null
+    ]
 }
-// omit duplicated information
-{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
-// the last chunk
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
-    "choices": [
-        {
-            "delta": {
-                "content": null,
-                "role": "assistant",
-                "function_call": null,
-                "tool_calls": null
-            },
-            "finish_reason": "stop",
-            "index": 0,
-            "logprobs": null
-        }
-    ],
-    "created": 1740543996,
-    "model": "model",
-    "object": "chat.completion.chunk",
-    "system_fingerprint": "",
-    "usage": {
-        "prompt_tokens": 18,
-        "completion_tokens": 225,
-        "total_tokens": 243
-    }
-}
+
+data: {"id": "518022d9-545b-4100-89ed-ecd9e46fa753", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": "!"}, "finish_reason": null, "index": 0}]}
+
+data: {"id": "f37c4af0-8187-4c86-8186-048c3c6ffe4e", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " How"}, "finish_reason": null, "index": 0}]}
+
+data: {"id": "3ebc0fcb-0f85-4024-b4a5-3b03234a16df", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " can"}, "finish_reason": null, "index": 0}]}
+
+data: {"id": "efa1f3cf-7bc4-47a4-8e53-cd696f290587", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " I"}, "finish_reason": null, "index": 0}]}
+
+data: {"id": "2eb6f741-50a3-4d3d-8418-88be27895611", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " assist"}, "finish_reason": null, "index": 0}]}
+
+data: {"id": "f1227e4f-bf8b-462c-8632-8f5269492ce9", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " you"}, "finish_reason": null, "index": 0}]}
+
+data: {"id": "35b669d0-b2be-4c0c-88d8-17ff98592b21", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " today"}, "finish_reason": null, "index": 0}]}
+
+data: {"id": "f00d8a39-af60-4f32-924f-d64106a7fdf1", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": "?"}, "finish_reason": null, "index": 0}]}
+
+data: [DONE]
 ```
 
 Non-stream:
 
 ```json
 {
-    "choices":[
+    "choices": [
         {
-            "finish_reason":"stop",
-            "index":0,
-            "logprobs":null,
-            "message":{
-                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
-                "role":"assistant"
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "Hello! How can I assist you today?",
+                "role": "assistant"
             }
         }
     ],
-    "created":1740543499,
-    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
-    "model":"model",
-    "object":"chat.completion",
-    "usage":{
-        "completion_tokens":246,
-        "completion_tokens_details":{
-            "accepted_prediction_tokens":246,
-            "reasoning_tokens":18,
-            "rejected_prediction_tokens":0
+    "created": null,
+    "id": "17aa4ec5-6d36-40c6-9a96-1b069c216d59",
+    "model": "99ee29d6783511f09c921a6272e682d8",
+    "object": "chat.completion",
+    "param": null,
+    "usage": {
+        "completion_tokens": 9,
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
         },
-        "prompt_tokens":18,
-        "total_tokens":264
+        "prompt_tokens": 1,
+        "total_tokens": 10
     }
 }
 ```
+
 
 Failure:
 
