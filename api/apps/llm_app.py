@@ -17,7 +17,8 @@ import logging
 import json
 from flask import request
 from flask_login import login_required, current_user
-from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
+from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
+from api.db.services.llm_service import LLMService
 from api import settings
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.db import StatusEnum, LLMType

@@ -191,7 +191,6 @@ class RAGFlowS3:
                 time.sleep(1)
         return
 
-    @use_prefix_path
     @use_default_bucket
     def rm_bucket(self, bucket, *args, **kwargs):
         for conn in self.conn:

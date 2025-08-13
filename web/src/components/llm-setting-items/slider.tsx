@@ -9,7 +9,7 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
-import { Input } from '../ui/input';
+import { NumberInput } from '../ui/input';
 import { Switch } from '../ui/switch';
 
 type SliderInputSwitchFormFieldProps = {
@@ -73,15 +73,14 @@ export function SliderInputSwitchFormField({
               ></SingleFormSlider>
             </FormControl>
             <FormControl>
-              <Input
+              <NumberInput
                 disabled={disabled}
-                type={'number'}
                 className="h-7 w-20"
                 max={max}
                 min={min}
                 step={step}
                 {...field}
-              ></Input>
+              ></NumberInput>
             </FormControl>
           </div>
           <FormMessage />
