@@ -16,7 +16,8 @@ services:
       #   condition: service_healthy
     build:
       context: ../
-      dockerfile: Dockerfile.monkeyocr-complete
+      dockerfile: Dockerfile.monkeyocr
+    platform: linux/amd64
     # Example configuration to set up an MCP server:
     command:
       - --enable-mcpserver
