@@ -44,3 +44,5 @@ nltk_data/
 .lh/
 .venv
 docker/data
+ragflow.egg*
+.cursor/
