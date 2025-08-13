@@ -167,6 +167,23 @@ def filename_type(filename):
     return FileType.OTHER.value
 
 
+def is_monkeyocr_supported(filename):
+    """
+    Check if file format is supported by MonkeyOCR parser
+    
+    Args:
+        filename: File name to check
+        
+    Returns:
+        bool: True if file is supported by MonkeyOCR
+    """
+    filename = filename.lower()
+    # MonkeyOCR supports PDF and image formats
+    if re.match(r".*\.(pdf|jpg|jpeg|png|tiff|bmp)$", filename):
+        return True
+    return False
+
+
 def thumbnail_img(filename, blob):
     """
     MySQL LongText max length is 65535

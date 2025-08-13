@@ -21,8 +21,62 @@ from .base import Base
 
 class DataSet(Base):
     class ParserConfig(Base):
-        def __init__(self, rag, res_dict):
-            super().__init__(rag, res_dict)
+        """
+        Parser configuration for dataset creation.
+        Supports both DeepDoc and MonkeyOCR configurations.
+        Note: parser_engine is passed separately, not in this config.
+        """
+        
+        def __init__(self, rag=None, res_dict=None, **kwargs):
+            """
+            Initialize ParserConfig with either response dict or keyword arguments.
+            
+            Args:
+                rag: RAGFlow instance (optional)
+                res_dict: Response dictionary from API (optional)
+                **kwargs: Configuration parameters
+            """
+            if res_dict is not None:
+                # Initialize from API response
+                super().__init__(rag, res_dict)
+            else:
+                # Initialize from keyword arguments
+                self.rag = rag
+                self._config = kwargs
+        
+        @classmethod
+        def create_deepdoc_config(cls, **kwargs):
+            """Create a DeepDoc parser configuration"""
+            default_config = {
+                "chunk_token_num": 128,
+                "delimiter": r"\n",
+                "html4excel": False,
+                "layout_recognize": "DeepDOC",
+            }
+            default_config.update(kwargs)
+            return cls(**default_config)
+        
+        @classmethod
+        def create_monkeyocr_config(cls, **kwargs):
+            """Create a MonkeyOCR parser configuration"""
+            default_config = {
+                "chunk_token_num": 500,
+                "delimiter": r"\n",
+                "html4excel": False,
+                "layout_recognize": "DeepDOC",
+                # Note: MonkeyOCR-specific fields like mode, split_pages, etc. are handled
+                # by the backend when parser_engine="monkeyocr" is specified
+            }
+            default_config.update(kwargs)
+            return cls(**default_config)
+        
+        def to_json(self):
+            """Convert configuration to JSON-serializable dict"""
+            if hasattr(self, '_config'):
+                return self._config
+            else:
+                # Fall back to base class implementation
+                return super().to_json()
 
     def __init__(self, rag, res_dict):
         self.id = ""

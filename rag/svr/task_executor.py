@@ -55,8 +55,8 @@ from api.db.services.file2document_service import File2DocumentService
 from api import settings
 from api.versions import get_ragflow_version
 from api.db.db_models import close_connection
-from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
-    email, tag
+from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
+from rag.app import monkey_ocr_parser as monkey_ocr 
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
@@ -83,7 +83,8 @@ FACTORY = {
     ParserType.AUDIO.value: audio,
     ParserType.EMAIL.value: email,
     ParserType.KG.value: naive,
-    ParserType.TAG.value: tag
+    ParserType.TAG.value: tag,
+    ParserType.MONKEYOCR.value: monkey_ocr,
 }
 
 UNACKED_ITERATOR = None
@@ -234,7 +235,15 @@ async def build_chunks(task, progress_callback):
                                               (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
-    chunker = FACTORY[task["parser_id"].lower()]
+    # Check if layout_recognize is specified in parser_config to determine processing engine
+    layout_recognize = task["parser_config"].get("layout_recognize", "DeepDOC")
+    
+    # If MonkeyOCR is selected as layout_recognize, use MonkeyOCR processing
+    if layout_recognize == "MonkeyOCR":
+        chunker = FACTORY["monkeyocr"]
+    else:
+        # Use the parser_id to determine the processing function (default behavior)
+        chunker = FACTORY[task["parser_id"].lower()]
     try:
         st = timer()
         bucket, name = File2DocumentService.get_storage_address(doc_id=task["doc_id"])

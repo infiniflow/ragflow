@@ -1,0 +1,78 @@
+{
+    "monkeyocr": {
+      "enabled": true,
+      "config_path": "monkeyocr/model_configs.yaml",
+      "model_weights_path": "monkeyocr/model_weight",
+      "supported_formats": [".pdf", ".jpg", ".jpeg", ".png"],
+      "max_image_dimension": 1280,
+      "default_dpi": 150,
+      "batch_size": 2,
+      "device": "cuda",
+      "capabilities": {
+        "document_layout_analysis": true,
+        "text_extraction": true,
+        "formula_recognition": true,
+        "table_extraction": true,
+        "image_ocr": true,
+        "omr_processing": true
+      },
+      "parsing_options": {
+        "split_pages": false,
+        "pred_abandon": false,
+        "extract_images": true,
+        "generate_layout_pdf": true,
+        "generate_spans_pdf": true
+      },
+      "ocr_settings": {
+        "task_instructions": {
+          "text": "Please output the text content from the image.",
+          "formula": "Please write out the expression of the formula in the image using LaTeX format.",
+          "table": "This is the image of a table. Please output the table in html format."
+        },
+        "max_batch_size": 256,
+        "queue_timeout": 1,
+        "max_queue_size": 2000
+      },
+      "omr_settings": {
+        "mean_percent_threshold": 7.0,
+        "min_pixel_count": 50,
+        "y_tolerance": 10,
+        "x_tolerance": 10,
+        "min_circle_area": 50,
+        "circle_aspect_ratio_min": 0.7,
+        "circle_aspect_ratio_max": 1.7,
+        "circle_size_min": 10,
+        "circle_size_max": 100,
+        "header_region_ratio": 0.15,
+        "crop_top_ratio": 0.13,
+        "min_circles_for_pattern": 3,
+        "max_circles_total": 50
+      },
+      "output_settings": {
+        "create_markdown": true,
+        "create_content_list": true,
+        "create_middle_json": true,
+        "create_model_pdf": true,
+        "create_layout_pdf": true,
+        "create_spans_pdf": true
+      },
+      "performance": {
+        "enable_caching": true,
+        "cache_dir": "monkeyocr/cache",
+        "max_cache_size": "1GB",
+        "enable_parallel_processing": true,
+        "max_workers": 4
+      },
+      "logging": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "file": "monkeyocr.log"
+      }
+    },
+    "integration": {
+      "ragflow_parser_registry": true,
+      "auto_register": true,
+      "priority": 10,
+      "fallback_parser": "default"
+    }
+  }

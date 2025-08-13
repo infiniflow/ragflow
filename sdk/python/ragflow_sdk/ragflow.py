@@ -56,9 +56,30 @@ class RAGFlow:
         embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
         permission: str = "me",
         chunk_method: str = "naive",
+        parser_engine: str = "deepdoc",
         pagerank: int = 0,
         parser_config: DataSet.ParserConfig = None,
     ) -> DataSet:
+        """
+        Create a new dataset with optional processing engine selection.
+        
+        Args:
+            name (str): Name of the dataset
+            avatar (Optional[str]): Base64 encoded avatar image
+            description (Optional[str]): Dataset description
+            embedding_model (Optional[str]): Embedding model to use
+            permission (str): Dataset permission ("me" or "team")
+            chunk_method (str): Document chunking method
+            parser_engine (str): Processing engine ("deepdoc" or "monkeyocr")
+            pagerank (int): Page rank value (0-100)
+            parser_config (Optional[DataSet.ParserConfig]): Advanced parser configuration
+            
+        Returns:
+            DataSet: Created dataset object
+            
+        Raises:
+            Exception: If dataset creation fails
+        """
         payload = {
             "name": name,
             "avatar": avatar,
@@ -66,6 +87,7 @@ class RAGFlow:
             "embedding_model": embedding_model,
             "permission": permission,
             "chunk_method": chunk_method,
+            "parser_engine": parser_engine,
             "pagerank": pagerank,
         }
         if parser_config is not None:

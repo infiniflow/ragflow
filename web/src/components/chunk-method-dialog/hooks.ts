@@ -15,6 +15,7 @@ const ParserListMap = new Map([
       'one',
       'qa',
       'knowledge_graph',
+      'monkeyocr',
     ],
   ],
   [

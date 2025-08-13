@@ -1,0 +1,3 @@
+[submodule "monkeyocr"]
+	path = monkeyocr
+	url = https://github.com/viact-ai/monkeyocr.git
