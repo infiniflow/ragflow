@@ -79,6 +79,12 @@ STRONG_TEST_COUNT = int(os.environ.get("STRONG_TEST_COUNT", "8"))
 
 BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
 
+# Timeout settings for is_strong_enough function
+IS_STRONG_ENOUGH_TIMEOUT_SECONDS = 60
+IS_STRONG_ENOUGH_TIMEOUT_ATTEMPTS = 2
+EMBEDDING_FAIL_AFTER_SECONDS = 10
+CHAT_FAIL_AFTER_SECONDS = 30
+
 
 def get_or_create_secret_key():
     secret_key = os.environ.get("RAGFLOW_SECRET_KEY")

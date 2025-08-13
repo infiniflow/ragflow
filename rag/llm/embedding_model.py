@@ -487,6 +487,13 @@ class MistralEmbed(Base):
                 except Exception as _e:
                     if retry_max == 1:
                         log_exception(_e)
+                    try:
+                        settings.IS_STRONG_ENOUGH_TIMEOUT_SECONDS = 750
+                        settings.IS_STRONG_ENOUGH_TIMEOUT_ATTEMPTS = 5
+                        settings.EMBEDDING_FAIL_AFTER_SECONDS = 60
+                        settings.CHAT_FAIL_AFTER_SECONDS = 150
+                    except Exception as e:
+                        logging.warning(f"Failed to update timeout settings: {e}")
                     delay = random.uniform(20, 60)
                     time.sleep(delay)
                     retry_max -= 1
