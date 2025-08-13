@@ -24,6 +24,7 @@ export function useChatSettingSchema() {
         optional: z.boolean(),
       }),
     ),
+    tavily_api_key: z.string().optional(),
   });
 
   const formSchema = z.object({
