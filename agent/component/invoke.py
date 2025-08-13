@@ -57,7 +57,7 @@ class Invoke(ComponentBase, ABC):
     def _invoke(self, **kwargs):
         args = {}
         for para in self._param.variables:
-            if para.get("value") is not None:
+            if para.get("value"):
                 args[para["key"]] = para["value"]
             else:
                 args[para["key"]] = self._canvas.get_variable_value(para["ref"])

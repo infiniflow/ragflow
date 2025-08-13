@@ -2632,9 +2632,11 @@ data:{
                     "document_name": "1.txt",
                     "dataset_id": "8e83e57a884611ef9d760242ac120006",
                     "image_id": "",
+                    "url": null,
                     "similarity": 0.7,
                     "vector_similarity": 0.0,
                     "term_similarity": 1.0,
+                    "doc_type": [],
                     "positions": [
                         ""
                     ]
@@ -2649,6 +2651,7 @@ data:{
             ]
         },
         "prompt": "xxxxxxxxxxx",
+        "created_at": 1755055623.6401553,
         "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
         "session_id": "82b0ab2a9c1911ef9d870242ac120006"
     }

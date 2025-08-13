@@ -44,6 +44,7 @@ export default {
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+  getMeta: `${api_host}/kb/get_meta`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -174,8 +175,7 @@ export default {
   testMcpServerTool: `${api_host}/mcp_server/test_tool`,
   cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
-
-  // Schedule endpoints
+  
   createSchedule: () => `${api_host}/canvas/schedule/create`,
   listSchedules: ({ page, page_size: pageSize, canvas_id, keywords }: any) =>
     `${api_host}/canvas/schedule/list?page=${page}&page_size=${pageSize}&canvas_id=${canvas_id}&keywords=${keywords}`,
@@ -186,4 +186,9 @@ export default {
   getScheduleHistory: (id: string) =>
     `${api_host}/canvas/schedule/history/${id}`,
   getScheduleStats: (id: string) => `${api_host}/canvas/schedule/stats/${id}`,
+  createSearch: `${api_host}/search/create`,
+  getSearchList: `${api_host}/search/list`,
+  deleteSearch: `${api_host}/search/rm`,
+  getSearchDetail: `${api_host}/search/detail`,
+  updateSearchSetting: `${api_host}/search/update`,
 };

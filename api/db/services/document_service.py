@@ -243,7 +243,7 @@ class DocumentService(CommonService):
         from api.db.services.task_service import TaskService
         cls.clear_chunk_num(doc.id)
         try:
-            TaskService.filter_delete(Task.doc_id == doc.id)
+            TaskService.filter_delete([Task.doc_id == doc.id])
             page = 0
             page_size = 1000
             all_chunk_ids = []
@@ -573,6 +573,25 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def update_meta_fields(cls, doc_id, meta_fields):
         return cls.update_by_id(doc_id, {"meta_fields": meta_fields})
+
+    @classmethod
+    @DB.connection_context()
+    def get_meta_by_kbs(cls, kb_ids):
+        fields = [
+            cls.model.id,
+            cls.model.meta_fields,
+        ]
+        meta = {}
+        for r in cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids)):
+            doc_id = r.id
+            for k,v in r.meta_fields.items():
+                if k not in meta:
+                    meta[k] = {}
+                v = str(v)
+                if v not in meta[k]:
+                    meta[k][v] = []
+                meta[k][v].append(doc_id)
+        return meta
 
     @classmethod
     @DB.connection_context()

@@ -10,7 +10,7 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { Input } from './ui/input';
+import { NumberInput } from './ui/input';
 
 export type FormLayoutType = {
   layout?: FormLayout;
@@ -79,19 +79,14 @@ export function SliderInputFormField({
               ></SingleFormSlider>
             </FormControl>
             <FormControl>
-              <Input
-                type={'number'}
+              <NumberInput
                 className="h-7 w-20"
                 max={max}
                 min={min}
                 step={step}
                 {...field}
-                onChange={(ev) => {
-                  const value = ev.target.value;
-                  field.onChange(value === '' ? 0 : Number(value)); // convert to number
-                }}
                 // defaultValue={defaultValue}
-              ></Input>
+              ></NumberInput>
             </FormControl>
           </div>
           <FormMessage />
