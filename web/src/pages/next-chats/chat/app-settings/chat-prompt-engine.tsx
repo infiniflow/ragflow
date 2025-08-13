@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFormContext } from 'react-hook-form';
+import { DynamicVariableForm } from './dynamic-variable';
 
 export function ChatPromptEngine() {
   const { t } = useTranslate('chat');
@@ -29,11 +30,7 @@ export function ChatPromptEngine() {
           <FormItem>
             <FormLabel>{t('system')}</FormLabel>
             <FormControl>
-              <Textarea
-                placeholder="Tell us a little bit about yourself"
-                className="resize-none"
-                {...field}
-              />
+              <Textarea {...field} />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -47,6 +44,7 @@ export function ChatPromptEngine() {
       ></SwitchFormField>
       <UseKnowledgeGraphFormField name="prompt_config.use_kg"></UseKnowledgeGraphFormField>
       <RerankFormFields></RerankFormFields>
+      <DynamicVariableForm></DynamicVariableForm>
     </div>
   );
 }

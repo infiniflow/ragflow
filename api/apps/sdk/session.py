@@ -589,14 +589,22 @@ def list_agent_session(tenant_id, agent_id):
             if "prompt" in info:
                 info.pop("prompt")
         conv["agent_id"] = conv.pop("dialog_id")
+        # Fix for session listing endpoint
         if conv["reference"]:
             messages = conv["messages"]
             message_num = 0
             chunk_num = 0
+            # Ensure reference is a list type to prevent KeyError
+            if not isinstance(conv["reference"], list):
+                conv["reference"] = []
             while message_num < len(messages):
                 if message_num != 0 and messages[message_num]["role"] != "user":
                     chunk_list = []
-                    if "chunks" in conv["reference"][chunk_num]:
+                    # Add boundary and type checks to prevent KeyError
+                    if (chunk_num < len(conv["reference"]) and
+                            conv["reference"][chunk_num] is not None and
+                            isinstance(conv["reference"][chunk_num], dict) and
+                            "chunks" in conv["reference"][chunk_num]):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
