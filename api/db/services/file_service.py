@@ -229,7 +229,7 @@ class FileService(CommonService):
         #     Knowledge base folder dictionary
         root_folder = cls.get_root_folder(tenant_id)
         root_id = root_folder["id"]
-        kb_folder = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == root_id), (cls.model.name == KNOWLEDGEBASE_FOLDER_NAME))
+        kb_folder = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == root_id), (cls.model.name == KNOWLEDGEBASE_FOLDER_NAME)).first()
         if not kb_folder:
             kb_folder = cls.new_a_file_from_kb(tenant_id, KNOWLEDGEBASE_FOLDER_NAME, root_id)
             return kb_folder
