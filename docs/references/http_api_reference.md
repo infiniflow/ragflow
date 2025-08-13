@@ -1931,7 +1931,7 @@ Success:
         "prompt": {
             "empty_response": "Sorry! No relevant content was found in the knowledge base!",
             "keywords_similarity_weight": 0.3,
-            "opener": "Hi! I'm your assistant, what can I do for you?",
+            "opener": "Hi! I'm your assistant. What can I do for you?",
             "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n ",
             "rerank_model": "",
             "similarity_threshold": 0.2,
@@ -2176,7 +2176,7 @@ Success:
             "prompt": {
                 "empty_response": "Sorry! No relevant content was found in the knowledge base!",
                 "keywords_similarity_weight": 0.3,
-                "opener": "Hi! I'm your assistant, what can I do for you?",
+                "opener": "Hi! I'm your assistant. What can I do for you?",
                 "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n",
                 "rerank_model": "",
                 "similarity_threshold": 0.2,
@@ -2571,7 +2571,7 @@ data:{
     "code": 0,
     "message": "",
     "data": {
-        "answer": "Hi! I'm your assistant, what can I do for you?",
+        "answer": "Hi! I'm your assistant. What can I do for you?",
         "reference": {},
         "audio_binary": null,
         "id": null,
@@ -2674,6 +2674,10 @@ Failure:
 ---
 
 ### Create session with agent
+
+:::danger DEPRECATED
+This method is deprecated and not recommended. You can still call it but be mindful that calling `Converse with agent` will automatically generate a session ID for the associated agent.
+:::
 
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
@@ -2787,7 +2791,7 @@ Success:
                             "message_history_window_size": 22,
                             "mode": "conversational",
                             "outputs": {},
-                            "prologue": "Hi! I'm your assistant, what can I do for you?",
+                            "prologue": "Hi! I'm your assistant. What can I do for you?",
                             "tips": "Please fill up the form"
                         }
                     },
@@ -2840,7 +2844,7 @@ Success:
                                     }
                                 },
                                 "mode": "conversational",
-                                "prologue": "Hi! I'm your assistant, what can I do for you?"
+                                "prologue": "Hi! I'm your assistant. What can I do for you?"
                             },
                             "label": "Begin",
                             "name": "begin"
@@ -2897,7 +2901,7 @@ Success:
         "id": "0b02fe80780e11f084adcfdc3ed1d902",
         "message": [
             {
-                "content": "Hi! I'm your assistant, what can I do for you?",
+                "content": "Hi! I'm your assistant. What can I do for you?",
                 "role": "assistant"
             }
         ],
