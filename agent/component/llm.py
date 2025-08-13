@@ -140,7 +140,6 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        # 根据history_independent参数选择历史记录来源
         if hasattr(self._param, 'history_independent') and self._param.history_independent:
             msg = self._canvas.get_agent_history(self._id, self._param.message_history_window_size)[:-1]
         else:
