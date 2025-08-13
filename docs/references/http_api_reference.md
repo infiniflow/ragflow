@@ -2684,7 +2684,7 @@ Creates a session with an agent.
 - Method: POST
 - URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json' or 'multipart/form-data'`
+  - `'content-Type: application/json'
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - the required parameters:`str`
@@ -2704,29 +2704,6 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component in your agent takes required parameters:
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/sessions \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --data '{
-            "lang":"Japanese",
-            "file":"Who are you"
-     }'
-```
-
-If the **Begin** component in your agent takes required file parameters:
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/sessions?user_id={user_id} \
-     --header 'Content-Type: multipart/form-data' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --form '<FILE_KEY>=@./test1.png'    
-```
-
 ##### Request parameters
 
 - `agent_id`: (*Path parameter*)  
@@ -2742,101 +2719,190 @@ Success:
 {
     "code": 0,
     "data": {
-        "agent_id": "b4a39922b76611efaa1a0242ac120006",
+        "agent_id": "dbb4ed366e8611f09690a55a6daec4ef",
         "dsl": {
-            "answer": [],
             "components": {
-                "Answer:GreenReadersDrum": {
+                "Message:EightyJobsAsk": {
                     "downstream": [],
                     "obj": {
-                        "component_name": "Answer",
-                        "inputs": [],
-                        "output": null,
-                        "params": {}
+                        "component_name": "Message",
+                        "params": {
+                            "content": [
+                                "{begin@var1}{begin@var2}"
+                            ],
+                            "debug_inputs": {},
+                            "delay_after_error": 2.0,
+                            "description": "",
+                            "exception_default_value": null,
+                            "exception_goto": null,
+                            "exception_method": null,
+                            "inputs": {},
+                            "max_retries": 0,
+                            "message_history_window_size": 22,
+                            "outputs": {
+                                "content": {
+                                    "type": "str",
+                                    "value": null
+                                }
+                            },
+                            "stream": true
+                        }
                     },
-                    "upstream": []
+                    "upstream": [
+                        "begin"
+                    ]
                 },
                 "begin": {
-                    "downstream": [],
+                    "downstream": [
+                        "Message:EightyJobsAsk"
+                    ],
                     "obj": {
                         "component_name": "Begin",
-                        "inputs": [],
-                        "output": {},
-                        "params": {}
+                        "params": {
+                            "debug_inputs": {},
+                            "delay_after_error": 2.0,
+                            "description": "",
+                            "enablePrologue": true,
+                            "enable_tips": true,
+                            "exception_default_value": null,
+                            "exception_goto": null,
+                            "exception_method": null,
+                            "inputs": {
+                                "var1": {
+                                    "name": "var1",
+                                    "optional": false,
+                                    "options": [],
+                                    "type": "line",
+                                    "value": null
+                                },
+                                "var2": {
+                                    "name": "var2",
+                                    "optional": false,
+                                    "options": [],
+                                    "type": "line",
+                                    "value": null
+                                }
+                            },
+                            "max_retries": 0,
+                            "message_history_window_size": 22,
+                            "mode": "conversational",
+                            "outputs": {},
+                            "prologue": "Hi! I'm your assistant, what can I do for you?",
+                            "tips": "Please fill up the form"
+                        }
                     },
                     "upstream": []
                 }
             },
-            "embed_id": "",
+            "globals": {
+                "sys.conversation_turns": 0,
+                "sys.files": [],
+                "sys.query": "",
+                "sys.user_id": ""
+            },
             "graph": {
-                "edges": [],
+                "edges": [
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__beginstart-Message:EightyJobsAskend",
+                        "markerEnd": "logo",
+                        "source": "begin",
+                        "sourceHandle": "start",
+                        "style": {
+                            "stroke": "rgba(151, 154, 171, 1)",
+                            "strokeWidth": 1
+                        },
+                        "target": "Message:EightyJobsAsk",
+                        "targetHandle": "end",
+                        "type": "buttonEdge",
+                        "zIndex": 1001
+                    }
+                ],
                 "nodes": [
                     {
                         "data": {
+                            "form": {
+                                "enablePrologue": true,
+                                "inputs": {
+                                    "var1": {
+                                        "name": "var1",
+                                        "optional": false,
+                                        "options": [],
+                                        "type": "line"
+                                    },
+                                    "var2": {
+                                        "name": "var2",
+                                        "optional": false,
+                                        "options": [],
+                                        "type": "line"
+                                    }
+                                },
+                                "mode": "conversational",
+                                "prologue": "Hi! I'm your assistant, what can I do for you?"
+                            },
                             "label": "Begin",
                             "name": "begin"
                         },
                         "dragging": false,
-                        "height": 44,
                         "id": "begin",
-                        "position": {
-                            "x": 53.25688640427177,
-                            "y": 198.37155679786412
+                        "measured": {
+                            "height": 112,
+                            "width": 200
                         },
-                        "positionAbsolute": {
-                            "x": 53.25688640427177,
-                            "y": 198.37155679786412
+                        "position": {
+                            "x": 270.64098070942583,
+                            "y": -56.320928437811176
                         },
                         "selected": false,
                         "sourcePosition": "left",
                         "targetPosition": "right",
-                        "type": "beginNode",
-                        "width": 200
+                        "type": "beginNode"
                     },
                     {
                         "data": {
-                            "form": {},
-                            "label": "Answer",
-                            "name": "dialog_0"
+                            "form": {
+                                "content": [
+                                    "{begin@var1}{begin@var2}"
+                                ]
+                            },
+                            "label": "Message",
+                            "name": "Message_0"
                         },
                         "dragging": false,
-                        "height": 44,
-                        "id": "Answer:GreenReadersDrum",
+                        "id": "Message:EightyJobsAsk",
+                        "measured": {
+                            "height": 57,
+                            "width": 200
+                        },
                         "position": {
-                            "x": 360.43473114516974,
-                            "y": 207.29298425089348
+                            "x": 279.5,
+                            "y": 190
                         },
-                        "positionAbsolute": {
-                            "x": 360.43473114516974,
-                            "y": 207.29298425089348
-                        },
-                        "selected": false,
+                        "selected": true,
                         "sourcePosition": "right",
                         "targetPosition": "left",
-                        "type": "logicNode",
-                        "width": 200
+                        "type": "messageNode"
                     }
                 ]
             },
             "history": [],
+            "memory": [],
             "messages": [],
-            "path": [
-                [
-                    "begin"
-                ],
-                []
-            ],
-            "reference": []
+            "path": [],
+            "retrieval": [],
+            "task_id": "dbb4ed366e8611f09690a55a6daec4ef"
         },
-        "id": "2581031eb7a311efb5200242ac120005",
+        "id": "0b02fe80780e11f084adcfdc3ed1d902",
         "message": [
             {
-                "content": "Hi! I'm your smart assistant. What can I do for you?",
+                "content": "Hi! I'm your assistant, what can I do for you?",
                 "role": "assistant"
             }
         ],
         "source": "agent",
-        "user_id": "69736c5e723611efb51b0242ac120007"
+        "user_id": "c3fb861af27a11efa69751e139332ced"
     }
 }
 ```
