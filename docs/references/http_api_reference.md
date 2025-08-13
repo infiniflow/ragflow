@@ -2929,12 +2929,8 @@ Asks a specified agent a question to start an AI-powered conversation.
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
 
-  ```json
-  data:
-  {
-    "code": 0,
-    "data": true
-  }
+  ```
+  [DONE]
   ```
 
 :::
@@ -2949,10 +2945,9 @@ Asks a specified agent a question to start an AI-powered conversation.
 - Body:
   - `"question"`: `string`
   - `"stream"`: `boolean`
-  - `"session_id"`: `string`
+  - `"session_id"`: `string`(optional)
+  - `"inputs"`: `object`(optional)
   - `"user_id"`: `string`(optional)
-  - `"sync_dsl"`: `boolean` (optional)
-  - other parameters: `string`
 
 :::info IMPORTANT
 You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
@@ -2960,7 +2955,7 @@ You can include custom parameters in the request body, but first ensure they are
 
 ##### Request example
 
-- If the **Begin** component does not take parameters, the following code will create a session.
+- If the **Begin** component does not take parameters.
 
 ```bash
 curl --request POST \
@@ -2969,10 +2964,12 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
+        "question": "Hello",
+        "stream": false,
      }'
 ```
 
-- If the **Begin** component takes parameters, the following code will create a session.  
+- If the **Begin** component takes parameters.  
 
 ```bash
 curl --request POST \
@@ -2980,10 +2977,18 @@ curl --request POST \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
-     {
-          "lang":"English",
-          "file":"How is the weather tomorrow?"
-     }'
+    {
+        "question": "Hello",
+        "stream": false,
+        "inputs": {
+            "var1": {
+                "value": "I am var1"
+            },
+            "var2": {
+                "value": "I am var2"
+            }
+        }
+    }'
 ```
 
 The following code will execute the completion process
@@ -3013,150 +3018,109 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
+- `"inputs"`: (*Body Parameter*)  
+  Parameters specified in the **Begin** component.
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
-- `"sync_dsl"`: (*Body parameter*), `boolean`
-  Whether to synchronize the changes to existing sessions when an agent is modified, defaults to `false`.
-- Other parameters: (*Body Parameter*)  
-  Parameters specified in the **Begin** component.
 
 #### Response
 
 success without `session_id` provided and with no parameters specified in the **Begin** component:
 
 ```json
-data:{
+{
     "code": 0,
-    "message": "",
     "data": {
-        "answer": "Hi! I'm your smart assistant. What can I do for you?",
-        "reference": {},
-        "id": "31e6091d-88d4-441b-ac65-eae1c055be7b",
-        "session_id": "2987ad3eb85f11efb2a70242ac120005"
+        "created_at": 1755070542,
+        "data": {
+            "created_at": 534163.205735863,
+            "elapsed_time": 2.732478702091612,
+            "inputs": {},
+            "outputs": {
+                "_created_time": 534163.207234189,
+                "_elapsed_time": 0.00014348502736538649,
+                "content": "<role>\n  AI assistant\n</role>\n<instructions>\n  1. Identify the user's greeting as a simple query for a response.\n  2. Formulate a standard, polite greeting in return.\n  3. Provide the greeting as a response.\n  4. No additional actions or follow-up questions needed based on the given instruction.\n</instructions>\n\nThe user has said \"Hello,\" which is a greeting. As per the instruction, a standard response would be:\n\n---\n\nHello there! How can I assist you today?\n\n---"
+            }
+        },
+        "event": "workflow_finished",
+        "message_id": "1dbab720781811f09b61729e3aa55728",
+        "session_id": "1da1cf80781811f09b61729e3aa55728",
+        "task_id": "7e50cef6781511f085d8729e3aa55728"
     }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": true
 }
 ```
 
 Success without `session_id` provided and with parameters specified in the **Begin** component:
 
 ```json
-data:{
+{
     "code": 0,
-    "message": "",
     "data": {
-        "session_id": "eacb36a0bdff11ef97120242ac120006",
-        "answer": "",
-        "reference": [],
-        "param": [
-            {
-                "key": "lang",
-                "name": "Target Language",
-                "optional": false,
-                "type": "line",
-                "value": "English"
+        "created_at": 1755070385,
+        "data": {
+            "created_at": 534006.314704696,
+            "elapsed_time": 0.7622153920819983,
+            "inputs": {
+                "var1": {
+                    "value": "I am var1"
+                },
+                "var2": {
+                    "value": "I am var2"
+                }
             },
-            {
-                "key": "file",
-                "name": "Files",
-                "optional": false,
-                "type": "file",
-                "value": "How is the weather tomorrow?"
-            },
-            {
-                "key": "hhyt",
-                "name": "hhty",
-                "optional": true,
-                "type": "line"
+            "outputs": {
+                "_created_time": 534006.316686204,
+                "_elapsed_time": 9.854696691036224e-05,
+                "content": "Hello! How can I assist you today? If you have a specific question or need help with something, please let me know."
             }
-        ]
+        },
+        "event": "workflow_finished",
+        "message_id": "c0370b26781711f09ded729e3aa55728",
+        "session_id": "c01df1e0781711f09ded729e3aa55728",
+        "task_id": "7e50cef6781511f085d8729e3aa55728"
     }
 }
-data:
 ```
 
 Success with parameters specified in the **Begin** component:
 
 ```json
 data:{
-    "code": 0,
-    "message": "",
+    "event": "message",
+    "message_id": "9e9f6c1e781d11f0b923729e3aa55728",
+    "created_at": 1755072905,
+    "task_id": "7e50cef6781511f085d8729e3aa55728",
     "data": {
-        "answer": "How",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
+        "content": "Hello"
+    },
+    "session_id": "979e450c781d11f095cb729e3aa55728"
 }
+
 data:{
-    "code": 0,
-    "message": "",
+    "event": "message",
+    "message_id": "9e9f6c1e781d11f0b923729e3aa55728",
+    "created_at": 1755072905,
+    "task_id": "7e50cef6781511f085d8729e3aa55728",
     "data": {
-        "answer": "How is",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
+        "content": " again"
+    },
+    "session_id": "979e450c781d11f095cb729e3aa55728"
 }
+
 data:{
-    "code": 0,
-    "message": "",
+    "event": "message",
+    "message_id": "9e9f6c1e781d11f0b923729e3aa55728",
+    "created_at": 1755072905,
+    "task_id": "7e50cef6781511f085d8729e3aa55728",
     "data": {
-        "answer": "How is the",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
+        "content": "!"
+    },
+    "session_id": "979e450c781d11f095cb729e3aa55728"
 }
-data:{
-    "code": 0,
-    "message": "",
-    "data": {
-        "answer": "How is the weather",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": {
-        "answer": "How is the weather tomorrow",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": {
-        "answer": "How is the weather tomorrow?",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": {
-        "answer": "How is the weather tomorrow?",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": true
-}
+
+...
+
+data:[DONE]
 ```
 
 Failure:
