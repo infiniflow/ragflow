@@ -1,7 +1,7 @@
-name: "💞 Agent scenairo request"
+name: "❤️‍🔥ᴬᴳᴱᴺᵀ Agent scenairo request"
 description: Propose a agent scenario request for RAGFlow.
 title: "[Agent Scenario Request]: "
-labels: ["💞 feature"]
+labels: ["❤️‍🔥ᴬᴳᴱᴺᵀ agent scenario"]
 body:
   - type: checkboxes
     attributes:
