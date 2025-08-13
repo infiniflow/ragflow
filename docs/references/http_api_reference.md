@@ -3041,69 +3041,171 @@ curl --request POST \
 
 success without `session_id` provided and with no parameters specified in the **Begin** component:
 
+Stream:
+
+```json
+data:{
+    "event": "message",
+    "message_id": "eb0c0a5e783511f0b9b61a6272e682d8",
+    "created_at": 1755083342,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": "Hello"
+    },
+    "session_id": "eaf19a8e783511f0b9b61a6272e682d8"
+}
+
+data:{
+    "event": "message",
+    "message_id": "eb0c0a5e783511f0b9b61a6272e682d8",
+    "created_at": 1755083342,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": "!"
+    },
+    "session_id": "eaf19a8e783511f0b9b61a6272e682d8"
+}
+
+data:{
+    "event": "message",
+    "message_id": "eb0c0a5e783511f0b9b61a6272e682d8",
+    "created_at": 1755083342,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": " How"
+    },
+    "session_id": "eaf19a8e783511f0b9b61a6272e682d8"
+}
+
+...
+
+data:[DONE]
+```
+
+Non-stream:
+
 ```json
 {
     "code": 0,
     "data": {
-        "created_at": 1755070542,
+        "created_at": 1755083440,
         "data": {
-            "created_at": 534163.205735863,
-            "elapsed_time": 2.732478702091612,
+            "created_at": 547061.147866385,
+            "elapsed_time": 2.595433341921307,
             "inputs": {},
             "outputs": {
-                "_created_time": 534163.207234189,
-                "_elapsed_time": 0.00014348502736538649,
-                "content": "<role>\n  AI assistant\n</role>\n<instructions>\n  1. Identify the user's greeting as a simple query for a response.\n  2. Formulate a standard, polite greeting in return.\n  3. Provide the greeting as a response.\n  4. No additional actions or follow-up questions needed based on the given instruction.\n</instructions>\n\nThe user has said \"Hello,\" which is a greeting. As per the instruction, a standard response would be:\n\n---\n\nHello there! How can I assist you today?\n\n---"
+                "_created_time": 547061.149137775,
+                "_elapsed_time": 8.720310870558023e-05,
+                "content": "Hello! How can I assist you today?"
             }
         },
         "event": "workflow_finished",
-        "message_id": "1dbab720781811f09b61729e3aa55728",
-        "session_id": "1da1cf80781811f09b61729e3aa55728",
-        "task_id": "7e50cef6781511f085d8729e3aa55728"
+        "message_id": "25807f94783611f095171a6272e682d8",
+        "session_id": "25663198783611f095171a6272e682d8",
+        "task_id": "99ee29d6783511f09c921a6272e682d8"
     }
 }
 ```
 
 Success without `session_id` provided and with parameters specified in the **Begin** component:
 
+Stream:
+
+```json
+data:{
+    "event": "message",
+    "message_id": "0e273472783711f0806e1a6272e682d8",
+    "created_at": 1755083830,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": "Hello"
+    },
+    "session_id": "0e0d1542783711f0806e1a6272e682d8"
+}
+
+data:{
+    "event": "message",
+    "message_id": "0e273472783711f0806e1a6272e682d8",
+    "created_at": 1755083830,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": "!"
+    },
+    "session_id": "0e0d1542783711f0806e1a6272e682d8"
+}
+
+data:{
+    "event": "message",
+    "message_id": "0e273472783711f0806e1a6272e682d8",
+    "created_at": 1755083830,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": " How"
+    },
+    "session_id": "0e0d1542783711f0806e1a6272e682d8"
+}
+
+...
+
+data:[DONE]
+```
+
+Non-stream:
+
 ```json
 {
     "code": 0,
     "data": {
-        "created_at": 1755070385,
+        "created_at": 1755083779,
         "data": {
-            "created_at": 534006.314704696,
-            "elapsed_time": 0.7622153920819983,
+            "created_at": 547400.868004651,
+            "elapsed_time": 3.5037803899031132,
             "inputs": {
-                "var1": {
-                    "value": "I am var1"
+                "boolean_var": {
+                    "type": "boolean",
+                    "value": true
                 },
-                "var2": {
-                    "value": "I am var2"
+                "int_var": {
+                    "type": "integer",
+                    "value": 1
+                },
+                "line_var": {
+                    "type": "line",
+                    "value": "I am line_var"
+                },
+                "option_var": {
+                    "type": "options",
+                    "value": "option 2"
+                },
+                "paragraph_var": {
+                    "type": "paragraph",
+                    "value": "a\nb\nc"
                 }
             },
             "outputs": {
-                "_created_time": 534006.316686204,
-                "_elapsed_time": 9.854696691036224e-05,
-                "content": "Hello! How can I assist you today? If you have a specific question or need help with something, please let me know."
+                "_created_time": 547400.869271305,
+                "_elapsed_time": 0.0001251999055966735,
+                "content": "Hello there! How can I assist you today?"
             }
         },
         "event": "workflow_finished",
-        "message_id": "c0370b26781711f09ded729e3aa55728",
-        "session_id": "c01df1e0781711f09ded729e3aa55728",
-        "task_id": "7e50cef6781511f085d8729e3aa55728"
+        "message_id": "effdad8c783611f089261a6272e682d8",
+        "session_id": "efe523b6783611f089261a6272e682d8",
+        "task_id": "99ee29d6783511f09c921a6272e682d8"
     }
 }
 ```
 
 Success with parameters specified in the **Begin** component:
 
+Stream:
+
 ```json
 data:{
     "event": "message",
-    "message_id": "9e9f6c1e781d11f0b923729e3aa55728",
-    "created_at": 1755072905,
-    "task_id": "7e50cef6781511f085d8729e3aa55728",
+    "message_id": "5b62e790783711f0bc531a6272e682d8",
+    "created_at": 1755083960,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
     "data": {
         "content": "Hello"
     },
@@ -3112,22 +3214,22 @@ data:{
 
 data:{
     "event": "message",
-    "message_id": "9e9f6c1e781d11f0b923729e3aa55728",
-    "created_at": 1755072905,
-    "task_id": "7e50cef6781511f085d8729e3aa55728",
+    "message_id": "5b62e790783711f0bc531a6272e682d8",
+    "created_at": 1755083960,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
     "data": {
-        "content": " again"
+        "content": "!"
     },
     "session_id": "979e450c781d11f095cb729e3aa55728"
 }
 
 data:{
     "event": "message",
-    "message_id": "9e9f6c1e781d11f0b923729e3aa55728",
-    "created_at": 1755072905,
-    "task_id": "7e50cef6781511f085d8729e3aa55728",
+    "message_id": "5b62e790783711f0bc531a6272e682d8",
+    "created_at": 1755083960,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
     "data": {
-        "content": "!"
+        "content": " You"
     },
     "session_id": "979e450c781d11f095cb729e3aa55728"
 }
@@ -3135,6 +3237,31 @@ data:{
 ...
 
 data:[DONE]
+```
+
+Non-stream:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "created_at": 1755084029,
+        "data": {
+            "created_at": 547650.750818867,
+            "elapsed_time": 1.6227330720284954,
+            "inputs": {},
+            "outputs": {
+                "_created_time": 547650.752800839,
+                "_elapsed_time": 9.628792759031057e-05,
+                "content": "Hello! It appears you've sent another \"Hello\" without additional context. I'm here and ready to respond to any requests or questions you may have. Is there something specific you'd like to discuss or learn about?"
+            }
+        },
+        "event": "workflow_finished",
+        "message_id": "84eec534783711f08db41a6272e682d8",
+        "session_id": "979e450c781d11f095cb729e3aa55728",
+        "task_id": "99ee29d6783511f09c921a6272e682d8"
+    }
+}
 ```
 
 Failure:
