@@ -22,7 +22,7 @@ from flask import Response, jsonify, request
 
 from agent.canvas import Canvas
 from api.db import LLMType, StatusEnum
-from api.db.db_models import APIToken
+from api.db.db_models import API4Conversation, APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService, completionOpenAI
 from api.db.services.canvas_service import completion as agent_completion
@@ -69,11 +69,7 @@ def create(tenant_id, chat_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
 def create_agent_session(tenant_id, agent_id):
-    req = request.json
-    if not request.is_json:
-        req = request.form
-    files = request.files
-    user_id = request.args.get("user_id", "")
+    user_id = request.args.get("user_id", tenant_id)
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -82,46 +78,21 @@ def create_agent_session(tenant_id, agent_id):
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    canvas = Canvas(cvs.dsl, tenant_id)
+    session_id=get_uuid()
+    canvas = Canvas(cvs.dsl, tenant_id, agent_id)
     canvas.reset()
-    query = canvas.get_preset_param()
-    if query:
-        for ele in query:
-            if not ele["optional"]:
-                if ele["type"] == "file":
-                    if files is None or not files.get(ele["key"]):
-                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
-                    upload_file = files.get(ele["key"])
-                    file_content = FileService.parse_docs([upload_file], user_id)
-                    file_name = upload_file.filename
-                    ele["value"] = file_name + "\n" + file_content
-                else:
-                    if req is None or not req.get(ele["key"]):
-                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
-                    ele["value"] = req[ele["key"]]
-            else:
-                if ele["type"] == "file":
-                    if files is not None and files.get(ele["key"]):
-                        upload_file = files.get(ele["key"])
-                        file_content = FileService.parse_docs([upload_file], user_id)
-                        file_name = upload_file.filename
-                        ele["value"] = file_name + "\n" + file_content
-                    else:
-                        if "value" in ele:
-                            ele.pop("value")
-                else:
-                    if req is not None and req.get(ele["key"]):
-                        ele["value"] = req[ele["key"]]
-                    else:
-                        if "value" in ele:
-                            ele.pop("value")
-
-    for ans in canvas.run(stream=False):
-        pass
+    conv = {
+        "id": session_id,
+        "dialog_id": cvs.id,
+        "user_id": user_id,
+        "message": [],
+        "source": "agent",
+        "dsl": cvs.dsl
+    }
+    API4ConversationService.save(**conv)
 
     cvs.dsl = json.loads(str(canvas))
-    conv = {"id": get_uuid(), "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
-    API4ConversationService.save(**conv)
+    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
 
