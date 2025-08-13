@@ -121,6 +121,7 @@ class DialogService(CommonService):
             cls.model.do_refer,
             cls.model.rerank_id,
             cls.model.kb_ids,
+            cls.model.icon,
             cls.model.status,
             User.nickname,
             User.avatar.alias("tenant_avatar"),

@@ -4,7 +4,9 @@ import useGraphStore from '@/pages/agent/store';
 import { useCallback, useContext } from 'react';
 import { useFormContext } from 'react-hook-form';
 
-export function useHandleFreedomChange() {
+export function useHandleFreedomChange(
+  getFieldWithPrefix: (name: string) => string,
+) {
   const form = useFormContext();
   const node = useContext(AgentFormContext);
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
@@ -25,13 +27,14 @@ export function useHandleFreedomChange() {
 
       for (const key in values) {
         if (Object.prototype.hasOwnProperty.call(values, key)) {
-          const element = values[key];
+          const realKey = getFieldWithPrefix(key);
+          const element = values[key as keyof typeof values];
 
-          form.setValue(key, element);
+          form.setValue(realKey, element);
         }
       }
     },
-    [form, node, updateNodeForm],
+    [form, getFieldWithPrefix, node?.id, updateNodeForm],
   );
 
   return handleChange;

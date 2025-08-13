@@ -124,9 +124,11 @@ export default {
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
-      vectorSimilarityWeight: 'Keyword similarity weight',
+      vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+      keywordSimilarityWeight: 'Keyword similarity weight',
+      keywordSimilarityWeightTip: '',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',

@@ -5,6 +5,7 @@ import { Select as AntSelect, Form, message, Slider } from 'antd';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
+import { SelectWithSearch } from './originui/select-with-search';
 import { SliderInputFormField } from './slider-input-form-field';
 import {
   FormControl,
@@ -13,7 +14,6 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { RAGFlowSelect } from './ui/select';
 
 type FieldType = {
   rerank_id?: string;
@@ -109,11 +109,11 @@ function RerankFormField() {
         <FormItem>
           <FormLabel tooltip={t('rerankTip')}>{t('rerankModel')}</FormLabel>
           <FormControl>
-            <RAGFlowSelect
+            <SelectWithSearch
               allowClear
               {...field}
               options={options}
-            ></RAGFlowSelect>
+            ></SelectWithSearch>
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -121,6 +121,11 @@ function RerankFormField() {
     />
   );
 }
+
+export const rerankFormSchema = {
+  [RerankId]: z.string().optional(),
+  top_k: z.coerce.number().optional(),
+};
 
 export function RerankFormFields() {
   const { watch } = useFormContext();

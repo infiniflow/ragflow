@@ -47,7 +47,7 @@ export function Sessions({
   }
 
   return (
-    <section className="p-6 w-[400px] max-w-[20%] flex flex-col">
+    <section className="p-6 w-[296px]  flex flex-col">
       <section className="flex items-center text-base justify-between gap-2">
         <div className="flex gap-3 items-center min-w-0">
           <RAGFlowAvatar
