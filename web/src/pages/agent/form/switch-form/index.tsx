@@ -59,7 +59,7 @@ export const LogicalOperatorIcon = function OperatorIcon({
   return icon;
 };
 
-function useBuildSwitchOperatorOptions() {
+export function useBuildSwitchOperatorOptions() {
   const { t } = useTranslation();
 
   const switchOperatorOptions = useMemo(() => {

@@ -587,65 +587,93 @@ def rollback_user_registration(user_id):
 
 
 def user_register(user_id, user):
-  user["id"] = user_id
-  tenant = {
-      "id": user_id,
-      "name": user["nickname"] + "‘s Kingdom",
-      "llm_id": settings.CHAT_MDL,
-      "embd_id": settings.EMBEDDING_MDL,
-      "asr_id": settings.ASR_MDL,
-      "parser_ids": settings.PARSERS,
-      "img2txt_id": settings.IMAGE2TEXT_MDL,
-      "rerank_id": settings.RERANK_MDL,
-  }
-  usr_tenant = {
-      "tenant_id": user_id,
-      "user_id": user_id,
-      "invited_by": user_id,
-      "role": UserTenantRole.OWNER,
-  }
-  file_id = get_uuid()
-  file = {
-      "id": file_id,
-      "parent_id": file_id,
-      "tenant_id": user_id,
-      "created_by": user_id,
-      "name": "/",
-      "type": FileType.FOLDER.value,
-      "size": 0,
-      "location": "",
-  }
-  tenant_llm = []
-  for llm in LLMService.query(fid=settings.LLM_FACTORY):
-    tenant_llm.append({
+    user["id"] = user_id
+    tenant = {
+        "id": user_id,
+        "name": user["nickname"] + "‘s Kingdom",
+        "llm_id": settings.CHAT_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
+        "asr_id": settings.ASR_MDL,
+        "parser_ids": settings.PARSERS,
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "rerank_id": settings.RERANK_MDL,
+    }
+    usr_tenant = {
         "tenant_id": user_id,
-        "llm_factory": settings.LLM_FACTORY,
-        "llm_name": llm.llm_name,
-        "model_type": llm.model_type,
-        "api_key": settings.API_KEY,
-        "api_base": settings.LLM_BASE_URL,
-        "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
-    })
-  if settings.LIGHTEN != 1:
-    for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
-      mdlnm, fid = TenantLLMService.split_model_name_and_factory(buildin_embedding_model)
-      tenant_llm.append({
-          "tenant_id": user_id,
-          "llm_factory": fid,
-          "llm_name": mdlnm,
-          "model_type": "embedding",
-          "api_key": "",
-          "api_base": "",
-          "max_tokens": 1024 if buildin_embedding_model == "BAAI/bge-large-zh-v1.5@BAAI" else 512,
-      })
+        "user_id": user_id,
+        "invited_by": user_id,
+        "role": UserTenantRole.OWNER,
+    }
+    file_id = get_uuid()
+    file = {
+        "id": file_id,
+        "parent_id": file_id,
+        "tenant_id": user_id,
+        "created_by": user_id,
+        "name": "/",
+        "type": FileType.FOLDER.value,
+        "size": 0,
+        "location": "",
+    }
+    tenant_llm = []
 
-  if not UserService.save(**user):
-    return
-  TenantService.insert(**tenant)
-  UserTenantService.insert(**usr_tenant)
-  TenantLLMService.insert_many(tenant_llm)
-  FileService.insert(file)
-  return UserService.query(email=user["email"])
+    seen = set()
+    factory_configs = []
+    for factory_config in [
+        settings.CHAT_CFG,
+        settings.EMBEDDING_CFG,
+        settings.ASR_CFG,
+        settings.IMAGE2TEXT_CFG,
+        settings.RERANK_CFG,
+    ]:
+        factory_name = factory_config["factory"]
+        if factory_name not in seen:
+            seen.add(factory_name)
+            factory_configs.append(factory_config)
+
+    for factory_config in factory_configs:
+        for llm in LLMService.query(fid=factory_config["factory"]):
+            tenant_llm.append(
+                {
+                    "tenant_id": user_id,
+                    "llm_factory": factory_config["factory"],
+                    "llm_name": llm.llm_name,
+                    "model_type": llm.model_type,
+                    "api_key": factory_config["api_key"],
+                    "api_base": factory_config["base_url"],
+                    "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
+                }
+            )
+
+    if settings.LIGHTEN != 1:
+        for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
+            mdlnm, fid = TenantLLMService.split_model_name_and_factory(buildin_embedding_model)
+            tenant_llm.append(
+                {
+                    "tenant_id": user_id,
+                    "llm_factory": fid,
+                    "llm_name": mdlnm,
+                    "model_type": "embedding",
+                    "api_key": "",
+                    "api_base": "",
+                    "max_tokens": 1024 if buildin_embedding_model == "BAAI/bge-large-zh-v1.5@BAAI" else 512,
+                }
+            )
+
+    unique = {}
+    for item in tenant_llm:
+        key = (item["tenant_id"], item["llm_factory"], item["llm_name"])
+        if key not in unique:
+            unique[key] = item
+    tenant_llm = list(unique.values())
+
+    if not UserService.save(**user):
+        return
+    TenantService.insert(**tenant)
+    UserTenantService.insert(**usr_tenant)
+    TenantLLMService.insert_many(tenant_llm)
+    FileService.insert(file)
+    return UserService.query(email=user["email"])
 
 
 @manager.route("/register", methods=["POST"])  # noqa: F821
@@ -820,10 +848,10 @@ def set_tenant_info():
         schema:
           type: object
     """
-  req = request.json
-  try:
-    tid = req.pop("tenant_id")
-    TenantService.update_by_id(tid, req)
-    return get_json_result(data=True)
-  except Exception as e:
-    return server_error_response(e)
+    req = request.json
+    try:
+        tid = req.pop("tenant_id")
+        TenantService.update_by_id(tid, req)
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)

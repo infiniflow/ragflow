@@ -61,11 +61,20 @@ export const keywordsSimilarityWeightSchema = {
   keywords_similarity_weight: z.number(),
 };
 
+export const vectorSimilarityWeightSchema = {
+  vector_similarity_weight: z.number(),
+};
+
+export const initialVectorSimilarityWeightValue = {
+  vector_similarity_weight: 0.3,
+};
+
 export function SimilaritySliderFormField({
   vectorSimilarityWeightName = 'vector_similarity_weight',
   isTooltipShown,
 }: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('knowledgeDetails');
+  const isVector = vectorSimilarityWeightName === 'vector_similarity_weight';
 
   return (
     <>
@@ -78,10 +87,19 @@ export function SimilaritySliderFormField({
       ></SliderInputFormField>
       <SliderInputFormField
         name={vectorSimilarityWeightName}
-        label={t('vectorSimilarityWeight')}
+        label={t(
+          isVector ? 'vectorSimilarityWeight' : 'keywordSimilarityWeight',
+        )}
         max={1}
         step={0.01}
-        tooltip={isTooltipShown && t('vectorSimilarityWeightTip')}
+        tooltip={
+          isTooltipShown &&
+          t(
+            isVector
+              ? 'vectorSimilarityWeightTip'
+              : 'keywordSimilarityWeightTip',
+          )
+        }
       ></SliderInputFormField>
     </>
   );

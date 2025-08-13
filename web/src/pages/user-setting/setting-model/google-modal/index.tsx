@@ -110,7 +110,7 @@ const GoogleModal = ({
               type: 'number',
               message: t('maxTokensInvalidMessage'),
             },
-            ({ getFieldValue }) => ({
+            ({}) => ({
               validator(_, value) {
                 if (value < 0) {
                   return Promise.reject(new Error(t('maxTokensMinMessage')));

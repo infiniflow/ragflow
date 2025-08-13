@@ -149,6 +149,7 @@ NEXT_STEP = load_prompt("next_step")
 REFLECT = load_prompt("reflect")
 SUMMARY4MEMORY = load_prompt("summary4memory")
 RANK_MEMORY = load_prompt("rank_memory")
+META_FILTER = load_prompt("meta_filter")
 
 PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
 
@@ -335,13 +336,13 @@ def form_history(history, limit=-6):
     return context
 
 
-def analyze_task(chat_mdl, task_name, tools_description: list[dict]):
+def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict]):
     tools_desc = tool_schema(tools_description)
     context = ""
 
     template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_USER)
-
-    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": template.render(task=task_name, context=context, tools_desc=tools_desc)}], {})
+    context = template.render(task=task_name, context=context, agent_prompt=prompt, tools_desc=tools_desc)
+    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": context}], {})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
@@ -413,3 +414,20 @@ def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[st
     ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
+
+def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
+    sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
+        current_date=datetime.datetime.today().strftime('%Y-%m-%d'),
+        metadata_keys=json.dumps(meta_data),
+        user_question=query
+    )
+    user_prompt = "Generate filters:"
+    ans = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}])
+    ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+    try:
+        ans = json_repair.loads(ans)
+        assert isinstance(ans, list), ans
+        return ans
+    except Exception:
+        logging.exception(f"Loading json failure: {ans}")
+    return []

@@ -4,6 +4,9 @@ Task: {{ task }}
 
 Context: {{ context }}
 
+**Agent Prompt**
+{{ agent_prompt }}
+
 **Analysis Requirements:**
 1. Is it just a small talk? (If yes, no further plan or analysis is needed)
 2. What is the core objective of the task?

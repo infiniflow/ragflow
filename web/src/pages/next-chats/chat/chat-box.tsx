@@ -23,7 +23,7 @@ interface IProps {
 export function ChatBox({ controller }: IProps) {
   const {
     value,
-    scrollRef,
+    // scrollRef,
     messageContainerRef,
     sendLoading,
     derivedMessages,
@@ -43,8 +43,8 @@ export function ChatBox({ controller }: IProps) {
   const sendDisabled = useSendButtonDisabled(value);
 
   return (
-    <section className="border-x  flex flex-col p-5 w-full">
-      <div ref={messageContainerRef} className="flex-1 overflow-auto">
+    <section className="border-x  flex flex-col p-5 flex-1 min-w-0">
+      <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
         <div className="w-full">
           {derivedMessages?.map((message, i) => {
             return (
@@ -75,7 +75,7 @@ export function ChatBox({ controller }: IProps) {
             );
           })}
         </div>
-        <div ref={scrollRef} />
+        {/* <div ref={scrollRef} /> */}
       </div>
       <NextMessageInput
         disabled={disabled}

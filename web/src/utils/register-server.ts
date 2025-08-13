@@ -1,3 +1,4 @@
+/* eslint-disable guard-for-in */
 import { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { isObject } from 'lodash';
 import omit from 'lodash/omit';

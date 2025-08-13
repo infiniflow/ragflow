@@ -67,7 +67,7 @@ def set_conversation():
         if not e:
             return get_data_error_result(message="Dialog not found")
         conv = {"id": conv_id, "dialog_id": req["dialog_id"], "name": name, "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}],"user_id": current_user.id,
-                "reference":[{}],}
+                "reference":[],}
         ConversationService.save(**conv)
         return get_json_result(data=conv)
     except Exception as e:
@@ -187,14 +187,7 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        else:
-            for ref in conv.reference:
-                if isinstance(ref, list):
-                    continue
-                ref["chunks"] = chunks_format(ref)
-
-        if not conv.reference:
-            conv.reference = []
+        conv.reference = [r for r in conv.reference if r]
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         def stream():

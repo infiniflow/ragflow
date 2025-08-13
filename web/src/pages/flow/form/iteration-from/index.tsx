@@ -1,4 +1,4 @@
-import { CommaIcon, SemicolonIcon } from '@/assets/icon/Icon';
+import { CommaIcon, SemicolonIcon } from '@/assets/icon/next-icon';
 import { Form, Select } from 'antd';
 import {
   CornerDownLeft,

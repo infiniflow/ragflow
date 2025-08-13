@@ -158,6 +158,15 @@ export const useDeleteSearch = () => {
   return { data, isLoading, isError, deleteSearch };
 };
 
+interface IllmSettingProps {
+  llm_id: string;
+  parameter: string;
+  temperature: number;
+  top_p: number;
+  frequency_penalty: number;
+  presence_penalty: number;
+}
+
 export interface ISearchAppDetailProps {
   avatar: any;
   created_by: string;
@@ -175,10 +184,12 @@ export interface ISearchAppDetailProps {
     rerank_id: string;
     similarity_threshold: number;
     summary: boolean;
+    llm_setting: IllmSettingProps;
     top_k: number;
     use_kg: boolean;
     vector_similarity_weight: number;
     web_search: boolean;
+    chat_settingcross_languages: string[];
   };
   tenant_id: string;
   update_time: number;
@@ -206,4 +217,44 @@ export const useFetchSearchDetail = () => {
   });
 
   return { data: data?.data, isLoading, isError };
+};
+
+export type IUpdateSearchProps = Omit<ISearchAppDetailProps, 'id'> & {
+  search_id: string;
+};
+
+export const useUpdateSearch = () => {
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isLoading,
+    isError,
+    mutateAsync: updateSearchMutation,
+  } = useMutation<any, Error, IUpdateSearchProps>({
+    mutationKey: ['updateSearch'],
+    mutationFn: async (formData) => {
+      const { data: response } =
+        await searchService.updateSearchSetting(formData);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to update search');
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      message.success(t('message.updated'));
+    },
+    onError: (error) => {
+      message.error(t('message.error', { error: error.message }));
+    },
+  });
+
+  const updateSearch = useCallback(
+    (formData: IUpdateSearchProps) => {
+      return updateSearchMutation(formData);
+    },
+    [updateSearchMutation],
+  );
+
+  return { data, isLoading, isError, updateSearch };
 };

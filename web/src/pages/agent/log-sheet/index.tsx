@@ -8,7 +8,7 @@ import { IModalProps } from '@/interfaces/common';
 import { NotebookText } from 'lucide-react';
 import 'react18-json-view/src/style.css';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
-import { WorkFlowTimeline } from './workFlowTimeline';
+import { WorkFlowTimeline } from './workflow-timeline';
 
 type LogSheetProps = IModalProps<any> &
   Pick<

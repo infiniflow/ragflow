@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useDeleteAgent } from '@/hooks/use-agent-request';
-import { IFlow } from '@/interfaces/database/flow';
+import { IFlow } from '@/interfaces/database/agent';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';

@@ -5,7 +5,7 @@ import {
   PasswordIcon,
   ProfileIcon,
   TeamIcon,
-} from '@/assets/icon/Icon';
+} from '@/assets/icon/next-icon';
 import { IconFont } from '@/components/icon-font';
 import { LLMFactory } from '@/constants/llm';
 import { UserSettingRouteKey } from '@/constants/setting';

@@ -50,10 +50,14 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
 };
 
 export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
+  console.log(
+    '🚀 ~ useWatchAgentChange ~ chatDrawerVisible:',
+    chatDrawerVisible,
+  );
   const [time, setTime] = useState<string>();
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
-  const { saveGraph } = useSaveGraph();
+  // const { saveGraph } = useSaveGraph();
   const { data: flowDetail } = useFetchFlow();
 
   const setSaveTime = useCallback((updateTime: number) => {
@@ -64,12 +68,12 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
     setSaveTime(flowDetail?.update_time);
   }, [flowDetail, setSaveTime]);
 
-  const saveAgent = useCallback(async () => {
-    if (!chatDrawerVisible) {
-      const ret = await saveGraph();
-      setSaveTime(ret.data.update_time);
-    }
-  }, [chatDrawerVisible, saveGraph, setSaveTime]);
+  // const saveAgent = useCallback(async () => {
+  //   if (!chatDrawerVisible) {
+  //     const ret = await saveGraph();
+  //     setSaveTime(ret.data.update_time);
+  //   }
+  // }, [chatDrawerVisible, saveGraph, setSaveTime]);
 
   useDebounceEffect(
     () => {

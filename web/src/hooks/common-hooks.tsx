@@ -4,8 +4,8 @@ import isEqual from 'lodash/isEqual';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export const useSetModalState = () => {
-  const [visible, setVisible] = useState(false);
+export const useSetModalState = (initialVisible = false) => {
+  const [visible, setVisible] = useState(initialVisible);
 
   const showModal = useCallback(() => {
     setVisible(true);

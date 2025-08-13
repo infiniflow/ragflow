@@ -30,7 +30,7 @@ type SearchFormValues = z.infer<typeof searchFormSchema>;
 export default function SearchList() {
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('search');
-  const { isLoading, isError, createSearch } = useCreateSearch();
+  const { isLoading, createSearch } = useCreateSearch();
   const {
     data: list,
     searchParams,

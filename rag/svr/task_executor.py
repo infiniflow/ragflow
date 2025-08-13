@@ -304,7 +304,11 @@ async def build_chunks(task, progress_callback):
                         converted_image = d["image"].convert("RGB")
                         d["image"].close()  # Close original image
                         d["image"] = converted_image
-                    d["image"].save(output_buffer, format='JPEG')
+                    try:
+                        d["image"].save(output_buffer, format='JPEG')
+                    except OSError as e:
+                        logging.warning(
+                            "Saving image of chunk {}/{}/{} got exception, ignore: {}".format(task["location"], task["name"], d["id"], str(e)))
 
                 async with minio_limiter:
                     await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
@@ -440,7 +444,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
         tk_count += c
 
-    @timeout(5)
+    @timeout(60)
     def batch_encode(txts):
         nonlocal mdl
         return mdl.encode([truncate(c, mdl.max_length-10) for c in txts])

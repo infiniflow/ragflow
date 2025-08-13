@@ -26,7 +26,7 @@ export const useGetSharedChatSearchParams = () => {
   const data = Object.fromEntries(
     searchParams
       .entries()
-      .filter(([key, value]) => key.startsWith(data_prefix))
+      .filter(([key]) => key.startsWith(data_prefix))
       .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
   return {

@@ -7,10 +7,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchDialog } from '@/hooks/use-chat-request';
 import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
+import { ChatSettings } from './app-settings/chat-settings';
 import { ChatBox } from './chat-box';
 import { Sessions } from './sessions';
 
@@ -20,6 +22,8 @@ export default function Chat() {
   const { t } = useTranslation();
   const { handleConversationCardClick, controller } =
     useHandleClickConversationCard();
+  const { visible: settingVisible, switchVisible: switchSettingVisible } =
+    useSetModalState(true);
 
   return (
     <section className="h-full flex flex-col">
@@ -39,10 +43,18 @@ export default function Chat() {
         </Breadcrumb>
       </PageHeader>
       <div className="flex flex-1 min-h-0">
-        <Sessions
-          handleConversationCardClick={handleConversationCardClick}
-        ></Sessions>
-        <ChatBox controller={controller}></ChatBox>
+        <div className="flex flex-1 min-w-0">
+          <Sessions
+            handleConversationCardClick={handleConversationCardClick}
+            switchSettingVisible={switchSettingVisible}
+          ></Sessions>
+          <ChatBox controller={controller}></ChatBox>
+        </div>
+        {settingVisible && (
+          <ChatSettings
+            switchSettingVisible={switchSettingVisible}
+          ></ChatSettings>
+        )}
       </div>
     </section>
   );
