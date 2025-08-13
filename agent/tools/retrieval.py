@@ -86,7 +86,7 @@ class Retrieval(ToolBase, ABC):
                 kb_ids.append(id)
                 continue
             kb_nm = self._canvas.get_variable_value(id)
-            e, kb = KnowledgebaseService.get_by_name(kb_nm)
+            e, kb = KnowledgebaseService.get_by_name(kb_nm, self._canvas._tenant_id)
             if not e:
                 raise Exception(f"Dataset({kb_nm}) does not exist.")
             kb_ids.append(kb.id)

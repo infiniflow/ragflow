@@ -30,10 +30,7 @@ export default function ModelManagement() {
         <section className="mt-6">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-2xl font-semibold ">Model library</h2>
-            <Input
-              placeholder="search"
-              className="bg-colors-background-inverse-weak w-1/5"
-            ></Input>
+            <Input placeholder="search" className="w-1/5"></Input>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
             {modelLibraryList.map((x, idx) => (

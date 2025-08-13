@@ -1,4 +1,4 @@
-import { Modal } from '@/components/ui/modal';
+import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
 import DebugContent from '@/pages/agent/debug-content';
 import { buildBeginInputListFromObject } from '@/pages/agent/form/begin-form/utils';

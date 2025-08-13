@@ -51,6 +51,7 @@ def create(tenant_id, chat_id):
         "name": req.get("name", "New session"),
         "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
         "user_id": req.get("user_id", ""),
+        "reference": [{}],
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -435,14 +436,38 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
             )
         )
 
-    # Get the last user message as the question
     question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
-    if req.get("stream", True):
-        return Response(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", req.get("metadata", {}).get("id", "")), stream=True), mimetype="text/event-stream")
+    stream = req.pop("stream", False)
+    if stream:
+        resp = Response(
+            completionOpenAI(
+                tenant_id,
+                agent_id,
+                question,
+                session_id=req.get("id", req.get("metadata", {}).get("id", "")),
+                stream=True,
+                **req,
+            ),
+            mimetype="text/event-stream",
+        )
+        resp.headers.add_header("Cache-control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+        return resp
     else:
         # For non-streaming, just return the response directly
-        response = next(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", req.get("metadata", {}).get("id", "")), stream=False))
+        response = next(
+            completionOpenAI(
+                tenant_id,
+                agent_id,
+                question,
+                session_id=req.get("id", req.get("metadata", {}).get("id", "")),
+                stream=False,
+                **req,
+            )
+        )
         return jsonify(response)
 
 
@@ -450,41 +475,38 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
 @token_required
 def agent_completions(tenant_id, agent_id):
     req = request.json
-    cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
-    if not cvs:
-        return get_error_data_result(f"You don't own the agent {agent_id}")
-    if req.get("session_id"):
-        dsl = cvs[0].dsl
-        if not isinstance(dsl, str):
-            dsl = json.dumps(dsl)
 
-        conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
-        if not conv:
-            return get_error_data_result(f"You don't own the session {req['session_id']}")
-        # If an update to UserCanvas is detected, update the API4Conversation.dsl
-        sync_dsl = req.get("sync_dsl", False)
-        if sync_dsl is True and cvs[0].update_time > conv[0].update_time:
-            current_dsl = conv[0].dsl
-            new_dsl = json.loads(dsl)
-            state_fields = ["history", "messages", "path", "reference"]
-            states = {field: current_dsl.get(field, []) for field in state_fields}
-            current_dsl.update(new_dsl)
-            current_dsl.update(states)
-            API4ConversationService.update_by_id(req["session_id"], {"dsl": current_dsl})
-    else:
-        req["question"] = ""
+    ans = {}
     if req.get("stream", True):
-        resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
+
+        def generate():
+            for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+                if isinstance(answer, str):
+                    try:
+                        ans = json.loads(answer[5:])  # remove "data:"
+                    except Exception:
+                        continue
+
+                if ans.get("event") != "message":
+                    continue
+
+                yield answer
+
+            yield "data:[DONE]\n\n"
+
+        resp = Response(generate(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
-    try:
-        for answer in agent_completion(tenant_id, agent_id, **req):
-            return get_result(data=answer)
-    except Exception as e:
-        return get_error_data_result(str(e))
+
+    for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+        try:
+            ans = json.loads(answer[5:])  # remove "data:"
+        except Exception as e:
+            return get_result(data=f"**ERROR**: {str(e)}")
+    return get_result(data=ans)
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
@@ -512,16 +534,16 @@ def list_session(tenant_id, chat_id):
             if "prompt" in info:
                 info.pop("prompt")
         conv["chat_id"] = conv.pop("dialog_id")
-        if conv["reference"]:
+        ref_messages = conv["reference"]
+        if ref_messages:
             messages = conv["messages"]
             message_num = 0
-            while message_num < len(messages) and message_num < len(conv["reference"]):
-                if message_num != 0 and messages[message_num]["role"] != "user":
-                    if message_num >= len(conv["reference"]):
-                        break
+            ref_num = 0
+            while message_num < len(messages) and ref_num < len(ref_messages):
+                if messages[message_num]["role"] != "user":
                     chunk_list = []
-                    if "chunks" in conv["reference"][message_num]:
-                        chunks = conv["reference"][message_num]["chunks"]
+                    if "chunks" in ref_messages[ref_num]:
+                        chunks = ref_messages[ref_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
                                 "id": chunk.get("chunk_id", chunk.get("id")),
@@ -535,6 +557,7 @@ def list_session(tenant_id, chat_id):
 
                             chunk_list.append(new_chunk)
                     messages[message_num]["reference"] = chunk_list
+                    ref_num += 1
                 message_num += 1
         del conv["reference"]
     return get_result(data=convs)
@@ -566,14 +589,22 @@ def list_agent_session(tenant_id, agent_id):
             if "prompt" in info:
                 info.pop("prompt")
         conv["agent_id"] = conv.pop("dialog_id")
+        # Fix for session listing endpoint
         if conv["reference"]:
             messages = conv["messages"]
             message_num = 0
             chunk_num = 0
+            # Ensure reference is a list type to prevent KeyError
+            if not isinstance(conv["reference"], list):
+                conv["reference"] = []
             while message_num < len(messages):
                 if message_num != 0 and messages[message_num]["role"] != "user":
                     chunk_list = []
-                    if "chunks" in conv["reference"][chunk_num]:
+                    # Add boundary and type checks to prevent KeyError
+                    if (chunk_num < len(conv["reference"]) and
+                            conv["reference"][chunk_num] is not None and
+                            isinstance(conv["reference"][chunk_num], dict) and
+                            "chunks" in conv["reference"][chunk_num]):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
@@ -848,10 +879,11 @@ def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
-    return get_result(data={
-        "title": cvs.title,
-        "avatar": cvs.avatar,
-        "inputs": canvas.get_component_input_form("begin")
-    })
-
-
+    return get_result(
+        data={
+            "title": cvs.title,
+            "avatar": cvs.avatar,
+            "inputs": canvas.get_component_input_form("begin"),
+            "prologue": canvas.get_prologue()
+        }
+    )

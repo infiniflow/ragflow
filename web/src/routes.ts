@@ -214,7 +214,7 @@ const routes = [
     ],
   },
   {
-    path: Routes.Chat,
+    path: Routes.Chat + '/:id',
     layout: false,
     component: `@/pages${Routes.Chats}/chat`,
   },
@@ -230,7 +230,7 @@ const routes = [
     ],
   },
   {
-    path: Routes.Search,
+    path: `${Routes.Search}/:id`,
     layout: false,
     component: `@/pages${Routes.Search}`,
   },

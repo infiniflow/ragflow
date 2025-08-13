@@ -15,7 +15,6 @@
 #
 import logging
 import json
-import base64
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
@@ -24,7 +23,7 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
-from api.utils.base64_image import test_image_base64
+from api.utils.base64_image import test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 
 
@@ -58,6 +57,7 @@ def set_api_key():
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
+    extra = {"provider": factory}
     msg = ""
     for llm in LLMService.query(fid=factory):
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
@@ -74,7 +74,7 @@ def set_api_key():
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
             assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
             mdl = ChatModel[factory](
-                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+                req["api_key"], llm.llm_name, base_url=req.get("base_url"), **extra)
             try:
                 m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}],
                                  {"temperature": 0.9, 'max_tokens': 50})
@@ -82,7 +82,7 @@ def set_api_key():
                     raise Exception(m)
                 chat_passed = True
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(
                     e)
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
             assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
@@ -95,7 +95,7 @@ def set_api_key():
                 rerank_passed = True
                 logging.debug(f'passed model rerank {llm.llm_name}')
             except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(
                     e)
         if any([embd_passed, chat_passed, rerank_passed]):
             msg = ''
@@ -205,6 +205,7 @@ def add_llm():
 
     msg = ""
     mdl_nm = llm["llm_name"].split("___")[0]
+    extra = {"provider": factory}
     if llm["model_type"] == LLMType.EMBEDDING.value:
         assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
         mdl = EmbeddingModel[factory](
@@ -222,7 +223,8 @@ def add_llm():
         mdl = ChatModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
-            base_url=llm["api_base"]
+            base_url=llm["api_base"],
+            **extra,
         )
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
@@ -230,7 +232,7 @@ def add_llm():
             if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         assert factory in RerankModel, f"RE-rank model from {factory} is not supported yet."
@@ -244,9 +246,9 @@ def add_llm():
             if len(arr) == 0:
                 raise Exception("Not known.")
         except KeyError:
-            msg += f"{factory} dose not support this model({mdl_nm})"
+            msg += f"{factory} dose not support this model({factory}/{mdl_nm})"
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
@@ -256,12 +258,12 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            image_data = base64.b64decode(test_image_base64)
+            image_data = test_image
             m, tc = mdl.describe(image_data)
             if not m and not tc:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(e)
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         assert factory in TTSModel, f"TTS model from {factory} is not supported yet."
         mdl = TTSModel[factory](
@@ -271,7 +273,7 @@ def add_llm():
             for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({mdl_nm})." + str(e)
+            msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
     else:
         # TODO: check other type of models
         pass
@@ -313,12 +315,12 @@ def delete_factory():
 def my_llms():
     try:
         include_details = request.args.get('include_details', 'false').lower() == 'true'
-        
+
         if include_details:
             res = {}
             objs = TenantLLMService.query(tenant_id=current_user.id)
             factories = LLMFactoriesService.query(status=StatusEnum.VALID.value)
-            
+
             for o in objs:
                 o_dict = o.to_dict()
                 factory_tags = None
@@ -326,13 +328,13 @@ def my_llms():
                     if f.name == o_dict["llm_factory"]:
                         factory_tags = f.tags
                         break
-                        
+
                 if o_dict["llm_factory"] not in res:
                     res[o_dict["llm_factory"]] = {
                         "tags": factory_tags,
                         "llm": []
                     }
-                
+
                 res[o_dict["llm_factory"]]["llm"].append({
                     "type": o_dict["model_type"],
                     "name": o_dict["llm_name"],
@@ -353,12 +355,10 @@ def my_llms():
                     "name": o["llm_name"],
                     "used_token": o["used_tokens"]
                 })
-        
+
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
-
-
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821

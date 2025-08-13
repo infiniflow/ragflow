@@ -27,6 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { currentReg, replaceTextByOldReg } from '@/pages/chat/utils';
 import classNames from 'classnames';
+import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
 import { CircleAlert } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -256,11 +257,12 @@ function MarkdownContent({
           'custom-typography': ({ children }: { children: string }) =>
             renderReference(children),
           code(props: any) {
-            const { children, className, node, ...rest } = props;
+            const { children, className, ...rest } = props;
+            const restProps = omit(rest, 'node');
             const match = /language-(\w+)/.exec(className || '');
             return match ? (
               <SyntaxHighlighter
-                {...rest}
+                {...restProps}
                 PreTag="div"
                 language={match[1]}
                 wrapLongLines
@@ -268,7 +270,10 @@ function MarkdownContent({
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>
             ) : (
-              <code {...rest} className={classNames(className, 'text-wrap')}>
+              <code
+                {...restProps}
+                className={classNames(className, 'text-wrap')}
+              >
                 {children}
               </code>
             );

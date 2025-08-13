@@ -13,13 +13,12 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
-import { Modal } from '@/components/ui/modal';
+import { Modal } from '@/components/ui/modal/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchChunk } from '@/hooks/chunk-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { IChunk } from '@/interfaces/database/knowledge';
 import { Trash2 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FieldValues, FormProvider, useForm } from 'react-hook-form';
@@ -30,11 +29,6 @@ import {
   transformTagFeaturesObjectToArray,
 } from '../../utils';
 import { TagFeatureItem } from './tag-feature-item';
-
-type FieldType = Pick<
-  IChunk,
-  'content_with_weight' | 'tag_kwd' | 'question_kwd' | 'important_kwd'
->;
 
 interface kFProps {
   doc_id: string;

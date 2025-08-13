@@ -44,6 +44,7 @@ export default {
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+  getMeta: `${api_host}/kb/get_meta`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -108,6 +109,9 @@ export default {
   completeExternalConversation: `${api_host}/api/completion`,
   uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
+  // next chat
+  listNextDialog: `${api_host}/dialog/next`,
+
   // file manager
   listFile: `${api_host}/file/list`,
   uploadFile: `${api_host}/file/upload`,
@@ -171,4 +175,11 @@ export default {
   testMcpServerTool: `${api_host}/mcp_server/test_tool`,
   cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
+
+  // next-search
+  createSearch: `${api_host}/search/create`,
+  getSearchList: `${api_host}/search/list`,
+  deleteSearch: `${api_host}/search/rm`,
+  getSearchDetail: `${api_host}/search/detail`,
+  updateSearchSetting: `${api_host}/search/update`,
 };

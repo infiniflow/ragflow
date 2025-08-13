@@ -26,17 +26,19 @@ from typing import Any, Protocol
 from urllib.parse import urljoin
 
 import json_repair
+import litellm
 import openai
 import requests
-from dashscope import Generation
 from ollama import Client
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from strenum import StrEnum
 from zhipuai import ZhipuAI
 
+from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
+
 
 # Error message constants
 class LLMErrorCode(StrEnum):
@@ -57,6 +59,7 @@ class LLMErrorCode(StrEnum):
 class ReActMode(StrEnum):
     FUNCTION_CALL = "function_call"
     REACT = "react"
+
 
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
@@ -113,7 +116,7 @@ class Base(ABC):
 
     def _chat(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
-        if self.model_name.lower().find("qwen3") >=0:
+        if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
@@ -167,7 +170,7 @@ class Base(ABC):
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
         # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = (error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER)
+        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
         if not should_retry:
             return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
@@ -176,11 +179,7 @@ class Base(ABC):
         time.sleep(delay)
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({
-            "name": name,
-            "args": args,
-            "result": res
-        }, ensure_ascii=False, indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -213,7 +212,7 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    def chat_with_tools(self, system: str, history: list, gen_conf: dict={}):
+    def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         if system:
             history.insert(0, {"role": "system", "content": system})
@@ -225,7 +224,7 @@ class Base(ABC):
         for attempt in range(self.max_retries + 1):
             history = hist
             try:
-                for _ in range(self.max_rounds+1):
+                for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += self.total_token_count(response)
@@ -255,7 +254,7 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             ans += self._verbose_tool_use(name, {}, str(e))
 
-                logging.warning( f"Exceed max rounds: {self.max_rounds}")
+                logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
                 response, token_count = self._chat(history, gen_conf)
                 ans += response
@@ -297,7 +296,7 @@ class Base(ABC):
 
         return final_tool_calls
 
-    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict={}):
+    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system:
@@ -309,7 +308,7 @@ class Base(ABC):
         for attempt in range(self.max_retries + 1):
             history = hist
             try:
-                for _ in range(self.max_rounds+1):
+                for _ in range(self.max_rounds + 1):
                     reasoning_start = False
                     logging.info(f"{tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
@@ -373,7 +372,7 @@ class Base(ABC):
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
                             yield self._verbose_tool_use(name, {}, str(e))
 
-                logging.warning( f"Exceed max rounds: {self.max_rounds}")
+                logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
                 response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
                 for resp in response:
@@ -402,7 +401,7 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    def chat_streamly(self, system, history, gen_conf: dict={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
         if system:
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -474,15 +473,6 @@ class GptTurbo(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class MoonshotChat(Base):
-    _FACTORY_NAME = "Moonshot"
-
-    def __init__(self, key, model_name="moonshot-v1-8k", base_url="https://api.moonshot.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.moonshot.cn/v1"
-        super().__init__(key, model_name, base_url)
-
-
 class XinferenceChat(Base):
     _FACTORY_NAME = "Xinference"
 
@@ -511,15 +501,6 @@ class ModelScopeChat(Base):
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url, **kwargs)
-
-
-class DeepSeekChat(Base):
-    _FACTORY_NAME = "DeepSeek"
-
-    def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.deepseek.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
 
 
 class AzureChat(Base):
@@ -606,26 +587,6 @@ class BaiChuanChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
-
-
-class xAIChat(Base):
-    _FACTORY_NAME = "xAI"
-
-    def __init__(self, key, model_name="grok-3", base_url=None, **kwargs):
-        if not base_url:
-            base_url = "https://api.x.ai/v1"
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-        return
-
-
-class QWenChat(Base):
-    _FACTORY_NAME = "Tongyi-Qianwen"
-
-    def __init__(self, key, model_name=Generation.Models.qwen_turbo, base_url=None, **kwargs):
-        if not base_url:
-            base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-        return
 
 
 class ZhipuChat(Base):
@@ -973,206 +934,6 @@ class MistralChat(Base):
         yield total_tokens
 
 
-class BedrockChat(Base):
-    _FACTORY_NAME = "Bedrock"
-
-    def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        import boto3
-
-        self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
-        self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
-        self.bedrock_region = json.loads(key).get("bedrock_region", "")
-        self.model_name = model_name
-
-        if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
-            # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
-            self.client = boto3.client("bedrock-runtime")
-        else:
-            self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
-
-    def _clean_conf(self, gen_conf):
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature"]:
-                del gen_conf[k]
-        return gen_conf
-
-    def _chat(self, history, gen_conf={}, **kwargs):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        hist = []
-        for item in history:
-            if item["role"] == "system":
-                continue
-            hist.append(deepcopy(item))
-            if not isinstance(hist[-1]["content"], list) and not isinstance(hist[-1]["content"], tuple):
-                hist[-1]["content"] = [{"text": hist[-1]["content"]}]
-        # Send the message to the model, using a basic inference configuration.
-        response = self.client.converse(
-            modelId=self.model_name,
-            messages=hist,
-            inferenceConfig=gen_conf,
-            system=[{"text": (system if system else "Answer the user's message.")}],
-        )
-
-        # Extract and print the response text.
-        ans = response["output"]["message"]["content"][0]["text"]
-        return ans, num_tokens_from_string(ans)
-
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        from botocore.exceptions import ClientError
-
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature"]:
-                del gen_conf[k]
-        for item in history:
-            if not isinstance(item["content"], list) and not isinstance(item["content"], tuple):
-                item["content"] = [{"text": item["content"]}]
-
-        if self.model_name.split(".")[0] == "ai21":
-            try:
-                response = self.client.converse(modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}])
-                ans = response["output"]["message"]["content"][0]["text"]
-                return ans, num_tokens_from_string(ans)
-
-            except (ClientError, Exception) as e:
-                return f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}", 0
-
-        ans = ""
-        try:
-            # Send the message to the model, using a basic inference configuration.
-            streaming_response = self.client.converse_stream(
-                modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}]
-            )
-
-            # Extract and print the streamed response text in real-time.
-            for resp in streaming_response["stream"]:
-                if "contentBlockDelta" in resp:
-                    ans = resp["contentBlockDelta"]["delta"]["text"]
-                    yield ans
-
-        except (ClientError, Exception) as e:
-            yield ans + f"ERROR: Can't invoke '{self.model_name}'. Reason: {e}"
-
-        yield num_tokens_from_string(ans)
-
-
-class GeminiChat(Base):
-    _FACTORY_NAME = "Gemini"
-
-    def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        from google.generativeai import GenerativeModel, client
-
-        client.configure(api_key=key)
-        _client = client.get_default_generative_client()
-        self.model_name = "models/" + model_name
-        self.model = GenerativeModel(model_name=self.model_name)
-        self.model._client = _client
-
-    def _clean_conf(self, gen_conf):
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
-            # if max_tokens exists, rename it to max_output_tokens to match Gemini's API
-            if k == "max_tokens":
-                gen_conf["max_output_tokens"] = gen_conf.pop("max_tokens")
-        return gen_conf
-
-    def _chat(self, history, gen_conf={}, **kwargs):
-        from google.generativeai.types import content_types
-
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        hist = []
-        for item in history:
-            if item["role"] == "system":
-                continue
-            hist.append(deepcopy(item))
-            item = hist[-1]
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "model"
-            if "role" in item and item["role"] == "system":
-                item["role"] = "user"
-            if "content" in item:
-                item["parts"] = item.pop("content")
-
-        if system:
-            self.model._system_instruction = content_types.to_content(system)
-        response = self.model.generate_content(hist, generation_config=gen_conf)
-        ans = response.text
-        return ans, response.usage_metadata.total_token_count
-
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        from google.generativeai.types import content_types
-
-        gen_conf = self._clean_conf(gen_conf)
-        if system:
-            self.model._system_instruction = content_types.to_content(system)
-        for item in history:
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "model"
-            if "content" in item:
-                item["parts"] = item.pop("content")
-        ans = ""
-        try:
-            response = self.model.generate_content(history, generation_config=gen_conf, stream=True)
-            for resp in response:
-                ans = resp.text
-                yield ans
-
-            yield response._chunks[-1].usage_metadata.total_token_count
-        except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
-
-        yield 0
-
-
-class GroqChat(Base):
-    _FACTORY_NAME = "Groq"
-
-    def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        from groq import Groq
-
-        self.client = Groq(api_key=key)
-        self.model_name = model_name
-
-    def _clean_conf(self, gen_conf):
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
-        return gen_conf
-
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
-            history.insert(0, {"role": "system", "content": system})
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
-        ans = ""
-        total_tokens = 0
-        try:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
-            for resp in response:
-                if not resp.choices or not resp.choices[0].delta.content:
-                    continue
-                ans = resp.choices[0].delta.content
-                total_tokens += 1
-                if resp.choices[0].finish_reason == "length":
-                    if is_chinese(ans):
-                        ans += LENGTH_NOTIFICATION_CN
-                    else:
-                        ans += LENGTH_NOTIFICATION_EN
-                yield ans
-
-        except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
-
-        yield total_tokens
-
-
 ## openrouter
 class OpenRouterChat(Base):
     _FACTORY_NAME = "OpenRouter"
@@ -1192,15 +953,6 @@ class StepFunChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class NvidiaChat(Base):
-    _FACTORY_NAME = "NVIDIA"
-
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://integrate.api.nvidia.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LmStudioChat(Base):
     _FACTORY_NAME = "LM-Studio"
 
@@ -1216,11 +968,11 @@ class LmStudioChat(Base):
 class OpenAI_APIChat(Base):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, **kwargs):
         if not base_url:
             raise ValueError("url cannot be None")
         model_name = model_name.split("___")[0]
-        super().__init__(key, model_name, base_url)
+        super().__init__(key, model_name, base_url, **kwargs)
 
 
 class PPIOChat(Base):
@@ -1232,98 +984,12 @@ class PPIOChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class CoHereChat(Base):
-    _FACTORY_NAME = "Cohere"
-
-    def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        from cohere import Client
-
-        self.client = Client(api_key=key)
-        self.model_name = model_name
-
-    def _clean_conf(self, gen_conf):
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        if "top_p" in gen_conf:
-            gen_conf["p"] = gen_conf.pop("top_p")
-        if "frequency_penalty" in gen_conf and "presence_penalty" in gen_conf:
-            gen_conf.pop("presence_penalty")
-        return gen_conf
-
-    def _chat(self, history, gen_conf):
-        hist = []
-        for item in history:
-            hist.append(deepcopy(item))
-            item = hist[-1]
-            if "role" in item and item["role"] == "user":
-                item["role"] = "USER"
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "CHATBOT"
-            if "content" in item:
-                item["message"] = item.pop("content")
-        mes = hist.pop()["message"]
-        response = self.client.chat(model=self.model_name, chat_history=hist, message=mes, **gen_conf)
-        ans = response.text
-        if response.finish_reason == "MAX_TOKENS":
-            ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-        return (
-            ans,
-            response.meta.tokens.input_tokens + response.meta.tokens.output_tokens,
-        )
-
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
-            history.insert(0, {"role": "system", "content": system})
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        if "top_p" in gen_conf:
-            gen_conf["p"] = gen_conf.pop("top_p")
-        if "frequency_penalty" in gen_conf and "presence_penalty" in gen_conf:
-            gen_conf.pop("presence_penalty")
-        for item in history:
-            if "role" in item and item["role"] == "user":
-                item["role"] = "USER"
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "CHATBOT"
-            if "content" in item:
-                item["message"] = item.pop("content")
-        mes = history.pop()["message"]
-        ans = ""
-        total_tokens = 0
-        try:
-            response = self.client.chat_stream(model=self.model_name, chat_history=history, message=mes, **gen_conf)
-            for resp in response:
-                if resp.event_type == "text-generation":
-                    ans = resp.text
-                    total_tokens += num_tokens_from_string(resp.text)
-                elif resp.event_type == "stream-end":
-                    if resp.finish_reason == "MAX_TOKENS":
-                        ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-                yield ans
-
-        except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
-
-        yield total_tokens
-
-
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = urljoin("https://" + model_name + ".lepton.run", "api/v1")
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class TogetherAIChat(Base):
-    _FACTORY_NAME = "TogetherAI"
-
-    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.together.xyz/v1"
         super().__init__(key, model_name, base_url, **kwargs)
 
 
@@ -1570,15 +1236,6 @@ class BaiduYiyanChat(Base):
         yield total_tokens
 
 
-class AnthropicChat(Base):
-    _FACTORY_NAME = "Anthropic"
-
-    def __init__(self, key, model_name, base_url="https://api.anthropic.com/v1/", **kwargs):
-        if not base_url:
-            base_url = "https://api.anthropic.com/v1/"
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
 
@@ -1727,14 +1384,7 @@ class GPUStackChat(Base):
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url, **kwargs)
-class DeepInfraChat(Base):
-    _FACTORY_NAME = "DeepInfra"
 
-    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.deepinfra.com/v1/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-        
 
 class Ai302Chat(Base):
     _FACTORY_NAME = "302.AI"
@@ -1743,3 +1393,499 @@ class Ai302Chat(Base):
         if not base_url:
             base_url = "https://api.302.ai/v1"
         super().__init__(key, model_name, base_url, **kwargs)
+
+
+class LiteLLMBase(ABC):
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic"]
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
+        self.provider = kwargs.get("provider", "")
+        self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
+        self.model_name = f"{self.prefix}{model_name}"
+        self.api_key = key
+        self.base_url = base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")
+        # Configure retry parameters
+        self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
+        self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+        self.max_rounds = kwargs.get("max_rounds", 5)
+        self.is_tools = False
+        self.tools = []
+        self.toolcall_sessions = {}
+
+        # Factory specific fields
+        if self.provider == SupportedLiteLLMProvider.Bedrock:
+            self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
+            self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
+            self.bedrock_region = json.loads(key).get("bedrock_region", "")
+
+    def _get_delay(self):
+        """Calculate retry delay time"""
+        return self.base_delay * random.uniform(10, 150)
+
+    def _classify_error(self, error):
+        """Classify error based on error message content"""
+        error_str = str(error).lower()
+
+        keywords_mapping = [
+            (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
+            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
+            (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
+            (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
+            (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
+            (["timeout", "timed out"], LLMErrorCode.ERROR_TIMEOUT),
+            (["connect", "network", "unreachable", "dns"], LLMErrorCode.ERROR_CONNECTION),
+            (["filter", "content", "policy", "blocked", "safety", "inappropriate"], LLMErrorCode.ERROR_CONTENT_FILTER),
+            (["model", "not found", "does not exist", "not available"], LLMErrorCode.ERROR_MODEL),
+            (["max rounds"], LLMErrorCode.ERROR_MODEL),
+        ]
+        for words, code in keywords_mapping:
+            if re.search("({})".format("|".join(words)), error_str):
+                return code
+
+        return LLMErrorCode.ERROR_GENERIC
+
+    def _clean_conf(self, gen_conf):
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+        return gen_conf
+
+    def _chat(self, history, gen_conf, **kwargs):
+        logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
+        if self.model_name.lower().find("qwen3") >= 0:
+            kwargs["extra_body"] = {"enable_thinking": False}
+
+        completion_args = self._construct_completion_args(history=history, stream=False, tools=False, **gen_conf)
+        response = litellm.completion(
+            **completion_args,
+            drop_params=True,
+            timeout=self.timeout,
+        )
+        # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
+
+        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+            return "", 0
+        ans = response.choices[0].message.content.strip()
+        if response.choices[0].finish_reason == "length":
+            ans = self._length_stop(ans)
+
+        return ans, self.total_token_count(response)
+
+    def _chat_streamly(self, history, gen_conf, **kwargs):
+        logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
+        reasoning_start = False
+
+        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
+        stop = kwargs.get("stop")
+        if stop:
+            completion_args["stop"] = stop
+        response = litellm.completion(
+            **completion_args,
+            drop_params=True,
+            timeout=self.timeout,
+        )
+
+        for resp in response:
+            if not hasattr(resp, "choices") or not resp.choices:
+                continue
+
+            delta = resp.choices[0].delta
+            if not hasattr(delta, "content") or delta.content is None:
+                delta.content = ""
+
+            if kwargs.get("with_reasoning", True) and hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                ans = ""
+                if not reasoning_start:
+                    reasoning_start = True
+                    ans = "<think>"
+                ans += delta.reasoning_content + "</think>"
+            else:
+                reasoning_start = False
+                ans = delta.content
+
+            tol = self.total_token_count(resp)
+            if not tol:
+                tol = num_tokens_from_string(delta.content)
+
+            finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
+            if finish_reason == "length":
+                if is_chinese(ans):
+                    ans += LENGTH_NOTIFICATION_CN
+                else:
+                    ans += LENGTH_NOTIFICATION_EN
+
+            yield ans, tol
+
+    def _length_stop(self, ans):
+        if is_chinese([ans]):
+            return ans + LENGTH_NOTIFICATION_CN
+        return ans + LENGTH_NOTIFICATION_EN
+
+    def _exceptions(self, e, attempt):
+        logging.exception("OpenAI chat_with_tools")
+        # Classify the error
+        error_code = self._classify_error(e)
+        if attempt == self.max_retries:
+            error_code = LLMErrorCode.ERROR_MAX_RETRIES
+
+        # Check if it's a rate limit error or server error and not the last attempt
+        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
+        if not should_retry:
+            return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+
+        delay = self._get_delay()
+        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+        time.sleep(delay)
+
+    def _verbose_tool_use(self, name, args, res):
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+
+    def _append_history(self, hist, tool_call, tool_res):
+        hist.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "index": tool_call.index,
+                        "id": tool_call.id,
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments,
+                        },
+                        "type": "function",
+                    },
+                ],
+            }
+        )
+        try:
+            if isinstance(tool_res, dict):
+                tool_res = json.dumps(tool_res, ensure_ascii=False)
+        finally:
+            hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+        return hist
+
+    def bind_tools(self, toolcall_session, tools):
+        if not (toolcall_session and tools):
+            return
+        self.is_tools = True
+        self.toolcall_session = toolcall_session
+        self.tools = tools
+
+    def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
+        completion_args = {
+            "model": self.model_name,
+            "messages": history,
+            "api_key": self.api_key,
+            **kwargs,
+        }
+        if stream:
+            completion_args.update(
+                {
+                    "stream": stream,
+                }
+            )
+        if tools and self.tools:
+            completion_args.update(
+                {
+                    "tools": self.tools,
+                    "tool_choice": "auto",
+                }
+            )
+        if self.provider in FACTORY_DEFAULT_BASE_URL:
+            completion_args.update({"api_base": self.base_url})
+        elif self.provider == SupportedLiteLLMProvider.Bedrock:
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
+            completion_args.update(
+                {
+                    "aws_access_key_id": self.bedrock_ak,
+                    "aws_secret_access_key": self.bedrock_sk,
+                    "aws_region_name": self.bedrock_region,
+                }
+            )
+        return completion_args
+
+    def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+        gen_conf = self._clean_conf(gen_conf)
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+
+        ans = ""
+        tk_count = 0
+        hist = deepcopy(history)
+
+        # Implement exponential backoff retry strategy
+        for attempt in range(self.max_retries + 1):
+            history = deepcopy(hist)  # deepcopy is required here
+            try:
+                for _ in range(self.max_rounds + 1):
+                    logging.info(f"{self.tools=}")
+
+                    completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
+                    response = litellm.completion(
+                        **completion_args,
+                        drop_params=True,
+                        timeout=self.timeout,
+                    )
+
+                    tk_count += self.total_token_count(response)
+
+                    if not hasattr(response, "choices") or not response.choices or not response.choices[0].message:
+                        raise Exception(f"500 response structure error. Response: {response}")
+
+                    message = response.choices[0].message
+
+                    if not hasattr(message, "tool_calls") or not message.tool_calls:
+                        if hasattr(message, "reasoning_content") and message.reasoning_content:
+                            ans += f"<think>{message.reasoning_content}</think>"
+                        ans += message.content or ""
+                        if response.choices[0].finish_reason == "length":
+                            ans = self._length_stop(ans)
+                        return ans, tk_count
+
+                    for tool_call in message.tool_calls:
+                        logging.info(f"Response {tool_call=}")
+                        name = tool_call.function.name
+                        try:
+                            args = json_repair.loads(tool_call.function.arguments)
+                            tool_response = self.toolcall_session.tool_call(name, args)
+                            history = self._append_history(history, tool_call, tool_response)
+                            ans += self._verbose_tool_use(name, args, tool_response)
+                        except Exception as e:
+                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
+                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            ans += self._verbose_tool_use(name, {}, str(e))
+
+                logging.warning(f"Exceed max rounds: {self.max_rounds}")
+                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+
+                response, token_count = self._chat(history, gen_conf)
+                ans += response
+                tk_count += token_count
+                return ans, tk_count
+
+            except Exception as e:
+                e = self._exceptions(e, attempt)
+                if e:
+                    return e, tk_count
+
+        assert False, "Shouldn't be here."
+
+    def chat(self, system, history, gen_conf={}, **kwargs):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        gen_conf = self._clean_conf(gen_conf)
+
+        # Implement exponential backoff retry strategy
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self._chat(history, gen_conf, **kwargs)
+                return response
+            except Exception as e:
+                e = self._exceptions(e, attempt)
+                if e:
+                    return e, 0
+        assert False, "Shouldn't be here."
+
+    def _wrap_toolcall_message(self, stream):
+        final_tool_calls = {}
+
+        for chunk in stream:
+            for tool_call in chunk.choices[0].delta.tool_calls or []:
+                index = tool_call.index
+
+                if index not in final_tool_calls:
+                    final_tool_calls[index] = tool_call
+
+                final_tool_calls[index].function.arguments += tool_call.function.arguments
+
+        return final_tool_calls
+
+    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+        gen_conf = self._clean_conf(gen_conf)
+        tools = self.tools
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+
+        total_tokens = 0
+        hist = deepcopy(history)
+
+        # Implement exponential backoff retry strategy
+        for attempt in range(self.max_retries + 1):
+            history = deepcopy(hist)  # deepcopy is required here
+            try:
+                for _ in range(self.max_rounds + 1):
+                    reasoning_start = False
+                    logging.info(f"{tools=}")
+
+                    completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                    response = litellm.completion(
+                        **completion_args,
+                        drop_params=True,
+                        timeout=self.timeout,
+                    )
+
+                    final_tool_calls = {}
+                    answer = ""
+
+                    for resp in response:
+                        if not hasattr(resp, "choices") or not resp.choices:
+                            continue
+
+                        delta = resp.choices[0].delta
+
+                        if hasattr(delta, "tool_calls") and delta.tool_calls:
+                            for tool_call in delta.tool_calls:
+                                index = tool_call.index
+                                if index not in final_tool_calls:
+                                    if not tool_call.function.arguments:
+                                        tool_call.function.arguments = ""
+                                    final_tool_calls[index] = tool_call
+                                else:
+                                    final_tool_calls[index].function.arguments += tool_call.function.arguments or ""
+                            continue
+
+                        if not hasattr(delta, "content") or delta.content is None:
+                            delta.content = ""
+
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            ans = ""
+                            if not reasoning_start:
+                                reasoning_start = True
+                                ans = "<think>"
+                            ans += delta.reasoning_content + "</think>"
+                            yield ans
+                        else:
+                            reasoning_start = False
+                            answer += delta.content
+                            yield delta.content
+
+                        tol = self.total_token_count(resp)
+                        if not tol:
+                            total_tokens += num_tokens_from_string(delta.content)
+                        else:
+                            total_tokens += tol
+
+                        finish_reason = getattr(resp.choices[0], "finish_reason", "")
+                        if finish_reason == "length":
+                            yield self._length_stop("")
+
+                    if answer:
+                        yield total_tokens
+                        return
+
+                    for tool_call in final_tool_calls.values():
+                        name = tool_call.function.name
+                        try:
+                            args = json_repair.loads(tool_call.function.arguments)
+                            yield self._verbose_tool_use(name, args, "Begin to call...")
+                            tool_response = self.toolcall_session.tool_call(name, args)
+                            history = self._append_history(history, tool_call, tool_response)
+                            yield self._verbose_tool_use(name, args, tool_response)
+                        except Exception as e:
+                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
+                            history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool call error: \n{tool_call}\nException:\n{str(e)}",
+                                }
+                            )
+                            yield self._verbose_tool_use(name, {}, str(e))
+
+                logging.warning(f"Exceed max rounds: {self.max_rounds}")
+                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+
+                completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                response = litellm.completion(
+                    **completion_args,
+                    drop_params=True,
+                    timeout=self.timeout,
+                )
+
+                for resp in response:
+                    if not hasattr(resp, "choices") or not resp.choices:
+                        continue
+                    delta = resp.choices[0].delta
+                    if not hasattr(delta, "content") or delta.content is None:
+                        continue
+                    tol = self.total_token_count(resp)
+                    if not tol:
+                        total_tokens += num_tokens_from_string(delta.content)
+                    else:
+                        total_tokens += tol
+                    yield delta.content
+
+                yield total_tokens
+                return
+
+            except Exception as e:
+                e = self._exceptions(e, attempt)
+                if e:
+                    yield e
+                    yield total_tokens
+                    return
+
+        assert False, "Shouldn't be here."
+
+    def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        gen_conf = self._clean_conf(gen_conf)
+        ans = ""
+        total_tokens = 0
+        try:
+            for delta_ans, tol in self._chat_streamly(history, gen_conf, **kwargs):
+                yield delta_ans
+                total_tokens += tol
+        except openai.APIError as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield total_tokens
+
+    def total_token_count(self, resp):
+        try:
+            return resp.usage.total_tokens
+        except Exception:
+            pass
+        try:
+            return resp["usage"]["total_tokens"]
+        except Exception:
+            pass
+        return 0
+
+    def _calculate_dynamic_ctx(self, history):
+        """Calculate dynamic context window size"""
+
+        def count_tokens(text):
+            """Calculate token count for text"""
+            # Simple calculation: 1 token per ASCII character
+            # 2 tokens for non-ASCII characters (Chinese, Japanese, Korean, etc.)
+            total = 0
+            for char in text:
+                if ord(char) < 128:  # ASCII characters
+                    total += 1
+                else:  # Non-ASCII characters (Chinese, Japanese, Korean, etc.)
+                    total += 2
+            return total
+
+        # Calculate total tokens for all messages
+        total_tokens = 0
+        for message in history:
+            content = message.get("content", "")
+            # Calculate content tokens
+            content_tokens = count_tokens(content)
+            # Add role marker token overhead
+            role_tokens = 4
+            total_tokens += content_tokens + role_tokens
+
+        # Apply 1.2x buffer ratio
+        total_tokens_with_buffer = int(total_tokens * 1.2)
+
+        if total_tokens_with_buffer <= 8192:
+            ctx_size = 8192
+        else:
+            ctx_multiplier = (total_tokens_with_buffer // 8192) + 1
+            ctx_size = ctx_multiplier * 8192
+
+        return ctx_size

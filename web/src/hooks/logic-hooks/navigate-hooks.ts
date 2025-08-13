@@ -35,9 +35,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Chats);
   }, [navigate]);
 
-  const navigateToChat = useCallback(() => {
-    navigate(Routes.Chat);
-  }, [navigate]);
+  const navigateToChat = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Chat}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToAgents = useCallback(() => {
     navigate(Routes.Agents);
@@ -69,9 +72,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Searches);
   }, [navigate]);
 
-  const navigateToSearch = useCallback(() => {
-    navigate(Routes.Search);
-  }, [navigate]);
+  const navigateToSearch = useCallback(
+    (id: string) => {
+      navigate(`${Routes.Search}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToChunkParsedResult = useCallback(
     (id: string, knowledgeId?: string) => () => {

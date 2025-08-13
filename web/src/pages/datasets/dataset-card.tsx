@@ -55,10 +55,10 @@ export function DatasetCard({
             <h3 className="text-lg font-semibold mb-2 line-clamp-1">
               {dataset.name}
             </h3>
-            <p className="text-xs text-text-sub-title">
+            <p className="text-xs text-text-secondary">
               {dataset.doc_num} files
             </p>
-            <p className="text-xs text-text-sub-title">
+            <p className="text-xs text-text-secondary">
               {formatDate(dataset.update_time)}
             </p>
           </div>
@@ -72,11 +72,8 @@ export function SeeAllCard() {
   const { navigateToDatasetList } = useNavigatePage();
 
   return (
-    <Card
-      className="bg-colors-background-inverse-weak w-40"
-      onClick={navigateToDatasetList}
-    >
-      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-sub-title">
+    <Card className="w-40" onClick={navigateToDatasetList}>
+      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
         See All <ChevronRight className="size-4" />
       </CardContent>
     </Card>

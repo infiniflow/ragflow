@@ -27,6 +27,7 @@ import {
   LaptopMinimalCheck,
   Logs,
   ScreenShare,
+  Settings,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
@@ -43,7 +44,9 @@ import {
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { useShowEmbedModal } from './hooks/use-show-dialog';
+import { SettingDialog } from './setting-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
+import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 
 function AgentDropdownMenuItem({
@@ -66,8 +69,7 @@ export default function Agent() {
     showModal: showChatDrawer,
   } = useSetModalState();
   const { t } = useTranslation();
-
-  // const openDocument = useOpenDocument();
+  useAgentHistoryManager();
   const {
     handleExportJson,
     handleImportJson,
@@ -92,6 +94,12 @@ export default function Agent() {
     showModal: showVersionDialog,
   } = useSetModalState();
 
+  const {
+    visible: settingDialogVisible,
+    hideModal: hideSettingDialog,
+    showModal: showSettingDialog,
+  } = useSetModalState();
+
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
   const { navigateToAgentLogs } = useNavigatePage();
@@ -114,7 +122,7 @@ export default function Agent() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div className="text-xs text-text-sub-title translate-y-3">
+          <div className="text-xs text-text-secondary translate-y-3">
             {t('flow.autosaved')} {time}
           </div>
         </section>
@@ -149,11 +157,6 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {/* <AgentDropdownMenuItem onClick={openDocument}>
-                <Key />
-                API
-              </AgentDropdownMenuItem> */}
-              {/* <DropdownMenuSeparator /> */}
               <AgentDropdownMenuItem onClick={handleImportJson}>
                 <Download />
                 {t('flow.import')}
@@ -162,6 +165,11 @@ export default function Agent() {
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
+              </AgentDropdownMenuItem>
+              <DropdownMenuSeparator />
+              <AgentDropdownMenuItem onClick={showSettingDialog}>
+                <Settings />
+                {t('flow.setting')}
               </AgentDropdownMenuItem>
               {location.hostname !== 'demo.ragflow.io' && (
                 <>
@@ -200,6 +208,9 @@ export default function Agent() {
       )}
       {versionDialogVisible && (
         <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+      )}
+      {settingDialogVisible && (
+        <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
       )}
     </section>
   );

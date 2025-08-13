@@ -12,7 +12,7 @@ export function MCPCard({
         {children}
         <section>
           <div className="pb-3 text-sm">{data.name}</div>
-          <p className="text-text-sub-title text-xs">{data.description}</p>
+          <p className="text-text-secondary text-xs">{data.description}</p>
         </section>
       </CardContent>
     </Card>
