@@ -202,7 +202,7 @@ export const useSendMessageWithSse = (
             [Authorization]: getAuthorization(),
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(omit(body, 'chatBoxId')),
           signal: controller?.signal || sseRef.current?.signal,
         });
 
@@ -228,6 +228,7 @@ export const useSendMessageWithSse = (
                 setAnswer({
                   ...d,
                   conversationId: body?.conversation_id,
+                  chatBoxId: body.chatBoxId,
                 });
               }
             } catch (e) {
