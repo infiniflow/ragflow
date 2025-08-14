@@ -18,7 +18,7 @@ from flask import request
 from flask_login import login_required, current_user
 from api.db.services.dialog_service import DialogService
 from api.db import StatusEnum
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
 from api import settings
@@ -51,6 +51,7 @@ def set_dialog():
     similarity_threshold = req.get("similarity_threshold", 0.1)
     vector_similarity_weight = req.get("vector_similarity_weight", 0.3)
     llm_setting = req.get("llm_setting", {})
+    meta_data_filter = req.get("meta_data_filter", {})
     prompt_config = req["prompt_config"]
 
     if not is_create:
@@ -85,6 +86,7 @@ def set_dialog():
                 "llm_id": llm_id,
                 "llm_setting": llm_setting,
                 "prompt_config": prompt_config,
+                "meta_data_filter": meta_data_filter,
                 "top_n": top_n,
                 "top_k": top_k,
                 "rerank_id": rerank_id,

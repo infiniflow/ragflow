@@ -55,7 +55,6 @@ interface SearchSettingProps {
   className?: string;
   data: ISearchAppDetailProps;
 }
-
 interface ISubmitLlmSettingProps {
   llm_id: string;
   parameter: string;

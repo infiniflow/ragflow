@@ -149,6 +149,7 @@ NEXT_STEP = load_prompt("next_step")
 REFLECT = load_prompt("reflect")
 SUMMARY4MEMORY = load_prompt("summary4memory")
 RANK_MEMORY = load_prompt("rank_memory")
+META_FILTER = load_prompt("meta_filter")
 
 PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
 
@@ -196,7 +197,7 @@ def question_proposal(chat_mdl, content, topn=3):
 def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.llm_service import TenantLLMService
+    from api.db.services.tenant_llm_service import TenantLLMService
 
     if not chat_mdl:
         if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
@@ -230,7 +231,7 @@ def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_
 def cross_languages(tenant_id, llm_id, query, languages=[]):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.llm_service import TenantLLMService
+    from api.db.services.tenant_llm_service import TenantLLMService
 
     if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
@@ -413,3 +414,20 @@ def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[st
     ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
+
+def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
+    sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
+        current_date=datetime.datetime.today().strftime('%Y-%m-%d'),
+        metadata_keys=json.dumps(meta_data),
+        user_question=query
+    )
+    user_prompt = "Generate filters:"
+    ans = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}])
+    ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+    try:
+        ans = json_repair.loads(ans)
+        assert isinstance(ans, list), ans
+        return ans
+    except Exception:
+        logging.exception(f"Loading json failure: {ans}")
+    return []
