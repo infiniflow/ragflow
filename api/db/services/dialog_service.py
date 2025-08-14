@@ -162,7 +162,6 @@ class DialogService(CommonService):
 
 def chat_solo(dialog, messages, stream=True, **kwargs):
     chat_llm_id = kwargs.get("chat_model_id", dialog.llm_id)
-    print(f"chatsolo got {chat_llm_id=}", flush=True)
 
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, chat_llm_id)

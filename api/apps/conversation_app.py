@@ -185,7 +185,6 @@ def completion():
     req.pop("llm_id", None)
     req["chat_model_id"] = chat_model_id
 
-    chat_model_config = req.get("chat_model_config", {})
     chat_model_config = {}
     for model_config in [
         "temperature",
