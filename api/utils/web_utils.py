@@ -23,9 +23,7 @@ from urllib.parse import urlparse
 
 from api.apps import smtp_mail_server
 from flask_mail import Message
-from flask import render_template_string, current_app
-from itsdangerous import URLSafeTimedSerializer
-from flask import current_app
+from flask import render_template_string
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -35,7 +33,6 @@ from selenium.webdriver.support.expected_conditions import staleness_of
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
-from api import settings
 
 
 CONTENT_TYPE_MAP = {

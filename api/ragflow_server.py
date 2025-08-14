@@ -31,7 +31,6 @@ import traceback
 import threading
 import uuid
 
-from flask_mail import Mail
 from werkzeug.serving import run_simple
 from api import settings
 from api.apps import app, smtp_mail_server
