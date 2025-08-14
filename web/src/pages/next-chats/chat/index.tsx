@@ -11,8 +11,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchConversation, useFetchDialog } from '@/hooks/use-chat-request';
+import {
+  useFetchConversation,
+  useFetchDialog,
+  useGetChatSearchParams,
+} from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 import { ArrowUpRight, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
@@ -41,6 +46,8 @@ export default function Chat() {
     hasSingleChatBox,
     hasThreeChatBox,
   } = useAddChatBox();
+
+  const { conversationId, isNew } = useGetChatSearchParams();
 
   const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
 
@@ -104,13 +111,17 @@ export default function Chat() {
                   <Button
                     variant={'ghost'}
                     onClick={switchDebugMode}
-                    disabled={hasThreeChatBox}
+                    disabled={
+                      hasThreeChatBox ||
+                      isEmpty(conversationId) ||
+                      isNew === 'true'
+                    }
                   >
                     <ArrowUpRight /> Multiple Models
                   </Button>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 p-0">
+              <CardContent className="flex-1 p-0 min-h-0">
                 <SingleChatBox controller={controller}></SingleChatBox>
               </CardContent>
             </Card>

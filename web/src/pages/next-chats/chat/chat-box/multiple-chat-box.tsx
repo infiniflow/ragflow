@@ -16,13 +16,16 @@ import {
   useFetchConversation,
   useFetchDialog,
   useGetChatSearchParams,
+  useSetDialog,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty, omit } from 'lodash';
 import { ListCheck, Plus, Trash2 } from 'lucide-react';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
+import { useParams } from 'umi';
 import { z } from 'zod';
 import {
   useGetSendButtonDisabled,
@@ -47,6 +50,7 @@ type ChatCardProps = {
   id: string;
   idx: number;
   derivedMessages: IMessage[];
+  sendLoading: boolean;
 } & Pick<
   MultipleChatBoxProps,
   'controller' | 'removeChatBox' | 'addChatBox' | 'chatBoxIds'
@@ -61,11 +65,14 @@ const ChatCard = forwardRef(function ChatCard(
     addChatBox,
     chatBoxIds,
     derivedMessages,
+    sendLoading,
   }: ChatCardProps,
   ref,
 ) {
-  const { sendLoading, regenerateMessage, removeMessageById } =
-    useSendMessage(controller);
+  const { id: dialogId } = useParams();
+  const { setDialog } = useSetDialog();
+
+  const { regenerateMessage, removeMessageById } = useSendMessage(controller);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -80,6 +87,8 @@ const ChatCard = forwardRef(function ChatCard(
     },
   });
 
+  const llmId = useWatch({ control: form.control, name: 'llm_id' });
+
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchDialog();
   const { data: conversation } = useFetchConversation();
@@ -89,6 +98,16 @@ const ChatCard = forwardRef(function ChatCard(
   const handleRemoveChatBox = useCallback(() => {
     removeChatBox(id);
   }, [id, removeChatBox]);
+
+  const handleApplyConfig = useCallback(() => {
+    const values = form.getValues();
+    setDialog({
+      ...currentDialog,
+      llm_id: values.llm_id,
+      llm_setting: omit(values, 'llm_id'),
+      dialog_id: dialogId,
+    });
+  }, [currentDialog, dialogId, form, setDialog]);
 
   useImperativeHandle(ref, () => ({
     getFormData: () => form.getValues(),
@@ -107,7 +126,11 @@ const ChatCard = forwardRef(function ChatCard(
           <div className="space-x-2">
             <Tooltip>
               <TooltipTrigger>
-                <Button variant={'ghost'}>
+                <Button
+                  variant={'ghost'}
+                  disabled={isEmpty(llmId)}
+                  onClick={handleApplyConfig}
+                >
                   <ListCheck />
                 </Button>
               </TooltipTrigger>
@@ -180,6 +203,7 @@ export function MultipleChatBox({
     handlePressEnter,
     stopOutputMessage,
     setFormRef,
+    handleUploadFile,
   } = useSendMultipleChatMessage(controller, chatBoxIds);
 
   const { createConversationBeforeUploadDocument } =
@@ -202,6 +226,7 @@ export function MultipleChatBox({
             addChatBox={addChatBox}
             derivedMessages={messageRecord[id]}
             ref={setFormRef(id)}
+            sendLoading={sendLoading}
           ></ChatCard>
         ))}
       </div>
@@ -218,6 +243,7 @@ export function MultipleChatBox({
             createConversationBeforeUploadDocument
           }
           stopOutputMessage={stopOutputMessage}
+          onUpload={handleUploadFile}
         />
       </div>
     </section>

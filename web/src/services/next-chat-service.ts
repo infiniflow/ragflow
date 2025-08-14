@@ -27,6 +27,7 @@ const {
   mindmap,
   getRelatedQuestions,
   listNextDialog,
+  upload_and_parse,
 } = api;
 
 const methods = {
@@ -125,6 +126,10 @@ const methods = {
   getRelatedQuestions: {
     url: getRelatedQuestions,
     method: 'post',
+  },
+  uploadAndParse: {
+    method: 'post',
+    url: upload_and_parse,
   },
 } as const;
 
