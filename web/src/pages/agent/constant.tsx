@@ -651,6 +651,7 @@ export const initialAgentValues = {
   exception_default_value: '',
   tools: [],
   mcp: [],
+  cite: true,
   outputs: {
     // structured_output: {
     //   topic: {
