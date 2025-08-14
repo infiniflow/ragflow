@@ -78,7 +78,6 @@ export function LlmSettingFieldItems({
             <FormLabel>{t('model')}</FormLabel>
             <FormControl>
               <SelectWithSearch
-                allowClear
                 options={options || modelOptions}
                 {...field}
               ></SelectWithSearch>
