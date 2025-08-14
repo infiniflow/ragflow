@@ -200,7 +200,7 @@ class TestChatAssistantUpdate:
                         "variables": [{"key": "knowledge", "optional": False}],
                         "rerank_model": "",
                         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
-                        "opener": "Hi! I'm your assistant, what can I do for you?",
+                        "opener": "Hi! I'm your assistant. What can I do for you?",
                         "show_quote": True,
                         "prompt": 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.',
                     },

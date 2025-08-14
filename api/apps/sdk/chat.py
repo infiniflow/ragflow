@@ -99,7 +99,7 @@ def create(tenant_id):
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.""",
-        "prologue": "Hi! I'm your assistant, what can I do for you?",
+        "prologue": "Hi! I'm your assistant. What can I do for you?",
         "parameters": [{"key": "knowledge", "optional": False}],
         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
         "quote": True,
