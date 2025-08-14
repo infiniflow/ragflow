@@ -42,6 +42,7 @@ export type HandleContextType = {
   id?: string;
   type: HandleType;
   position: Position;
+  isFromConnectionDrag: boolean;
 };
 
 export const HandleContext = createContext<HandleContextType>(
