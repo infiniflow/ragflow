@@ -1,13 +1,17 @@
+import { LargeModelFormFieldWithoutFilter } from '@/components/large-model-form-field';
+import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Form } from '@/components/ui/form';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { MessageType } from '@/constants/chat';
+import { useScrollToBottom } from '@/hooks/logic-hooks';
 import {
   useFetchConversation,
   useFetchDialog,
@@ -15,16 +19,20 @@ import {
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { ListCheck, Plus, Trash2 } from 'lucide-react';
-import { useCallback } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
 } from '../../hooks/use-button-disabled';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
+import { useSendMultipleChatMessage } from '../../hooks/use-send-multiple-message';
 import { buildMessageItemReference } from '../../utils';
-import { LLMSelectForm } from '../llm-select-form';
+import { IMessage } from '../interface';
 import { useAddChatBox } from '../use-add-box';
 
 type MultipleChatBoxProps = {
@@ -35,31 +43,42 @@ type MultipleChatBoxProps = {
   'removeChatBox' | 'addChatBox' | 'chatBoxIds'
 >;
 
-type ChatCardProps = { id: string; idx: number } & Pick<
+type ChatCardProps = {
+  id: string;
+  idx: number;
+  derivedMessages: IMessage[];
+} & Pick<
   MultipleChatBoxProps,
   'controller' | 'removeChatBox' | 'addChatBox' | 'chatBoxIds'
 >;
 
-function ChatCard({
-  controller,
-  removeChatBox,
-  id,
-  idx,
-  addChatBox,
-  chatBoxIds,
-}: ChatCardProps) {
-  const {
-    value,
-    // scrollRef,
-    messageContainerRef,
-    sendLoading,
+const ChatCard = forwardRef(function ChatCard(
+  {
+    controller,
+    removeChatBox,
+    id,
+    idx,
+    addChatBox,
+    chatBoxIds,
     derivedMessages,
-    handleInputChange,
-    handlePressEnter,
-    regenerateMessage,
-    removeMessageById,
-    stopOutputMessage,
-  } = useSendMessage(controller);
+  }: ChatCardProps,
+  ref,
+) {
+  const { sendLoading, regenerateMessage, removeMessageById } =
+    useSendMessage(controller);
+
+  const messageContainerRef = useRef<HTMLDivElement>(null);
+
+  const { scrollRef } = useScrollToBottom(derivedMessages, messageContainerRef);
+
+  const FormSchema = z.object(LlmSettingSchema);
+
+  const form = useForm<z.infer<typeof FormSchema>>({
+    resolver: zodResolver(FormSchema),
+    defaultValues: {
+      llm_id: '',
+    },
+  });
 
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchDialog();
@@ -71,13 +90,19 @@ function ChatCard({
     removeChatBox(id);
   }, [id, removeChatBox]);
 
+  useImperativeHandle(ref, () => ({
+    getFormData: () => form.getValues(),
+  }));
+
   return (
-    <Card className="bg-transparent border flex-1">
+    <Card className="bg-transparent border flex-1 flex flex-col">
       <CardHeader className="border-b px-5 py-3">
         <CardTitle className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <span className="text-base">{idx + 1}</span>
-            <LLMSelectForm></LLMSelectForm>
+            <Form {...form}>
+              <LargeModelFormFieldWithoutFilter></LargeModelFormFieldWithoutFilter>
+            </Form>
           </div>
           <div className="space-x-2">
             <Tooltip>
@@ -102,8 +127,8 @@ function ChatCard({
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
+      <CardContent className="flex-1 min-h-0">
+        <div ref={messageContainerRef} className="h-full overflow-auto">
           <div className="w-full">
             {derivedMessages?.map((message, i) => {
               return (
@@ -134,12 +159,12 @@ function ChatCard({
               );
             })}
           </div>
-          {/* <div ref={scrollRef} /> */}
+          <div ref={scrollRef} />
         </div>
       </CardContent>
     </Card>
   );
-}
+});
 
 export function MultipleChatBox({
   controller,
@@ -150,10 +175,12 @@ export function MultipleChatBox({
   const {
     value,
     sendLoading,
+    messageRecord,
     handleInputChange,
     handlePressEnter,
     stopOutputMessage,
-  } = useSendMessage(controller);
+    setFormRef,
+  } = useSendMultipleChatMessage(controller, chatBoxIds);
 
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
@@ -163,7 +190,7 @@ export function MultipleChatBox({
 
   return (
     <section className="h-full flex flex-col px-5">
-      <div className="flex gap-4 flex-1 px-5 pb-14">
+      <div className="flex gap-4 flex-1 px-5 pb-14 min-h-0">
         {chatBoxIds.map((id, idx) => (
           <ChatCard
             key={id}
@@ -173,6 +200,8 @@ export function MultipleChatBox({
             chatBoxIds={chatBoxIds}
             removeChatBox={removeChatBox}
             addChatBox={addChatBox}
+            derivedMessages={messageRecord[id]}
+            ref={setFormRef(id)}
           ></ChatCard>
         ))}
       </div>
