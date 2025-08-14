@@ -1,15 +1,16 @@
 import { useFetchExcel } from '@/pages/document-viewer/hooks';
 import classNames from 'classnames';
-import { useGetDocumentUrl } from './hooks';
 
 interface ExcelCsvPreviewerProps {
   className?: string;
+  url: string;
 }
 
 export const ExcelCsvPreviewer: React.FC<ExcelCsvPreviewerProps> = ({
   className,
+  url,
 }) => {
-  const url = useGetDocumentUrl();
+  // const url = useGetDocumentUrl();
   const { containerRef } = useFetchExcel(url);
 
   return (

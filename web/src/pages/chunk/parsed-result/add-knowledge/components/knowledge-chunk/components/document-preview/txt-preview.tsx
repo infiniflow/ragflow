@@ -3,11 +3,10 @@ import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
 import classNames from 'classnames';
 import { useEffect, useState } from 'react';
-import { useGetDocumentUrl } from './hooks';
 
-type TxtPreviewerProps = { className?: string };
-export const TxtPreviewer = ({ className }: TxtPreviewerProps) => {
-  const url = useGetDocumentUrl();
+type TxtPreviewerProps = { className?: string; url: string };
+export const TxtPreviewer = ({ className, url }: TxtPreviewerProps) => {
+  // const url = useGetDocumentUrl();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<string>('');
   const fetchTxt = async () => {

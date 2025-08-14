@@ -12,6 +12,7 @@ import {
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { pick } from 'lodash';
 import { Plus, Search } from 'lucide-react';
@@ -30,6 +31,7 @@ type SearchFormValues = z.infer<typeof searchFormSchema>;
 export default function SearchList() {
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('search');
+  const { navigateToSearch } = useNavigatePage();
   const { isLoading, createSearch } = useCreateSearch();
   const {
     data: list,
@@ -48,7 +50,10 @@ export default function SearchList() {
   };
 
   const onSubmit = async (values: SearchFormValues) => {
-    await createSearch({ name: values.name });
+    const res = await createSearch({ name: values.name });
+    if (res) {
+      navigateToSearch(res?.search_id);
+    }
     if (!isLoading) {
       setOpenCreateModal(false);
     }
@@ -88,16 +93,12 @@ export default function SearchList() {
         {list?.data.search_apps.map((x) => {
           return <SearchCard key={x.id} data={x}></SearchCard>;
         })}
-        {/* {data.map((x) => {
-          return <SearchCard key={x.id} data={x}></SearchCard>;
-        })} */}
       </div>
       {list?.data.total && (
         <RAGFlowPagination
           {...pick(searchParams, 'current', 'pageSize')}
           total={list?.data.total}
           onChange={handlePageChange}
-          on
         />
       )}
       <Modal
