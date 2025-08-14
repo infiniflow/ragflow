@@ -68,7 +68,7 @@ class Base(ABC):
             pmpt.append({
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/jpeg;base64,{img}" if img[:4] != "data" else img
+                    "url": img if isinstance(img, str) and img.startswith("data:") else f"data:image/png;base64,{img}"
                 }
             })
         return pmpt
@@ -109,16 +109,33 @@ class Base(ABC):
 
     @staticmethod
     def image2base64(image):
+        # Return a data URL with the correct MIME to avoid provider mismatches
         if isinstance(image, bytes):
-            return base64.b64encode(image).decode("utf-8")
+            # Best-effort magic number sniffing
+            mime = "image/png"
+            if len(image) >= 2 and image[0] == 0xFF and image[1] == 0xD8:
+                mime = "image/jpeg"
+            b64 = base64.b64encode(image).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
         if isinstance(image, BytesIO):
-            return base64.b64encode(image.getvalue()).decode("utf-8")
+            data = image.getvalue()
+            mime = "image/png"
+            if len(data) >= 2 and data[0] == 0xFF and data[1] == 0xD8:
+                mime = "image/jpeg"
+            b64 = base64.b64encode(data).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
         buffered = BytesIO()
+        fmt = "JPEG"
         try:
             image.save(buffered, format="JPEG")
         except Exception:
+            buffered = BytesIO()  # reset buffer before saving PNG
             image.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
+            fmt = "PNG"
+        data = buffered.getvalue()
+        b64 = base64.b64encode(data).decode("utf-8")
+        mime = f"image/{fmt.lower()}"
+        return f"data:{mime};base64,{b64}"
 
     def prompt(self, b64):
         return [
@@ -674,8 +691,8 @@ class AnthropicCV(Base):
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/jpeg" if img[:4] != "data" else img.split(":")[1].split(";")[0],
-                            "data": img if img[:4] != "data" else img.split(",")[1]
+                            "media_type": (img.split(":")[1].split(";")[0] if isinstance(img, str) and img[:4] == "data" else "image/png"),
+                            "data": (img.split(",")[1] if isinstance(img, str) and img[:4] == "data" else img)
                         },
                     }
             )
