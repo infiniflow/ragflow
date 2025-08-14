@@ -125,7 +125,7 @@ async def run_graphrag(
     return
 
 
-@timeout(60*60, 1)
+@timeout(60*60*2, 1)
 async def generate_subgraph(
     extractor: Extractor,
     tenant_id: str,
