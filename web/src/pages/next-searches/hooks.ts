@@ -1,8 +1,8 @@
 // src/pages/next-searches/hooks.ts
 
+import message from '@/components/ui/message';
 import searchService from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { message } from 'antd';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';

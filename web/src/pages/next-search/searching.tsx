@@ -71,7 +71,7 @@ export default function SearchingPage({
       setSearchStr(searchText);
       sendQuestion(searchText);
     }
-    // 重新获取焦点
+    // regain focus
     if (inputRef.current) {
       inputRef.current.focus();
     }
@@ -173,7 +173,7 @@ export default function SearchingPage({
 
           {/* search body */}
           <div
-            className="w-full mt-5 overflow-auto scrollbar-none divide-y divide-gray-300"
+            className="w-full mt-5 overflow-auto scrollbar-none "
             style={{ height: 'calc(100vh - 250px)' }}
           >
             {searchData.search_config.summary && (
@@ -201,6 +201,8 @@ export default function SearchingPage({
                 )}
               </>
             )}
+
+            <div className="w-full border-b border-border-default/80 my-6"></div>
             {/* retrieval documents */}
             <div className=" mt-3 w-44 ">
               <RetrievalDocuments
@@ -209,49 +211,54 @@ export default function SearchingPage({
                 onTesting={handleTestChunk}
               ></RetrievalDocuments>
             </div>
-
+            <div className="w-full border-b border-border-default/80 my-6"></div>
             <div className="mt-3 ">
               <Spin spinning={loading}>
                 {chunks?.length > 0 && (
                   <>
-                    {chunks.map((chunk) => {
+                    {chunks.map((chunk, index) => {
                       return (
-                        <div
-                          key={chunk.chunk_id}
-                          className="w-full flex flex-col"
-                        >
-                          <div className="w-full">
-                            <ImageWithPopover
-                              id={chunk.img_id}
-                            ></ImageWithPopover>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <div
-                                  dangerouslySetInnerHTML={{
-                                    __html: DOMPurify.sanitize(
-                                      `${chunk.highlight}...`,
-                                    ),
-                                  }}
-                                  className="text-sm text-text-primary mb-1"
-                                ></div>
-                              </PopoverTrigger>
-                              <PopoverContent className="text-text-primary">
-                                <HightLightMarkdown>
-                                  {chunk.content_with_weight}
-                                </HightLightMarkdown>
-                              </PopoverContent>
-                            </Popover>
-                          </div>
+                        <>
                           <div
-                            className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit"
-                            onClick={() =>
-                              clickDocumentButton(chunk.doc_id, chunk as any)
-                            }
+                            key={chunk.chunk_id}
+                            className="w-full flex flex-col"
                           >
-                            <FileIcon name={chunk.docnm_kwd}></FileIcon>
-                            {chunk.docnm_kwd}
+                            <div className="w-full">
+                              <ImageWithPopover
+                                id={chunk.img_id}
+                              ></ImageWithPopover>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <div
+                                    dangerouslySetInnerHTML={{
+                                      __html: DOMPurify.sanitize(
+                                        `${chunk.highlight}...`,
+                                      ),
+                                    }}
+                                    className="text-sm text-text-primary mb-1"
+                                  ></div>
+                                </PopoverTrigger>
+                                <PopoverContent className="text-text-primary">
+                                  <HightLightMarkdown>
+                                    {chunk.content_with_weight}
+                                  </HightLightMarkdown>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            <div
+                              className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit"
+                              onClick={() =>
+                                clickDocumentButton(chunk.doc_id, chunk as any)
+                              }
+                            >
+                              <FileIcon name={chunk.docnm_kwd}></FileIcon>
+                              {chunk.docnm_kwd}
+                            </div>
                           </div>
-                        </div>
+                          {index < chunks.length - 1 && (
+                            <div className="w-full border-b border-border-default/80 mt-6"></div>
+                          )}
+                        </>
                       );
                     })}
                   </>

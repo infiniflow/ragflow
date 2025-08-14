@@ -3,7 +3,6 @@ import SvgIcon from '@/components/svg-icon';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
-import { Button, Flex, Popover } from 'antd';
 import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
@@ -26,6 +25,12 @@ import {
   showImage,
 } from '@/utils/chat';
 
+import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { currentReg, replaceTextByOldReg } from '@/pages/next-chats/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
@@ -33,7 +38,7 @@ import { pipe } from 'lodash/fp';
 
 const getChunkIndex = (match: string) => Number(match);
 
-// 定义 Tailwind CSS 类名常量
+// Defining Tailwind CSS class name constants
 const styles = {
   referenceChunkImage: 'w-[10vw] object-contain',
   referenceInnerChunkImage: 'block object-contain max-w-full max-h-[6vh]',
@@ -151,19 +156,19 @@ const MarkdownContent = ({
       return (
         <div key={chunkItem?.id} className="flex gap-2">
           {imageId && (
-            <Popover
-              placement="left"
-              content={
+            <Popover>
+              <PopoverTrigger>
+                <Image
+                  id={imageId}
+                  className={styles.referenceChunkImage}
+                ></Image>
+              </PopoverTrigger>
+              <PopoverContent>
                 <Image
                   id={imageId}
                   className={styles.referenceImagePreview}
                 ></Image>
-              }
-            >
-              <Image
-                id={imageId}
-                className={styles.referenceChunkImage}
-              ></Image>
+              </PopoverContent>
             </Popover>
           )}
           <div className={'space-y-2 max-w-[40vw]'}>
@@ -174,7 +179,7 @@ const MarkdownContent = ({
               className={classNames(styles.chunkContentText)}
             ></div>
             {documentId && (
-              <Flex gap={'small'}>
+              <div className="flex gap-2">
                 {fileThumbnail ? (
                   <img
                     src={fileThumbnail}
@@ -188,7 +193,7 @@ const MarkdownContent = ({
                   ></SvgIcon>
                 )}
                 <Button
-                  type="link"
+                  variant="link"
                   className={classNames(styles.documentLink, 'text-wrap')}
                   onClick={handleDocumentButtonClick(
                     documentId,
@@ -199,7 +204,7 @@ const MarkdownContent = ({
                 >
                   {document?.doc_name}
                 </Button>
-              </Flex>
+              </div>
             )}
           </div>
         </div>
@@ -234,15 +239,14 @@ const MarkdownContent = ({
             }
           ></Image>
         ) : (
-          <Popover content={getPopoverContent(chunkIndex)} key={i}>
-            <InfoCircleOutlined className={styles.referenceIcon} />
+          <Popover>
+            <PopoverTrigger>
+              <InfoCircleOutlined className={styles.referenceIcon} />
+            </PopoverTrigger>
+            <PopoverContent>{getPopoverContent(chunkIndex)}</PopoverContent>
           </Popover>
         );
       });
-
-      // replacedText = reactStringReplace(replacedText, curReg, (match, i) => (
-      //   <span className={styles.cursor} key={i}></span>
-      // ));
 
       return replacedText;
     },

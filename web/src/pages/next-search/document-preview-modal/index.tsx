@@ -32,29 +32,13 @@ const PdfDrawer = ({
 
   console.log('chunk--->', chunk.docnm_kwd, url);
   const [fileType, setFileType] = useState('');
-  // const fileType = useMemo(() => {
-  //   switch (documentInfo?.type) {
-  //     case 'doc':
-  //       return documentInfo?.name.split('.').pop() || 'doc';
-  //     case 'visual':
-  //     case 'docx':
-  //     case 'txt':
-  //     case 'md':
-  //     case 'pdf':
-  //       return documentInfo?.type;
-  //   }
-  //   return 'unknown';
-  // }, [documentInfo]);
+
   useEffect(() => {
     if (chunk.docnm_kwd) {
       const type = getFileExtensionRegex(chunk.docnm_kwd);
       setFileType(type);
     }
   }, [chunk.docnm_kwd]);
-  // if (chunk.docnm_kwd) {
-  //   const type = getFileExtensionRegex(chunk.docnm_kwd);
-  //   setFileType(type);
-  // }
   return (
     <Modal
       title={
@@ -68,7 +52,7 @@ const PdfDrawer = ({
       showfooter={false}
     >
       <DocumentPreview
-        className={'!h-[calc(100dvh-300px)]'}
+        className={'!h-[calc(100dvh-300px)] overflow-auto'}
         fileType={fileType}
         highlights={highlights}
         setWidthAndHeight={setWidthAndHeight}
