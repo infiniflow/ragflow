@@ -3,13 +3,16 @@ import request from '@/utils/request';
 import classNames from 'classnames';
 import { init } from 'pptx-preview';
 import { useEffect, useRef } from 'react';
-import { useGetDocumentUrl } from './hooks';
 interface PptPreviewerProps {
   className?: string;
+  url: string;
 }
 
-export const PptPreviewer: React.FC<PptPreviewerProps> = ({ className }) => {
-  const url = useGetDocumentUrl();
+export const PptPreviewer: React.FC<PptPreviewerProps> = ({
+  className,
+  url,
+}) => {
+  // const url = useGetDocumentUrl();
   const wrapper = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fetchDocument = async () => {

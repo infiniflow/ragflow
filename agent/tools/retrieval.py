@@ -108,7 +108,9 @@ class Retrieval(ToolBase, ABC):
         if self._param.rerank_id:
             rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
 
-        query = kwargs["query"]
+        vars = self.get_input_elements_from_text(kwargs["query"])
+        vars = {k:o["value"] for k,o in vars.items()}
+        query = self.string_format(kwargs["query"], vars)
         if self._param.cross_languages:
             query = cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
 

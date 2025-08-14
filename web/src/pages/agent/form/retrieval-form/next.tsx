@@ -2,6 +2,7 @@ import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { TopNFormField } from '@/components/top-n-item';
@@ -25,7 +26,7 @@ import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { QueryVariable } from '../components/query-variable';
+import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
@@ -74,6 +75,8 @@ export function EmptyResponseField() {
 }
 
 function RetrievalForm({ node }: INextOperatorForm) {
+  const { t } = useTranslation();
+
   const outputList = useMemo(() => {
     return [
       {
@@ -96,7 +99,9 @@ function RetrievalForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <QueryVariable></QueryVariable>
+          <RAGFlowFormItem name="query" label={t('flow.query')}>
+            <PromptEditor></PromptEditor>
+          </RAGFlowFormItem>
           <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
         <Collapse title={<div>Advanced Settings</div>}>
