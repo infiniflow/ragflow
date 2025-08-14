@@ -18,6 +18,26 @@ es:
   hosts: 'http://localhost:1200'
   username: 'elastic'
   password: 'infini_rag_flow'
+  retry_attempts:
+    global: 2
+    # connect: 5
+    # exists: 2
+    # search: 3
+    # get: 2
+    # insert: 3
+    # update: 3
+    # delete: 2
+    # sql: 2
+  timeouts:
+    # default: 600        # Connection timeout (uses 600s if not set)
+    # exists: 10          # Index existence checks (uses 5s if not set)
+    # get: 10             # Single document retrieval
+    # search: 300         # Document search (uses 600s if not set)
+    # bulk: 60            # Bulk operations (uses 60s if not set)
+    # update: 30          # Document updates
+    # delete_by_query: 60 # Bulk document deletion
+    # sql: 10             # SQL queries (uses 2s if not set)
+    # health: 10          # Cluster health checks
 os:
   hosts: 'http://localhost:1201'
   username: 'admin'
