@@ -28,7 +28,8 @@ from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
 from api.db.services.file_service import FileService
-from api.db.services.llm_service import TenantLLMService, get_init_tenant_llm
+from api.db.services.llm_service import get_init_tenant_llm
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils import (
     current_timestamp,
