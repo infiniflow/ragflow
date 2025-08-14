@@ -99,7 +99,6 @@ class DialogService(CommonService):
 
         return list(chats.dicts())
 
-
     @classmethod
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, keywords, parser_id=None):
@@ -256,9 +255,10 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 def meta_filter(metas: dict, filters: list[dict]):
     doc_ids = []
+
     def filter_out(v2docs, operator, value):
         nonlocal doc_ids
-        for input,docids in v2docs.items():
+        for input, docids in v2docs.items():
             try:
                 input = float(input)
                 value = float(value)
@@ -303,10 +303,17 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     chat_start_ts = timer()
 
-    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    # Allow overriding the default LLM model for this conversation
+    # Uses `chat_model_id` parameter name instead of `llm_id` to:
+    # 1. Avoid confusion with the dialog's default `llm_id`
+    # 2. Explicitly indicate this is for chat completion only
+    # Priority: kwargs.chat_model_id > dialog.llm_id
+    chat_llm_id = kwargs.get("chat_model_id", dialog.llm_id)
+
+    if TenantLLMService.llm_id2llm_type(chat_llm_id) == "image2text":
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, chat_llm_id)
     else:
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, chat_llm_id)
 
     max_tokens = llm_model_config.get("max_tokens", 8192)
 
@@ -354,12 +361,12 @@ def chat(dialog, messages, stream=True, **kwargs):
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
-        questions = [full_question(dialog.tenant_id, dialog.llm_id, messages)]
+        questions = [full_question(dialog.tenant_id, chat_llm_id, messages)]
     else:
         questions = questions[-1:]
 
     if prompt_config.get("cross_languages"):
-        questions = [cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
+        questions = [cross_languages(dialog.tenant_id, chat_llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
@@ -389,7 +396,17 @@ def chat(dialog, messages, stream=True, **kwargs):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
-                partial(retriever.retrieval, embd_mdl=embd_mdl, tenant_ids=tenant_ids, kb_ids=dialog.kb_ids, page=1, page_size=dialog.top_n, similarity_threshold=0.2, vector_similarity_weight=0.3, doc_ids=attachments),
+                partial(
+                    retriever.retrieval,
+                    embd_mdl=embd_mdl,
+                    tenant_ids=tenant_ids,
+                    kb_ids=dialog.kb_ids,
+                    page=1,
+                    page_size=dialog.top_n,
+                    similarity_threshold=0.2,
+                    vector_similarity_weight=0.3,
+                    doc_ids=attachments,
+                ),
             )
 
             for think in reasoner.thinking(kbinfos, " ".join(questions)):
@@ -436,7 +453,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
-    gen_conf = dialog.llm_setting
+    gen_conf = kwargs.get("chat_model_config", dialog.llm_setting)
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
     prompt4citation = ""

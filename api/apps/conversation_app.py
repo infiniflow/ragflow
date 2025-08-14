@@ -29,7 +29,8 @@ from api.db.services.conversation_service import ConversationService, structure_
 from api.db.services.dialog_service import DialogService, ask, chat
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import UserTenantService, TenantService
+from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.app.tag import label_question
@@ -66,8 +67,14 @@ def set_conversation():
         e, dia = DialogService.get_by_id(req["dialog_id"])
         if not e:
             return get_data_error_result(message="Dialog not found")
-        conv = {"id": conv_id, "dialog_id": req["dialog_id"], "name": name, "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}],"user_id": current_user.id,
-                "reference":[],}
+        conv = {
+            "id": conv_id,
+            "dialog_id": req["dialog_id"],
+            "name": name,
+            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}],
+            "user_id": current_user.id,
+            "reference": [],
+        }
         ConversationService.save(**conv)
         return get_json_result(data=conv)
     except Exception as e:
@@ -174,6 +181,23 @@ def completion():
             continue
         msg.append(m)
     message_id = msg[-1].get("id")
+    chat_model_id = req.get("llm_id", "")
+    req.pop("llm_id", None)
+    req["chat_model_id"] = chat_model_id
+
+    chat_model_config = req.get("chat_model_config", {})
+    chat_model_config = {}
+    for model_config in [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty",
+        "max_tokens",
+    ]:
+        config = req.get(model_config)
+        if config:
+            chat_model_config[model_config] = config
+
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
@@ -189,6 +213,10 @@ def completion():
             conv.reference = []
         conv.reference = [r for r in conv.reference if r]
         conv.reference.append({"chunks": [], "doc_aggs": []})
+
+        if chat_model_id and not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
+            req.pop("chat_model_id", None)
+            req.pip("chat_model_config", None)
 
         def stream():
             nonlocal dia, msg, req, conv
