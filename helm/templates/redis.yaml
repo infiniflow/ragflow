@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/component: redis
 spec:
   ports:
-    - port: 6379
+    - port: 16379
       name: redis
       protocol: TCP
   clusterIP: None  # Headless service for StatefulSet
@@ -52,7 +52,7 @@ spec:
             - secretRef:
                 name: {{ include "ragflow.fullname" . }}-env-config
           ports:
-            - containerPort: 6379
+            - containerPort: 16379
               name: redis
           {{- if .Values.redis.persistence.enabled }}
           volumeMounts:
@@ -99,7 +99,7 @@ metadata:
     app.kubernetes.io/component: redis
 spec:
   ports:
-    - port: 6379
+    - port: 16379
       targetPort: redis
       protocol: TCP
   selector:
