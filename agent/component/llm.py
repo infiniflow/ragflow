@@ -145,7 +145,7 @@ class LLM(ComponentBase):
         prompt = self.string_format(prompt, args)
         for m in msg:
             m["content"] = self.string_format(m["content"], args)
-        if self._canvas.get_reference()["chunks"]:
+        if self._param.cite and self._canvas.get_reference()["chunks"]:
             prompt += citation_prompt()
 
         return prompt, msg
