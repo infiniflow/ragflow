@@ -58,15 +58,18 @@ class Session(Base):
             except ValueError:
                 raise Exception(f"Invalid response {res}")
             return self._structure_answer(json_data)
-        
+
 
     def _structure_answer(self, json_data):
         answer = json_data["data"]["answer"]
         reference = json_data["data"].get("reference", {})
+        message_id = json_data["data"].get("id")
         temp_dict = {
             "content": answer,
-            "role": "assistant"
+            "role": "assistant",
+            "id": message_id
         }
+
         if reference and "chunks" in reference:
             chunks = reference["chunks"]
             temp_dict["reference"] = chunks
