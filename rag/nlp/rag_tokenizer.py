@@ -23,7 +23,8 @@ import re
 import string
 import sys
 from hanziconv import HanziConv
-from nltk import word_tokenize
+from nltk import word_tokenize, pos_tag
+from nltk.corpus import wordnet
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from api.utils.file_utils import get_project_base_directory
 
@@ -65,8 +66,9 @@ class RagTokenizer:
 
         self.stemmer = PorterStemmer()
         self.lemmatizer = WordNetLemmatizer()
+        self.lemmatizer.lemmatize('warmup')
 
-        self.SPLIT_CHAR = r"([ ,\.<>/?;:'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-zA-Z0-9,\.-]+)"
+        self.SPLIT_CHAR = r"([ ,\.<>/?;:'\[\]\\`!@#$%^&\*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-z A-Z0-9,\.-]+)"
 
         trie_file_name = self.DIR_ + ".txt.trie"
         # check if trie file existence
@@ -294,7 +296,17 @@ class RagTokenizer:
         return self.score_(res[::-1])
 
     def english_normalize_(self, tks):
-        return [self.stemmer.stem(self.lemmatizer.lemmatize(t)) if re.match(r"[a-zA-Z_-]+$", t) else t for t in tks]
+        result = []
+        for t in tks:
+            if re.match(r"[a-zA-Z_-]+$", t):
+                if self.key_(t) in self.trie_:
+                    result.append(t)
+                else:
+                    token, pos = pos_tag([t])[0]
+                    result.append(self.lemmatizer.lemmatize(token, self.get_wordnet_pos(pos)))
+            else:
+                result.append(t)
+        return result
 
     def _split_by_lang(self, line):
         txt_lang_pairs = []
@@ -310,14 +322,61 @@ class RagTokenizer:
                 if _zh == zh:
                     e += 1
                     continue
-                txt_lang_pairs.append((a[s: e], zh))
+                txt_lang_pairs.append((a[s: e].strip(), zh))
                 s = e
                 e = s + 1
                 zh = _zh
             if s >= len(a):
                 continue
-            txt_lang_pairs.append((a[s: e], zh))
+            txt_lang_pairs.append((a[s: e].strip(), zh))
         return txt_lang_pairs
+
+    @staticmethod
+    def get_wordnet_pos(treebank_tag):
+        # POS 转换：从 Penn Treebank → WordNet POS
+        if treebank_tag.startswith('J'):
+            return wordnet.ADJ
+        elif treebank_tag.startswith('V'):
+            return wordnet.VERB
+        elif treebank_tag.startswith('N'):
+            return wordnet.NOUN
+        elif treebank_tag.startswith('R'):
+            return wordnet.ADV
+        else:
+            return wordnet.NOUN  # 默认用名词
+
+    def tokenize_eng(self, text):
+        """
+        执行最长前向匹配，将连续 token 合并为 trie 中的词组
+        """
+        tokens = word_tokenize(text)
+        result = []
+        i = 0
+        while i < len(tokens):
+            max_match = None
+            max_j = i
+            j = i + 1
+            while j <= len(tokens):
+                phrase = " ".join(tokens[i:j])
+                key = self.key_(phrase)
+                if self.trie_.has_keys_with_prefix(key):
+                    if key in self.trie_:
+                        max_match = phrase
+                        max_j = j
+                    j += 1
+                else:
+                    break
+            if max_match:
+                result.append(max_match)
+                i = max_j
+            else:
+                # 没匹配上词典，词形还原
+                token = tokens[i]
+                token, pos = pos_tag([token])[0]
+                lemmatized_token = self.lemmatizer.lemmatize(token, self.get_wordnet_pos(pos))
+                result.append(lemmatized_token)
+                i += 1
+        return result
 
     def tokenize(self, line):
         line = re.sub(r"\W+", " ", line)
@@ -328,7 +387,7 @@ class RagTokenizer:
         res = []
         for L,lang in arr:
             if not lang:
-                res.extend([self.stemmer.stem(self.lemmatizer.lemmatize(t)) for t in word_tokenize(L)])
+                res.extend(self.tokenize_eng(L))
                 continue
             if len(L) < 2 or re.match(
                     r"[a-z\.-]+$", L) or re.match(r"[0-9\.-]+$", L):
