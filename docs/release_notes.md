@@ -22,6 +22,14 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
+## v0.20.2 (Ongoing)
+
+### API changes
+
+#### Deprecated
+
+[Create session with agent](./references/http_api_reference.md#create-session-with-agent)
+
 ## v0.20.1
 
 Released on August 8, 2025.
@@ -182,7 +190,7 @@ From this release onwards, if you still see RAGFlow's responses being cut short 
 
 - Unable to add models via Ollama/Xinference, an issue introduced in v0.17.1.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -243,7 +251,7 @@ The following is a screenshot of a conversation that integrates Deep Research:
 
 ![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -318,7 +326,7 @@ This release fixes the following issues:
 - Using the **Table** parsing method results in information loss.
 - Miscellaneous API issues.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -354,7 +362,7 @@ Released on December 18, 2024.
 - Upgrades the Document Layout Analysis model in DeepDoc.
 - Significantly enhances the retrieval performance when using [Infinity](https://github.com/infiniflow/infinity) as document engine.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -411,7 +419,7 @@ This approach eliminates the need to manually update **service_config.yaml** aft
 Ensure that you [upgrade **both** your code **and** Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -570,7 +578,7 @@ While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker
 If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a RAGFlow Docker image.
 :::
 
-### Related APIs
+### API changes
 
 #### HTTP API
 
@@ -591,7 +599,7 @@ Released on May 21, 2024.
 - Supports monitoring of system components, including Elasticsearch, MySQL, Redis, and MinIO.
 - Supports disabling **Layout Recognition** in the GENERAL chunking method to reduce file chunking time.
 
-### Related APIs
+### API changes
 
 #### HTTP API
 
