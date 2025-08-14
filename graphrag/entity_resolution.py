@@ -106,7 +106,7 @@ class EntityResolution(Extractor):
             nonlocal remain_candidates_to_resolve, callback
             async with semaphore:
                 try:
-                    with trio.move_on_after(180) as cancel_scope:
+                    with trio.move_on_after(280) as cancel_scope:
                         await self._resolve_candidate(candidate_batch, result_set, result_lock)
                         remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
                         callback(msg=f"Resolved {len(candidate_batch[1])} pairs, {remain_candidates_to_resolve} are remained to resolve. ")
