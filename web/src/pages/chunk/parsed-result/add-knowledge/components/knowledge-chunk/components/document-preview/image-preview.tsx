@@ -3,16 +3,17 @@ import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
 import classNames from 'classnames';
 import { useEffect, useState } from 'react';
-import { useGetDocumentUrl } from './hooks';
 
 interface ImagePreviewerProps {
   className?: string;
+  url: string;
 }
 
 export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
   className,
+  url,
 }) => {
-  const url = useGetDocumentUrl();
+  // const url = useGetDocumentUrl();
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 

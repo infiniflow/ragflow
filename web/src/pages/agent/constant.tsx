@@ -262,7 +262,7 @@ export const initialRetrievalValues = {
 
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
-  prologue: `Hi! I'm your assistant, what can I do for you?`,
+  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const variableCheckBoxFieldMap = Object.keys(

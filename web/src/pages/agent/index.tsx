@@ -34,6 +34,7 @@ import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import AgentCanvas from './canvas';
+import { DropdownProvider } from './canvas/context';
 import EmbedDialog from './embed-dialog';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
@@ -185,10 +186,12 @@ export default function Agent() {
         </div>
       </PageHeader>
       <ReactFlowProvider>
-        <AgentCanvas
-          drawerVisible={chatDrawerVisible}
-          hideDrawer={hideChatDrawer}
-        ></AgentCanvas>
+        <DropdownProvider>
+          <AgentCanvas
+            drawerVisible={chatDrawerVisible}
+            hideDrawer={hideChatDrawer}
+          ></AgentCanvas>
+        </DropdownProvider>
       </ReactFlowProvider>
       {fileUploadVisible && (
         <UploadAgentDialog
