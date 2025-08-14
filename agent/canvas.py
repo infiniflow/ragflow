@@ -252,15 +252,6 @@ class Canvas:
                            "created_at": cpn_obj.output("_created_time"),
                        })
 
-        def _append_path(cpn_id):
-            if self.path[-1] == cpn_id:
-                return
-            self.path.append(cpn_id)
-
-        def _extend_path(cpn_ids):
-            for cpn_id in cpn_ids:
-                _append_path(cpn_id)
-
         self.error = ""
         idx = len(self.path) - 1
         partials = []
@@ -279,10 +270,11 @@ class Canvas:
             # post processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
-                if cpn["obj"].component_name.lower() == "message":
-                    if isinstance(cpn["obj"].output("content"), partial):
+                cpn_obj = self.get_component_obj(self.path[i])
+                if cpn_obj.component_name.lower() == "message":
+                    if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
-                        for m in cpn["obj"].output("content")():
+                        for m in cpn_obj.output("content")():
                             if not m:
                                 continue
                             if m == "<think>":
@@ -292,48 +284,65 @@ class Canvas:
                             else:
                                 yield decorate("message", {"content": m})
                                 _m += m
-                        cpn["obj"].set_output("content", _m)
+                        cpn_obj.set_output("content", _m)
                     else:
-                        yield decorate("message", {"content": cpn["obj"].output("content")})
+                        yield decorate("message", {"content": cpn_obj.output("content")})
                     yield decorate("message_end", {"reference": self.get_reference()})
 
                     while partials:
-                        _cpn = self.get_component(partials[0])
-                        if isinstance(_cpn["obj"].output("content"), partial):
+                        _cpn_obj = self.get_component_obj(partials[0])
+                        if isinstance(_cpn_obj.output("content"), partial):
                             break
-                        yield _node_finished(_cpn["obj"])
+                        yield _node_finished(_cpn_obj)
                         partials.pop(0)
 
-                if cpn["obj"].error():
-                    ex = cpn["obj"].exception_handler()
-                    if ex and ex["comment"]:
-                        yield decorate("message", {"content": ex["comment"]})
-                        yield decorate("message_end", {})
+                other_branch = False
+                if cpn_obj.error():
+                    ex = cpn_obj.exception_handler()
                     if ex and ex["goto"]:
-                        self.path.append(ex["goto"])
-                    elif not ex or not ex["default_value"]:
-                        self.error = cpn["obj"].error()
+                        self.path.extend(ex["goto"])
+                        other_branch = True
+                    elif ex and ex["default_value"]:
+                        yield decorate("message", {"content": ex["default_value"]})
+                        yield decorate("message_end", {})
+                    else:
+                        self.error = cpn_obj.error()
 
-                if cpn["obj"].component_name.lower() != "iteration":
-                    if isinstance(cpn["obj"].output("content"), partial):
+                if cpn_obj.component_name.lower() != "iteration":
+                    if isinstance(cpn_obj.output("content"), partial):
                         if self.error:
-                            cpn["obj"].set_output("content", None)
-                            yield _node_finished(cpn["obj"])
+                            cpn_obj.set_output("content", None)
+                            yield _node_finished(cpn_obj)
                         else:
                             partials.append(self.path[i])
                     else:
-                        yield _node_finished(cpn["obj"])
+                        yield _node_finished(cpn_obj)
 
-                if cpn["obj"].component_name.lower() == "iterationitem" and cpn["obj"].end():
-                    iter = cpn["obj"].get_parent()
+                def _append_path(cpn_id):
+                    nonlocal other_branch
+                    if other_branch:
+                        return
+                    if self.path[-1] == cpn_id:
+                        return
+                    self.path.append(cpn_id)
+
+                def _extend_path(cpn_ids):
+                    nonlocal other_branch
+                    if other_branch:
+                        return
+                    for cpn_id in cpn_ids:
+                        _append_path(cpn_id)
+
+                if cpn_obj.component_name.lower() == "iterationitem" and cpn_obj.end():
+                    iter = cpn_obj.get_parent()
                     yield _node_finished(iter)
                     _extend_path(self.get_component(cpn["parent_id"])["downstream"])
-                elif cpn["obj"].component_name.lower() in ["categorize", "switch"]:
-                    _extend_path(cpn["obj"].output("_next"))
-                elif cpn["obj"].component_name.lower() == "iteration":
-                    _append_path(cpn["obj"].get_start())
-                elif not cpn["downstream"] and cpn["obj"].get_parent():
-                    _append_path(cpn["obj"].get_parent().get_start())
+                elif cpn_obj.component_name.lower() in ["categorize", "switch"]:
+                    _extend_path(cpn_obj.output("_next"))
+                elif cpn_obj.component_name.lower() == "iteration":
+                    _append_path(cpn_obj.get_start())
+                elif not cpn["downstream"] and cpn_obj.get_parent():
+                    _append_path(cpn_obj.get_parent().get_start())
                 else:
                     _extend_path(cpn["downstream"])
 
@@ -342,13 +351,13 @@ class Canvas:
                 break
             idx = to
 
-            if any([self.get_component(c)["obj"].component_name.lower() == "userfillup" for c in self.path[idx:]]):
+            if any([self.get_component_obj(c).component_name.lower() == "userfillup" for c in self.path[idx:]]):
                 path = [c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() == "userfillup"]
                 path.extend([c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() != "userfillup"])
                 another_inputs = {}
                 tips = ""
                 for c in path:
-                    o = self.get_component(c)["obj"]
+                    o = self.get_component_obj(c)
                     if o.component_name.lower() == "userfillup":
                         another_inputs.update(o.get_input_elements())
                         if o.get_param("enable_tips"):

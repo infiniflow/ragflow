@@ -1,19 +1,22 @@
 ---
 sidebar_position: 2
-slug: /generate_component
+slug: /agent_component
 ---
 
-# Generate component
+# Agent component
 
-The component that prompts the LLM to respond appropriately.
+The component equipped with reasoning, tool usage, and multi-agent collaboration capabilities.
 
 ---
 
-A **Generate** component fine-tunes the LLM and sets its prompt.
+An **Agent** component fine-tunes the LLM and sets its prompt. From v0.20.0 onwards, an **Agent** component is able to work independently and with the following capabilities:
+
+- Autonomous reasoning with reflection and adjustment based on environmental feedback.
+- Use of tools or subagents to complete tasks.
 
 ## Scenarios
 
-A **Generate** component is essential when you need the LLM to assist with summarizing, translating, or controlling various tasks. 
+An **Agent** component is essential when you need the LLM to assist with summarizing, translating, or controlling various tasks. 
 
 ## Configurations
 
@@ -43,6 +46,7 @@ Click the dropdown menu of **Model** to show the model configuration window.
 - **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.  
   - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
   - Defaults to 0.7.
+- **Max tokens**: 
 
 :::tip NOTE
 - It is not necessary to stick with the same model for all components. If a specific model is not performing well for a particular task, consider using a different one.
@@ -54,37 +58,21 @@ Click the dropdown menu of **Model** to show the model configuration window.
 Typically, you use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. We do not plan to elaborate on this topic, as it can be as extensive as prompt engineering. However, please be aware that the system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. 
 
 :::danger IMPORTANT
-A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence. Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` or the **(x)** button to show the keys to use.
+An **Agent** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence. Keys in a **Agent** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` or the **(x)** button to show the keys to use.
 :::
 
-Below is a prompt excerpt of a **Generate** component from the **Interpreter** template (component ID: **Reflect**):
+### User prompt
 
-```text
-Your task is to read a source text and a translation to {target_lang}, and give constructive suggestions to improve the translation. The source text and initial translation, delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT> and <TRANSLATION></TRANSLATION>, are as follows:
-
-<SOURCE_TEXT>
-{source_text}
-</SOURCE_TEXT>
-
-<TRANSLATION>
-{translation_1}
-</TRANSLATION>
-
-When writing suggestions, pay attention to whether there are ways to improve the translation's fluency, by applying {target_lang} grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions.
-- Each suggestion should address one specific part of the translation.
-- Output the suggestions only.
-```
-
-Where `{source_text}` and `{target_lang}` are global variables defined by the **Begin** component, while `{translation_1}` is the output of another **Generate** component with the component ID **Translate directly**.
-
-### Cite 
-
-This toggle sets whether to cite the original text as reference. 
+The user-defined prompt. Defaults to `sys.query`, the user query.
 
 
-:::tip NOTE
-This feature applies *only* after the original documents have been uploaded to the corresponding knowledge base(s) and file parsing is complete.
-:::
+### Tools 
+
+You can use an **Agent** component as a collaborator that reasons and reflects with the aid of other tools; for instance, **Retrieval** can serve as one such tool for an **Agent**.
+
+### Agent 
+
+You use an **Agent** component as a collaborator that reasons and reflects with the aid of subagents or other tools, forming a multi-agent system.
 
 ### Message window size
 
@@ -94,15 +82,22 @@ An integer specifying the number of previous dialogue rounds to input into the L
 This feature is used for multi-turn dialogue *only*.
 :::
 
+### Max retries
 
-## Examples
+Defines the maximum number of attempts the agent will make to retry a failed task or operation before stopping or reporting failure.
 
-You can explore our three-step interpreter agent template, where a **Generate** component (component ID: **Reflect**) takes three global variables:
+### Delay after error
 
-1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
-2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
-3. On the **agent template** page, hover over the **Interpreter** card and click **Use this template**.
-4. Name your new agent and click **OK** to enter the workflow editor.
-5. Click on component **Reflect**, to display its **Configuration** window, where:
-   - `{target_lang}` and `{source_text}` are defined in the **Begin** component and require user input.
-   - `{translation_1}` is the output from the upstream component **Translate directly**.
+The waiting period in seconds that the agent observes before retrying a failed task, helping to prevent immediate repeated attempts and allowing system conditions to improve. Defaults to 1 second.
+
+### Max rounds
+
+Defines the maximum number reflection rounds of the selected chat model. Defaults to 5 rounds.
+
+:::tip NOTE
+You can set the value to 1 to shorten your agent's response time.
+:::
+
+### Output
+
+The global variable name for the output of the **Agent** component, which can be referenced by other components in the workflow.

@@ -19,31 +19,35 @@ A **Begin** component is essential in all cases. Every agent includes a **Begin*
 
 Click the component to display its **Configuration** window. Here, you can set an opening greeting and the input parameters (global variables) for the agent.
 
-### ID
+### Mode
 
-The ID is the unique identifier for the component within the workflow. Unlike the IDs of other components, the ID of the **Begin** component _cannot_ be changed.
+Mode defines how the workflow is triggered.
+
+- Conversational: The agent is triggered from a conversation.
+- Task: The agent starts without a conversation.
 
 ### Opening greeting
 
-An opening greeting is the agent's first message to the user. It can be a welcoming remark or an instruction to guide the user forward.
+**Conversational mode only.**
+
+An agent in conversational mode begins with an opening greeting. It is the agent's first message to the user in conversational mode, which can be a welcoming remark or an instruction to guide the user forward.
 
 ### Global variables
 
 You can define global variables within the **Begin** component, which can be either mandatory or optional. Once set, users will need to provide values for these variables when engaging with the agent. Click **+ Add variable** to add a global variable, each with the following attributes:
 
-- **Key**: _Required_  
-  The unique variable name.
 - **Name**: _Required_  
   A descriptive name providing additional details about the variable.  
-  For example, if **Key** is set to `lang`, you can set its **Name** to `Target language`.
 - **Type**: _Required_  
   The type of the variable:
-  - **line**: Accepts a single line of text without line breaks.
-  - **paragraph**: Accepts multiple lines of text, including line breaks.
-  - **options**: Requires the user to select a value for this variable from a dropdown menu. And you are required to set _at least_ one option for the dropdown menu.
-  - **file**: Requires the user to upload one or multiple files.
-  - **integer**: Accepts an integer as input.
-  - **boolean**: Requires the user to toggle between on and off.
+  - **Single-line text**: Accepts a single line of text without line breaks.
+  - **Paragraph text**: Accepts multiple lines of text, including line breaks.
+  - **Dropdown options**: Requires the user to select a value for this variable from a dropdown menu. And you are required to set _at least_ one option for the dropdown menu.
+  - **file upload**: Requires the user to upload one or multiple files.
+  - **Number**: Accepts a number as input.
+  - **Boolean**: Requires the user to toggle between on and off.
+- **Key**: _Required_  
+  The unique variable name.
 - **Optional**: A toggle indicating whether the variable is optional.
 
 :::tip NOTE
@@ -54,36 +58,18 @@ To pass in parameters from a client, call:
   :::
 
 :::danger IMPORTANT
-
-- If you set the key type as **file**, ensure the token count of the uploaded file does not exceed your model provider's maximum token limit; otherwise, the plain text in your file will be truncated and incomplete.
-- If your agent's **Begin** component takes a variable, you _cannot_ embed it into a webpage.
-  :::
+If you set the key type as **file**, ensure the token count of the uploaded file does not exceed your model provider's maximum token limit; otherwise, the plain text in your file will be truncated and incomplete.
+:::
 
 :::note
 You can tune document parsing and embedding efficiency by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`.
 :::
-
-## Examples
-
-As mentioned earlier, the **Begin** component is indispensable for an agent. Still, you can take a look at our three-step interpreter agent template, where the **Begin** component takes two global variables:
-
-1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
-2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
-3. On the **agent template** page, hover over the **Interpreter** card and click **Use this template**.
-4. Name your new agent and click **OK** to enter the workflow editor.
-5. Click on the **Begin** component to display its **Configuration** window.
 
 ## Frequently asked questions
 
 ### Is the uploaded file in a knowledge base?
 
 No. Files uploaded to an agent as input are not stored in a knowledge base and hence will not be processed using RAGFlow's built-in OCR, DLR or TSR models, or chunked using RAGFlow's built-in chunking methods.
-
-### How to upload a webpage or file from a URL?
-
-If you set the type of a variable as **file**, your users will be able to upload a file either from their local device or from an accessible URL. For example:
-
-![upload_file](https://github.com/user-attachments/assets/7ad2a352-0807-4b74-b8d1-d09e5cd37997)
 
 ### File size limit for an uploaded file
 

@@ -1118,14 +1118,14 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
 
 Lists documents in a specified dataset.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -1134,7 +1134,7 @@ Lists documents in a specified dataset.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -1156,6 +1156,10 @@ curl --request GET \
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
+- `create_time_from`: (*Filter parameter*), `integer`
+  Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
+- `create_time_to`: (*Filter parameter*), `integer`
+  Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
 
 #### Response
 
@@ -3371,6 +3375,7 @@ The chat model autonomously determines the number of questions to generate based
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string`
+  - `"industry"`: `string`
 
 ##### Request example
 
@@ -3381,7 +3386,8 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '
      {
-          "question": "What are the key advantages of Neovim over Vim?"
+          "question": "What are the key advantages of Neovim over Vim?",
+          "industry": "software_development"
      }'
 ```
 
@@ -3389,6 +3395,8 @@ curl --request POST \
 
 - `"question"`: (*Body Parameter*), `string`
   The original user question.
+- `"industry"`: (*Body Parameter*), `string`
+  Industry of the question.
 
 #### Response
 

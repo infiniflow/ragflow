@@ -13,15 +13,16 @@ import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import { preprocessLaTeX } from '@/utils/chat';
+import { useIsDarkTheme } from '../theme-provider';
 import styles from './index.less';
 
 const HightLightMarkdown = ({
   children,
-  dark = false,
 }: {
   children: string | null | undefined;
-  dark?: boolean;
 }) => {
+  const isDarkTheme = useIsDarkTheme();
+
   return (
     <Markdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -37,7 +38,7 @@ const HightLightMarkdown = ({
                 {...rest}
                 PreTag="div"
                 language={match[1]}
-                style={dark ? oneDark : oneLight}
+                style={isDarkTheme ? oneDark : oneLight}
               >
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>

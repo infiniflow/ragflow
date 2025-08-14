@@ -353,7 +353,12 @@ export const useHandleMessageInputChange = () => {
 export const useSelectDerivedMessages = () => {
   const [derivedMessages, setDerivedMessages] = useState<IMessage[]>([]);
 
-  const ref = useScrollToBottom(derivedMessages);
+  const messageContainerRef = useRef<HTMLDivElement>(null);
+
+  const { scrollRef, scrollToBottom } = useScrollToBottom(
+    derivedMessages,
+    messageContainerRef,
+  );
 
   const addNewestQuestion = useCallback(
     (message: Message, answer: string = '') => {
@@ -487,8 +492,13 @@ export const useSelectDerivedMessages = () => {
     [setDerivedMessages],
   );
 
+  const removeAllMessages = useCallback(() => {
+    setDerivedMessages([]);
+  }, [setDerivedMessages]);
+
   return {
-    ref,
+    scrollRef,
+    messageContainerRef,
     derivedMessages,
     setDerivedMessages,
     addNewestQuestion,
@@ -498,6 +508,8 @@ export const useSelectDerivedMessages = () => {
     addNewestOneQuestion,
     addNewestOneAnswer,
     removeMessagesAfterCurrentMessage,
+    removeAllMessages,
+    scrollToBottom,
   };
 };
 

@@ -1,3 +1,4 @@
+import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
 import {
   Tooltip,
   TooltipContent,
@@ -144,6 +145,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   const { ref, showImage, hideImage, imgVisible, mouse } = useMoveNote();
 
+  const { theme } = useTheme();
+
   const onPaneClick = useCallback(() => {
     hideFormDrawer();
     if (imgVisible) {
@@ -164,6 +167,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       setLastSendLoading(false);
     }
   };
+
+  const isDarkTheme = useIsDarkTheme();
 
   useHideFormSheetOnNodeDeletion({ hideFormDrawer });
 
@@ -211,13 +216,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onEdgeMouseEnter={onEdgeMouseEnter}
           onEdgeMouseLeave={onEdgeMouseLeave}
           className="h-full"
-          colorMode="dark"
+          colorMode={theme}
           defaultEdgeOptions={{
             type: 'buttonEdge',
             markerEnd: 'logo',
             style: {
               strokeWidth: 1,
-              stroke: 'rgba(91, 93, 106, 1)',
+              stroke: isDarkTheme
+                ? 'rgba(91, 93, 106, 1)'
+                : 'rgba(151, 154, 171, 1)',
             },
             zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}
