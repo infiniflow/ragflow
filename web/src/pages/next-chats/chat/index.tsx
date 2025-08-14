@@ -11,21 +11,25 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchDialog } from '@/hooks/use-chat-request';
+import { useFetchConversation, useFetchDialog } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
-import { Plus } from 'lucide-react';
+import { ArrowUpRight, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/multiple-chat-box';
 import { SingleChatBox } from './chat-box/single-chat-box';
+import { LLMSelectForm } from './llm-select-form';
 import { Sessions } from './sessions';
 import { useAddChatBox } from './use-add-box';
+import { useSwitchDebugMode } from './use-switch-debug-mode';
 
 export default function Chat() {
   const { navigateToChatList } = useNavigatePage();
   const { data } = useFetchDialog();
   const { t } = useTranslation();
+  const { data: conversation } = useFetchConversation();
+
   const { handleConversationCardClick, controller } =
     useHandleClickConversationCard();
   const { visible: settingVisible, switchVisible: switchSettingVisible } =
@@ -37,6 +41,29 @@ export default function Chat() {
     hasSingleChatBox,
     hasThreeChatBox,
   } = useAddChatBox();
+
+  const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
+
+  if (isDebugMode) {
+    return (
+      <section className="pt-14 h-[100vh] pb-24">
+        <div className="flex items-center justify-between px-10 pb-5">
+          <span className="text-2xl">
+            Multiple Models ({chatBoxIds.length}/3)
+          </span>
+          <Button variant={'ghost'} onClick={switchDebugMode}>
+            Exit <LogOut />
+          </Button>
+        </div>
+        <MultipleChatBox
+          chatBoxIds={chatBoxIds}
+          controller={controller}
+          removeChatBox={removeChatBox}
+          addChatBox={addChatBox}
+        ></MultipleChatBox>
+      </section>
+    );
+  }
 
   return (
     <section className="h-full flex flex-col pr-5">
@@ -57,6 +84,7 @@ export default function Chat() {
       </PageHeader>
       <div className="flex flex-1 min-h-0">
         <Sessions
+          hasSingleChatBox={hasSingleChatBox}
           handleConversationCardClick={handleConversationCardClick}
           switchSettingVisible={switchSettingVisible}
         ></Sessions>
@@ -67,32 +95,23 @@ export default function Chat() {
               <CardHeader
                 className={cn('p-5', { 'border-b': hasSingleChatBox })}
               >
-                <CardTitle className="flex justify-between items-center">
-                  <div className="text-base">
-                    Card Title
-                    <Button variant={'ghost'} className="ml-2">
-                      GPT-4
-                    </Button>
+                <CardTitle className="flex justify-between items-center text-base">
+                  <div className="flex gap-3 items-center">
+                    {conversation.name}
+                    <LLMSelectForm></LLMSelectForm>
                   </div>
+
                   <Button
                     variant={'ghost'}
-                    onClick={addChatBox}
+                    onClick={switchDebugMode}
                     disabled={hasThreeChatBox}
                   >
-                    <Plus></Plus> Multiple Models
+                    <ArrowUpRight /> Multiple Models
                   </Button>
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex-1 p-0">
-                {hasSingleChatBox ? (
-                  <SingleChatBox controller={controller}></SingleChatBox>
-                ) : (
-                  <MultipleChatBox
-                    chatBoxIds={chatBoxIds}
-                    controller={controller}
-                    removeChatBox={removeChatBox}
-                  ></MultipleChatBox>
-                )}
+                <SingleChatBox controller={controller}></SingleChatBox>
               </CardContent>
             </Card>
             {settingVisible && (
