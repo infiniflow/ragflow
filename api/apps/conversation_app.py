@@ -216,7 +216,7 @@ def completion():
 
         if chat_model_id and not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
             req.pop("chat_model_id", None)
-            req.pip("chat_model_config", None)
+            req.pop("chat_model_config", None)
 
         def stream():
             nonlocal dia, msg, req, conv

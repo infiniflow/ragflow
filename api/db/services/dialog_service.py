@@ -160,12 +160,16 @@ class DialogService(CommonService):
         return list(dialogs.dicts()), count
 
 
-def chat_solo(dialog, messages, stream=True):
-    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-    else:
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+def chat_solo(dialog, messages, stream=True, **kwargs):
+    chat_llm_id = kwargs.get("chat_model_id", dialog.llm_id)
+    print(f"chatsolo got {chat_llm_id=}", flush=True)
 
+    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, chat_llm_id)
+    else:
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, chat_llm_id)
+
+    gen_conf = kwargs.get("chat_model_config", dialog.llm_setting)
     prompt_config = dialog.prompt_config
     tts_mdl = None
     if prompt_config.get("tts"):
@@ -174,7 +178,7 @@ def chat_solo(dialog, messages, stream=True):
     if stream:
         last_ans = ""
         delta_ans = ""
-        for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
+        for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, gen_conf):
             answer = ans
             delta_ans = ans[len(last_ans) :]
             if num_tokens_from_string(delta_ans) < 16:
@@ -185,7 +189,7 @@ def chat_solo(dialog, messages, stream=True):
         if delta_ans:
             yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
     else:
-        answer = chat_mdl.chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+        answer = chat_mdl.chat(prompt_config.get("system", ""), msg, gen_conf)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
