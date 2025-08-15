@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 import { IMessage } from '../chat/interface';
 import { useBuildFormRefs } from './use-build-form-refs';
+import { useUploadFile } from './use-upload-file';
 
 export function useSendMultipleChatMessage(
   controller: AbortController,
@@ -24,9 +25,11 @@ export function useSendMultipleChatMessage(
   const { conversationId } = useGetChatSearchParams();
 
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  const { send, answer, done } = useSendMessageWithSse(
+  const { send, answer, allDone } = useSendMessageWithSse(
     api.completeConversation,
   );
+
+  const { handleUploadFile, fileIds, clearFileIds } = useUploadFile();
 
   const { setFormRef, getLLMConfigById, isLLMConfigEmpty } =
     useBuildFormRefs(chatBoxIds);
@@ -182,12 +185,12 @@ export function useSendMultipleChatMessage(
           id,
           role: MessageType.User,
           chatBoxId,
+          doc_ids: fileIds,
         });
       }
     });
 
-    if (done) {
-      // TODO:
+    if (allDone) {
       setValue('');
       chatBoxIds.forEach((chatBoxId) => {
         if (!isLLMConfigEmpty(chatBoxId)) {
@@ -196,18 +199,22 @@ export function useSendMultipleChatMessage(
               id,
               content: value.trim(),
               role: MessageType.User,
+              doc_ids: fileIds,
             },
             chatBoxId,
           });
         }
       });
     }
+    clearFileIds();
   }, [
     value,
     chatBoxIds,
-    done,
+    allDone,
+    clearFileIds,
     isLLMConfigEmpty,
     addNewestQuestion,
+    fileIds,
     setValue,
     sendMessage,
   ]);
@@ -229,7 +236,8 @@ export function useSendMultipleChatMessage(
     handleInputChange,
     handlePressEnter,
     stopOutputMessage,
-    sendLoading: false,
+    sendLoading: !allDone,
     setFormRef,
+    handleUploadFile,
   };
 }
