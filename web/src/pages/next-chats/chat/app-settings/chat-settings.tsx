@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'umi';
 import { z } from 'zod';
+import { DatasetMetadata } from '../../constants';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatModelSettings } from './chat-model-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
@@ -38,6 +39,10 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
       top_n: 8,
       vector_similarity_weight: 0.2,
       top_k: 1024,
+      meta_data_filter: {
+        method: DatasetMetadata.Disabled,
+        manual: [],
+      },
     },
   });
 

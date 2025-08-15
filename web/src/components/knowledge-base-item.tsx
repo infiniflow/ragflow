@@ -70,6 +70,10 @@ const KnowledgeBaseItem = ({
 
 export default KnowledgeBaseItem;
 
+function buildQueryVariableOptionsByShowVariable(showVariable?: boolean) {
+  return showVariable ? useBuildQueryVariableOptions : () => [];
+}
+
 export function KnowledgeBaseFormField({
   showVariable = false,
 }: {
@@ -84,7 +88,7 @@ export function KnowledgeBaseFormField({
     (x) => x.parser_id !== DocumentParserType.Tag,
   );
 
-  const nextOptions = useBuildQueryVariableOptions();
+  const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 
   const knowledgeOptions = filteredKnowledgeList.map((x) => ({
     label: x.name,

@@ -27,6 +27,7 @@ export function SingleChatBox({ controller }: IProps) {
     messageContainerRef,
     sendLoading,
     derivedMessages,
+    isUploading,
     handleInputChange,
     handlePressEnter,
     regenerateMessage,
@@ -91,6 +92,7 @@ export function SingleChatBox({ controller }: IProps) {
         }
         stopOutputMessage={stopOutputMessage}
         onUpload={handleUploadFile}
+        isUploading={isUploading}
       />
     </section>
   );
