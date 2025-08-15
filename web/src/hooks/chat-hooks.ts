@@ -13,7 +13,6 @@ import i18n from '@/locales/config';
 import { IClientConversation } from '@/pages/chat/interface';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import chatService from '@/services/chat-service';
-import searchService from '@/services/search-service';
 import {
   buildMessageListWithUuid,
   getConversationId,
@@ -623,12 +622,7 @@ export const useFetchMindMap = () => {
   return { data, loading, fetchMindMap: mutateAsync };
 };
 
-export const useFetchRelatedQuestions = (tenantId?: string) => {
-  const [searchParams] = useSearchParams();
-  const shared_id = searchParams.get('shared_id');
-  const retrievalTestFunc = shared_id
-    ? searchService.getRelatedQuestionsShare
-    : chatService.getRelatedQuestions;
+export const useFetchRelatedQuestions = () => {
   const {
     data,
     isPending: loading,
@@ -637,10 +631,7 @@ export const useFetchRelatedQuestions = (tenantId?: string) => {
     mutationKey: ['fetchRelatedQuestions'],
     gcTime: 0,
     mutationFn: async (question: string): Promise<string[]> => {
-      const { data } = await retrievalTestFunc({
-        question,
-        tenant_id: tenantId,
-      });
+      const { data } = await chatService.getRelatedQuestions({ question });
 
       return data?.data ?? [];
     },
