@@ -113,3 +113,14 @@ redis:
 #   switch: false
 #   component: false
 #   dataset: false
+# smtp:
+#   mail_server: ""
+#   mail_port: 465
+#   mail_use_ssl: true
+#   mail_use_tls: false
+#   mail_username: ""
+#   mail_password: ""
+#   mail_default_sender:
+#     - "RAGFlow" # display name
+#     - "" # sender email address
+#   mail_frontend_url: "https://your-frontend.example.com"

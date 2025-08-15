@@ -21,6 +21,9 @@ import re
 import socket
 from urllib.parse import urlparse
 
+from api.apps import smtp_mail_server
+from flask_mail import Message
+from flask import render_template_string
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -29,6 +32,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.expected_conditions import staleness_of
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
+
 
 
 CONTENT_TYPE_MAP = {
@@ -172,3 +176,26 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return parsed if parsed > 0 else default
     except (TypeError, ValueError):
         return default
+
+
+INVITE_EMAIL_TMPL = """
+<p>Hi {{email}},</p>
+<p>{{inviter}} has invited you to join their team (ID: {{tenant_id}}).</p>
+<p>Click the link below to complete your registration:<br>
+<a href="{{invite_url}}">{{invite_url}}</a></p>
+<p>If you did not request this, please ignore this email.</p>
+"""
+
+def send_invite_email(to_email, invite_url, tenant_id, inviter):
+    from api.apps import  app
+    with app.app_context():
+        msg = Message(subject="RAGFlow Invitation",
+                      recipients=[to_email])
+        msg.html = render_template_string(
+            INVITE_EMAIL_TMPL,
+            email=to_email,
+            invite_url=invite_url,
+            tenant_id=tenant_id,
+            inviter=inviter,
+        )
+        smtp_mail_server.send(msg)

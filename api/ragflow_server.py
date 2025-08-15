@@ -33,7 +33,7 @@ import uuid
 
 from werkzeug.serving import run_simple
 from api import settings
-from api.apps import app
+from api.apps import app, smtp_mail_server
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from api import utils
@@ -74,11 +74,11 @@ def signal_handler(sig, frame):
 
 if __name__ == '__main__':
     logging.info(r"""
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     """)
     logging.info(
@@ -136,6 +136,18 @@ if __name__ == '__main__':
             threading.Timer(1.0, delayed_start_update_progress).start()
     else:
         threading.Timer(1.0, delayed_start_update_progress).start()
+
+    # init smtp server
+    if settings.SMTP_CONF:
+        app.config["MAIL_SERVER"] = settings.MAIL_SERVER
+        app.config["MAIL_PORT"] = settings.MAIL_PORT
+        app.config["MAIL_USE_SSL"] = settings.MAIL_USE_SSL
+        app.config["MAIL_USE_TLS"] = settings.MAIL_USE_TLS
+        app.config["MAIL_USERNAME"] = settings.MAIL_USERNAME
+        app.config["MAIL_PASSWORD"] = settings.MAIL_PASSWORD
+        app.config["MAIL_DEFAULT_SENDER"] = settings.MAIL_DEFAULT_SENDER
+        smtp_mail_server.init_app(app)
+
 
     # start http server
     try:

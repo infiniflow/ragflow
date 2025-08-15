@@ -130,6 +130,7 @@ dependencies = [
     "click>=8.1.8",
     "python-calamine>=0.4.0",
     "litellm>=1.74.15.post1",
+    "flask-mail>=0.10.0",
 ]
 
 [project.optional-dependencies]

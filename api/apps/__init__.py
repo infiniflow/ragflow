@@ -29,6 +29,7 @@ from api.db.db_models import close_connection
 from api.db.services import UserService
 from api.utils import CustomJSONEncoder, commands
 
+from flask_mail import Mail
 from flask_session import Session
 from flask_login import LoginManager
 from api import settings
@@ -40,6 +41,7 @@ __all__ = ["app"]
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
 app = Flask(__name__)
+smtp_mail_server = Mail()
 
 # Add this at the beginning of your file to configure Swagger UI
 swagger_config = {
@@ -146,16 +148,16 @@ def load_user(web_request):
     if authorization:
         try:
             access_token = str(jwt.loads(authorization))
-            
+
             if not access_token or not access_token.strip():
                 logging.warning("Authentication attempt with empty access token")
                 return None
-            
+
             # Access tokens should be UUIDs (32 hex characters)
             if len(access_token.strip()) < 32:
                 logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
                 return None
-            
+
             user = UserService.query(
                 access_token=access_token, status=StatusEnum.VALID.value
             )
