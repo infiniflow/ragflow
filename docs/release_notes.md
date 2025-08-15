@@ -22,7 +22,27 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
-## v0.20.2 (Ongoing)
+## v0.20.2 (Ongoing🔨)
+
+### Improvements
+
+- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
+- Search: Supports creating search apps tailored to various business scenarios
+- Chat: Supports comparing answer performance of up to three chat model settings on a single **Chat** page.
+- Agent:  
+  - Implements a toggle in the **Agent** component to enable or disable citation.  
+  - Introduces a drag-and-drop method for creating components.  
+- Documentation: Corrects inaccuracies in the API reference.
+
+### New Agent templates
+
+- Report Agent: A template for generating summary reports in internal question-answering scenarios, supporting the display of tables and formulae.  [#9427](https://github.com/infiniflow/ragflow/pull/9427)
+
+### Fixed issues
+
+- Predefined opening greeting in the **Agent** component was missing during conversations.  
+- An automatic line break issue in the prompt editor.  
+- A memory leak issue caused by PyPDF. [#9469](https://github.com/infiniflow/ragflow/pull/9469)
 
 ### API changes
 
