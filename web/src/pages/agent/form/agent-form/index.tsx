@@ -73,6 +73,7 @@ const FormSchema = z.object({
   exception_goto: z.array(z.string()).optional(),
   exception_default_value: z.string().optional(),
   ...LargeModelFilterFormSchema,
+  cite: z.boolean().optional(),
 });
 
 const outputList = buildOutputList(initialAgentValues.outputs);
@@ -186,6 +187,23 @@ function AgentForm({ node }: INextOperatorForm) {
         <Collapse title={<div>Advanced Settings</div>}>
           <FormContainer>
             <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
+            <FormField
+              control={form.control}
+              name={`cite`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel tooltip={t('flow.citeTip')}>
+                    {t('flow.cite')}
+                  </FormLabel>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    ></Switch>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name={`max_retries`}

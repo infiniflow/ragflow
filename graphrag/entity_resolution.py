@@ -106,7 +106,7 @@ class EntityResolution(Extractor):
             nonlocal remain_candidates_to_resolve, callback
             async with semaphore:
                 try:
-                    with trio.move_on_after(180) as cancel_scope:
+                    with trio.move_on_after(280) as cancel_scope:
                         await self._resolve_candidate(candidate_batch, result_set, result_lock)
                         remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
                         callback(msg=f"Resolved {len(candidate_batch[1])} pairs, {remain_candidates_to_resolve} are remained to resolve. ")
@@ -169,7 +169,7 @@ class EntityResolution(Extractor):
         logging.info(f"Created resolution prompt {len(text)} bytes for {len(candidate_resolution_i[1])} entity pairs of type {candidate_resolution_i[0]}")
         async with chat_limiter:
             try:
-                with trio.move_on_after(120) as cancel_scope:
+                with trio.move_on_after(240) as cancel_scope:
                     response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], {})
                 if cancel_scope.cancelled_caught:
                     logging.warning("_resolve_candidate._chat timeout, skipping...")
