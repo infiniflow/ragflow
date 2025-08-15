@@ -160,15 +160,12 @@ class DialogService(CommonService):
         return list(dialogs.dicts()), count
 
 
-def chat_solo(dialog, messages, stream=True, **kwargs):
-    chat_llm_id = kwargs.get("chat_model_id", dialog.llm_id)
-
+def chat_solo(dialog, messages, stream=True):
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, chat_llm_id)
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
-        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, chat_llm_id)
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
 
-    gen_conf = kwargs.get("chat_model_config", dialog.llm_setting)
     prompt_config = dialog.prompt_config
     tts_mdl = None
     if prompt_config.get("tts"):
@@ -177,7 +174,7 @@ def chat_solo(dialog, messages, stream=True, **kwargs):
     if stream:
         last_ans = ""
         delta_ans = ""
-        for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, gen_conf):
+        for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
             answer = ans
             delta_ans = ans[len(last_ans) :]
             if num_tokens_from_string(delta_ans) < 16:
@@ -188,7 +185,7 @@ def chat_solo(dialog, messages, stream=True, **kwargs):
         if delta_ans:
             yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
     else:
-        answer = chat_mdl.chat(prompt_config.get("system", ""), msg, gen_conf)
+        answer = chat_mdl.chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
@@ -306,17 +303,10 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     chat_start_ts = timer()
 
-    # Allow overriding the default LLM model for this conversation
-    # Uses `chat_model_id` parameter name instead of `llm_id` to:
-    # 1. Avoid confusion with the dialog's default `llm_id`
-    # 2. Explicitly indicate this is for chat completion only
-    # Priority: kwargs.chat_model_id > dialog.llm_id
-    chat_llm_id = kwargs.get("chat_model_id", dialog.llm_id)
-
-    if TenantLLMService.llm_id2llm_type(chat_llm_id) == "image2text":
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, chat_llm_id)
+    if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, chat_llm_id)
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
 
     max_tokens = llm_model_config.get("max_tokens", 8192)
 
@@ -364,12 +354,12 @@ def chat(dialog, messages, stream=True, **kwargs):
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
-        questions = [full_question(dialog.tenant_id, chat_llm_id, messages)]
+        questions = [full_question(dialog.tenant_id, dialog.llm_id, messages)]
     else:
         questions = questions[-1:]
 
     if prompt_config.get("cross_languages"):
-        questions = [cross_languages(dialog.tenant_id, chat_llm_id, questions[0], prompt_config["cross_languages"])]
+        questions = [cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
@@ -456,7 +446,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
-    gen_conf = kwargs.get("chat_model_config", dialog.llm_setting)
+    gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
     prompt4citation = ""
