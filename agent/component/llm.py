@@ -141,7 +141,7 @@ class LLM(ComponentBase):
             self.set_input_value(k, args[k])
 
         if hasattr(self._param, 'history_independent') and self._param.history_independent:
-            msg = self._canvas.get_agent_history(self._id, self._param.message_history_window_size)[:-1]
+            msg = self._canvas.get_agent_history(self._id, self._param.message_history_window_size)
         else:
             msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
         msg.extend(deepcopy(self._param.prompts))
