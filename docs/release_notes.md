@@ -24,6 +24,8 @@ These two embedding models are optimized specifically for English and Chinese, s
 
 ## v0.20.2 (Ongoing🔨)
 
+Released on August ??, 2025.
+
 ### Improvements
 
 - Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
