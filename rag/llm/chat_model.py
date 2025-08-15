@@ -38,6 +38,7 @@ from zhipuai import ZhipuAI
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
+from api import settings
 
 
 # Error message constants
@@ -164,6 +165,13 @@ class Base(ABC):
 
     def _exceptions(self, e, attempt):
         logging.exception("OpenAI chat_with_tools")
+        try:
+            settings.IS_STRONG_ENOUGH_TIMEOUT_SECONDS = 750
+            settings.IS_STRONG_ENOUGH_TIMEOUT_ATTEMPTS = 5
+            settings.EMBEDDING_FAIL_AFTER_SECONDS = 60
+            settings.CHAT_FAIL_AFTER_SECONDS = 150
+        except Exception as e:
+            logging.warning(f"Failed to update timeout settings: {e}")
         # Classify the error
         error_code = self._classify_error(e)
         if attempt == self.max_retries:
