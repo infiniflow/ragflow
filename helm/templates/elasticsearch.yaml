@@ -44,9 +44,21 @@ spec:
         checksum/config-es: {{ include (print $.Template.BasePath "/elasticsearch-config.yaml") . | sha256sum }}
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
+      {{- if or .Values.imagePullSecrets .Values.elasticsearch.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.elasticsearch.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
       initContainers:
       - name: fix-data-volume-permissions
-        image: alpine
+        image: {{ .Values.elasticsearch.initContainers.alpine.repository }}:{{ .Values.elasticsearch.initContainers.alpine.tag }}
+        {{- with .Values.elasticsearch.initContainers.alpine.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
         command:
         - sh
         - -c
@@ -55,14 +67,20 @@ spec:
           - mountPath: /usr/share/elasticsearch/data
             name: es-data
       - name: sysctl
-        image: busybox
+        image: {{ .Values.elasticsearch.initContainers.busybox.repository }}:{{ .Values.elasticsearch.initContainers.busybox.tag }}
+        {{- with .Values.elasticsearch.initContainers.busybox.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
         securityContext:
           privileged: true
           runAsUser: 0
         command: ["sysctl", "-w", "vm.max_map_count=262144"]
       containers:
       - name: elasticsearch
-        image: elasticsearch:{{ .Values.env.STACK_VERSION }}
+        image: {{ .Values.elasticsearch.image.repository }}:{{ .Values.elasticsearch.image.tag }}
+        {{- with .Values.elasticsearch.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
