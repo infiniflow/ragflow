@@ -244,7 +244,7 @@ class Agent(LLM, ToolBase):
 
         def complete():
             nonlocal hist
-            need2cite = self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
+            need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
             cited = False
             if hist[0]["role"] == "system" and need2cite:
                 if len(hist) < 7:
