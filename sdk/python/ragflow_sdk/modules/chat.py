@@ -47,7 +47,7 @@ class Chat(Base):
             self.variables = [{"key": "knowledge", "optional": True}]
             self.rerank_model = ""
             self.empty_response = None
-            self.opener = "Hi! I'm your assistant, what can I do for you?"
+            self.opener = "Hi! I'm your assistant. What can I do for you?"
             self.show_quote = True
             self.prompt = (
                 "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. "

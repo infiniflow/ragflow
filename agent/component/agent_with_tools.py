@@ -24,7 +24,8 @@ from typing import Any
 import json_repair
 
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
-from api.db.services.llm_service import LLMBundle, TenantLLMService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
 from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in
@@ -243,7 +244,7 @@ class Agent(LLM, ToolBase):
 
         def complete():
             nonlocal hist
-            need2cite = self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
+            need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
             cited = False
             if hist[0]["role"] == "system" and need2cite:
                 if len(hist) < 7:

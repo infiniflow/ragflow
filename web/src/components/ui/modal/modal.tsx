@@ -152,7 +152,7 @@ const Modal: ModalType = ({
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
-            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-colors-background-neutral-standard rounded-lg shadow-lg transition-all focus-visible:!outline-none`}
+            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-colors-background-neutral-standard rounded-lg shadow-lg border transition-all focus-visible:!outline-none`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}

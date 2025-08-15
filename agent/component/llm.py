@@ -24,7 +24,8 @@ from copy import deepcopy
 from functools import partial
 
 from api.db import LLMType
-from api.db.services.llm_service import LLMBundle, TenantLLMService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in, citation_prompt
@@ -144,7 +145,7 @@ class LLM(ComponentBase):
         prompt = self.string_format(prompt, args)
         for m in msg:
             m["content"] = self.string_format(m["content"], args)
-        if self._canvas.get_reference()["chunks"]:
+        if self._param.cite and self._canvas.get_reference()["chunks"]:
             prompt += citation_prompt()
 
         return prompt, msg

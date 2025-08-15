@@ -12,6 +12,7 @@ import {
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { pick } from 'lodash';
 import { Plus, Search } from 'lucide-react';
@@ -30,6 +31,7 @@ type SearchFormValues = z.infer<typeof searchFormSchema>;
 export default function SearchList() {
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('search');
+  const { navigateToSearch } = useNavigatePage();
   const { isLoading, createSearch } = useCreateSearch();
   const {
     data: list,
@@ -48,7 +50,10 @@ export default function SearchList() {
   };
 
   const onSubmit = async (values: SearchFormValues) => {
-    await createSearch({ name: values.name });
+    const res = await createSearch({ name: values.name });
+    if (res) {
+      navigateToSearch(res?.search_id);
+    }
     if (!isLoading) {
       setOpenCreateModal(false);
     }
@@ -61,7 +66,7 @@ export default function SearchList() {
     setSearchListParams({ ...searchParams, page, page_size: pageSize });
   };
   return (
-    <section>
+    <section className="w-full h-full flex flex-col">
       <div className="px-8 pt-8">
         <ListFilterBar
           icon={
@@ -84,22 +89,23 @@ export default function SearchList() {
           </Button>
         </ListFilterBar>
       </div>
-      <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[84vh] overflow-auto px-8">
-        {list?.data.search_apps.map((x) => {
-          return <SearchCard key={x.id} data={x}></SearchCard>;
-        })}
-        {/* {data.map((x) => {
-          return <SearchCard key={x.id} data={x}></SearchCard>;
-        })} */}
+      <div className="flex-1">
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[84vh] overflow-auto px-8">
+          {list?.data.search_apps.map((x) => {
+            return <SearchCard key={x.id} data={x}></SearchCard>;
+          })}
+        </div>
       </div>
-      {list?.data.total && (
-        <RAGFlowPagination
-          {...pick(searchParams, 'current', 'pageSize')}
-          total={list?.data.total}
-          onChange={handlePageChange}
-          on
-        />
+      {list?.data.total && list?.data.total > 0 && (
+        <div className="px-8 mb-4">
+          <RAGFlowPagination
+            {...pick(searchParams, 'current', 'pageSize')}
+            total={list?.data.total}
+            onChange={handlePageChange}
+          />
+        </div>
       )}
+
       <Modal
         open={openCreateModal}
         onOpenChange={(open) => {

@@ -38,6 +38,7 @@ export default {
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',
+      promptPlaceholder: '请输入或使用 / 快速插入变量。',
     },
     login: {
       login: '登录',
@@ -1315,12 +1316,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         },
       },
     },
-  },
-  modal: {
-    okText: '确认',
-    cancelText: '取消',
-  },
-  search: {
-    createSearch: '新建查询',
+    modal: {
+      okText: '确认',
+      cancelText: '取消',
+    },
+    search: {
+      createSearch: '新建查询',
+      searchGreeting: '今天我能为你做些什么？',
+    },
   },
 };

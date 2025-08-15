@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'umi';
 import { z } from 'zod';
+import { DatasetMetadata } from '../../constants';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatModelSettings } from './chat-model-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
@@ -38,6 +39,10 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
       top_n: 8,
       vector_similarity_weight: 0.2,
       top_k: 1024,
+      meta_data_filter: {
+        method: DatasetMetadata.Disabled,
+        manual: [],
+      },
     },
   });
 
@@ -68,14 +73,14 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   }, [data, form]);
 
   return (
-    <section className="p-5  w-[440px] ">
-      <div className="flex justify-between items-center text-base">
+    <section className="p-5  w-[440px] border-l">
+      <div className="flex justify-between items-center text-base pb-2">
         Chat Settings
         <X className="size-4 cursor-pointer" onClick={switchSettingVisible} />
       </div>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
-          <section className="space-y-6 overflow-auto max-h-[87vh] pr-4">
+          <section className="space-y-6 overflow-auto max-h-[85vh] pr-4">
             <ChatBasicSetting></ChatBasicSetting>
             <Separator />
             <ChatPromptEngine></ChatPromptEngine>
