@@ -79,6 +79,16 @@ STRONG_TEST_COUNT = int(os.environ.get("STRONG_TEST_COUNT", "8"))
 
 BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
 
+SMTP_CONF = None
+MAIL_SERVER = ""
+MAIL_PORT = 000
+MAIL_USE_SSL= True
+MAIL_USE_TLS = False
+MAIL_USERNAME = ""
+MAIL_PASSWORD = ""
+MAIL_DEFAULT_SENDER = ()
+MAIL_FRONTEND_URL = ""
+
 
 def get_or_create_secret_key():
     secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
@@ -185,6 +195,21 @@ def init_settings():
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
         global SANDBOX_HOST
         SANDBOX_HOST = os.environ.get("SANDBOX_HOST", "sandbox-executor-manager")
+
+    global SMTP_CONF, MAIL_SERVER, MAIL_PORT, MAIL_USE_SSL, MAIL_USE_TLS
+    global MAIL_USERNAME, MAIL_PASSWORD, MAIL_DEFAULT_SENDER, MAIL_FRONTEND_URL
+    SMTP_CONF = get_base_config("smtp", {})
+
+    MAIL_SERVER = SMTP_CONF.get("mail_server", "")
+    MAIL_PORT = SMTP_CONF.get("mail_port", 000)
+    MAIL_USE_SSL = SMTP_CONF.get("mail_use_ssl", True)
+    MAIL_USE_TLS = SMTP_CONF.get("mail_use_tls", False)
+    MAIL_USERNAME = SMTP_CONF.get("mail_username", "")
+    MAIL_PASSWORD = SMTP_CONF.get("mail_password", "")
+    mail_default_sender = SMTP_CONF.get("mail_default_sender", [])
+    if mail_default_sender and len(mail_default_sender) >= 2:
+        MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
+    MAIL_FRONTEND_URL = SMTP_CONF.get("mail_frontend_url", "")
 
 
 class CustomEnum(Enum):
