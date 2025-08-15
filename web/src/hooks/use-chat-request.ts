@@ -30,6 +30,7 @@ export const enum ChatApiAction {
   DeleteMessage = 'deleteMessage',
   FetchMindMap = 'fetchMindMap',
   FetchRelatedQuestions = 'fetchRelatedQuestions',
+  UploadAndParse = 'upload_and_parse',
 }
 
 export const useGetChatSearchParams = () => {
@@ -161,6 +162,10 @@ export const useSetDialog = () => {
         queryClient.invalidateQueries({
           exact: false,
           queryKey: [ChatApiAction.FetchDialogList],
+        });
+
+        queryClient.invalidateQueries({
+          queryKey: [ChatApiAction.FetchDialog],
         });
 
         message.success(
@@ -375,6 +380,34 @@ export const useDeleteMessage = () => {
 
   return { data, loading, deleteMessage: mutateAsync };
 };
+
+export function useUploadAndParseFile() {
+  const { conversationId } = useGetChatSearchParams();
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [ChatApiAction.UploadAndParse],
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('conversation_id', conversationId);
+
+      const { data } = await chatService.uploadAndParse(formData);
+
+      if (data.code === 0) {
+        message.success(t(`message.uploaded`));
+      }
+
+      return data;
+    },
+  });
+
+  return { data, loading, uploadAndParseFile: mutateAsync };
+}
 
 //#endregion
 

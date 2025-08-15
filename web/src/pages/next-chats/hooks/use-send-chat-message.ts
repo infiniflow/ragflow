@@ -18,6 +18,7 @@ import { useParams, useSearchParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { IMessage } from '../chat/interface';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
+import { useUploadFile } from './use-upload-file';
 
 export const useSetChatRouteParams = () => {
   const [currentQueryParameters, setSearchParams] = useSearchParams();
@@ -137,6 +138,8 @@ export const useSendMessage = (controller: AbortController) => {
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
+  const { handleUploadFile, fileIds, clearFileIds } = useUploadFile();
+
   const { send, answer, done } = useSendMessageWithSse(
     api.completeConversation,
   );
@@ -238,29 +241,35 @@ export const useSendMessage = (controller: AbortController) => {
     }
   }, [answer, addNewestAnswer, conversationId, isNew]);
 
-  const handlePressEnter = useCallback(
-    (documentIds: string[]) => {
-      if (trim(value) === '') return;
-      const id = uuid();
+  const handlePressEnter = useCallback(() => {
+    if (trim(value) === '') return;
+    const id = uuid();
 
-      addNewestQuestion({
-        content: value,
-        doc_ids: documentIds,
+    addNewestQuestion({
+      content: value,
+      doc_ids: fileIds,
+      id,
+      role: MessageType.User,
+    });
+    if (done) {
+      setValue('');
+      handleSendMessage({
         id,
+        content: value.trim(),
         role: MessageType.User,
+        doc_ids: fileIds,
       });
-      if (done) {
-        setValue('');
-        handleSendMessage({
-          id,
-          content: value.trim(),
-          role: MessageType.User,
-          doc_ids: documentIds,
-        });
-      }
-    },
-    [addNewestQuestion, handleSendMessage, done, setValue, value],
-  );
+    }
+    clearFileIds();
+  }, [
+    value,
+    addNewestQuestion,
+    fileIds,
+    done,
+    clearFileIds,
+    setValue,
+    handleSendMessage,
+  ]);
 
   return {
     handlePressEnter,
@@ -275,5 +284,6 @@ export const useSendMessage = (controller: AbortController) => {
     derivedMessages,
     removeMessageById,
     stopOutputMessage,
+    handleUploadFile,
   };
 };

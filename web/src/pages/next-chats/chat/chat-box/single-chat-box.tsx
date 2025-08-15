@@ -32,6 +32,7 @@ export function SingleChatBox({ controller }: IProps) {
     regenerateMessage,
     removeMessageById,
     stopOutputMessage,
+    handleUploadFile,
   } = useSendMessage(controller);
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchDialog();
@@ -89,6 +90,7 @@ export function SingleChatBox({ controller }: IProps) {
           createConversationBeforeUploadDocument
         }
         stopOutputMessage={stopOutputMessage}
+        onUpload={handleUploadFile}
       />
     </section>
   );
