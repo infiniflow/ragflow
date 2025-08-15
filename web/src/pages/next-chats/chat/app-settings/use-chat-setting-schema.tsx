@@ -43,6 +43,18 @@ export function useChatSettingSchema() {
     llm_id: z.string().optional(),
     ...vectorSimilarityWeightSchema,
     ...topnSchema,
+    meta_data_filter: z
+      .object({
+        method: z.string().optional(),
+        manual: z.array(
+          z.object({
+            key: z.string(),
+            op: z.string(),
+            value: z.string(),
+          }),
+        ),
+      })
+      .optional(),
   });
 
   return formSchema;
