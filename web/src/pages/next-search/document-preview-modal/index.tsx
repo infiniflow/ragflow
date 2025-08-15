@@ -12,7 +12,8 @@ import { useEffect, useState } from 'react';
 
 interface IProps extends IModalProps<any> {
   documentId: string;
-  chunk: IChunk | IReferenceChunk | IReferenceChunk;
+  chunk: IChunk &
+    IReferenceChunk & { docnm_kwd: string; document_name: string };
 }
 function getFileExtensionRegex(filename: string): string {
   const match = filename.match(/\.([^.]+)$/);
@@ -30,7 +31,6 @@ const PdfDrawer = ({
   // const [loaded, setLoaded] = useState(false);
   const url = getDocumentUrl();
 
-  console.log('chunk--->', chunk.docnm_kwd, url);
   const [fileType, setFileType] = useState('');
 
   useEffect(() => {

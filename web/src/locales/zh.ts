@@ -38,6 +38,7 @@ export default {
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',
+      promptPlaceholder: '请输入或使用 / 快速插入变量。',
     },
     login: {
       login: '登录',

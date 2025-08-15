@@ -585,7 +585,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         </FormControl>
                         <FormControl>
                           <Input
-                            type={'number'}
                             className="h-7 w-20 bg-bg-card"
                             max={2048}
                             min={0}

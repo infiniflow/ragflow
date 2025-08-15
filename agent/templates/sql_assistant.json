@@ -206,7 +206,7 @@
                             "enablePrologue": true,
                             "inputs": {},
                             "mode": "conversational",
-                            "prologue": "Hi! I'm your SQL assistant, what can I do for you?"
+                            "prologue": "Hi! I'm your SQL assistant. What can I do for you?"
                         }
                     },
                     "upstream": []
@@ -319,7 +319,7 @@
                                 "enablePrologue": true,
                                 "inputs": {},
                                 "mode": "conversational",
-                                "prologue": "Hi! I'm your SQL assistant, what can I do for you?"
+                                "prologue": "Hi! I'm your SQL assistant. What can I do for you?"
                             },
                             "label": "Begin",
                             "name": "begin"

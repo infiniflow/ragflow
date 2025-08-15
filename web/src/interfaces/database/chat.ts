@@ -82,6 +82,7 @@ export interface Message {
   audio_binary?: string;
   data?: any;
   files?: File[];
+  chatBoxId?: string;
 }
 
 export interface IReferenceChunk {
@@ -117,6 +118,7 @@ export interface IAnswer {
   id?: string;
   audio_binary?: string;
   data?: any;
+  chatBoxId?: string;
 }
 
 export interface Docagg {
