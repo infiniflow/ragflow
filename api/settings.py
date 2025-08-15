@@ -206,7 +206,9 @@ def init_settings():
     MAIL_USE_TLS = SMTP_CONF.get("mail_use_tls", False)
     MAIL_USERNAME = SMTP_CONF.get("mail_username", "")
     MAIL_PASSWORD = SMTP_CONF.get("mail_password", "")
-    MAIL_DEFAULT_SENDER = (SMTP_CONF.get("mail_default_sender")[0], SMTP_CONF.get("mail_default_sender")[1])
+    mail_default_sender = SMTP_CONF.get("mail_default_sender", [])
+    if mail_default_sender and len(mail_default_sender) >= 2:
+        MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
     MAIL_FRONTEND_URL = SMTP_CONF.get("mail_frontend_url", "")
 
 

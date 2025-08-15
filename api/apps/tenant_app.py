@@ -80,7 +80,7 @@ def create(tenant_id):
         role=UserTenantRole.INVITE,
         status=StatusEnum.VALID.value)
 
-    if smtp_mail_server:
+    if smtp_mail_server and settings.SMTP_CONF:
         from threading import Thread
 
         user_name = ""
@@ -88,12 +88,11 @@ def create(tenant_id):
         if user:
             user_name = user.nickname
 
-        Thread(target=send_invite_email, args=(
-            invite_user_email,
-            settings.MAIL_FRONTEND_URL,
-            tenant_id,
-            user_name or current_user.email
-        )).start()
+        Thread(
+            target=send_invite_email,
+            args=(invite_user_email, settings.MAIL_FRONTEND_URL, tenant_id, user_name or current_user.email),
+            daemon=True
+        ).start()
 
     usr = invite_users[0].to_dict()
     usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
