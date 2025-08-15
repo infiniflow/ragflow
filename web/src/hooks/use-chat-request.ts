@@ -17,6 +17,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { useHandleSearchStrChange } from './logic-hooks/use-change-search';
 
 export const enum ChatApiAction {
   FetchDialogList = 'fetchDialogList',
@@ -229,6 +230,9 @@ export const useClickConversationCard = () => {
 export const useFetchConversationList = () => {
   const { id } = useParams();
   const { handleClickConversation } = useClickConversationCard();
+
+  const { searchString, handleInputChange } = useHandleSearchStrChange();
+
   const {
     data,
     isFetching: loading,
@@ -239,6 +243,11 @@ export const useFetchConversationList = () => {
     gcTime: 0,
     refetchOnWindowFocus: false,
     enabled: !!id,
+    select(data) {
+      return searchString
+        ? data.filter((x) => x.name.includes(searchString))
+        : data;
+    },
     queryFn: async () => {
       const { data } = await chatService.listConversation(
         { params: { dialog_id: id } },
@@ -255,7 +264,7 @@ export const useFetchConversationList = () => {
     },
   });
 
-  return { data, loading, refetch };
+  return { data, loading, refetch, searchString, handleInputChange };
 };
 
 export const useFetchConversation = () => {
