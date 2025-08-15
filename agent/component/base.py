@@ -529,13 +529,13 @@ class ComponentBase(ABC):
     @staticmethod
     def string_format(content: str, kv: dict[str, str]) -> str:
         for n, v in kv.items():
-            pattern = r"\{%s\}" % re.escape(n)
-            if callable(v):
-                repl_func = lambda m, func=v: str(func(m))
-            else:
-                repl_func = lambda m, val=v: str(val)
-
-            content = re.sub(pattern, repl_func, content)
+            def repl(_match, val=v):
+                return str(val) if val is not None else ""
+            content = re.sub(
+                r"\{%s\}" % re.escape(n),
+                repl,
+                content
+            )
         return content
 
     def exception_handler(self):
