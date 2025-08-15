@@ -4,14 +4,17 @@ import request from '@/utils/request';
 import classNames from 'classnames';
 import mammoth from 'mammoth';
 import { useEffect, useState } from 'react';
-import { useGetDocumentUrl } from './hooks';
 
 interface DocPreviewerProps {
   className?: string;
+  url: string;
 }
 
-export const DocPreviewer: React.FC<DocPreviewerProps> = ({ className }) => {
-  const url = useGetDocumentUrl();
+export const DocPreviewer: React.FC<DocPreviewerProps> = ({
+  className,
+  url,
+}) => {
+  // const url = useGetDocumentUrl();
   const [htmlContent, setHtmlContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const fetchDocument = async () => {

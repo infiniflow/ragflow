@@ -17,8 +17,9 @@ import { useSelectDerivedConversationList } from '../hooks/use-select-conversati
 type SessionProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
   'handleConversationCardClick'
-> & { switchSettingVisible(): void };
+> & { switchSettingVisible(): void; hasSingleChatBox: boolean };
 export function Sessions({
+  hasSingleChatBox,
   handleConversationCardClick,
   switchSettingVisible,
 }: SessionProps) {
@@ -91,7 +92,11 @@ export function Sessions({
         ))}
       </div>
       <div className="py-2">
-        <Button className="w-full" onClick={switchSettingVisible}>
+        <Button
+          className="w-full"
+          onClick={switchSettingVisible}
+          disabled={!hasSingleChatBox}
+        >
           Chat Settings
         </Button>
       </div>

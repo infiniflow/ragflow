@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Settings } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ISearchAppDetailProps,
   useFetchSearchDetail,
@@ -26,6 +26,13 @@ export default function SearchPage() {
   const { data: SearchData } = useFetchSearchDetail();
 
   const [openSetting, setOpenSetting] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  useEffect(() => {
+    if (isSearching) {
+      setOpenSetting(false);
+    }
+  }, [isSearching]);
+
   return (
     <section>
       <PageHeader>
@@ -50,6 +57,8 @@ export default function SearchPage() {
               <SearchHome
                 setIsSearching={setIsSearching}
                 isSearching={isSearching}
+                searchText={searchText}
+                setSearchText={setSearchText}
               />
             </div>
           )}
@@ -57,33 +66,35 @@ export default function SearchPage() {
             <div className="animate-fade-in-up">
               <SearchingPage
                 setIsSearching={setIsSearching}
-                isSearching={isSearching}
+                searchText={searchText}
+                setSearchText={setSearchText}
+                data={SearchData as ISearchAppDetailProps}
               />
             </div>
           )}
         </div>
-        {/* {openSetting && (
-          <div className=" w-[440px]"> */}
-        <SearchSetting
-          className="mt-20 mr-2"
-          open={openSetting}
-          setOpen={setOpenSetting}
-          data={SearchData as ISearchAppDetailProps}
-        />
-        {/* </div>
-        )} */}
+        {openSetting && (
+          <SearchSetting
+            className="mt-20 mr-2"
+            open={openSetting}
+            setOpen={setOpenSetting}
+            data={SearchData as ISearchAppDetailProps}
+          />
+        )}
       </div>
 
-      <div className="absolute left-5 bottom-12 ">
-        <Button
-          variant="transparent"
-          className="bg-bg-card"
-          onClick={() => setOpenSetting(!openSetting)}
-        >
-          <Settings className="text-text-secondary" />
-          <div className="text-text-secondary">Search Settings</div>
-        </Button>
-      </div>
+      {!isSearching && (
+        <div className="absolute left-5 bottom-12 ">
+          <Button
+            variant="transparent"
+            className="bg-bg-card"
+            onClick={() => setOpenSetting(!openSetting)}
+          >
+            <Settings className="text-text-secondary" />
+            <div className="text-text-secondary">Search Settings</div>
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

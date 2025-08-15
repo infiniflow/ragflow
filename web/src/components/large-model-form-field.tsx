@@ -96,3 +96,22 @@ export function LargeModelFormField() {
     </>
   );
 }
+
+export function LargeModelFormFieldWithoutFilter() {
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name="llm_id"
+      render={({ field }) => (
+        <FormItem>
+          <FormControl>
+            <NextLLMSelect {...field} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}

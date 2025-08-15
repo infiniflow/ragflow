@@ -1,4 +1,4 @@
-import PasswordInput from '@/components/password-input';
+import PasswordInput from '@/components/originui/password-input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {

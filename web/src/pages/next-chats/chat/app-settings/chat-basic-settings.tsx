@@ -3,6 +3,7 @@
 import { FileUploader } from '@/components/file-uploader';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { SwitchFormField } from '@/components/switch-fom-field';
+import { TavilyFormField } from '@/components/tavily-form-field';
 import {
   FormControl,
   FormField,
@@ -105,6 +106,7 @@ export default function ChatBasicSetting() {
         name={'prompt_config.tts'}
         label={t('tts')}
       ></SwitchFormField>
+      <TavilyFormField></TavilyFormField>
       <KnowledgeBaseFormField></KnowledgeBaseFormField>
     </div>
   );

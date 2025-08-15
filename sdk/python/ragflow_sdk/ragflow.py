@@ -143,7 +143,7 @@ class RAGFlow:
                 },
             )
             if prompt.opener is None:
-                prompt.opener = "Hi! I'm your assistant, what can I do for you?"
+                prompt.opener = "Hi! I'm your assistant. What can I do for you?"
             if prompt.prompt is None:
                 prompt.prompt = (
                     "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. "
