@@ -38,6 +38,7 @@ const {
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
+  retrievalTestShare,
 } = api;
 
 const methods = {
@@ -163,6 +164,10 @@ const methods = {
   getMeta: {
     url: getMeta,
     method: 'get',
+  },
+  retrievalTestShare: {
+    url: retrievalTestShare,
+    method: 'post',
   },
 };
 

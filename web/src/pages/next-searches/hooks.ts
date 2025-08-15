@@ -5,7 +5,7 @@ import searchService from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { useParams, useSearchParams } from 'umi';
 
 interface CreateSearchProps {
   name: string;
@@ -156,13 +156,13 @@ export const useDeleteSearch = () => {
   return { data, isError, deleteSearch };
 };
 
-interface IllmSettingProps {
+export interface IllmSettingProps {
   llm_id: string;
   parameter: string;
-  temperature: number;
-  top_p: number;
-  frequency_penalty: number;
-  presence_penalty: number;
+  temperature?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
 }
 interface IllmSettingEnableProps {
   temperatureEnabled?: boolean;
@@ -204,14 +204,29 @@ interface SearchDetailResponse {
   message: string;
 }
 
-export const useFetchSearchDetail = () => {
+export const useFetchSearchDetail = (tenantId?: string) => {
   const { id } = useParams();
+
+  const [searchParams] = useSearchParams();
+  const shared_id = searchParams.get('shared_id');
+  const searchId = id || shared_id;
+  let param: { search_id: string | null; tenant_id?: string } = {
+    search_id: searchId,
+  };
+  if (shared_id) {
+    param = {
+      search_id: searchId,
+      tenant_id: tenantId,
+    };
+  }
+  const fetchSearchDetailFunc = shared_id
+    ? searchService.getSearchDetailShare
+    : searchService.getSearchDetail;
   const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
-    queryKey: ['searchDetail', id],
+    queryKey: ['searchDetail', searchId],
+    enabled: !shared_id || !!tenantId,
     queryFn: async () => {
-      const { data: response } = await searchService.getSearchDetail({
-        search_id: id,
-      });
+      const { data: response } = await fetchSearchDetailFunc(param);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch search detail');
       }

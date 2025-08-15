@@ -1418,6 +1418,7 @@ This delimiter is used to split the input text into several text pieces echo of 
     },
     search: {
       createSearch: 'Create Search',
+      searchGreeting: 'How can I help you today ？',
     },
   },
 };

@@ -66,7 +66,7 @@ export default function SearchList() {
     setSearchListParams({ ...searchParams, page, page_size: pageSize });
   };
   return (
-    <section>
+    <section className="w-full h-full flex flex-col">
       <div className="px-8 pt-8">
         <ListFilterBar
           icon={
@@ -89,18 +89,23 @@ export default function SearchList() {
           </Button>
         </ListFilterBar>
       </div>
-      <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[84vh] overflow-auto px-8">
-        {list?.data.search_apps.map((x) => {
-          return <SearchCard key={x.id} data={x}></SearchCard>;
-        })}
+      <div className="flex-1">
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[84vh] overflow-auto px-8">
+          {list?.data.search_apps.map((x) => {
+            return <SearchCard key={x.id} data={x}></SearchCard>;
+          })}
+        </div>
       </div>
-      {list?.data.total && (
-        <RAGFlowPagination
-          {...pick(searchParams, 'current', 'pageSize')}
-          total={list?.data.total}
-          onChange={handlePageChange}
-        />
+      {list?.data.total && list?.data.total > 0 && (
+        <div className="px-8 mb-4">
+          <RAGFlowPagination
+            {...pick(searchParams, 'current', 'pageSize')}
+            total={list?.data.total}
+            onChange={handlePageChange}
+          />
+        </div>
       )}
+
       <Modal
         open={openCreateModal}
         onOpenChange={(open) => {

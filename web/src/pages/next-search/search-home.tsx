@@ -1,5 +1,4 @@
 import { Input } from '@/components/originui/input';
-import { Button } from '@/components/ui/button';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
@@ -66,42 +65,6 @@ export default function SearchPage({
                 <Search size={22} className="m-auto" />
               </button>
             </div>
-          </div>
-        </div>
-
-        <div className="mt-14 w-full overflow-hidden opacity-100 max-h-96">
-          <p className="text-text-primary mb-2 text-xl">Related Search</p>
-          <div className="mt-2 flex flex-wrap justify-start gap-2">
-            <Button
-              variant="transparent"
-              className="bg-bg-card text-text-secondary"
-            >
-              Related Search
-            </Button>
-            <Button
-              variant="transparent"
-              className="bg-bg-card text-text-secondary"
-            >
-              Related Search Related SearchRelated Search
-            </Button>
-            <Button
-              variant="transparent"
-              className="bg-bg-card text-text-secondary"
-            >
-              Related Search Search
-            </Button>
-            <Button
-              variant="transparent"
-              className="bg-bg-card text-text-secondary"
-            >
-              Related Search Related SearchRelated Search
-            </Button>
-            <Button
-              variant="transparent"
-              className="bg-bg-card text-text-secondary"
-            >
-              Related Search
-            </Button>
           </div>
         </div>
       </div>
