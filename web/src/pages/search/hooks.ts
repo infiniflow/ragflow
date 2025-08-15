@@ -135,6 +135,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     answer: currentAnswer,
     relatedQuestions: relatedQuestions?.slice(0, 5) ?? [],
     searchStr,
+    setSearchStr,
     isFirstRender,
     selectedDocumentIds,
     isSearchStrEmpty: isEmpty(trim(searchStr)),

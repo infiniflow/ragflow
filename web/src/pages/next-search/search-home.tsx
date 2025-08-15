@@ -1,5 +1,6 @@
 import { Input } from '@/components/originui/input';
 import { Button } from '@/components/ui/button';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
@@ -9,10 +10,15 @@ import Spotlight from './spotlight';
 export default function SearchPage({
   isSearching,
   setIsSearching,
+  searchText,
+  setSearchText,
 }: {
   isSearching: boolean;
   setIsSearching: Dispatch<SetStateAction<boolean>>;
+  searchText: string;
+  setSearchText: Dispatch<SetStateAction<string>>;
 }) {
+  const { data: userInfo } = useFetchUserInfo();
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-32">
       <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-[780px]">
@@ -30,14 +36,25 @@ export default function SearchPage({
             {!isSearching && (
               <>
                 <p className="mb-4 transition-opacity">👋 Hi there</p>
-                <p className="mb-10 transition-opacity">Welcome back, KiKi</p>
+                <p className="mb-10 transition-opacity">
+                  Welcome back, {userInfo?.nickname}
+                </p>
               </>
             )}
 
             <div className="relative w-full ">
               <Input
                 placeholder="How can I help you today?"
-                className="w-full rounded-full py-6 px-4 pr-10 text-white text-lg bg-background delay-700"
+                className="w-full rounded-full py-6 px-4 pr-10 text-text-primary text-lg bg-bg-base delay-700"
+                value={searchText}
+                onKeyUp={(e) => {
+                  if (e.key === 'Enter') {
+                    setIsSearching(!isSearching);
+                  }
+                }}
+                onChange={(e) => {
+                  setSearchText(e.target.value || '');
+                }}
               />
               <button
                 type="button"

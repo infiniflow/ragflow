@@ -7,7 +7,6 @@ import {
   PdfLoader,
   Popup,
 } from 'react-pdf-highlighter';
-import { useGetDocumentUrl } from './hooks';
 
 import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
 import { Spin } from '@/components/ui/spin';
@@ -17,6 +16,7 @@ import styles from './index.less';
 export interface IProps {
   highlights: IHighlight[];
   setWidthAndHeight: (width: number, height: number) => void;
+  url: string;
 }
 const HighlightPopup = ({
   comment,
@@ -30,8 +30,8 @@ const HighlightPopup = ({
   ) : null;
 
 // TODO: merge with DocumentPreviewer
-const PdfPreview = ({ highlights: state, setWidthAndHeight }: IProps) => {
-  const url = useGetDocumentUrl();
+const PdfPreview = ({ highlights: state, setWidthAndHeight, url }: IProps) => {
+  // const url = useGetDocumentUrl();
 
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const error = useCatchDocumentError(url);

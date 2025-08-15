@@ -1,8 +1,8 @@
 // src/pages/next-searches/hooks.ts
 
+import message from '@/components/ui/message';
 import searchService from '@/services/search-service';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { message } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
@@ -23,7 +23,6 @@ export const useCreateSearch = () => {
 
   const {
     data,
-    isLoading,
     isError,
     mutateAsync: createSearchMutation,
   } = useMutation<CreateSearchResponse, Error, CreateSearchProps>({
@@ -50,7 +49,7 @@ export const useCreateSearch = () => {
     [createSearchMutation],
   );
 
-  return { data, isLoading, isError, createSearch };
+  return { data, isError, createSearch };
 };
 
 export interface SearchListParams {
@@ -128,7 +127,6 @@ export const useDeleteSearch = () => {
 
   const {
     data,
-    isLoading,
     isError,
     mutateAsync: deleteSearchMutation,
   } = useMutation<DeleteSearchResponse, Error, DeleteSearchProps>({
@@ -155,7 +153,7 @@ export const useDeleteSearch = () => {
     [deleteSearchMutation],
   );
 
-  return { data, isLoading, isError, deleteSearch };
+  return { data, isError, deleteSearch };
 };
 
 interface IllmSettingProps {
@@ -166,7 +164,12 @@ interface IllmSettingProps {
   frequency_penalty: number;
   presence_penalty: number;
 }
-
+interface IllmSettingEnableProps {
+  temperatureEnabled?: boolean;
+  topPEnabled?: boolean;
+  presencePenaltyEnabled?: boolean;
+  frequencyPenaltyEnabled?: boolean;
+}
 export interface ISearchAppDetailProps {
   avatar: any;
   created_by: string;
@@ -184,7 +187,7 @@ export interface ISearchAppDetailProps {
     rerank_id: string;
     similarity_threshold: number;
     summary: boolean;
-    llm_setting: IllmSettingProps;
+    llm_setting: IllmSettingProps & IllmSettingEnableProps;
     top_k: number;
     use_kg: boolean;
     vector_similarity_weight: number;
@@ -225,10 +228,9 @@ export type IUpdateSearchProps = Omit<ISearchAppDetailProps, 'id'> & {
 
 export const useUpdateSearch = () => {
   const { t } = useTranslation();
-
+  const queryClient = useQueryClient();
   const {
     data,
-    isLoading,
     isError,
     mutateAsync: updateSearchMutation,
   } = useMutation<any, Error, IUpdateSearchProps>({
@@ -241,8 +243,11 @@ export const useUpdateSearch = () => {
       }
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       message.success(t('message.updated'));
+      queryClient.invalidateQueries({
+        queryKey: ['searchDetail', variables.search_id],
+      });
     },
     onError: (error) => {
       message.error(t('message.error', { error: error.message }));
@@ -256,5 +261,5 @@ export const useUpdateSearch = () => {
     [updateSearchMutation],
   );
 
-  return { data, isLoading, isError, updateSearch };
+  return { data, isError, updateSearch };
 };

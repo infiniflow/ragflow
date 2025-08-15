@@ -68,14 +68,14 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   }, [data, form]);
 
   return (
-    <section className="p-5  w-[440px] ">
-      <div className="flex justify-between items-center text-base">
+    <section className="p-5  w-[440px] border-l">
+      <div className="flex justify-between items-center text-base pb-2">
         Chat Settings
         <X className="size-4 cursor-pointer" onClick={switchSettingVisible} />
       </div>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
-          <section className="space-y-6 overflow-auto max-h-[87vh] pr-4">
+          <section className="space-y-6 overflow-auto max-h-[85vh] pr-4">
             <ChatBasicSetting></ChatBasicSetting>
             <Separator />
             <ChatPromptEngine></ChatPromptEngine>
