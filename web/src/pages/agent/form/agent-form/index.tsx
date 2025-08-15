@@ -188,23 +188,6 @@ function AgentForm({ node }: INextOperatorForm) {
             <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
             <FormField
               control={form.control}
-              name={`history_independent`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel tooltip={t('flow.historyIndependentTip')}>
-                    {t('flow.historyIndependent')}
-                  </FormLabel>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
               name={`max_retries`}
               render={({ field }) => (
                 <FormItem className="flex-1">
@@ -250,6 +233,23 @@ function AgentForm({ node }: INextOperatorForm) {
                       {...field}
                       options={ExceptionMethodOptions}
                       allowClear
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name={`history_independent`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel tooltip={t('flow.historyIndependentTip')}>
+                    {t('flow.historyIndependent')}
+                  </FormLabel>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
                     />
                   </FormControl>
                 </FormItem>
