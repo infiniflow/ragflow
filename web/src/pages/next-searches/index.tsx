@@ -94,7 +94,7 @@ export default function SearchList() {
           return <SearchCard key={x.id} data={x}></SearchCard>;
         })}
       </div>
-      {list?.data.total && (
+      {list?.data.total && list?.data.total > 0 && (
         <RAGFlowPagination
           {...pick(searchParams, 'current', 'pageSize')}
           total={list?.data.total}

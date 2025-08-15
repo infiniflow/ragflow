@@ -8,13 +8,17 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
+import { SharedFrom } from '@/constants/chat';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { Settings } from 'lucide-react';
+import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useFetchTokenListBeforeOtherStep } from '../agent/hooks/use-show-dialog';
 import {
   ISearchAppDetailProps,
   useFetchSearchDetail,
 } from '../next-searches/hooks';
+import EmbedAppModal from './embed-app-modal';
 import './index.less';
 import SearchHome from './search-home';
 import { SearchSetting } from './search-setting';
@@ -24,9 +28,15 @@ export default function SearchPage() {
   const { navigateToSearchList } = useNavigatePage();
   const [isSearching, setIsSearching] = useState(false);
   const { data: SearchData } = useFetchSearchDetail();
-
+  const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
   const [openSetting, setOpenSetting] = useState(false);
+  const [openEmbed, setOpenEmbed] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const tenantId = tenantInfo.tenant_id;
+  useEffect(() => {
+    handleOperate();
+  }, [handleOperate]);
   useEffect(() => {
     if (isSearching) {
       setOpenSetting(false);
@@ -81,8 +91,37 @@ export default function SearchPage() {
             data={SearchData as ISearchAppDetailProps}
           />
         )}
+        {
+          <EmbedAppModal
+            open={openEmbed}
+            setOpen={setOpenEmbed}
+            url="/next-search/share"
+            token={SearchData?.id as string}
+            from={SharedFrom.Search}
+            beta={beta}
+            tenantId={tenantId}
+          />
+        }
+        {
+          // <EmbedDialog
+          //   visible={openEmbed}
+          //   hideModal={setOpenEmbed}
+          //   token={SearchData?.id as string}
+          //   from={SharedFrom.Search}
+          //   beta={beta}
+          //   isAgent={false}
+          // ></EmbedDialog>
+        }
       </div>
-
+      <div className="absolute right-5 top-12 ">
+        <Button
+          className="bg-text-primary  text-bg-base border-b-[#00BEB4] border-b-2"
+          onClick={() => setOpenEmbed(!openEmbed)}
+        >
+          <Send />
+          <div>Embed App</div>
+        </Button>
+      </div>
       {!isSearching && (
         <div className="absolute left-5 bottom-12 ">
           <Button

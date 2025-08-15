@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 
 interface IProps extends IModalProps<any> {
   documentId: string;
-  chunk: IChunk | IReferenceChunk;
+  chunk: IChunk | IReferenceChunk | IReferenceChunk;
 }
 function getFileExtensionRegex(filename: string): string {
   const match = filename.match(/\.([^.]+)$/);
@@ -34,17 +34,19 @@ const PdfDrawer = ({
   const [fileType, setFileType] = useState('');
 
   useEffect(() => {
-    if (chunk.docnm_kwd) {
-      const type = getFileExtensionRegex(chunk.docnm_kwd);
+    if (chunk.docnm_kwd || chunk.document_name) {
+      const type = getFileExtensionRegex(
+        chunk.docnm_kwd || chunk.document_name,
+      );
       setFileType(type);
     }
-  }, [chunk.docnm_kwd]);
+  }, [chunk.docnm_kwd, chunk.document_name]);
   return (
     <Modal
       title={
         <div className="flex items-center gap-2">
-          <FileIcon name={chunk.docnm_kwd}></FileIcon>
-          {chunk.docnm_kwd}
+          <FileIcon name={chunk.docnm_kwd || chunk.document_name}></FileIcon>
+          {chunk.docnm_kwd || chunk.document_name}
         </div>
       }
       onCancel={hideModal}

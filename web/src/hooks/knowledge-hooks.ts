@@ -218,12 +218,18 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
 
 //#region Retrieval testing
 
-export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
+export const useTestChunkRetrieval = (
+  tenantId?: string,
+): ResponsePostType<ITestingResult> & {
   testChunk: (...params: any[]) => void;
 } => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const { page, size: pageSize } = useSetPaginationParams();
-
+  const [searchParams] = useSearchParams();
+  const shared_id = searchParams.get('shared_id');
+  const retrievalTestFunc = shared_id
+    ? kbService.retrievalTestShare
+    : kbService.retrieval_test;
   const {
     data,
     isPending: loading,
@@ -232,11 +238,12 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
     mutationKey: ['testChunk'], // This method is invalid
     gcTime: 0,
     mutationFn: async (values: any) => {
-      const { data } = await kbService.retrieval_test({
+      const { data } = await retrievalTestFunc({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         page,
         size: pageSize,
+        tenant_id: tenantId,
       });
       if (data.code === 0) {
         const res = data.data;
@@ -262,12 +269,18 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
   };
 };
 
-export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
+export const useTestChunkAllRetrieval = (
+  tenantId?: string,
+): ResponsePostType<ITestingResult> & {
   testChunkAll: (...params: any[]) => void;
 } => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const { page, size: pageSize } = useSetPaginationParams();
-
+  const [searchParams] = useSearchParams();
+  const shared_id = searchParams.get('shared_id');
+  const retrievalTestFunc = shared_id
+    ? kbService.retrievalTestShare
+    : kbService.retrieval_test;
   const {
     data,
     isPending: loading,
@@ -276,12 +289,13 @@ export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
     mutationKey: ['testChunkAll'], // This method is invalid
     gcTime: 0,
     mutationFn: async (values: any) => {
-      const { data } = await kbService.retrieval_test({
+      const { data } = await retrievalTestFunc({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         doc_ids: [],
         page,
         size: pageSize,
+        tenant_id: tenantId,
       });
       if (data.code === 0) {
         const res = data.data;
