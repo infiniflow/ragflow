@@ -2936,7 +2936,7 @@ curl --request POST \
      }'
 ```
 
-- If the **Begin** component takes parameters, include them in the body of `"inputs"` as follows:  
+- If the **Begin** component takes parameters, include their values in the body of `"inputs"` as follows:  
 
 ```bash
 curl --request POST \
