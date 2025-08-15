@@ -15,7 +15,7 @@ import { FormTooltip } from '@/components/ui/tooltip';
 import { buildSelectOptions } from '@/utils/component-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -70,11 +70,17 @@ function BeginForm({ node }: INextOperatorForm) {
     name: 'enablePrologue',
   });
 
+  const previousModeRef = useRef(mode);
+
   useEffect(() => {
-    if (mode === AgentDialogueMode.Task && enablePrologue) {
-      form.setValue('enablePrologue', false);
+    if (
+      previousModeRef.current === AgentDialogueMode.Task &&
+      mode === AgentDialogueMode.Conversational
+    ) {
+      form.setValue('enablePrologue', true);
     }
-  }, [mode, enablePrologue, form]);
+    previousModeRef.current = mode;
+  }, [mode, form]);
 
   const {
     ok,
