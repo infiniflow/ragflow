@@ -1,3 +1,5 @@
+[![MSeeP.ai Security Assessment Badge](https://mseep.net/pr/infiniflow-ragflow-badge.png)](https://mseep.ai/app/infiniflow-ragflow)
+
 <div align="center">
 <a href="https://demo.ragflow.io/">
 <img src="web/src/assets/logo-with-text.png" width="520" alt="ragflow logo">
