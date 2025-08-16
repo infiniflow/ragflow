@@ -267,19 +267,19 @@ def meta_filter(metas: dict, filters: list[dict]):
                 value = str(value)
 
             for conds in [
-                    (operator == "contains", str(value).lower() in str(input).lower()),
-                    (operator == "not contains", str(value).lower() not in str(input).lower()),
-                    (operator == "start with", str(input).lower().startswith(str(value).lower())),
-                    (operator == "end with", str(input).lower().endswith(str(value).lower())),
-                    (operator == "empty", not input),
-                    (operator == "not empty", input),
-                    (operator == "=", input == value),
-                    (operator == "≠", input != value),
-                    (operator == ">", input > value),
-                    (operator == "<", input < value),
-                    (operator == "≥", input >= value),
-                    (operator == "≤", input <= value),
-                ]:
+                (operator == "contains", str(value).lower() in str(input).lower()),
+                (operator == "not contains", str(value).lower() not in str(input).lower()),
+                (operator == "start with", str(input).lower().startswith(str(value).lower())),
+                (operator == "end with", str(input).lower().endswith(str(value).lower())),
+                (operator == "empty", not input),
+                (operator == "not empty", input),
+                (operator == "=", input == value),
+                (operator == "≠", input != value),
+                (operator == ">", input > value),
+                (operator == "<", input < value),
+                (operator == "≥", input >= value),
+                (operator == "≤", input <= value),
+            ]:
                 try:
                     if all(conds):
                         doc_ids.extend(docids)
@@ -425,6 +425,8 @@ def chat(dialog, messages, stream=True, **kwargs):
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
                 )
+                attachments_only_retrieval = kwargs.get("attachments_only_retrieval", False)
+                kbinfos = filter_kbinfos_by_doc_ids(kbinfos, attachments, attachments_only_retrieval)
             if prompt_config.get("tavily_api_key"):
                 tav = Tavily(prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(" ".join(questions))
@@ -566,6 +568,16 @@ def chat(dialog, messages, stream=True, **kwargs):
         res = decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
+
+
+def filter_kbinfos_by_doc_ids(kbinfos, doc_ids, attachments_only_retrieval=False):
+    if not attachments_only_retrieval or not doc_ids:
+        return kbinfos
+    filtered_kbinfos = {}
+    filtered_kbinfos["total"] = kbinfos.get("total", 0)
+    filtered_kbinfos["chunks"] = [chunk for chunk in kbinfos.get("chunks", []) if chunk.get("doc_id") in doc_ids]
+    filtered_kbinfos["doc_aggs"] = [agg for agg in kbinfos.get("doc_aggs", []) if agg.get("doc_id") in doc_ids]
+    return filtered_kbinfos
 
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
