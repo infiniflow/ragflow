@@ -1,6 +1,6 @@
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import i18n from '@/locales/config';
 import { useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   ISearchAppDetailProps,
   useFetchSearchDetail,
@@ -9,7 +9,7 @@ import { useGetSharedSearchParams, useSearching } from '../hooks';
 import '../index.less';
 import SearchingView from '../search-view';
 export default function SearchingPage() {
-  const { tenantId, locale } = useGetSharedSearchParams();
+  const { tenantId, locale, visibleAvatar } = useGetSharedSearchParams();
   const {
     data: searchData = {
       search_config: { kb_ids: [] },
@@ -18,18 +18,25 @@ export default function SearchingPage() {
   const searchingParam = useSearching({
     data: searchData,
   });
-  const { t } = useTranslation();
 
-  // useEffect(() => {
-  //   if (locale) {
-  //     i18n.changeLanguage(locale);
-  //   }
-  // }, [locale, i18n]);
   useEffect(() => {
     console.log('locale', locale, i18n.language);
     if (locale && i18n.language !== locale) {
       i18n.changeLanguage(locale);
     }
   }, [locale]);
-  return <SearchingView {...searchingParam} searchData={searchData} t={t} />;
+  return (
+    <>
+      {visibleAvatar && (
+        <div className="flex justify-start items-center gap-1 mx-6 mt-6 text-text-primary">
+          <RAGFlowAvatar
+            avatar={searchData.avatar}
+            name={searchData.name}
+          ></RAGFlowAvatar>
+          <div>{searchData.name}</div>
+        </div>
+      )}
+      <SearchingView {...searchingParam} searchData={searchData} />;
+    </>
+  );
 }

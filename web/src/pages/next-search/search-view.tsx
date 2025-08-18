@@ -9,13 +9,11 @@ import {
 } from '@/components/ui/popover';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Spin } from '@/components/ui/spin';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import DOMPurify from 'dompurify';
-import { TFunction } from 'i18next';
 import { isEmpty } from 'lodash';
-import { BrainCircuit, Search, Square, X } from 'lucide-react';
+import { BrainCircuit, Search, X } from 'lucide-react';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
@@ -35,7 +33,6 @@ export default function SearchingView({
   answer,
   sendingLoading,
   relatedQuestions,
-  loading,
   isFirstRender,
   selectedDocumentIds,
   isSearchStrEmpty,
@@ -56,19 +53,17 @@ export default function SearchingView({
   handleSearch,
   pagination,
   onChange,
-  t,
 }: ISearchReturnProps & {
   setIsSearching?: Dispatch<SetStateAction<boolean>>;
   searchData: ISearchAppDetailProps;
-  t: TFunction<'translation', undefined>;
 }) {
-  const { t: tt, i18n } = useTranslation();
-  useEffect(() => {
-    const changeLanguage = async () => {
-      await i18n.changeLanguage('zh');
-    };
-    changeLanguage();
-  }, [i18n]);
+  const { t } = useTranslation();
+  // useEffect(() => {
+  //   const changeLanguage = async () => {
+  //     await i18n.changeLanguage('zh');
+  //   };
+  //   changeLanguage();
+  // }, [i18n]);
   const [searchtext, setSearchtext] = useState<string>('');
 
   useEffect(() => {
@@ -105,9 +100,9 @@ export default function SearchingView({
           <div className={cn('flex flex-col justify-start items-start w-full')}>
             <div className="relative w-full text-primary">
               <Input
-                placeholder={tt('search.searchGreeting')}
+                placeholder={t('search.searchGreeting')}
                 className={cn(
-                  'w-full rounded-full py-6 pl-4 !pr-[8rem] text-primary text-lg bg-background',
+                  'w-full rounded-full py-6 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base',
                 )}
                 value={searchtext}
                 onChange={(e) => {
@@ -122,16 +117,17 @@ export default function SearchingView({
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 transform flex items-center gap-1">
                 <X
-                  className="text-text-secondary"
+                  className="text-text-secondary cursor-pointer"
                   size={14}
                   onClick={() => {
+                    setSearchtext('');
                     handleClickRelatedQuestion('');
                   }}
                 />
-                <span className="text-text-secondary">|</span>
+                <span className="text-text-secondary ml-4">|</span>
                 <button
                   type="button"
-                  className="rounded-full bg-white p-1 text-gray-800 shadow w-12 h-8 ml-4"
+                  className="rounded-full bg-text-primary p-1 text-bg-base shadow w-12 h-8 ml-4"
                   onClick={() => {
                     if (sendingLoading) {
                       stopOutputMessage();
@@ -141,7 +137,8 @@ export default function SearchingView({
                   }}
                 >
                   {sendingLoading ? (
-                    <Square size={22} className="m-auto" />
+                    // <Square size={22} className="m-auto" />
+                    <div className="w-2 h-2 bg-bg-base m-auto"></div>
                   ) : (
                     <Search size={22} className="m-auto" />
                   )}
@@ -157,10 +154,10 @@ export default function SearchingView({
             {searchData.search_config.summary && !isSearchStrEmpty && (
               <>
                 <div className="flex justify-start items-start text-text-primary text-2xl">
-                  AI Summary
+                  {t('search.AISummary')}
                 </div>
                 {isEmpty(answer) && sendingLoading ? (
-                  <div className="space-y-2">
+                  <div className="space-y-2 mt-2">
                     <Skeleton className="h-4 w-full bg-bg-card" />
                     <Skeleton className="h-4 w-full bg-bg-card" />
                     <Skeleton className="h-4 w-2/3 bg-bg-card" />
@@ -194,76 +191,75 @@ export default function SearchingView({
               </>
             )}
             <div className="mt-3 ">
-              <Spin spinning={loading}>
-                {chunks?.length > 0 && (
-                  <>
-                    {chunks.map((chunk, index) => {
-                      return (
-                        <>
-                          <div
-                            key={chunk.chunk_id}
-                            className="w-full flex flex-col"
-                          >
-                            <div className="w-full">
-                              <ImageWithPopover
-                                id={chunk.img_id}
-                              ></ImageWithPopover>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <div
-                                    dangerouslySetInnerHTML={{
-                                      __html: DOMPurify.sanitize(
-                                        `${chunk.highlight}...`,
-                                      ),
-                                    }}
-                                    className="text-sm text-text-primary mb-1"
-                                  ></div>
-                                </PopoverTrigger>
-                                <PopoverContent className="text-text-primary">
-                                  <HightLightMarkdown>
-                                    {chunk.content_with_weight}
-                                  </HightLightMarkdown>
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                            <div
-                              className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit"
-                              onClick={() =>
-                                clickDocumentButton(chunk.doc_id, chunk as any)
-                              }
-                            >
-                              <FileIcon name={chunk.docnm_kwd}></FileIcon>
-                              {chunk.docnm_kwd}
-                            </div>
+              {chunks?.length > 0 && (
+                <>
+                  {chunks.map((chunk, index) => {
+                    return (
+                      <>
+                        <div
+                          key={chunk.chunk_id}
+                          className="w-full flex flex-col"
+                        >
+                          <div className="w-full">
+                            <ImageWithPopover
+                              id={chunk.img_id}
+                            ></ImageWithPopover>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <div
+                                  dangerouslySetInnerHTML={{
+                                    __html: DOMPurify.sanitize(
+                                      `${chunk.highlight}...`,
+                                    ),
+                                  }}
+                                  className="text-sm text-text-primary mb-1"
+                                ></div>
+                              </PopoverTrigger>
+                              <PopoverContent className="text-text-primary">
+                                <HightLightMarkdown>
+                                  {chunk.content_with_weight}
+                                </HightLightMarkdown>
+                              </PopoverContent>
+                            </Popover>
                           </div>
-                          {index < chunks.length - 1 && (
-                            <div className="w-full border-b border-border-default/80 mt-6"></div>
-                          )}
-                        </>
-                      );
-                    })}
-                  </>
-                )}
-              </Spin>
-              {relatedQuestions?.length > 0 && (
-                <div className="mt-14 w-full overflow-hidden opacity-100 max-h-96">
-                  <p className="text-text-primary mb-2 text-xl">
-                    Related Search
-                  </p>
-                  <div className="mt-2 flex flex-wrap justify-start gap-2">
-                    {relatedQuestions?.map((x, idx) => (
-                      <Button
-                        key={idx}
-                        variant="transparent"
-                        className="bg-bg-card text-text-secondary"
-                        onClick={handleClickRelatedQuestion(x)}
-                      >
-                        Related Search{x}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
+                          <div
+                            className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit"
+                            onClick={() =>
+                              clickDocumentButton(chunk.doc_id, chunk as any)
+                            }
+                          >
+                            <FileIcon name={chunk.docnm_kwd}></FileIcon>
+                            {chunk.docnm_kwd}
+                          </div>
+                        </div>
+                        {index < chunks.length - 1 && (
+                          <div className="w-full border-b border-border-default/80 mt-6"></div>
+                        )}
+                      </>
+                    );
+                  })}
+                </>
               )}
+              {relatedQuestions?.length > 0 &&
+                searchData.search_config.related_search && (
+                  <div className="mt-14 w-full overflow-hidden opacity-100 max-h-96">
+                    <p className="text-text-primary mb-2 text-xl">
+                      {t('relatedSearch')}
+                    </p>
+                    <div className="mt-2 flex flex-wrap justify-start gap-2">
+                      {relatedQuestions?.map((x, idx) => (
+                        <Button
+                          key={idx}
+                          variant="transparent"
+                          className="bg-bg-card text-text-secondary"
+                          onClick={handleClickRelatedQuestion(x)}
+                        >
+                          {x}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
             </div>
           </div>
 

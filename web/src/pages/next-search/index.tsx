@@ -13,12 +13,13 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useFetchTokenListBeforeOtherStep } from '../agent/hooks/use-show-dialog';
+import { useTranslation } from 'react-i18next';
 import {
   ISearchAppDetailProps,
   useFetchSearchDetail,
 } from '../next-searches/hooks';
 import EmbedAppModal from './embed-app-modal';
+import { useCheckSettings } from './hooks';
 import './index.less';
 import SearchHome from './search-home';
 import { SearchSetting } from './search-setting';
@@ -28,15 +29,20 @@ export default function SearchPage() {
   const { navigateToSearchList } = useNavigatePage();
   const [isSearching, setIsSearching] = useState(false);
   const { data: SearchData } = useFetchSearchDetail();
-  const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
+
   const [openSetting, setOpenSetting] = useState(false);
   const [openEmbed, setOpenEmbed] = useState(false);
   const [searchText, setSearchText] = useState('');
   const { data: tenantInfo } = useFetchTenantInfo();
   const tenantId = tenantInfo.tenant_id;
+  const { t } = useTranslation();
+  const { openSetting: checkOpenSetting } = useCheckSettings(
+    SearchData as ISearchAppDetailProps,
+  );
   useEffect(() => {
-    handleOperate();
-  }, [handleOperate]);
+    setOpenSetting(checkOpenSetting);
+  }, [checkOpenSetting]);
+
   useEffect(() => {
     if (isSearching) {
       setOpenSetting(false);
@@ -60,7 +66,7 @@ export default function SearchPage() {
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
-      <div className="flex gap-3 w-full">
+      <div className="flex gap-3 w-full bg-bg-base">
         <div className="flex-1">
           {!isSearching && (
             <div className="animate-fade-in-down">
@@ -98,7 +104,6 @@ export default function SearchPage() {
             url="/next-search/share"
             token={SearchData?.id as string}
             from={SharedFrom.Search}
-            beta={beta}
             tenantId={tenantId}
           />
         }
@@ -119,7 +124,7 @@ export default function SearchPage() {
           onClick={() => setOpenEmbed(!openEmbed)}
         >
           <Send />
-          <div>Embed App</div>
+          <div>{t('search.embedApp')}</div>
         </Button>
       </div>
       {!isSearching && (
@@ -130,7 +135,9 @@ export default function SearchPage() {
             onClick={() => setOpenSetting(!openSetting)}
           >
             <Settings className="text-text-secondary" />
-            <div className="text-text-secondary">Search Settings</div>
+            <div className="text-text-secondary">
+              {t('search.searchSettings')}
+            </div>
           </Button>
         </div>
       )}

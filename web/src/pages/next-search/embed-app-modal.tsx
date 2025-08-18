@@ -7,21 +7,28 @@ import {
   LanguageAbbreviationMap,
 } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useCallback, useMemo, useState } from 'react';
+import { message } from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFetchTokenListBeforeOtherStep } from '../agent/hooks/use-show-dialog';
 
 type IEmbedAppModalProps = {
   open: any;
   url: string;
   token: string;
   from: string;
-  beta: string;
   setOpen: (e: any) => void;
   tenantId: string;
 };
 
 const EmbedAppModal = (props: IEmbedAppModalProps) => {
-  const { t } = useTranslate('chat');
-  const { open, setOpen, token = '', from, beta = '', url, tenantId } = props;
+  const { t } = useTranslate('search');
+  const { open, setOpen, token = '', from, url, tenantId } = props;
+  const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
+  useEffect(() => {
+    if (open && !beta) {
+      handleOperate();
+    }
+  }, [handleOperate, open, beta]);
   const [hideAvatar, setHideAvatar] = useState(false);
   const [locale, setLocale] = useState('');
 
@@ -69,7 +76,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
         {/* Hide Avatar Toggle */}
         <div className="mb-6">
           <label className="block text-sm font-medium mb-2">
-            {t('avatarHidden')}
+            {t('profile')}
           </label>
           <div className="flex items-center">
             <Switch
@@ -83,7 +90,9 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
 
         {/* Locale Select */}
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-2">Locale</label>
+          <label className="block text-sm font-medium mb-2">
+            {t('locale')}
+          </label>
           <RAGFlowSelect
             placeholder="Select a locale"
             value={locale}
@@ -93,7 +102,9 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
         </div>
         {/* Embed Code */}
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-2">Embed code</label>
+          <label className="block text-sm font-medium mb-2">
+            {t('embedCode')}
+          </label>
           {/* <div className=" border rounded-lg"> */}
           {/* <pre className="text-sm whitespace-pre-wrap">{text}</pre> */}
           <HightLightMarkdown>{text}</HightLightMarkdown>
@@ -102,18 +113,21 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
 
         {/* ID Field */}
         <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">ID</label>
-          <div className="flex items-center">
+          <label className="block text-sm font-medium mb-2">{t('id')}</label>
+          <div className="flex items-center border border-border rounded-lg bg-bg-base">
             <input
               type="text"
               value={token}
               readOnly
-              className="flex-1 px-4 py-2  border border-gray-700 rounded-lg bg-bg-base focus:outline-none"
+              className="flex-1 px-4 py-2 focus:outline-none bg-bg-base rounded-lg"
             />
             <button
               type="button"
-              onClick={() => navigator.clipboard.writeText(token)}
-              className="ml-2 p-2 text-gray-400 hover:text-white transition-colors"
+              onClick={() => {
+                navigator.clipboard.writeText(token);
+                message.success(t('copySuccess'));
+              }}
+              className="ml-2 p-2 hover:text-white transition-colors"
               title="Copy ID"
             >
               <svg
