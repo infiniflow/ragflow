@@ -569,6 +569,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         automatic: '自动',
         manual: '手动',
       },
+      cancel: '取消',
+      chatSetting: '聊天设置',
     },
     setting: {
       profile: '概要',

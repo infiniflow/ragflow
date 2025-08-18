@@ -13,18 +13,18 @@ export interface NextInnerLLMSelectProps {
   onChange?: (value: string) => void;
   disabled?: boolean;
   filter?: string;
-  showTTSModel?: boolean;
+  showSpeech2TextModel?: boolean;
 }
 
 const NextInnerLLMSelect = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   NextInnerLLMSelectProps
->(({ value, disabled, filter, showTTSModel = false }, ref) => {
+>(({ value, disabled, filter, showSpeech2TextModel = false }, ref) => {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   const ttsModel = useMemo(() => {
-    return showTTSModel ? [LlmModelType.TTS] : [];
-  }, [showTTSModel]);
+    return showSpeech2TextModel ? [LlmModelType.Speech2text] : [];
+  }, [showSpeech2TextModel]);
 
   const modelTypes = useMemo(() => {
     if (filter === LlmModelType.Chat) {

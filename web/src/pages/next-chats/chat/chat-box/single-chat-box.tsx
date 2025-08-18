@@ -47,7 +47,7 @@ export function SingleChatBox({ controller }: IProps) {
   return (
     <section className="flex flex-col p-5 h-full">
       <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
-        <div className="w-full">
+        <div className="w-full pr-5">
           {derivedMessages?.map((message, i) => {
             return (
               <MessageItem

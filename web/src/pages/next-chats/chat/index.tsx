@@ -100,7 +100,7 @@ export default function Chat() {
           {t('common.embedIntoSite')}
         </Button>
       </PageHeader>
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 pb-9">
         <Sessions
           hasSingleChatBox={hasSingleChatBox}
           handleConversationCardClick={handleConversationCardClick}
