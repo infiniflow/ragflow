@@ -23,7 +23,7 @@ interface IProps {
 export function SingleChatBox({ controller }: IProps) {
   const {
     value,
-    // scrollRef,
+    scrollRef,
     messageContainerRef,
     sendLoading,
     derivedMessages,
@@ -77,7 +77,7 @@ export function SingleChatBox({ controller }: IProps) {
             );
           })}
         </div>
-        {/* <div ref={scrollRef} /> */}
+        <div ref={scrollRef} />
       </div>
       <NextMessageInput
         disabled={disabled}

@@ -91,7 +91,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   return (
     <section className="p-5  w-[440px] border-l">
       <div className="flex justify-between items-center text-base pb-2">
-        Chat Settings
+        {t('chat.chatSetting')}
         <X className="size-4 cursor-pointer" onClick={switchSettingVisible} />
       </div>
       <Form {...form}>
