@@ -28,10 +28,10 @@ import { IKnowledge } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
 import { transformFile2Base64 } from '@/utils/file-util';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from 'i18next';
 import { Pencil, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   LlmModelType,
@@ -113,6 +113,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   const [datasetList, setDatasetList] = useState<MultiSelectOptionType[]>([]);
   const [datasetSelectEmbdId, setDatasetSelectEmbdId] = useState('');
   const descriptionDefaultValue = 'You are an intelligent assistant.';
+  const { t } = useTranslation();
   const resetForm = useCallback(() => {
     formMethods.reset({
       search_id: data?.id,
@@ -305,7 +306,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       style={{ maxHeight: 'calc(100dvh - 170px)' }}
     >
       <div className="flex justify-between items-center text-base mb-8">
-        <div className="text-text-primary">Search Settings</div>
+        <div className="text-text-primary">{t('search.searchSettings')}</div>
         <div onClick={() => setOpen(false)}>
           <X size={16} className="text-text-primary cursor-pointer" />
         </div>
@@ -334,10 +335,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>Name
+                    <span className="text-destructive mr-1"> *</span>
+                    {t('search.name')}
                   </FormLabel>
                   <FormControl>
-                    <Input placeholder="Name" {...field} />
+                    <Input placeholder={t('search.name')} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -350,7 +352,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               name="avatar"
               render={() => (
                 <FormItem>
-                  <FormLabel>Avatar</FormLabel>
+                  <FormLabel>{t('search.avatar')}</FormLabel>
                   <FormControl>
                     <div className="relative group flex items-end gap-2">
                       <div>
@@ -413,7 +415,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>{t('search.description')}</FormLabel>
                   <FormControl>
                     <Input
                       placeholder="You are an intelligent assistant."
@@ -443,7 +445,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>Datasets
+                    <span className="text-destructive mr-1"> *</span>
+                    {t('search.datasets')}
                   </FormLabel>
                   <FormControl>
                     <MultiSelect
@@ -501,26 +504,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   </div>
                   <FormMessage />
                 </FormItem>
-                // <FormItem className="flex flex-col">
-                //   <FormLabel>
-                //     <span className="text-destructive mr-1"> *</span>Keyword
-                //     Similarity Weight
-                //   </FormLabel>
-                //   <FormControl>
-                //     {/* <div className="flex justify-between items-center">
-                //       <SingleFormSlider
-                //         max={100}
-                //         step={1}
-                //         value={field.value as number}
-                //         onChange={(values) => field.onChange(values)}
-                //       ></SingleFormSlider>
-                //       <Label className="w-10 h-6 bg-bg-card flex justify-center items-center rounded-lg ml-20">
-                //         {field.value}
-                //       </Label>
-                //     </div> */}
-                //   </FormControl>
-                //   <FormMessage />
-                // </FormItem>
               )}
             />
 
@@ -536,7 +519,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
-                  <FormLabel>Rerank Model</FormLabel>
+                  <FormLabel>{t('search.rerankModel')}</FormLabel>
                 </FormItem>
               )}
             />
@@ -612,7 +595,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
-                  <FormLabel>AI Summary</FormLabel>
+                  <FormLabel>{t('search.AISummary')}</FormLabel>
                 </FormItem>
               )}
             />
@@ -636,7 +619,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
-                  <FormLabel>Enable Web Search</FormLabel>
+                  <FormLabel>{t('search.enableWebSearch')}</FormLabel>
                 </FormItem>
               )}
             />
@@ -652,7 +635,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
-                  <FormLabel>Enable Related Search</FormLabel>
+                  <FormLabel>{t('search.enableRelatedSearch')}</FormLabel>
                 </FormItem>
               )}
             />
@@ -668,7 +651,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
-                  <FormLabel>Show Query Mindmap</FormLabel>
+                  <FormLabel>{t('search.showQueryMindmap')}</FormLabel>
                 </FormItem>
               )}
             />
@@ -683,9 +666,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   setOpen(false);
                 }}
               >
-                Cancel
+                {t('modal.cancelText')}
               </Button>
-              <Button type="submit">Confirm</Button>
+              <Button type="submit">{t('modal.okText')}</Button>
             </div>
           </form>
         </Form>

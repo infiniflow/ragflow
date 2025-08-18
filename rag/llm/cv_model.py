@@ -539,24 +539,24 @@ class GeminiCV(Base):
         return res.text, res.usage_metadata.total_token_count
 
     def chat(self, system, history, gen_conf, images=[]):
-        from transformers import GenerationConfig
+        generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
         try:
             response = self.model.generate_content(
                 self._form_history(system, history, images),
-                generation_config=GenerationConfig(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7)))
+                generation_config=generation_config)
             ans = response.text
             return ans, response.usage_metadata.total_token_count
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf, images=[]):
-        from transformers import GenerationConfig
         ans = ""
         response = None
         try:
+            generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
             response = self.model.generate_content(
                 self._form_history(system, history, images),
-                generation_config=GenerationConfig(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7)),
+                generation_config=generation_config,
                 stream=True,
             )
 
@@ -572,7 +572,7 @@ class GeminiCV(Base):
             yield response.usage_metadata.total_token_count
         else:
             yield 0
-            
+
 
 class NvidiaCV(Base):
     _FACTORY_NAME = "NVIDIA"
