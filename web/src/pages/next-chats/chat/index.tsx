@@ -1,3 +1,5 @@
+import EmbedDialog from '@/components/embed-dialog';
+import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -9,6 +11,7 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
@@ -20,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { ArrowUpRight, LogOut, Send } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'umi';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/multiple-chat-box';
@@ -29,6 +33,7 @@ import { useAddChatBox } from './use-add-box';
 import { useSwitchDebugMode } from './use-switch-debug-mode';
 
 export default function Chat() {
+  const { id } = useParams();
   const { navigateToChatList } = useNavigatePage();
   const { data } = useFetchDialog();
   const { t } = useTranslation();
@@ -45,6 +50,9 @@ export default function Chat() {
     hasSingleChatBox,
     hasThreeChatBox,
   } = useAddChatBox();
+
+  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
+    useShowEmbedModal();
 
   const { conversationId, isNew } = useGetChatSearchParams();
 
@@ -87,7 +95,7 @@ export default function Chat() {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <Button>
+        <Button onClick={showEmbedModal}>
           <Send />
           {t('common.embedIntoSite')}
         </Button>
@@ -133,6 +141,16 @@ export default function Chat() {
           </CardContent>
         </Card>
       </div>
+      {embedVisible && (
+        <EmbedDialog
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={id!}
+          from={SharedFrom.Chat}
+          beta={beta}
+          isAgent={false}
+        ></EmbedDialog>
+      )}
     </section>
   );
 }

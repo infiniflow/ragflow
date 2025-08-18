@@ -1,3 +1,4 @@
+import { useFetchTokenListBeforeOtherStep } from '@/components/embed-dialog/use-show-embed-dialog';
 import HightLightMarkdown from '@/components/highlight-markdown';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowSelect } from '@/components/ui/select';
@@ -9,7 +10,6 @@ import {
 import { useTranslate } from '@/hooks/common-hooks';
 import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useFetchTokenListBeforeOtherStep } from '../agent/hooks/use-show-dialog';
 
 type IEmbedAppModalProps = {
   open: any;
