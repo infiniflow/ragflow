@@ -539,8 +539,6 @@ class GeminiCV(Base):
         return res.text, res.usage_metadata.total_token_count
 
     def chat(self, system, history, gen_conf, images=[]):
-        from transformers import GenerationConfig
-
         generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
         try:
             response = self.model.generate_content(
@@ -552,7 +550,6 @@ class GeminiCV(Base):
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf, images=[]):
-        from transformers import GenerationConfig
         ans = ""
         response = None
         try:
