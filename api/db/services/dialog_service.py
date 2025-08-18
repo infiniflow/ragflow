@@ -713,7 +713,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, meta_data_filter=None):
     msg = [{"role": "user", "content": question}]
 
     def decorate_answer(answer):
-        nonlocal knowledges, kbinfos, prompt
+        nonlocal knowledges, kbinfos, sys_prompt
         answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
