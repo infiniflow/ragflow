@@ -32,9 +32,9 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
-from api.utils.web_utils import RELATED_QUESTION_PROMPT
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.app.tag import label_question
+from rag.prompts.prompt_template import load_prompt
 from rag.prompts.prompts import chunks_format
 
 
@@ -390,7 +390,7 @@ def related_questions():
     req = request.json
     question = req["question"]
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    prompt = RELATED_QUESTION_PROMPT
+    prompt = load_prompt("related_question")
     ans = chat_mdl.chat(
         prompt,
         [
