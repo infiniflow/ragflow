@@ -14,11 +14,13 @@ services:
     command:
       - --enable-mcpserver
       - --mcp-host=0.0.0.0
-      - --mcp-port=9382
+      - --mcp-port=9383
       - --mcp-base-url=http://127.0.0.1:9380
       - --mcp-script-path=/ragflow/mcp/server/server.py
-      - --mcp-mode=self-host
-      - --mcp-host-api-key=ragflow-ljMjA5MDUwM2QzMzExZjA4MmNmMDI0Mm
+      # MCP server defaults: --mode=host --no-transport-streamable-http-enabled
+      # For self-host mode, uncomment below:
+      # - --mcp-mode=self-host
+      # - --mcp-host-api-key=ragflow-ljMjA5MDUwM2QzMzExZjA4MmNmMDI0Mm
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
@@ -26,7 +28,7 @@ services:
       - 443:443
       - 5678:5678
       - 5679:5679
-      - 9382:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
+      - 9383:9383 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
     volumes:
       - ./ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
@@ -36,11 +38,21 @@ services:
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
 
+      # # NOTE: Bind-mount application code for live edits without image rebuild
+      # - ../api:/ragflow/api
+      # - ../rag:/ragflow/rag
+      # - ../agent:/ragflow/agent
+      # - ../graphrag:/ragflow/graphrag
+      # - ../agentic_reasoning:/ragflow/agentic_reasoning
+      - ../mcp:/ragflow/mcp
+      # - ../plugin:/ragflow/plugin
+
     env_file: .env
     environment:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=${HF_ENDPOINT}
       - MACOS=${MACOS}
+      - RAGFLOW_MCP_ROOT_PATH=/mcp
     networks:
       - ragflow
     restart: on-failure

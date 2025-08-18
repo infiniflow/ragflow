@@ -35,8 +35,9 @@ MCP_HOST="127.0.0.1"
 MCP_PORT=9382
 MCP_BASE_URL="http://127.0.0.1:9380"
 MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
-MCP_MODE="self-host"
+MCP_MODE="host"
 MCP_HOST_API_KEY=""
+MCP_NO_STREAMABLE_HTTP=""
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
@@ -107,6 +108,10 @@ for arg in "$@"; do
       HOST_ID="${arg#*=}"
       shift
       ;;
+    --no-transport-streamable-http-enabled)
+      MCP_NO_STREAMABLE_HTTP="--no-transport-streamable-http-enabled"
+      shift
+      ;;
     *)
       usage
       ;;
@@ -148,9 +153,10 @@ function start_mcp_server() {
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
-        --base_url="${MCP_BASE_URL}" \
+        --base-url="${MCP_BASE_URL}" \
         --mode="${MCP_MODE}" \
-        --api_key="${MCP_HOST_API_KEY}" &
+        --api-key="${MCP_HOST_API_KEY}" \
+        ${MCP_NO_STREAMABLE_HTTP} &
 }
 
 # -----------------------------------------------------------------------------
