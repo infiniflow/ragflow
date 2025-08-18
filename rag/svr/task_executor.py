@@ -302,7 +302,7 @@ async def build_chunks(task, progress_callback):
                     # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
                     if d["image"].mode in ("RGBA", "P"):
                         converted_image = d["image"].convert("RGB")
-                        d["image"].close()  # Close original image
+                        #d["image"].close()  # Close original image
                         d["image"] = converted_image
                     try:
                         d["image"].save(output_buffer, format='JPEG')
