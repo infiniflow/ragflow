@@ -1185,9 +1185,13 @@ export default {
       knowledge: '知識',
       chat: '聊天',
     },
-  },
-  modal: {
-    okText: '確認',
-    cancelText: '取消',
+    modal: {
+      okText: '確認',
+      cancelText: '取消',
+    },
+    search: {
+      createSearch: '新建查詢',
+      searchGreeting: '今天我能為你做些什麽？',
+    },
   },
 };

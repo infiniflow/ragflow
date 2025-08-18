@@ -8,7 +8,7 @@ export function ReferenceDocumentList({ list }: { list: Docagg[] }) {
     <section className="flex gap-3 flex-wrap">
       {list.map((item) => (
         <Card key={item.doc_id}>
-          <CardContent className="p-2">
+          <CardContent className="p-2 space-x-2">
             <FileIcon id={item.doc_id} name={item.doc_name}></FileIcon>
             <NewDocumentLink
               documentId={item.doc_id}

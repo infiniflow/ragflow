@@ -25,7 +25,7 @@ import { useDebounce } from 'ahooks';
 import { get, set } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { useParams, useSearchParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import {
   useGetPaginationWithRouter,
@@ -304,6 +304,9 @@ export const useSetAgent = (showMessage: boolean = true) => {
 // Only one file can be uploaded at a time
 export const useUploadCanvasFile = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const shared_id = searchParams.get('shared_id');
+  const canvasId = id || shared_id;
   const {
     data,
     isPending: loading,
@@ -321,7 +324,7 @@ export const useUploadCanvasFile = () => {
         }
 
         const { data } = await agentService.uploadCanvasFile(
-          { url: api.uploadAgentFile(id), data: nextBody },
+          { url: api.uploadAgentFile(canvasId as string), data: nextBody },
           true,
         );
         if (data?.code === 0) {

@@ -12,7 +12,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Label } from '@/components/ui/label';
 import {
   MultiSelect,
   MultiSelectOptionType,
@@ -42,6 +41,7 @@ import {
 import {
   ISearchAppDetailProps,
   IUpdateSearchProps,
+  IllmSettingProps,
   useUpdateSearch,
 } from '../next-searches/hooks';
 import {
@@ -54,14 +54,6 @@ interface SearchSettingProps {
   setOpen: (open: boolean) => void;
   className?: string;
   data: ISearchAppDetailProps;
-}
-interface ISubmitLlmSettingProps {
-  llm_id: string;
-  parameter: string;
-  temperature?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
 }
 
 const SearchSettingFormSchema = z
@@ -120,16 +112,19 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
   const [datasetList, setDatasetList] = useState<MultiSelectOptionType[]>([]);
   const [datasetSelectEmbdId, setDatasetSelectEmbdId] = useState('');
-
+  const descriptionDefaultValue = 'You are an intelligent assistant.';
   const resetForm = useCallback(() => {
     formMethods.reset({
       search_id: data?.id,
       name: data?.name || '',
       avatar: data?.avatar || '',
-      description: data?.description || 'You are an intelligent assistant.',
+      description: data?.description || descriptionDefaultValue,
       search_config: {
         kb_ids: search_config?.kb_ids || [],
-        vector_similarity_weight: search_config?.vector_similarity_weight || 20,
+        vector_similarity_weight:
+          (search_config?.vector_similarity_weight
+            ? 1 - search_config?.vector_similarity_weight
+            : 0.3) || 0.3,
         web_search: search_config?.web_search || false,
         doc_ids: [],
         similarity_threshold: 0.0,
@@ -198,8 +193,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       })();
     }
   }, [avatarFile]);
-  const { list: datasetListOrigin, loading: datasetLoading } =
-    useFetchKnowledgeList();
+  const { list: datasetListOrigin } = useFetchKnowledgeList();
 
   useEffect(() => {
     const datasetListMap = datasetListOrigin.map((item: IKnowledge) => {
@@ -259,7 +253,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   ) => {
     try {
       const { search_config, ...other_formdata } = formData;
-      const { llm_setting, ...other_config } = search_config;
+      const { llm_setting, vector_similarity_weight, ...other_config } =
+        search_config;
       const llmSetting = {
         llm_id: llm_setting.llm_id,
         parameter: llm_setting.parameter,
@@ -267,7 +262,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         top_p: llm_setting.top_p,
         frequency_penalty: llm_setting.frequency_penalty,
         presence_penalty: llm_setting.presence_penalty,
-      } as ISubmitLlmSettingProps;
+      } as IllmSettingProps;
+
       if (!llm_setting.frequencyPenaltyEnabled) {
         delete llmSetting.frequency_penalty;
       }
@@ -284,6 +280,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         ...other_formdata,
         search_config: {
           ...other_config,
+          vector_similarity_weight: 1 - vector_similarity_weight,
           llm_setting: { ...llmSetting },
         },
         tenant_id: systemSetting.tenant_id,
@@ -355,46 +352,54 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 <FormItem>
                   <FormLabel>Avatar</FormLabel>
                   <FormControl>
-                    <div className="relative group">
-                      {!avatarBase64Str ? (
-                        <div className="w-[64px] h-[64px] grid place-content-center border border-dashed	rounded-md">
-                          <div className="flex flex-col items-center">
-                            <Upload />
-                            <p>{t('common.upload')}</p>
+                    <div className="relative group flex items-end gap-2">
+                      <div>
+                        {!avatarBase64Str ? (
+                          <div className="w-[64px] h-[64px] grid place-content-center border border-dashed	rounded-md">
+                            <div className="flex flex-col items-center">
+                              <Upload />
+                              <p>{t('common.upload')}</p>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="w-[64px] h-[64px] relative grid place-content-center">
-                          <RAGFlowAvatar
-                            avatar={avatarBase64Str}
-                            name={data.name}
-                            className="w-[64px] h-[64px] rounded-md block"
-                          />
-                          <div className="absolute inset-0 bg-[#000]/20 group-hover:bg-[#000]/60">
-                            <Pencil
-                              size={20}
-                              className="absolute right-2 bottom-0 opacity-50 hidden group-hover:block"
+                        ) : (
+                          <div className="w-[64px] h-[64px] relative grid place-content-center">
+                            <RAGFlowAvatar
+                              avatar={avatarBase64Str}
+                              name={data.name}
+                              className="w-[64px] h-[64px] rounded-md block"
                             />
+                            <div className="absolute inset-0 bg-[#000]/20 group-hover:bg-[#000]/60">
+                              <Pencil
+                                size={20}
+                                className="absolute right-2 bottom-0 opacity-50 hidden group-hover:block"
+                              />
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      <input
-                        placeholder=""
-                        // {...field}
-                        type="file"
-                        title=""
-                        accept="image/*"
-                        className="absolute w-[64px] top-0 left-0 h-full opacity-0 cursor-pointer"
-                        onChange={(ev) => {
-                          const file = ev.target?.files?.[0];
-                          if (
-                            /\.(jpg|jpeg|png|webp|bmp)$/i.test(file?.name ?? '')
-                          ) {
-                            setAvatarFile(file!);
-                          }
-                          ev.target.value = '';
-                        }}
-                      />
+                        )}
+                        <input
+                          placeholder=""
+                          // {...field}
+                          type="file"
+                          title=""
+                          accept="image/*"
+                          className="absolute w-[64px] top-0 left-0 h-full opacity-0 cursor-pointer"
+                          onChange={(ev) => {
+                            const file = ev.target?.files?.[0];
+                            if (
+                              /\.(jpg|jpeg|png|webp|bmp)$/i.test(
+                                file?.name ?? '',
+                              )
+                            ) {
+                              setAvatarFile(file!);
+                            }
+                            ev.target.value = '';
+                          }}
+                        />
+                      </div>
+
+                      <div className="margin-1 text-muted-foreground">
+                        {t('knowledgeConfiguration.photoTip')}
+                      </div>
                     </div>
                   </FormControl>
                   <FormMessage />
@@ -410,7 +415,20 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Input placeholder="Description" {...field} />
+                    <Input
+                      placeholder="You are an intelligent assistant."
+                      {...field}
+                      onFocus={() => {
+                        if (field.value === descriptionDefaultValue) {
+                          field.onChange('');
+                        }
+                      }}
+                      onBlur={() => {
+                        if (field.value === '') {
+                          field.onChange(descriptionDefaultValue);
+                        }
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -451,26 +469,58 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               control={formMethods.control}
               name="search_config.vector_similarity_weight"
               render={({ field }) => (
-                <FormItem className="flex flex-col">
+                <FormItem>
                   <FormLabel>
                     <span className="text-destructive mr-1"> *</span>Keyword
                     Similarity Weight
                   </FormLabel>
-                  <FormControl>
-                    <div className="flex justify-between items-center">
+                  <div
+                    className={cn(
+                      'flex items-center gap-4 justify-between',
+                      className,
+                    )}
+                  >
+                    <FormControl>
                       <SingleFormSlider
-                        max={100}
-                        step={1}
-                        value={field.value as number}
-                        onChange={(values) => field.onChange(values)}
+                        {...field}
+                        max={1}
+                        min={0}
+                        step={0.01}
                       ></SingleFormSlider>
-                      <Label className="w-10 h-6 bg-bg-card flex justify-center items-center rounded-lg ml-20">
-                        {field.value}
-                      </Label>
-                    </div>
-                  </FormControl>
+                    </FormControl>
+                    <FormControl>
+                      <Input
+                        type={'number'}
+                        className="h-7 w-20 bg-bg-card"
+                        max={1}
+                        min={0}
+                        step={0.01}
+                        {...field}
+                      ></Input>
+                    </FormControl>
+                  </div>
                   <FormMessage />
                 </FormItem>
+                // <FormItem className="flex flex-col">
+                //   <FormLabel>
+                //     <span className="text-destructive mr-1"> *</span>Keyword
+                //     Similarity Weight
+                //   </FormLabel>
+                //   <FormControl>
+                //     {/* <div className="flex justify-between items-center">
+                //       <SingleFormSlider
+                //         max={100}
+                //         step={1}
+                //         value={field.value as number}
+                //         onChange={(values) => field.onChange(values)}
+                //       ></SingleFormSlider>
+                //       <Label className="w-10 h-6 bg-bg-card flex justify-center items-center rounded-lg ml-20">
+                //         {field.value}
+                //       </Label>
+                //     </div> */}
+                //   </FormControl>
+                //   <FormMessage />
+                // </FormItem>
               )}
             />
 
@@ -528,16 +578,15 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         <FormControl>
                           <SingleFormSlider
                             {...field}
-                            max={100}
+                            max={2048}
                             min={0}
                             step={1}
                           ></SingleFormSlider>
                         </FormControl>
                         <FormControl>
                           <Input
-                            type={'number'}
                             className="h-7 w-20 bg-bg-card"
-                            max={100}
+                            max={2048}
                             min={0}
                             step={1}
                             {...field}
