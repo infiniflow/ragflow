@@ -99,7 +99,6 @@ class DialogService(CommonService):
 
         return list(chats.dicts())
 
-
     @classmethod
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, keywords, parser_id=None):
@@ -256,9 +255,10 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 def meta_filter(metas: dict, filters: list[dict]):
     doc_ids = []
+
     def filter_out(v2docs, operator, value):
         nonlocal doc_ids
-        for input,docids in v2docs.items():
+        for input, docids in v2docs.items():
             try:
                 input = float(input)
                 value = float(value)
@@ -389,7 +389,17 @@ def chat(dialog, messages, stream=True, **kwargs):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
-                partial(retriever.retrieval, embd_mdl=embd_mdl, tenant_ids=tenant_ids, kb_ids=dialog.kb_ids, page=1, page_size=dialog.top_n, similarity_threshold=0.2, vector_similarity_weight=0.3, doc_ids=attachments),
+                partial(
+                    retriever.retrieval,
+                    embd_mdl=embd_mdl,
+                    tenant_ids=tenant_ids,
+                    kb_ids=dialog.kb_ids,
+                    page=1,
+                    page_size=dialog.top_n,
+                    similarity_threshold=0.2,
+                    vector_similarity_weight=0.3,
+                    doc_ids=attachments,
+                ),
             )
 
             for think in reasoner.thinking(kbinfos, " ".join(questions)):
