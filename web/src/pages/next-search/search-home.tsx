@@ -1,5 +1,5 @@
 import { Input } from '@/components/originui/input';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { IUserInfo } from '@/interfaces/database/user-setting';
 import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
@@ -12,13 +12,15 @@ export default function SearchPage({
   setIsSearching,
   searchText,
   setSearchText,
+  userInfo,
 }: {
   isSearching: boolean;
   setIsSearching: Dispatch<SetStateAction<boolean>>;
   searchText: string;
   setSearchText: Dispatch<SetStateAction<string>>;
+  userInfo?: IUserInfo;
 }) {
-  const { data: userInfo } = useFetchUserInfo();
+  // const { data: userInfo } = useFetchUserInfo();
   const { t } = useTranslation();
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-32">
@@ -38,7 +40,11 @@ export default function SearchPage({
               <>
                 <p className="mb-4 transition-opacity">👋 Hi there</p>
                 <p className="mb-10 transition-opacity">
-                  {t('search.welcomeBack')}, {userInfo?.nickname}
+                  {userInfo && (
+                    <>
+                      {t('search.welcomeBack')}, {userInfo.nickname}
+                    </>
+                  )}
                 </p>
               </>
             )}

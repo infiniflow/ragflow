@@ -11,7 +11,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { SharedFrom } from '@/constants/chat';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+import {
+  useFetchTenantInfo,
+  useFetchUserInfo,
+} from '@/hooks/user-setting-hooks';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +39,7 @@ export default function SearchPage() {
   const [openEmbed, setOpenEmbed] = useState(false);
   const [searchText, setSearchText] = useState('');
   const { data: tenantInfo } = useFetchTenantInfo();
+  const { data: userInfo } = useFetchUserInfo();
   const tenantId = tenantInfo.tenant_id;
   const { t } = useTranslation();
   const { openSetting: checkOpenSetting } = useCheckSettings(
@@ -77,6 +81,7 @@ export default function SearchPage() {
                 isSearching={isSearching}
                 searchText={searchText}
                 setSearchText={setSearchText}
+                userInfo={userInfo}
               />
             </div>
           )}
