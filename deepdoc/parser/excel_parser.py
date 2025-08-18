@@ -90,9 +90,17 @@ class RAGFlowExcelParser:
         return wb
 
     def html(self, fnm, chunk_rows=256):
+        from html import escape
+
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
         wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
         tb_chunks = []
+
+        def _fmt(v):
+            if v is None:
+                return ""
+            return str(v).strip()
+
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
@@ -101,7 +109,7 @@ class RAGFlowExcelParser:
 
             tb_rows_0 = "<tr>"
             for t in list(rows[0]):
-                tb_rows_0 += f"<th>{t.value}</th>"
+                tb_rows_0 += f"<th>{escape(_fmt(t.value))}</th>"
             tb_rows_0 += "</tr>"
 
             for chunk_i in range((len(rows) - 1) // chunk_rows + 1):
@@ -109,7 +117,7 @@ class RAGFlowExcelParser:
                 tb += f"<table><caption>{sheetname}</caption>"
                 tb += tb_rows_0
                 for r in list(
-                    rows[1 + chunk_i * chunk_rows: 1 + (chunk_i + 1) * chunk_rows]
+                    rows[1 + chunk_i * chunk_rows: min(1 + (chunk_i + 1) * chunk_rows, len(rows))]
                 ):
                     tb += "<tr>"
                     for i, c in enumerate(r):

@@ -3,7 +3,7 @@ import { useUploadAndParseFile } from '@/hooks/use-chat-request';
 import { useCallback, useState } from 'react';
 
 export function useUploadFile() {
-  const { uploadAndParseFile } = useUploadAndParseFile();
+  const { uploadAndParseFile, loading } = useUploadAndParseFile();
   const [fileIds, setFileIds] = useState<string[]>([]);
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
@@ -23,5 +23,5 @@ export function useUploadFile() {
     setFileIds([]);
   }, []);
 
-  return { handleUploadFile, clearFileIds, fileIds };
+  return { handleUploadFile, clearFileIds, fileIds, isUploading: loading };
 }

@@ -13,7 +13,7 @@ const MindMapDrawer = ({ data, hideModal, visible, loading }: IProps) => {
   const { t } = useTranslation();
   const percent = usePendingMindMap();
   return (
-    <div className="w-[400px] h-[420px]">
+    <div className="w-full h-full">
       <div className="flex w-full justify-between items-center mb-2">
         <div className="text-text-primary font-medium text-base">
           {t('chunk.mind')}
@@ -32,11 +32,14 @@ const MindMapDrawer = ({ data, hideModal, visible, loading }: IProps) => {
         </div>
       )}
       {!loading && (
-        <div className="bg-bg-card rounded-lg p-4 w-[400px] h-[380px]">
+        <div className="bg-bg-card rounded-lg p-4 w-full h-full">
           <IndentedTree
             data={data}
             show
-            style={{ width: '100%', height: '100%' }}
+            style={{
+              width: '100%',
+              height: '100%',
+            }}
           ></IndentedTree>
         </div>
       )}
