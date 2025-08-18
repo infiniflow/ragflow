@@ -347,7 +347,7 @@ def ask_about():
     def stream():
         nonlocal req, uid
         try:
-            for ans in ask(req["question"], req["kb_ids"], uid):
+            for ans in ask(req["question"], req["kb_ids"], uid, meta_data_filter=req.get("meta_data_filter")):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"

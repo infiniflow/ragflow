@@ -40,7 +40,7 @@ from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in
-from rag.prompts.prompts import gen_meta_filter
+from rag.prompts.prompts import gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
 from rag.utils import num_tokens_from_string, rmSpace
 from rag.utils.tavily_conn import Tavily
 
@@ -687,7 +687,7 @@ def tts(tts_mdl, text):
     return binascii.hexlify(bin).decode("utf-8")
 
 
-def ask(question, kb_ids, tenant_id, chat_llm_name=None):
+def ask(question, kb_ids, tenant_id, chat_llm_name=None, meta_data_filter=None):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
@@ -698,24 +698,18 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None):
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_llm_name)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-    kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids, 1, 12, 0.1, 0.3, aggs=False, rank_feature=label_question(question, kbs))
+    docs = []
+    if meta_data_filter:
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        filters = gen_meta_filter(chat_mdl, metas, question)
+        docs.extend(meta_filter(metas, filters))
+        if not docs:
+            docs = None
+
+    kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids, 1, 12, 0.1, 0.3, aggs=False, doc_ids=docs, rank_feature=label_question(question, kbs))
     knowledges = kb_prompt(kbinfos, max_tokens)
-    prompt = """
-    Role: You're a smart assistant. Your name is Miss R.
-    Task: Summarize the information from knowledge bases and answer user's question.
-    Requirements and restriction:
-      - DO NOT make things up, especially for numbers.
-      - If the information from knowledge is irrelevant with user's question, JUST SAY: Sorry, no relevant information provided.
-      - Answer with markdown format text.
-      - Answer in language of user's question.
-      - DO NOT make things up, especially for numbers.
+    sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
 
-    ### Information from knowledge bases
-    %s
-
-    The above is information from knowledge bases.
-
-    """ % "\n".join(knowledges)
     msg = [{"role": "user", "content": question}]
 
     def decorate_answer(answer):
@@ -737,7 +731,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None):
         return {"answer": answer, "reference": refs}
 
     answer = ""
-    for ans in chat_mdl.chat_streamly(prompt, msg, {"temperature": 0.1}):
+    for ans in chat_mdl.chat_streamly(sys_prompt, msg, {"temperature": 0.1}):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
