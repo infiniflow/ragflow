@@ -486,3 +486,16 @@ export const useSearching = ({
     onChange,
   };
 };
+
+export const useCheckSettings = (data: ISearchAppDetailProps) => {
+  if (!data) {
+    return {
+      openSetting: false,
+    };
+  }
+  const { search_config, name } = data;
+  const { kb_ids } = search_config;
+  return {
+    openSetting: kb_ids && kb_ids.length && name ? false : true,
+  };
+};
