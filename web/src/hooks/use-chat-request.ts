@@ -1,6 +1,10 @@
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
-import { IConversation, IDialog } from '@/interfaces/database/chat';
+import {
+  IConversation,
+  IDialog,
+  IExternalChatInfo,
+} from '@/interfaces/database/chat';
 import { IAskRequestBody } from '@/interfaces/request/chat';
 import { IClientConversation } from '@/pages/next-chats/chat/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
@@ -32,6 +36,7 @@ export const enum ChatApiAction {
   FetchMindMap = 'fetchMindMap',
   FetchRelatedQuestions = 'fetchRelatedQuestions',
   UploadAndParse = 'upload_and_parse',
+  FetchExternalChatInfo = 'fetchExternalChatInfo',
 }
 
 export const useGetChatSearchParams = () => {
@@ -417,6 +422,29 @@ export function useUploadAndParseFile() {
 
   return { data, loading, uploadAndParseFile: mutateAsync };
 }
+
+export const useFetchExternalChatInfo = () => {
+  const { sharedId: id } = useGetSharedChatSearchParams();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IExternalChatInfo>({
+    queryKey: [ChatApiAction.FetchExternalChatInfo, id],
+    gcTime: 0,
+    initialData: {} as IExternalChatInfo,
+    enabled: !!id,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.fetchExternalChatInfo(id!);
+
+      return data?.data;
+    },
+  });
+
+  return { data, loading, refetch };
+};
 
 //#endregion
 

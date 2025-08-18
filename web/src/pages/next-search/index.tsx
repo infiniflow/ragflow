@@ -1,3 +1,4 @@
+import { useFetchTokenListBeforeOtherStep } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -13,7 +14,6 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useFetchTokenListBeforeOtherStep } from '../agent/hooks/use-show-dialog';
 import {
   ISearchAppDetailProps,
   useFetchSearchDetail,

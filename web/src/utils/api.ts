@@ -111,6 +111,8 @@ export default {
 
   // next chat
   listNextDialog: `${api_host}/dialog/next`,
+  fetchExternalChatInfo: (id: string) =>
+    `${ExternalApi}${api_host}/chatbots/${id}/info`,
 
   // file manager
   listFile: `${api_host}/file/list`,
