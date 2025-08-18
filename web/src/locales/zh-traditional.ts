@@ -1192,6 +1192,12 @@ export default {
     search: {
       createSearch: '新建查詢',
       searchGreeting: '今天我能為你做些什麽？',
+      profile: '隱藏個人資料',
+      locale: '語言',
+      embedCode: '嵌入代碼',
+      id: 'ID',
+      copySuccess: '複製成功',
+      welcomeBack: '歡迎回來',
     },
   },
 };
