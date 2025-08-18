@@ -172,3 +172,9 @@ export interface IStats {
   round: [string, number][];
   thumb_up: [string, number][];
 }
+
+export interface IExternalChatInfo {
+  avatar?: string;
+  title: string;
+  prologue?: string;
+}
