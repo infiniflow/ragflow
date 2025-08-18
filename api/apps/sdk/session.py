@@ -816,6 +816,29 @@ def chatbot_completions(dialog_id):
         return get_result(data=answer)
 
 
+@manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
+def chatbots_inputs(dialog_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    e, dialog = DialogService.get_by_id(dialog_id)
+    if not e:
+        return get_error_data_result(f"Can't find dialog by ID: {dialog_id}")
+
+    return get_result(
+        data={
+            "title": dialog.name,
+            "avatar": dialog.icon,
+            "prologue": dialog.prompt_config.get("prologue", ""),
+        }
+    )
+
+
 @manager.route("/agentbots/<agent_id>/completions", methods=["POST"])  # noqa: F821
 def agent_bot_completions(agent_id):
     req = request.json
