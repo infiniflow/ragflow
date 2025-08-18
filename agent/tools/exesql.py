@@ -133,6 +133,10 @@ class ExeSQL(ToolBase, ABC):
                 single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
                 single_res.columns = [i[0] for i in cursor.description]
 
+            for col in single_res.columns:
+                if pd.api.types.is_datetime64_any_dtype(single_res[col]):
+                    single_res[col] = single_res[col].dt.strftime('%Y-%m-%d')
+
             sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
             formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
 
