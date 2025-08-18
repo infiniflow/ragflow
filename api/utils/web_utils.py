@@ -21,6 +21,9 @@ import re
 import socket
 from urllib.parse import urlparse
 
+from api.apps import smtp_mail_server
+from flask_mail import Message
+from flask import render_template_string
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -29,6 +32,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.expected_conditions import staleness_of
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
+
 
 
 CONTENT_TYPE_MAP = {
@@ -207,4 +211,5 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return parsed if parsed > 0 else default
     except (TypeError, ValueError):
         return default
+
 

@@ -85,7 +85,7 @@ const getUrlWithToken = (token: string, from: string = 'chat') => {
   return `${protocol}//${host}/chat/share?shared_id=${token}&from=${from}`;
 };
 
-const useFetchTokenListBeforeOtherStep = () => {
+export const useFetchTokenListBeforeOtherStep = () => {
   const { showTokenEmptyError } = useShowTokenEmptyError();
   const { showBetaEmptyError } = useShowBetaEmptyError();
 
