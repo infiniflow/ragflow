@@ -3,6 +3,10 @@ import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
 import { transformBase64ToFile, transformFile2Base64 } from '@/utils/file-util';
+import {
+  removeUselessFieldsFromValues,
+  setLLMSettingEnabledValues,
+} from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
@@ -26,6 +30,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
+    shouldUnregister: true,
     defaultValues: {
       name: '',
       language: 'English',
@@ -47,14 +52,18 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   });
 
   async function onSubmit(values: FormSchemaType) {
-    const icon = values.icon;
+    const nextValues: Record<string, any> = removeUselessFieldsFromValues(
+      values,
+      'llm_setting.',
+    );
+    const icon = nextValues.icon;
     const avatar =
       Array.isArray(icon) && icon.length > 0
         ? await transformFile2Base64(icon[0])
         : '';
     setDialog({
       ...data,
-      ...values,
+      ...nextValues,
       icon: avatar,
       dialog_id: id,
     });
@@ -65,9 +74,14 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   }
 
   useEffect(() => {
+    const llmSettingEnabledValues = setLLMSettingEnabledValues(
+      data.llm_setting,
+    );
+
     const nextData = {
       ...data,
       icon: data.icon ? [transformBase64ToFile(data.icon)] : [],
+      ...llmSettingEnabledValues,
     };
     form.reset(nextData as FormSchemaType);
   }, [data, form]);
