@@ -1,3 +1,4 @@
+import { useFetchTokenListBeforeOtherStep } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -29,6 +30,7 @@ export default function SearchPage() {
   const { navigateToSearchList } = useNavigatePage();
   const [isSearching, setIsSearching] = useState(false);
   const { data: SearchData } = useFetchSearchDetail();
+  const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
 
   const [openSetting, setOpenSetting] = useState(false);
   const [openEmbed, setOpenEmbed] = useState(false);
@@ -105,6 +107,7 @@ export default function SearchPage() {
             token={SearchData?.id as string}
             from={SharedFrom.Search}
             tenantId={tenantId}
+            beta={beta}
           />
         }
         {
@@ -121,7 +124,14 @@ export default function SearchPage() {
       <div className="absolute right-5 top-12 ">
         <Button
           className="bg-text-primary  text-bg-base border-b-[#00BEB4] border-b-2"
-          onClick={() => setOpenEmbed(!openEmbed)}
+          onClick={() => {
+            handleOperate().then((res) => {
+              console.log(res, 'res');
+              if (res) {
+                setOpenEmbed(!openEmbed);
+              }
+            });
+          }}
         >
           <Send />
           <div>{t('search.embedApp')}</div>
