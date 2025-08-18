@@ -86,10 +86,16 @@ class Retrieval(ToolBase, ABC):
                 kb_ids.append(id)
                 continue
             kb_nm = self._canvas.get_variable_value(id)
-            e, kb = KnowledgebaseService.get_by_name(kb_nm, self._canvas._tenant_id)
-            if not e:
-                raise Exception(f"Dataset({kb_nm}) does not exist.")
-            kb_ids.append(kb.id)
+            # if kb_nm is a list
+            kb_nm_list = kb_nm if isinstance(kb_nm, list) else [kb_nm]
+            for nm_or_id in kb_nm_list:
+                e, kb = KnowledgebaseService.get_by_name(nm_or_id,
+                                                         self._canvas._tenant_id)
+                if not e:
+                    e, kb = KnowledgebaseService.get_by_id(nm_or_id)
+                    if not e:
+                        raise Exception(f"Dataset({nm_or_id}) does not exist.")
+                kb_ids.append(kb.id)
 
         filtered_kb_ids: list[str] = list(set([kb_id for kb_id in kb_ids if kb_id]))
 
