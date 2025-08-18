@@ -67,9 +67,17 @@ class CodeExecParam(ToolParamBase):
             "description": """
 This tool has a sandbox that can execute code written in 'Python'/'Javascript'. It recieves a piece of code and return a Json string.
 Here's a code example for Python(`main` function MUST be included):
-def main(arg1: str, arg2: str) -> dict:
+def main() -> dict:
+    \"\"\"
+    Generate Fibonacci numbers within 100.
+    \"\"\"
+    def fibonacci_recursive(n):
+        if n <= 1:
+            return n
+        else:
+            return fibonacci_recursive(n-1) + fibonacci_recursive(n-2)
     return {
-        "result": arg1 + arg2,
+        "result": fibonacci_recursive(100),
     }
     
 Here's a code example for Javascript(`main` function MUST be included and exported):

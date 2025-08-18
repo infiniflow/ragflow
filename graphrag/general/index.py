@@ -57,7 +57,7 @@ async def run_graphrag(
     ):
         chunks.append(d["content_with_weight"])
 
-    with trio.fail_after(len(chunks)*60):
+    with trio.fail_after(max(120, len(chunks)*120)):
         subgraph = await generate_subgraph(
             LightKGExt
             if "method" not in row["kb_parser_config"].get("graphrag", {}) or row["kb_parser_config"]["graphrag"]["method"] != "general"
