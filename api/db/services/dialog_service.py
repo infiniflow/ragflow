@@ -40,7 +40,7 @@ from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in
-from rag.prompts.prompts import gen_meta_filter
+from rag.prompts.prompts import gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
 from rag.utils import num_tokens_from_string, rmSpace
 from rag.utils.tavily_conn import Tavily
 
@@ -723,6 +723,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
         rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
+
     kbinfos = retriever.retrieval(
         question = question,
         embd_mdl=embd_mdl,
@@ -740,26 +741,12 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     )
 
     knowledges = kb_prompt(kbinfos, max_tokens)
-    prompt = """
-    Role: You're a smart assistant. Your name is Miss R.
-    Task: Summarize the information from knowledge bases and answer user's question.
-    Requirements and restriction:
-      - DO NOT make things up, especially for numbers.
-      - If the information from knowledge is irrelevant with user's question, JUST SAY: Sorry, no relevant information provided.
-      - Answer with markdown format text.
-      - Answer in language of user's question.
-      - DO NOT make things up, especially for numbers.
+    sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
 
-    ### Information from knowledge bases
-    %s
-
-    The above is information from knowledge bases.
-
-    """ % "\n".join(knowledges)
     msg = [{"role": "user", "content": question}]
 
     def decorate_answer(answer):
-        nonlocal knowledges, kbinfos, prompt
+        nonlocal knowledges, kbinfos, sys_prompt
         answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
@@ -777,7 +764,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
         return {"answer": answer, "reference": refs}
 
     answer = ""
-    for ans in chat_mdl.chat_streamly(prompt, msg, {"temperature": 0.1}):
+    for ans in chat_mdl.chat_streamly(sys_prompt, msg, {"temperature": 0.1}):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
