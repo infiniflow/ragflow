@@ -59,10 +59,10 @@ export function UseGraphRagFormField() {
       name="parser_config.graphrag.use_graphrag"
       render={({ field }) => (
         <FormItem defaultChecked={false} className=" items-center space-y-0 ">
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
             <FormLabel
               tooltip={t('useGraphRagTip')}
-              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+              className="text-sm text-muted-foreground whitespace-break-spaces w-1/4"
             >
               {t('useGraphRag')}
             </FormLabel>

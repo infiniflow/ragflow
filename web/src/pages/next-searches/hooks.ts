@@ -89,7 +89,10 @@ export const useFetchSearchList = (params?: SearchListParams) => {
     ...params,
   });
 
-  const { data, isLoading, isError } = useQuery<SearchListResponse, Error>({
+  const { data, isLoading, isError, refetch } = useQuery<
+    SearchListResponse,
+    Error
+  >({
     queryKey: ['searchList', searchParams],
     queryFn: async () => {
       const { data: response } =
@@ -108,7 +111,14 @@ export const useFetchSearchList = (params?: SearchListParams) => {
     }));
   };
 
-  return { data, isLoading, isError, searchParams, setSearchListParams };
+  return {
+    data,
+    isLoading,
+    isError,
+    searchParams,
+    setSearchListParams,
+    refetch,
+  };
 };
 
 interface DeleteSearchProps {
@@ -150,6 +160,7 @@ export interface ISearchAppDetailProps {
     query_mindmap: boolean;
     related_search: boolean;
     rerank_id: string;
+    use_rerank?: boolean;
     similarity_threshold: number;
     summary: boolean;
     llm_setting: IllmSettingProps & IllmSettingEnableProps;
@@ -191,6 +202,7 @@ export const useFetchSearchDetail = (tenantId?: string) => {
   const fetchSearchDetailFunc = shared_id
     ? searchService.getSearchDetailShare
     : searchService.getSearchDetail;
+
   const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
     queryKey: ['searchDetail', searchId],
     enabled: !shared_id || !!tenantId,

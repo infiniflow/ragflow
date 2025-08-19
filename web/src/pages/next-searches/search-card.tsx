@@ -8,8 +8,9 @@ import { SearchDropdown } from './search-dropdown';
 
 interface IProps {
   data: ISearchAppProps;
+  showSearchRenameModal: (data: ISearchAppProps) => void;
 }
-export function SearchCard({ data }: IProps) {
+export function SearchCard({ data, showSearchRenameModal }: IProps) {
   const { navigateToSearch } = useNavigatePage();
 
   return (
@@ -32,7 +33,10 @@ export function SearchCard({ data }: IProps) {
             <div className="text-[20px] font-bold w-80% leading-5">
               {data.name}
             </div>
-            <SearchDropdown dataset={data}>
+            <SearchDropdown
+              dataset={data}
+              showSearchRenameModal={showSearchRenameModal}
+            >
               <MoreButton></MoreButton>
             </SearchDropdown>
           </section>
