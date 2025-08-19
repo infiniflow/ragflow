@@ -687,7 +687,30 @@ def tts(tts_mdl, text):
     return binascii.hexlify(bin).decode("utf-8")
 
 
-def ask(question, kb_ids, tenant_id, chat_llm_name=None):
+def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
+    similarity_threshold = 0.1,
+    vector_similarity_weight = 0.3,
+    top = 1024,
+    doc_ids = []
+    rerank_id = ""
+    rerank_mdl = None
+
+    if search_config:
+        if search_config.get("kb_ids", []):
+            kb_ids = search_config.get("kb_ids", [])
+        if search_config.get("chat_id", ""):
+            chat_llm_name = search_config.get("chat_id", "")
+        if search_config.get("similarity_threshold", 0.1):
+            similarity_threshold = search_config.get("similarity_threshold", 0.1)
+        if search_config.get("vector_similarity_weight", 0.3):
+            vector_similarity_weight = search_config.get("vector_similarity_weight", 0.3)
+        if search_config.get("top_k", 1024):
+            top = search_config.get("top_k", 1024)
+        if search_config.get("doc_ids", []):
+            doc_ids = search_config.get("doc_ids", [])
+        if search_config.get("rerank_id", ""):
+            rerank_id = search_config.get("rerank_id", "")
+
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
@@ -696,9 +719,26 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None):
 
     embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_list[0])
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_llm_name)
+    if rerank_id:
+        rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-    kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids, 1, 12, 0.1, 0.3, aggs=False, rank_feature=label_question(question, kbs))
+    kbinfos = retriever.retrieval(
+        question = question,
+        embd_mdl=embd_mdl,
+        tenant_ids=tenant_ids,
+        kb_ids=kb_ids,
+        page=1,
+        page_size=12,
+        similarity_threshold=similarity_threshold,
+        vector_similarity_weight=vector_similarity_weight,
+        top=top,
+        doc_ids=doc_ids,
+        aggs=False,
+        rerank_mdl=rerank_mdl,
+        rank_feature=label_question(question, kbs)
+    )
+
     knowledges = kb_prompt(kbinfos, max_tokens)
     prompt = """
     Role: You're a smart assistant. Your name is Miss R.
