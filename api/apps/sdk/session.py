@@ -18,7 +18,6 @@ import re
 import time
 import tiktoken
 from flask import Response, jsonify, request
-import trio
 from agent.canvas import Canvas
 from api import settings
 from api.db import LLMType, StatusEnum
