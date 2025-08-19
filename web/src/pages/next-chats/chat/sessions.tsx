@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { PanelLeftClose, PanelRightClose, Plus } from 'lucide-react';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
 import { ConversationDropdown } from './conversation-dropdown';
@@ -24,6 +25,7 @@ export function Sessions({
   handleConversationCardClick,
   switchSettingVisible,
 }: SessionProps) {
+  const { t } = useTranslation();
   const {
     list: conversationList,
     addTemporaryConversation,
@@ -102,8 +104,9 @@ export function Sessions({
           className="w-full"
           onClick={switchSettingVisible}
           disabled={!hasSingleChatBox}
+          variant={'outline'}
         >
-          Chat Settings
+          {t('chat.chatSetting')}
         </Button>
       </div>
     </section>

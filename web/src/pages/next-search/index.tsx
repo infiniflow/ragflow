@@ -1,3 +1,4 @@
+import { useFetchTokenListBeforeOtherStep } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -10,15 +11,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { SharedFrom } from '@/constants/chat';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+import {
+  useFetchTenantInfo,
+  useFetchUserInfo,
+} from '@/hooks/user-setting-hooks';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useFetchTokenListBeforeOtherStep } from '../agent/hooks/use-show-dialog';
+import { useTranslation } from 'react-i18next';
 import {
   ISearchAppDetailProps,
   useFetchSearchDetail,
 } from '../next-searches/hooks';
 import EmbedAppModal from './embed-app-modal';
+import { useCheckSettings } from './hooks';
 import './index.less';
 import SearchHome from './search-home';
 import { SearchSetting } from './search-setting';
@@ -29,14 +34,21 @@ export default function SearchPage() {
   const [isSearching, setIsSearching] = useState(false);
   const { data: SearchData } = useFetchSearchDetail();
   const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
+
   const [openSetting, setOpenSetting] = useState(false);
   const [openEmbed, setOpenEmbed] = useState(false);
   const [searchText, setSearchText] = useState('');
   const { data: tenantInfo } = useFetchTenantInfo();
+  const { data: userInfo } = useFetchUserInfo();
   const tenantId = tenantInfo.tenant_id;
+  const { t } = useTranslation();
+  const { openSetting: checkOpenSetting } = useCheckSettings(
+    SearchData as ISearchAppDetailProps,
+  );
   useEffect(() => {
-    handleOperate();
-  }, [handleOperate]);
+    setOpenSetting(checkOpenSetting);
+  }, [checkOpenSetting]);
+
   useEffect(() => {
     if (isSearching) {
       setOpenSetting(false);
@@ -60,7 +72,7 @@ export default function SearchPage() {
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
-      <div className="flex gap-3 w-full">
+      <div className="flex gap-3 w-full bg-bg-base">
         <div className="flex-1">
           {!isSearching && (
             <div className="animate-fade-in-down">
@@ -69,6 +81,7 @@ export default function SearchPage() {
                 isSearching={isSearching}
                 searchText={searchText}
                 setSearchText={setSearchText}
+                userInfo={userInfo}
               />
             </div>
           )}
@@ -98,8 +111,8 @@ export default function SearchPage() {
             url="/next-search/share"
             token={SearchData?.id as string}
             from={SharedFrom.Search}
-            beta={beta}
             tenantId={tenantId}
+            beta={beta}
           />
         }
         {
@@ -116,10 +129,17 @@ export default function SearchPage() {
       <div className="absolute right-5 top-12 ">
         <Button
           className="bg-text-primary  text-bg-base border-b-[#00BEB4] border-b-2"
-          onClick={() => setOpenEmbed(!openEmbed)}
+          onClick={() => {
+            handleOperate().then((res) => {
+              console.log(res, 'res');
+              if (res) {
+                setOpenEmbed(!openEmbed);
+              }
+            });
+          }}
         >
           <Send />
-          <div>Embed App</div>
+          <div>{t('search.embedApp')}</div>
         </Button>
       </div>
       {!isSearching && (
@@ -130,7 +150,9 @@ export default function SearchPage() {
             onClick={() => setOpenSetting(!openSetting)}
           >
             <Settings className="text-text-secondary" />
-            <div className="text-text-secondary">Search Settings</div>
+            <div className="text-text-secondary">
+              {t('search.searchSettings')}
+            </div>
           </Button>
         </div>
       )}

@@ -1,29 +1,41 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { forwardRef, memo, useState } from 'react';
+import { forwardRef, memo, useMemo, useState } from 'react';
 import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
 
-interface IProps {
+export interface NextInnerLLMSelectProps {
   id?: string;
   value?: string;
   onInitialValue?: (value: string, option: any) => void;
   onChange?: (value: string) => void;
   disabled?: boolean;
   filter?: string;
+  showSpeech2TextModel?: boolean;
 }
 
 const NextInnerLLMSelect = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  IProps
->(({ value, disabled, filter }, ref) => {
+  NextInnerLLMSelectProps
+>(({ value, disabled, filter, showSpeech2TextModel = false }, ref) => {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const modelTypes =
-    filter === 'all' || filter === undefined
-      ? [LlmModelType.Chat, LlmModelType.Image2text]
-      : [filter as LlmModelType];
+
+  const ttsModel = useMemo(() => {
+    return showSpeech2TextModel ? [LlmModelType.Speech2text] : [];
+  }, [showSpeech2TextModel]);
+
+  const modelTypes = useMemo(() => {
+    if (filter === LlmModelType.Chat) {
+      return [LlmModelType.Chat];
+    } else if (filter === LlmModelType.Image2text) {
+      return [LlmModelType.Image2text, ...ttsModel];
+    } else {
+      return [LlmModelType.Chat, LlmModelType.Image2text, ...ttsModel];
+    }
+  }, [filter, ttsModel]);
+
   const modelOptions = useComposeLlmOptionsByModelTypes(modelTypes);
 
   return (

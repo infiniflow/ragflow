@@ -27,7 +27,7 @@ const MindMapDrawer = ({ data, hideModal, visible, loading }: IProps) => {
         />
       </div>
       {loading && (
-        <div className="absolute top-48">
+        <div className=" rounded-lg p-4 w-full h-full">
           <Progress value={percent} className="h-1 flex-1 min-w-10" />
         </div>
       )}

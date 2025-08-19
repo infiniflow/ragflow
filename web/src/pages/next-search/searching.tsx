@@ -1,5 +1,4 @@
 import { Dispatch, SetStateAction } from 'react';
-import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import { useSearching } from './hooks';
 import './index.less';
@@ -21,13 +20,11 @@ export default function SearchingPage({
     setIsSearching,
     setSearchText,
   });
-  const { t } = useTranslation();
   return (
     <SearchingView
       {...searchingParam}
       searchData={searchData}
       setIsSearching={setIsSearching}
-      t={t}
     />
   );
 }

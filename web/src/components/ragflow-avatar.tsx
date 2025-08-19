@@ -49,7 +49,7 @@ export const RAGFlowAvatar = memo(
     const initials = getInitials(name);
     const { from, to } = name
       ? getColorForName(name)
-      : { from: 'hsl(0, 0%, 80%)', to: 'hsl(0, 0%, 30%)' };
+      : { from: 'hsl(0, 0%, 30%)', to: 'hsl(0, 0%, 80%)' };
 
     const fallbackRef = useRef<HTMLElement>(null);
     const [fontSize, setFontSize] = useState('0.875rem');
