@@ -490,6 +490,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
         else:
             sections = [(_, "") for _ in excel_parser(binary) if _]
+        parser_config["chunk_token_num"] = 12800
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

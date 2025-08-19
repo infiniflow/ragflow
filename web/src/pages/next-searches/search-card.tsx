@@ -19,7 +19,7 @@ export function SearchCard({ data }: IProps) {
         navigateToSearch(data?.id);
       }}
     >
-      <CardContent className="p-4 flex gap-2 items-start group">
+      <CardContent className="p-4 flex gap-2 items-start group h-full">
         <div className="flex justify-between mb-4">
           <RAGFlowAvatar
             className="w-[32px] h-[32px]"
@@ -27,7 +27,7 @@ export function SearchCard({ data }: IProps) {
             name={data.name}
           />
         </div>
-        <div className="flex flex-col gap-1 flex-1">
+        <div className="flex flex-col justify-between gap-1 flex-1 h-full">
           <section className="flex justify-between">
             <div className="text-[20px] font-bold w-80% leading-5">
               {data.name}
@@ -37,22 +37,13 @@ export function SearchCard({ data }: IProps) {
             </SearchDropdown>
           </section>
 
-          <div>{data.description}</div>
-          <section className="flex justify-between">
+          <section className="flex flex-col gap-1 mt-1">
+            <div>{data.description}</div>
             <div>
-              Search app
               <p className="text-sm opacity-80">
                 {formatDate(data.update_time)}
               </p>
             </div>
-            {/* <div className="space-x-2 invisible group-hover:visible">
-              <Button variant="icon" size="icon" onClick={navigateToSearch}>
-                <ChevronRight className="h-6 w-6" />
-              </Button>
-              <Button variant="icon" size="icon">
-                <Trash2 />
-              </Button>
-            </div> */}
           </section>
         </div>
       </CardContent>

@@ -872,7 +872,7 @@ class Search(DataBaseModel):
         default={
             "kb_ids": [],
             "doc_ids": [],
-            "similarity_threshold": 0.0,
+            "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             "use_kg": False,
             # rerank settings
@@ -881,11 +881,12 @@ class Search(DataBaseModel):
             # chat settings
             "summary": False,
             "chat_id": "",
+            # Leave it here for reference, don't need to set default values
             "llm_setting": {
-                "temperature": 0.1,
-                "top_p": 0.3,
-                "frequency_penalty": 0.7,
-                "presence_penalty": 0.4,
+                # "temperature": 0.1,
+                # "top_p": 0.3,
+                # "frequency_penalty": 0.7,
+                # "presence_penalty": 0.4,
             },
             "chat_settingcross_languages": [],
             "highlight": False,

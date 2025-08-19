@@ -100,7 +100,7 @@ class DefaultRerank(Base):
         old_dynamic_batch_size = self._dynamic_batch_size
         if max_batch_size is not None:
             self._dynamic_batch_size = max_batch_size
-        res = np.array([], dtype=float)
+        res = np.array(len(pairs), dtype=float)
         i = 0
         while i < len(pairs):
             cur_i = i
@@ -111,7 +111,7 @@ class DefaultRerank(Base):
                 try:
                     # call subclass implemented batch processing calculation
                     batch_scores = self._compute_batch_scores(pairs[i : i + current_batch])
-                    res = np.append(res, batch_scores)
+                    res[i : i + current_batch] = batch_scores
                     i += current_batch
                     self._dynamic_batch_size = min(self._dynamic_batch_size * 2, 8)
                     break
@@ -125,8 +125,8 @@ class DefaultRerank(Base):
                         raise
             if retry_count >= max_retries:
                 raise RuntimeError("max retry times, still cannot process batch, please check your GPU memory")
-            self.torch_empty_cache()
-
+            
+        self.torch_empty_cache()
         self._dynamic_batch_size = old_dynamic_batch_size
         return np.array(res)
 
@@ -482,9 +482,10 @@ class VoyageRerank(Base):
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
-        rank = np.zeros(len(texts), dtype=float)
         if not texts:
-            return rank, 0
+            return np.array([]), 0
+        rank = np.zeros(len(texts), dtype=float)
+
         res = self.client.rerank(query=query, documents=texts, model=self.model_name, top_k=len(texts))
         try:
             for r in res.results:

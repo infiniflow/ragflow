@@ -242,7 +242,7 @@ export function InnerNextStepDropdown({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="w-[300px] font-semibold bg-white border border-border rounded-md shadow-lg">
+        <div className="w-[300px] font-semibold bg-bg-base border border-border rounded-md shadow-lg">
           <div className="px-3 py-2 border-b border-border">
             <div className="text-sm font-medium">Next Step</div>
           </div>

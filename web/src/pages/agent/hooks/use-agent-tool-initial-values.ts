@@ -54,6 +54,8 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'top_n');
         case Operator.WenCai:
           return pick(initialValues, 'top_n', 'query_type');
+        case Operator.Code:
+          return {};
 
         default:
           return initialValues;

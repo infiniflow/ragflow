@@ -11,6 +11,7 @@ export enum Routes {
   AgentList = '/agent-list',
   Searches = '/next-searches',
   Search = '/next-search',
+  SearchShare = '/next-search/share',
   Chats = '/next-chats',
   Chat = '/next-chat',
   Files = '/files',
@@ -37,6 +38,8 @@ export enum Routes {
   ResultView = `${Chunk}${Result}`,
   KnowledgeGraph = '/knowledge-graph',
   AgentLogPage = '/agent-log-page',
+  AgentShare = '/agent/share',
+  ChatShare = `${Chats}/share`,
 }
 
 const routes = [
@@ -56,8 +59,13 @@ const routes = [
     layout: false,
   },
   {
-    path: '/next-chat/share',
-    component: '@/pages/next-chats/share',
+    path: Routes.ChatShare,
+    component: `@/pages${Routes.ChatShare}`,
+    layout: false,
+  },
+  {
+    path: Routes.AgentShare,
+    component: `@/pages${Routes.AgentShare}`,
     layout: false,
   },
   {
@@ -233,6 +241,11 @@ const routes = [
     path: `${Routes.Search}/:id`,
     layout: false,
     component: `@/pages${Routes.Search}`,
+  },
+  {
+    path: `${Routes.SearchShare}`,
+    layout: false,
+    component: `@/pages${Routes.SearchShare}`,
   },
   {
     path: Routes.Agents,

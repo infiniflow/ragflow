@@ -10,9 +10,11 @@ import {
 } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
 import { PanelLeftClose, PanelRightClose, Plus } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
+import { ConversationDropdown } from './conversation-dropdown';
 
 type SessionProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
@@ -23,11 +25,15 @@ export function Sessions({
   handleConversationCardClick,
   switchSettingVisible,
 }: SessionProps) {
-  const { list: conversationList, addTemporaryConversation } =
-    useSelectDerivedConversationList();
+  const { t } = useTranslation();
+  const {
+    list: conversationList,
+    addTemporaryConversation,
+    handleInputChange,
+    searchString,
+  } = useSelectDerivedConversationList();
   const { data } = useFetchDialog();
   const { visible, switchVisible } = useSetModalState(true);
-  const [searchStr, setSearchStr] = useState('');
 
   const handleCardClick = useCallback(
     (conversationId: string, isNew: boolean) => () => {
@@ -71,8 +77,8 @@ export function Sessions({
       </div>
       <div className="pb-4">
         <SearchInput
-          onChange={(e) => setSearchStr(e.target.value)}
-          value={searchStr}
+          onChange={handleInputChange}
+          value={searchString}
         ></SearchInput>
       </div>
       <div className="space-y-4 flex-1 overflow-auto">
@@ -86,7 +92,9 @@ export function Sessions({
           >
             <CardContent className="px-3 py-2 flex justify-between items-center group">
               {x.name}
-              <MoreButton></MoreButton>
+              <ConversationDropdown conversation={x}>
+                <MoreButton></MoreButton>
+              </ConversationDropdown>
             </CardContent>
           </Card>
         ))}
@@ -96,8 +104,9 @@ export function Sessions({
           className="w-full"
           onClick={switchSettingVisible}
           disabled={!hasSingleChatBox}
+          variant={'outline'}
         >
-          Chat Settings
+          {t('chat.chatSetting')}
         </Button>
       </div>
     </section>

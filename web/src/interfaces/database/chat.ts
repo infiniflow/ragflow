@@ -57,6 +57,18 @@ export interface IDialog {
   similarity_threshold: number;
   top_k: number;
   top_n: number;
+  meta_data_filter: MetaDataFilter;
+}
+
+interface MetaDataFilter {
+  manual: Manual[];
+  method: string;
+}
+
+interface Manual {
+  key: string;
+  op: string;
+  value: string;
 }
 
 export interface IConversation {
@@ -159,4 +171,10 @@ export interface IStats {
   tokens: [string, number][];
   round: [string, number][];
   thumb_up: [string, number][];
+}
+
+export interface IExternalChatInfo {
+  avatar?: string;
+  title: string;
+  prologue?: string;
 }

@@ -18,7 +18,9 @@ import re
 import time
 import tiktoken
 from flask import Response, jsonify, request
+import trio
 from agent.canvas import Canvas
+from api import settings
 from api.db import LLMType, StatusEnum
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
@@ -29,9 +31,15 @@ from api.db.services.conversation_service import completion as rag_completion
 from api.db.services.dialog_service import DialogService, ask, chat
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.search_service import SearchService
+from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
-from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_result, token_required, validate_request
+from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, get_result, server_error_response, token_required, validate_request
+from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.app.tag import label_question
 from rag.prompts import chunks_format
+from rag.prompts.prompt_template import load_prompt
+from rag.prompts.prompts import cross_languages, keyword_extraction
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
@@ -808,6 +816,29 @@ def chatbot_completions(dialog_id):
         return get_result(data=answer)
 
 
+@manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
+def chatbots_inputs(dialog_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    e, dialog = DialogService.get_by_id(dialog_id)
+    if not e:
+        return get_error_data_result(f"Can't find dialog by ID: {dialog_id}")
+
+    return get_result(
+        data={
+            "title": dialog.name,
+            "avatar": dialog.icon,
+            "prologue": dialog.prompt_config.get("prologue", ""),
+        }
+    )
+
+
 @manager.route("/agentbots/<agent_id>/completions", methods=["POST"])  # noqa: F821
 def agent_bot_completions(agent_id):
     req = request.json
@@ -855,3 +886,279 @@ def begin_inputs(agent_id):
             "prologue": canvas.get_prologue()
         }
     )
+
+
+@manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
+@validate_request("question", "kb_ids")
+def ask_about_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    req = request.json
+    uid = objs[0].tenant_id
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
+    def stream():
+        nonlocal req, uid
+        try:
+            for ans in ask(req["question"], req["kb_ids"], uid, search_config):
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+        except Exception as e:
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
+
+
+@manager.route("/searchbots/retrieval_test", methods=['POST'])  # noqa: F821
+@validate_request("kb_id", "question")
+def retrieval_test_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    req = request.json
+    page = int(req.get("page", 1))
+    size = int(req.get("size", 30))
+    question = req["question"]
+    kb_ids = req["kb_id"]
+    if isinstance(kb_ids, str):
+        kb_ids = [kb_ids]
+    doc_ids = req.get("doc_ids", [])
+    similarity_threshold = float(req.get("similarity_threshold", 0.0))
+    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    use_kg = req.get("use_kg", False)
+    top = int(req.get("top_k", 1024))
+    langs = req.get("cross_languages", [])
+    tenant_ids = []
+
+    tenant_id = objs[0].tenant_id
+    if not tenant_id:
+        return get_error_data_result(message="permission denined.")
+
+    try:
+        tenants = UserTenantService.query(user_id=tenant_id)
+        for kb_id in kb_ids:
+            for tenant in tenants:
+                if KnowledgebaseService.query(
+                        tenant_id=tenant.tenant_id, id=kb_id):
+                    tenant_ids.append(tenant.tenant_id)
+                    break
+            else:
+                return get_json_result(
+                    data=False, message='Only owner of knowledgebase authorized for this operation.',
+                    code=settings.RetCode.OPERATING_ERROR)
+
+        e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
+        if not e:
+            return get_error_data_result(message="Knowledgebase not found!")
+
+        if langs:
+            question = cross_languages(kb.tenant_id, None, question, langs)
+
+        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+
+        rerank_mdl = None
+        if req.get("rerank_id"):
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+
+        if req.get("keyword", False):
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            question += keyword_extraction(chat_mdl, question)
+
+        labels = label_question(question, [kb])
+        ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
+                               similarity_threshold, vector_similarity_weight, top,
+                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+                               rank_feature=labels
+                               )
+        if use_kg:
+            ck = settings.kg_retrievaler.retrieval(question,
+                                                   tenant_ids,
+                                                   kb_ids,
+                                                   embd_mdl,
+                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+
+        for c in ranks["chunks"]:
+            c.pop("vector", None)
+        ranks["labels"] = labels
+
+        return get_json_result(data=ranks)
+    except Exception as e:
+        if str(e).find("not_found") > 0:
+            return get_json_result(data=False, message='No chunk found! Check the chunk status please!',
+                                   code=settings.RetCode.DATA_ERROR)
+        return server_error_response(e)
+
+
+@manager.route("/searchbots/related_questions", methods=["POST"])  # noqa: F821
+@validate_request("question")
+def related_questions_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    req = request.json
+    tenant_id = objs[0].tenant_id
+    if not tenant_id:
+        return get_error_data_result(message="permission denined.")
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
+    question = req["question"]
+
+    chat_id = search_config.get("chat_id", "")
+    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_id)
+
+    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    prompt = load_prompt("related_question")
+    ans = chat_mdl.chat(
+        prompt,
+        [
+            {
+                "role": "user",
+                "content": f"""
+Keywords: {question}
+Related search terms:
+    """,
+            }
+        ],
+        gen_conf,
+    )
+    return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+
+
+@manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
+def detail_share_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    search_id = request.args["search_id"]
+    tenant_id = objs[0].tenant_id
+    if not tenant_id:
+        return get_error_data_result(message="permission denined.")
+    try:
+        tenants = UserTenantService.query(user_id=tenant_id)
+        for tenant in tenants:
+            if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
+                break
+        else:
+            return get_json_result(data=False, message="Has no permission for this operation.", code=settings.RetCode.OPERATING_ERROR)
+
+        search = SearchService.get_detail(search_id)
+        if not search:
+            return get_error_data_result(message="Can't find this Search App!")
+        return get_json_result(data=search)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/searchbots/mindmap", methods=["POST"])  # noqa: F821
+@validate_request("question", "kb_ids")
+def mindmap():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    tenant_id = objs[0].tenant_id
+    req = request.json
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
+    kb_ids = req["kb_ids"]
+    if search_config.get("kb_ids", []):
+        kb_ids = search_config.get("kb_ids", [])
+    e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
+    if not e:
+        return get_error_data_result(message="Knowledgebase not found!")
+
+    chat_id = ""
+    similarity_threshold = 0.3,
+    vector_similarity_weight = 0.3,
+    top = 1024,
+    doc_ids = []
+    rerank_id = ""
+    rerank_mdl = None
+
+    if search_config:
+        if search_config.get("chat_id", ""):
+            chat_id = search_config.get("chat_id", "")
+        if search_config.get("similarity_threshold", 0.2):
+            similarity_threshold = search_config.get("similarity_threshold", 0.2)
+        if search_config.get("vector_similarity_weight", 0.3):
+            vector_similarity_weight = search_config.get("vector_similarity_weight", 0.3)
+        if search_config.get("top_k", 1024):
+            top = search_config.get("top_k", 1024)
+        if search_config.get("doc_ids", []):
+            doc_ids = search_config.get("doc_ids", [])
+        if search_config.get("rerank_id", ""):
+            rerank_id = search_config.get("rerank_id", "")
+
+    embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
+    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=chat_id)
+    if rerank_id:
+        rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
+    question = req["question"]
+    ranks = settings.retrievaler.retrieval(
+        question=question,
+        embd_mdl=embd_mdl,
+        tenant_ids=tenant_id,
+        kb_ids=kb_ids,
+        page=1,
+        page_size=12,
+        similarity_threshold=similarity_threshold,
+        vector_similarity_weight=vector_similarity_weight,
+        top=top,
+        doc_ids=doc_ids,
+        aggs=False,
+        rerank_mdl=rerank_mdl,
+        rank_feature=label_question(question, [kb]),
+    )
+    mindmap = MindMapExtractor(chat_mdl)
+    mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
+    mind_map = mind_map.output
+    if "error" in mind_map:
+        return server_error_response(Exception(mind_map["error"]))
+    return get_json_result(data=mind_map)

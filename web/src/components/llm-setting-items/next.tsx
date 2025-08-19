@@ -28,18 +28,30 @@ interface LlmSettingFieldItemsProps {
   options?: any[];
 }
 
-export const LlmSettingSchema = {
+export const LLMIdFormField = {
   llm_id: z.string(),
-  temperature: z.coerce.number().optional(),
-  top_p: z.number().optional(),
-  presence_penalty: z.coerce.number().optional(),
-  frequency_penalty: z.coerce.number().optional(),
+};
+
+export const LlmSettingEnabledSchema = {
   temperatureEnabled: z.boolean().optional(),
   topPEnabled: z.boolean().optional(),
   presencePenaltyEnabled: z.boolean().optional(),
   frequencyPenaltyEnabled: z.boolean().optional(),
   maxTokensEnabled: z.boolean().optional(),
+};
+
+export const LlmSettingFieldSchema = {
+  temperature: z.coerce.number().optional(),
+  top_p: z.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
   max_tokens: z.number().optional(),
+};
+
+export const LlmSettingSchema = {
+  ...LLMIdFormField,
+  ...LlmSettingFieldSchema,
+  ...LlmSettingEnabledSchema,
 };
 
 export function LlmSettingFieldItems({

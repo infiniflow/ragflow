@@ -8,6 +8,10 @@ const {
   deleteSearch,
   getSearchDetail,
   updateSearchSetting,
+  askShare,
+  mindmapShare,
+  getRelatedQuestionsShare,
+  getSearchDetailShare,
 } = api;
 const methods = {
   createSearch: {
@@ -26,6 +30,23 @@ const methods = {
   updateSearchSetting: {
     url: updateSearchSetting,
     method: 'post',
+  },
+  askShare: {
+    url: askShare,
+    method: 'post',
+  },
+  mindmapShare: {
+    url: mindmapShare,
+    method: 'post',
+  },
+  getRelatedQuestionsShare: {
+    url: getRelatedQuestionsShare,
+    method: 'post',
+  },
+
+  getSearchDetailShare: {
+    url: getSearchDetailShare,
+    method: 'get',
   },
 } as const;
 const searchService = registerServer<keyof typeof methods>(methods, request);
