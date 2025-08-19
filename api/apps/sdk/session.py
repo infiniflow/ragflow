@@ -18,7 +18,6 @@ import re
 import time
 import tiktoken
 from flask import Response, jsonify, request
-import trio
 from agent.canvas import Canvas
 from api import settings
 from api.db import LLMType, StatusEnum
@@ -28,14 +27,13 @@ from api.db.services.canvas_service import UserCanvasService, completionOpenAI
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
-from api.db.services.dialog_service import DialogService, ask, chat
+from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, get_result, server_error_response, token_required, validate_request
-from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.app.tag import label_question
 from rag.prompts import chunks_format
 from rag.prompts.prompt_template import load_prompt
@@ -1102,63 +1100,9 @@ def mindmap():
     req = request.json
 
     search_id = req.get("search_id", "")
-    search_config = {}
-    if search_id:
-        if search_app := SearchService.get_detail(search_id):
-            search_config = search_app.get("search_config", {})
+    search_app = SearchService.get_detail(search_id) if search_id else {}
 
-    kb_ids = req["kb_ids"]
-    if search_config.get("kb_ids", []):
-        kb_ids = search_config.get("kb_ids", [])
-    e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
-    if not e:
-        return get_error_data_result(message="Knowledgebase not found!")
-
-    chat_id = ""
-    similarity_threshold = 0.3,
-    vector_similarity_weight = 0.3,
-    top = 1024,
-    doc_ids = []
-    rerank_id = ""
-    rerank_mdl = None
-
-    if search_config:
-        if search_config.get("chat_id", ""):
-            chat_id = search_config.get("chat_id", "")
-        if search_config.get("similarity_threshold", 0.2):
-            similarity_threshold = search_config.get("similarity_threshold", 0.2)
-        if search_config.get("vector_similarity_weight", 0.3):
-            vector_similarity_weight = search_config.get("vector_similarity_weight", 0.3)
-        if search_config.get("top_k", 1024):
-            top = search_config.get("top_k", 1024)
-        if search_config.get("doc_ids", []):
-            doc_ids = search_config.get("doc_ids", [])
-        if search_config.get("rerank_id", ""):
-            rerank_id = search_config.get("rerank_id", "")
-
-    embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
-    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=chat_id)
-    if rerank_id:
-        rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
-    question = req["question"]
-    ranks = settings.retrievaler.retrieval(
-        question=question,
-        embd_mdl=embd_mdl,
-        tenant_ids=tenant_id,
-        kb_ids=kb_ids,
-        page=1,
-        page_size=12,
-        similarity_threshold=similarity_threshold,
-        vector_similarity_weight=vector_similarity_weight,
-        top=top,
-        doc_ids=doc_ids,
-        aggs=False,
-        rerank_mdl=rerank_mdl,
-        rank_feature=label_question(question, [kb]),
-    )
-    mindmap = MindMapExtractor(chat_mdl)
-    mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
-    mind_map = mind_map.output
+    mind_map = gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
