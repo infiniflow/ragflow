@@ -293,8 +293,14 @@ class RagTokenizer:
 
         return self.score_(res[::-1])
 
+    def _stem_and_lemmatize(self, input):
+        lemmatize = self.lemmatizer.lemmatize(input)
+        if lemmatize.endswith('e'):
+            return lemmatize
+        return self.stemmer.stem(lemmatize)
+
     def english_normalize_(self, tks):
-        return [self.stemmer.stem(self.lemmatizer.lemmatize(t)) if re.match(r"[a-zA-Z_-]+$", t) else t for t in tks]
+        return [self._stem_and_lemmatize(t) if re.match(r"[a-zA-Z_-]+$", t) else t for t in tks]
 
     def _split_by_lang(self, line):
         txt_lang_pairs = []
@@ -328,7 +334,7 @@ class RagTokenizer:
         res = []
         for L,lang in arr:
             if not lang:
-                res.extend([self.stemmer.stem(self.lemmatizer.lemmatize(t)) for t in word_tokenize(L)])
+                res.extend([self._stem_and_lemmatize(t) for t in word_tokenize(L)])
                 continue
             if len(L) < 2 or re.match(
                     r"[a-z\.-]+$", L) or re.match(r"[0-9\.-]+$", L):
