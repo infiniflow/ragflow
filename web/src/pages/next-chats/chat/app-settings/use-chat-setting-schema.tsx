@@ -2,6 +2,7 @@ import {
   LlmSettingEnabledSchema,
   LlmSettingFieldSchema,
 } from '@/components/llm-setting-items/next';
+import { MetadataFilterSchema } from '@/components/metadata-filter';
 import { rerankFormSchema } from '@/components/rerank';
 import { vectorSimilarityWeightSchema } from '@/components/similarity-slider';
 import { topnSchema } from '@/components/top-n-item';
@@ -46,20 +47,7 @@ export function useChatSettingSchema() {
     llm_id: z.string().optional(),
     ...vectorSimilarityWeightSchema,
     ...topnSchema,
-    meta_data_filter: z
-      .object({
-        method: z.string().optional(),
-        manual: z
-          .array(
-            z.object({
-              key: z.string(),
-              op: z.string(),
-              value: z.string(),
-            }),
-          )
-          .optional(),
-      })
-      .optional(),
+    ...MetadataFilterSchema,
   });
 
   return formSchema;

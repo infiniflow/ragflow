@@ -81,6 +81,7 @@ export default {
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
+      dataset: 'Dataset',
     },
     knowledgeList: {
       welcome: 'Welcome back',

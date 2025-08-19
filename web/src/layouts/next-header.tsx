@@ -75,7 +75,7 @@ export function Header() {
   const tagsData = useMemo(
     () => [
       { path: Routes.Home, name: t('header.home'), icon: House },
-      { path: Routes.Datasets, name: t('header.knowledgeBase'), icon: Library },
+      { path: Routes.Datasets, name: t('header.dataset'), icon: Library },
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('header.search'), icon: Search },
       { path: Routes.Agents, name: t('header.flow'), icon: Cpu },

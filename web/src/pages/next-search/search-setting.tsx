@@ -1,5 +1,9 @@
 // src/pages/next-search/search-setting.tsx
 
+import {
+  MetadataFilter,
+  MetadataFilterSchema,
+} from '@/components/metadata-filter';
 import { Input } from '@/components/originui/input';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
@@ -76,6 +80,7 @@ const SearchSettingFormSchema = z
       llm_setting: z.object(LlmSettingSchema),
       related_search: z.boolean(),
       query_mindmap: z.boolean(),
+      ...MetadataFilterSchema,
     }),
   })
   .superRefine((data, ctx) => {
@@ -165,6 +170,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         keyword: false,
         related_search: search_config?.related_search || false,
         query_mindmap: search_config?.query_mindmap || false,
+        meta_data_filter: search_config?.meta_data_filter,
       },
     });
   }, [data, search_config, llm_setting, formMethods]);
@@ -346,7 +352,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Avatar */}
             <FormField
               control={formMethods.control}
@@ -409,7 +414,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Description */}
             <FormField
               control={formMethods.control}
@@ -437,7 +441,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Datasets */}
             <FormField
               control={formMethods.control}
@@ -467,6 +470,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
+            <MetadataFilter prefix="search_config."></MetadataFilter>
             <FormField
               control={formMethods.control}
               name="search_config.similarity_threshold"
@@ -541,7 +545,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}
@@ -617,7 +620,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 />
               </>
             )}
-
             {/* AI Summary */}
             <FormField
               control={formMethods.control}
@@ -634,14 +636,12 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {aiSummaryDisabled && (
               <LlmSettingFieldItems
                 prefix="search_config.llm_setting"
                 options={aiSummeryModelOptions}
               ></LlmSettingFieldItems>
             )}
-
             {/* Feature Controls */}
             {/* <FormField
               control={formMethods.control}
@@ -658,7 +658,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             /> */}
-
             <FormField
               control={formMethods.control}
               name="search_config.related_search"
@@ -674,7 +673,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             <FormField
               control={formMethods.control}
               name="search_config.query_mindmap"

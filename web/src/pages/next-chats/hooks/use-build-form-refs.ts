@@ -1,3 +1,4 @@
+import { removeUselessFieldsFromValues } from '@/utils/form';
 import { isEmpty } from 'lodash';
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -23,7 +24,7 @@ export function useBuildFormRefs(chatBoxIds: string[]) {
         ? formRefs.current[chatBoxId].getFormData()
         : {};
 
-      return llmConfig;
+      return removeUselessFieldsFromValues(llmConfig, '');
     },
     [formRefs],
   );
