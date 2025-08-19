@@ -482,9 +482,10 @@ class VoyageRerank(Base):
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
-        rank = np.zeros(len(texts), dtype=float)
         if not texts:
-            return rank, 0
+            return np.array([]), 0
+        rank = np.zeros(len(texts), dtype=float)
+
         res = self.client.rerank(query=query, documents=texts, model=self.model_name, top_k=len(texts))
         try:
             for r in res.results:
