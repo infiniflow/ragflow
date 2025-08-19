@@ -24,11 +24,15 @@ export const useNavigatePage = () => {
   );
 
   const navigateToHome = useCallback(() => {
-    navigate(Routes.Home);
+    navigate(Routes.Root);
   }, [navigate]);
 
   const navigateToProfile = useCallback(() => {
     navigate(Routes.ProfileSetting);
+  }, [navigate]);
+
+  const navigateToOldProfile = useCallback(() => {
+    navigate(Routes.UserSetting);
   }, [navigate]);
 
   const navigateToChatList = useCallback(() => {
@@ -139,5 +143,6 @@ export const useNavigatePage = () => {
     navigateToSearch,
     navigateToFiles,
     navigateToAgentList,
+    navigateToOldProfile,
   };
 };
