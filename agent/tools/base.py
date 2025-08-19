@@ -24,6 +24,7 @@ from api.utils import hash_str2int
 from rag.llm.chat_model import ToolCallSession
 from rag.prompts.prompts import kb_prompt
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession
+from timeit import default_timer as timer
 
 
 class ToolParameter(TypedDict):
@@ -49,12 +50,13 @@ class LLMToolPluginCallSession(ToolCallSession):
 
     def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
+        st = timer()
         if isinstance(self.tools_map[name], MCPToolCallSession):
             resp = self.tools_map[name].tool_call(name, arguments, 60)
         else:
             resp = self.tools_map[name].invoke(**arguments)
 
-        self.callback(name, arguments, resp)
+        self.callback(name, arguments, resp, elapsed_time=timer()-st)
         return resp
 
     def get_tool_obj(self, name):

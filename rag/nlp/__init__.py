@@ -611,10 +611,6 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                 if re.match(f"^{dels}$", sub_sec):
                     continue
                 add_chunk(sub_sec, image)
-        
-        for img in images:
-            if isinstance(img, Image.Image):
-                img.close()
 
     return cks, result_images
 
