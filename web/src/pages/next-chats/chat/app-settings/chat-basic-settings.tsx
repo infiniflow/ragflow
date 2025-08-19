@@ -2,8 +2,7 @@
 
 import { FileUploader } from '@/components/file-uploader';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { MetadataFilter } from '@/components/metadata-filter';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { TavilyFormField } from '@/components/tavily-form-field';
 import {
@@ -16,26 +15,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useFormContext, useWatch } from 'react-hook-form';
-import { DatasetMetadata } from '../../constants';
-import { MetadataFilterConditions } from './metadata-filter-conditions';
+import { useFormContext } from 'react-hook-form';
 
 export default function ChatBasicSetting() {
   const { t } = useTranslate('chat');
   const form = useFormContext();
-  const kbIds: string[] = useWatch({ control: form.control, name: 'kb_ids' });
-  const metadata = useWatch({
-    control: form.control,
-    name: 'meta_data_filter.method',
-  });
-  const hasKnowledge = Array.isArray(kbIds) && kbIds.length > 0;
-
-  const MetadataOptions = Object.values(DatasetMetadata).map((x) => {
-    return {
-      value: x,
-      label: t(`meta.${x}`),
-    };
-  });
 
   return (
     <div className="space-y-8">
@@ -125,18 +109,7 @@ export default function ChatBasicSetting() {
       ></SwitchFormField>
       <TavilyFormField></TavilyFormField>
       <KnowledgeBaseFormField></KnowledgeBaseFormField>
-      {hasKnowledge && (
-        <RAGFlowFormItem
-          label={t('metadata')}
-          name={'meta_data_filter.method'}
-          tooltip={t('metadataTip')}
-        >
-          <SelectWithSearch options={MetadataOptions} />
-        </RAGFlowFormItem>
-      )}
-      {hasKnowledge && metadata === DatasetMetadata.Manual && (
-        <MetadataFilterConditions kbIds={kbIds}></MetadataFilterConditions>
-      )}
+      <MetadataFilter></MetadataFilter>
     </div>
   );
 }
