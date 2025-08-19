@@ -3001,12 +3001,14 @@ curl --request POST \
   The ID of the session. If it is not provided, a new session will be generated.
 - `"inputs"`: (*Body Parameter*)  
   Variables specified in the **Begin** component.  
-  **NOTE**: For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
-  `http://{address}/v1/canvas/upload/{agent_id}`  
-  *You will get a corresponding file ID from its response body.*
-75906
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+
+:::tip NOTE
+For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
+`http://{address}/v1/canvas/upload/{agent_id}`  
+*You will get a corresponding file ID from its response body.*
+:::
 
 #### Response
 
