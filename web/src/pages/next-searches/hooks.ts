@@ -158,6 +158,10 @@ export interface ISearchAppDetailProps {
     vector_similarity_weight: number;
     web_search: boolean;
     chat_settingcross_languages: string[];
+    meta_data_filter?: {
+      method: string;
+      manual: { key: string; op: string; value: string }[];
+    };
   };
   tenant_id: string;
   update_time: number;
