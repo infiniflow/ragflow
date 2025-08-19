@@ -22,13 +22,14 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
-## v0.20.2 (Ongoing🔨)
+## v0.20.2
 
-Released on August ??, 2025.
+Released on August 19, 2025.
 
 ### Improvements
 
 - Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
+- Search and Chat: Introduces document-level metadata filtering, allowing automatic or manual filtering during chats or searches.
 - Search: Supports creating search apps tailored to various business scenarios
 - Chat: Supports comparing answer performance of up to three chat model settings on a single **Chat** page.
 - Agent:  
@@ -42,6 +43,7 @@ Released on August ??, 2025.
 
 ### Fixed issues
 
+- The timeout mechanism introduced in v0.20.0 caused tasks like GraphRAG to halt.
 - Predefined opening greeting in the **Agent** component was missing during conversations.  
 - An automatic line break issue in the prompt editor.  
 - A memory leak issue caused by PyPDF. [#9469](https://github.com/infiniflow/ragflow/pull/9469)
