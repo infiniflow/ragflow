@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import {
   useComposeLlmOptionsByModelTypes,
@@ -64,7 +65,7 @@ const SearchSettingFormSchema = z
     description: z.string().optional(),
     search_config: z.object({
       kb_ids: z.array(z.string()).min(1, 'At least one dataset is required'),
-      vector_similarity_weight: z.number().min(0).max(100),
+      vector_similarity_weight: z.number().min(0).max(1),
       web_search: z.boolean(),
       similarity_threshold: z.number(),
       use_kg: z.boolean(),
@@ -128,7 +129,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             : 0.3) || 0.3,
         web_search: search_config?.web_search || false,
         doc_ids: [],
-        similarity_threshold: 0.0,
+        similarity_threshold: search_config?.similarity_threshold || 0.2,
         use_kg: false,
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,
@@ -417,7 +418,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 <FormItem>
                   <FormLabel>{t('search.description')}</FormLabel>
                   <FormControl>
-                    <Input
+                    <Textarea
                       placeholder="You are an intelligent assistant."
                       {...field}
                       onFocus={() => {
@@ -466,7 +467,41 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
+            <FormField
+              control={formMethods.control}
+              name="search_config.similarity_threshold"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Similarity Threshold</FormLabel>
+                  <div
+                    className={cn(
+                      'flex items-center gap-4 justify-between',
+                      className,
+                    )}
+                  >
+                    <FormControl>
+                      <SingleFormSlider
+                        {...field}
+                        max={1}
+                        min={0}
+                        step={0.01}
+                      ></SingleFormSlider>
+                    </FormControl>
+                    <FormControl>
+                      <Input
+                        type={'number'}
+                        className="h-7 w-20 bg-bg-card"
+                        max={1}
+                        min={0}
+                        step={0.01}
+                        {...field}
+                      ></Input>
+                    </FormControl>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             {/* Keyword Similarity Weight */}
             <FormField
               control={formMethods.control}
@@ -474,7 +509,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>Keyword
+                    <span className="text-destructive mr-1"> *</span>Vector
                     Similarity Weight
                   </FormLabel>
                   <div
@@ -608,7 +643,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             )}
 
             {/* Feature Controls */}
-            <FormField
+            {/* <FormField
               control={formMethods.control}
               name="search_config.web_search"
               render={({ field }) => (
@@ -622,7 +657,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   <FormLabel>{t('search.enableWebSearch')}</FormLabel>
                 </FormItem>
               )}
-            />
+            /> */}
 
             <FormField
               control={formMethods.control}
@@ -666,9 +701,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   setOpen(false);
                 }}
               >
-                {t('modal.cancelText')}
+                {t('search.cancelText')}
               </Button>
-              <Button type="submit">{t('modal.okText')}</Button>
+              <Button type="submit">{t('search.okText')}</Button>
             </div>
           </form>
         </Form>

@@ -1,6 +1,5 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -163,9 +162,10 @@ export function Header() {
             className="size-8 cursor-pointer"
             onClick={navigateToProfile}
           ></RAGFlowAvatar>
-          <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-bg-base bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
+          {/* Temporarily hidden */}
+          {/* <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-bg-base bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
             Pro
-          </Badge>
+          </Badge> */}
         </div>
       </div>
     </section>

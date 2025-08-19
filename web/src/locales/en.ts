@@ -1437,6 +1437,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       showQueryMindmap: 'Show Query Mindmap',
       embedApp: 'Embed App',
       relatedSearch: 'Related Search',
+      okText: 'Save',
+      cancelText: 'Cancel',
     },
   },
 };

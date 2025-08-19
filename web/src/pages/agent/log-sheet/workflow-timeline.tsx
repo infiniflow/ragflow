@@ -153,6 +153,22 @@ export const WorkFlowTimeline = ({
     }, []);
   }, [currentEventListWithoutMessage, sendLoading]);
 
+  const getElapsedTime = (nodeId: string) => {
+    if (nodeId === 'begin') {
+      return '';
+    }
+    const data = currentEventListWithoutMessage?.find((x) => {
+      return (
+        x.data.component_id === nodeId &&
+        x.event === MessageEventType.NodeFinished
+      );
+    });
+    if (!data || data?.data.elapsed_time < 0.000001) {
+      return '';
+    }
+    return data?.data.elapsed_time || '';
+  };
+
   const hasTrace = useCallback(
     (componentId: string) => {
       if (Array.isArray(traceData)) {
@@ -272,7 +288,10 @@ export const WorkFlowTimeline = ({
                                 nodeLabel)}
                           </span>
                           <span className="text-text-secondary text-xs">
-                            {x.data.elapsed_time?.toString().slice(0, 6)}
+                            {getElapsedTime(x.data.component_id)
+                              .toString()
+                              .slice(0, 6)}
+                            {getElapsedTime(x.data.component_id) ? 's' : ''}
                           </span>
                           <span
                             className={cn(

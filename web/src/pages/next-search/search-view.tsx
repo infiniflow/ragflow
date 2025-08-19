@@ -276,7 +276,7 @@ export default function SearchingView({
         </div>
 
         {mindMapVisible && (
-          <div className="flex-1 h-[88dvh] z-30 ml-8 mt-5">
+          <div className="flex-1 h-[88dvh] z-30 ml-32 mt-5">
             <MindMapDrawer
               visible={mindMapVisible}
               hideModal={hideMindMapModal}

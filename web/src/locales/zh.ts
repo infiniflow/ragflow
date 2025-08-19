@@ -1341,6 +1341,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       showQueryMindmap: '显示查询思维导图',
       embedApp: '嵌入网站',
       relatedSearch: '相关搜索',
+      okText: '保存',
+      cancelText: '返回',
     },
   },
 };
