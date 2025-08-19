@@ -217,7 +217,11 @@ export const useTestRetrieval = (
   };
 };
 
-export const useShowMindMapDrawer = (kbIds: string[], question: string) => {
+export const useShowMindMapDrawer = (
+  kbIds: string[],
+  question: string,
+  searchId = '',
+) => {
   const { visible, showModal, hideModal } = useSetModalState();
   const ref = useRef<any>();
 
@@ -228,7 +232,7 @@ export const useShowMindMapDrawer = (kbIds: string[], question: string) => {
   } = useSearchFetchMindMap();
 
   const handleShowModal = useCallback(() => {
-    const searchParams = { question: trim(question), kb_ids: kbIds };
+    const searchParams = { question: trim(question), kb_ids: kbIds, searchId };
     if (
       !isEmpty(searchParams.question) &&
       !isEqual(searchParams, ref.current)
@@ -237,7 +241,7 @@ export const useShowMindMapDrawer = (kbIds: string[], question: string) => {
       fetchMindMap(searchParams);
     }
     showModal();
-  }, [fetchMindMap, showModal, question, kbIds]);
+  }, [fetchMindMap, showModal, question, kbIds, searchId]);
 
   return {
     mindMap,

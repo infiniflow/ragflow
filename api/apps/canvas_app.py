@@ -74,11 +74,11 @@ def rm():
 @login_required
 def save():
     req = request.json
-    req["user_id"] = current_user.id
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
+        req["user_id"] = current_user.id
         if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip()):
             return get_data_error_result(message=f"{req['title'].strip()} already exists.")
         req["id"] = get_uuid()

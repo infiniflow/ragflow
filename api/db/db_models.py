@@ -872,7 +872,7 @@ class Search(DataBaseModel):
         default={
             "kb_ids": [],
             "doc_ids": [],
-            "similarity_threshold": 0.0,
+            "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             "use_kg": False,
             # rerank settings
