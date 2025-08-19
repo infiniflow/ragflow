@@ -1,4 +1,4 @@
-import { ButtonLoading } from '@/components/ui/button';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
@@ -11,6 +11,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { z } from 'zod';
 import { DatasetMetadata } from '../../constants';
@@ -25,6 +26,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   const { data } = useFetchDialog();
   const { setDialog, loading } = useSetDialog();
   const { id } = useParams();
+  const { t } = useTranslation();
 
   type FormSchemaType = z.infer<typeof formSchema>;
 
@@ -89,25 +91,26 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   return (
     <section className="p-5  w-[440px] border-l">
       <div className="flex justify-between items-center text-base pb-2">
-        Chat Settings
+        {t('chat.chatSetting')}
         <X className="size-4 cursor-pointer" onClick={switchSettingVisible} />
       </div>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
-          <section className="space-y-6 overflow-auto max-h-[85vh] pr-4">
+          <section className="space-y-6 overflow-auto max-h-[82vh] pr-4">
             <ChatBasicSetting></ChatBasicSetting>
             <Separator />
             <ChatPromptEngine></ChatPromptEngine>
             <Separator />
             <ChatModelSettings></ChatModelSettings>
           </section>
-          <ButtonLoading
-            className="w-full my-4"
-            type="submit"
-            loading={loading}
-          >
-            Update
-          </ButtonLoading>
+          <div className="space-x-5 text-right">
+            <Button variant={'outline'} onClick={switchSettingVisible}>
+              {t('chat.cancel')}
+            </Button>
+            <ButtonLoading className=" my-4" type="submit" loading={loading}>
+              {t('common.save')}
+            </ButtonLoading>
+          </div>
         </form>
       </Form>
     </section>
