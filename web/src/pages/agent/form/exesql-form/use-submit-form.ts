@@ -3,7 +3,6 @@ import { useCallback } from 'react';
 import { z } from 'zod';
 
 export const ExeSQLFormSchema = {
-  sql: z.string(),
   db_type: z.string().min(1),
   database: z.string().min(1),
   username: z.string().min(1),
@@ -14,7 +13,7 @@ export const ExeSQLFormSchema = {
 };
 
 export const FormSchema = z.object({
-  query: z.string().optional(),
+  sql: z.string().optional(),
   ...ExeSQLFormSchema,
 });
 
