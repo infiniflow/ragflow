@@ -60,6 +60,7 @@ export const useSendSharedMessage = () => {
     scrollRef,
     messageContainerRef,
     removeAllMessages,
+    removeAllMessagesExceptFirst,
   } = useSelectDerivedMessages();
   const [hasError, setHasError] = useState(false);
 
@@ -149,5 +150,6 @@ export const useSendSharedMessage = () => {
     scrollRef,
     messageContainerRef,
     removeAllMessages,
+    removeAllMessagesExceptFirst,
   };
 };
