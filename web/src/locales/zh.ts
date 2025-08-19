@@ -73,6 +73,7 @@ export default {
       flow: 'Agent',
       search: '搜索',
       welcome: '欢迎来到',
+      dataset: '数据集',
     },
     knowledgeList: {
       welcome: '欢迎回来',
