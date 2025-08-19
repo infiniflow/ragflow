@@ -131,7 +131,16 @@ class Canvas:
 
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]
-        self.globals = self.dsl["globals"]
+        if "globals" in self.dsl:
+            self.globals = self.dsl["globals"]
+        else:
+            self.globals = {
+            "sys.query": "",
+            "sys.user_id": "",
+            "sys.conversation_turns": 0,
+            "sys.files": []
+        }
+            
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
 
