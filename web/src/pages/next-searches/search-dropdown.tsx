@@ -3,9 +3,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Trash2 } from 'lucide-react';
+import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppProps, useDeleteSearch } from './hooks';
@@ -13,12 +14,21 @@ import { ISearchAppProps, useDeleteSearch } from './hooks';
 export function SearchDropdown({
   children,
   dataset,
+  showSearchRenameModal,
 }: PropsWithChildren & {
   dataset: ISearchAppProps;
+  showSearchRenameModal: (dataset: ISearchAppProps) => void;
 }) {
   const { t } = useTranslation();
   const { deleteSearch } = useDeleteSearch();
-
+  const handleShowChatRenameModal: MouseEventHandler<HTMLDivElement> =
+    useCallback(
+      (e) => {
+        e.stopPropagation();
+        showSearchRenameModal(dataset);
+      },
+      [dataset, showSearchRenameModal],
+    );
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
     deleteSearch({ search_id: dataset.id });
   }, [dataset.id, deleteSearch]);
@@ -27,10 +37,10 @@ export function SearchDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent>
-        {/* <DropdownMenuItem onClick={handleShowDatasetRenameModal}>
+        <DropdownMenuItem onClick={handleShowChatRenameModal}>
           {t('common.rename')} <PenLine />
         </DropdownMenuItem>
-        <DropdownMenuSeparator /> */}
+        <DropdownMenuSeparator />
         <ConfirmDeleteDialog onOk={handleDelete}>
           <DropdownMenuItem
             className="text-text-delete-red"

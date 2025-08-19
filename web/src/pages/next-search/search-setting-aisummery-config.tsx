@@ -30,7 +30,12 @@ interface LlmSettingFieldItemsProps {
   prefix?: string;
   options?: any[];
 }
-
+const LlmSettingEnableSchema = {
+  temperatureEnabled: z.boolean(),
+  topPEnabled: z.boolean(),
+  presencePenaltyEnabled: z.boolean(),
+  frequencyPenaltyEnabled: z.boolean(),
+};
 export const LlmSettingSchema = {
   llm_id: z.string(),
   parameter: z.string(),
@@ -38,10 +43,7 @@ export const LlmSettingSchema = {
   top_p: z.coerce.number(),
   presence_penalty: z.coerce.number(),
   frequency_penalty: z.coerce.number(),
-  temperatureEnabled: z.boolean(),
-  topPEnabled: z.boolean(),
-  presencePenaltyEnabled: z.boolean(),
-  frequencyPenaltyEnabled: z.boolean(),
+  ...LlmSettingEnableSchema,
   // maxTokensEnabled: z.boolean(),
 };
 
@@ -65,6 +67,7 @@ export function LlmSettingFieldItems({
         settledModelVariableMap[
           parameter as keyof typeof settledModelVariableMap
         ];
+      const enabledKeys = Object.keys(LlmSettingEnableSchema);
 
       // const nextValues = { ...currentValues, ...values };
 
@@ -73,6 +76,11 @@ export function LlmSettingFieldItems({
           const element = values[key];
 
           form.setValue(`${prefix}.${key}`, element);
+        }
+      }
+      if (enabledKeys && enabledKeys.length) {
+        for (const key of enabledKeys) {
+          form.setValue(`${prefix}.${key}`, true);
         }
       }
     },
