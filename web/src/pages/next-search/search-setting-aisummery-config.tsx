@@ -30,18 +30,20 @@ interface LlmSettingFieldItemsProps {
   prefix?: string;
   options?: any[];
 }
-
-export const LlmSettingSchema = {
-  llm_id: z.string(),
-  parameter: z.string(),
-  temperature: z.coerce.number(),
-  top_p: z.coerce.number(),
-  presence_penalty: z.coerce.number(),
-  frequency_penalty: z.coerce.number(),
+const LlmSettingEnableSchema = {
   temperatureEnabled: z.boolean(),
   topPEnabled: z.boolean(),
   presencePenaltyEnabled: z.boolean(),
   frequencyPenaltyEnabled: z.boolean(),
+};
+export const LlmSettingSchema = {
+  llm_id: z.string(),
+  parameter: z.string().optional(),
+  temperature: z.coerce.number().optional(),
+  top_p: z.coerce.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
+  ...LlmSettingEnableSchema,
   // maxTokensEnabled: z.boolean(),
 };
 
@@ -65,6 +67,7 @@ export function LlmSettingFieldItems({
         settledModelVariableMap[
           parameter as keyof typeof settledModelVariableMap
         ];
+      const enabledKeys = Object.keys(LlmSettingEnableSchema);
 
       // const nextValues = { ...currentValues, ...values };
 
@@ -73,6 +76,11 @@ export function LlmSettingFieldItems({
           const element = values[key];
 
           form.setValue(`${prefix}.${key}`, element);
+        }
+      }
+      if (enabledKeys && enabledKeys.length) {
+        for (const key of enabledKeys) {
+          form.setValue(`${prefix}.${key}`, true);
         }
       }
     },
