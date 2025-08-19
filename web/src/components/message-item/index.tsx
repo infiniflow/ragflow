@@ -9,6 +9,7 @@ import {
   useFetchDocumentThumbnailsByIds,
 } from '@/hooks/document-hooks';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
+import { cn } from '@/lib/utils';
 import { IMessage } from '@/pages/chat/interface';
 import MarkdownContent from '@/pages/chat/markdown-content';
 import { Avatar, Flex, Space } from 'antd';
@@ -129,13 +130,14 @@ const MessageItem = ({
               {/* <b>{isAssistant ? '' : nickname}</b> */}
             </Space>
             <div
-              className={
+              className={cn(
                 isAssistant
                   ? theme === 'dark'
                     ? styles.messageTextDark
                     : styles.messageText
-                  : styles.messageUserText
-              }
+                  : styles.messageUserText,
+                { '!bg-bg-card': !isAssistant },
+              )}
             >
               <MarkdownContent
                 loading={loading}
