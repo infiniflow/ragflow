@@ -5,6 +5,7 @@ export default {
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
       cancel: 'No',
+      no: 'No',
       total: 'Total',
       rename: 'Rename',
       name: 'Name',
@@ -80,6 +81,7 @@ export default {
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
+      dataset: 'Dataset',
     },
     knowledgeList: {
       welcome: 'Welcome back',
@@ -575,6 +577,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         automatic: 'Automatic',
         manual: 'Manual',
       },
+      cancel: 'Cancel',
+      chatSetting: 'Chat setting',
     },
     setting: {
       profile: 'Profile',
