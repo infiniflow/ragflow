@@ -38,11 +38,11 @@ const LlmSettingEnableSchema = {
 };
 export const LlmSettingSchema = {
   llm_id: z.string(),
-  parameter: z.string(),
-  temperature: z.coerce.number(),
-  top_p: z.coerce.number(),
-  presence_penalty: z.coerce.number(),
-  frequency_penalty: z.coerce.number(),
+  parameter: z.string().optional(),
+  temperature: z.coerce.number().optional(),
+  top_p: z.coerce.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
   ...LlmSettingEnableSchema,
   // maxTokensEnabled: z.boolean(),
 };
