@@ -326,9 +326,15 @@ class RagTokenizer:
 
         arr = self._split_by_lang(line)
         res = []
-        for L,lang in arr:
+        for L, lang in arr:
             if not lang:
-                res.extend([self.stemmer.stem(self.lemmatizer.lemmatize(t)) for t in word_tokenize(L)])
+                # ref: https://stackoverflow.com/questions/24517722/how-to-stop-nltk-stemmer-from-removing-the-trailing-e
+                for t in word_tokenize(L):
+                    tt = self.lemmatizer.lemmatize(t)
+                    if tt.endswith('e'):
+                        res.append(tt)
+                    else:
+                        res.append(self.stemmer.stem(tt))
                 continue
             if len(L) < 2 or re.match(
                     r"[a-z\.-]+$", L) or re.match(r"[0-9\.-]+$", L):
