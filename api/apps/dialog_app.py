@@ -41,6 +41,9 @@ def set_dialog():
         return get_data_error_result(message="Dialog name can't be empty.")
     if len(name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Dialog name length is {len(name)} which is larger than 255")
+
+    if DialogService.get_or_none(tenant_id=current_user.id, name=name):
+        return get_data_error_result(message=f"Duplicated Dialog name {name}.")
     description = req.get("description", "A helpful dialog")
     icon = req.get("icon", "")
     top_n = req.get("top_n", 6)

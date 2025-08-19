@@ -505,6 +505,24 @@
                     "tags": "RE-RANK,4k",
                     "max_tokens": 4000,
                     "model_type": "rerank"
+                },
+                {
+                    "llm_name": "qwen-audio-asr",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "qwen-audio-asr-latest",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "qwen-audio-asr-1204",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
                 }
             ]
         },
