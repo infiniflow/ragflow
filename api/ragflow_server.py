@@ -59,11 +59,14 @@ def update_progress():
             if redis_lock.acquire():
                 DocumentService.update_progress()
                 redis_lock.release()
-            stop_event.wait(6)
         except Exception:
             logging.exception("update_progress exception")
         finally:
-            redis_lock.release()
+            try:
+                redis_lock.release()
+            except Exception:
+                logging.exception("update_progress exception")
+            stop_event.wait(6)
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
