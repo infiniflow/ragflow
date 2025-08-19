@@ -771,10 +771,11 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
 def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     meta_data_filter = search_config.get("meta_data_filter", {})
     doc_ids = search_config.get("doc_ids", [])
-    kb_ids = search_config.get("doc_ids", kb_ids)
     rerank_id = search_config.get("rerank_id", "")
     rerank_mdl = None
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    if not kbs:
+        return {"error": "No KB selected"}
     embedding_list = list(set([kb.embd_id for kb in kbs]))
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
