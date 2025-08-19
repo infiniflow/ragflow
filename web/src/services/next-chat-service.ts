@@ -28,6 +28,7 @@ const {
   getRelatedQuestions,
   listNextDialog,
   upload_and_parse,
+  fetchExternalChatInfo,
 } = api;
 
 const methods = {
@@ -130,6 +131,10 @@ const methods = {
   uploadAndParse: {
     method: 'post',
     url: upload_and_parse,
+  },
+  fetchExternalChatInfo: {
+    url: fetchExternalChatInfo,
+    method: 'get',
   },
 } as const;
 

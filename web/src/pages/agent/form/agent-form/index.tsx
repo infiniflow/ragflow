@@ -128,7 +128,7 @@ function AgentForm({ node }: INextOperatorForm) {
       <FormWrapper>
         <FormContainer>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField></LargeModelFormField>
+          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
           {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
             <QueryVariable
               name="visual_files_var"
