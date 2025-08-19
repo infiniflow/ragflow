@@ -775,6 +775,8 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     rerank_id = search_config.get("rerank_id", "")
     rerank_mdl = None
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    if not kbs:
+        return {"error": "No KB selected"}
     embedding_list = list(set([kb.embd_id for kb in kbs]))
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
