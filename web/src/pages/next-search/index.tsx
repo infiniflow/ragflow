@@ -1,3 +1,4 @@
+import { useFetchTokenListBeforeOtherStep } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -10,7 +11,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { SharedFrom } from '@/constants/chat';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+import {
+  useFetchTenantInfo,
+  useFetchUserInfo,
+} from '@/hooks/user-setting-hooks';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,11 +33,13 @@ export default function SearchPage() {
   const { navigateToSearchList } = useNavigatePage();
   const [isSearching, setIsSearching] = useState(false);
   const { data: SearchData } = useFetchSearchDetail();
+  const { beta, handleOperate } = useFetchTokenListBeforeOtherStep();
 
   const [openSetting, setOpenSetting] = useState(false);
   const [openEmbed, setOpenEmbed] = useState(false);
   const [searchText, setSearchText] = useState('');
   const { data: tenantInfo } = useFetchTenantInfo();
+  const { data: userInfo } = useFetchUserInfo();
   const tenantId = tenantInfo.tenant_id;
   const { t } = useTranslation();
   const { openSetting: checkOpenSetting } = useCheckSettings(
@@ -75,6 +81,7 @@ export default function SearchPage() {
                 isSearching={isSearching}
                 searchText={searchText}
                 setSearchText={setSearchText}
+                userInfo={userInfo}
               />
             </div>
           )}
@@ -105,6 +112,7 @@ export default function SearchPage() {
             token={SearchData?.id as string}
             from={SharedFrom.Search}
             tenantId={tenantId}
+            beta={beta}
           />
         }
         {
@@ -121,7 +129,14 @@ export default function SearchPage() {
       <div className="absolute right-5 top-12 ">
         <Button
           className="bg-text-primary  text-bg-base border-b-[#00BEB4] border-b-2"
-          onClick={() => setOpenEmbed(!openEmbed)}
+          onClick={() => {
+            handleOperate().then((res) => {
+              console.log(res, 'res');
+              if (res) {
+                setOpenEmbed(!openEmbed);
+              }
+            });
+          }}
         >
           <Send />
           <div>{t('search.embedApp')}</div>

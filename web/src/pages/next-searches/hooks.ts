@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'umi';
-
 interface CreateSearchProps {
   name: string;
   description?: string;
@@ -122,40 +121,6 @@ interface DeleteSearchResponse {
   message: string;
 }
 
-export const useDeleteSearch = () => {
-  const { t } = useTranslation();
-
-  const {
-    data,
-    isError,
-    mutateAsync: deleteSearchMutation,
-  } = useMutation<DeleteSearchResponse, Error, DeleteSearchProps>({
-    mutationKey: ['deleteSearch'],
-    mutationFn: async (props) => {
-      const response = await searchService.deleteSearch(props);
-      if (response.code !== 0) {
-        throw new Error(response.message || 'Failed to delete search');
-      }
-      return response;
-    },
-    onSuccess: () => {
-      message.success(t('message.deleted'));
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
-  });
-
-  const deleteSearch = useCallback(
-    (props: DeleteSearchProps) => {
-      return deleteSearchMutation(props);
-    },
-    [deleteSearchMutation],
-  );
-
-  return { data, isError, deleteSearch };
-};
-
 export interface IllmSettingProps {
   llm_id: string;
   parameter: string;
@@ -235,6 +200,42 @@ export const useFetchSearchDetail = (tenantId?: string) => {
   });
 
   return { data: data?.data, isLoading, isError };
+};
+
+export const useDeleteSearch = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isError,
+    mutateAsync: deleteSearchMutation,
+  } = useMutation<DeleteSearchResponse, Error, DeleteSearchProps>({
+    mutationKey: ['deleteSearch'],
+    mutationFn: async (props) => {
+      const { data: response } = await searchService.deleteSearch(props);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to delete search');
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['searchList'] });
+      return response;
+    },
+    onSuccess: () => {
+      message.success(t('message.deleted'));
+    },
+    onError: (error) => {
+      message.error(t('message.error', { error: error.message }));
+    },
+  });
+
+  const deleteSearch = useCallback(
+    (props: DeleteSearchProps) => {
+      return deleteSearchMutation(props);
+    },
+    [deleteSearchMutation],
+  );
+
+  return { data, isError, deleteSearch };
 };
 
 export type IUpdateSearchProps = Omit<ISearchAppDetailProps, 'id'> & {

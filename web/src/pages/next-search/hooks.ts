@@ -234,7 +234,10 @@ export const useTestRetrieval = (
     setSelectedDocumentIds,
   };
 };
-export const useFetchRelatedQuestions = (tenantId?: string) => {
+export const useFetchRelatedQuestions = (
+  tenantId?: string,
+  searchId?: string,
+) => {
   const [searchParams] = useSearchParams();
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
@@ -251,6 +254,7 @@ export const useFetchRelatedQuestions = (tenantId?: string) => {
       const { data } = await retrievalTestFunc({
         question,
         tenant_id: tenantId,
+        search_id: searchId,
       });
 
       return data?.data ?? [];
@@ -260,7 +264,12 @@ export const useFetchRelatedQuestions = (tenantId?: string) => {
   return { data, loading, fetchRelatedQuestions: mutateAsync };
 };
 
-export const useSendQuestion = (kbIds: string[], tenantId?: string) => {
+export const useSendQuestion = (
+  kbIds: string[],
+  tenantId?: string,
+  searchId: string = '',
+  related_search: boolean = false,
+) => {
   const { sharedId } = useGetSharedSearchParams();
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
     sharedId ? api.askShare : api.ask,
@@ -271,7 +280,7 @@ export const useSendQuestion = (kbIds: string[], tenantId?: string) => {
   const [sendingLoading, setSendingLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
   const { fetchRelatedQuestions, data: relatedQuestions } =
-    useFetchRelatedQuestions(tenantId);
+    useFetchRelatedQuestions(tenantId, searchId);
   const [searchStr, setSearchStr] = useState<string>('');
   const [isFirstRender, setIsFirstRender] = useState(true);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
@@ -286,7 +295,7 @@ export const useSendQuestion = (kbIds: string[], tenantId?: string) => {
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       setSendingLoading(true);
-      send({ kb_ids: kbIds, question: q, tenantId });
+      send({ kb_ids: kbIds, question: q, tenantId, search_id: searchId });
       testChunk({
         kb_id: kbIds,
         highlight: true,
@@ -295,7 +304,9 @@ export const useSendQuestion = (kbIds: string[], tenantId?: string) => {
         size: pagination.pageSize,
       });
 
-      fetchRelatedQuestions(q);
+      if (related_search) {
+        fetchRelatedQuestions(q);
+      }
     },
     [
       send,
@@ -305,6 +316,8 @@ export const useSendQuestion = (kbIds: string[], tenantId?: string) => {
       setPagination,
       pagination.pageSize,
       tenantId,
+      searchId,
+      related_search,
     ],
   );
 
@@ -408,7 +421,12 @@ export const useSearching = ({
     isSearchStrEmpty,
     setSearchStr,
     stopOutputMessage,
-  } = useSendQuestion(searchData.search_config.kb_ids, tenantId as string);
+  } = useSendQuestion(
+    searchData.search_config.kb_ids,
+    tenantId as string,
+    searchData.id,
+    searchData.search_config.related_search,
+  );
 
   const handleSearchStrChange = useCallback(
     (value: string) => {
@@ -435,15 +453,20 @@ export const useSearching = ({
     showMindMapModal,
     mindMapLoading,
     mindMap,
-  } = useShowMindMapDrawer(searchData.search_config.kb_ids, searchStr);
+  } = useShowMindMapDrawer(
+    searchData.search_config.kb_ids,
+    searchStr,
+    searchData.id,
+  );
   const { chunks, total } = useSelectTestingResult();
 
   const handleSearch = useCallback(
     (value: string) => {
       sendQuestion(value);
       setSearchStr?.(value);
+      hideMindMapModal();
     },
-    [setSearchStr, sendQuestion],
+    [setSearchStr, sendQuestion, hideMindMapModal],
   );
 
   const { pagination, setPagination } = useGetPaginationWithRouter();
