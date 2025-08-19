@@ -374,6 +374,7 @@ def mindmap():
     search_config = search_app.get("search_config", {}) if search_app else {}
     kb_ids = search_config.get("kb_ids", [])
     kb_ids.extend(req["kb_ids"])
+    kb_ids = list(set(kb_ids))
 
     mind_map = gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
     if "error" in mind_map:
