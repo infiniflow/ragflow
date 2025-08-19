@@ -288,20 +288,23 @@ export const useSendQuestion = (
   const { pagination, setPagination } = useGetPaginationWithRouter();
 
   const sendQuestion = useCallback(
-    (question: string) => {
+    (question: string, enableAI: boolean = true) => {
       const q = trim(question);
       if (isEmpty(q)) return;
       setPagination({ page: 1 });
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
-      setSendingLoading(true);
-      send({ kb_ids: kbIds, question: q, tenantId, search_id: searchId });
+      if (enableAI) {
+        setSendingLoading(true);
+        send({ kb_ids: kbIds, question: q, tenantId, search_id: searchId });
+      }
       testChunk({
         kb_id: kbIds,
         highlight: true,
         question: q,
         page: 1,
         size: pagination.pageSize,
+        search_id: searchId,
       });
 
       if (related_search) {
@@ -327,12 +330,13 @@ export const useSendQuestion = (
     }, []);
 
   const handleClickRelatedQuestion = useCallback(
-    (question: string) => () => {
-      if (sendingLoading) return;
+    (question: string, enableAI: boolean = true) =>
+      () => {
+        if (sendingLoading) return;
 
-      setSearchStr(question);
-      sendQuestion(question);
-    },
+        setSearchStr(question);
+        sendQuestion(question, enableAI);
+      },
     [sendQuestion, sendingLoading],
   );
 
@@ -348,6 +352,7 @@ export const useSendQuestion = (
         doc_ids: documentIds ?? selectedDocumentIds,
         page,
         size,
+        search_id: searchId,
       });
 
       testChunkAll({
@@ -357,6 +362,7 @@ export const useSendQuestion = (
         doc_ids: [],
         page,
         size,
+        search_id: searchId,
       });
     },
     [
@@ -366,6 +372,7 @@ export const useSendQuestion = (
       kbIds,
       selectedDocumentIds,
       testChunkAll,
+      searchId,
     ],
   );
 
@@ -430,7 +437,6 @@ export const useSearching = ({
 
   const handleSearchStrChange = useCallback(
     (value: string) => {
-      console.log('handleSearchStrChange', value);
       setSearchStr(value);
     },
     [setSearchStr],
@@ -442,10 +448,16 @@ export const useSearching = ({
   useEffect(() => {
     if (searchText) {
       setSearchStr(searchText);
-      sendQuestion(searchText);
+      sendQuestion(searchText, searchData.search_config.summary);
       setSearchText?.('');
     }
-  }, [searchText, sendQuestion, setSearchStr, setSearchText]);
+  }, [
+    searchText,
+    sendQuestion,
+    setSearchStr,
+    setSearchText,
+    searchData.search_config.summary,
+  ]);
 
   const {
     mindMapVisible,
@@ -462,11 +474,16 @@ export const useSearching = ({
 
   const handleSearch = useCallback(
     (value: string) => {
-      sendQuestion(value);
+      sendQuestion(value, searchData.search_config.summary);
       setSearchStr?.(value);
       hideMindMapModal();
     },
-    [setSearchStr, sendQuestion, hideMindMapModal],
+    [
+      setSearchStr,
+      sendQuestion,
+      hideMindMapModal,
+      searchData.search_config.summary,
+    ],
   );
 
   const { pagination, setPagination } = useGetPaginationWithRouter();

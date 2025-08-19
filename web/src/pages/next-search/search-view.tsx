@@ -252,7 +252,10 @@ export default function SearchingView({
                           key={idx}
                           variant="transparent"
                           className="bg-bg-card text-text-secondary"
-                          onClick={handleClickRelatedQuestion(x)}
+                          onClick={handleClickRelatedQuestion(
+                            x,
+                            searchData.search_config.summary,
+                          )}
                         >
                           {x}
                         </Button>
