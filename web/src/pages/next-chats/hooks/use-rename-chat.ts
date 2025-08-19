@@ -1,7 +1,7 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetDialog } from '@/hooks/use-chat-request';
 import { IDialog } from '@/interfaces/database/chat';
-import { isEmpty } from 'lodash';
+import { isEmpty, omit } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -44,7 +44,9 @@ export const useRenameChat = () => {
   const onChatRenameOk = useCallback(
     async (name: string) => {
       const nextChat = {
-        ...(isEmpty(chat) ? InitialData : chat),
+        ...(isEmpty(chat)
+          ? InitialData
+          : { ...omit(chat, 'nickname', 'tenant_avatar'), dialog_id: chat.id }),
         name,
       };
       const ret = await setDialog(nextChat);

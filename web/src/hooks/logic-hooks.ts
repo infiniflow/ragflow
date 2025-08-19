@@ -557,6 +557,15 @@ export const useSelectDerivedMessages = () => {
     setDerivedMessages([]);
   }, [setDerivedMessages]);
 
+  const removeAllMessagesExceptFirst = useCallback(() => {
+    setDerivedMessages((list) => {
+      if (list.length <= 1) {
+        return list;
+      }
+      return list.slice(0, 1);
+    });
+  }, [setDerivedMessages]);
+
   return {
     scrollRef,
     messageContainerRef,
@@ -571,6 +580,7 @@ export const useSelectDerivedMessages = () => {
     removeMessagesAfterCurrentMessage,
     removeAllMessages,
     scrollToBottom,
+    removeAllMessagesExceptFirst,
   };
 };
 

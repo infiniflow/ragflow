@@ -18,7 +18,7 @@ import { TemplateCard } from './template-card';
 import { MenuItemKey, SideBar } from './template-sidebar';
 
 export default function AgentTemplates() {
-  const { navigateToAgentList } = useNavigatePage();
+  const { navigateToAgents } = useNavigatePage();
   const { t } = useTranslation();
   const list = useFetchAgentTemplates();
   const { loading, setAgent } = useSetAgent();
@@ -89,9 +89,7 @@ export default function AgentTemplates() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToAgentList}>
-                Agent
-              </BreadcrumbLink>
+              <BreadcrumbLink onClick={navigateToAgents}>Agent</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
