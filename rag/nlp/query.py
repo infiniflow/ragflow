@@ -82,7 +82,7 @@ class FulltextQueryer:
         txt = re.sub(r'([\u4e00-\u9fa5]+)([A-Za-z])', r'\1 \2', txt)
         return txt
 
-    def question(self, txt, tbl="qa", min_match: float = 0.6):
+    def question(self, txt, tbl="qa", min_match: float = 0.6, cross_language_question: bool = False):
         txt = FulltextQueryer.add_space_between_eng_zh(txt)
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
@@ -92,7 +92,7 @@ class FulltextQueryer:
         otxt = txt
         txt = FulltextQueryer.rmWWW(txt)
 
-        if not self.isChinese(txt):
+        if not self.isChinese(txt) or cross_language_question:
             txt = FulltextQueryer.rmWWW(txt)
             tks = rag_tokenizer.tokenize(txt).split()
             keywords = [t for t in tks if t]

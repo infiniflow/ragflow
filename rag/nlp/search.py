@@ -70,7 +70,8 @@ class Dealer:
                kb_ids: list[str],
                emb_mdl=None,
                highlight=False,
-               rank_feature: dict | None = None
+               rank_feature: dict | None = None,
+               cross_language_question: bool = False
                ):
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
@@ -99,7 +100,7 @@ class Dealer:
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
             highlightFields = ["content_ltks", "title_tks"] if highlight else []
-            matchText, keywords = self.qryr.question(qst, min_match=0.3)
+            matchText, keywords = self.qryr.question(qst, min_match=0.3, cross_language_question=cross_language_question)
             if emb_mdl is None:
                 matchExprs = [matchText]
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit,
@@ -125,7 +126,7 @@ class Dealer:
                         res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.getTotal(res)
                     else:
-                        matchText, _ = self.qryr.question(qst, min_match=0.1)
+                        matchText, _ = self.qryr.question(qst, min_match=0.1, cross_language_question=cross_language_question)
                         matchDense.extra_options["similarity"] = 0.17
                         res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
                                                     orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
@@ -347,7 +348,7 @@ class Dealer:
     def retrieval(self, question, embd_mdl, tenant_ids, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True,
                   rerank_mdl=None, highlight=False,
-                  rank_feature: dict | None = {PAGERANK_FLD: 10}):
+                  rank_feature: dict | None = {PAGERANK_FLD: 10}, cross_language_question: bool = False):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
@@ -366,7 +367,7 @@ class Dealer:
             tenant_ids = tenant_ids.split(",")
 
         sres = self.search(req, [index_name(tid) for tid in tenant_ids],
-                           kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
+                           kb_ids, embd_mdl, highlight, rank_feature=rank_feature, cross_language_question=cross_language_question)
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(rerank_mdl,

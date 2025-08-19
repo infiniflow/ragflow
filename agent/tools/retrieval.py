@@ -111,8 +111,10 @@ class Retrieval(ToolBase, ABC):
         vars = self.get_input_elements_from_text(kwargs["query"])
         vars = {k:o["value"] for k,o in vars.items()}
         query = self.string_format(kwargs["query"], vars)
+        cross_language_query = False
         if self._param.cross_languages:
             query = cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
+            cross_language_query = True
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
@@ -128,6 +130,7 @@ class Retrieval(ToolBase, ABC):
                 aggs=False,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
+                cross_language_question=cross_language_query
             )
             if self._param.use_kg:
                 ck = settings.kg_retrievaler.retrieval(query,

@@ -292,7 +292,7 @@ def retrieval_test():
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
-    langs = req.get("cross_languages", [])
+    langs = req.get("", [])
     tenant_ids = []
 
     try:
@@ -311,9 +311,11 @@ def retrieval_test():
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_data_error_result(message="Knowledgebase not found!")
-
+        
+        cross_language_query = False
         if langs:
             question = cross_languages(kb.tenant_id, None, question, langs)
+            cross_language_query = True
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -329,7 +331,7 @@ def retrieval_test():
         ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
                                similarity_threshold, vector_similarity_weight, top,
                                doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
-                               rank_feature=labels
+                               rank_feature=labels, cross_language_question=cross_language_query
                                )
         if use_kg:
             ck = settings.kg_retrievaler.retrieval(question,
