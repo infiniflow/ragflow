@@ -289,7 +289,7 @@ class Pdf(PdfParser):
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
         else:
             tbls = self._extract_table_figure(True, zoomin, True, True)
-            # self._naive_vertical_merge()
+            self._naive_vertical_merge()
             self._concat_downward()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
