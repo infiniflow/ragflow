@@ -206,6 +206,10 @@ module.exports = {
           ring: 'hsl(var(--sidebar-ring))',
         },
       },
+      backgroundImage: {
+        'metallic-gradient':
+          'linear-gradient(104deg, var(--text-primary) 30%, var(--metallic) 50%, var(--text-primary) 70%)',
+      },
       borderRadius: {
         lg: `var(--radius)`,
         md: `calc(var(--radius) - 2px)`,
