@@ -77,7 +77,7 @@ export const useNavigatePage = () => {
   }, [navigate]);
 
   const navigateToSearch = useCallback(
-    (id: string) => {
+    (id: string) => () => {
       navigate(`${Routes.Search}/${id}`);
     },
     [navigate],

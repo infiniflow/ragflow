@@ -85,7 +85,7 @@ export default function SearchList() {
       res = await createSearch({ name: values.name });
     }
     if (res && !searchData?.id) {
-      navigateToSearch(res?.search_id);
+      navigateToSearch(res?.search_id)();
     }
     if (!isLoading) {
       setOpenCreateModal(false);

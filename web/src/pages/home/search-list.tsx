@@ -14,7 +14,7 @@ export function SearchList() {
         title: x.name,
         update_time: x.update_time,
       }}
-      onClick={() => navigateToSearch(x.id)}
+      onClick={navigateToSearch(x.id)}
     ></ApplicationCard>
   ));
 }

@@ -25,9 +25,7 @@ export function ChatCard({ data, showChatRenameModal }: IProps) {
           <MoreButton></MoreButton>
         </ChatDropdown>
       }
-      onClick={() => {
-        navigateToChat(data?.id);
-      }}
+      onClick={navigateToChat(data?.id)}
     />
   );
 }
