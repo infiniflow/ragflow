@@ -182,7 +182,7 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
         yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
-    conv.reference.append(canvas.get_reference())
+    conv.reference = canvas.get_reference()
     conv.errors = canvas.error
     conv.dsl = str(canvas)
     conv = conv.to_dict()
