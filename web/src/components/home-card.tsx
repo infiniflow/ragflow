@@ -31,7 +31,7 @@ export function HomeCard({ data, onClick, moreDropdown }: IProps) {
         </div>
         <div className="flex flex-col justify-between gap-1 flex-1 h-full w-[calc(100%-50px)]">
           <section className="flex justify-between">
-            <div className="text-[20px] font-bold w-80% leading-5">
+            <div className="text-[20px] font-bold w-80% leading-5 text-ellipsis overflow-hidden">
               {data.name}
             </div>
             {moreDropdown}
