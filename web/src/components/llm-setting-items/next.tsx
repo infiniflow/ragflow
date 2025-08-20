@@ -5,6 +5,7 @@ import { camelCase } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
+import { SelectWithSearch } from '../originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -15,9 +16,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
@@ -26,37 +25,34 @@ import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
+  options?: any[];
 }
 
 export const LlmSettingSchema = {
   llm_id: z.string(),
-  temperature: z.coerce.number(),
-  top_p: z.string(),
-  presence_penalty: z.coerce.number(),
-  frequency_penalty: z.coerce.number(),
-  temperatureEnabled: z.boolean(),
-  topPEnabled: z.boolean(),
-  presencePenaltyEnabled: z.boolean(),
-  frequencyPenaltyEnabled: z.boolean(),
-  maxTokensEnabled: z.boolean(),
+  temperature: z.coerce.number().optional(),
+  top_p: z.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
+  temperatureEnabled: z.boolean().optional(),
+  topPEnabled: z.boolean().optional(),
+  presencePenaltyEnabled: z.boolean().optional(),
+  frequencyPenaltyEnabled: z.boolean().optional(),
+  maxTokensEnabled: z.boolean().optional(),
+  max_tokens: z.number().optional(),
 };
 
-export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
+export function LlmSettingFieldItems({
+  prefix,
+  options,
+}: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
+
   const modelOptions = useComposeLlmOptionsByModelTypes([
     LlmModelType.Chat,
     LlmModelType.Image2text,
   ]);
-
-  // useWatchFreedomChange();
-
-  const handleChange = useHandleFreedomChange();
-
-  const parameterOptions = Object.values(ModelVariableType).map((x) => ({
-    label: t(camelCase(x)),
-    value: x,
-  }));
 
   const getFieldWithPrefix = useCallback(
     (name: string) => {
@@ -64,6 +60,13 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
     },
     [prefix],
   );
+
+  const handleChange = useHandleFreedomChange(getFieldWithPrefix);
+
+  const parameterOptions = Object.values(ModelVariableType).map((x) => ({
+    label: t(camelCase(x)),
+    value: x,
+  }));
 
   return (
     <div className="space-y-5">
@@ -74,27 +77,10 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           <FormItem>
             <FormLabel>{t('model')}</FormLabel>
             <FormControl>
-              <Select onValueChange={field.onChange} {...field}>
-                <SelectTrigger value={field.value}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelOptions.map((x) => (
-                    <SelectGroup key={x.value}>
-                      <SelectLabel>{x.label}</SelectLabel>
-                      {x.options.map((y) => (
-                        <SelectItem
-                          value={y.value}
-                          key={y.value}
-                          disabled={y.disabled}
-                        >
-                          {y.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SelectWithSearch
+                options={options || modelOptions}
+                {...field}
+              ></SelectWithSearch>
             </FormControl>
             <FormMessage />
           </FormItem>

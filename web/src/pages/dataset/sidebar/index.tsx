@@ -1,11 +1,15 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import {
+  useFetchKnowledgeBaseConfiguration,
+  useFetchKnowledgeGraph,
+} from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
-import { Banknote, Database, FileSearch2 } from 'lucide-react';
+import { isEmpty } from 'lodash';
+import { Banknote, Database, FileSearch2, GitGraph } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -19,10 +23,11 @@ export function SideBar({ refreshCount }: PropType) {
   const { handleMenuClick } = useHandleMenuClick();
   // refreshCount: be for avatar img sync update on top left
   const { data } = useFetchKnowledgeBaseConfiguration(refreshCount);
+  const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
-    return [
+    const list = [
       {
         icon: Database,
         label: t(`knowledgeDetails.dataset`),
@@ -39,7 +44,15 @@ export function SideBar({ refreshCount }: PropType) {
         key: Routes.DatasetSetting,
       },
     ];
-  }, [t]);
+    if (!isEmpty(routerData?.graph)) {
+      list.push({
+        icon: GitGraph,
+        label: t(`knowledgeDetails.knowledgeGraph`),
+        key: Routes.KnowledgeGraph,
+      });
+    }
+    return list;
+  }, [t, routerData]);
 
   return (
     <aside className="relative p-5 space-y-8">
@@ -49,8 +62,8 @@ export function SideBar({ refreshCount }: PropType) {
           name={data.name}
           className="size-16"
         ></RAGFlowAvatar>
-        <div className=" text-text-sub-title text-xs space-y-1">
-          <h3 className="text-lg font-semibold line-clamp-1 text-text-title">
+        <div className=" text-text-secondary text-xs space-y-1">
+          <h3 className="text-lg font-semibold line-clamp-1 text-text-primary">
             {data.name}
           </h3>
           <div className="flex justify-between">
@@ -71,8 +84,8 @@ export function SideBar({ refreshCount }: PropType) {
               className={cn(
                 'w-full justify-start gap-2.5 px-3 relative h-10 text-text-sub-title-invert',
                 {
-                  'bg-background-card': active,
-                  'text-text-title': active,
+                  'bg-bg-card': active,
+                  'text-text-primary': active,
                 },
               )}
               onClick={handleMenuClick(item.key)}

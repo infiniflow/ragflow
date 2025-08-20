@@ -26,6 +26,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { Variable } from 'lucide-react';
 import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PasteHandlerPlugin } from './paste-handler-plugin';
 import theme from './theme';
 import { VariableNode } from './variable-node';
 import { VariableOnChangePlugin } from './variable-on-change-plugin';
@@ -46,7 +47,7 @@ const Nodes: Array<Klass<LexicalNode>> = [
   VariableNode,
 ];
 
-type PromptContentProps = { showToolbar?: boolean };
+type PromptContentProps = { showToolbar?: boolean; multiLine?: boolean };
 
 type IProps = {
   value?: string;
@@ -54,7 +55,10 @@ type IProps = {
   placeholder?: ReactNode;
 } & PromptContentProps;
 
-function PromptContent({ showToolbar = true }: PromptContentProps) {
+function PromptContent({
+  showToolbar = true,
+  multiLine = true,
+}: PromptContentProps) {
   const [editor] = useLexicalComposerContext();
   const [isBlur, setIsBlur] = useState(false);
   const { t } = useTranslation();
@@ -100,7 +104,12 @@ function PromptContent({ showToolbar = true }: PromptContentProps) {
         </div>
       )}
       <ContentEditable
-        className="min-h-40 relative px-2 py-1 focus-visible:outline-none"
+        className={cn(
+          'relative px-2 py-1 focus-visible:outline-none max-h-[50vh] overflow-auto',
+          {
+            'min-h-40': multiLine,
+          },
+        )}
         onBlur={handleBlur}
         onFocus={handleFocus}
       />
@@ -113,6 +122,7 @@ export function PromptEditor({
   onChange,
   placeholder,
   showToolbar,
+  multiLine = true,
 }: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
@@ -142,19 +152,28 @@ export function PromptEditor({
       <LexicalComposer initialConfig={initialConfig}>
         <RichTextPlugin
           contentEditable={
-            <PromptContent showToolbar={showToolbar}></PromptContent>
+            <PromptContent
+              showToolbar={showToolbar}
+              multiLine={multiLine}
+            ></PromptContent>
           }
           placeholder={
             <div
-              className="absolute top-10 left-2 text-text-sub-title"
-              data-xxx
+              className={cn(
+                'absolute top-1 left-2 text-text-secondary pointer-events-none',
+                {
+                  'truncate w-[90%]': !multiLine,
+                  'translate-y-10': multiLine,
+                },
+              )}
             >
-              {placeholder || t('common.pleaseInput')}
+              {placeholder || t('common.promptPlaceholder')}
             </div>
           }
           ErrorBoundary={LexicalErrorBoundary}
         />
         <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
+        <PasteHandlerPlugin />
         <VariableOnChangePlugin
           onChange={onValueChange}
         ></VariableOnChangePlugin>

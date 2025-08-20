@@ -1,5 +1,5 @@
 import { MoreButton } from '@/components/more-button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
@@ -32,10 +32,11 @@ export function DatasetCard({
       <CardContent className="p-2.5 pt-2 group">
         <section className="flex justify-between mb-2">
           <div className="flex gap-2 items-center">
-            <Avatar className="size-6 rounded-lg">
-              <AvatarImage src={dataset.avatar} />
-              <AvatarFallback className="rounded-lg ">CN</AvatarFallback>
-            </Avatar>
+            <RAGFlowAvatar
+              className="size-6 rounded-lg"
+              avatar={dataset.avatar}
+              name={dataset.name || 'CN'}
+            ></RAGFlowAvatar>
             {owner && (
               <Badge className="h-5 rounded-sm px-1 bg-background-badge text-text-badge">
                 {owner}
@@ -54,10 +55,10 @@ export function DatasetCard({
             <h3 className="text-lg font-semibold mb-2 line-clamp-1">
               {dataset.name}
             </h3>
-            <p className="text-xs text-text-sub-title">
+            <p className="text-xs text-text-secondary">
               {dataset.doc_num} files
             </p>
-            <p className="text-xs text-text-sub-title">
+            <p className="text-xs text-text-secondary">
               {formatDate(dataset.update_time)}
             </p>
           </div>
@@ -71,11 +72,8 @@ export function SeeAllCard() {
   const { navigateToDatasetList } = useNavigatePage();
 
   return (
-    <Card
-      className="bg-colors-background-inverse-weak w-40"
-      onClick={navigateToDatasetList}
-    >
-      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-sub-title">
+    <Card className="w-40" onClick={navigateToDatasetList}>
+      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
         See All <ChevronRight className="size-4" />
       </CardContent>
     </Card>

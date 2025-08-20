@@ -5,7 +5,8 @@ import {
   PasswordIcon,
   ProfileIcon,
   TeamIcon,
-} from '@/assets/icon/Icon';
+} from '@/assets/icon/next-icon';
+import { IconFont } from '@/components/icon-font';
 import { LLMFactory } from '@/constants/llm';
 import { UserSettingRouteKey } from '@/constants/setting';
 import { MonitorOutlined } from '@ant-design/icons';
@@ -18,6 +19,9 @@ export const UserSettingIconMap = {
   [UserSettingRouteKey.Team]: <TeamIcon />,
   [UserSettingRouteKey.Logout]: <LogOutIcon />,
   [UserSettingRouteKey.Api]: <ApiIcon />,
+  [UserSettingRouteKey.MCP]: (
+    <IconFont name="mcp" className="size-6"></IconFont>
+  ),
 };
 
 export * from '@/constants/setting';

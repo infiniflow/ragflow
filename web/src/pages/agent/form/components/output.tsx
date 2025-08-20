@@ -22,9 +22,9 @@ export function Output({ list }: OutputProps) {
         {list.map((x, idx) => (
           <li
             key={idx}
-            className="bg-background-highlight text-background-checked rounded-sm px-2 py-1"
+            className="bg-background-highlight text-accent-primary rounded-sm px-2 py-1"
           >
-            {x.title}: {x.type}
+            {x.title}: <span className="text-text-secondary">{x.type}</span>
           </li>
         ))}
       </ul>

@@ -3,14 +3,21 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Operator } from '@/pages/agent/constant';
 import { AgentFormContext, AgentInstanceContext } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
 import { Position } from '@xyflow/react';
-import { PropsWithChildren, useCallback, useContext } from 'react';
-import { useGetAgentToolNames } from '../use-get-tools';
-import { ToolCommand } from './tool-command';
+import { PropsWithChildren, useCallback, useContext, useEffect } from 'react';
+import { useGetAgentMCPIds, useGetAgentToolNames } from '../use-get-tools';
+import { MCPCommand, ToolCommand } from './tool-command';
+import { useUpdateAgentNodeMCP } from './use-update-mcp';
 import { useUpdateAgentNodeTools } from './use-update-tools';
+
+enum ToolType {
+  Common = 'common',
+  MCP = 'mcp',
+}
 
 export function ToolPopover({ children }: PropsWithChildren) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
@@ -20,29 +27,57 @@ export function ToolPopover({ children }: PropsWithChildren) {
   const deleteAgentToolNodeById = useGraphStore(
     (state) => state.deleteAgentToolNodeById,
   );
+  const { mcpIds } = useGetAgentMCPIds();
+  const { updateNodeMCP } = useUpdateAgentNodeMCP();
 
   const handleChange = useCallback(
     (value: string[]) => {
       if (Array.isArray(value) && node?.id) {
         updateNodeTools(value);
-        if (value.length > 0) {
-          addCanvasNode(Operator.Tool, {
-            position: Position.Bottom,
-            nodeId: node?.id,
-          })();
-        } else {
-          deleteAgentToolNodeById(node.id); // TODO: The tool node should be derived from the agent tools data
-        }
       }
     },
-    [addCanvasNode, deleteAgentToolNodeById, node?.id, updateNodeTools],
+    [node?.id, updateNodeTools],
   );
+
+  useEffect(() => {
+    const total = toolNames.length + mcpIds.length;
+    if (node?.id) {
+      if (total > 0) {
+        addCanvasNode(Operator.Tool, {
+          position: Position.Bottom,
+          nodeId: node?.id,
+        })();
+      } else {
+        deleteAgentToolNodeById(node.id);
+      }
+    }
+  }, [
+    addCanvasNode,
+    deleteAgentToolNodeById,
+    mcpIds.length,
+    node?.id,
+    toolNames.length,
+  ]);
 
   return (
     <Popover>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-80 p-0">
-        <ToolCommand onChange={handleChange} value={toolNames}></ToolCommand>
+      <PopoverContent className="w-80 p-4">
+        <Tabs defaultValue={ToolType.Common}>
+          <TabsList>
+            <TabsTrigger value={ToolType.Common}>Built-in</TabsTrigger>
+            <TabsTrigger value={ToolType.MCP}>MCP</TabsTrigger>
+          </TabsList>
+          <TabsContent value={ToolType.Common}>
+            <ToolCommand
+              onChange={handleChange}
+              value={toolNames}
+            ></ToolCommand>
+          </TabsContent>
+          <TabsContent value={ToolType.MCP}>
+            <MCPCommand value={mcpIds} onChange={updateNodeMCP}></MCPCommand>
+          </TabsContent>
+        </Tabs>
       </PopoverContent>
     </Popover>
   );

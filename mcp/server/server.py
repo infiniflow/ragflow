@@ -460,6 +460,23 @@ async def call_tool(name: str, arguments: dict, *, connector) -> list[types.Text
         rerank_id = arguments.get("rerank_id")
         force_refresh = arguments.get("force_refresh", False)
 
+        
+        # If no dataset_ids provided or empty list, get all available dataset IDs
+        if not dataset_ids:
+            dataset_list_str = connector.list_datasets()
+            dataset_ids = []
+            
+            # Parse the dataset list to extract IDs
+            if dataset_list_str:
+                for line in dataset_list_str.strip().split('\n'):
+                    if line.strip():
+                        try:
+                            dataset_info = json.loads(line.strip())
+                            dataset_ids.append(dataset_info["id"])
+                        except (json.JSONDecodeError, KeyError):
+                            # Skip malformed lines
+                            continue
+        
         return connector.retrieval(
             dataset_ids=dataset_ids,
             document_ids=document_ids,

@@ -28,7 +28,11 @@ from rag.utils import num_tokens_from_string
 
 
 class Base(ABC):
-    def __init__(self, key, model_name):
+    def __init__(self, key, model_name, **kwargs):
+        """
+        Abstract base class constructor.
+        Parameters are not stored; initialization is left to subclasses.
+        """
         pass
 
     def transcription(self, audio, **kwargs):
@@ -208,3 +212,12 @@ class GiteeSeq2txt(Base):
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
+class DeepInfraSeq2txt(Base):
+    _FACTORY_NAME = "DeepInfra"
+
+    def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai", **kwargs):
+        if not base_url:
+            base_url = "https://api.deepinfra.com/v1/openai"
+
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name

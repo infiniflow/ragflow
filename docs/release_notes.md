@@ -9,8 +9,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1`
 :::
 
 :::danger IMPORTANT
@@ -21,6 +21,65 @@ The embedding models included in a full edition are:
 
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
+
+## v0.20.1
+
+Released on August 8, 2025.
+
+### New Features
+
+- The **Retrieval** component now supports the dynamic specification of knowledge base names using variables.
+- The user interface now includes a French language option.
+
+### Added Models
+
+- GPT-5
+- Claude 4.1
+
+### New agent templates (both workflow and agentic)
+
+- SQL Assistant Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
+- Choose Your Knowledge Base Workflow: Lets users select a knowledge base to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+
+### Fixed Issues
+
+- The **Agent** component was unable to invoke models installed via vLLM.
+- Agents could not be shared with the team.
+- Embedding an Agent into a webpage was not functioning properly.
+
+## v0.20.0
+
+Released on August 4, 2025.
+
+### Compatibility changes
+
+From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and all existing Agents from previous versions must be rebuilt following the upgrade.
+
+### New features
+
+- Unified orchestration of both Agents and Workflows.
+- A comprehensive refactor of the Agent, greatly enhancing its capabilities and usability, with support for Multi-Agent configurations, planning and reflection, and visual functionalities.
+- Fully implemented MCP functionality, allowing for MCP Server import, Agents functioning as MCP Clients, and RAGFlow itself operating as an MCP Server.
+- Access to runtime logs for Agents.
+- Chat histories with Agents available through the management panel.
+- Integration of a new, more robust version of Infinity, enabling the auto-tagging functionality with Infinity as the underlying document engine.
+- An OpenAI-compatible API that supports file reference information.
+- Support for new models, including Kimi K2, Grok 4, and Voyage embedding.
+- RAGFlow’s codebase is now mirrored on Gitee.
+- Introduction of a new model provider, Gitee AI.
+
+### New agent templates introduced
+
+- Multi-Agent based Deep Research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
+- An intelligent Q&A chatbot leveraging internal knowledge bases, designed for customer service and training scenarios.
+- A resume analysis template used by the RAGFlow team to screen, analyze, and record candidate information.
+- A blog generation workflow that transforms raw ideas into SEO-friendly blog content.
+- An intelligent customer service workflow.
+- A user feedback analysis template that directs user feedback to appropriate teams through semantic analysis.
+- Trip Planner: Uses web search and map MCP servers to assist with travel planning.
+- Image Lingo: Translates content from uploaded photos.
+- An information search assistant that retrieves answers from both internal knowledge bases and the web.
 
 ## v0.19.1
 

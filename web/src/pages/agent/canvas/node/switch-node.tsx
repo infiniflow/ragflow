@@ -48,7 +48,7 @@ const ConditionBlock = ({
         {items.map((x, idx) => (
           <div key={idx}>
             <section className="flex justify-between gap-2 items-center text-xs p-1">
-              <div className="flex-1 truncate text-background-checked">
+              <div className="flex-1 truncate text-accent-primary">
                 {getLabel(x?.cpn_id)}
               </div>
               <span>{renderOperatorIcon(x?.operator)}</span>
@@ -64,8 +64,8 @@ const ConditionBlock = ({
 function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
   return (
-    <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper>
+    <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
+      <NodeWrapper selected={selected}>
         <CommonHandle
           type="target"
           position={Position.Left}
@@ -78,14 +78,17 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
           {positions.map((position, idx) => {
             return (
               <div key={idx}>
-                <section className="flex flex-col">
-                  <div className="flex justify-between">
-                    <span className="text-text-sub-title text-xs translate-y-2">
-                      {idx < positions.length - 1 &&
-                        position.condition?.logical_operator?.toUpperCase()}
-                    </span>
+                <section className="flex flex-col text-xs">
+                  <div className="text-right">
                     <span>{getConditionKey(idx, positions.length)}</span>
+                    <div className="text-text-secondary">
+                      {idx < positions.length - 1 && position.text}
+                    </div>
                   </div>
+                  <span className="text-accent-primary">
+                    {idx < positions.length - 1 &&
+                      position.condition?.logical_operator?.toUpperCase()}
+                  </span>
                   {position.condition && (
                     <ConditionBlock
                       condition={position.condition}

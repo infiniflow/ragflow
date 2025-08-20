@@ -2,9 +2,9 @@ import { useFetchDialogList } from '@/hooks/use-chat-request';
 import { ApplicationCard } from './application-card';
 
 export function ChatList() {
-  const { data } = useFetchDialogList(true);
+  const { data } = useFetchDialogList();
 
-  return data
+  return data.dialogs
     .slice(0, 10)
     .map((x) => (
       <ApplicationCard

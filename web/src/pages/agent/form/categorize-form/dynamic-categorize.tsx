@@ -28,9 +28,11 @@ import {
   useState,
 } from 'react';
 import { UseFormReturn, useFieldArray, useFormContext } from 'react-hook-form';
-import { Operator } from '../../constant';
-import { useBuildFormSelectOptions } from '../../form-hooks';
+import { v4 as uuid } from 'uuid';
+import { z } from 'zod';
+import useGraphStore from '../../store';
 import DynamicExample from './dynamic-example';
+import { useCreateCategorizeFormSchema } from './use-form-schema';
 
 interface IProps {
   nodeId?: string;
@@ -107,13 +109,9 @@ const InnerNameInput = ({
 
 const NameInput = memo(InnerNameInput);
 
-const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
+const InnerFormSet = ({ index }: IProps & { index: number }) => {
   const form = useFormContext();
   const { t } = useTranslate('flow');
-  const buildCategorizeToOptions = useBuildFormSelectOptions(
-    Operator.Categorize,
-    nodeId,
-  );
 
   const buildFieldName = useCallback(
     (name: string) => {
@@ -161,6 +159,12 @@ const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
           </FormItem>
         )}
       />
+      {/* Create a hidden field to make Form instance record this */}
+      <FormField
+        control={form.control}
+        name={'uuid'}
+        render={() => <div></div>}
+      />
       <DynamicExample name={buildFieldName('examples')}></DynamicExample>
     </section>
   );
@@ -170,21 +174,38 @@ const FormSet = memo(InnerFormSet);
 
 const DynamicCategorize = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
-  const form = useFormContext();
+  const FormSchema = useCreateCategorizeFormSchema();
+
+  const deleteCategorizeCaseEdges = useGraphStore(
+    (state) => state.deleteEdgesBySourceAndSourceHandle,
+  );
+  const form = useFormContext<z.infer<typeof FormSchema>>();
   const { t } = useTranslate('flow');
   const { fields, remove, append } = useFieldArray({
     name: 'items',
     control: form.control,
   });
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     append({
       name: humanId(),
       description: '',
+      uuid: uuid(),
       examples: [{ value: '' }],
     });
     if (nodeId) updateNodeInternals(nodeId);
-  };
+  }, [append, nodeId, updateNodeInternals]);
+
+  const handleRemove = useCallback(
+    (index: number) => () => {
+      remove(index);
+      if (nodeId) {
+        const uuid = fields[index].uuid;
+        deleteCategorizeCaseEdges(nodeId, uuid);
+      }
+    },
+    [deleteCategorizeCaseEdges, fields, nodeId, remove],
+  );
 
   return (
     <div className="flex flex-col gap-4 ">
@@ -200,7 +221,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   variant="ghost"
                   size="sm"
                   className="w-9 p-0"
-                  onClick={() => remove(index)}
+                  onClick={handleRemove(index)}
                 >
                   <X className="h-4 w-4" />
                 </Button>

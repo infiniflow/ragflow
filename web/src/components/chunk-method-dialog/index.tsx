@@ -80,7 +80,6 @@ export function ChunkMethodDialog({
   hideModal,
   onOk,
   parserId,
-  documentId,
   documentExtension,
   visible,
   parserConfig,

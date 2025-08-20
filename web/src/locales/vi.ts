@@ -220,7 +220,7 @@ export default {
       book: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Đối với mỗi sách trong PDF, vui lòng đặt <i>phạm vi trang</i> để loại bỏ thông tin không mong muốn và giảm thời gian phân tích.</p>`,
       laws: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-      Các tài liệu pháp lý thường tuân theo định dạng viết nghiêm ngặt. Chúng tôi sử dụng tính năng văn bản để xác định điểm phân chia. 
+      Các tài liệu pháp lý thường tuân theo định dạng viết nghiêm ngặt. Chúng tôi sử dụng tính năng văn bản để xác định điểm phân chia.
       </p><p>
       Khối có độ chi tiết nhất quán với 'ARTICLE', đảm bảo tất cả văn bản cấp trên được bao gồm trong khối.
       </p>`,
@@ -234,7 +234,7 @@ export default {
       <p>Các định dạng tệp được hỗ trợ là <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>`,
       paper: `<p>Chỉ hỗ trợ tệp <b>PDF</b>.</p><p>
       Bài báo sẽ được chia theo các phần, chẳng hạn như <i>tóm tắt, 1.1, 1.2</i>. </p><p>
-      Cách tiếp cận này cho phép LLM tóm tắt bài báo hiệu quả hơn và cung cấp các phản hồi toàn diện, dễ hiểu hơn. 
+      Cách tiếp cận này cho phép LLM tóm tắt bài báo hiệu quả hơn và cung cấp các phản hồi toàn diện, dễ hiểu hơn.
       Tuy nhiên, nó cũng làm tăng ngữ cảnh cho các cuộc hội thoại AI và tăng thêm chi phí tính toán cho LLM. Vì vậy, trong quá trình trò chuyện, hãy cân nhắc giảm giá trị của '<b>topN</b>'.</p>`,
       presentation: `<p>Các định dạng tệp được hỗ trợ là <b>PDF</b>, <b>PPTX</b>.</p><p>
       Mỗi trang trong slide được coi là một khối, với hình thu nhỏ của nó được lưu trữ.</p><p>
@@ -290,7 +290,7 @@ export default {
       Áp dụng khi bạn yêu cầu LLM tóm tắt toàn bộ tài liệu, với điều kiện nó có thể xử lý được lượng ngữ cảnh đó.
       </p>`,
       knowledgeGraph: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
-             
+
       <p>Cách tiếp cận này phân đoạn tệp bằng phương pháp 'ngây thơ'/'Tổng hợp'. Nó chia tài liệu thành các phân đoạn và sau đó kết hợp các phân đoạn liền kề cho đến khi số lượng token vượt quá ngưỡng được chỉ định bởi 'Số token khối', tại thời điểm đó, một khối được tạo.</p>
       <p>Các khối sau đó được đưa vào LLM để trích xuất các thực thể và mối quan hệ cho biểu đồ tri thức và sơ đồ tư duy.</p>
       <p>Đảm bảo bạn đã đặt <b>Loại thực thể</b>.</p>`,
@@ -321,7 +321,7 @@ export default {
       pageRank: 'Xếp hạng trang',
       pageRankTip: `Bạn có thể gán điểm PageRank cao hơn cho các cơ sở kiến thức cụ thể trong quá trình truy xuất. Điểm tương ứng được cộng vào điểm tương đồng lai của các đoạn được truy xuất từ các cơ sở kiến thức này, làm tăng thứ hạng của chúng. Xem https://ragflow.io/docs/dev/set_page_rank để biết thêm chi tiết.`,
       tag: `<p>Cơ sở kiến thức sử dụng phương pháp phân đoạn 'Tag' hoạt động như một tập hợp thẻ. Các cơ sở kiến thức khác có thể sử dụng nó để gắn thẻ cho các đoạn của riêng chúng và các truy vấn tới các cơ sở kiến thức này cũng sẽ được gắn thẻ bằng tập hợp thẻ này.</p>
-      <p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn sẽ <b>NOT</b> tham gia vào quy trình Tạo tăng cường truy xuất (RAG).</p>
+      <p>Một bộ thẻ sẽ không trực tiếp tham gia vào quá trình Tạo sinh tăng cường truy xuất (Retrieval-Augmented Generation, RAG).</p>
       <p>Mỗi đoạn trong cơ sở kiến thức này là một cặp mô tả-thẻ độc lập.</p>
       <p>Các định dạng tệp được hỗ trợ bao gồm <b>XLSX</b> và <b>CSV/TXT</b>:</p>
       <p>Nếu tệp ở định dạng <b>XLSX</b>, tệp đó phải chứa hai cột không có tiêu đề: một cột dành cho mô tả thẻ và cột còn lại dành cho tên thẻ, với cột Mô tả đứng trước cột Thẻ. Có thể chấp nhận nhiều trang tính, miễn là cấu trúc cột được cấu trúc đúng cách.</p>
@@ -499,7 +499,7 @@ export default {
         'Có nên sử dụng đồ thị tri thức trong cơ sở tri thức được chỉ định trong quá trình thu hồi để trả lời câu hỏi đa bước hay không. Khi được kích hoạt, điều này sẽ liên quan đến các tìm kiếm lặp lại trên các đoạn thực thể, mối quan hệ và báo cáo cộng đồng, làm tăng đáng kể thời gian thu hồi.',
       keyword: 'Phân tích từ khóa',
       keywordTip:
-        'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan.',
+        'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan. Hoạt động tốt với các truy vấn dài nhưng sẽ làm tăng thời gian phản hồi.',
       languageTip:
         'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
     },
@@ -554,11 +554,12 @@ export default {
       apiKeyTip:
         'Khóa API có thể được lấy bằng cách đăng ký nhà cung cấp LLM tương ứng.',
       showMoreModels: 'Hiển thị thêm mô hình',
+      hideModels: 'Ẩn mô hình',
       baseUrl: 'Base-Url',
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
       modify: 'Sửa đổi',
-      systemModelSettings: 'Thiết lập mô hình mặc định',
+      systemModelSettings: 'Đặt mô hình mặc định',
       chatModel: 'Mô hình trò chuyện',
       chatModelTip:
         'LLM trò chuyện mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',
@@ -602,13 +603,41 @@ export default {
       bedrockSKMessage: 'Vui lòng nhập KHÓA BÍ MẬT của bạn',
       bedrockRegion: 'Vùng AWS',
       bedrockRegionMessage: 'Vui lòng chọn!',
+      'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
+      'us-west-1': 'US West (N. California)',
       'us-west-2': 'US West (Oregon)',
+      'af-south-1': 'Africa (Cape Town)',
+      'ap-east-1': 'Asia Pacific (Hong Kong)',
+      'ap-south-2': 'Asia Pacific (Hyderabad)',
+      'ap-southeast-3': 'Asia Pacific (Jakarta)',
+      'ap-southeast-5': 'Asia Pacific (Malaysia)',
+      'ap-southeast-4': 'Asia Pacific (Melbourne)',
+      'ap-south-1': 'Asia Pacific (Mumbai)',
+      'ap-northeast-3': 'Asia Pacific (Osaka)',
+      'ap-northeast-2': 'Asia Pacific (Seoul)',
       'ap-southeast-1': 'Asia Pacific (Singapore)',
-      'ap-northeast-1': 'Asia Pacific (Tokyo)',
-      'eu-central-1': 'Europe (Frankfurt)',
-      'us-gov-west-1': 'AWS GovCloud (US-West)',
       'ap-southeast-2': 'Asia Pacific (Sydney)',
+      'ap-east-2': 'Asia Pacific (Taipei)',
+      'ap-southeast-7': 'Asia Pacific (Thailand)',
+      'ap-northeast-1': 'Asia Pacific (Tokyo)',
+      'ca-central-1': 'Canada (Central)',
+      'ca-west-1': 'Canada West (Calgary)',
+      'eu-central-1': 'Europe (Frankfurt)',
+      'eu-west-1': 'Europe (Ireland)',
+      'eu-west-2': 'Europe (London)',
+      'eu-south-1': 'Europe (Milan)',
+      'eu-west-3': 'Europe (Paris)',
+      'eu-south-2': 'Europe (Spain)',
+      'eu-north-1': 'Europe (Stockholm)',
+      'eu-central-2': 'Europe (Zurich)',
+      'il-central-1': 'Israel (Tel Aviv)',
+      'mx-central-1': 'Mexico (Central)',
+      'me-south-1': 'Middle East (Bahrain)',
+      'me-central-1': 'Middle East (UAE)',
+      'sa-east-1': 'South America (São Paulo)',
+      'us-gov-east-1': 'AWS GovCloud (US-East)',
+      'us-gov-west-1': 'AWS GovCloud (US-West)',
       addHunyuanSID: 'Hunyuan Secret ID',
       HunyuanSIDMessage: 'Vui lòng nhập ID bí mật của bạn',
       addHunyuanSK: 'Hunyuan Secret Key',
@@ -647,7 +676,7 @@ export default {
         'Vui lòng nhập Khóa Tài khoản Dịch vụ Google Cloud ở định dạng base64',
       addGoogleRegion: 'Vùng Google Cloud',
       GoogleRegionMessage: 'Vui lòng nhập Vùng Google Cloud',
-      modelProvidersWarn: `Vui lòng thêm cả mô hình nhúng và LLM trong <b>Cài đặt > Nhà cung cấp mô hình</b> trước tiên. Sau đó, đặt chúng trong 'Cài đặt mô hình hệ thống'.`,
+      modelProvidersWarn: `Vui lòng thêm cả mô hình nhúng và LLM trong <b>Cài đặt > Nhà cung cấp mô hình</b> trước tiên. Sau đó, đặt chúng trong 'Đặt mô hình mặc định'.`,
       apiVersion: 'Phiên bản API',
       apiVersionMessage: 'Vui lòng nhập phiên bản API',
       add: 'Thêm',

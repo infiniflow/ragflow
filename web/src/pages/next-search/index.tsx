@@ -1,23 +1,100 @@
 import { PageHeader } from '@/components/page-header';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { EllipsisVertical } from 'lucide-react';
+import { Settings } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  ISearchAppDetailProps,
+  useFetchSearchDetail,
+} from '../next-searches/hooks';
+import './index.less';
+import SearchHome from './search-home';
+import { SearchSetting } from './search-setting';
+import SearchingPage from './searching';
 
 export default function SearchPage() {
   const { navigateToSearchList } = useNavigatePage();
+  const [isSearching, setIsSearching] = useState(false);
+  const { data: SearchData } = useFetchSearchDetail();
+
+  const [openSetting, setOpenSetting] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  useEffect(() => {
+    if (isSearching) {
+      setOpenSetting(false);
+    }
+  }, [isSearching]);
 
   return (
     <section>
-      <PageHeader back={navigateToSearchList} title="Search app 01">
-        <div className="flex items-center gap-2">
-          <Button variant={'icon'} size={'icon'}>
-            <EllipsisVertical />
-          </Button>
-          <Button variant={'tertiary'} size={'sm'}>
-            Publish
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink onClick={navigateToSearchList}>
+                Search
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{SearchData?.name}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </PageHeader>
+      <div className="flex gap-3 w-full">
+        <div className="flex-1">
+          {!isSearching && (
+            <div className="animate-fade-in-down">
+              <SearchHome
+                setIsSearching={setIsSearching}
+                isSearching={isSearching}
+                searchText={searchText}
+                setSearchText={setSearchText}
+              />
+            </div>
+          )}
+          {isSearching && (
+            <div className="animate-fade-in-up">
+              <SearchingPage
+                setIsSearching={setIsSearching}
+                searchText={searchText}
+                setSearchText={setSearchText}
+                data={SearchData as ISearchAppDetailProps}
+              />
+            </div>
+          )}
+        </div>
+        {openSetting && (
+          <SearchSetting
+            className="mt-20 mr-2"
+            open={openSetting}
+            setOpen={setOpenSetting}
+            data={SearchData as ISearchAppDetailProps}
+          />
+        )}
+      </div>
+
+      {!isSearching && (
+        <div className="absolute left-5 bottom-12 ">
+          <Button
+            variant="transparent"
+            className="bg-bg-card"
+            onClick={() => setOpenSetting(!openSetting)}
+          >
+            <Settings className="text-text-secondary" />
+            <div className="text-text-secondary">Search Settings</div>
           </Button>
         </div>
-      </PageHeader>
+      )}
     </section>
   );
 }

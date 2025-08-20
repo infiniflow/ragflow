@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'umi';
 
 export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',
+  id = 'id',
 }
 
 export const useNavigatePage = () => {
@@ -34,17 +35,31 @@ export const useNavigatePage = () => {
     navigate(Routes.Chats);
   }, [navigate]);
 
-  const navigateToChat = useCallback(() => {
-    navigate(Routes.Chat);
+  const navigateToChat = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Chat}/${id}`);
+    },
+    [navigate],
+  );
+
+  const navigateToAgents = useCallback(() => {
+    navigate(Routes.Agents);
   }, [navigate]);
 
   const navigateToAgentList = useCallback(() => {
-    navigate(Routes.Agents);
+    navigate(Routes.AgentList);
   }, [navigate]);
 
   const navigateToAgent = useCallback(
     (id: string) => () => {
       navigate(`${Routes.Agent}/${id}`);
+    },
+    [navigate],
+  );
+
+  const navigateToAgentLogs = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.AgentLogPage}/${id}`);
     },
     [navigate],
   );
@@ -57,9 +72,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Searches);
   }, [navigate]);
 
-  const navigateToSearch = useCallback(() => {
-    navigate(Routes.Search);
-  }, [navigate]);
+  const navigateToSearch = useCallback(
+    (id: string) => {
+      navigate(`${Routes.Search}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToChunkParsedResult = useCallback(
     (id: string, knowledgeId?: string) => () => {
@@ -77,6 +95,7 @@ export const useNavigatePage = () => {
         [QueryStringMap.KnowledgeId]: searchParams.get(
           QueryStringMap.KnowledgeId,
         ),
+        [QueryStringMap.id]: searchParams.get(QueryStringMap.id),
       };
       if (queryStringKey) {
         return allQueryString[queryStringKey];
@@ -112,11 +131,13 @@ export const useNavigatePage = () => {
     navigateToChunkParsedResult,
     getQueryString,
     navigateToChunk,
-    navigateToAgentList,
+    navigateToAgents,
     navigateToAgent,
+    navigateToAgentLogs,
     navigateToAgentTemplates,
     navigateToSearchList,
     navigateToSearch,
     navigateToFiles,
+    navigateToAgentList,
   };
 };

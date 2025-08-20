@@ -24,6 +24,7 @@ export type CheckboxFormMultipleProps = {
   filters?: FilterCollection[];
   value?: FilterValue;
   onChange?: FilterChange;
+  onOpenChange?: (open: boolean) => void;
   setOpen(open: boolean): void;
 };
 
@@ -94,7 +95,7 @@ function CheckboxFormMultiple({
                     name={x.field}
                     render={({ field }) => {
                       return (
-                        <div className="flex items-center justify-between text-text-title text-xs">
+                        <div className="flex items-center justify-between text-text-primary text-xs">
                           <FormItem
                             key={item.id}
                             className="flex flex-row  space-x-3 space-y-0 items-center "
@@ -148,12 +149,19 @@ export function FilterPopover({
   children,
   value,
   onChange,
+  onOpenChange,
   filters,
 }: PropsWithChildren & Omit<CheckboxFormMultipleProps, 'setOpen'>) {
   const [open, setOpen] = useState(false);
-
+  const onOpenChangeFun = useCallback(
+    (e: boolean) => {
+      onOpenChange?.(e);
+      setOpen(e);
+    },
+    [onOpenChange],
+  );
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={onOpenChangeFun}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent className="p-0">
         <CheckboxFormMultiple

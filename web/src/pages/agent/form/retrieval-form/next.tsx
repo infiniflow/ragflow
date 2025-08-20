@@ -1,5 +1,8 @@
+import { Collapse } from '@/components/collapse';
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { TopNFormField } from '@/components/top-n-item';
@@ -12,16 +15,18 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
+import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialRetrievalValues } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { QueryVariable } from '../components/query-variable';
+import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
@@ -32,6 +37,8 @@ export const RetrievalPartialSchema = {
   kb_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
+  cross_languages: z.array(z.string()),
+  use_kg: z.boolean(),
 };
 
 export const FormSchema = z.object({
@@ -49,7 +56,9 @@ export function EmptyResponseField() {
       name="empty_response"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>{t('chat.emptyResponse')}</FormLabel>
+          <FormLabel tooltip={t('chat.emptyResponseTip')}>
+            {t('chat.emptyResponse')}
+          </FormLabel>
           <FormControl>
             <Textarea
               placeholder={t('common.namePlaceholder')}
@@ -65,7 +74,9 @@ export function EmptyResponseField() {
   );
 }
 
-const RetrievalForm = ({ node }: INextOperatorForm) => {
+function RetrievalForm({ node }: INextOperatorForm) {
+  const { t } = useTranslation();
+
   const outputList = useMemo(() => {
     return [
       {
@@ -86,29 +97,30 @@ const RetrievalForm = ({ node }: INextOperatorForm) => {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
-          <QueryVariable></QueryVariable>
-          <KnowledgeBaseFormField></KnowledgeBaseFormField>
+          <RAGFlowFormItem name="query" label={t('flow.query')}>
+            <PromptEditor></PromptEditor>
+          </RAGFlowFormItem>
+          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
-        <FormContainer>
-          <SimilaritySliderFormField
-            vectorSimilarityWeightName="keywords_similarity_weight"
-            isTooltipShown
-          ></SimilaritySliderFormField>
-          <TopNFormField></TopNFormField>
-          <RerankFormFields></RerankFormFields>
-          <EmptyResponseField></EmptyResponseField>
-        </FormContainer>
+        <Collapse title={<div>Advanced Settings</div>}>
+          <FormContainer>
+            <SimilaritySliderFormField
+              vectorSimilarityWeightName="keywords_similarity_weight"
+              isTooltipShown
+            ></SimilaritySliderFormField>
+            <TopNFormField></TopNFormField>
+            <RerankFormFields></RerankFormFields>
+            <EmptyResponseField></EmptyResponseField>
+            <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+          </FormContainer>
+        </Collapse>
         <Output list={outputList}></Output>
-      </form>
+      </FormWrapper>
     </Form>
   );
-};
+}
 
-export default RetrievalForm;
+export default memo(RetrievalForm);

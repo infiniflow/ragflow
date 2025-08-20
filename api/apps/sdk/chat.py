@@ -21,7 +21,7 @@ from api import settings
 from api.db import StatusEnum
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required
@@ -99,7 +99,7 @@ def create(tenant_id):
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.""",
-        "prologue": "Hi! I'm your assistant, what can I do for you?",
+        "prologue": "Hi! I'm your assistant. What can I do for you?",
         "parameters": [{"key": "knowledge", "optional": False}],
         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
         "quote": True,
@@ -139,7 +139,7 @@ def create(tenant_id):
     res["llm"] = res.pop("llm_setting")
     res["llm"]["model_name"] = res.pop("llm_id")
     del res["kb_ids"]
-    res["dataset_ids"] = req["dataset_ids"]
+    res["dataset_ids"] = req.get("dataset_ids", [])
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
@@ -166,7 +166,7 @@ def update(tenant_id, chat_id):
         kbs = KnowledgebaseService.get_by_ids(ids)
         embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
         embd_count = list(set(embd_ids))
-        if len(embd_count) != 1:
+        if len(embd_count) > 1:
             return get_result(message='Datasets use different embedding models."', code=settings.RetCode.AUTHENTICATION_ERROR)
         req["kb_ids"] = ids
     llm = req.get("llm")

@@ -4,11 +4,12 @@ export interface ICategorizeItem {
   examples?: { value: string }[];
   index: number;
   to: string[];
+  uuid: string;
 }
 
 export type ICategorizeItemResult = Record<
   string,
-  Omit<ICategorizeItem, 'name' | 'examples'> & { examples: string[] }
+  Omit<ICategorizeItem, 'name' | 'examples' | 'uuid'> & { examples: string[] }
 >;
 
 export interface ISwitchCondition {
@@ -72,6 +73,7 @@ export declare interface IFlow {
   user_id: string;
   permission: string;
   nickname: string;
+  operator_permission: number;
 }
 
 export interface IFlowTemplate {
@@ -101,6 +103,7 @@ export interface IGenerateForm {
 
 export interface ICategorizeForm extends IGenerateForm {
   category_description: ICategorizeItemResult;
+  items: ICategorizeItem[];
 }
 
 export interface IRelevantForm extends IGenerateForm {
@@ -155,8 +158,13 @@ export interface IAgentForm {
   exception_comment: any;
   exception_goto: any;
   tools: Array<{
+    name: string;
     component_name: string;
     params: Record<string, any>;
+  }>;
+  mcp: Array<{
+    mcp_id: string;
+    tools: Record<string, Record<string, any>>;
   }>;
   outputs: {
     structured_output: Record<string, Record<string, any>>;
@@ -216,4 +224,44 @@ export type RAGFlowNodeType =
 export interface IGraph {
   nodes: RAGFlowNodeType[];
   edges: Edge[];
+}
+
+export interface ITraceData {
+  component_id: string;
+  trace: Array<Record<string, any>>;
+}
+
+export interface IAgentLogResponse {
+  id: string;
+  message: IAgentLogMessage[];
+  update_date: string;
+  create_date: string;
+  update_time: number;
+  create_time: number;
+  round: number;
+  thumb_up: number;
+  errors: string;
+  source: string;
+  user_id: string;
+  dsl: string;
+  reference: IReference;
+}
+export interface IAgentLogsResponse {
+  total: number;
+  sessions: IAgentLogResponse[];
+}
+export interface IAgentLogsRequest {
+  keywords?: string;
+  to_date?: string | Date;
+  from_date?: string | Date;
+  orderby?: string;
+  desc?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+export interface IAgentLogMessage {
+  content: string;
+  role: 'user' | 'assistant';
+  id: string;
 }

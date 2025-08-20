@@ -1,12 +1,8 @@
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { TopTitle } from '../dataset-title';
 import TestingForm from './testing-form';
 import { TestingResult } from './testing-result';
-
-function Vertical() {
-  return <div>xxx</div>;
-}
 
 export default function RetrievalTesting() {
   const {
@@ -21,23 +17,14 @@ export default function RetrievalTesting() {
     filterValue,
   } = useTestRetrieval();
 
-  const [count, setCount] = useState(1);
-
-  const addCount = useCallback(() => {
-    setCount(2);
-  }, []);
-
-  const removeCount = useCallback(() => {
-    setCount(1);
-  }, []);
+  const [count] = useState(1);
 
   return (
     <div className="p-5">
       <section className="flex justify-between items-center">
         <TopTitle
-          title={'Configuration'}
-          description={`  Update your knowledge base configuration here, particularly the chunk
-                  method.`}
+          title={'Retrieval testing'}
+          description={`Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.`}
         ></TopTitle>
         {/* <Button>Save as Preset</Button> */}
       </section>
@@ -45,7 +32,7 @@ export default function RetrievalTesting() {
         <section className="flex divide-x h-full">
           <div className="p-4 flex-1">
             <div className="flex justify-between pb-2.5">
-              <span className="text-text-title font-semibold text-2xl">
+              <span className="text-text-primary font-semibold text-2xl">
                 Test setting
               </span>
               {/* <Button variant={'outline'} onClick={addCount}>

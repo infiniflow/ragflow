@@ -19,6 +19,8 @@ const {
   listCanvasTeam,
   settingCanvas,
   uploadCanvasFile,
+  trace,
+  inputForm,
 } = api;
 
 const methods = {
@@ -85,6 +87,14 @@ const methods = {
   uploadCanvasFile: {
     url: uploadCanvasFile,
     method: 'post',
+  },
+  trace: {
+    url: trace,
+    method: 'get',
+  },
+  inputForm: {
+    url: inputForm,
+    method: 'get',
   },
 } as const;
 

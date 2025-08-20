@@ -24,7 +24,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     api.ask,
   );
   const { testChunk, loading } = useTestChunkRetrieval();
-  const { testChunkAll, loading: loadingAll } = useTestChunkAllRetrieval();
+  const { testChunkAll } = useTestChunkAllRetrieval();
   const [sendingLoading, setSendingLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
   const { fetchRelatedQuestions, data: relatedQuestions } =
@@ -102,7 +102,14 @@ export const useSendQuestion = (kbIds: string[]) => {
         size,
       });
     },
-    [sendingLoading, searchStr, kbIds, testChunk, selectedDocumentIds],
+    [
+      searchStr,
+      sendingLoading,
+      testChunk,
+      kbIds,
+      selectedDocumentIds,
+      testChunkAll,
+    ],
   );
 
   useEffect(() => {
@@ -128,6 +135,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     answer: currentAnswer,
     relatedQuestions: relatedQuestions?.slice(0, 5) ?? [],
     searchStr,
+    setSearchStr,
     isFirstRender,
     selectedDocumentIds,
     isSearchStrEmpty: isEmpty(trim(searchStr)),

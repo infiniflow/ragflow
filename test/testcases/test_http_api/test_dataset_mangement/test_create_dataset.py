@@ -299,11 +299,8 @@ class TestDatasetCreate:
         [
             ("me", "me"),
             ("team", "team"),
-            ("me_upercase", "ME"),
-            ("team_upercase", "TEAM"),
-            ("whitespace", " ME "),
         ],
-        ids=["me", "team", "me_upercase", "team_upercase", "whitespace"],
+        ids=["me", "team"],
     )
     def test_permission(self, HttpApiAuth, name, permission):
         payload = {"name": name, "permission": permission}
@@ -318,8 +315,11 @@ class TestDatasetCreate:
             ("empty", ""),
             ("unknown", "unknown"),
             ("type_error", list()),
+            ("me_upercase", "ME"),
+            ("team_upercase", "TEAM"),
+            ("whitespace", " ME "),
         ],
-        ids=["empty", "unknown", "type_error"],
+        ids=["empty", "unknown", "type_error", "me_upercase", "team_upercase", "whitespace"],
     )
     def test_permission_invalid(self, HttpApiAuth, name, permission):
         payload = {"name": name, "permission": permission}
@@ -517,57 +517,57 @@ class TestDatasetCreate:
         [
             ("auto_keywords_min_limit", {"auto_keywords": -1}, "Input should be greater than or equal to 0"),
             ("auto_keywords_max_limit", {"auto_keywords": 33}, "Input should be less than or equal to 32"),
-            ("auto_keywords_float_not_allowed", {"auto_keywords": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("auto_keywords_type_invalid", {"auto_keywords": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("auto_keywords_float_not_allowed", {"auto_keywords": 3.14}, "Input should be a valid integer"),
+            ("auto_keywords_type_invalid", {"auto_keywords": "string"}, "Input should be a valid integer"),
             ("auto_questions_min_limit", {"auto_questions": -1}, "Input should be greater than or equal to 0"),
             ("auto_questions_max_limit", {"auto_questions": 11}, "Input should be less than or equal to 10"),
-            ("auto_questions_float_not_allowed", {"auto_questions": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("auto_questions_type_invalid", {"auto_questions": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("auto_questions_float_not_allowed", {"auto_questions": 3.14}, "Input should be a valid integer"),
+            ("auto_questions_type_invalid", {"auto_questions": "string"}, "Input should be a valid integer"),
             ("chunk_token_num_min_limit", {"chunk_token_num": 0}, "Input should be greater than or equal to 1"),
             ("chunk_token_num_max_limit", {"chunk_token_num": 2049}, "Input should be less than or equal to 2048"),
-            ("chunk_token_num_float_not_allowed", {"chunk_token_num": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("chunk_token_num_type_invalid", {"chunk_token_num": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("chunk_token_num_float_not_allowed", {"chunk_token_num": 3.14}, "Input should be a valid integer"),
+            ("chunk_token_num_type_invalid", {"chunk_token_num": "string"}, "Input should be a valid integer"),
             ("delimiter_empty", {"delimiter": ""}, "String should have at least 1 character"),
-            ("html4excel_type_invalid", {"html4excel": "string"}, "Input should be a valid boolean, unable to interpret input"),
+            ("html4excel_type_invalid", {"html4excel": "string"}, "Input should be a valid boolean"),
             ("tag_kb_ids_not_list", {"tag_kb_ids": "1,2"}, "Input should be a valid list"),
             ("tag_kb_ids_int_in_list", {"tag_kb_ids": [1, 2]}, "Input should be a valid string"),
             ("topn_tags_min_limit", {"topn_tags": 0}, "Input should be greater than or equal to 1"),
             ("topn_tags_max_limit", {"topn_tags": 11}, "Input should be less than or equal to 10"),
-            ("topn_tags_float_not_allowed", {"topn_tags": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("topn_tags_type_invalid", {"topn_tags": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("topn_tags_float_not_allowed", {"topn_tags": 3.14}, "Input should be a valid integer"),
+            ("topn_tags_type_invalid", {"topn_tags": "string"}, "Input should be a valid integer"),
             ("filename_embd_weight_min_limit", {"filename_embd_weight": -1}, "Input should be greater than or equal to 0"),
             ("filename_embd_weight_max_limit", {"filename_embd_weight": 1.1}, "Input should be less than or equal to 1"),
-            ("filename_embd_weight_type_invalid", {"filename_embd_weight": "string"}, "Input should be a valid number, unable to parse string as a number"),
+            ("filename_embd_weight_type_invalid", {"filename_embd_weight": "string"}, "Input should be a valid number"),
             ("task_page_size_min_limit", {"task_page_size": 0}, "Input should be greater than or equal to 1"),
-            ("task_page_size_float_not_allowed", {"task_page_size": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("task_page_size_type_invalid", {"task_page_size": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("task_page_size_float_not_allowed", {"task_page_size": 3.14}, "Input should be a valid integer"),
+            ("task_page_size_type_invalid", {"task_page_size": "string"}, "Input should be a valid integer"),
             ("pages_not_list", {"pages": "1,2"}, "Input should be a valid list"),
             ("pages_not_list_in_list", {"pages": ["1,2"]}, "Input should be a valid list"),
-            ("pages_not_int_list", {"pages": [["string1", "string2"]]}, "Input should be a valid integer, unable to parse string as an integer"),
-            ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean, unable to interpret input"),
+            ("pages_not_int_list", {"pages": [["string1", "string2"]]}, "Input should be a valid integer"),
+            ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ("graphrag_entity_types_not_list", {"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ("graphrag_entity_types_not_str_in_list", {"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
             ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
             ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
-            ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean, unable to interpret input"),
-            ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean, unable to interpret input"),
-            ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean, unable to interpret input"),
+            ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
+            ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
+            ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ("raptor_prompt_empty", {"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ("raptor_prompt_space", {"raptor": {"prompt": " "}}, "String should have at least 1 character"),
             ("raptor_max_token_min_limit", {"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_token_max_limit", {"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer, got a number with a fractional part"),
-            ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
+            ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
             ("raptor_threshold_min_limit", {"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
             ("raptor_threshold_max_limit", {"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number, unable to parse string as a number"),
+            ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number"),
             ("raptor_max_cluster_min_limit", {"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_cluster_max_limit", {"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
-            ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer, got a number with a fractional par"),
-            ("raptor_max_cluster_type_invalid", {"raptor": {"max_cluster": "string"}}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
+            ("raptor_max_cluster_type_invalid", {"raptor": {"max_cluster": "string"}}, "Input should be a valid integer"),
             ("raptor_random_seed_min_limit", {"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
-            ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer, got a number with a fractional part"),
-            ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
+            ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
             ("parser_config_type_invalid", {"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
         ],
         ids=[
@@ -639,11 +639,12 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p2
@@ -652,11 +653,12 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p3
@@ -665,11 +667,12 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": "\\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p2
@@ -695,3 +698,64 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res
+
+
+@pytest.mark.usefixtures("clear_datasets")
+class TestParserConfigBugFix:
+    @pytest.mark.p1
+    def test_parser_config_missing_raptor_and_graphrag(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_missing_fields", "parser_config": {"chunk_token_num": 1024}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, "raptor field should be present"
+        assert "graphrag" in parser_config, "graphrag field should be present"
+        assert parser_config["raptor"]["use_raptor"] is False, "raptor.use_raptor should default to False"
+        assert parser_config["graphrag"]["use_graphrag"] is False, "graphrag.use_graphrag should default to False"
+        assert parser_config["chunk_token_num"] == 1024, "User-provided chunk_token_num should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_raptor(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_only_raptor", "parser_config": {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert parser_config["raptor"]["use_raptor"] is True, "User-provided raptor.use_raptor should be preserved"
+        assert "graphrag" in parser_config, "graphrag field should be present"
+        assert parser_config["graphrag"]["use_graphrag"] is False, "graphrag.use_graphrag should default to False"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_graphrag(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_only_graphrag", "parser_config": {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, "raptor field should be present"
+        assert parser_config["raptor"]["use_raptor"] is False, "raptor.use_raptor should default to False"
+        assert parser_config["graphrag"]["use_graphrag"] is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_both_fields(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_both_fields", "parser_config": {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert parser_config["raptor"]["use_raptor"] is True, "User-provided raptor.use_raptor should be preserved"
+        assert parser_config["graphrag"]["use_graphrag"] is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
+    def test_parser_config_different_chunk_methods(self, HttpApiAuth, chunk_method):
+        payload = {"name": f"test_parser_config_{chunk_method}", "chunk_method": chunk_method, "parser_config": {"chunk_token_num": 512}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, f"raptor field should be present for {chunk_method}"
+        assert "graphrag" in parser_config, f"graphrag field should be present for {chunk_method}"
+        assert parser_config["raptor"]["use_raptor"] is False, f"raptor.use_raptor should default to False for {chunk_method}"
+        assert parser_config["graphrag"]["use_graphrag"] is False, f"graphrag.use_graphrag should default to False for {chunk_method}"

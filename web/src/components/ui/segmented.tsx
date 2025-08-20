@@ -31,10 +31,19 @@ export function Segmented({
   onChange,
   className,
 }: SegmentedProps) {
+  const [selectedValue, setSelectedValue] = React.useState<
+    SegmentedValue | undefined
+  >(value);
+  const handleOnChange = (e: SegmentedValue) => {
+    if (onChange) {
+      onChange(e);
+    }
+    setSelectedValue(e);
+  };
   return (
     <div
       className={cn(
-        'flex items-center rounded-3xl p-1 gap-2 bg-background-header-bar px-5 py-2.5',
+        'flex items-center rounded-3xl p-1 gap-2 bg-bg-card px-5 py-2.5',
         className,
       )}
     >
@@ -46,13 +55,13 @@ export function Segmented({
           <div
             key={actualValue}
             className={cn(
-              'inline-flex items-center px-6 py-2 text-base font-normal rounded-3xl cursor-pointer text-text-badge',
+              'inline-flex items-center px-6 py-2 text-base font-normal rounded-3xl cursor-pointer',
               {
-                'bg-text-title': value === actualValue,
-                'text-text-title-invert': value === actualValue,
+                'bg-text-primary': selectedValue === actualValue,
+                'text-bg-base': selectedValue === actualValue,
               },
             )}
-            onClick={() => onChange?.(actualValue)}
+            onClick={() => handleOnChange(actualValue)}
           >
             {isObject ? option.label : option}
           </div>

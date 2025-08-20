@@ -40,11 +40,12 @@ class Ppt(PptParser):
         with slides.Presentation(BytesIO(fnm)) as presentation:
             for i, slide in enumerate(presentation.slides[from_page: to_page]):
                 try:
-                    buffered = BytesIO()
-                    slide.get_thumbnail(
-                        0.5, 0.5).save(
-                        buffered, drawing.imaging.ImageFormat.jpeg)
-                    imgs.append(Image.open(buffered))
+                    with BytesIO() as buffered:
+                        slide.get_thumbnail(
+                            0.1, 0.1).save(
+                            buffered, drawing.imaging.ImageFormat.jpeg)
+                        buffered.seek(0)
+                        imgs.append(Image.open(buffered).copy())
                 except RuntimeError as e:
                     raise RuntimeError(f'ppt parse error at page {i+1}, original error: {str(e)}') from e
         assert len(imgs) == len(
@@ -134,7 +135,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             sections = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
         elif layout_recognizer == "Plain Text":
             pdf_parser = PlainParser()
-            sections, _ = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+            sections, _ = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
+                                      callback=callback)
         else:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=layout_recognizer, lang=lang)
             pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
