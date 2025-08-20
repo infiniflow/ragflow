@@ -22,9 +22,9 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
-## v0.20.2
+## v0.20.3
 
-Released on August 19, 2025.
+Released on August 20, 2025.
 
 ### Improvements
 
