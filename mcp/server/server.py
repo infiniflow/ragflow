@@ -149,6 +149,23 @@ class RAGFlowConnector:
     ):
         if document_ids is None:
             document_ids = []
+        
+        # If no dataset_ids provided or empty list, get all available dataset IDs
+        if not dataset_ids:
+            dataset_list_str = self.list_datasets()
+            dataset_ids = []
+            
+            # Parse the dataset list to extract IDs
+            if dataset_list_str:
+                for line in dataset_list_str.strip().split('\n'):
+                    if line.strip():
+                        try:
+                            dataset_info = json.loads(line.strip())
+                            dataset_ids.append(dataset_info["id"])
+                        except (json.JSONDecodeError, KeyError):
+                            # Skip malformed lines
+                            continue
+        
         data_json = {
             "page": page,
             "page_size": page_size,
@@ -186,7 +203,7 @@ class RAGFlowConnector:
                     "page": data.get("page", page),
                     "page_size": data.get("page_size", page_size),
                     "total_chunks": data.get("total", len(chunks)),
-                    "total_pages": (data.get("total", len(chunks)) + page_size - 1),
+                    "total_pages": (data.get("total", len(chunks)) + page_size - 1) // page_size,
                 },
                 "query_info": {
                     "question": question,
@@ -252,7 +269,7 @@ class RAGFlowConnector:
                                 # "source_type": doc.get("source_type", ""),
                                 "thumbnail": doc.get("thumbnail", ""),
                                 "dataset_id": doc.get("dataset_id", dataset_id),
-                                "meta_fields": doc.get("meta_fields", {}),  # ,
+                                "meta_fields": doc.get("meta_fields", {}),
                                 # "parser_config": doc.get("parser_config", {})
                             }
                             doc_id_meta_list.append((doc_id, doc_meta))
@@ -353,7 +370,7 @@ async def list_tools(*, connector) -> list[types.Tool]:
     return [
         types.Tool(
             name="ragflow_retrieval",
-            description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question, using the specified dataset_ids and optionally document_ids. Below is the list of all available datasets, including their descriptions and IDs. If you're unsure which datasets are relevant to the question, simply pass all dataset IDs to the function."
+            description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question. You can optionally specify dataset_ids to search only specific datasets, or omit dataset_ids entirely to search across ALL available datasets. You can also optionally specify document_ids to search within specific documents. When dataset_ids is not provided or is empty, the system will automatically search across all available datasets. Below is the list of all available datasets, including their descriptions and IDs:"
             + dataset_description,
             inputSchema={
                 "type": "object",
@@ -361,16 +378,16 @@ async def list_tools(*, connector) -> list[types.Tool]:
                     "dataset_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of dataset IDs to search in",
+                        "description": "Optional array of dataset IDs to search. If not provided or empty, all datasets will be searched."
                     },
                     "document_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional array of specific document IDs",
+                        "description": "Optional array of document IDs to search within."
                     },
                     "question": {
                         "type": "string",
-                        "description": "The question to search for",
+                        "description": "The question or query to search for."
                     },
                     "page": {
                         "type": "integer",
@@ -421,7 +438,7 @@ async def list_tools(*, connector) -> list[types.Tool]:
                         "default": False,
                     },
                 },
-                "required": ["dataset_ids", "question"],
+                "required": ["question"],
             },
         ),
     ]
@@ -432,6 +449,8 @@ async def list_tools(*, connector) -> list[types.Tool]:
 async def call_tool(name: str, arguments: dict, *, connector) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     if name == "ragflow_retrieval":
         document_ids = arguments.get("document_ids", [])
+        dataset_ids = arguments.get("dataset_ids", [])
+        question = arguments.get("question", "")
         page = arguments.get("page", 1)
         page_size = arguments.get("page_size", 10)
         similarity_threshold = arguments.get("similarity_threshold", 0.2)
@@ -442,9 +461,9 @@ async def call_tool(name: str, arguments: dict, *, connector) -> list[types.Text
         force_refresh = arguments.get("force_refresh", False)
 
         return connector.retrieval(
-            dataset_ids=arguments["dataset_ids"],
+            dataset_ids=dataset_ids,
             document_ids=document_ids,
-            question=arguments["question"],
+            question=question,
             page=page,
             page_size=page_size,
             similarity_threshold=similarity_threshold,
@@ -616,6 +635,10 @@ __  __  ____ ____       ____  _____ ______     _______ ____
     print(f"MCP host: {HOST}", flush=True)
     print(f"MCP port: {PORT}", flush=True)
     print(f"MCP base_url: {BASE_URL}", flush=True)
+
+    if not any([TRANSPORT_SSE_ENABLED, TRANSPORT_STREAMABLE_HTTP_ENABLED]):
+        print("At least one transport should be enabled, enable streamable-http automatically", flush=True)
+        TRANSPORT_STREAMABLE_HTTP_ENABLED = True
 
     if TRANSPORT_SSE_ENABLED:
         print("SSE transport enabled: yes", flush=True)
