@@ -2707,7 +2707,7 @@ Creates a session with an agent.
 - Body:
   - the required parameters:`str`
   - other parameters:
-    The parameters specified in the **Begin** component.
+    The variables specified in the **Begin** component.
 
 ##### Request example
 
@@ -3052,13 +3052,19 @@ curl --request POST \
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
 - `"inputs"`: (*Body Parameter*)  
-  Parameters specified in the **Begin** component.
+  Variables specified in the **Begin** component.  
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 
+:::tip NOTE
+For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
+`http://{address}/v1/canvas/upload/{agent_id}`  
+*You will get a corresponding file ID from its response body.*
+:::
+
 #### Response
 
-success without `session_id` provided and with no parameters specified in the **Begin** component:
+success without `session_id` provided and with no variables specified in the **Begin** component:
 
 Stream:
 
@@ -3126,7 +3132,7 @@ Non-stream:
 }
 ```
 
-Success without `session_id` provided and with parameters specified in the **Begin** component:
+Success without `session_id` provided and with variables specified in the **Begin** component:
 
 Stream:
 
@@ -3215,7 +3221,7 @@ Non-stream:
 }
 ```
 
-Success with parameters specified in the **Begin** component:
+Success with variables specified in the **Begin** component:
 
 Stream:
 

@@ -73,6 +73,7 @@ export default {
       flow: 'Agent',
       search: '搜索',
       welcome: '欢迎来到',
+      dataset: '数据集',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -181,8 +182,8 @@ export default {
 <b>元数据为：</b><br>
 <code>
 {
-“作者”：“Alex Dowson”，
-“日期”：“2024-11-12”
+    "作者": "Alex Dowson",
+    "日期": "2024-11-12"
 }
 </code><br>
 <b>提示将为：</b><br>

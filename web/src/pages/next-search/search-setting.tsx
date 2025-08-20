@@ -1,5 +1,9 @@
 // src/pages/next-search/search-setting.tsx
 
+import {
+  MetadataFilter,
+  MetadataFilterSchema,
+} from '@/components/metadata-filter';
 import { Input } from '@/components/originui/input';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
@@ -34,11 +38,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  LlmModelType,
-  ModelVariableType,
-  settledModelVariableMap,
-} from '../dataset/dataset/constant';
+import { LlmModelType } from '../dataset/dataset/constant';
 import {
   ISearchAppDetailProps,
   IUpdateSearchProps,
@@ -76,6 +76,7 @@ const SearchSettingFormSchema = z
       llm_setting: z.object(LlmSettingSchema),
       related_search: z.boolean(),
       query_mindmap: z.boolean(),
+      ...MetadataFilterSchema,
     }),
   })
   .superRefine((data, ctx) => {
@@ -138,21 +139,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         chat_id: '',
         llm_setting: {
           llm_id: llm_setting?.llm_id || '',
-          parameter: llm_setting?.parameter || ModelVariableType.Improvise,
-          temperature:
-            llm_setting?.temperature ||
-            settledModelVariableMap[ModelVariableType.Improvise].temperature,
-          top_p:
-            llm_setting?.top_p ||
-            settledModelVariableMap[ModelVariableType.Improvise].top_p,
-          frequency_penalty:
-            llm_setting?.frequency_penalty ||
-            settledModelVariableMap[ModelVariableType.Improvise]
-              .frequency_penalty,
-          presence_penalty:
-            llm_setting?.presence_penalty ||
-            settledModelVariableMap[ModelVariableType.Improvise]
-              .presence_penalty,
+          parameter: llm_setting?.parameter,
+          temperature: llm_setting?.temperature,
+          top_p: llm_setting?.top_p,
+          frequency_penalty: llm_setting?.frequency_penalty,
+          presence_penalty: llm_setting?.presence_penalty,
           temperatureEnabled: llm_setting?.temperature ? true : false,
           topPEnabled: llm_setting?.top_p ? true : false,
           presencePenaltyEnabled: llm_setting?.presence_penalty ? true : false,
@@ -165,6 +156,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         keyword: false,
         related_search: search_config?.related_search || false,
         query_mindmap: search_config?.query_mindmap || false,
+        meta_data_filter: search_config?.meta_data_filter,
       },
     });
   }, [data, search_config, llm_setting, formMethods]);
@@ -255,8 +247,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   ) => {
     try {
       const { search_config, ...other_formdata } = formData;
-      const { llm_setting, vector_similarity_weight, ...other_config } =
-        search_config;
+      const {
+        llm_setting,
+        vector_similarity_weight,
+        use_rerank,
+        rerank_id,
+        ...other_config
+      } = search_config;
       const llmSetting = {
         llm_id: llm_setting.llm_id,
         parameter: llm_setting.parameter,
@@ -283,6 +280,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         search_config: {
           ...other_config,
           vector_similarity_weight: 1 - vector_similarity_weight,
+          rerank_id: use_rerank ? rerank_id : '',
           llm_setting: { ...llmSetting },
         },
         tenant_id: systemSetting.tenant_id,
@@ -296,7 +294,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   return (
     <div
       className={cn(
-        'text-text-primary border p-4 rounded-lg',
+        'text-text-primary border p-4 pb-12 rounded-lg',
         {
           'animate-fade-in-right': open,
           'animate-fade-out-right': !open,
@@ -346,7 +344,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Avatar */}
             <FormField
               control={formMethods.control}
@@ -409,7 +406,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Description */}
             <FormField
               control={formMethods.control}
@@ -437,7 +433,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Datasets */}
             <FormField
               control={formMethods.control}
@@ -467,6 +462,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
+            <MetadataFilter prefix="search_config."></MetadataFilter>
             <FormField
               control={formMethods.control}
               name="search_config.similarity_threshold"
@@ -541,7 +537,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}
@@ -617,7 +612,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 />
               </>
             )}
-
             {/* AI Summary */}
             <FormField
               control={formMethods.control}
@@ -634,14 +628,12 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             {aiSummaryDisabled && (
               <LlmSettingFieldItems
                 prefix="search_config.llm_setting"
                 options={aiSummeryModelOptions}
               ></LlmSettingFieldItems>
             )}
-
             {/* Feature Controls */}
             {/* <FormField
               control={formMethods.control}
@@ -674,7 +666,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-
             <FormField
               control={formMethods.control}
               name="search_config.query_mindmap"
@@ -692,7 +683,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             />
             {/* Submit Button */}
             <div className="flex justify-end"></div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 absolute bottom-1 right-3 bg-bg-base w-[calc(100%-1em)] py-2">
               <Button
                 type="reset"
                 variant={'transparent'}

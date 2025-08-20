@@ -1,32 +1,9 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetDialog } from '@/hooks/use-chat-request';
 import { IDialog } from '@/interfaces/database/chat';
-import { isEmpty } from 'lodash';
-import { useCallback, useState } from 'react';
-
-const InitialData = {
-  name: '',
-  icon: '',
-  language: 'English',
-  prompt_config: {
-    empty_response: '',
-    prologue: '你好！ 我是你的助理，有什么可以帮到你的吗？',
-    quote: true,
-    keyword: false,
-    tts: false,
-    system:
-      '你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。\n        以下是知识库：\n        {knowledge}\n        以上是知识库。',
-    refine_multiturn: false,
-    use_kg: false,
-    reasoning: false,
-    parameters: [{ key: 'knowledge', optional: false }],
-  },
-  llm_id: '',
-  llm_setting: {},
-  similarity_threshold: 0.2,
-  vector_similarity_weight: 0.30000000000000004,
-  top_n: 8,
-};
+import { isEmpty, omit } from 'lodash';
+import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export const useRenameChat = () => {
   const [chat, setChat] = useState<IDialog>({} as IDialog);
@@ -36,11 +13,40 @@ export const useRenameChat = () => {
     showModal: showChatRenameModal,
   } = useSetModalState();
   const { setDialog, loading } = useSetDialog();
+  const { t } = useTranslation();
+
+  const InitialData = useMemo(
+    () => ({
+      name: '',
+      icon: '',
+      language: 'English',
+      prompt_config: {
+        empty_response: '',
+        prologue: t('chat.setAnOpenerInitial'),
+        quote: true,
+        keyword: false,
+        tts: false,
+        system: t('chat.systemInitialValue'),
+        refine_multiturn: false,
+        use_kg: false,
+        reasoning: false,
+        parameters: [{ key: 'knowledge', optional: false }],
+      },
+      llm_id: '',
+      llm_setting: {},
+      similarity_threshold: 0.2,
+      vector_similarity_weight: 0.30000000000000004,
+      top_n: 8,
+    }),
+    [t],
+  );
 
   const onChatRenameOk = useCallback(
     async (name: string) => {
       const nextChat = {
-        ...(isEmpty(chat) ? InitialData : chat),
+        ...(isEmpty(chat)
+          ? InitialData
+          : { ...omit(chat, 'nickname', 'tenant_avatar'), dialog_id: chat.id }),
         name,
       };
       const ret = await setDialog(nextChat);
@@ -49,7 +55,7 @@ export const useRenameChat = () => {
         hideChatRenameModal();
       }
     },
-    [setDialog, chat, hideChatRenameModal],
+    [chat, InitialData, setDialog, hideChatRenameModal],
   );
 
   const handleShowChatRenameModal = useCallback(

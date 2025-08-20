@@ -131,7 +131,16 @@ class Canvas:
 
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]
-        self.globals = self.dsl["globals"]
+        if "globals" in self.dsl:
+            self.globals = self.dsl["globals"]
+        else:
+            self.globals = {
+            "sys.query": "",
+            "sys.user_id": "",
+            "sys.conversation_turns": 0,
+            "sys.files": []
+        }
+            
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
 
@@ -484,7 +493,7 @@ class Canvas:
             threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
         return [th.result() for th in threads]
 
-    def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any):
+    def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any, elapsed_time=None):
         agent_ids = agent_id.split("-->")
         agent_name = self.get_component_name(agent_ids[0])
         path = agent_name if len(agent_ids) < 2 else agent_name+"-->"+"-->".join(agent_ids[1:])
@@ -493,16 +502,16 @@ class Canvas:
             if bin:
                 obj = json.loads(bin.encode("utf-8"))
                 if obj[-1]["component_id"] == agent_ids[0]:
-                    obj[-1]["trace"].append({"path": path, "tool_name": func_name, "arguments": params, "result": result})
+                    obj[-1]["trace"].append({"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time})
                 else:
                     obj.append({
                     "component_id": agent_ids[0],
-                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result}]
+                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]
                 })
             else:
                 obj = [{
                     "component_id": agent_ids[0],
-                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result}]
+                    "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]
                 }]
             REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
         except Exception as e:
