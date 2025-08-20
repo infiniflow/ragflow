@@ -32,9 +32,7 @@ export function DatasetCard({
           <MoreButton></MoreButton>
         </DatasetDropdown>
       }
-      onClick={() => {
-        navigateToDataset(dataset.id);
-      }}
+      onClick={navigateToDataset(dataset.id)}
     />
   );
 }

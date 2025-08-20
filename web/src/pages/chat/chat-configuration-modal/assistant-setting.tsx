@@ -8,7 +8,7 @@ import classNames from 'classnames';
 import { useCallback } from 'react';
 import { ISegmentedContentProps } from '../interface';
 
-import { DatasetMetadata } from '../constants';
+import { DatasetMetadata } from '@/constants/chat';
 import styles from './index.less';
 import { MetadataFilterConditions } from './metadata-filter-conditions';
 
