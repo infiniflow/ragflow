@@ -1,6 +1,7 @@
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
+import { DatasetMetadata } from '@/constants/chat';
 import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
 import { transformBase64ToFile, transformFile2Base64 } from '@/utils/file-util';
 import {
@@ -14,7 +15,6 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { z } from 'zod';
-import { DatasetMetadata } from '../../constants';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatModelSettings } from './chat-model-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';

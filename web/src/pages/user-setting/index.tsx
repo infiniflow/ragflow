@@ -1,4 +1,3 @@
-import { Flex } from 'antd';
 import { Outlet } from 'umi';
 import SideBar from './sidebar';
 
@@ -22,7 +21,7 @@ const UserSetting = () => {
   const { navigateToHome } = useNavigatePage();
 
   return (
-    <section>
+    <section className="flex flex-col h-full">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
@@ -38,12 +37,14 @@ const UserSetting = () => {
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
-      <Flex className={cn(styles.settingWrapper, '-translate-y-6')}>
+      <div
+        className={cn(styles.settingWrapper, 'overflow-auto flex flex-1 pt-4')}
+      >
         <SideBar></SideBar>
-        <Flex flex={1} className={styles.outletWrapper}>
+        <div className={cn(styles.outletWrapper, 'flex flex-1 px-8')}>
           <Outlet></Outlet>
-        </Flex>
-      </Flex>
+        </div>
+      </div>
     </section>
   );
 };
