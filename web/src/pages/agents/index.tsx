@@ -46,7 +46,7 @@ export default function Agents() {
         </ListFilterBar>
       </div>
       <div className="flex-1 overflow-auto">
-        <div className="flex flex-wrap gap-4   px-8">
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[78vh] overflow-auto px-8">
           {data.map((x) => {
             return (
               <AgentCard
