@@ -42,7 +42,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         self._prompt = prompt
         self._max_token = max_token
 
-    @timeout(60)
+    @timeout(60*3)
     async def _chat(self, system, history, gen_conf):
         response = get_llm_cache(self._llm_model.llm_name, system, history, gen_conf)
         if response:
@@ -86,7 +86,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
 
-        @timeout(60)
+        @timeout(60*3)
         async def summarize(ck_idx: list[int]):
             nonlocal chunks
             texts = [chunks[i][0] for i in ck_idx]
