@@ -22,9 +22,7 @@ export function SearchCard({ data, showSearchRenameModal }: IProps) {
           <MoreButton></MoreButton>
         </SearchDropdown>
       }
-      onClick={() => {
-        navigateToSearch(data?.id);
-      }}
+      onClick={navigateToSearch(data?.id)}
     />
   );
 }

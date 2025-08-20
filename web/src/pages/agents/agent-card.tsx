@@ -20,9 +20,7 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
           <MoreButton></MoreButton>
         </AgentDropdown>
       }
-      onClick={() => {
-        navigateToAgent(data?.id);
-      }}
+      onClick={navigateToAgent(data?.id)}
     />
   );
 }
