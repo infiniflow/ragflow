@@ -93,6 +93,7 @@ class RAGFlowPdfParser:
                 model_dir, "updown_concat_xgb.model"))
 
         self.page_from = 0
+        self.column_num = 1
 
     def __char_width(self, c):
         return (c["x1"] - c["x0"]) // max(len(c["text"]), 1)
@@ -427,10 +428,18 @@ class RAGFlowPdfParser:
             i += 1
         self.boxes = bxs
 
-    def _naive_vertical_merge(self):
+    def _naive_vertical_merge(self, zoomin=3):
         bxs = Recognizer.sort_Y_firstly(
             self.boxes, np.median(
                 self.mean_height) / 3)
+
+        column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
+        self.column_num = int(self.page_images[0].size[0] / zoomin / column_width)
+        if column_width < self.page_images[0].size[0] / zoomin / self.column_num:
+            logging.info("Multi-column................... {} {}".format(column_width,
+                  self.page_images[0].size[0] / zoomin / self.column_num))
+            self.boxes = self.sort_X_by_page(self.boxes, column_width / self.column_num)
+
         i = 0
         while i + 1 < len(bxs):
             b = bxs[i]
@@ -1138,6 +1147,50 @@ class RAGFlowPdfParser:
         tbls = self._extract_table_figure(
             need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
+
+    def parse_into_bboxes(self, fnm, zoomin=3):
+        self.__images__(fnm, zoomin)
+        self._layouts_rec(zoomin)
+        self._table_transformer_job(zoomin)
+        self._text_merge()
+        self._concat_downward()
+        self._naive_vertical_merge(zoomin)
+        tbls, figs = self._extract_table_figure(True, zoomin, True, True, True)
+
+        def insert_table_figures(tbls_or_figs, layout_type):
+            def min_rectangle_distance(rect1, rect2):
+                import math
+                left1, right1, top1, bottom1 = rect1
+                left2, right2, top2, bottom2 = rect2
+                if (right1 >= left2 and right2 >= left1 and
+                        bottom1 >= top2 and bottom2 >= top1):
+                    return 0
+                if right1 < left2:
+                    dx = left2 - right1
+                elif right2 < left1:
+                    dx = left1 - right2
+                else:
+                    dx = 0
+                if bottom1 < top2:
+                    dy = top2 - bottom1
+                elif bottom2 < top1:
+                    dy = top1 - bottom2
+                else:
+                    dy = 0
+                return math.sqrt(dx*dx + dy*dy)
+
+            for (img, txt), (pn, left, right, top, bott) in tbls_or_figs:
+                bboxes = [(i, (b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.bboxes) if b["page_number"] == pn]
+                dists = [min_rectangle_distance((left, right, top, bott), rect) for _, rect in bboxes]
+                min_i = np.argmin(dists)
+                min_i, rect = bboxes[min_i]
+                self.bboxes.insert(min_i, {
+                    "x0": rect[0], "x1": rect[1], "top": rect[2], "bottom": rect[3], "layout_type": layout_type, "text": txt, "image": img
+                })
+
+        insert_table_figures(tbls, "table")
+        insert_table_figures(figs, "figure")
+        return deepcopy(self.bboxes)
 
     @staticmethod
     def remove_tag(txt):
