@@ -58,6 +58,8 @@ module.exports = {
 
         'bg-base': 'var(--bg-base)',
         'bg-card': 'var(--bg-card)',
+        'bg-component': 'var(--bg-component)',
+        'bg-input': 'var(--bg-input)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
         'text-disabled': 'var(--text-disabled)',
