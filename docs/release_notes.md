@@ -24,7 +24,7 @@ These two embedding models are optimized specifically for English and Chinese, s
 
 ## v0.20.3
 
-Released on August 19, 2025.
+Released on August 20, 2025.
 
 ### Improvements
 
