@@ -90,6 +90,7 @@
 
     --input-border: rgba(22, 22, 24, 0.2);
 
+    --metallic: #46464a;
     /* design colors */
 
     --bg-base: #f6f6f7;
@@ -230,6 +231,7 @@
 
     --input-border: rgba(255, 255, 255, 0.2);
 
+    --metallic: #fafafa;
     /* design colors */
 
     --bg-base: #161618;
