@@ -187,8 +187,8 @@ export function GeneralForm() {
           disabled={submitLoading}
           onClick={() => {
             (async () => {
-              let isValidate = await form.formControl.trigger('name');
-              const { name, description } = form.formState.values;
+              let isValidate = await form.trigger('name');
+              const { name, description } = form.getValues();
               const avatar = avatarBase64Str;
 
               if (isValidate) {
