@@ -1,4 +1,5 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
+import { ResponseType } from '@/interfaces/database/base';
 import {
   IDocumentInfo,
   IDocumentInfoFilter,
@@ -45,9 +46,9 @@ export const useUploadNextDocument = () => {
     data,
     isPending: loading,
     mutateAsync,
-  } = useMutation({
+  } = useMutation<ResponseType<IDocumentInfo[]>, Error, File[]>({
     mutationKey: [DocumentApiAction.UploadDocument],
-    mutationFn: async (fileList: File[]) => {
+    mutationFn: async (fileList) => {
       const formData = new FormData();
       formData.append('kb_id', id!);
       fileList.forEach((file: any) => {

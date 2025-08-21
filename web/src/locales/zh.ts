@@ -799,6 +799,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       fileError: '文件错误',
       uploadLimit: '文件大小不能超过10M，文件总数不超过128个',
       destinationFolder: '目标文件夹',
+      pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
       flow: '工作流',
@@ -1344,6 +1345,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       showQueryMindmap: '显示查询思维导图',
       embedApp: '嵌入网站',
       relatedSearch: '相关搜索',
+      descriptionValue: '你是一位智能助手。',
       okText: '保存',
       cancelText: '返回',
     },

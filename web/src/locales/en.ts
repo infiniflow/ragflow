@@ -845,6 +845,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       uploadLimit:
         'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
       destinationFolder: 'Destination folder',
+      pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
       cite: 'Cite',
@@ -1441,6 +1442,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       showQueryMindmap: 'Show Query Mindmap',
       embedApp: 'Embed App',
       relatedSearch: 'Related Search',
+      descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
     },
