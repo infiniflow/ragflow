@@ -34,11 +34,11 @@ export function useChatSettingSchema() {
     name: z.string().min(1, { message: t('assistantNameMessage') }),
     icon: z.array(z.instanceof(File)),
     language: z.string().min(1, {
-      message: 'Username must be at least 2 characters.',
+      message: t('languageMessage'),
     }),
-    description: z.string(),
+    description: z.string().optional(),
     kb_ids: z.array(z.string()).min(0, {
-      message: 'Username must be at least 1 characters.',
+      message: t('knowledgeBasesMessage'),
     }),
     prompt_config: promptConfigSchema,
     ...rerankFormSchema,

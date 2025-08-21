@@ -35,13 +35,18 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
     shouldUnregister: true,
     defaultValues: {
       name: '',
+      icon: [],
       language: 'English',
+      description: '',
+      kb_ids: [],
       prompt_config: {
         quote: true,
         keyword: false,
         tts: false,
         use_kg: false,
         refine_multiturn: true,
+        system: '',
+        parameters: [],
       },
       top_n: 8,
       vector_similarity_weight: 0.2,
