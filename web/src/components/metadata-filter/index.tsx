@@ -58,7 +58,10 @@ export function MetadataFilter({ prefix = '' }: MetadataFilterProps) {
           name={methodName}
           tooltip={t('metadataTip')}
         >
-          <SelectWithSearch options={MetadataOptions} />
+          <SelectWithSearch
+            options={MetadataOptions}
+            triggerClassName="!bg-bg-input"
+          />
         </RAGFlowFormItem>
       )}
       {hasKnowledge && metadata === DatasetMetadata.Manual && (
