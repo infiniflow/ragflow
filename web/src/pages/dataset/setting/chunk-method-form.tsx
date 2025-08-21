@@ -66,10 +66,10 @@ export function ChunkMethodForm() {
   }, [finalParserId]);
 
   return (
-    <>
-      <section className="overflow-auto max-h-[76vh]">
+    <section className="h-full flex flex-col">
+      <div className="overflow-auto flex-1 min-h-0">
         <ConfigurationComponent></ConfigurationComponent>
-      </section>
+      </div>
       <div className="text-right pt-4 flex justify-end gap-3">
         <Button
           type="reset"
@@ -112,6 +112,6 @@ export function ChunkMethodForm() {
           {t('knowledgeConfiguration.save')}
         </Button>
       </div>
-    </>
+    </section>
   );
 }

@@ -116,7 +116,10 @@ export { ExpandedInput, Input, SearchInput };
 
 type NumberInputProps = { onChange?(value: number): void } & InputProps;
 
-export const NumberInput = ({ onChange, ...props }: NumberInputProps) => {
+export const NumberInput = React.forwardRef<
+  HTMLInputElement,
+  NumberInputProps & { value: Value; onChange(value: Value): void }
+>(function NumberInput({ onChange, ...props }, ref) {
   return (
     <Input
       type="number"
@@ -125,6 +128,7 @@ export const NumberInput = ({ onChange, ...props }: NumberInputProps) => {
         onChange?.(value === '' ? 0 : Number(value)); // convert to number
       }}
       {...props}
+      ref={ref}
     ></Input>
   );
-};
+});
