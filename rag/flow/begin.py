@@ -16,37 +16,13 @@
 from rag.flow.base import ProcessBase, ProcessParamBase
 
 
-class ProcessParamBase(ProcessParamBase):
-
-    """
-    Define the Begin component parameters.
-    """
+class BeginBase(ProcessParamBase):
     def __init__(self):
         super().__init__()
-        self.mode = "conversational"
-        self.prologue = "Hi! I'm your smart assistant. What can I do for you?"
-
-    def check(self):
-        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task"])
-
-    def get_input_form(self) -> dict[str, dict]:
-        return getattr(self, "inputs")
 
 
 class Begin(ProcessBase):
     component_name = "Begin"
 
     def _invoke(self, **kwargs):
-        for k, v in kwargs.get("inputs", {}).items():
-            if isinstance(v, dict) and v.get("type", "").lower().find("file") >=0:
-                if v.get("optional") and v.get("value", None) is None:
-                    v = None
-                else:
-                    v = self._canvas.get_files([v["value"]])
-            else:
-                v = v.get("value")
-            self.set_output(k, v)
-            self.set_input_value(k, v)
-
-    def thoughts(self) -> str:
-        return ""
+        pass

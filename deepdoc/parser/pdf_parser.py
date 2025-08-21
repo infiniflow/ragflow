@@ -1148,13 +1148,30 @@ class RAGFlowPdfParser:
             need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
-    def parse_into_bboxes(self, fnm, zoomin=3):
+    def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
+        start = timer()
         self.__images__(fnm, zoomin)
+        if callback:
+            callback(0.40, "OCR finished ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._layouts_rec(zoomin)
+        if callback:
+            callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
+        if callback:
+            callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
         self._concat_downward()
         self._naive_vertical_merge(zoomin)
+        if callback:
+            callback(0.92, "Text merged ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         tbls, figs = self._extract_table_figure(True, zoomin, True, True, True)
 
         def insert_table_figures(tbls_or_figs, layout_type):
@@ -1190,6 +1207,8 @@ class RAGFlowPdfParser:
 
         insert_table_figures(tbls, "table")
         insert_table_figures(figs, "figure")
+        if callback:
+            callback(1, "Structured ({:.2f}s)".format(timer() - start))
         return deepcopy(self.bboxes)
 
     @staticmethod
@@ -1370,6 +1389,8 @@ class VisionParser(RAGFlowPdfParser):
                 prompt=vision_llm_describe_prompt(page=pdf_page_num+1),
                 callback=callback,
             )
+            if kwargs.get("callback"):
+                kwargs["callback"](idx*1./len(self.page_images), f"Processed: {idx+1}/{len(self.page_images)}")
 
             if docs:
                 all_docs.append(docs)

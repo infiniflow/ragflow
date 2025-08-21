@@ -27,6 +27,7 @@ class ProcessParamBase(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.timeout = 100000000
+        self.persist_logs = True
 
 
 class ProcessBase(ABC):
