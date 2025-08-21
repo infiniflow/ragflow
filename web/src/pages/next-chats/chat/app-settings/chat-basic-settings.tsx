@@ -35,7 +35,6 @@ export default function ChatBasicSetting() {
                   value={field.value}
                   onValueChange={field.onChange}
                   maxFileCount={1}
-                  maxSize={4 * 1024 * 1024}
                 />
               </FormControl>
               <FormMessage />

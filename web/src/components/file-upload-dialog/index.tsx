@@ -26,12 +26,7 @@ export function UploaderTabs({ setFiles }: UploaderTabsProps) {
         <TabsTrigger value="password">{t('fileManager.s3')}</TabsTrigger>
       </TabsList>
       <TabsContent value="account">
-        <FileUploader
-          maxFileCount={8}
-          maxSize={8 * 1024 * 1024}
-          onValueChange={setFiles}
-          accept={{ '*': [] }}
-        />
+        <FileUploader onValueChange={setFiles} accept={{ '*': [] }} />
       </TabsContent>
       <TabsContent value="password">{t('common.comingSoon')}</TabsContent>
     </Tabs>
