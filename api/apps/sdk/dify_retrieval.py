@@ -24,7 +24,8 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
-
+from api.db.services.dialog_service import meta_filter
+import json
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
@@ -37,7 +38,7 @@ def retrieval(tenant_id):
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
-
+    metas = DocumentService.get_meta_by_kbs(kb_id)
     try:
 
         e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -45,7 +46,10 @@ def retrieval(tenant_id):
             return build_error_result(message="Knowledgebase not found!", code=settings.RetCode.NOT_FOUND)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+        doc_ids.extend(meta_filter(metas, convert_conditions(json.loads(retrieval_setting.get("metadata_condition")))))
 
+        if not doc_ids:
+            doc_ids = None
         ranks = settings.retrievaler.retrieval(
             question,
             embd_mdl,
@@ -56,6 +60,7 @@ def retrieval(tenant_id):
             similarity_threshold=similarity_threshold,
             vector_similarity_weight=0.3,
             top=top,
+            doc_ids=doc_ids,
             rank_feature=label_question(question, [kb])
         )
 
@@ -64,6 +69,7 @@ def retrieval(tenant_id):
                                                    [tenant_id],
                                                    [kb_id],
                                                    embd_mdl,
+                                                   doc_ids,
                                                    LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
@@ -90,3 +96,18 @@ def retrieval(tenant_id):
             )
         logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
+
+def convert_conditions(metadata_condition):
+    op_mapping = {
+        "is": "=",
+        "not is": "≠"
+    }
+    return [
+    {
+        "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
+        "key": cond["name"],
+        "value": cond["value"]
+    }
+    for cond in metadata_condition.get("conditions", [])
+]
+
