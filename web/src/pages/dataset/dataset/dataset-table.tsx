@@ -164,7 +164,7 @@ export function DatasetTable({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end  py-4">
+      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-3">
         <div className="space-x-2">
           <RAGFlowPagination
             {...pick(pagination, 'current', 'pageSize')}

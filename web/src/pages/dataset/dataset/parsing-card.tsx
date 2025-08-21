@@ -17,7 +17,7 @@ function Dot({ run }: { run: RunningStatus }) {
   const runningStatus = RunningStatusMap[run];
   return (
     <span
-      className={'size-2 inline-block rounded'}
+      className={'size-1 inline-block rounded'}
       style={{ backgroundColor: runningStatus.color }}
     ></span>
   );
@@ -89,7 +89,7 @@ export function ParsingCard({ record }: IProps) {
   return (
     <HoverCard>
       <HoverCardTrigger asChild>
-        <Button variant={'ghost'} size={'sm'}>
+        <Button variant={'transparent'} className="border-none" size={'sm'}>
           <Dot run={record.run}></Dot>
         </Button>
       </HoverCardTrigger>
