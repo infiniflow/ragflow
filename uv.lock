@@ -2603,7 +2603,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.0.dev4"
+version = "0.6.0.dev5"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2620,7 +2620,7 @@ dependencies = [
     { name = "thrift" },
 ]
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/d4/cc/645ed8de15952940c7308a788036376583a5fc29fdcf3e4bc75b5ad0c881/infinity_sdk-0.6.0.dev4-py3-none-any.whl", hash = "sha256:f8f4bd8a44e3fae7b4228b5c9e9a16559b4905f50d2d7d0a3d18f39974613e7a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/fe/a4/6079bf9790f16badc01e7b79a28c90bec407cfcaa8a2ed37e4a68120f87a/infinity_sdk-0.6.0.dev5-py3-none-any.whl", hash = "sha256:510ac408d5cd9d3d4df33c7c0877f55c5ae8a6019e465190c86d58012a319179" },
 ]
 
 [[package]]
@@ -5471,7 +5471,7 @@ requires-dist = [
     { name = "httpx", extras = ["socks"], specifier = "==0.27.2" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.0.dev4" },
+    { name = "infinity-sdk", specifier = "==0.6.0.dev5" },
     { name = "itsdangerous", specifier = "==2.1.2" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
