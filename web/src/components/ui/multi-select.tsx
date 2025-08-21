@@ -266,7 +266,7 @@ export const MultiSelect = React.forwardRef<
     return (
       <Popover
         open={isPopoverOpen}
-        // onOpenChange={setIsPopoverOpen}
+        onOpenChange={setIsPopoverOpen}
         modal={modalPopover}
       >
         <PopoverTrigger asChild>
