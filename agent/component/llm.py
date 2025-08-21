@@ -18,11 +18,8 @@ import logging
 import os
 import re
 from typing import Any, Generator
-
 import json_repair
-from copy import deepcopy
 from functools import partial
-
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -130,7 +127,7 @@ class LLM(ComponentBase):
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
-        prompt = self._param.sys_prompt
+        sys_prompt = self._param.sys_prompt
         for k, o in vars.items():
             args[k] = o["value"]
             if not isinstance(args[k], str):
@@ -141,14 +138,18 @@ class LLM(ComponentBase):
             self.set_input_value(k, args[k])
 
         msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
-        msg.extend(deepcopy(self._param.prompts))
-        prompt = self.string_format(prompt, args)
+        for p in self._param.prompts:
+            if msg and msg[-1]["role"] == p["role"]:
+                continue
+            msg.append(p)
+
+        sys_prompt = self.string_format(sys_prompt, args)
         for m in msg:
             m["content"] = self.string_format(m["content"], args)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
-            prompt += citation_prompt()
+            sys_prompt += citation_prompt()
 
-        return prompt, msg
+        return sys_prompt, msg
 
     def _generate(self, msg:list[dict], **kwargs) -> str:
         if not self.imgs:

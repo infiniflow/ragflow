@@ -169,7 +169,7 @@ class EntityResolution(Extractor):
         logging.info(f"Created resolution prompt {len(text)} bytes for {len(candidate_resolution_i[1])} entity pairs of type {candidate_resolution_i[0]}")
         async with chat_limiter:
             try:
-                with trio.move_on_after(240) as cancel_scope:
+                with trio.move_on_after(280) as cancel_scope:
                     response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], {})
                 if cancel_scope.cancelled_caught:
                     logging.warning("_resolve_candidate._chat timeout, skipping...")
