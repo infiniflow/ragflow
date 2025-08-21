@@ -85,7 +85,7 @@ function Root({ children }: React.PropsWithChildren) {
         <Sonner position={'top-right'} expand richColors closeButton></Sonner>
         <Toaster />
       </ConfigProvider>
-      <ReactQueryDevtools buttonPosition={'top-left'} />
+      <ReactQueryDevtools buttonPosition={'top-left'} initialIsOpen={false} />
     </>
   );
 }
