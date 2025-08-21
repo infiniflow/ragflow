@@ -450,37 +450,26 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
 def agent_completions(tenant_id, agent_id):
     req = request.json
 
-    ans = {}
+
     if req.get("stream", True):
-
-        def generate():
-            for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
-                if isinstance(answer, str):
-                    try:
-                        ans = json.loads(answer[5:])  # remove "data:"
-                    except Exception:
-                        continue
-
-                if ans.get("event") != "message":
-                    continue
-
-                yield answer
-
-            yield "data:[DONE]\n\n"
-
-        resp = Response(generate(), mimetype="text/event-stream")
+        resp = Response(agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
-
+    result = {}
     for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])  # remove "data:"
+            if not result:
+                result = ans.copy()
+            else:
+                result["data"]["answer"] += ans["data"]["answer"]
+                result["data"]["reference"] = ans["data"].get("reference", [])
         except Exception as e:
-            return get_result(data=f"**ERROR**: {str(e)}")
-    return get_result(data=ans)
+            return get_error_data_result(str(e))
+    return result
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
