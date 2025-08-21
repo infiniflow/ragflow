@@ -141,7 +141,7 @@ export function useDatasetTableColumns({
     },
     {
       accessorKey: 'run',
-      header: t('parsingStatus'),
+      header: t('Parse'),
       // meta: { cellClassName: 'min-w-[20vw]' },
       cell: ({ row }) => {
         return (

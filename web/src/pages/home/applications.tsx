@@ -51,7 +51,8 @@ export function Applications() {
           options={options}
           value={val}
           onChange={handleChange}
-          className="bg-transparent"
+          className="bg-bg-card border border-border-button rounded-full"
+          activeClassName="bg-text-primary border-none"
         ></Segmented>
       </div>
       <div className="flex flex-wrap gap-4">

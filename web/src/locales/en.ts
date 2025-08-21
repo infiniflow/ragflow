@@ -70,7 +70,7 @@ export default {
       review: 'from 500+ reviews',
     },
     header: {
-      knowledgeBase: 'Knowledge Base',
+      knowledgeBase: 'Dataset',
       chat: 'Chat',
       register: 'Register',
       signin: 'Sign in',
@@ -86,7 +86,7 @@ export default {
     knowledgeList: {
       welcome: 'Welcome back',
       description: 'Which knowledge bases will you use today?',
-      createKnowledgeBase: 'Create knowledge base',
+      createKnowledgeBase: 'Create Dataset',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
