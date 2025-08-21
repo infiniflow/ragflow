@@ -36,7 +36,7 @@ _IS_RAW_CONF = "_is_raw_conf"
 
 class ComponentParamBase(ABC):
     def __init__(self):
-        self.message_history_window_size = 22
+        self.message_history_window_size = 13
         self.inputs = {}
         self.outputs = {}
         self.description = ""
