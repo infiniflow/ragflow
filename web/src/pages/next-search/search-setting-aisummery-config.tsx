@@ -113,7 +113,7 @@ export function LlmSettingFieldItems({
             <FormControl>
               <SelectWithSearch
                 options={options || modelOptions}
-                triggerClassName="bg-bg-card"
+                triggerClassName="!bg-bg-input"
                 {...field}
               ></SelectWithSearch>
             </FormControl>

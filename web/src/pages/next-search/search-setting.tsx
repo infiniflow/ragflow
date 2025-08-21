@@ -114,8 +114,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
   const [datasetList, setDatasetList] = useState<MultiSelectOptionType[]>([]);
   const [datasetSelectEmbdId, setDatasetSelectEmbdId] = useState('');
-  const descriptionDefaultValue = 'You are an intelligent assistant.';
   const { t } = useTranslation();
+  const descriptionDefaultValue = t('search.descriptionValue');
   const resetForm = useCallback(() => {
     formMethods.reset({
       search_id: data?.id,
@@ -415,7 +415,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   <FormLabel>{t('search.description')}</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="You are an intelligent assistant."
+                      placeholder={descriptionDefaultValue}
                       {...field}
                       onFocus={() => {
                         if (field.value === descriptionDefaultValue) {
@@ -444,7 +444,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                     <span className="text-destructive mr-1"> *</span>
                     {t('search.datasets')}
                   </FormLabel>
-                  <FormControl>
+                  <FormControl className="bg-bg-input">
                     <MultiSelect
                       options={datasetList}
                       onValueChange={(value) => {
@@ -452,7 +452,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       }}
                       showSelectAll={false}
                       placeholder={t('chat.knowledgeBasesMessage')}
-                      variant="inverted"
                       maxCount={10}
                       defaultValue={field.value}
                       {...field}
@@ -568,6 +567,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         <RAGFlowSelect
                           {...field}
                           options={rerankModelOptions}
+                          triggerClassName={'bg-bg-input'}
                           // disabled={disabled}
                           placeholder={'model'}
                         />

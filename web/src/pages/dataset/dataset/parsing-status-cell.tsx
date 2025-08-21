@@ -27,7 +27,7 @@ const IconMap = {
   [RunningStatus.UNSTART]: (
     <div className="w-0 h-0 border-l-[10px] border-l-accent-primary border-t-8 border-r-4 border-b-8 border-transparent"></div>
   ),
-  [RunningStatus.RUNNING]: <CircleX size={14} />,
+  [RunningStatus.RUNNING]: <CircleX size={14} color="var(--state-error)" />,
   [RunningStatus.CANCEL]: <RefreshCw size={14} color="var(--accent-primary)" />,
   [RunningStatus.DONE]: <RefreshCw size={14} color="var(--accent-primary)" />,
   [RunningStatus.FAIL]: <RefreshCw size={14} color="var(--accent-primary)" />,
