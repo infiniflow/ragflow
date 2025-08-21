@@ -30,7 +30,7 @@ from tika import parser
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
@@ -350,17 +350,14 @@ class Markdown(MarkdownParser):
         else:
             with open(filename, "r") as f:
                 txt = f.read()
+
         remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
-        sections = []
+
+        extractor = MarkdownElementExtractor(txt)
+        element_sections = extractor.extract_elements()
+        sections = [(element, "") for element in element_sections]
+
         tbls = []
-        for sec in remainder.split("\n"):
-            if sec.strip().find("#") == 0:
-                sections.append((sec, ""))
-            elif sections and sections[-1][0].strip().find("#") == 0:
-                sec_, _ = sections.pop(-1)
-                sections.append((sec_ + "\n" + sec, ""))
-            else:
-                sections.append((sec, ""))
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls
