@@ -426,7 +426,7 @@ class Canvas:
         convs = []
         if window_size <= 0:
             return convs
-        for role, obj in self.history[window_size * -1:]:
+        for role, obj in self.history[window_size * -2:]:
             if isinstance(obj, dict):
                 convs.append({"role": role, "content": obj.get("content", "")})
             else:

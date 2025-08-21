@@ -44,9 +44,6 @@ def retrieval(tenant_id):
         if not e:
             return build_error_result(message="Knowledgebase not found!", code=settings.RetCode.NOT_FOUND)
 
-        if kb.tenant_id != tenant_id:
-            return build_error_result(message="Knowledgebase not found!", code=settings.RetCode.NOT_FOUND)
-
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
         ranks = settings.retrievaler.retrieval(
