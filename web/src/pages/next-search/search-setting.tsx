@@ -136,9 +136,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         use_rerank: search_config?.rerank_id ? true : false,
         top_k: search_config?.top_k || 1024,
         summary: search_config?.summary || false,
-        chat_id: '',
+        chat_id: search_config?.chat_id || '',
         llm_setting: {
-          llm_id: llm_setting?.llm_id || '',
+          llm_id: search_config?.chat_id || '',
           parameter: llm_setting?.parameter,
           temperature: llm_setting?.temperature,
           top_p: llm_setting?.top_p,
@@ -159,7 +159,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         meta_data_filter: search_config?.meta_data_filter,
       },
     });
-  }, [data, search_config, llm_setting, formMethods]);
+  }, [data, search_config, llm_setting, formMethods, descriptionDefaultValue]);
 
   useEffect(() => {
     resetForm();
@@ -255,7 +255,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         ...other_config
       } = search_config;
       const llmSetting = {
-        llm_id: llm_setting.llm_id,
+        // llm_id: llm_setting.llm_id,
         parameter: llm_setting.parameter,
         temperature: llm_setting.temperature,
         top_p: llm_setting.top_p,
@@ -263,22 +263,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         presence_penalty: llm_setting.presence_penalty,
       } as IllmSettingProps;
 
-      if (!llm_setting.frequencyPenaltyEnabled) {
-        delete llmSetting.frequency_penalty;
-      }
-      if (!llm_setting.presencePenaltyEnabled) {
-        delete llmSetting.presence_penalty;
-      }
-      if (!llm_setting.temperatureEnabled) {
-        delete llmSetting.temperature;
-      }
-      if (!llm_setting.topPEnabled) {
-        delete llmSetting.top_p;
-      }
       await updateSearch({
         ...other_formdata,
         search_config: {
           ...other_config,
+          chat_id: llm_setting.llm_id,
           vector_similarity_weight: 1 - vector_similarity_weight,
           rerank_id: use_rerank ? rerank_id : '',
           llm_setting: { ...llmSetting },
