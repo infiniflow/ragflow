@@ -454,6 +454,7 @@ export default {
       improvise: '即興創作',
       precise: '精確',
       balance: '平衡',
+      custom: '自定義',
       freedomTip: `“精確”意味著法學碩士會保守並謹慎地回答你的問題。“即興發揮”意味著你希望法學碩士能夠自由地暢所欲言。“平衡”是謹慎與自由之間的平衡。`,
       temperature: '溫度',
       temperatureMessage: '溫度是必填項',
