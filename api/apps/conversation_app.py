@@ -209,7 +209,7 @@ def completion():
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
         if chat_model_id:
-            if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
+            if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=re.split(r"(@|___)", chat_model_id)[0]):
                 req.pop("chat_model_id", None)
                 req.pop("chat_model_config", None)
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
