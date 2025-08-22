@@ -1,11 +1,11 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
+import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { ChevronRight } from 'lucide-react';
 import { DatasetDropdown } from './dataset-dropdown';
-import { useDisplayOwnerName } from './use-display-owner';
 import { useRenameDataset } from './use-rename-dataset';
 
 export type DatasetCardProps = {
@@ -17,9 +17,6 @@ export function DatasetCard({
   showDatasetRenameModal,
 }: DatasetCardProps) {
   const { navigateToDataset } = useNavigatePage();
-  const displayOwnerName = useDisplayOwnerName();
-
-  const owner = displayOwnerName(dataset.tenant_id, dataset.nickname);
 
   return (
     <HomeCard
@@ -32,6 +29,7 @@ export function DatasetCard({
           <MoreButton></MoreButton>
         </DatasetDropdown>
       }
+      sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
       onClick={navigateToDataset(dataset.id)}
     />
   );

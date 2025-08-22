@@ -1,5 +1,7 @@
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import {
   useFetchConversation,
@@ -43,6 +45,8 @@ export function SingleChatBox({ controller }: IProps) {
   const { data: conversation } = useFetchConversation();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   return (
     <section className="flex flex-col p-5 h-full">
@@ -68,7 +72,7 @@ export function SingleChatBox({ controller }: IProps) {
                   },
                   message,
                 )}
-                // clickDocumentButton={clickDocumentButton}
+                clickDocumentButton={clickDocumentButton}
                 index={i}
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage}
@@ -94,6 +98,14 @@ export function SingleChatBox({ controller }: IProps) {
         onUpload={handleUploadFile}
         isUploading={isUploading}
       />
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
     </section>
   );
 }
