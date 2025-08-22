@@ -240,9 +240,8 @@ export default {
       promptTip:
         'Décrivez la tâche attendue du LLM, ses réponses, ses exigences, etc. Utilisez `/` pour afficher les variables disponibles.',
       promptMessage: 'Le prompt est requis',
-      promptText: `Veuillez résumer les paragraphes suivants. Attention aux chiffres, ne pas inventer. Paragraphes suivants : {cluster_content
-      }
-    Le contenu à résumer est ci-dessus.`,
+      promptText: `Veuillez résumer les paragraphes suivants. Attention aux chiffres, ne pas inventer. Paragraphes suivants : {cluster_content}
+  Le contenu à résumer est ci-dessus.`,
       maxToken: 'Nombre maximal de tokens',
       maxTokenTip: 'Nombre maximal de tokens générés par résumé.',
       maxTokenMessage: 'Nombre maximal de tokens requis',
