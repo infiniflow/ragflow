@@ -2,6 +2,8 @@ import { LargeModelFormFieldWithoutFilter } from '@/components/large-model-form-
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
@@ -54,7 +56,8 @@ type ChatCardProps = {
 } & Pick<
   MultipleChatBoxProps,
   'controller' | 'removeChatBox' | 'addChatBox' | 'chatBoxIds'
->;
+> &
+  Pick<ReturnType<typeof useClickDrawer>, 'clickDocumentButton'>;
 
 const ChatCard = forwardRef(function ChatCard(
   {
@@ -66,6 +69,7 @@ const ChatCard = forwardRef(function ChatCard(
     chatBoxIds,
     derivedMessages,
     sendLoading,
+    clickDocumentButton,
   }: ChatCardProps,
   ref,
 ) {
@@ -178,6 +182,7 @@ const ChatCard = forwardRef(function ChatCard(
                   removeMessageById={removeMessageById}
                   regenerateMessage={regenerateMessage}
                   sendLoading={sendLoading}
+                  clickDocumentButton={clickDocumentButton}
                 ></MessageItem>
               );
             })}
@@ -211,6 +216,8 @@ export function MultipleChatBox({
   const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   return (
     <section className="h-full flex flex-col px-5">
@@ -227,6 +234,7 @@ export function MultipleChatBox({
             derivedMessages={messageRecord[id]}
             ref={setFormRef(id)}
             sendLoading={sendLoading}
+            clickDocumentButton={clickDocumentButton}
           ></ChatCard>
         ))}
       </div>
@@ -246,6 +254,14 @@ export function MultipleChatBox({
           onUpload={handleUploadFile}
         />
       </div>
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
     </section>
   );
 }

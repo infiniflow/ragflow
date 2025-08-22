@@ -109,13 +109,12 @@ export default function Chat() {
 
         <Card className="flex-1 min-w-0 bg-transparent border h-full">
           <CardContent className="flex p-0 h-full">
-            <Card className="flex flex-col flex-1 bg-transparent">
+            <Card className="flex flex-col flex-1 bg-transparent min-w-0">
               <CardHeader
                 className={cn('p-5', { 'border-b': hasSingleChatBox })}
               >
                 <CardTitle className="flex justify-between items-center text-base">
-                  <div>{conversation.name}</div>
-
+                  <div className="truncate">{conversation.name}</div>
                   <Button
                     variant={'ghost'}
                     onClick={switchDebugMode}
