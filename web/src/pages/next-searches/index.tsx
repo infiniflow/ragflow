@@ -12,13 +12,21 @@ import {
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import searchService from '@/services/search-service';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { pick } from 'lodash';
 import { Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { useCreateSearch, useFetchSearchList } from './hooks';
+import {
+  ISearchAppProps,
+  IUpdateSearchProps,
+  useCreateSearch,
+  useFetchSearchList,
+  useUpdateSearch,
+} from './hooks';
 import { SearchCard } from './search-card';
 const searchFormSchema = z.object({
   name: z.string().min(1, {
@@ -26,15 +34,22 @@ const searchFormSchema = z.object({
   }),
 });
 
-type SearchFormValues = z.infer<typeof searchFormSchema>;
+type SearchFormValues = z.infer<typeof searchFormSchema> & {
+  search_id?: string;
+};
+
 export default function SearchList() {
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('search');
+  const { navigateToSearch } = useNavigatePage();
   const { isLoading, createSearch } = useCreateSearch();
+  const [isEdit, setIsEdit] = useState(false);
+  const [searchData, setSearchData] = useState<ISearchAppProps | null>(null);
   const {
     data: list,
     searchParams,
     setSearchListParams,
+    refetch: refetchList,
   } = useFetchSearchList();
   const [openCreateModal, setOpenCreateModal] = useState(false);
   const form = useForm<SearchFormValues>({
@@ -46,22 +61,57 @@ export default function SearchList() {
   const handleSearchChange = (value: string) => {
     console.log(value);
   };
-
+  const { updateSearch } = useUpdateSearch();
   const onSubmit = async (values: SearchFormValues) => {
-    await createSearch({ name: values.name });
+    let res;
+    if (isEdit) {
+      try {
+        const reponse = await searchService.getSearchDetail({
+          search_id: searchData?.id,
+        });
+        const detail = reponse.data?.data;
+        console.log('detail-->', detail);
+        const { id, created_by, update_time, ...searchDataTemp } = detail;
+        res = await updateSearch({
+          ...searchDataTemp,
+          name: values.name,
+          search_id: searchData?.id,
+        } as unknown as IUpdateSearchProps);
+        refetchList();
+      } catch (e) {
+        console.error('error', e);
+      }
+    } else {
+      res = await createSearch({ name: values.name });
+    }
+    if (res && !searchData?.id) {
+      navigateToSearch(res?.search_id)();
+    }
     if (!isLoading) {
       setOpenCreateModal(false);
     }
     form.reset({ name: '' });
   };
   const openCreateModalFun = () => {
+    setIsEdit(false);
     setOpenCreateModal(true);
   };
   const handlePageChange = (page: number, pageSize: number) => {
+    setIsEdit(false);
     setSearchListParams({ ...searchParams, page, page_size: pageSize });
   };
+
+  const showSearchRenameModal = (data: ISearchAppProps) => {
+    form.setValue('name', data.name);
+    if (data.id) {
+      setIsEdit(true);
+    }
+
+    setSearchData(data);
+    setOpenCreateModal(true);
+  };
   return (
-    <section>
+    <section className="w-full h-full flex flex-col">
       <div className="px-8 pt-8">
         <ListFilterBar
           icon={
@@ -84,22 +134,29 @@ export default function SearchList() {
           </Button>
         </ListFilterBar>
       </div>
-      <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[84vh] overflow-auto px-8">
-        {list?.data.search_apps.map((x) => {
-          return <SearchCard key={x.id} data={x}></SearchCard>;
-        })}
-        {/* {data.map((x) => {
-          return <SearchCard key={x.id} data={x}></SearchCard>;
-        })} */}
+      <div className="flex-1">
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[84vh] overflow-auto px-8">
+          {list?.data.search_apps.map((x) => {
+            return (
+              <SearchCard
+                key={x.id}
+                data={x}
+                showSearchRenameModal={showSearchRenameModal}
+              ></SearchCard>
+            );
+          })}
+        </div>
       </div>
-      {list?.data.total && (
-        <RAGFlowPagination
-          {...pick(searchParams, 'current', 'pageSize')}
-          total={list?.data.total}
-          onChange={handlePageChange}
-          on
-        />
+      {list?.data.total && list?.data.total > 0 && (
+        <div className="px-8 mb-4">
+          <RAGFlowPagination
+            {...pick(searchParams, 'current', 'pageSize')}
+            total={list?.data.total}
+            onChange={handlePageChange}
+          />
+        </div>
       )}
+
       <Modal
         open={openCreateModal}
         onOpenChange={(open) => {

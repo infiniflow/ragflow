@@ -17,22 +17,19 @@ import json
 import re
 import traceback
 from copy import deepcopy
-
-import trio
 from flask import Response, request
 from flask_login import current_user, login_required
-
 from api import settings
 from api.db import LLMType
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import ConversationService, structure_answer
-from api.db.services.dialog_service import DialogService, ask, chat
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap
 from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import UserTenantService, TenantService
+from api.db.services.search_service import SearchService
+from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
-from graphrag.general.mind_map_extractor import MindMapExtractor
-from rag.app.tag import label_question
+from rag.prompts.prompt_template import load_prompt
 from rag.prompts.prompts import chunks_format
 
 
@@ -66,8 +63,14 @@ def set_conversation():
         e, dia = DialogService.get_by_id(req["dialog_id"])
         if not e:
             return get_data_error_result(message="Dialog not found")
-        conv = {"id": conv_id, "dialog_id": req["dialog_id"], "name": name, "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}],"user_id": current_user.id,
-                "reference":[],}
+        conv = {
+            "id": conv_id,
+            "dialog_id": req["dialog_id"],
+            "name": name,
+            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}],
+            "user_id": current_user.id,
+            "reference": [],
+        }
         ConversationService.save(**conv)
         return get_json_result(data=conv)
     except Exception as e:
@@ -174,6 +177,21 @@ def completion():
             continue
         msg.append(m)
     message_id = msg[-1].get("id")
+    chat_model_id = req.get("llm_id", "")
+    req.pop("llm_id", None)
+
+    chat_model_config = {}
+    for model_config in [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty",
+        "max_tokens",
+    ]:
+        config = req.get(model_config)
+        if config:
+            chat_model_config[model_config] = config
+
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
@@ -190,13 +208,23 @@ def completion():
         conv.reference = [r for r in conv.reference if r]
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
+        if chat_model_id:
+            if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
+                req.pop("chat_model_id", None)
+                req.pop("chat_model_config", None)
+                return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
+            dia.llm_id = chat_model_id
+            dia.llm_setting = chat_model_config
+
+        is_embedded = bool(chat_model_id)
         def stream():
             nonlocal dia, msg, req, conv
             try:
                 for ans in chat(dia, msg, True, **req):
                     ans = structure_answer(conv, ans, message_id, conv.id)
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                ConversationService.update_by_id(conv.id, conv.to_dict())
+                if not is_embedded:
+                    ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
                 traceback.print_exc()
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
@@ -214,7 +242,8 @@ def completion():
             answer = None
             for ans in chat(dia, msg, **req):
                 answer = structure_answer(conv, ans, message_id, conv.id)
-                ConversationService.update_by_id(conv.id, conv.to_dict())
+                if not is_embedded:
+                    ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
     except Exception as e:
@@ -310,10 +339,18 @@ def ask_about():
     req = request.json
     uid = current_user.id
 
+    search_id = req.get("search_id", "")
+    search_app = None
+    search_config = {}
+    if search_id:
+        search_app = SearchService.get_detail(search_id)
+    if search_app:
+        search_config = search_app.get("search_config", {})
+
     def stream():
         nonlocal req, uid
         try:
-            for ans in ask(req["question"], req["kb_ids"], uid):
+            for ans in ask(req["question"], req["kb_ids"], uid, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
@@ -332,18 +369,14 @@ def ask_about():
 @validate_request("question", "kb_ids")
 def mindmap():
     req = request.json
-    kb_ids = req["kb_ids"]
-    e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
-    if not e:
-        return get_data_error_result(message="Knowledgebase not found!")
+    search_id = req.get("search_id", "")
+    search_app = SearchService.get_detail(search_id) if search_id else {}
+    search_config = search_app.get("search_config", {}) if search_app else {}
+    kb_ids = search_config.get("kb_ids", [])
+    kb_ids.extend(req["kb_ids"])
+    kb_ids = list(set(kb_ids))
 
-    embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
-    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    question = req["question"]
-    ranks = settings.retrievaler.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, 1, 12, 0.3, 0.3, aggs=False, rank_feature=label_question(question, [kb]))
-    mindmap = MindMapExtractor(chat_mdl)
-    mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
-    mind_map = mind_map.output
+    mind_map = gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
@@ -354,41 +387,20 @@ def mindmap():
 @validate_request("question")
 def related_questions():
     req = request.json
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
     question = req["question"]
-    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    prompt = """
-Role: You are an AI language model assistant tasked with generating 5-10 related questions based on a user’s original query. These questions should help expand the search query scope and improve search relevance.
 
-Instructions:
-	Input: You are provided with a user’s question.
-	Output: Generate 5-10 alternative questions that are related to the original user question. These alternatives should help retrieve a broader range of relevant documents from a vector database.
-	Context: Focus on rephrasing the original question in different ways, making sure the alternative questions are diverse but still connected to the topic of the original query. Do not create overly obscure, irrelevant, or unrelated questions.
-	Fallback: If you cannot generate any relevant alternatives, do not return any questions.
-	Guidance:
-	1. Each alternative should be unique but still relevant to the original query.
-	2. Keep the phrasing clear, concise, and easy to understand.
-	3. Avoid overly technical jargon or specialized terms unless directly relevant.
-	4. Ensure that each question contributes towards improving search results by broadening the search angle, not narrowing it.
+    chat_id = search_config.get("chat_id", "")
+    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT, chat_id)
 
-Example:
-Original Question: What are the benefits of electric vehicles?
-
-Alternative Questions:
-	1. How do electric vehicles impact the environment?
-	2. What are the advantages of owning an electric car?
-	3. What is the cost-effectiveness of electric vehicles?
-	4. How do electric vehicles compare to traditional cars in terms of fuel efficiency?
-	5. What are the environmental benefits of switching to electric cars?
-	6. How do electric vehicles help reduce carbon emissions?
-	7. Why are electric vehicles becoming more popular?
-	8. What are the long-term savings of using electric vehicles?
-	9. How do electric vehicles contribute to sustainability?
-	10. What are the key benefits of electric vehicles for consumers?
-
-Reason:
-	Rephrasing the original query into multiple alternative questions helps the user explore different aspects of their search topic, improving the quality of search results.
-	These questions guide the search engine to provide a more comprehensive set of relevant documents.
-"""
+    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    prompt = load_prompt("related_question")
     ans = chat_mdl.chat(
         prompt,
         [
@@ -400,6 +412,6 @@ Related search terms:
     """,
             }
         ],
-        {"temperature": 0.9},
+        gen_conf,
     )
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])

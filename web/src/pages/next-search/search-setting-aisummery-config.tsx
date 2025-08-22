@@ -30,18 +30,21 @@ interface LlmSettingFieldItemsProps {
   prefix?: string;
   options?: any[];
 }
-
-export const LlmSettingSchema = {
-  llm_id: z.string(),
-  temperature: z.coerce.number(),
-  top_p: z.string(),
-  presence_penalty: z.coerce.number(),
-  frequency_penalty: z.coerce.number(),
+const LlmSettingEnableSchema = {
   temperatureEnabled: z.boolean(),
   topPEnabled: z.boolean(),
   presencePenaltyEnabled: z.boolean(),
   frequencyPenaltyEnabled: z.boolean(),
-  maxTokensEnabled: z.boolean(),
+};
+export const LlmSettingSchema = {
+  llm_id: z.string(),
+  parameter: z.string().optional(),
+  temperature: z.coerce.number().optional(),
+  top_p: z.coerce.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
+  ...LlmSettingEnableSchema,
+  // maxTokensEnabled: z.boolean(),
 };
 
 export function LlmSettingFieldItems({
@@ -58,11 +61,13 @@ export function LlmSettingFieldItems({
 
   const handleChange = useCallback(
     (parameter: string) => {
-      // const currentValues = { ...form.getValues() };
+      const currentValues = { ...form.getValues() };
+      console.log('currentValues', currentValues);
       const values =
         settledModelVariableMap[
           parameter as keyof typeof settledModelVariableMap
         ];
+      const enabledKeys = Object.keys(LlmSettingEnableSchema);
 
       // const nextValues = { ...currentValues, ...values };
 
@@ -71,6 +76,11 @@ export function LlmSettingFieldItems({
           const element = values[key];
 
           form.setValue(`${prefix}.${key}`, element);
+        }
+      }
+      if (enabledKeys && enabledKeys.length) {
+        for (const key of enabledKeys) {
+          form.setValue(`${prefix}.${key}`, true);
         }
       }
     },
@@ -103,7 +113,7 @@ export function LlmSettingFieldItems({
             <FormControl>
               <SelectWithSearch
                 options={options || modelOptions}
-                triggerClassName="bg-bg-card"
+                triggerClassName="!bg-bg-input"
                 {...field}
               ></SelectWithSearch>
             </FormControl>
@@ -145,28 +155,28 @@ export function LlmSettingFieldItems({
       />
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('temperature')}
-        checkName="temperatureEnabled"
+        checkName={getFieldWithPrefix('temperatureEnabled')}
         label="temperature"
         max={1}
         step={0.01}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('top_p')}
-        checkName="topPEnabled"
+        checkName={getFieldWithPrefix('topPEnabled')}
         label="topP"
         max={1}
         step={0.01}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('presence_penalty')}
-        checkName="presencePenaltyEnabled"
+        checkName={getFieldWithPrefix('presencePenaltyEnabled')}
         label="presencePenalty"
         max={1}
         step={0.01}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('frequency_penalty')}
-        checkName="frequencyPenaltyEnabled"
+        checkName={getFieldWithPrefix('frequencyPenaltyEnabled')}
         label="frequencyPenalty"
         max={1}
         step={0.01}

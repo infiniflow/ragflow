@@ -1,6 +1,10 @@
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
-import { IConversation, IDialog } from '@/interfaces/database/chat';
+import {
+  IConversation,
+  IDialog,
+  IExternalChatInfo,
+} from '@/interfaces/database/chat';
 import { IAskRequestBody } from '@/interfaces/request/chat';
 import { IClientConversation } from '@/pages/next-chats/chat/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
@@ -17,6 +21,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { useHandleSearchStrChange } from './logic-hooks/use-change-search';
 
 export const enum ChatApiAction {
   FetchDialogList = 'fetchDialogList',
@@ -30,6 +35,8 @@ export const enum ChatApiAction {
   DeleteMessage = 'deleteMessage',
   FetchMindMap = 'fetchMindMap',
   FetchRelatedQuestions = 'fetchRelatedQuestions',
+  UploadAndParse = 'upload_and_parse',
+  FetchExternalChatInfo = 'fetchExternalChatInfo',
 }
 
 export const useGetChatSearchParams = () => {
@@ -163,6 +170,10 @@ export const useSetDialog = () => {
           queryKey: [ChatApiAction.FetchDialogList],
         });
 
+        queryClient.invalidateQueries({
+          queryKey: [ChatApiAction.FetchDialog],
+        });
+
         message.success(
           t(`message.${params.dialog_id ? 'modified' : 'created'}`),
         );
@@ -224,6 +235,9 @@ export const useClickConversationCard = () => {
 export const useFetchConversationList = () => {
   const { id } = useParams();
   const { handleClickConversation } = useClickConversationCard();
+
+  const { searchString, handleInputChange } = useHandleSearchStrChange();
+
   const {
     data,
     isFetching: loading,
@@ -234,6 +248,11 @@ export const useFetchConversationList = () => {
     gcTime: 0,
     refetchOnWindowFocus: false,
     enabled: !!id,
+    select(data) {
+      return searchString
+        ? data.filter((x) => x.name.includes(searchString))
+        : data;
+    },
     queryFn: async () => {
       const { data } = await chatService.listConversation(
         { params: { dialog_id: id } },
@@ -250,7 +269,7 @@ export const useFetchConversationList = () => {
     },
   });
 
-  return { data, loading, refetch };
+  return { data, loading, refetch, searchString, handleInputChange };
 };
 
 export const useFetchConversation = () => {
@@ -374,6 +393,57 @@ export const useDeleteMessage = () => {
   });
 
   return { data, loading, deleteMessage: mutateAsync };
+};
+
+export function useUploadAndParseFile() {
+  const { conversationId } = useGetChatSearchParams();
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [ChatApiAction.UploadAndParse],
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('conversation_id', conversationId);
+
+      const { data } = await chatService.uploadAndParse(formData);
+
+      if (data.code === 0) {
+        message.success(t(`message.uploaded`));
+      }
+
+      return data;
+    },
+  });
+
+  return { data, loading, uploadAndParseFile: mutateAsync };
+}
+
+export const useFetchExternalChatInfo = () => {
+  const { sharedId: id } = useGetSharedChatSearchParams();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IExternalChatInfo>({
+    queryKey: [ChatApiAction.FetchExternalChatInfo, id],
+    gcTime: 0,
+    initialData: {} as IExternalChatInfo,
+    enabled: !!id,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.fetchExternalChatInfo(id!);
+
+      return data?.data;
+    },
+  });
+
+  return { data, loading, refetch };
 };
 
 //#endregion

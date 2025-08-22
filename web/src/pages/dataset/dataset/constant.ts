@@ -3,15 +3,15 @@ import { RunningStatus } from '@/constants/knowledge';
 export const RunningStatusMap = {
   [RunningStatus.UNSTART]: {
     label: 'UNSTART',
-    color: 'cyan',
+    color: 'var(--accent-primary)',
   },
   [RunningStatus.RUNNING]: {
     label: 'Parsing',
-    color: 'blue',
+    color: 'var(--team-member)',
   },
-  [RunningStatus.CANCEL]: { label: 'CANCEL', color: 'orange' },
-  [RunningStatus.DONE]: { label: 'SUCCESS', color: 'blue' },
-  [RunningStatus.FAIL]: { label: 'FAIL', color: 'red' },
+  [RunningStatus.CANCEL]: { label: 'CANCEL', color: 'var(--state-warning)' },
+  [RunningStatus.DONE]: { label: 'SUCCESS', color: 'var(--state-success)' },
+  [RunningStatus.FAIL]: { label: 'FAIL', color: 'var(--state-error' },
 };
 
 export * from '@/constants/knowledge';

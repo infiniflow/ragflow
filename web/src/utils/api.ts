@@ -111,6 +111,8 @@ export default {
 
   // next chat
   listNextDialog: `${api_host}/dialog/next`,
+  fetchExternalChatInfo: (id: string) =>
+    `${ExternalApi}${api_host}/chatbots/${id}/info`,
 
   // file manager
   listFile: `${api_host}/file/list`,
@@ -181,5 +183,10 @@ export default {
   getSearchList: `${api_host}/search/list`,
   deleteSearch: `${api_host}/search/rm`,
   getSearchDetail: `${api_host}/search/detail`,
+  getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
   updateSearchSetting: `${api_host}/search/update`,
+  askShare: `${ExternalApi}${api_host}/searchbots/ask`,
+  mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
+  getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
+  retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
 };

@@ -1,6 +1,5 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,10 +12,13 @@ import { LanguageList, LanguageMap, ThemeEnum } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
+import { useListTenant } from '@/hooks/use-user-setting-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import { camelCase } from 'lodash';
 import {
+  BellRing,
   ChevronDown,
   CircleHelp,
   Cpu,
@@ -41,7 +43,7 @@ export function Header() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigateWithFromState();
-  const { navigateToProfile } = useNavigatePage();
+  const { navigateToOldProfile } = useNavigatePage();
 
   const changeLanguage = useChangeLanguage();
   const { setTheme, theme } = useTheme();
@@ -54,11 +56,11 @@ export function Header() {
     changeLanguage(key);
   };
 
-  // const { data } = useListTenant();
+  const { data } = useListTenant();
 
-  // const showBell = useMemo(() => {
-  //   return data.some((x) => x.role === TenantRole.Invite);
-  // }, [data]);
+  const showBell = useMemo(() => {
+    return data.some((x) => x.role === TenantRole.Invite);
+  }, [data]);
 
   const items = LanguageList.map((x) => ({
     key: x,
@@ -69,14 +71,14 @@ export function Header() {
     setTheme(theme === ThemeEnum.Dark ? ThemeEnum.Light : ThemeEnum.Dark);
   }, [setTheme, theme]);
 
-  // const handleBellClick = useCallback(() => {
-  //   navigate('/user-setting/team');
-  // }, [navigate]);
+  const handleBellClick = useCallback(() => {
+    navigate('/user-setting/team');
+  }, [navigate]);
 
   const tagsData = useMemo(
     () => [
-      { path: Routes.Home, name: t('header.home'), icon: House },
-      { path: Routes.Datasets, name: t('header.knowledgeBase'), icon: Library },
+      { path: Routes.Root, name: t('header.Root'), icon: House },
+      { path: Routes.Datasets, name: t('header.dataset'), icon: Library },
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('header.search'), icon: Search },
       { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
@@ -91,7 +93,7 @@ export function Header() {
 
       return {
         label:
-          tag.path === Routes.Home ? (
+          tag.path === Routes.Root ? (
             <HeaderIcon className="size-6"></HeaderIcon>
           ) : (
             <span>{tag.name}</span>
@@ -101,18 +103,18 @@ export function Header() {
     });
   }, [tagsData]);
 
-  const currentPath = useMemo(() => {
-    return (
-      tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Home
-    );
-  }, [pathname, tagsData]);
+  // const currentPath = useMemo(() => {
+  //   return (
+  //     tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Root
+  //   );
+  // }, [pathname, tagsData]);
 
   const handleChange = (path: SegmentedValue) => {
     navigate(path as Routes);
   };
 
   const handleLogoClick = useCallback(() => {
-    navigate(Routes.Home);
+    navigate(Routes.Root);
   }, [navigate]);
 
   return (
@@ -124,14 +126,19 @@ export function Header() {
           className="size-10 mr-[12]"
           onClick={handleLogoClick}
         />
-        <div className="flex items-center gap-1.5 text-text-secondary">
-          <Github className="size-3.5" />
-          <span className=" text-base">21.5k stars</span>
-        </div>
+        <a
+          className="flex items-center gap-1.5 text-text-secondary"
+          target="_blank"
+          href="https://github.com/infiniflow/ragflow"
+          rel="noreferrer"
+        >
+          <Github className="size-4" />
+          {/* <span className=" text-base">21.5k stars</span> */}
+        </a>
       </div>
       <Segmented
         options={options}
-        value={currentPath}
+        value={pathname}
         onChange={handleChange}
       ></Segmented>
       <div className="flex items-center gap-5 text-text-badge">
@@ -156,16 +163,25 @@ export function Header() {
         <Button variant={'ghost'} onClick={onThemeClick}>
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>
+        {showBell && (
+          <Button variant={'ghost'} onClick={handleBellClick}>
+            <div className="relative">
+              <BellRing className="size-4 " />
+              <span className="absolute size-1 rounded -right-1 -top-1 bg-red-600"></span>
+            </div>
+          </Button>
+        )}
         <div className="relative">
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}
             className="size-8 cursor-pointer"
-            onClick={navigateToProfile}
+            onClick={navigateToOldProfile}
           ></RAGFlowAvatar>
-          <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-bg-base bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
+          {/* Temporarily hidden */}
+          {/* <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-bg-base bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
             Pro
-          </Badge>
+          </Badge> */}
         </div>
       </div>
     </section>

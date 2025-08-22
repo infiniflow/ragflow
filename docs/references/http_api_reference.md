@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
 
 ---
 
@@ -191,13 +191,13 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`, *Required*  
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*
+- `messages` (*Body parameter*) `list[object]`, *Required*  
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`
+- `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
 #### Response
@@ -1894,7 +1894,7 @@ Success:
         "prompt": {
             "empty_response": "Sorry! No relevant content was found in the knowledge base!",
             "keywords_similarity_weight": 0.3,
-            "opener": "Hi! I'm your assistant, what can I do for you?",
+            "opener": "Hi! I'm your assistant. What can I do for you?",
             "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n ",
             "rerank_model": "",
             "similarity_threshold": 0.2,
@@ -2139,7 +2139,7 @@ Success:
             "prompt": {
                 "empty_response": "Sorry! No relevant content was found in the knowledge base!",
                 "keywords_similarity_weight": 0.3,
-                "opener": "Hi! I'm your assistant, what can I do for you?",
+                "opener": "Hi! I'm your assistant. What can I do for you?",
                 "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n",
                 "rerank_model": "",
                 "similarity_threshold": 0.2,
@@ -2534,7 +2534,7 @@ data:{
     "code": 0,
     "message": "",
     "data": {
-        "answer": "Hi! I'm your assistant, what can I do for you?",
+        "answer": "Hi! I'm your assistant. What can I do for you?",
         "reference": {},
         "audio_binary": null,
         "id": null,
@@ -2638,6 +2638,10 @@ Failure:
 
 ### Create session with agent
 
+:::danger DEPRECATED
+This method is deprecated and not recommended. You can still call it but be mindful that calling `Converse with agent` will automatically generate a session ID for the associated agent.
+:::
+
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
 Creates a session with an agent.
@@ -2652,7 +2656,7 @@ Creates a session with an agent.
 - Body:
   - the required parameters:`str`
   - other parameters:
-    The parameters specified in the **Begin** component.
+    The variables specified in the **Begin** component.
 
 ##### Request example
 
@@ -2671,7 +2675,7 @@ curl --request POST \
 
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
-- `user_id`: (*Filter parameter*)
+- `user_id`: (*Filter parameter*)  
   The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
 
 #### Response
@@ -2750,8 +2754,8 @@ Success:
                             "message_history_window_size": 22,
                             "mode": "conversational",
                             "outputs": {},
-                            "prologue": "Hi! I'm your assistant, what can I do for you?",
-                            "tips": "Please fill up the form"
+                            "prologue": "Hi! I'm your assistant. What can I do for you?",
+                            "tips": "Please fill in the form"
                         }
                     },
                     "upstream": []
@@ -2803,7 +2807,7 @@ Success:
                                     }
                                 },
                                 "mode": "conversational",
-                                "prologue": "Hi! I'm your assistant, what can I do for you?"
+                                "prologue": "Hi! I'm your assistant. What can I do for you?"
                             },
                             "label": "Begin",
                             "name": "begin"
@@ -2860,7 +2864,7 @@ Success:
         "id": "0b02fe80780e11f084adcfdc3ed1d902",
         "message": [
             {
-                "content": "Hi! I'm your assistant, what can I do for you?",
+                "content": "Hi! I'm your assistant. What can I do for you?",
                 "role": "assistant"
             }
         ],
@@ -2908,17 +2912,17 @@ Asks a specified agent a question to start an AI-powered conversation.
 - Body:
   - `"question"`: `string`
   - `"stream"`: `boolean`
-  - `"session_id"`: `string`(optional)
-  - `"inputs"`: `object`(optional)
-  - `"user_id"`: `string`(optional)
+  - `"session_id"`: `string` (optional)
+  - `"inputs"`: `object` (optional)
+  - `"user_id"`: `string` (optional)
 
 :::info IMPORTANT
-You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component.
 :::
 
 ##### Request example
 
-- If the **Begin** component does not take parameters.
+- If the **Begin** component does not take parameters:
 
 ```bash
 curl --request POST \
@@ -2932,7 +2936,7 @@ curl --request POST \
      }'
 ```
 
-- If the **Begin** component takes parameters.  
+- If the **Begin** component takes parameters, include their values in the body of `"inputs"` as follows:  
 
 ```bash
 curl --request POST \
@@ -2996,13 +3000,19 @@ curl --request POST \
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
 - `"inputs"`: (*Body Parameter*)  
-  Parameters specified in the **Begin** component.
+  Variables specified in the **Begin** component.  
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 
+:::tip NOTE
+For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
+`http://{address}/v1/canvas/upload/{agent_id}`  
+*You will get a corresponding file ID from its response body.*
+:::
+
 #### Response
 
-success without `session_id` provided and with no parameters specified in the **Begin** component:
+success without `session_id` provided and with no variables specified in the **Begin** component:
 
 Stream:
 
@@ -3070,7 +3080,7 @@ Non-stream:
 }
 ```
 
-Success without `session_id` provided and with parameters specified in the **Begin** component:
+Success without `session_id` provided and with variables specified in the **Begin** component:
 
 Stream:
 
@@ -3159,7 +3169,7 @@ Non-stream:
 }
 ```
 
-Success with parameters specified in the **Begin** component:
+Success with variables specified in the **Begin** component:
 
 Stream:
 

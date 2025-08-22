@@ -505,6 +505,24 @@
                     "tags": "RE-RANK,4k",
                     "max_tokens": 4000,
                     "model_type": "rerank"
+                },
+                {
+                    "llm_name": "qwen-audio-asr",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "qwen-audio-asr-latest",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "qwen-audio-asr-1204",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
                 }
             ]
         },
@@ -1146,60 +1164,35 @@
                     "llm_name": "gemini-2.5-flash",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
                     "tags": "LLM,CHAT,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gemini-2.5-flash-preview-05-20",
+                    "llm_name": "gemini-2.5-flash-lite",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gemini-2.0-flash-001",
-                    "tags": "LLM,CHAT,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": "image2text",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gemini-2.0-flash-thinking-exp-01-21",
+                    "llm_name": "gemini-2.0-flash",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gemini-1.5-flash",
-                    "tags": "LLM,IMAGE2TEXT,1024K",
+                    "llm_name": "gemini-2.0-flash-lite",
+                    "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "gemini-2.5-pro-preview-05-06",
-                    "tags": "LLM,IMAGE2TEXT,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "gemini-1.5-pro",
-                    "tags": "LLM,IMAGE2TEXT,2048K",
-                    "max_tokens": 2097152,
-                    "model_type": "image2text"
-                },
-                {
-                    "llm_name": "gemini-1.5-flash-8b",
-                    "tags": "LLM,IMAGE2TEXT,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": "chat",
                     "is_tools": true
                 },
                 {

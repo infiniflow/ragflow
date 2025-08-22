@@ -10,11 +10,12 @@ type ApplicationCardProps = {
     title: string;
     update_time: number;
   };
+  onClick?(): void;
 };
 
-export function ApplicationCard({ app }: ApplicationCardProps) {
+export function ApplicationCard({ app, onClick }: ApplicationCardProps) {
   return (
-    <Card className="w-[264px]">
+    <Card className="w-[264px]" onClick={onClick}>
       <CardContent className="p-2.5  group flex justify-between">
         <div className="flex items-center gap-2.5">
           <RAGFlowAvatar

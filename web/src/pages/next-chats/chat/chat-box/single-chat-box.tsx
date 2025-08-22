@@ -1,5 +1,7 @@
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import {
   useFetchConversation,
@@ -23,15 +25,17 @@ interface IProps {
 export function SingleChatBox({ controller }: IProps) {
   const {
     value,
-    // scrollRef,
+    scrollRef,
     messageContainerRef,
     sendLoading,
     derivedMessages,
+    isUploading,
     handleInputChange,
     handlePressEnter,
     regenerateMessage,
     removeMessageById,
     stopOutputMessage,
+    handleUploadFile,
   } = useSendMessage(controller);
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchDialog();
@@ -41,11 +45,13 @@ export function SingleChatBox({ controller }: IProps) {
   const { data: conversation } = useFetchConversation();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   return (
     <section className="flex flex-col p-5 h-full">
       <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
-        <div className="w-full">
+        <div className="w-full pr-5">
           {derivedMessages?.map((message, i) => {
             return (
               <MessageItem
@@ -66,7 +72,7 @@ export function SingleChatBox({ controller }: IProps) {
                   },
                   message,
                 )}
-                // clickDocumentButton={clickDocumentButton}
+                clickDocumentButton={clickDocumentButton}
                 index={i}
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage}
@@ -75,7 +81,7 @@ export function SingleChatBox({ controller }: IProps) {
             );
           })}
         </div>
-        {/* <div ref={scrollRef} /> */}
+        <div ref={scrollRef} />
       </div>
       <NextMessageInput
         disabled={disabled}
@@ -89,7 +95,17 @@ export function SingleChatBox({ controller }: IProps) {
           createConversationBeforeUploadDocument
         }
         stopOutputMessage={stopOutputMessage}
+        onUpload={handleUploadFile}
+        isUploading={isUploading}
       />
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
     </section>
   );
 }

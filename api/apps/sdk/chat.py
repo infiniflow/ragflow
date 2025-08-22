@@ -99,7 +99,7 @@ def create(tenant_id):
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.""",
-        "prologue": "Hi! I'm your assistant, what can I do for you?",
+        "prologue": "Hi! I'm your assistant. What can I do for you?",
         "parameters": [{"key": "knowledge", "optional": False}],
         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
         "quote": True,
@@ -150,10 +150,10 @@ def update(tenant_id, chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the chat")
     req = request.json
-    ids = req.get("dataset_ids")
+    ids = req.get("dataset_ids", [])
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
-    if ids is not None:
+    if ids:
         for kb_id in ids:
             kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
             if not kbs:
