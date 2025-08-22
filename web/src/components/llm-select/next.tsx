@@ -2,6 +2,7 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { forwardRef, memo, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
@@ -20,6 +21,7 @@ const NextInnerLLMSelect = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   NextInnerLLMSelectProps
 >(({ value, disabled, filter, showSpeech2TextModel = false }, ref) => {
+  const { t } = useTranslation();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   const ttsModel = useMemo(() => {
@@ -49,7 +51,7 @@ const NextInnerLLMSelect = forwardRef<
             }}
             ref={ref}
           >
-            <SelectValue>
+            <SelectValue placeholder={t('common.pleaseSelect')}>
               {
                 modelOptions
                   .flatMap((x) => x.options)
