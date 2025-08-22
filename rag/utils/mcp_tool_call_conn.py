@@ -93,7 +93,8 @@ class MCPToolCallSession(ToolCallSession):
                             msg = f"Timeout initializing client_session for server {self._mcp_server.id}"
                             logging.error(msg)
                             await self._process_mcp_tasks(None, msg)
-            except Exception:
+            except Exception as e:
+                logging.exception(e)
                 msg = "Connection failed (possibly due to auth error). Please check authentication settings first"
                 await self._process_mcp_tasks(None, msg)
 

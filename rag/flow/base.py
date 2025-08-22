@@ -14,12 +14,11 @@
 #  limitations under the License.
 #
 import time
-from abc import ABC
 import os
 import logging
 from typing import Any
 import trio
-from agent.component.base import ComponentParamBase
+from agent.component.base import ComponentParamBase, ComponentBase
 from api.utils.api_utils import timeout
 
 
@@ -30,7 +29,7 @@ class ProcessParamBase(ComponentParamBase):
         self.persist_logs = True
 
 
-class ProcessBase(ABC):
+class ProcessBase(ComponentBase):
 
     def __init__(self, pipeline, id, param: ProcessParamBase):
         super().__init__(pipeline, id, param)

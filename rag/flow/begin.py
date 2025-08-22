@@ -13,7 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class BeginBase(ProcessParamBase):
@@ -25,4 +29,16 @@ class Begin(ProcessBase):
     component_name = "Begin"
 
     def _invoke(self, **kwargs):
-        pass
+        if self._canvas._doc_id:
+            e, doc = DocumentService.get_by_id(self._canvas._doc_id)
+            if not e:
+                self.set_output("_ERROR", f"Document({self._canvas._doc_id}) not found!")
+                return
+
+            b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
+            self.set_output("blob", STORAGE_IMPL.get(b, n))
+            self.set_output("name", doc.name)
+        else:
+            file = kwargs.get("file")
+            self.set_output("name", file["name"])
+            self.set_output("blob", FileService.get_blob(file["created_by"], file["id"]))

@@ -32,84 +32,11 @@ from rag.utils.redis_conn import REDIS_CONN
 
 
 class Pipeline(Canvas):
-    """
-    dsl = {
-        "components": {
-            "begin": {
-                "obj":{
-                    "component_name": "Begin",
-                    "params": {},
-                },
-                "downstream": ["answer_0"],
-                "upstream": [],
-            },
-            "retrieval_0": {
-                "obj": {
-                    "component_name": "Retrieval",
-                    "params": {}
-                },
-                "downstream": ["generate_0"],
-                "upstream": ["answer_0"],
-            },
-            "generate_0": {
-                "obj": {
-                    "component_name": "Generate",
-                    "params": {}
-                },
-                "downstream": ["answer_0"],
-                "upstream": ["retrieval_0"],
-            }
-        },
-        "history": [],
-        "path": ["begin"],
-        "retrieval": {"chunks": [], "doc_aggs": []},
-        "globals": {
-            "sys.query": "",
-            "sys.user_id": tenant_id,
-            "sys.conversation_turns": 0,
-            "sys.files": []
-        }
-    }
-    """
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None):
-        self.path = []
-        self.history = []
-        self.components = {}
-        self.error = ""
-        self.globals = {
-            "sys.query": "",
-            "sys.user_id": tenant_id,
-            "sys.conversation_turns": 0,
-            "sys.files": []
-        }
-        self.dsl = json.loads(dsl) if dsl else {
-            "components": {
-                "begin": {
-                    "obj": {
-                        "component_name": "Begin",
-                        "params": {
-                            "prologue": "Hi there!"
-                        }
-                    },
-                    "downstream": [],
-                    "upstream": [],
-                    "parent_id": ""
-                }
-            },
-            "history": [],
-            "path": [],
-            "retrieval": [],
-            "globals": {
-                "sys.query": "",
-                "sys.user_id": "",
-                "sys.conversation_turns": 0,
-                "sys.files": []
-            }
-        }
-        self._tenant_id = tenant_id
-        self.task_id = task_id if task_id else get_uuid()
-        self.load()
+    def __init__(self, dsl: str, tenant_id=None, kb_id=None, doc_id=None, task_id=None):
+        super().__init__(dsl, tenant_id, task_id)
+        self._kb_id = kb_id
+        self._doc_id = doc_id
 
     def load(self):
         self.components = self.dsl["components"]

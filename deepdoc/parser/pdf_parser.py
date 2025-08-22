@@ -1205,6 +1205,10 @@ class RAGFlowPdfParser:
                     "x0": rect[0], "x1": rect[1], "top": rect[2], "bottom": rect[3], "layout_type": layout_type, "text": txt, "image": img
                 })
 
+        for b in self.bboxes:
+            b["position_tag"] = self._line_tag(b, zoomin)
+            b["image"] = self.crop(b["position_tag"], zoomin)
+
         insert_table_figures(tbls, "table")
         insert_table_figures(figs, "figure")
         if callback:
@@ -1215,16 +1219,21 @@ class RAGFlowPdfParser:
     def remove_tag(txt):
         return re.sub(r"@@[\t0-9.-]+?##", "", txt)
 
-    def crop(self, text, ZM=3, need_position=False):
-        imgs = []
+    @staticmethod
+    def extract_positions(txt):
         poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
+        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", txt):
             pn, left, right, top, bottom = tag.strip(
                 "#").strip("@").split("\t")
             left, right, top, bottom = float(left), float(
                 right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")],
                          left, right, top, bottom))
+        return poss
+
+    def crop(self, text, ZM=3, need_position=False):
+        imgs = []
+        poss = self.extract_positions(text)
         if not poss:
             if need_position:
                 return None, None
@@ -1368,8 +1377,8 @@ class VisionParser(RAGFlowPdfParser):
 
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
         callback = kwargs.get("callback", lambda prog, msg: None)
-
-        self.__images__(fnm=filename, zoomin=3, page_from=from_page, page_to=to_page, **kwargs)
+        zoomin = kwargs.get("zoomin", 3)
+        self.__images__(fnm=filename, zoomin=zoomin, page_from=from_page, page_to=to_page, callback=callback)
 
         total_pdf_pages = self.total_page
 
@@ -1383,7 +1392,7 @@ class VisionParser(RAGFlowPdfParser):
             if pdf_page_num < start_page or pdf_page_num >= end_page:
                 continue
 
-            docs = picture_vision_llm_chunk(
+            text = picture_vision_llm_chunk(
                 binary=img_binary,
                 vision_model=self.vision_model,
                 prompt=vision_llm_describe_prompt(page=pdf_page_num+1),
@@ -1392,9 +1401,10 @@ class VisionParser(RAGFlowPdfParser):
             if kwargs.get("callback"):
                 kwargs["callback"](idx*1./len(self.page_images), f"Processed: {idx+1}/{len(self.page_images)}")
 
-            if docs:
-                all_docs.append(docs)
-        return [(doc, "") for doc in all_docs], []
+            if text:
+                width, height = self.page_images[idx].size
+                all_docs.append((text, f"{pdf_page_num+1} 0 {width/zoomin} 0 {height/zoomin}"))
+        return all_docs, []
 
 
 if __name__ == "__main__":
