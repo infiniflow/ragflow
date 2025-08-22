@@ -209,8 +209,10 @@ export const MultiSelect = React.forwardRef<
     const [isAnimating, setIsAnimating] = React.useState(false);
 
     React.useEffect(() => {
-      setSelectedValues(defaultValue);
-    }, [defaultValue]);
+      if (selectedValues === undefined) {
+        setSelectedValues(defaultValue);
+      }
+    }, [defaultValue, selectedValues]);
 
     const flatOptions = React.useMemo(() => {
       return options.flatMap((option) =>

@@ -154,6 +154,7 @@ export interface ISearchAppDetailProps {
   search_config: {
     cross_languages: string[];
     doc_ids: string[];
+    chat_id: string;
     highlight: boolean;
     kb_ids: string[];
     keyword: boolean;

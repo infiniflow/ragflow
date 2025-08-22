@@ -479,6 +479,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       improvise: 'Improvise',
       precise: 'Precise',
       balance: 'Balance',
+      custom: 'Custom',
       freedomTip: `A shortcut to 'Temperature', 'Top P', 'Presence penalty', and 'Frequency penalty' settings, indicating the freedom level of the model. This parameter has three options: Select 'Improvise' to produce more creative responses; select 'Precise' (default) to produce more conservative responses; 'Balance' is a middle ground between 'Improvise' and 'Precise'.`,
       temperature: 'Temperature',
       temperatureMessage: 'Temperature is required',
