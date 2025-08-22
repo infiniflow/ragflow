@@ -1,5 +1,6 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
+import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
@@ -32,6 +33,7 @@ export function DatasetCard({
           <MoreButton></MoreButton>
         </DatasetDropdown>
       }
+      sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
       onClick={navigateToDataset(dataset.id)}
     />
   );

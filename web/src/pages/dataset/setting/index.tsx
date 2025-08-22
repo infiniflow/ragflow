@@ -6,6 +6,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs-underlined';
 import { DocumentParserType } from '@/constants/knowledge';
+import { PermissionRole } from '@/constants/permission';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -43,7 +44,7 @@ export default function DatasetSettings() {
     defaultValues: {
       name: '',
       parser_id: DocumentParserType.Naive,
-      permission: 'me',
+      permission: PermissionRole.Me,
       parser_config: {
         layout_recognize: DocumentType.DeepDOC,
         chunk_token_num: 512,
@@ -81,22 +82,23 @@ export default function DatasetSettings() {
   }
 
   return (
-    <section className="p-5 ">
+    <section className="p-5 h-full flex flex-col">
       <TopTitle
         title={t('knowledgeDetails.configuration')}
         description={t('knowledgeConfiguration.titleDescription')}
       ></TopTitle>
-      <div className="flex gap-14">
+      <div className="flex gap-14 flex-1 min-h-0">
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 basis-full min-w-[1000px] max-w-[1000px]"
+            className="space-y-6 flex-1"
           >
             <Tabs
               defaultValue="generalForm"
               onValueChange={(val) => {
                 setCurrentTab(val);
               }}
+              className="h-full flex flex-col"
             >
               <TabsList className="grid bg-transparent grid-cols-2 rounded-none text-foreground">
                 <TabsTrigger
@@ -120,10 +122,10 @@ export default function DatasetSettings() {
                   </div>
                 </TabsTrigger>
               </TabsList>
-              <TabsContent value="generalForm">
+              <TabsContent value="generalForm" className="flex-1 min-h-0">
                 <GeneralForm></GeneralForm>
               </TabsContent>
-              <TabsContent value="chunkMethodForm">
+              <TabsContent value="chunkMethodForm" className="flex-1 min-h-0">
                 <ChunkMethodForm></ChunkMethodForm>
               </TabsContent>
             </Tabs>
