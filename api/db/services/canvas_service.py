@@ -134,6 +134,25 @@ class UserCanvasService(CommonService):
             return False
         return True
 
+
+def structure_answer(conv, ans, message_id, session_id):
+    if not conv:
+        return ans
+    content = ""
+    if ans["event"] == "message":
+        if ans["data"].get("start_to_think") is True:
+            content = "<think>"
+        elif ans["data"].get("end_to_think") is True:
+            content = "</think>"
+        else:
+            content = ans["data"]["content"]
+
+    reference = ans["data"].get("reference")
+    result = {"id": message_id, "session_id": session_id, "answer": content}
+    if reference:
+        result["reference"] = [reference]
+    return result
+
 def completion(tenant_id, agent_id, session_id=None, **kwargs):
     query = kwargs.get("query", "") or kwargs.get("question", "")
     files = kwargs.get("files", [])
@@ -176,13 +195,14 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
     })
     txt = ""
     for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
-        ans["session_id"] = session_id
-        if ans["event"] == "message":
-            txt += ans["data"]["content"]
-        yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+        ans = structure_answer(conv, ans, message_id, session_id)
+        txt += ans["answer"]
+        if ans.get("answer") or ans.get("reference"):
+            yield "data:" + json.dumps({"code": 0, "data": ans},
+                                       ensure_ascii=False) + "\n\n"
 
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
-    conv.reference = canvas.get_reference()
+    conv.reference.append(canvas.get_reference())
     conv.errors = canvas.error
     conv.dsl = str(canvas)
     conv = conv.to_dict()
@@ -211,11 +231,9 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     except Exception as e:
                         logging.exception(f"Agent OpenAI-Compatible completionOpenAI parse answer failed: {e}")
                         continue
-
-                if ans.get("event") != "message":
+                if not ans["data"]["answer"]:
                     continue
-
-                content_piece = ans["data"]["content"]
+                content_piece = ans["data"]["answer"]
                 completion_tokens += len(tiktokenenc.encode(content_piece))
 
                 yield "data: " + json.dumps(
@@ -260,9 +278,9 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             ):
                 if isinstance(ans, str):
                     ans = json.loads(ans[5:])
-                if ans.get("event") != "message":
+                if not ans["data"]["answer"]:
                     continue
-                all_content += ans["data"]["content"]
+                all_content += ans["data"]["answer"]
 
             completion_tokens = len(tiktokenenc.encode(all_content))
 
