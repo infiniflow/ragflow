@@ -8,9 +8,13 @@ import {
 } from '@/interfaces/database/llm';
 import { buildLlmUuid } from '@/utils/llm-util';
 
+export const enum LLMApiAction {
+  LlmList = 'llmList',
+}
+
 export const useFetchLlmList = (modelType?: LlmModelType) => {
   const { data } = useQuery<IThirdAiModelCollection>({
-    queryKey: ['llmList'],
+    queryKey: [LLMApiAction.LlmList],
     initialData: {},
     queryFn: async () => {
       const { data } = await userService.llm_list({ model_type: modelType });
