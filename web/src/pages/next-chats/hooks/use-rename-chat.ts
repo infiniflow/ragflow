@@ -1,5 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetDialog } from '@/hooks/use-chat-request';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IDialog } from '@/interfaces/database/chat';
 import { isEmpty, omit } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
@@ -14,6 +15,7 @@ export const useRenameChat = () => {
   } = useSetModalState();
   const { setDialog, loading } = useSetDialog();
   const { t } = useTranslation();
+  const tenantInfo = useFetchTenantInfo();
 
   const InitialData = useMemo(
     () => ({
@@ -32,13 +34,13 @@ export const useRenameChat = () => {
         reasoning: false,
         parameters: [{ key: 'knowledge', optional: false }],
       },
-      llm_id: '',
+      llm_id: tenantInfo.data.llm_id,
       llm_setting: {},
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.30000000000000004,
       top_n: 8,
     }),
-    [t],
+    [t, tenantInfo.data.llm_id],
   );
 
   const onChatRenameOk = useCallback(
