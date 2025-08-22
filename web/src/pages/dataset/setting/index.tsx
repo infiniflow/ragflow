@@ -6,6 +6,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs-underlined';
 import { DocumentParserType } from '@/constants/knowledge';
+import { PermissionRole } from '@/constants/permission';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -43,7 +44,7 @@ export default function DatasetSettings() {
     defaultValues: {
       name: '',
       parser_id: DocumentParserType.Naive,
-      permission: 'me',
+      permission: PermissionRole.Me,
       parser_config: {
         layout_recognize: DocumentType.DeepDOC,
         chunk_token_num: 512,
