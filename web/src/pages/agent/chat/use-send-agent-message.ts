@@ -4,6 +4,7 @@ import {
   useHandleMessageInputChange,
   useSelectDerivedMessages,
 } from '@/hooks/logic-hooks';
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
   IInputEvent,
@@ -188,11 +189,7 @@ export const useSendAgentMessage = (
     return answerList[0]?.message_id;
   }, [answerList]);
 
-  useEffect(() => {
-    if (answerList[0]?.session_id) {
-      setSessionId(answerList[0]?.session_id);
-    }
-  }, [answerList]);
+  const { refetch } = useFetchAgent();
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -250,7 +247,7 @@ export const useSendAgentMessage = (
           setValue(message.content);
           removeLatestMessage();
         } else {
-          // refetch(); // pull the message list after sending the message successfully
+          refetch(); // pull the message list after sending the message successfully
         }
       } catch (error) {
         console.log('🚀 ~ useSendAgentMessage ~ error:', error);
@@ -258,28 +255,30 @@ export const useSendAgentMessage = (
     },
     [
       agentId,
-      sessionId,
-      send,
-      clearUploadResponseList,
       inputs,
       beginParams,
       uploadResponseList,
+      sessionId,
+      send,
+      clearUploadResponseList,
       setValue,
       removeLatestMessage,
+      refetch,
     ],
   );
 
   const sendFormMessage = useCallback(
-    (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
-      send({ ...body, session_id: sessionId });
+    async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([key, val]) => `${key}: ${val.value}`)
           .join('<br/>'),
         role: MessageType.User,
       });
+      await send({ ...body, session_id: sessionId });
+      refetch();
     },
-    [addNewestOneQuestion, send, sessionId],
+    [addNewestOneQuestion, refetch, send, sessionId],
   );
 
   // reset session
@@ -345,6 +344,12 @@ export const useSendAgentMessage = (
       addEventListFun(answerList, messageId);
     }
   }, [addEventList, answerList, addEventListFun, messageId]);
+
+  useEffect(() => {
+    if (answerList[0]?.session_id) {
+      setSessionId(answerList[0]?.session_id);
+    }
+  }, [answerList]);
 
   return {
     value,
