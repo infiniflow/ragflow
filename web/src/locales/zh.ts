@@ -477,6 +477,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       improvise: '即兴创作',
       precise: '精确',
       balance: '平衡',
+      custom: '自定义',
       freedomTip: `“精确”意味着大语言模型会保守并谨慎地回答你的问题。 “即兴发挥”意味着你希望大语言模型能够自由地畅所欲言。 “平衡”是谨慎与自由之间的平衡。`,
       temperature: '温度',
       temperatureMessage: '温度是必填项',
