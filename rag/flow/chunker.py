@@ -76,6 +76,33 @@ class Chunker(ProcessBase):
             "positions": RAGFlowPdfParser.extract_positions(c)
         } for c,img in zip(chunks,images)]
 
+    def _q_and_a(self, **kwargs):
+        pass
+
+    def _resume(self, **kwargs):
+        pass
+
+    def _manual(self, **kwargs):
+        pass
+
+    def _table(self, **kwargs):
+        pass
+
+    def _paper(self, **kwargs):
+        pass
+
+    def _book(self, **kwargs):
+        pass
+
+    def _laws(self, **kwargs):
+        pass
+
+    def _presentation(self, **kwargs):
+        pass
+
+    def _one(self, **kwargs):
+        pass
+
     async def _invoke(self, **kwargs):
         function_map = {
             "general": self._general,
@@ -89,7 +116,7 @@ class Chunker(ProcessBase):
             "presentation": self._presentation,
             "one": self._one,
         }
-        chunks = function_map[self._param.method](kwargs)
+        chunks = function_map[self._param.method](**kwargs)
         llm_setting = self._param.llm_setting
 
         async def auto_keywords():

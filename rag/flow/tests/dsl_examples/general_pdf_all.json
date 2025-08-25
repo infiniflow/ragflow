@@ -2,7 +2,7 @@
   "components": {
     "begin": {
         "obj":{
-            "component_name": "Begin",
+            "component_name": "File",
             "params": {
             }
         },
@@ -14,11 +14,15 @@
             "component_name": "Parser",
             "params": {
               "setups": {
+                "pdf": {
                   "parse_method": "deepdoc",
                   "vlm_name": "",
                   "lang": "Chinese",
-                  "suffix": ["pdf"],
+                  "suffix": [
+                    "pdf"
+                  ],
                   "output_format": "json"
+                }
               }
             }
         },

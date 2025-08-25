@@ -18,8 +18,12 @@ import json
 import logging
 import random
 import time
+
+import trio
+
 from agent.canvas import Graph
 from api.db.services.document_service import DocumentService
+from rag.flow.base import ProcessBase
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -34,12 +38,12 @@ class Pipeline(Graph):
             self._kb_id = DocumentService.get_knowledgebase_id(doc_id)
             assert self._kb_id, f"Can't find KB of this document: {doc_id}"
 
-    def callback(self, component_name: str, progress: float, message: str) -> None:
+    def callback(self, component_name: str, progress: float|int|None=None, message: str = "") -> None:
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         try:
             bin = REDIS_CONN.get(log_key)
-            if bin:
-                obj = json.loads(bin.encode("utf-8"))
+            obj = json.loads(bin.encode("utf-8"))
+            if obj:
                 if obj[-1]["component_name"] == component_name:
                     obj[-1]["trace"].append({"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")})
                 else:
@@ -89,22 +93,31 @@ class Pipeline(Graph):
         self.error = ""
         idx = len(self.path) - 1
         if idx == 0:
-            cpn = self.get_component_obj(self.path[0])
-            await cpn.invoke(**kwargs)
-            idx += 1
+            cpn_obj = self.get_component_obj(self.path[0])
+            await cpn_obj.invoke(**kwargs)
+            if cpn_obj.error():
+                self.error = "[ERROR]" + cpn_obj.error()
+            else:
+                idx += 1
+                self.path.extend(cpn_obj.get_downstream())
 
-        while idx < len(self.path):
+        while idx < len(self.path) and not self.error:
             last_cpn = self.get_component_obj(self.path[idx-1])
             cpn_obj = self.get_component_obj(self.path[idx])
-            await cpn.invoke(**last_cpn.output())
+            async def invoke():
+                nonlocal last_cpn, cpn_obj
+                await cpn_obj.invoke(**last_cpn.output())
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(invoke)
             if cpn_obj.error():
-                self.error = cpn_obj.error()
+                self.error = "[ERROR]" + cpn_obj.error()
                 break
             idx += 1
+            self.path.extend(cpn_obj.get_downstream())
 
         if self._doc_id:
             DocumentService.update_by_id(self._doc_id, {
-                "progress": 1,
+                "progress": 1 if not self.error else -1,
                 "progress_msg": "Pipeline finished...\n" + self.error,
                 "process_duration": time.perf_counter() - st
             })

@@ -1177,11 +1177,11 @@ class RAGFlowPdfParser:
         def insert_table_figures(tbls_or_figs, layout_type):
             def min_rectangle_distance(rect1, rect2):
                 import math
-                left1, right1, top1, bottom1 = rect1
-                left2, right2, top2, bottom2 = rect2
+                pn1, left1, right1, top1, bottom1 = rect1
+                pn2, left2, right2, top2, bottom2 = rect2
                 if (right1 >= left2 and right2 >= left1 and
                         bottom1 >= top2 and bottom2 >= top1):
-                    return 0
+                    return 0 + (pn1-pn2)*10000
                 if right1 < left2:
                     dx = left2 - right1
                 elif right2 < left1:
@@ -1194,18 +1194,20 @@ class RAGFlowPdfParser:
                     dy = top1 - bottom2
                 else:
                     dy = 0
-                return math.sqrt(dx*dx + dy*dy)
+                return math.sqrt(dx*dx + dy*dy) + (pn1-pn2)*10000
 
-            for (img, txt), (pn, left, right, top, bott) in tbls_or_figs:
-                bboxes = [(i, (b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.bboxes) if b["page_number"] == pn]
-                dists = [min_rectangle_distance((left, right, top, bott), rect) for _, rect in bboxes]
-                min_i = np.argmin(dists)
-                min_i, rect = bboxes[min_i]
-                self.bboxes.insert(min_i, {
-                    "x0": rect[0], "x1": rect[1], "top": rect[2], "bottom": rect[3], "layout_type": layout_type, "text": txt, "image": img
+            for (img, txt), poss in tbls_or_figs:
+                bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
+                dists = [(min_rectangle_distance((pn, left, right, top, bott), rect),i) for i, rect in bboxes for pn, left, right, top, bott in poss]
+                min_i = np.argmin(dists, axis=0)[0]
+                min_i, rect = bboxes[dists[min_i][-1]]
+                if isinstance(txt, list):
+                    txt = "\n".join(txt)
+                self.boxes.insert(min_i, {
+                    "page_number": rect[0], "x0": rect[1], "x1": rect[2], "top": rect[3], "bottom": rect[4], "layout_type": layout_type, "text": txt, "image": img
                 })
 
-        for b in self.bboxes:
+        for b in self.boxes:
             b["position_tag"] = self._line_tag(b, zoomin)
             b["image"] = self.crop(b["position_tag"], zoomin)
 
@@ -1213,7 +1215,7 @@ class RAGFlowPdfParser:
         insert_table_figures(figs, "figure")
         if callback:
             callback(1, "Structured ({:.2f}s)".format(timer() - start))
-        return deepcopy(self.bboxes)
+        return deepcopy(self.boxes)
 
     @staticmethod
     def remove_tag(txt):

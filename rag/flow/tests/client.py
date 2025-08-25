@@ -54,4 +54,7 @@ if __name__ == '__main__':
     pipeline.reset()
 
     exe = ThreadPoolExecutor(max_workers=5)
-    exe.submit(print_logs, pipeline)
+    thr = exe.submit(print_logs, pipeline)
+
+    trio.run(pipeline.run)
+    thr.result()

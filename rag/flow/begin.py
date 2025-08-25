@@ -20,13 +20,16 @@ from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
-class BeginBase(ProcessParamBase):
+class FileParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
 
+    def check(self):
+        pass
 
-class Begin(ProcessBase):
-    component_name = "Begin"
+
+class File(ProcessBase):
+    component_name = "File"
 
     async def _invoke(self, **kwargs):
         if self._canvas._doc_id:

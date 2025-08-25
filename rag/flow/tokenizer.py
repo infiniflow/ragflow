@@ -44,7 +44,8 @@ class TokenizerParam(ProcessParamBase):
         self.filename_embd_weight = 0.1
 
     def check(self):
-        self.check_valid_value(self.search_method.lower(), "Chunk method abnormal.", ["full_text", "embedding"])
+        for v in self.search_method:
+            self.check_valid_value(v.lower(), "Chunk method abnormal.", ["full_text", "embedding"])
 
 
 class Tokenizer(ProcessBase):
@@ -84,7 +85,8 @@ class Tokenizer(ProcessBase):
             else:
                 cnts_ = np.concatenate((cnts_, vts), axis=0)
             token_count += c
-            self.callback(i*1./len(texts)/parts + 0.5*(parts-1))
+            if i % 33 == 32:
+                self.callback(i*1./len(texts)/parts/EMBEDDING_BATCH_SIZE + 0.5*(parts-1))
 
         cnts = cnts_
         title_w = float(self._param.filename_embd_weight)
@@ -109,7 +111,7 @@ class Tokenizer(ProcessBase):
                         ck["important_tks"] = rag_tokenizer.tokenize("\n".join(ck["keywords"]))
                     ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
-                    if i % 99 == 0:
+                    if i % 100 == 99:
                         self.callback(i*1./len(chunks)/parts)
             elif kwargs.get("output_format") in ["markdown", "text"]:
                 ck = {
@@ -124,12 +126,16 @@ class Tokenizer(ProcessBase):
                 for i, ck in enumerate(chunks):
                     ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
-                    if i % 99 == 0:
+                    if i % 100 == 99:
                         self.callback(i*1./len(chunks)/parts)
+
+            self.callback(1./parts, "Finish tokenizing.")
 
         if "embedding" in self._param.search_method:
             self.callback(random.randint(1,5)/100. + 0.5*(parts-1), "Start embedding inference.")
             chunks, token_count = await self._embedding(kwargs.get("name", ""), chunks)
             self.set_output("embedding_token_consumption", token_count)
+
+            self.callback(1., "Finish embedding.")
 
         self.set_output("chunks", chunks)

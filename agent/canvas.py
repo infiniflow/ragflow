@@ -85,8 +85,6 @@ class Graph:
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
 
-        assert "Begin" in cpn_nms, "There have to be an 'Begin' component."
-
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
             param = component_class(cpn["obj"]["component_name"] + "Param")()

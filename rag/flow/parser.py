@@ -14,6 +14,8 @@
 #  limitations under the License.
 import random
 
+import trio
+
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser, PlainParser, VisionParser
@@ -88,5 +90,5 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if kwargs.get("name", "").split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            function_map[p_type](kwargs["blob"])
+            await trio.to_thread.run_sync(function_map[p_type], kwargs["blob"])
             break
