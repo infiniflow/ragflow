@@ -37,6 +37,8 @@ const {
   upload_and_parse,
   listTagByKnowledgeIds,
   setMeta,
+  getMeta,
+  retrievalTestShare,
 } = api;
 
 const methods = {
@@ -157,6 +159,14 @@ const methods = {
   },
   documentFilter: {
     url: api.get_dataset_filter,
+    method: 'post',
+  },
+  getMeta: {
+    url: getMeta,
+    method: 'get',
+  },
+  retrievalTestShare: {
+    url: retrievalTestShare,
     method: 'post',
   },
 };

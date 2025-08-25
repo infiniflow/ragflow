@@ -95,7 +95,7 @@ function CheckboxFormMultiple({
                     name={x.field}
                     render={({ field }) => {
                       return (
-                        <div className="flex items-center justify-between text-text-title text-xs">
+                        <div className="flex items-center justify-between text-text-primary text-xs">
                           <FormItem
                             key={item.id}
                             className="flex flex-row  space-x-3 space-y-0 items-center "

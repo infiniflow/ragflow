@@ -36,7 +36,7 @@ _IS_RAW_CONF = "_is_raw_conf"
 
 class ComponentParamBase(ABC):
     def __init__(self):
-        self.message_history_window_size = 22
+        self.message_history_window_size = 13
         self.inputs = {}
         self.outputs = {}
         self.description = ""
@@ -479,7 +479,7 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE):
+        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE|re.DOTALL):
             exp = r.group(1)
             cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
             res[exp] = {
@@ -529,8 +529,12 @@ class ComponentBase(ABC):
     @staticmethod
     def string_format(content: str, kv: dict[str, str]) -> str:
         for n, v in kv.items():
+            def repl(_match, val=v):
+                return str(val) if val is not None else ""
             content = re.sub(
-                r"\{%s\}" % re.escape(n), v, content
+                r"\{%s\}" % re.escape(n),
+                repl,
+                content
             )
         return content
 

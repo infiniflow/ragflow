@@ -166,6 +166,17 @@ def create():
         if DocumentService.query(name=req["name"], kb_id=kb_id):
             return get_data_error_result(message="Duplicated document name in the same knowledgebase.")
 
+        kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
+        if not kb_root_folder:
+            return get_data_error_result(message="Cannot find the root folder.")
+        kb_folder = FileService.new_a_file_from_kb(
+            kb.tenant_id,
+            kb.name,
+            kb_root_folder["id"],
+        )
+        if not kb_folder:
+            return get_data_error_result(message="Cannot find the kb folder for this file.")
+
         doc = DocumentService.insert(
             {
                 "id": get_uuid(),
@@ -180,6 +191,9 @@ def create():
                 "size": 0,
             }
         )
+
+        FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
+
         return get_json_result(data=doc.to_json())
     except Exception as e:
         return server_error_response(e)
@@ -667,6 +681,11 @@ def set_meta():
         return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
     try:
         meta = json.loads(req["meta"])
+        if not isinstance(meta, dict):
+            return get_json_result(data=False, message="Only dictionary type supported.", code=settings.RetCode.ARGUMENT_ERROR)
+        for k,v in meta.items():
+            if not isinstance(v, str) and not isinstance(v, int) and not isinstance(v, float):
+                return get_json_result(data=False, message=f"The type is not supported: {v}", code=settings.RetCode.ARGUMENT_ERROR)
     except Exception as e:
         return get_json_result(data=False, message=f"Json syntax error: {e}", code=settings.RetCode.ARGUMENT_ERROR)
     if not isinstance(meta, dict):

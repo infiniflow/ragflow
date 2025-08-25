@@ -1,5 +1,43 @@
 // .eslintrc.js
 module.exports = {
-  // Umi 项目
   extends: [require.resolve('umi/eslint'), 'plugin:react-hooks/recommended'],
+  plugins: ['check-file'],
+  rules: {
+    '@typescript-eslint/no-use-before-define': [
+      'warn',
+      {
+        functions: false,
+        variables: true,
+      },
+    ],
+    'check-file/filename-naming-convention': [
+      'error',
+      {
+        '**/*.{jsx,tsx}': 'KEBAB_CASE',
+        '**/*.{js,ts}': '[a-z0-9.-]*',
+      },
+    ],
+    'check-file/folder-naming-convention': [
+      'error',
+      {
+        'src/**/': 'KEBAB_CASE',
+        'mocks/*/': 'KEBAB_CASE',
+      },
+    ],
+    'react/no-unescaped-entities': [
+      'warn',
+      {
+        forbid: [
+          {
+            char: "'",
+            alternatives: ['&apos;', '&#39;'],
+          },
+          {
+            char: '"',
+            alternatives: ['&quot;', '&#34;'],
+          },
+        ],
+      },
+    ],
+  },
 };

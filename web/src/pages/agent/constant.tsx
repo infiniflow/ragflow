@@ -48,8 +48,6 @@ export const BeginId = 'begin';
 export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
-  Generate = 'Generate',
-  Answer = 'Answer',
   Categorize = 'Categorize',
   Message = 'Message',
   Relevant = 'Relevant',
@@ -78,7 +76,6 @@ export enum Operator {
   Note = 'Note',
   Crawler = 'Crawler',
   Invoke = 'Invoke',
-  Template = 'Template',
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
@@ -100,15 +97,12 @@ export const CommonOperatorList = Object.values(Operator).filter(
 
 export const AgentOperatorList = [
   Operator.Retrieval,
-  Operator.Generate,
-  Operator.Answer,
   Operator.Categorize,
   Operator.Message,
   Operator.RewriteQuestion,
   Operator.KeywordExtract,
   Operator.Switch,
   Operator.Concentrator,
-  Operator.Template,
   Operator.Iteration,
   Operator.WaitingDialogue,
   Operator.Note,
@@ -118,12 +112,6 @@ export const AgentOperatorList = [
 export const componentMenuList = [
   {
     name: Operator.Retrieval,
-  },
-  {
-    name: Operator.Generate,
-  },
-  {
-    name: Operator.Answer,
   },
   {
     name: Operator.Categorize,
@@ -143,9 +131,6 @@ export const componentMenuList = [
   },
   {
     name: Operator.Concentrator,
-  },
-  {
-    name: Operator.Template,
   },
   {
     name: Operator.Iteration,
@@ -277,7 +262,7 @@ export const initialRetrievalValues = {
 
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
-  prologue: `Hi! I'm your assistant, what can I do for you?`,
+  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const variableCheckBoxFieldMap = Object.keys(
@@ -660,12 +645,13 @@ export const initialAgentValues = {
   max_retries: 3,
   delay_after_error: 1,
   visual_files_var: '',
-  max_rounds: 5,
+  max_rounds: 1,
   exception_method: '',
   exception_goto: [],
   exception_default_value: '',
   tools: [],
   mcp: [],
+  cite: true,
   outputs: {
     // structured_output: {
     //   topic: {
@@ -796,19 +782,16 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Relevant],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize, Operator.Answer],
-  [Operator.Answer]: [Operator.Begin, Operator.Answer, Operator.Message],
+  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Generate]: [Operator.Begin, Operator.Relevant],
   [Operator.Message]: [
     Operator.Begin,
     Operator.Message,
-    Operator.Generate,
     Operator.Retrieval,
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
-  [Operator.Relevant]: [Operator.Begin, Operator.Answer],
+  [Operator.Relevant]: [Operator.Begin],
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
@@ -843,7 +826,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Crawler]: [Operator.Begin],
   [Operator.Note]: [],
   [Operator.Invoke]: [Operator.Begin],
-  [Operator.Template]: [Operator.Begin, Operator.Relevant],
   [Operator.Email]: [Operator.Begin],
   [Operator.Iteration]: [Operator.Begin],
   [Operator.IterationStart]: [Operator.Begin],
@@ -861,8 +843,6 @@ export const NodeMap = {
   [Operator.Begin]: 'beginNode',
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
-  [Operator.Generate]: 'generateNode',
-  [Operator.Answer]: 'logicNode',
   [Operator.Message]: 'messageNode',
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
@@ -890,7 +870,6 @@ export const NodeMap = {
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
-  [Operator.Template]: 'templateNode',
   [Operator.Email]: 'ragNode',
   [Operator.Iteration]: 'group',
   [Operator.IterationStart]: 'iterationStartNode',
@@ -924,9 +903,7 @@ export const BeginQueryTypeIconMap = {
 
 export const NoDebugOperatorsList = [
   Operator.Begin,
-  Operator.Answer,
   Operator.Concentrator,
-  Operator.Template,
   Operator.Message,
   Operator.RewriteQuestion,
   Operator.Switch,

@@ -28,11 +28,16 @@ from rag.utils import num_tokens_from_string
 
 
 class Base(ABC):
-    def __init__(self, key, model_name):
+    def __init__(self, key, model_name, **kwargs):
+        """
+        Abstract base class constructor.
+        Parameters are not stored; initialization is left to subclasses.
+        """
         pass
 
-    def transcription(self, audio, **kwargs):
-        transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio, response_format="text")
+    def transcription(self, audio_path, **kwargs):
+        audio_file = open(audio_path, "rb")
+        transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
         return transcription.text.strip(), num_tokens_from_string(transcription.text.strip())
 
     def audio2base64(self, audio):
@@ -46,7 +51,7 @@ class Base(ABC):
 class GPTSeq2txt(Base):
     _FACTORY_NAME = "OpenAI"
 
-    def __init__(self, key, model_name="whisper-1", base_url="https://api.openai.com/v1"):
+    def __init__(self, key, model_name="whisper-1", base_url="https://api.openai.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
@@ -56,27 +61,38 @@ class GPTSeq2txt(Base):
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="paraformer-realtime-8k-v1", **kwargs):
+    def __init__(self, key, model_name="qwen-audio-asr", **kwargs):
         import dashscope
 
         dashscope.api_key = key
         self.model_name = model_name
 
-    def transcription(self, audio, format):
-        from http import HTTPStatus
+    def transcription(self, audio_path):
+        if "paraformer" in self.model_name or "sensevoice" in self.model_name:
+            return f"**ERROR**: model {self.model_name} is not suppported yet.", 0
 
-        from dashscope.audio.asr import Recognition
+        from dashscope import MultiModalConversation
 
-        recognition = Recognition(model=self.model_name, format=format, sample_rate=16000, callback=None)
-        result = recognition.call(audio)
+        audio_path = f"file://{audio_path}"
+        messages = [
+            {
+                "role": "user",
+                "content": [{"audio": audio_path}],
+            }
+        ]
 
-        ans = ""
-        if result.status_code == HTTPStatus.OK:
-            for sentence in result.get_sentence():
-                ans += sentence.text.decode("utf-8") + "\n"
-            return ans, num_tokens_from_string(ans)
-
-        return "**ERROR**: " + result.message, 0
+        response = None
+        full_content = ""
+        try:
+            response = MultiModalConversation.call(model="qwen-audio-asr", messages=messages, result_format="message", stream=True)
+            for response in response:
+                try:
+                    full_content += response["output"]["choices"][0]["message"].content[0]["text"]
+                except Exception:
+                    pass
+            return full_content, num_tokens_from_string(full_content)
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
 
 
 class AzureSeq2txt(Base):
@@ -207,6 +223,7 @@ class GiteeSeq2txt(Base):
             base_url = "https://ai.gitee.com/v1/"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
+
 
 class DeepInfraSeq2txt(Base):
     _FACTORY_NAME = "DeepInfra"

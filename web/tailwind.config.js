@@ -40,7 +40,6 @@ module.exports = {
         'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
         'colors-text-persist-light': 'var(--colors-text-persist-light)',
         'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
-        'text-delete-red': 'var(--text-delete-red)',
 
         'background-badge': 'var(--background-badge)',
         'text-badge': 'var(--text-badge)',
@@ -51,12 +50,34 @@ module.exports = {
         'background-header-bar': 'var(--background-header-bar)',
         'background-card': 'var(--background-card)',
         'background-note': 'var(--background-note)',
-        'background-checked': 'var(--background-checked)',
         'background-highlight': 'var(--background-highlight)',
 
         'input-border': 'var(--input-border)',
-        'dot-green': 'var(--dot-green)',
-        'dot-red': 'var(--dot-red)',
+
+        /* design colors */
+
+        'bg-base': 'var(--bg-base)',
+        'bg-card': 'var(--bg-card)',
+        'bg-component': 'var(--bg-component)',
+        'bg-input': 'var(--bg-input)',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-disabled': 'var(--text-disabled)',
+        'text-input-tip': 'var(--text-input-tip)',
+        'border-default': 'var(--border-default)',
+        'border-accent': 'var(--border-accent)',
+        'border-button': 'var(--border-button)',
+        'accent-primary': 'var(--accent-primary)',
+        'bg-accent': 'var(--bg-accent)',
+        'state-success': 'var(--state-success)',
+        'state-warning': 'var(--state-warning)',
+        'state-error': 'var(--state-error)',
+        'team-group': 'var(--team-group)',
+        'team-member': 'var(--team-member)',
+        'team-department': 'var(--team-department)',
+        'bg-group': 'var(--bg-group)',
+        'bg-member': 'var(--bg-member)',
+        'bg-department': 'var(--bg-department)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
@@ -160,10 +181,6 @@ module.exports = {
           DEFAULT: 'var(--colors-background-inverse-strong)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
-        'colors-background-inverse-weak': {
-          DEFAULT: 'var(--colors-background-inverse-weak)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
         'colors-background-neutral-standard': {
           DEFAULT: 'var(--colors-background-neutral-standard)',
           foreground: 'var(--background-inverse-standard-foreground)',
@@ -190,6 +207,10 @@ module.exports = {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+      },
+      backgroundImage: {
+        'metallic-gradient':
+          'linear-gradient(104deg, var(--text-primary) 30%, var(--metallic) 50%, var(--text-primary) 70%)',
       },
       borderRadius: {
         lg: `var(--radius)`,

@@ -17,7 +17,7 @@ import base64
 import logging
 import os
 from abc import ABC
-from enum import StrEnum
+from strenum import StrEnum
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
@@ -67,11 +67,19 @@ class CodeExecParam(ToolParamBase):
             "description": """
 This tool has a sandbox that can execute code written in 'Python'/'Javascript'. It recieves a piece of code and return a Json string.
 Here's a code example for Python(`main` function MUST be included):
-def main(arg1: str, arg2: str) -> dict:
+def main() -> dict:
+    \"\"\"
+    Generate Fibonacci numbers within 100.
+    \"\"\"
+    def fibonacci_recursive(n):
+        if n <= 1:
+            return n
+        else:
+            return fibonacci_recursive(n-1) + fibonacci_recursive(n-2)
     return {
-        "result": arg1 + arg2,
+        "result": fibonacci_recursive(100),
     }
-    
+
 Here's a code example for Javascript(`main` function MUST be included and exported):
 const axios = require('axios');
 async function main(args) {
@@ -148,7 +156,7 @@ class CodeExec(ToolBase, ABC):
             self.set_output("_ERROR", "construct code request error: " + str(e))
 
         try:
-            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=10)
+            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
             logging.info(f"http://{settings.SANDBOX_HOST}:9385/run", code_req, resp.status_code)
             if resp.status_code != 200:
                 resp.raise_for_status()

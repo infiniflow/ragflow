@@ -61,7 +61,6 @@
     --colors-text-inverse-strong: rgba(255, 255, 255, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
     --colors-text-inverse-weak: rgba(184, 181, 203, 1);
-    --text-delete-red: rgba(216, 73, 75, 1);
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -87,12 +86,45 @@
 
     --background-note: rgba(22, 22, 24, 0.1);
 
-    --background-checked: rgba(76, 164, 231, 1);
     --background-highlight: rgba(76, 164, 231, 0.1);
 
     --input-border: rgba(22, 22, 24, 0.2);
-    --dot-green: rgba(59, 160, 92, 1);
-    --dot-red: rgba(216, 73, 75, 1);
+
+    --metallic: #46464a;
+    /* design colors */
+
+    --bg-base: #ffffff;
+    /* card color , dividing line */
+    --bg-card: rgba(0, 0, 0, 0.05);
+    --bg-component: #ffffff;
+    --bg-input: rgba(255, 255, 255, 0);
+    --bg-accent: rgba(76, 164, 231, 0.05);
+    /* Button ,Body text, Input completed text */
+    --text-primary: #161618;
+    --text-secondary: #75787a;
+    --text-disabled: #b2b5b7;
+    /* input placeholder color */
+    --text-input-tip: #b2b5b7;
+    /* Input  default color */
+    --border-default: rgba(0, 0, 0, 0.2);
+    /* Input accent color */
+    --border-accent: #000000;
+    --border-button: rgba(0, 0, 0, 0.1);
+    /* Regulators, parsing, switches, variables */
+    --accent-primary: #00beb4;
+    /* Output Variables Box */
+    --bg-accent: rgba(76, 164, 231, 0.05);
+
+    --state-success: #3ba05c;
+    --state-warning: #faad14;
+    --state-error: #d8494b;
+
+    --team-group: #5ab77e;
+    --team-member: #5c96c8;
+    --team-department: #8866d3;
+    --bg-group: rgba(90, 183, 126, 0.1);
+    --bg-member: rgba(92, 150, 200, 0.1);
+    --bg-department: rgba(136, 102, 211, 0.1);
   }
 
   .dark {
@@ -161,7 +193,6 @@
     );
     --colors-background-inverse-standard: rgba(230, 227, 246, 0.15);
     --colors-background-inverse-strong: rgba(255, 255, 255, 0.8);
-    --colors-background-inverse-weak: rgba(184, 181, 203, 0.15);
     --colors-background-neutral-standard: rgba(11, 10, 18, 1);
     --colors-background-neutral-strong: rgba(29, 26, 44, 1);
     --colors-background-neutral-weak: rgba(17, 16, 23, 1);
@@ -179,7 +210,6 @@
     --colors-text-inverse-strong: rgba(17, 16, 23, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
     --colors-text-inverse-weak: rgba(84, 80, 106, 1);
-    --text-delete-red: rgba(216, 73, 75, 1);
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -199,14 +229,25 @@
 
     --background-card: rgba(255, 255, 255, 0.05);
     --background-note: rgba(255, 255, 255, 0.05);
-    --background-checked: rgba(76, 164, 231, 1);
 
     --background-highlight: rgba(76, 164, 231, 0.1);
 
     --input-border: rgba(255, 255, 255, 0.2);
 
-    --dot-green: rgba(59, 160, 92, 1);
-    --dot-red: rgba(216, 73, 75, 1);
+    --metallic: #fafafa;
+    /* design colors */
+
+    --bg-base: #161618;
+    --bg-card: rgba(255, 255, 255, 0.05);
+    --bg-component: #202025;
+    --bg-input: rgba(255, 255, 255, 0.05);
+    --text-primary: #f6f6f7;
+    --text-secondary: #b2b5b7;
+    --text-disabled: #75787a;
+    --text-input-tip: #75787a;
+    --border-default: rgba(255, 255, 255, 0.2);
+    --border-accent: #ffffff;
+    --border-button: rgba(255, 255, 255, 0.1);
   }
 }
 
@@ -215,7 +256,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-text-title-invert text-foreground;
+    @apply bg-bg-base text-text-primary;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;

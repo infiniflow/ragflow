@@ -21,7 +21,7 @@ from api import settings
 from api.db import StatusEnum
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required
@@ -99,7 +99,7 @@ def create(tenant_id):
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.""",
-        "prologue": "Hi! I'm your assistant, what can I do for you?",
+        "prologue": "Hi! I'm your assistant. What can I do for you?",
         "parameters": [{"key": "knowledge", "optional": False}],
         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
         "quote": True,
@@ -139,7 +139,7 @@ def create(tenant_id):
     res["llm"] = res.pop("llm_setting")
     res["llm"]["model_name"] = res.pop("llm_id")
     del res["kb_ids"]
-    res["dataset_ids"] = req["dataset_ids"]
+    res["dataset_ids"] = req.get("dataset_ids", [])
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
@@ -150,10 +150,10 @@ def update(tenant_id, chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the chat")
     req = request.json
-    ids = req.get("dataset_ids")
+    ids = req.get("dataset_ids", [])
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
-    if ids is not None:
+    if ids:
         for kb_id in ids:
             kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
             if not kbs:

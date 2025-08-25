@@ -1,6 +1,8 @@
 import { FormContainer } from '@/components/form-container';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   FormControl,
   FormField,
@@ -9,9 +11,10 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { PermissionRole } from '@/constants/permission';
 import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
 import { transformFile2Base64 } from '@/utils/file-util';
-import { Loader2Icon, Pencil, Upload } from 'lucide-react';
+import { Pencil, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -32,6 +35,13 @@ export function GeneralForm() {
   );
   const parser_id = defaultValues['parser_id'];
   const { id: kb_id } = useParams();
+
+  const teamOptions = useMemo(() => {
+    return Object.values(PermissionRole).map((x) => ({
+      label: t('knowledgeConfiguration.' + x),
+      value: x,
+    }));
+  }, [t]);
 
   // init avatar file if it exists in defaultValues
   useEffect(() => {
@@ -171,24 +181,35 @@ export function GeneralForm() {
             );
           }}
         />
+        <RAGFlowFormItem
+          name="permission"
+          label={t('knowledgeConfiguration.permissions')}
+          tooltip={t('knowledgeConfiguration.permissionsTip')}
+          horizontal
+        >
+          <SelectWithSearch
+            options={teamOptions}
+            triggerClassName="w-3/4"
+          ></SelectWithSearch>
+        </RAGFlowFormItem>
       </FormContainer>
       <div className="text-right pt-4 flex justify-end gap-3">
         <Button
           type="reset"
-          className="bg-transparent text-color-white hover:bg-transparent border-gray-500 border-[1px]"
+          variant={'outline'}
           onClick={() => {
             form.reset();
           }}
         >
           {t('knowledgeConfiguration.cancel')}
         </Button>
-        <Button
+        <ButtonLoading
           type="button"
-          disabled={submitLoading}
+          loading={submitLoading}
           onClick={() => {
             (async () => {
-              let isValidate = await form.formControl.trigger('name');
-              const { name, description } = form.formState.values;
+              let isValidate = await form.trigger('name');
+              const { name, description, permission } = form.getValues();
               const avatar = avatarBase64Str;
 
               if (isValidate) {
@@ -198,14 +219,14 @@ export function GeneralForm() {
                   name,
                   description,
                   avatar,
+                  permission,
                 });
               }
             })();
           }}
         >
-          {submitLoading && <Loader2Icon className="animate-spin" />}
           {t('knowledgeConfiguration.save')}
-        </Button>
+        </ButtonLoading>
       </div>
     </>
   );

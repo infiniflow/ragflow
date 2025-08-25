@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+import re
 from abc import ABC
 import pandas as pd
 import pymysql
@@ -78,6 +79,17 @@ class ExeSQL(ToolBase, ABC):
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
     def _invoke(self, **kwargs):
+
+        def convert_decimals(obj):
+            from decimal import Decimal
+            if isinstance(obj, Decimal):
+                return float(obj)  # 或 str(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_decimals(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimals(item) for item in obj]
+            return obj
+
         sql = kwargs.get("sql")
         if not sql:
             raise Exception("SQL for `ExeSQL` MUST not be empty.")
@@ -109,7 +121,7 @@ class ExeSQL(ToolBase, ABC):
             single_sql = single_sql.replace('```','')
             if not single_sql:
                 continue
-
+            single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
             cursor.execute(single_sql)
             if cursor.rowcount == 0:
                 sql_res.append({"content": "No record in the database!"})
@@ -121,7 +133,11 @@ class ExeSQL(ToolBase, ABC):
                 single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
                 single_res.columns = [i[0] for i in cursor.description]
 
-            sql_res.append(single_res.to_dict(orient='records'))
+            for col in single_res.columns:
+                if pd.api.types.is_datetime64_any_dtype(single_res[col]):
+                    single_res[col] = single_res[col].dt.strftime('%Y-%m-%d')
+
+            sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
             formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
 
         self.set_output("json", sql_res)

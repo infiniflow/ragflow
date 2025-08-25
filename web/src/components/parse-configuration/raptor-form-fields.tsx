@@ -86,10 +86,10 @@ const RaptorFormFields = () => {
               defaultChecked={false}
               className="items-center space-y-0 "
             >
-              <div className="flex items-center">
+              <div className="flex items-center gap-1">
                 <FormLabel
                   tooltip={t('useRaptorTip')}
-                  className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                  className="text-sm text-muted-foreground w-1/4 whitespace-break-spaces"
                 >
                   {t('useRaptor')}
                 </FormLabel>

@@ -133,7 +133,7 @@ export function EditMcpDialog({
               onClick={handleTest}
             >
               <RefreshCw
-                className={cn('text-background-checked', {
+                className={cn('text-accent-primary', {
                   'animate-spin': testLoading,
                 })}
               />

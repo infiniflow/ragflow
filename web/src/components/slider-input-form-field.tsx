@@ -10,7 +10,7 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { Input } from './ui/input';
+import { NumberInput } from './ui/input';
 
 export type FormLayoutType = {
   layout?: FormLayout;
@@ -49,12 +49,12 @@ export function SliderInputFormField({
       defaultValue={defaultValue || 0}
       render={({ field }) => (
         <FormItem
-          className={cn({ 'flex items-center space-y-0': isHorizontal })}
+          className={cn({ 'flex items-center gap-1 space-y-0': isHorizontal })}
         >
           <FormLabel
             tooltip={tooltip}
             className={cn({
-              'text-sm text-muted-foreground whitespace-nowrap w-1/4':
+              'text-sm text-muted-foreground whitespace-break-spaces w-1/4':
                 isHorizontal,
             })}
           >
@@ -79,19 +79,14 @@ export function SliderInputFormField({
               ></SingleFormSlider>
             </FormControl>
             <FormControl>
-              <Input
-                type={'number'}
+              <NumberInput
                 className="h-7 w-20"
                 max={max}
                 min={min}
                 step={step}
                 {...field}
-                onChange={(ev) => {
-                  const value = ev.target.value;
-                  field.onChange(value === '' ? 0 : Number(value)); // convert to number
-                }}
                 // defaultValue={defaultValue}
-              ></Input>
+              ></NumberInput>
             </FormControl>
           </div>
           <FormMessage />

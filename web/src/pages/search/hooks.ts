@@ -1,4 +1,4 @@
-import { useFetchMindMap, useFetchRelatedQuestions } from '@/hooks/chat-hooks';
+import { useFetchRelatedQuestions } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useTestChunkAllRetrieval,
@@ -18,17 +18,23 @@ import {
   useRef,
   useState,
 } from 'react';
+import {
+  useGetSharedSearchParams,
+  useSearchFetchMindMap,
+} from '../next-search/hooks';
 
-export const useSendQuestion = (kbIds: string[]) => {
+export const useSendQuestion = (kbIds: string[], tenantId?: string) => {
+  const { sharedId } = useGetSharedSearchParams();
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
-    api.ask,
+    sharedId ? api.askShare : api.ask,
   );
-  const { testChunk, loading } = useTestChunkRetrieval();
-  const { testChunkAll, loading: loadingAll } = useTestChunkAllRetrieval();
+
+  const { testChunk, loading } = useTestChunkRetrieval(tenantId);
+  const { testChunkAll } = useTestChunkAllRetrieval(tenantId);
   const [sendingLoading, setSendingLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
   const { fetchRelatedQuestions, data: relatedQuestions } =
-    useFetchRelatedQuestions();
+    useFetchRelatedQuestions(tenantId);
   const [searchStr, setSearchStr] = useState<string>('');
   const [isFirstRender, setIsFirstRender] = useState(true);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
@@ -43,7 +49,7 @@ export const useSendQuestion = (kbIds: string[]) => {
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       setSendingLoading(true);
-      send({ kb_ids: kbIds, question: q });
+      send({ kb_ids: kbIds, question: q, tenantId });
       testChunk({
         kb_id: kbIds,
         highlight: true,
@@ -61,6 +67,7 @@ export const useSendQuestion = (kbIds: string[]) => {
       fetchRelatedQuestions,
       setPagination,
       pagination.pageSize,
+      tenantId,
     ],
   );
 
@@ -102,7 +109,14 @@ export const useSendQuestion = (kbIds: string[]) => {
         size,
       });
     },
-    [sendingLoading, searchStr, kbIds, testChunk, selectedDocumentIds],
+    [
+      searchStr,
+      sendingLoading,
+      testChunk,
+      kbIds,
+      selectedDocumentIds,
+      testChunkAll,
+    ],
   );
 
   useEffect(() => {
@@ -128,6 +142,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     answer: currentAnswer,
     relatedQuestions: relatedQuestions?.slice(0, 5) ?? [],
     searchStr,
+    setSearchStr,
     isFirstRender,
     selectedDocumentIds,
     isSearchStrEmpty: isEmpty(trim(searchStr)),
@@ -202,7 +217,11 @@ export const useTestRetrieval = (
   };
 };
 
-export const useShowMindMapDrawer = (kbIds: string[], question: string) => {
+export const useShowMindMapDrawer = (
+  kbIds: string[],
+  question: string,
+  searchId = '',
+) => {
   const { visible, showModal, hideModal } = useSetModalState();
   const ref = useRef<any>();
 
@@ -210,10 +229,10 @@ export const useShowMindMapDrawer = (kbIds: string[], question: string) => {
     fetchMindMap,
     data: mindMap,
     loading: mindMapLoading,
-  } = useFetchMindMap();
+  } = useSearchFetchMindMap();
 
   const handleShowModal = useCallback(() => {
-    const searchParams = { question: trim(question), kb_ids: kbIds };
+    const searchParams = { question: trim(question), kb_ids: kbIds, searchId };
     if (
       !isEmpty(searchParams.question) &&
       !isEqual(searchParams, ref.current)
@@ -222,7 +241,7 @@ export const useShowMindMapDrawer = (kbIds: string[], question: string) => {
       fetchMindMap(searchParams);
     }
     showModal();
-  }, [fetchMindMap, showModal, question, kbIds]);
+  }, [fetchMindMap, showModal, question, kbIds, searchId]);
 
   return {
     mindMap,

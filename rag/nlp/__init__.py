@@ -642,7 +642,6 @@ def concat_img(img1, img2):
         pixel_data1 = img1.tobytes()
         pixel_data2 = img2.tobytes()
         if pixel_data1 == pixel_data2:
-            img2.close()
             return img1
 
     width1, height1 = img1.size
@@ -654,8 +653,6 @@ def concat_img(img1, img2):
 
     new_image.paste(img1, (0, 0))
     new_image.paste(img2, (0, height1))
-    img1.close()
-    img2.close()
     return new_image
 
 

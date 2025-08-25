@@ -245,4 +245,4 @@ class TestUpdatedChunk:
         delete_documents(HttpApiAuth, dataset_id, {"ids": [document_id]})
         res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
         assert res["code"] == 102
-        assert res["message"] == f"Can't find this chunk {chunk_ids[0]}"
+        assert res["message"] in [f"You don't own the document {document_id}.", f"Can't find this chunk {chunk_ids[0]}"]

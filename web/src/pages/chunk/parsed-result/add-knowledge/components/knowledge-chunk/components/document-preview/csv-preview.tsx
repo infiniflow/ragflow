@@ -3,7 +3,6 @@ import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
 import classNames from 'classnames';
 import React, { useEffect, useRef, useState } from 'react';
-import { useGetDocumentUrl } from './hooks';
 
 interface CSVData {
   rows: string[][];
@@ -12,13 +11,14 @@ interface CSVData {
 
 interface FileViewerProps {
   className?: string;
+  url: string;
 }
 
-const CSVFileViewer: React.FC<FileViewerProps> = () => {
+const CSVFileViewer: React.FC<FileViewerProps> = ({ url }) => {
   const [data, setData] = useState<CSVData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const url = useGetDocumentUrl();
+  // const url = useGetDocumentUrl();
   const parseCSV = (csvText: string): CSVData => {
     console.log('Parsing CSV data:', csvText);
     const lines = csvText.split('\n');
@@ -36,7 +36,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = () => {
         const res = await request(url, {
           method: 'GET',
           responseType: 'blob',
-          onError: (err) => {
+          onError: () => {
             message.error('file load failed');
             setIsLoading(false);
           },
@@ -84,7 +84,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = () => {
               {data.headers.map((header, index) => (
                 <th
                   key={`header-${index}`}
-                  className="px-6 py-3 text-left text-sm font-medium text-text-title"
+                  className="px-6 py-3 text-left text-sm font-medium text-text-primary"
                 >
                   {header}
                 </th>

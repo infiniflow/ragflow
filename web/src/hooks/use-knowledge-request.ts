@@ -28,6 +28,8 @@ export const enum KnowledgeApiAction {
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
+  FetchKnowledgeGraph = 'fetchKnowledgeGraph',
+  FetchMetadata = 'fetchMetadata',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -263,13 +265,30 @@ export function useFetchKnowledgeGraph() {
   const knowledgeBaseId = useKnowledgeBaseId();
 
   const { data, isFetching: loading } = useQuery<IKnowledgeGraph>({
-    queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+    queryKey: [KnowledgeApiAction.FetchKnowledgeGraph, knowledgeBaseId],
     initialData: { graph: {}, mind_map: {} } as IKnowledgeGraph,
     enabled: !!knowledgeBaseId,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await getKnowledgeGraph(knowledgeBaseId);
       return data?.data;
+    },
+  });
+
+  return { data, loading };
+}
+
+export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
+  const { data, isFetching: loading } = useQuery<
+    Record<string, Record<string, string[]>>
+  >({
+    queryKey: [KnowledgeApiAction.FetchMetadata, kbIds],
+    initialData: {},
+    enabled: kbIds.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.getMeta({ kb_ids: kbIds.join(',') });
+      return data?.data ?? {};
     },
   });
 

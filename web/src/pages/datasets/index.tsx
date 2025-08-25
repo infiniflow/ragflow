@@ -53,7 +53,7 @@ export default function Datasets() {
   );
 
   return (
-    <section className="py-4 text-foreground">
+    <section className="py-4 flex-1 flex flex-col">
       <ListFilterBar
         title={t('header.knowledgeBase')}
         searchString={searchString}
@@ -69,16 +69,18 @@ export default function Datasets() {
           {t('knowledgeList.createKnowledgeBase')}
         </Button>
       </ListFilterBar>
-      <div className="flex flex-wrap gap-4 max-h-[78vh] overflow-auto px-8">
-        {kbs.map((dataset) => {
-          return (
-            <DatasetCard
-              dataset={dataset}
-              key={dataset.id}
-              showDatasetRenameModal={showDatasetRenameModal}
-            ></DatasetCard>
-          );
-        })}
+      <div className="flex-1">
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[78vh] overflow-auto px-8">
+          {kbs.map((dataset) => {
+            return (
+              <DatasetCard
+                dataset={dataset}
+                key={dataset.id}
+                showDatasetRenameModal={showDatasetRenameModal}
+              ></DatasetCard>
+            );
+          })}
+        </div>
       </div>
       <div className="mt-8 px-8">
         <RAGFlowPagination

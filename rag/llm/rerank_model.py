@@ -33,7 +33,11 @@ from api.utils.log_utils import log_exception
 from rag.utils import num_tokens_from_string, truncate
 
 class Base(ABC):
-    def __init__(self, key, model_name):
+    def __init__(self, key, model_name, **kwargs):
+        """
+        Abstract base class constructor.
+        Parameters are not stored; initialization is left to subclasses.
+        """
         pass
 
     def similarity(self, query: str, texts: list):
@@ -96,7 +100,7 @@ class DefaultRerank(Base):
         old_dynamic_batch_size = self._dynamic_batch_size
         if max_batch_size is not None:
             self._dynamic_batch_size = max_batch_size
-        res = np.array([], dtype=float)
+        res = np.array(len(pairs), dtype=float)
         i = 0
         while i < len(pairs):
             cur_i = i
@@ -107,7 +111,7 @@ class DefaultRerank(Base):
                 try:
                     # call subclass implemented batch processing calculation
                     batch_scores = self._compute_batch_scores(pairs[i : i + current_batch])
-                    res = np.append(res, batch_scores)
+                    res[i : i + current_batch] = batch_scores
                     i += current_batch
                     self._dynamic_batch_size = min(self._dynamic_batch_size * 2, 8)
                     break
@@ -121,8 +125,8 @@ class DefaultRerank(Base):
                         raise
             if retry_count >= max_retries:
                 raise RuntimeError("max retry times, still cannot process batch, please check your GPU memory")
-            self.torch_empty_cache()
-
+            
+        self.torch_empty_cache()
         self._dynamic_batch_size = old_dynamic_batch_size
         return np.array(res)
 
@@ -264,7 +268,7 @@ class LocalAIRerank(Base):
         max_rank = np.max(rank)
 
         # Avoid division by zero if all ranks are identical
-        if max_rank - min_rank != 0:
+        if not np.isclose(min_rank, max_rank, atol=1e-3):
             rank = (rank - min_rank) / (max_rank - min_rank)
         else:
             rank = np.zeros_like(rank)
@@ -315,7 +319,7 @@ class NvidiaRerank(Base):
 class LmStudioRerank(Base):
     _FACTORY_NAME = "LM-Studio"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, **kwargs):
         pass
 
     def similarity(self, query: str, texts: list):
@@ -396,7 +400,7 @@ class CoHereRerank(Base):
 class TogetherAIRerank(Base):
     _FACTORY_NAME = "TogetherAI"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, **kwargs):
         pass
 
     def similarity(self, query: str, texts: list):
@@ -478,9 +482,10 @@ class VoyageRerank(Base):
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
-        rank = np.zeros(len(texts), dtype=float)
         if not texts:
-            return rank, 0
+            return np.array([]), 0
+        rank = np.zeros(len(texts), dtype=float)
+
         res = self.client.rerank(query=query, documents=texts, model=self.model_name, top_k=len(texts))
         try:
             for r in res.results:

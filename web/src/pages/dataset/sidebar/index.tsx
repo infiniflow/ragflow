@@ -62,8 +62,8 @@ export function SideBar({ refreshCount }: PropType) {
           name={data.name}
           className="size-16"
         ></RAGFlowAvatar>
-        <div className=" text-text-sub-title text-xs space-y-1">
-          <h3 className="text-lg font-semibold line-clamp-1 text-text-title">
+        <div className=" text-text-secondary text-xs space-y-1 overflow-hidden">
+          <h3 className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden">
             {data.name}
           </h3>
           <div className="flex justify-between">
@@ -84,8 +84,8 @@ export function SideBar({ refreshCount }: PropType) {
               className={cn(
                 'w-full justify-start gap-2.5 px-3 relative h-10 text-text-sub-title-invert',
                 {
-                  'bg-background-card': active,
-                  'text-text-title': active,
+                  'bg-bg-card': active,
+                  'text-text-primary': active,
                 },
               )}
               onClick={handleMenuClick(item.key)}

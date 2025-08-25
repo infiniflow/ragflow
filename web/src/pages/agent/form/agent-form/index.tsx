@@ -15,6 +15,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -71,6 +72,7 @@ const FormSchema = z.object({
   exception_goto: z.array(z.string()).optional(),
   exception_default_value: z.string().optional(),
   ...LargeModelFilterFormSchema,
+  cite: z.boolean().optional(),
 });
 
 const outputList = buildOutputList(initialAgentValues.outputs);
@@ -126,7 +128,7 @@ function AgentForm({ node }: INextOperatorForm) {
       <FormWrapper>
         <FormContainer>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField></LargeModelFormField>
+          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
           {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
             <QueryVariable
               name="visual_files_var"
@@ -184,6 +186,23 @@ function AgentForm({ node }: INextOperatorForm) {
         <Collapse title={<div>Advanced Settings</div>}>
           <FormContainer>
             <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
+            <FormField
+              control={form.control}
+              name={`cite`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel tooltip={t('flow.citeTip')}>
+                    {t('flow.cite')}
+                  </FormLabel>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    ></Switch>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name={`max_retries`}

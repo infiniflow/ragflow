@@ -9,7 +9,7 @@ The component equipped with reasoning, tool usage, and multi-agent collaboration
 
 ---
 
-An **Agent** component fine-tunes the LLM and sets its prompt. From v0.20.0 onwards, an **Agent** component is able to work independently and with the following capabilities:
+An **Agent** component fine-tunes the LLM and sets its prompt. From v0.20.3 onwards, an **Agent** component is able to work independently and with the following capabilities:
 
 - Autonomous reasoning with reflection and adjustment based on environmental feedback.
 - Use of tools or subagents to complete tasks.
@@ -92,10 +92,10 @@ The waiting period in seconds that the agent observes before retrying a failed t
 
 ### Max rounds
 
-Defines the maximum number reflection rounds of the selected chat model. Defaults to 5 rounds.
+Defines the maximum number reflection rounds of the selected chat model. Defaults to 1 round.
 
 :::tip NOTE
-You can set the value to 1 to shorten your agent's response time.
+Increasing this value will significantly extend your agent's response time.
 :::
 
 ### Output

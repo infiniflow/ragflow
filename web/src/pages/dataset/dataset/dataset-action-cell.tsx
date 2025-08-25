@@ -11,7 +11,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { downloadDocument } from '@/utils/file-util';
-import { ArrowDownToLine, FolderPen, ScrollText, Trash2 } from 'lucide-react';
+import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { isParserRunning } from './utils';
@@ -57,12 +57,12 @@ export function DatasetActionCell({
         disabled={isRunning}
         onClick={handleRename}
       >
-        <FolderPen />
+        <PenLine />
       </Button>
       <HoverCard>
         <HoverCardTrigger>
           <Button variant="ghost" disabled={isRunning} size={'sm'}>
-            <ScrollText />
+            <Eye />
           </Button>
         </HoverCardTrigger>
         <HoverCardContent className="w-[40vw] max-h-[40vh] overflow-auto">
@@ -93,7 +93,7 @@ export function DatasetActionCell({
           disabled={isRunning}
           size={'sm'}
         >
-          <ArrowDownToLine />
+          <Download />
         </Button>
       )}
       <ConfirmDeleteDialog onOk={handleRemove}>
