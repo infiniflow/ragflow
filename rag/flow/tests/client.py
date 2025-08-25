@@ -14,10 +14,28 @@
 #  limitations under the License.
 #
 import argparse
+import json
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import trio
+
 from agent.canvas import Canvas
 from api import settings
+from api.utils import get_uuid
 from rag.flow.pipeline import Pipeline
+
+def print_logs(pipeline):
+    last_logs = "[]"
+    while True:
+        time.sleep(5)
+        logs = pipeline.fetch_logs()
+        logs_str = json.dumps(logs)
+        if logs_str != last_logs:
+            print(logs_str)
+        last_logs = logs_str
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -28,19 +46,12 @@ if __name__ == '__main__':
     )
     parser.add_argument('-s', '--dsl', default=dsl_default_path, help="input dsl", action='store', required=True)
     parser.add_argument('-d', '--doc_id', default=False, help="Document ID", action='store', required=True)
+    parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
     args = parser.parse_args()
 
     settings.init_settings()
-    canvas = Pipeline(open(args.dsl, "r").read(), args.tenant_id)
-    if canvas.get_prologue():
-        print(f"==================== Bot =====================\n>    {canvas.get_prologue()}", end='')
-    query = ""
-    while True:
-        canvas.reset(True)
-        query = input("\n==================== User =====================\n> ")
-        ans = canvas.run(query=query)
-        print("==================== Bot =====================\n>    ", end='')
-        for ans in canvas.run(query=query):
-            print(ans, end='\n', flush=True)
+    pipeline = Pipeline(open(args.dsl, "r").read(), tenant_id=args.tenant_id, doc_id=args.doc_id, task_id="xxxx", flow_id="xxx")
+    pipeline.reset()
 
-        print(canvas.path)
+    exe = ThreadPoolExecutor(max_workers=5)
+    exe.submit(print_logs, pipeline)

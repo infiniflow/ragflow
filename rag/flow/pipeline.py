@@ -90,13 +90,13 @@ class Pipeline(Graph):
         idx = len(self.path) - 1
         if idx == 0:
             cpn = self.get_component_obj(self.path[0])
-            cpn.invoke(**kwargs)
+            await cpn.invoke(**kwargs)
             idx += 1
 
         while idx < len(self.path):
             last_cpn = self.get_component_obj(self.path[idx-1])
             cpn_obj = self.get_component_obj(self.path[idx])
-            cpn.invoke(**last_cpn.output())
+            await cpn.invoke(**last_cpn.output())
             if cpn_obj.error():
                 self.error = cpn_obj.error()
                 break
