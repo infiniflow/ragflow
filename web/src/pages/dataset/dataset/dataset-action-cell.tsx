@@ -50,9 +50,10 @@ export function DatasetActionCell({
   }, [record, showRenameModal]);
 
   return (
-    <section className="flex gap-4 items-center text-text-sub-title-invert">
+    <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
       <Button
-        variant={'ghost'}
+        variant="transparent"
+        className="border-none hover:bg-bg-card text-text-primary"
         size={'sm'}
         disabled={isRunning}
         onClick={handleRename}
@@ -61,7 +62,12 @@ export function DatasetActionCell({
       </Button>
       <HoverCard>
         <HoverCardTrigger>
-          <Button variant="ghost" disabled={isRunning} size={'sm'}>
+          <Button
+            variant="transparent"
+            className="border-none hover:bg-bg-card text-text-primary"
+            disabled={isRunning}
+            size={'sm'}
+          >
             <Eye />
           </Button>
         </HoverCardTrigger>
@@ -88,7 +94,8 @@ export function DatasetActionCell({
 
       {isVirtualDocument || (
         <Button
-          variant={'ghost'}
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
           onClick={onDownloadDocument}
           disabled={isRunning}
           size={'sm'}
@@ -97,7 +104,12 @@ export function DatasetActionCell({
         </Button>
       )}
       <ConfirmDeleteDialog onOk={handleRemove}>
-        <Button variant={'ghost'} size={'sm'} disabled={isRunning}>
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          disabled={isRunning}
+        >
           <Trash2 />
         </Button>
       </ConfirmDeleteDialog>

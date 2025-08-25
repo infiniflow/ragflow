@@ -119,7 +119,7 @@ export function DatasetTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[82vh]">
+      <Table rootClassName="max-h-[calc(100vh-222px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -144,6 +144,7 @@ export function DatasetTable({
               <TableRow
                 key={row.id}
                 data-state={row.getIsSelected() && 'selected'}
+                className="group"
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell

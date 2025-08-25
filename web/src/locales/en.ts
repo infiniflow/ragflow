@@ -837,7 +837,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     fileManager: {
       name: 'Name',
       uploadDate: 'Upload Date',
-      knowledgeBase: 'Knowledge Base',
+      knowledgeBase: 'Dataset',
       size: 'Size',
       action: 'Action',
       addToKnowledge: 'Link to Knowledge Base',

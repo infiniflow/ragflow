@@ -55,7 +55,7 @@ module.exports = {
         'input-border': 'var(--input-border)',
 
         /* design colors */
-
+        'bg-title': 'var(--bg-title)',
         'bg-base': 'var(--bg-base)',
         'bg-card': 'var(--bg-card)',
         'bg-component': 'var(--bg-component)',
