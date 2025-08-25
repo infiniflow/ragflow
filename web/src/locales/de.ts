@@ -871,7 +871,7 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
-        channel: 'Kanal',
+      channel: 'Kanal',
       channelTip:
         'Führt eine Textsuche oder Nachrichtensuche für die Eingabe der Komponente durch',
       text: 'Text',
