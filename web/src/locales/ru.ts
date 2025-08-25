@@ -859,6 +859,9 @@ export default {
       baiduDescription: `Ищет на baidu.com.`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription: 'Ищет на duckduckgo.com.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'Компонент, который выполняет поиск по указанному вами URL-адресу экземпляра SearXNG. Укажите TopN и URL-адрес экземпляра.',
       channel: 'Канал',
       channelTip: `Текстовый или новостной поиск`,
       text: 'Текст',
