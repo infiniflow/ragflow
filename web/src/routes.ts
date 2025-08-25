@@ -74,7 +74,7 @@ const routes = [
     path: Routes.Home,
     component: '@/layouts',
     layout: false,
-    redirect: '/knowledge',
+    redirect: '/',
   },
   {
     path: '/knowledge',
