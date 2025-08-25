@@ -17,6 +17,7 @@ import asyncio
 import functools
 import json
 import logging
+import os
 import queue
 import random
 import threading
@@ -48,7 +49,8 @@ from werkzeug.http import HTTP_STATUS_CODES
 from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db.db_models import APIToken
-from api.db.services.llm_service import LLMService, TenantLLMService
+from api.db.services.llm_service import LLMService
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils import CustomJSONEncoder, get_uuid, json_dumps
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
@@ -666,7 +668,10 @@ def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Option
 
             for a in range(attempts):
                 try:
-                    result = result_queue.get(timeout=seconds)
+                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                        result = result_queue.get(timeout=seconds)
+                    else:
+                        result = result_queue.get()
                     if isinstance(result, Exception):
                         raise result
                     return result
@@ -681,7 +686,10 @@ def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Option
 
             for a in range(attempts):
                 try:
-                    with trio.fail_after(seconds):
+                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                        with trio.fail_after(seconds):
+                            return await func(*args, **kwargs)
+                    else:
                         return await func(*args, **kwargs)
                 except trio.TooSlowError:
                     if a < attempts - 1:

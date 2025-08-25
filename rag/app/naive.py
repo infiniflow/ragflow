@@ -22,13 +22,15 @@ from timeit import default_timer as timer
 
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
+from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
+from docx.opc.oxml import parse_xml
 from markdown import markdown
 from PIL import Image
 from tika import parser
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
@@ -47,8 +49,8 @@ class Docx(DocxParser):
         if not embed:
             return None
         embed = embed[0]
-        related_part = document.part.related_parts[embed]
         try:
+            related_part = document.part.related_parts[embed]
             image_blob = related_part.image.blob
         except UnrecognizedImageError:
             logging.info("Unrecognized image format. Skipping image.")
@@ -60,6 +62,9 @@ class Docx(DocxParser):
             logging.info("The recognized image stream appears to be corrupted. Skipping image.")
             return None
         except UnicodeDecodeError:
+            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+            return None
+        except Exception:
             logging.info("The recognized image stream appears to be corrupted. Skipping image.")
             return None
         try:
@@ -284,7 +289,7 @@ class Pdf(PdfParser):
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
         else:
             tbls = self._extract_table_figure(True, zoomin, True, True)
-            # self._naive_vertical_merge()
+            self._naive_vertical_merge()
             self._concat_downward()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
@@ -345,21 +350,32 @@ class Markdown(MarkdownParser):
         else:
             with open(filename, "r") as f:
                 txt = f.read()
+
         remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
-        sections = []
+
+        extractor = MarkdownElementExtractor(txt)
+        element_sections = extractor.extract_elements()
+        sections = [(element, "") for element in element_sections]
+
         tbls = []
-        for sec in remainder.split("\n"):
-            if sec.strip().find("#") == 0:
-                sections.append((sec, ""))
-            elif sections and sections[-1][0].strip().find("#") == 0:
-                sec_, _ = sections.pop(-1)
-                sections.append((sec_ + "\n" + sec, ""))
-            else:
-                sections.append((sec, ""))
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls
 
+def load_from_xml_v2(baseURI, rels_item_xml):
+    """
+    Return |_SerializedRelationships| instance loaded with the
+    relationships contained in *rels_item_xml*. Returns an empty
+    collection if *rels_item_xml* is |None|.
+    """
+    srels = _SerializedRelationships()
+    if rels_item_xml is not None:
+        rels_elm = parse_xml(rels_item_xml)
+        for rel_elm in rels_elm.Relationship_lst:
+            if rel_elm.target_ref in ('../NULL', 'NULL'):
+                continue
+            srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
+    return srels
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
@@ -391,6 +407,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         except Exception:
             vision_model = None
 
+        # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
+        _SerializedRelationships.load_from_xml = load_from_xml_v2
         sections, tables = Docx()(filename, binary)
 
         if vision_model:
@@ -469,6 +487,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
         else:
             sections = [(_, "") for _ in excel_parser(binary) if _]
+        parser_config["chunk_token_num"] = 12800
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

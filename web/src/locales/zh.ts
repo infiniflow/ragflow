@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      selectPlaceholder: '请选择',
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       ok: '是',
@@ -38,6 +39,7 @@ export default {
       previousPage: '上一页',
       nextPage: '下一页',
       add: '添加',
+      promptPlaceholder: '请输入或使用 / 快速插入变量。',
     },
     login: {
       login: '登录',
@@ -72,6 +74,7 @@ export default {
       flow: 'Agent',
       search: '搜索',
       welcome: '欢迎来到',
+      dataset: '数据集',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -84,6 +87,16 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      created: '创建于',
+      learnMore: '了解更多',
+      general: '通用',
+      chunkMethodTab: '切片方法',
+      testResults: '测试结果',
+      testSetting: '测试设置',
+      retrievalTesting: '知识检索测试',
+      retrievalTestingDescription:
+        '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
+      Parse: '解析',
       dataset: '数据集',
       testing: '检索测试',
       configuration: '配置',
@@ -180,8 +193,8 @@ export default {
 <b>元数据为：</b><br>
 <code>
 {
-“作者”：“Alex Dowson”，
-“日期”：“2024-11-12”
+    "作者": "Alex Dowson",
+    "日期": "2024-11-12"
 }
 </code><br>
 <b>提示将为：</b><br>
@@ -475,6 +488,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       improvise: '即兴创作',
       precise: '精确',
       balance: '平衡',
+      custom: '自定义',
       freedomTip: `“精确”意味着大语言模型会保守并谨慎地回答你的问题。 “即兴发挥”意味着你希望大语言模型能够自由地畅所欲言。 “平衡”是谨慎与自由之间的平衡。`,
       temperature: '温度',
       temperatureMessage: '温度是必填项',
@@ -568,6 +582,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         automatic: '自动',
         manual: '手动',
       },
+      cancel: '取消',
+      chatSetting: '聊天设置',
     },
     setting: {
       profile: '概要',
@@ -795,6 +811,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       fileError: '文件错误',
       uploadLimit: '文件大小不能超过10M，文件总数不超过128个',
       destinationFolder: '目标文件夹',
+      pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
       flow: '工作流',
@@ -1315,12 +1332,34 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         },
       },
     },
-  },
-  modal: {
-    okText: '确认',
-    cancelText: '取消',
-  },
-  search: {
-    createSearch: '新建查询',
+    modal: {
+      okText: '确认',
+      cancelText: '取消',
+    },
+    search: {
+      createSearch: '新建查询',
+      searchGreeting: '今天我能为你做些什么？',
+      profile: '隐藏个人资料',
+      locale: '语言',
+      embedCode: '嵌入代码',
+      id: 'ID',
+      copySuccess: '复制成功',
+      welcomeBack: '欢迎回来',
+      searchSettings: '搜索设置',
+      name: '姓名',
+      avatar: '头像',
+      description: '描述',
+      datasets: '数据集',
+      rerankModel: 'rerank 模型',
+      AISummary: 'AI 总结',
+      enableWebSearch: '启用网页搜索',
+      enableRelatedSearch: '启用相关搜索',
+      showQueryMindmap: '显示查询思维导图',
+      embedApp: '嵌入网站',
+      relatedSearch: '相关搜索',
+      descriptionValue: '你是一位智能助手。',
+      okText: '保存',
+      cancelText: '返回',
+    },
   },
 };

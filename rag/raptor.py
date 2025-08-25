@@ -42,9 +42,12 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         self._prompt = prompt
         self._max_token = max_token
 
-    @timeout(60)
+    @timeout(60*20)
     async def _chat(self, system, history, gen_conf):
-        response = get_llm_cache(self._llm_model.llm_name, system, history, gen_conf)
+        response = await trio.to_thread.run_sync(
+            lambda: get_llm_cache(self._llm_model.llm_name, system, history, gen_conf)
+        )
+
         if response:
             return response
         response = await trio.to_thread.run_sync(
@@ -53,19 +56,23 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
-        set_llm_cache(self._llm_model.llm_name, system, response, history, gen_conf)
+        await trio.to_thread.run_sync(
+            lambda: set_llm_cache(self._llm_model.llm_name, system, response, history, gen_conf)
+        )
         return response
 
-    @timeout(2)
+    @timeout(20)
     async def _embedding_encode(self, txt):
-        response = get_embed_cache(self._embd_model.llm_name, txt)
+        response = await trio.to_thread.run_sync(
+            lambda: get_embed_cache(self._embd_model.llm_name, txt)
+        )
         if response is not None:
             return response
         embds, _ = await trio.to_thread.run_sync(lambda: self._embd_model.encode([txt]))
         if len(embds) < 1 or len(embds[0]) < 1:
             raise Exception("Embedding error: ")
         embds = embds[0]
-        set_embed_cache(self._embd_model.llm_name, txt, embds)
+        await trio.to_thread.run_sync(lambda: set_embed_cache(self._embd_model.llm_name, txt, embds))
         return embds
 
     def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int):
@@ -86,7 +93,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
 
-        @timeout(60)
+        @timeout(60*20)
         async def summarize(ck_idx: list[int]):
             nonlocal chunks
             texts = [chunks[i][0] for i in ck_idx]

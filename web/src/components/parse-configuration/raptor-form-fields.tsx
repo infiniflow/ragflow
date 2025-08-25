@@ -3,7 +3,7 @@ import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import random from 'lodash/random';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { SliderInputFormField } from '../slider-input-form-field';
 import { Button } from '../ui/button';
@@ -57,15 +57,19 @@ const RaptorFormFields = () => {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
-  useEffect(() => {
-    if (useRaptor) {
-      form.setValue(MaxTokenField, 256);
-      form.setValue(ThresholdField, 0.1);
-      form.setValue(MaxCluster, 64);
-      form.setValue(RandomSeedField, 0);
-      form.setValue(Prompt, t('promptText'));
-    }
-  }, [form, useRaptor, t]);
+
+  const changeRaptor = useCallback(
+    (isUseRaptor: boolean) => {
+      if (isUseRaptor) {
+        form.setValue(MaxTokenField, 256);
+        form.setValue(ThresholdField, 0.1);
+        form.setValue(MaxCluster, 64);
+        form.setValue(RandomSeedField, 0);
+        form.setValue(Prompt, t('promptText'));
+      }
+    },
+    [form],
+  );
 
   const handleGenerate = useCallback(() => {
     form.setValue(RandomSeedField, random(10000));
@@ -86,10 +90,10 @@ const RaptorFormFields = () => {
               defaultChecked={false}
               className="items-center space-y-0 "
             >
-              <div className="flex items-center">
+              <div className="flex items-center gap-1">
                 <FormLabel
                   tooltip={t('useRaptorTip')}
-                  className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                  className="text-sm text-muted-foreground w-1/4 whitespace-break-spaces"
                 >
                   {t('useRaptor')}
                 </FormLabel>
@@ -97,7 +101,10 @@ const RaptorFormFields = () => {
                   <FormControl>
                     <Switch
                       checked={field.value}
-                      onCheckedChange={field.onChange}
+                      onCheckedChange={(e) => {
+                        changeRaptor(e);
+                        field.onChange(e);
+                      }}
                     ></Switch>
                   </FormControl>
                 </div>
@@ -127,7 +134,13 @@ const RaptorFormFields = () => {
                     </FormLabel>
                     <div className="w-3/4">
                       <FormControl>
-                        <Textarea {...field} rows={8} />
+                        <Textarea
+                          {...field}
+                          rows={8}
+                          onChange={(e) => {
+                            field.onChange(e?.target?.value);
+                          }}
+                        />
                       </FormControl>
                     </div>
                   </div>

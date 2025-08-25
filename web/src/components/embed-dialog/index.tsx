@@ -23,6 +23,7 @@ import {
 } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
+import { Routes } from '@/routes';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -68,7 +69,7 @@ function EmbedDialog({
 
   const generateIframeSrc = useCallback(() => {
     const { visibleAvatar, locale } = values;
-    let src = `${location.origin}/next-chat/share?shared_id=${token}&from=${from}&auth=${beta}`;
+    let src = `${location.origin}${from === SharedFrom.Agent ? Routes.AgentShare : Routes.ChatShare}?shared_id=${token}&from=${from}&auth=${beta}`;
     if (visibleAvatar) {
       src += '&visible_avatar=1';
     }

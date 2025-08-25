@@ -19,7 +19,7 @@ export default function DatasetWrapper() {
   const { data } = useFetchKnowledgeBaseConfiguration();
 
   return (
-    <section>
+    <section className="flex h-full flex-col w-full">
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
@@ -30,12 +30,14 @@ export default function DatasetWrapper() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{data.name}</BreadcrumbPage>
+              <BreadcrumbPage className="w-28 whitespace-nowrap text-ellipsis overflow-hidden">
+                {data.name}
+              </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
-      <div className="flex flex-1">
+      <div className="flex flex-1 min-h-0">
         <SideBar></SideBar>
         <div className="flex-1">
           <Outlet />

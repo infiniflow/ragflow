@@ -1,5 +1,7 @@
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import {
   useFetchConversation,
@@ -11,27 +13,29 @@ import { buildMessageUuidWithRole } from '@/utils/chat';
 import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
-} from '../hooks/use-button-disabled';
-import { useCreateConversationBeforeUploadDocument } from '../hooks/use-create-conversation';
-import { useSendMessage } from '../hooks/use-send-chat-message';
-import { buildMessageItemReference } from '../utils';
+} from '../../hooks/use-button-disabled';
+import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
+import { useSendMessage } from '../../hooks/use-send-chat-message';
+import { buildMessageItemReference } from '../../utils';
 
 interface IProps {
   controller: AbortController;
 }
 
-export function ChatBox({ controller }: IProps) {
+export function SingleChatBox({ controller }: IProps) {
   const {
     value,
-    // scrollRef,
+    scrollRef,
     messageContainerRef,
     sendLoading,
     derivedMessages,
+    isUploading,
     handleInputChange,
     handlePressEnter,
     regenerateMessage,
     removeMessageById,
     stopOutputMessage,
+    handleUploadFile,
   } = useSendMessage(controller);
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchDialog();
@@ -41,11 +45,13 @@ export function ChatBox({ controller }: IProps) {
   const { data: conversation } = useFetchConversation();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   return (
-    <section className="border-x  flex flex-col p-5 flex-1 min-w-0">
+    <section className="flex flex-col p-5 h-full">
       <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
-        <div className="w-full">
+        <div className="w-full pr-5">
           {derivedMessages?.map((message, i) => {
             return (
               <MessageItem
@@ -66,7 +72,7 @@ export function ChatBox({ controller }: IProps) {
                   },
                   message,
                 )}
-                // clickDocumentButton={clickDocumentButton}
+                clickDocumentButton={clickDocumentButton}
                 index={i}
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage}
@@ -75,7 +81,7 @@ export function ChatBox({ controller }: IProps) {
             );
           })}
         </div>
-        {/* <div ref={scrollRef} /> */}
+        <div ref={scrollRef} />
       </div>
       <NextMessageInput
         disabled={disabled}
@@ -89,7 +95,17 @@ export function ChatBox({ controller }: IProps) {
           createConversationBeforeUploadDocument
         }
         stopOutputMessage={stopOutputMessage}
+        onUpload={handleUploadFile}
+        isUploading={isUploading}
       />
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
     </section>
   );
 }

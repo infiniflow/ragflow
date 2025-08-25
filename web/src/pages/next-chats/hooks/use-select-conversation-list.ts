@@ -43,7 +43,12 @@ export const useSelectDerivedConversationList = () => {
   const { t } = useTranslate('chat');
 
   const [list, setList] = useState<Array<IConversation>>([]);
-  const { data: conversationList, loading } = useFetchConversationList();
+  const {
+    data: conversationList,
+    loading,
+    handleInputChange,
+    searchString,
+  } = useFetchConversationList();
   const { id: dialogId } = useParams();
   const { setNewConversationRouteParams } = useSetNewConversationRouteParams();
   const prologue = useFindPrologueFromDialogList();
@@ -81,5 +86,11 @@ export const useSelectDerivedConversationList = () => {
     setList([...conversationList]);
   }, [conversationList]);
 
-  return { list, addTemporaryConversation, loading };
+  return {
+    list,
+    addTemporaryConversation,
+    loading,
+    handleInputChange,
+    searchString,
+  };
 };

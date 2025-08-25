@@ -27,7 +27,8 @@ from api.db.services import UserService
 from api.db.services.canvas_service import CanvasTemplateService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMFactoriesService, LLMService, TenantLLMService, LLMBundle
+from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
+from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
 from api import settings
 from api.utils.file_utils import get_project_base_directory
@@ -64,43 +65,7 @@ def init_superuser():
         "role": UserTenantRole.OWNER
     }
 
-    user_id = user_info
-    tenant_llm = []
-
-    seen = set()
-    factory_configs = []
-    for factory_config in [
-        settings.CHAT_CFG["factory"],
-        settings.EMBEDDING_CFG["factory"],
-        settings.ASR_CFG["factory"],
-        settings.IMAGE2TEXT_CFG["factory"],
-        settings.RERANK_CFG["factory"],
-    ]:
-        factory_name = factory_config["factory"]
-        if factory_name not in seen:
-            seen.add(factory_name)
-            factory_configs.append(factory_config)
-
-    for factory_config in factory_configs:
-        for llm in LLMService.query(fid=factory_config["factory"]):
-            tenant_llm.append(
-                {
-                    "tenant_id": user_id,
-                    "llm_factory": factory_config["factory"],
-                    "llm_name": llm.llm_name,
-                    "model_type": llm.model_type,
-                    "api_key": factory_config["api_key"],
-                    "api_base": factory_config["base_url"],
-                    "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
-                }
-            )
-
-    unique = {}
-    for item in tenant_llm:
-        key = (item["tenant_id"], item["llm_factory"], item["llm_name"])
-        if key not in unique:
-            unique[key] = item
-    tenant_llm = list(unique.values())
+    tenant_llm = get_init_tenant_llm(user_info["id"])
 
     if not UserService.save(**user_info):
         logging.error("can't init admin.")

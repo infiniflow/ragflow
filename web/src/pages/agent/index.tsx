@@ -1,3 +1,5 @@
+import EmbedDialog from '@/components/embed-dialog';
+import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -35,7 +37,7 @@ import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import AgentCanvas from './canvas';
-import EmbedDialog from './embed-dialog';
+import { DropdownProvider } from './canvas/context';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
@@ -44,7 +46,6 @@ import {
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
-import { useShowEmbedModal } from './hooks/use-show-dialog';
 import { ScheduleModal, useScheduleModal } from './schedule-modal';
 import { SettingDialog } from './setting-dialog';
 import { UploadAgentDialog } from './upload-agent-dialog';
@@ -64,7 +65,7 @@ function AgentDropdownMenuItem({
 
 export default function Agent() {
   const { id } = useParams();
-  const { navigateToAgentList } = useNavigatePage();
+  const { navigateToAgents } = useNavigatePage();
   const {
     visible: chatDrawerVisible,
     hideModal: hideChatDrawer,
@@ -119,7 +120,7 @@ export default function Agent() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink onClick={navigateToAgentList}>
+                <BreadcrumbLink onClick={navigateToAgents}>
                   Agent
                 </BreadcrumbLink>
               </BreadcrumbItem>
@@ -196,10 +197,12 @@ export default function Agent() {
         </div>
       </PageHeader>
       <ReactFlowProvider>
-        <AgentCanvas
-          drawerVisible={chatDrawerVisible}
-          hideDrawer={hideChatDrawer}
-        ></AgentCanvas>
+        <DropdownProvider>
+          <AgentCanvas
+            drawerVisible={chatDrawerVisible}
+            hideDrawer={hideChatDrawer}
+          ></AgentCanvas>
+        </DropdownProvider>
       </ReactFlowProvider>
       {fileUploadVisible && (
         <UploadAgentDialog
@@ -218,7 +221,9 @@ export default function Agent() {
         ></EmbedDialog>
       )}
       {versionDialogVisible && (
-        <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+        <DropdownProvider>
+          <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+        </DropdownProvider>
       )}
       {scheduleVisible && (
         <ScheduleModal

@@ -14,7 +14,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleX, Play, RefreshCw } from 'lucide-react';
+import { CircleX, RefreshCw } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RunningStatus } from './constant';
@@ -24,11 +24,13 @@ import { useHandleRunDocumentByIds } from './use-run-document';
 import { UseSaveMetaShowType } from './use-save-meta';
 import { isParserRunning } from './utils';
 const IconMap = {
-  [RunningStatus.UNSTART]: <Play />,
-  [RunningStatus.RUNNING]: <CircleX />,
-  [RunningStatus.CANCEL]: <RefreshCw />,
-  [RunningStatus.DONE]: <RefreshCw />,
-  [RunningStatus.FAIL]: <RefreshCw />,
+  [RunningStatus.UNSTART]: (
+    <div className="w-0 h-0 border-l-[10px] border-l-accent-primary border-t-8 border-r-4 border-b-8 border-transparent"></div>
+  ),
+  [RunningStatus.RUNNING]: <CircleX size={14} color="var(--state-error)" />,
+  [RunningStatus.CANCEL]: <RefreshCw size={14} color="var(--accent-primary)" />,
+  [RunningStatus.DONE]: <RefreshCw size={14} color="var(--accent-primary)" />,
+  [RunningStatus.FAIL]: <RefreshCw size={14} color="var(--accent-primary)" />,
 };
 
 export function ParsingStatusCell({
@@ -60,11 +62,11 @@ export function ParsingStatusCell({
   }, [record, showSetMetaModal]);
 
   return (
-    <section className="flex gap-2 items-center">
-      <div className="w-28 flex items-center justify-between">
+    <section className="flex gap-8 items-center">
+      <div className="w-fit flex items-center justify-between">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant={'ghost'} size={'sm'}>
+            <Button variant={'transparent'} className="border-none" size={'sm'}>
               {parser_id === 'naive' ? 'general' : parser_id}
             </Button>
           </DropdownMenuTrigger>
@@ -77,7 +79,6 @@ export function ParsingStatusCell({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Separator orientation="vertical" className="h-2.5" />
       </div>
       <ConfirmDeleteDialog
         title={t(`knowledgeDetails.redo`, { chunkNum: chunk_num })}
@@ -85,17 +86,17 @@ export function ParsingStatusCell({
         onOk={handleOperationIconClick(true)}
         onCancel={handleOperationIconClick(false)}
       >
-        <Button
-          variant={'ghost'}
-          size={'sm'}
+        <div
+          className="cursor-pointer flex items-center gap-3"
           onClick={
             isZeroChunk || isRunning
               ? handleOperationIconClick(false)
               : () => {}
           }
         >
+          <Separator orientation="vertical" className="h-2.5" />
           {operationIcon}
-        </Button>
+        </div>
       </ConfirmDeleteDialog>
       {isParserRunning(run) ? (
         <HoverCard>

@@ -70,7 +70,7 @@ export default function Datasets() {
         </Button>
       </ListFilterBar>
       <div className="flex-1">
-        <div className="flex flex-wrap gap-4 max-h-[78vh] overflow-auto px-8">
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[78vh] overflow-auto px-8">
           {kbs.map((dataset) => {
             return (
               <DatasetCard

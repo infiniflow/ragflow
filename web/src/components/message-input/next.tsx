@@ -14,6 +14,7 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import { CircleStop, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -135,7 +136,11 @@ export function NextMessageInput({
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
         />
-        <div className="flex items-center justify-between gap-1.5">
+        <div
+          className={cn('flex items-center justify-between gap-1.5', {
+            'justify-end': !showUploadIcon,
+          })}
+        >
           {showUploadIcon && (
             <FileUploadTrigger asChild>
               <Button

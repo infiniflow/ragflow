@@ -16,7 +16,7 @@ import { Funnel } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { NextLLMSelect } from './llm-select/next';
+import { NextInnerLLMSelectProps, NextLLMSelect } from './llm-select/next';
 import { Button } from './ui/button';
 
 const ModelTypes = [
@@ -38,7 +38,13 @@ export const LargeModelFilterFormSchema = {
   llm_filter: z.string().optional(),
 };
 
-export function LargeModelFormField() {
+type LargeModelFormFieldProps = Pick<
+  NextInnerLLMSelectProps,
+  'showSpeech2TextModel'
+>;
+export function LargeModelFormField({
+  showSpeech2TextModel: showTTSModel,
+}: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
   const filter = useWatch({ control: form.control, name: 'llm_filter' });
@@ -85,7 +91,11 @@ export function LargeModelFormField() {
               />
 
               <FormControl>
-                <NextLLMSelect {...field} filter={filter} />
+                <NextLLMSelect
+                  {...field}
+                  filter={filter}
+                  showSpeech2TextModel={showTTSModel}
+                />
               </FormControl>
             </section>
 
@@ -94,5 +104,24 @@ export function LargeModelFormField() {
         )}
       />
     </>
+  );
+}
+
+export function LargeModelFormFieldWithoutFilter() {
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name="llm_id"
+      render={({ field }) => (
+        <FormItem>
+          <FormControl>
+            <NextLLMSelect {...field} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
   );
 }

@@ -14,7 +14,7 @@ module.exports = {
       'error',
       {
         '**/*.{jsx,tsx}': 'KEBAB_CASE',
-        '**/*.{js,ts}': 'KEBAB_CASE',
+        '**/*.{js,ts}': '[a-z0-9.-]*',
       },
     ],
     'check-file/folder-naming-convention': [

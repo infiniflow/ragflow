@@ -208,7 +208,7 @@ function useAddToolNode() {
   );
 
   const addToolNode = useCallback(
-    (newNode: Node<any>, nodeId?: string) => {
+    (newNode: Node<any>, nodeId?: string): boolean => {
       const agentNode = getNode(nodeId);
 
       if (agentNode) {
@@ -222,7 +222,7 @@ function useAddToolNode() {
           childToolNodeIds.length > 0 &&
           nodes.some((x) => x.id === childToolNodeIds[0])
         ) {
-          return;
+          return false;
         }
 
         newNode.position = {
@@ -239,7 +239,9 @@ function useAddToolNode() {
             targetHandle: NodeHandleId.End,
           });
         }
+        return true;
       }
+      return false;
     },
     [addEdge, addNode, edges, getNode, nodes],
   );
@@ -295,13 +297,17 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const addCanvasNode = useCallback(
     (
       type: string,
-      params: { nodeId?: string; position: Position; id?: string } = {
+      params: {
+        nodeId?: string;
+        position: Position;
+        id?: string;
+        isFromConnectionDrag?: boolean;
+      } = {
         position: Position.Right,
       },
     ) =>
-      (event?: CanvasMouseEvent) => {
+      (event?: CanvasMouseEvent): string | undefined => {
         const nodeId = params.nodeId;
-
         const node = getNode(nodeId);
 
         // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
@@ -312,7 +318,11 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           y: event?.clientY || 0,
         });
 
-        if (params.position === Position.Right && type !== Operator.Note) {
+        if (
+          params.position === Position.Right &&
+          type !== Operator.Note &&
+          !params.isFromConnectionDrag
+        ) {
           position = calculateNewlyBackChildPosition(nodeId, params.id);
         }
 
@@ -371,6 +381,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               targetHandle: NodeHandleId.End,
             });
           }
+          return newNode.id;
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom
@@ -406,8 +417,10 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               targetHandle: NodeHandleId.AgentTop,
             });
           }
+          return newNode.id;
         } else if (type === Operator.Tool) {
-          addToolNode(newNode, params.nodeId);
+          const toolNodeAdded = addToolNode(newNode, params.nodeId);
+          return toolNodeAdded ? newNode.id : undefined;
         } else {
           addNode(newNode);
           addChildEdge(params.position, {
@@ -416,6 +429,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             sourceHandle: params.id,
           });
         }
+
+        return newNode.id;
       },
     [
       addChildEdge,

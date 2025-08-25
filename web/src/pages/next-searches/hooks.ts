@@ -1,12 +1,11 @@
 // src/pages/next-searches/hooks.ts
 
+import message from '@/components/ui/message';
 import searchService from '@/services/search-service';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { message } from 'antd';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
-
+import { useParams, useSearchParams } from 'umi';
 interface CreateSearchProps {
   name: string;
   description?: string;
@@ -23,7 +22,6 @@ export const useCreateSearch = () => {
 
   const {
     data,
-    isLoading,
     isError,
     mutateAsync: createSearchMutation,
   } = useMutation<CreateSearchResponse, Error, CreateSearchProps>({
@@ -50,7 +48,7 @@ export const useCreateSearch = () => {
     [createSearchMutation],
   );
 
-  return { data, isLoading, isError, createSearch };
+  return { data, isError, createSearch };
 };
 
 export interface SearchListParams {
@@ -91,7 +89,10 @@ export const useFetchSearchList = (params?: SearchListParams) => {
     ...params,
   });
 
-  const { data, isLoading, isError } = useQuery<SearchListResponse, Error>({
+  const { data, isLoading, isError, refetch } = useQuery<
+    SearchListResponse,
+    Error
+  >({
     queryKey: ['searchList', searchParams],
     queryFn: async () => {
       const { data: response } =
@@ -110,7 +111,14 @@ export const useFetchSearchList = (params?: SearchListParams) => {
     }));
   };
 
-  return { data, isLoading, isError, searchParams, setSearchListParams };
+  return {
+    data,
+    isLoading,
+    isError,
+    searchParams,
+    setSearchListParams,
+    refetch,
+  };
 };
 
 interface DeleteSearchProps {
@@ -123,21 +131,110 @@ interface DeleteSearchResponse {
   message: string;
 }
 
+export interface IllmSettingProps {
+  llm_id: string;
+  parameter: string;
+  temperature?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+}
+interface IllmSettingEnableProps {
+  temperatureEnabled?: boolean;
+  topPEnabled?: boolean;
+  presencePenaltyEnabled?: boolean;
+  frequencyPenaltyEnabled?: boolean;
+}
+export interface ISearchAppDetailProps {
+  avatar: any;
+  created_by: string;
+  description: string;
+  id: string;
+  name: string;
+  search_config: {
+    cross_languages: string[];
+    doc_ids: string[];
+    chat_id: string;
+    highlight: boolean;
+    kb_ids: string[];
+    keyword: boolean;
+    query_mindmap: boolean;
+    related_search: boolean;
+    rerank_id: string;
+    use_rerank?: boolean;
+    similarity_threshold: number;
+    summary: boolean;
+    llm_setting: IllmSettingProps & IllmSettingEnableProps;
+    top_k: number;
+    use_kg: boolean;
+    vector_similarity_weight: number;
+    web_search: boolean;
+    chat_settingcross_languages: string[];
+    meta_data_filter?: {
+      method: string;
+      manual: { key: string; op: string; value: string }[];
+    };
+  };
+  tenant_id: string;
+  update_time: number;
+}
+
+interface SearchDetailResponse {
+  code: number;
+  data: ISearchAppDetailProps;
+  message: string;
+}
+
+export const useFetchSearchDetail = (tenantId?: string) => {
+  const { id } = useParams();
+
+  const [searchParams] = useSearchParams();
+  const shared_id = searchParams.get('shared_id');
+  const searchId = id || shared_id;
+  let param: { search_id: string | null; tenant_id?: string } = {
+    search_id: searchId,
+  };
+  if (shared_id) {
+    param = {
+      search_id: searchId,
+      tenant_id: tenantId,
+    };
+  }
+  const fetchSearchDetailFunc = shared_id
+    ? searchService.getSearchDetailShare
+    : searchService.getSearchDetail;
+
+  const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
+    queryKey: ['searchDetail', searchId],
+    enabled: !shared_id || !!tenantId,
+    queryFn: async () => {
+      const { data: response } = await fetchSearchDetailFunc(param);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to fetch search detail');
+      }
+      return response;
+    },
+  });
+
+  return { data: data?.data, isLoading, isError };
+};
+
 export const useDeleteSearch = () => {
   const { t } = useTranslation();
-
+  const queryClient = useQueryClient();
   const {
     data,
-    isLoading,
     isError,
     mutateAsync: deleteSearchMutation,
   } = useMutation<DeleteSearchResponse, Error, DeleteSearchProps>({
     mutationKey: ['deleteSearch'],
     mutationFn: async (props) => {
-      const response = await searchService.deleteSearch(props);
+      const { data: response } = await searchService.deleteSearch(props);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to delete search');
       }
+
+      queryClient.invalidateQueries({ queryKey: ['searchList'] });
       return response;
     },
     onSuccess: () => {
@@ -155,68 +252,7 @@ export const useDeleteSearch = () => {
     [deleteSearchMutation],
   );
 
-  return { data, isLoading, isError, deleteSearch };
-};
-
-interface IllmSettingProps {
-  llm_id: string;
-  parameter: string;
-  temperature: number;
-  top_p: number;
-  frequency_penalty: number;
-  presence_penalty: number;
-}
-
-export interface ISearchAppDetailProps {
-  avatar: any;
-  created_by: string;
-  description: string;
-  id: string;
-  name: string;
-  search_config: {
-    cross_languages: string[];
-    doc_ids: string[];
-    highlight: boolean;
-    kb_ids: string[];
-    keyword: boolean;
-    query_mindmap: boolean;
-    related_search: boolean;
-    rerank_id: string;
-    similarity_threshold: number;
-    summary: boolean;
-    llm_setting: IllmSettingProps;
-    top_k: number;
-    use_kg: boolean;
-    vector_similarity_weight: number;
-    web_search: boolean;
-    chat_settingcross_languages: string[];
-  };
-  tenant_id: string;
-  update_time: number;
-}
-
-interface SearchDetailResponse {
-  code: number;
-  data: ISearchAppDetailProps;
-  message: string;
-}
-
-export const useFetchSearchDetail = () => {
-  const { id } = useParams();
-  const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
-    queryKey: ['searchDetail', id],
-    queryFn: async () => {
-      const { data: response } = await searchService.getSearchDetail({
-        search_id: id,
-      });
-      if (response.code !== 0) {
-        throw new Error(response.message || 'Failed to fetch search detail');
-      }
-      return response;
-    },
-  });
-
-  return { data: data?.data, isLoading, isError };
+  return { data, isError, deleteSearch };
 };
 
 export type IUpdateSearchProps = Omit<ISearchAppDetailProps, 'id'> & {
@@ -225,10 +261,9 @@ export type IUpdateSearchProps = Omit<ISearchAppDetailProps, 'id'> & {
 
 export const useUpdateSearch = () => {
   const { t } = useTranslation();
-
+  const queryClient = useQueryClient();
   const {
     data,
-    isLoading,
     isError,
     mutateAsync: updateSearchMutation,
   } = useMutation<any, Error, IUpdateSearchProps>({
@@ -241,8 +276,11 @@ export const useUpdateSearch = () => {
       }
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       message.success(t('message.updated'));
+      queryClient.invalidateQueries({
+        queryKey: ['searchDetail', variables.search_id],
+      });
     },
     onError: (error) => {
       message.error(t('message.error', { error: error.message }));
@@ -256,5 +294,5 @@ export const useUpdateSearch = () => {
     [updateSearchMutation],
   );
 
-  return { data, isLoading, isError, updateSearch };
+  return { data, isError, updateSearch };
 };

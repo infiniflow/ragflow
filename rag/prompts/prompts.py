@@ -114,6 +114,8 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     docs = {d.id: d.meta_fields for d in docs}
 
     def draw_node(k, line):
+        if line is not None and not isinstance(line, str):
+            line = str(line)
         if not line:
             return ""
         return f"\n├── {k}: " + re.sub(r"\n+", " ", line, flags=re.DOTALL)
@@ -150,6 +152,7 @@ REFLECT = load_prompt("reflect")
 SUMMARY4MEMORY = load_prompt("summary4memory")
 RANK_MEMORY = load_prompt("rank_memory")
 META_FILTER = load_prompt("meta_filter")
+ASK_SUMMARY = load_prompt("ask_summary")
 
 PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
 
@@ -197,7 +200,7 @@ def question_proposal(chat_mdl, content, topn=3):
 def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.llm_service import TenantLLMService
+    from api.db.services.tenant_llm_service import TenantLLMService
 
     if not chat_mdl:
         if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
@@ -231,7 +234,7 @@ def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_
 def cross_languages(tenant_id, llm_id, query, languages=[]):
     from api.db import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.llm_service import TenantLLMService
+    from api.db.services.tenant_llm_service import TenantLLMService
 
     if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)

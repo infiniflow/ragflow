@@ -22,9 +22,10 @@ from functools import partial
 from typing import Any
 
 import json_repair
-
+from timeit import default_timer as timer
 from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
-from api.db.services.llm_service import LLMBundle, TenantLLMService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
 from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in
@@ -214,8 +215,9 @@ class Agent(LLM, ToolBase):
         hist = deepcopy(history)
         last_calling = ""
         if len(hist) > 3:
+            st = timer()
             user_request = full_question(messages=history, chat_mdl=self.chat_mdl)
-            self.callback("Multi-turn conversation optimization", {}, user_request)
+            self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer()-st)
         else:
             user_request = history[-1]["content"]
 
@@ -243,7 +245,7 @@ class Agent(LLM, ToolBase):
 
         def complete():
             nonlocal hist
-            need2cite = self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
+            need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
             cited = False
             if hist[0]["role"] == "system" and need2cite:
                 if len(hist) < 7:
@@ -262,12 +264,13 @@ class Agent(LLM, ToolBase):
             if not need2cite or cited:
                 return
 
+            st = timer()
             txt = ""
             for delta_ans in self._gen_citations(entire_txt):
                 yield delta_ans, 0
                 txt += delta_ans
 
-            self.callback("gen_citations", {}, txt)
+            self.callback("gen_citations", {}, txt, elapsed_time=timer()-st)
 
         def append_user_content(hist, content):
             if hist[-1]["role"] == "user":
@@ -275,8 +278,9 @@ class Agent(LLM, ToolBase):
             else:
                 hist.append({"role": "user", "content": content})
 
+        st = timer()
         task_desc = analyze_task(self.chat_mdl, prompt, user_request, tool_metas)
-        self.callback("analyze_task", {}, task_desc)
+        self.callback("analyze_task", {}, task_desc, elapsed_time=timer()-st)
         for _ in range(self._param.max_rounds + 1):
             response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc)
             # self.callback("next_step", {}, str(response)[:256]+"...")
@@ -302,9 +306,10 @@ class Agent(LLM, ToolBase):
 
                         thr.append(executor.submit(use_tool, name, args))
 
+                    st = timer()
                     reflection = reflect(self.chat_mdl, hist, [th.result() for th in thr])
                     append_user_content(hist, reflection)
-                    self.callback("reflection", {}, str(reflection))
+                    self.callback("reflection", {}, str(reflection), elapsed_time=timer()-st)
 
             except Exception as e:
                 logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
