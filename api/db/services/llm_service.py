@@ -152,7 +152,7 @@ class LLMBundle(LLM4Tenant):
 
     def describe_with_prompt(self, image, prompt):
         if self.langfuse:
-            generation = self.language.start_generation(trace_context=self.trace_context, name="describe_with_prompt", metadata={"model": self.llm_name, "prompt": prompt})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="describe_with_prompt", metadata={"model": self.llm_name, "prompt": prompt})
 
         txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
