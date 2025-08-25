@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 
-from api.utils.api_utils import timeout, is_strong_enough
+from api.utils.api_utils import timeout
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
