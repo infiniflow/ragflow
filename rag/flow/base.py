@@ -16,6 +16,7 @@
 import time
 import os
 import logging
+from functools import partial
 from typing import Any
 import trio
 from agent.component.base import ComponentParamBase, ComponentBase
@@ -33,21 +34,26 @@ class ProcessBase(ComponentBase):
 
     def __init__(self, pipeline, id, param: ProcessParamBase):
         super().__init__(pipeline, id, param)
+        self.callback = partial(self._canvas.callback, self.component_name)
 
     async def invoke(self, **kwargs) -> dict[str, Any]:
         self.set_output("_created_time", time.perf_counter())
+        for k,v in kwargs.items():
+            self.set_output(k, v)
         try:
             with trio.fail_after(self._param.timeout):
-                await trio.to_thread.run_sync(lambda: self._invoke(**kwargs))
+                await self._invoke(**kwargs)
+                self.callback(1, "Done")
         except Exception as e:
             if self.get_exception_default_value():
                 self.set_exception_default_value()
             else:
                 self.set_output("_ERROR", str(e))
             logging.exception(e)
+            self.callback(-1, str(e))
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
-    def _invoke(self, **kwargs):
+    async def _invoke(self, **kwargs):
         raise NotImplementedError()

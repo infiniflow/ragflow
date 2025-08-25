@@ -12,16 +12,21 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import random
 from functools import reduce
 from optparse import check_choice
+
+import trio
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser, PlainParser, VisionParser
+from graphrag.utils import get_llm_cache, chat_limiter, set_llm_cache
 from rag.app.naive import Markdown
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.llm.cv_model import Base as VLM
 from rag.nlp import concat_img, naive_merge, naive_merge_with_images
+from rag.prompts.prompts import keyword_extraction, question_proposal
 
 
 class ChunkerParam(ProcessParamBase):
@@ -34,7 +39,7 @@ class ChunkerParam(ProcessParamBase):
         self.overlapped_percent = 0
         self.page_rank = 0
         self.auto_keywords = 0
-        self.auto_question = 0
+        self.auto_questions = 0
         self.tag_sets = []
         self.llm_setting = {
             "llm_name": "",
@@ -46,7 +51,7 @@ class ChunkerParam(ProcessParamBase):
         self.check_positive_integer(self.chunk_token_size, "Chunk token size.")
         self.check_nonnegative_number(self.page_rank, "Page rank value: (0, 10]")
         self.check_nonnegative_number(self.auto_keywords, "Auto-keyword value: (0, 10]")
-        self.check_nonnegative_number(self.auto_question, "Auto-question value: (0, 10]")
+        self.check_nonnegative_number(self.auto_questions, "Auto-question value: (0, 10]")
         self.check_decimal_float(self.overlapped_percent, "Overlapped percentage: [0, 1)")
 
 
@@ -54,8 +59,9 @@ class Chunker(ProcessBase):
     component_name = "Chunker"
 
     def _general(self, **kwargs):
+        self.callback(random.randint(1,5)/100., "Start to chunk via `General`.")
         if kwargs.get("output_format") in ["markdown", "text"]:
-            cks = naive_merge(kwargs.get("markdown"), self._param.chunk_token_size, self._param.delimiter, self._param.overlapped_percent)
+            cks = naive_merge(kwargs.get(kwargs["output_format"]), self._param.chunk_token_size, self._param.delimiter, self._param.overlapped_percent)
             return [{"text": c} for c in cks]
 
         sections, section_images = [], []
@@ -83,21 +89,51 @@ class Chunker(ProcessBase):
             "presentation": self._presentation,
             "one": self._one,
         }
-        chunks = function_map["general"](kwargs)
-        if self._param.auto_keywords:
-            llm_setting = self._param.llm_setting
+        chunks = function_map[self._param.method](kwargs)
+        llm_setting = self._param.llm_setting
+
+        async def auto_keywords():
+            nonlocal chunks, llm_setting
             chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT, llm_name=llm_setting["llm_name"], lang=llm_setting["lang"])
 
             async def doc_keyword_extraction(chat_mdl, ck, topn):
-                cached = get_llm_cache(chat_mdl.llm_name, d["text"], "keywords", {"topn": topn})
+                cached = get_llm_cache(chat_mdl.llm_name, ck["text"], "keywords", {"topn": topn})
                 if not cached:
                     async with chat_limiter:
-                        cached = await trio.to_thread.run_sync(lambda: keyword_extraction(chat_mdl, d["content_with_weight"], topn))
-                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
+                        cached = await trio.to_thread.run_sync(lambda: keyword_extraction(chat_mdl, ck["text"], topn))
+                    set_llm_cache(chat_mdl.llm_name, ck["text"], cached, "keywords", {"topn": topn})
                 if cached:
-                    d["important_kwd"] = cached.split(",")
-                    d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
-                return
+                    ck["keywords"] = cached.split(",")
+
             async with trio.open_nursery() as nursery:
-                for d in docs:
-                    nursery.start_soon(doc_keyword_extraction, chat_mdl, d, task["parser_config"]["auto_keywords"])
+                for ck in chunks:
+                    nursery.start_soon(doc_keyword_extraction, chat_mdl, ck, self._param.auto_keywords)
+
+        async def auto_questions():
+            nonlocal chunks, llm_setting
+            chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT, llm_name=llm_setting["llm_name"], lang=llm_setting["lang"])
+
+            async def doc_question_proposal(chat_mdl, d, topn):
+                cached = get_llm_cache(chat_mdl.llm_name, ck["text"], "question", {"topn": topn})
+                if not cached:
+                    async with chat_limiter:
+                        cached = await trio.to_thread.run_sync(lambda: question_proposal(chat_mdl, ck["text"], topn))
+                    set_llm_cache(chat_mdl.llm_name, ck["text"], cached, "question", {"topn": topn})
+                if cached:
+                    d["questions"] = cached.split("\n")
+
+            async with trio.open_nursery() as nursery:
+                for ck in chunks:
+                    nursery.start_soon(doc_question_proposal, chat_mdl, ck, self._param.auto_questions)
+
+        async with trio.open_nursery() as nursery:
+            if self._param.auto_questions:
+                nursery.start_soon(auto_questions)
+            if self._param.auto_keywords:
+                nursery.start_soon(auto_keywords)
+
+        if self._param.page_rank:
+            for ck in chunks:
+                ck["page_rank"] = self._param.page_rank
+
+        self.set_output("chunks", chunks)

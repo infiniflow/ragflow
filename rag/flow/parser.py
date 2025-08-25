@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import random
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
@@ -52,17 +53,18 @@ class Parser(ProcessBase):
     component_name = "Parser"
 
     def _pdf(self, blob):
+        self.callback(random.randint(1,5)/100., "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
         if conf.get("parse_method") == "deepdoc":
-            bboxes = RAGFlowPdfParser().parse_into_bboxes(blob)
+            bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
         elif conf.get("parse_method") == "plain_text":
             lines,_ = PlainParser()(blob)
             bboxes = [{"text": t} for t,_ in lines]
         else:
             assert conf.get("vlm_name")
             vision_model = LLMBundle(self._canvas.tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self.setups["pdf"].get("lang"))
-            lines, _ = VisionParser(vision_model=vision_model)(bin, callback=None)
+            lines, _ = VisionParser(vision_model=vision_model)(bin, callback=self.callback)
             bboxes = []
             for t, poss in lines:
                 pn, x0, x1, top, bott = poss.split(" ")
@@ -79,7 +81,7 @@ class Parser(ProcessBase):
             mkdn += b.get("text", "") + "\n"
         self.set_output("markdown", mkdn)
 
-    def _invoke(self, **kwargs):
+    async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
         }

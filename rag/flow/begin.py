@@ -28,7 +28,7 @@ class BeginBase(ProcessParamBase):
 class Begin(ProcessBase):
     component_name = "Begin"
 
-    def _invoke(self, **kwargs):
+    async def _invoke(self, **kwargs):
         if self._canvas._doc_id:
             e, doc = DocumentService.get_by_id(self._canvas._doc_id)
             if not e:

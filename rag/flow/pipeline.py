@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import datetime
 import json
 import logging
 import time
@@ -22,7 +23,7 @@ from copy import deepcopy
 from functools import partial
 from typing import Any, Union, Tuple
 
-from agent.canvas import Canvas
+from agent.canvas import Graph
 from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
@@ -31,288 +32,56 @@ from rag.prompts.prompts import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 
 
-class Pipeline(Canvas):
+class Pipeline(Graph):
 
-    def __init__(self, dsl: str, tenant_id=None, kb_id=None, doc_id=None, task_id=None):
+    def __init__(self, dsl: str, tenant_id=None, kb_id=None, doc_id=None, task_id=None, flow_id=None):
         super().__init__(dsl, tenant_id, task_id)
         self._kb_id = kb_id
         self._doc_id = doc_id
+        self._flow_id = flow_id
 
-    def load(self):
-        self.components = self.dsl["components"]
-        cpn_nms = set([])
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-
-        assert "Begin" in cpn_nms, "There have to be an 'Begin' component."
-
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
-            param.update(cpn["obj"]["params"])
-            try:
-                param.check()
-            except Exception as e:
-                raise ValueError(self.get_component_name(k) + f": {e}")
-
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-
-        self.path = self.dsl["path"]
-        self.history = self.dsl["history"]
-        if "globals" in self.dsl:
-            self.globals = self.dsl["globals"]
-        else:
-            self.globals = {
-            "sys.query": "",
-            "sys.user_id": "",
-            "sys.conversation_turns": 0,
-            "sys.files": []
-        }
-            
-        self.retrieval = self.dsl["retrieval"]
-        self.memory = self.dsl.get("memory", [])
-
-    def __str__(self):
-        self.dsl["path"] = self.path
-        self.dsl["history"] = self.history
-        self.dsl["globals"] = self.globals
-        self.dsl["task_id"] = self.task_id
-        self.dsl["retrieval"] = self.retrieval
-        self.dsl["memory"] = self.memory
-        dsl = {
-            "components": {}
-        }
-        for k in self.dsl.keys():
-            if k in ["components"]:
-                continue
-            dsl[k] = deepcopy(self.dsl[k])
-
-        for k, cpn in self.components.items():
-            if k not in dsl["components"]:
-                dsl["components"][k] = {}
-            for c in cpn.keys():
-                if c == "obj":
-                    dsl["components"][k][c] = json.loads(str(cpn["obj"]))
-                    continue
-                dsl["components"][k][c] = deepcopy(cpn[c])
-        return json.dumps(dsl, ensure_ascii=False)
-
-    def reset(self, mem=False):
-        self.path = []
-        if not mem:
-            self.history = []
-            self.retrieval = []
-            self.memory = []
-        for k, cpn in self.components.items():
-            self.components[k]["obj"].reset()
-
-        for k in self.globals.keys():
-            if isinstance(self.globals[k], str):
-                self.globals[k] = ""
-            elif isinstance(self.globals[k], int):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], float):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], list):
-                self.globals[k] = []
-            elif isinstance(self.globals[k], dict):
-                self.globals[k] = {}
-            else:
-                self.globals[k] = None
-
+    def callback(self, component_name: str, progress: float, message: str) -> None:
+        log_key = f"{self._flow_id}-{self.task_id}-logs"
         try:
-            REDIS_CONN.delete(f"{self.task_id}-logs")
+            bin = REDIS_CONN.get(log_key)
+            if bin:
+                obj = json.loads(bin.encode("utf-8"))
+                if obj[-1]["component_name"] == component_name:
+                    obj[-1]["trace"].append({"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")})
+                else:
+                    obj.append({
+                    "component_name": component_name,
+                    "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]
+                })
+            else:
+                obj = [{
+                    "component_name": component_name,
+                    "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]
+                }]
+            REDIS_CONN.set_obj(log_key, obj, 60*10)
         except Exception as e:
             logging.exception(e)
 
-    def get_component_name(self, cid):
-        for n in self.dsl.get("graph", {}).get("nodes", []):
-            if cid == n["id"]:
-                return n["data"]["name"]
-        return ""
-
     def run(self, **kwargs):
         st = time.perf_counter()
-        self.message_id = get_uuid()
-        created_at = int(time.time())
-        self.add_user_input(kwargs.get("query"))
-
-        for k in kwargs.keys():
-            if k in ["query", "user_id", "files"] and kwargs[k]:
-                if k == "files":
-                    self.globals[f"sys.{k}"] = self.get_files(kwargs[k])
-                else:
-                    self.globals[f"sys.{k}"] = kwargs[k]
-        if not self.globals["sys.conversation_turns"] :
-            self.globals["sys.conversation_turns"] = 0
-        self.globals["sys.conversation_turns"] += 1
-
-        def decorate(event, dt):
-            nonlocal created_at
-            return {
-                "event": event,
-                #"conversation_id": "f3cc152b-24b0-4258-a1a1-7d5e9fc8a115",
-                "message_id": self.message_id,
-                "created_at": created_at,
-                "task_id": self.task_id,
-                "data": dt
-            }
-
-        if not self.path or self.path[-1].lower().find("userfillup") < 0:
+        if not self.path:
             self.path.append("begin")
-            self.retrieval.append({"chunks": [], "doc_aggs": []})
-
-        yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
-        self.retrieval.append({"chunks": {}, "doc_aggs": {}})
-
-        def _run_batch(f, t):
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                thr = []
-                for i in range(f, t):
-                    cpn = self.get_component_obj(self.path[i])
-                    if cpn.component_name.lower() in ["begin", "userfillup"]:
-                        thr.append(executor.submit(cpn.invoke, inputs=kwargs.get("inputs", {})))
-                    else:
-                        thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
-                for t in thr:
-                    t.result()
-
-        def _node_finished(cpn_obj):
-            return decorate("node_finished",{
-                           "inputs": cpn_obj.get_input_values(),
-                           "outputs": cpn_obj.output(),
-                           "component_id": cpn_obj._id,
-                           "component_name": self.get_component_name(cpn_obj._id),
-                           "component_type": self.get_component_type(cpn_obj._id),
-                           "error": cpn_obj.error(),
-                           "elapsed_time": time.perf_counter() - cpn_obj.output("_created_time"),
-                           "created_at": cpn_obj.output("_created_time"),
-                       })
 
         self.error = ""
         idx = len(self.path) - 1
-        partials = []
+        if idx == 0:
+            cpn = self.get_component_obj(self.path[0])
+            cpn.invoke(**kwargs)
+            idx += 1
+
         while idx < len(self.path):
-            to = len(self.path)
-            for i in range(idx, to):
-                yield decorate("node_started", {
-                    "inputs": None, "created_at": int(time.time()),
-                    "component_id": self.path[i],
-                    "component_name": self.get_component_name(self.path[i]),
-                    "component_type": self.get_component_type(self.path[i]),
-                    "thoughts": self.get_component_thoughts(self.path[i])
-                })
-            _run_batch(idx, to)
-
-            # post processing of components invocation
-            for i in range(idx, to):
-                cpn = self.get_component(self.path[i])
-                cpn_obj = self.get_component_obj(self.path[i])
-                if cpn_obj.component_name.lower() == "message":
-                    if isinstance(cpn_obj.output("content"), partial):
-                        _m = ""
-                        for m in cpn_obj.output("content")():
-                            if not m:
-                                continue
-                            if m == "<think>":
-                                yield decorate("message", {"content": "", "start_to_think": True})
-                            elif m == "</think>":
-                                yield decorate("message", {"content": "", "end_to_think": True})
-                            else:
-                                yield decorate("message", {"content": m})
-                                _m += m
-                        cpn_obj.set_output("content", _m)
-                    else:
-                        yield decorate("message", {"content": cpn_obj.output("content")})
-                    yield decorate("message_end", {"reference": self.get_reference()})
-
-                    while partials:
-                        _cpn_obj = self.get_component_obj(partials[0])
-                        if isinstance(_cpn_obj.output("content"), partial):
-                            break
-                        yield _node_finished(_cpn_obj)
-                        partials.pop(0)
-
-                other_branch = False
-                if cpn_obj.error():
-                    ex = cpn_obj.exception_handler()
-                    if ex and ex["goto"]:
-                        self.path.extend(ex["goto"])
-                        other_branch = True
-                    elif ex and ex["default_value"]:
-                        yield decorate("message", {"content": ex["default_value"]})
-                        yield decorate("message_end", {})
-                    else:
-                        self.error = cpn_obj.error()
-
-                if cpn_obj.component_name.lower() != "iteration":
-                    if isinstance(cpn_obj.output("content"), partial):
-                        if self.error:
-                            cpn_obj.set_output("content", None)
-                            yield _node_finished(cpn_obj)
-                        else:
-                            partials.append(self.path[i])
-                    else:
-                        yield _node_finished(cpn_obj)
-
-                def _append_path(cpn_id):
-                    nonlocal other_branch
-                    if other_branch:
-                        return
-                    if self.path[-1] == cpn_id:
-                        return
-                    self.path.append(cpn_id)
-
-                def _extend_path(cpn_ids):
-                    nonlocal other_branch
-                    if other_branch:
-                        return
-                    for cpn_id in cpn_ids:
-                        _append_path(cpn_id)
-
-                if cpn_obj.component_name.lower() == "iterationitem" and cpn_obj.end():
-                    iter = cpn_obj.get_parent()
-                    yield _node_finished(iter)
-                    _extend_path(self.get_component(cpn["parent_id"])["downstream"])
-                elif cpn_obj.component_name.lower() in ["categorize", "switch"]:
-                    _extend_path(cpn_obj.output("_next"))
-                elif cpn_obj.component_name.lower() == "iteration":
-                    _append_path(cpn_obj.get_start())
-                elif not cpn["downstream"] and cpn_obj.get_parent():
-                    _append_path(cpn_obj.get_parent().get_start())
-                else:
-                    _extend_path(cpn["downstream"])
-
-            if self.error:
-                logging.error(f"Runtime Error: {self.error}")
+            last_cpn = self.get_component_obj(self.path[idx-1])
+            cpn_obj = self.get_component_obj(self.path[idx])
+            cpn.invoke(**last_cpn.output())
+            if cpn_obj.error():
+                self.error = cpn_obj.error()
                 break
-            idx = to
-
-            if any([self.get_component_obj(c).component_name.lower() == "userfillup" for c in self.path[idx:]]):
-                path = [c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() == "userfillup"]
-                path.extend([c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() != "userfillup"])
-                another_inputs = {}
-                tips = ""
-                for c in path:
-                    o = self.get_component_obj(c)
-                    if o.component_name.lower() == "userfillup":
-                        another_inputs.update(o.get_input_elements())
-                        if o.get_param("enable_tips"):
-                            tips = o.get_param("tips")
-                self.path = path
-                yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
-                return
-
-        self.path = self.path[:idx]
-        if not self.error:
-            yield decorate("workflow_finished",
-                       {
-                           "inputs": kwargs.get("inputs"),
-                           "outputs": self.get_component_obj(self.path[-1]).output(),
-                           "elapsed_time": time.perf_counter() - st,
-                           "created_at": st,
-                       })
-            self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
+            idx += 1
 
     def get_component(self, cpn_id) -> Union[None, dict[str, Any]]:
         return self.components.get(cpn_id)
