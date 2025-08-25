@@ -36,6 +36,7 @@ export function SingleChatBox({ controller }: IProps) {
     removeMessageById,
     stopOutputMessage,
     handleUploadFile,
+    removeFile,
   } = useSendMessage(controller);
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchDialog();
@@ -97,6 +98,7 @@ export function SingleChatBox({ controller }: IProps) {
         stopOutputMessage={stopOutputMessage}
         onUpload={handleUploadFile}
         isUploading={isUploading}
+        removeFile={removeFile}
       />
       {visible && (
         <PdfDrawer

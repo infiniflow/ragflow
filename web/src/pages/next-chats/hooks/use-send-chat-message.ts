@@ -138,7 +138,7 @@ export const useSendMessage = (controller: AbortController) => {
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
-  const { handleUploadFile, fileIds, clearFileIds, isUploading } =
+  const { handleUploadFile, fileIds, clearFileIds, isUploading, removeFile } =
     useUploadFile();
 
   const { send, answer, done } = useSendMessageWithSse(
@@ -287,5 +287,6 @@ export const useSendMessage = (controller: AbortController) => {
     stopOutputMessage,
     handleUploadFile,
     isUploading,
+    removeFile,
   };
 };
