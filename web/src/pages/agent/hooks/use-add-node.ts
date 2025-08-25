@@ -38,6 +38,7 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialSearXNGValues,
   initialStringTransformValues,
   initialSwitchValues,
   initialTavilyExtractValues,
@@ -88,6 +89,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Bing]: initialBingValues,
       [Operator.GoogleScholar]: initialGoogleScholarValues,
       [Operator.DeepL]: initialDeepLValues,
+      [Operator.SearXNG]: initialSearXNGValues,
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
@@ -208,7 +210,7 @@ function useAddToolNode() {
   );
 
   const addToolNode = useCallback(
-    (newNode: Node<any>, nodeId?: string): boolean => {
+    (newNode: Node<any>, nodeId?: string) => {
       const agentNode = getNode(nodeId);
 
       if (agentNode) {
@@ -222,7 +224,7 @@ function useAddToolNode() {
           childToolNodeIds.length > 0 &&
           nodes.some((x) => x.id === childToolNodeIds[0])
         ) {
-          return false;
+          return;
         }
 
         newNode.position = {
@@ -239,9 +241,7 @@ function useAddToolNode() {
             targetHandle: NodeHandleId.End,
           });
         }
-        return true;
       }
-      return false;
     },
     [addEdge, addNode, edges, getNode, nodes],
   );
@@ -297,17 +297,13 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const addCanvasNode = useCallback(
     (
       type: string,
-      params: {
-        nodeId?: string;
-        position: Position;
-        id?: string;
-        isFromConnectionDrag?: boolean;
-      } = {
+      params: { nodeId?: string; position: Position; id?: string } = {
         position: Position.Right,
       },
     ) =>
-      (event?: CanvasMouseEvent): string | undefined => {
+      (event?: CanvasMouseEvent) => {
         const nodeId = params.nodeId;
+
         const node = getNode(nodeId);
 
         // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
@@ -318,11 +314,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           y: event?.clientY || 0,
         });
 
-        if (
-          params.position === Position.Right &&
-          type !== Operator.Note &&
-          !params.isFromConnectionDrag
-        ) {
+        if (params.position === Position.Right && type !== Operator.Note) {
           position = calculateNewlyBackChildPosition(nodeId, params.id);
         }
 
@@ -381,7 +373,6 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               targetHandle: NodeHandleId.End,
             });
           }
-          return newNode.id;
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom
@@ -417,10 +408,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               targetHandle: NodeHandleId.AgentTop,
             });
           }
-          return newNode.id;
         } else if (type === Operator.Tool) {
-          const toolNodeAdded = addToolNode(newNode, params.nodeId);
-          return toolNodeAdded ? newNode.id : undefined;
+          addToolNode(newNode, params.nodeId);
         } else {
           addNode(newNode);
           addChildEdge(params.position, {
@@ -429,8 +418,6 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             sourceHandle: params.id,
           });
         }
-
-        return newNode.id;
       },
     [
       addChildEdge,
