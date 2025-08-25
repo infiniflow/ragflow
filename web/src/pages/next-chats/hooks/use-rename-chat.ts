@@ -48,7 +48,10 @@ export const useRenameChat = () => {
       const nextChat = {
         ...(isEmpty(chat)
           ? InitialData
-          : { ...omit(chat, 'nickname', 'tenant_avatar'), dialog_id: chat.id }),
+          : {
+              ...omit(chat, 'nickname', 'tenant_avatar', 'operator_permission'),
+              dialog_id: chat.id,
+            }),
         name,
       };
       const ret = await setDialog(nextChat);
