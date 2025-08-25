@@ -209,10 +209,16 @@ export const MultiSelect = React.forwardRef<
     const [isAnimating, setIsAnimating] = React.useState(false);
 
     React.useEffect(() => {
-      if (selectedValues === undefined) {
+      if (!selectedValues && props.value) {
+        setSelectedValues(props.value as string[]);
+      }
+    }, [props.value, selectedValues]);
+
+    React.useEffect(() => {
+      if (!selectedValues && !props.value && defaultValue) {
         setSelectedValues(defaultValue);
       }
-    }, [defaultValue, selectedValues]);
+    }, [defaultValue, props.value, selectedValues]);
 
     const flatOptions = React.useMemo(() => {
       return options.flatMap((option) =>
@@ -293,15 +299,18 @@ export const MultiSelect = React.forwardRef<
                         variant="secondary"
                         className={cn(
                           isAnimating ? 'animate-bounce' : '',
+                          'px-1',
                           multiSelectVariants({ variant }),
                         )}
                         style={{ animationDuration: `${animation}s` }}
                       >
-                        <div className="flex items-center gap-1">
+                        <div className="flex justify-between items-center gap-1">
                           {IconComponent && (
                             <IconComponent className="h-4 w-4" />
                           )}
-                          <div>{option?.label}</div>
+                          <div className="max-w-28 text-ellipsis overflow-hidden">
+                            {option?.label}
+                          </div>
                           <XCircle
                             className="h-4 w-4 cursor-pointer"
                             onClick={(event) => {

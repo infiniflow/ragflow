@@ -107,7 +107,7 @@ export default function DatasetSettings() {
                 >
                   <div className="flex w-full h-full justify-center	items-center">
                     <span className="h-full group-data-[state=active]:border-b-2 border-foreground	">
-                      General
+                      {t('knowledgeDetails.general')}
                     </span>
                   </div>
                 </TabsTrigger>
@@ -117,7 +117,7 @@ export default function DatasetSettings() {
                 >
                   <div className="flex w-full h-full justify-center	items-center">
                     <span className="h-full group-data-[state=active]:border-b-2 border-foreground	">
-                      Chunk Method
+                      {t('knowledgeDetails.chunkMethodTab')}
                     </span>
                   </div>
                 </TabsTrigger>

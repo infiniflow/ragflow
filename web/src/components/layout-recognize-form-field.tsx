@@ -68,7 +68,7 @@ export function LayoutRecognizeFormField() {
             <div className="flex items-center">
               <FormLabel
                 tooltip={t('layoutRecognizeTip')}
-                className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                className="text-sm text-muted-foreground whitespace-wrap w-1/4"
               >
                 {t('layoutRecognize')}
               </FormLabel>

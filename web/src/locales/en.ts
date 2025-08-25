@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      selectPlaceholder: 'select value',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
@@ -94,6 +95,16 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      created: 'Created',
+      learnMore: 'Learn More',
+      general: 'General',
+      chunkMethodTab: 'Chunk Method',
+      testResults: 'Test Results',
+      testSetting: 'Test Setting',
+      retrievalTesting: 'Retrieval Testing',
+      retrievalTestingDescription:
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
+      Parse: 'Parse',
       dataset: 'Dataset',
       testing: 'Retrieval testing',
       files: 'files',

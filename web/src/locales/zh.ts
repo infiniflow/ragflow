@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      selectPlaceholder: '请选择',
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       ok: '是',
@@ -86,6 +87,16 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      created: '创建于',
+      learnMore: '了解更多',
+      general: '通用',
+      chunkMethodTab: '切片方法',
+      testResults: '测试结果',
+      testSetting: '测试设置',
+      retrievalTesting: '知识检索测试',
+      retrievalTestingDescription:
+        '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
+      Parse: '解析',
       dataset: '数据集',
       testing: '检索测试',
       configuration: '配置',

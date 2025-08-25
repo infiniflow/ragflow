@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { X } from 'lucide-react';
 import { useState } from 'react';
 import CategoryPanel from './category-panel';
@@ -26,7 +27,7 @@ export default ({
             setVisible(!visible);
           }}
         >
-          Learn More
+          {t('knowledgeDetails.learnMore')}
         </Button>
       </div>
       <div
