@@ -15,6 +15,8 @@
 #
 import json
 import logging
+import os
+
 import networkx as nx
 import trio
 
@@ -49,6 +51,7 @@ async def run_graphrag(
     embedding_model,
     callback,
 ):
+    enable_timeout_assertion=os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
@@ -57,7 +60,7 @@ async def run_graphrag(
     ):
         chunks.append(d["content_with_weight"])
 
-    with trio.fail_after(max(120, len(chunks)*60*10)):
+    with trio.fail_after(max(120, len(chunks)*60*10) if enable_timeout_assertion else 10000000000):
         subgraph = await generate_subgraph(
             LightKGExt
             if "method" not in row["kb_parser_config"].get("graphrag", {}) or row["kb_parser_config"]["graphrag"]["method"] != "general"
