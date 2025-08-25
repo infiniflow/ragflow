@@ -182,7 +182,8 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
             "user_id": user_id,
             "message": [],
             "source": "agent",
-            "dsl": cvs.dsl
+            "dsl": cvs.dsl,
+            "reference": []
         }
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
