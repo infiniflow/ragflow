@@ -114,6 +114,8 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     docs = {d.id: d.meta_fields for d in docs}
 
     def draw_node(k, line):
+        if line is not None and not isinstance(line, str):
+            line = str(line)
         if not line:
             return ""
         return f"\n├── {k}: " + re.sub(r"\n+", " ", line, flags=re.DOTALL)
