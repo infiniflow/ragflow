@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 
-from api.utils.api_utils import timeout, is_strong_enough
+from api.utils.api_utils import timeout
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
@@ -478,8 +478,6 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
 @timeout(3600)
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
-    # Pressure test for GraphRAG task
-    await is_strong_enough(chat_mdl, embd_mdl)
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
     for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
@@ -553,7 +551,6 @@ async def do_handle_task(task):
     try:
         # bind embedding model
         embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
-        await is_strong_enough(None, embedding_model)
         vts, _ = embedding_model.encode(["ok"])
         vector_size = len(vts[0])
     except Exception as e:
@@ -568,7 +565,6 @@ async def do_handle_task(task):
     if task.get("task_type", "") == "raptor":
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        await is_strong_enough(chat_model, None)
         # run RAPTOR
         async with kg_limiter:
             chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
@@ -580,7 +576,6 @@ async def do_handle_task(task):
         graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        await is_strong_enough(chat_model, None)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:
