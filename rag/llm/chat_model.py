@@ -112,6 +112,32 @@ class Base(ABC):
     def _clean_conf(self, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
+
+        allowed_conf = {
+            "temperature",
+            "max_completion_tokens",
+            "top_p",
+            "stream",
+            "stream_options",
+            "stop",
+            "n",
+            "presence_penalty",
+            "frequency_penalty",
+            "functions",
+            "function_call",
+            "logit_bias",
+            "user",
+            "response_format",
+            "seed",
+            "tools",
+            "tool_choice",
+            "logprobs",
+            "top_logprobs",
+            "extra_headers",
+        }
+
+        gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
+
         return gen_conf
 
     def _chat(self, history, gen_conf, **kwargs):

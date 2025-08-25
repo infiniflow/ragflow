@@ -12,13 +12,10 @@ import { LanguageList, LanguageMap, ThemeEnum } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
-import { useListTenant } from '@/hooks/use-user-setting-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
-import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import { camelCase } from 'lodash';
 import {
-  BellRing,
   ChevronDown,
   CircleHelp,
   Cpu,
@@ -34,6 +31,7 @@ import {
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'umi';
+import { BellButton } from './bell-button';
 
 const handleDocHelpCLick = () => {
   window.open('https://ragflow.io/docs/dev/category/guides', 'target');
@@ -56,12 +54,6 @@ export function Header() {
     changeLanguage(key);
   };
 
-  const { data } = useListTenant();
-
-  const showBell = useMemo(() => {
-    return data.some((x) => x.role === TenantRole.Invite);
-  }, [data]);
-
   const items = LanguageList.map((x) => ({
     key: x,
     label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
@@ -70,10 +62,6 @@ export function Header() {
   const onThemeClick = React.useCallback(() => {
     setTheme(theme === ThemeEnum.Dark ? ThemeEnum.Light : ThemeEnum.Dark);
   }, [setTheme, theme]);
-
-  const handleBellClick = useCallback(() => {
-    navigate('/user-setting/team');
-  }, [navigate]);
 
   const tagsData = useMemo(
     () => [
@@ -163,14 +151,7 @@ export function Header() {
         <Button variant={'ghost'} onClick={onThemeClick}>
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>
-        {showBell && (
-          <Button variant={'ghost'} onClick={handleBellClick}>
-            <div className="relative">
-              <BellRing className="size-4 " />
-              <span className="absolute size-1 rounded -right-1 -top-1 bg-red-600"></span>
-            </div>
-          </Button>
-        )}
+        <BellButton></BellButton>
         <div className="relative">
           <RAGFlowAvatar
             name={nickname}
