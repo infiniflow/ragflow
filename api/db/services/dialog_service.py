@@ -285,6 +285,7 @@ def meta_filter(metas: dict, filters: list[dict]):
                 try:
                     if all(conds):
                         ids.extend(docids)
+                        break
                 except Exception:
                     pass
         return ids
