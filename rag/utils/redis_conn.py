@@ -73,7 +73,7 @@ class RedisDB:
         try:
             self.REDIS = redis.StrictRedis(
                 host=self.config["host"].split(":")[0],
-                port=int(self.config.get("host", ":6379").split(":")[1]),
+                port=int(self.config.get("host", ":16379").split(":")[1]),
                 db=int(self.config.get("db", 1)),
                 password=self.config.get("password"),
                 decode_responses=True,
