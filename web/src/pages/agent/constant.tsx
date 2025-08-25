@@ -266,7 +266,7 @@ export const initialRetrievalValues = {
 
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
-  prologue: `Hi! I'm your assistant, what can I do for you?`,
+  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const variableCheckBoxFieldMap = Object.keys(
@@ -671,6 +671,7 @@ export const initialAgentValues = {
   exception_default_value: '',
   tools: [],
   mcp: [],
+  cite: true,
   outputs: {
     // structured_output: {
     //   topic: {
