@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import {
   ICreateScheduleRequest,
   IFrequencyOptions,
@@ -10,7 +11,6 @@ import agentService, {
   toggleScheduleById,
 } from '@/services/agent-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { message } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 export const useFetchFrequencyOptions = () => {
@@ -82,7 +82,6 @@ export const useUpdateSchedule = () => {
 
   const { mutateAsync, isPending } = useMutation({
     mutationFn: async (params: IUpdateScheduleRequest) => {
-
       const { data } = await agentService.updateSchedule(params);
       return data;
     },

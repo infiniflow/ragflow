@@ -18,7 +18,6 @@ import {
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { ScheduleOutlined } from '@ant-design/icons';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -29,6 +28,7 @@ import {
   Logs,
   ScreenShare,
   Settings,
+  Timer,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
@@ -174,7 +174,7 @@ export default function Agent() {
                 {t('flow.export')}
               </AgentDropdownMenuItem>
               <AgentDropdownMenuItem onClick={showScheduleModal}>
-                <ScheduleOutlined />
+                <Timer />
                 {t('flow.schedule.title')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
@@ -227,6 +227,7 @@ export default function Agent() {
           canvasId={id!}
           canvasTitle={agentDetail.title}
         />
+      )}
       {settingDialogVisible && (
         <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
       )}
