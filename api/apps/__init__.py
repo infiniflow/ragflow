@@ -147,7 +147,18 @@ def load_user(web_request):
     authorization = web_request.headers.get("Authorization")
     if authorization:
         try:
-            access_token = str(jwt.loads(authorization))
+            # Support both raw token and "Bearer <token>" formats
+            auth_parts = authorization.split()
+            is_bearer = len(auth_parts) >= 2 and auth_parts[0].lower() == "bearer"
+            token_str = auth_parts[1] if is_bearer else authorization
+            logging.debug(
+                f"Auth header received: bearer_format={is_bearer}, token_str_len={len(token_str) if token_str else 0}"
+            )
+
+            access_token = str(jwt.loads(token_str))
+            logging.debug(
+                f"Decoded token: access_token_len={len(access_token) if access_token else 0}"
+            )
 
             if not access_token or not access_token.strip():
                 logging.warning("Authentication attempt with empty access token")
@@ -155,7 +166,9 @@ def load_user(web_request):
 
             # Access tokens should be UUIDs (32 hex characters)
             if len(access_token.strip()) < 32:
-                logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
+                logging.warning(
+                    f"Authentication attempt with invalid token format: {len(access_token)} chars"
+                )
                 return None
 
             user = UserService.query(
@@ -163,15 +176,24 @@ def load_user(web_request):
             )
             if user:
                 if not user[0].access_token or not user[0].access_token.strip():
-                    logging.warning(f"User {user[0].email} has empty access_token in database")
+                    logging.warning(
+                        f"User {user[0].email} has empty access_token in database"
+                    )
                     return None
+                logging.debug(
+                    f"Authenticated user_id={user[0].id} via header_bearer={is_bearer}"
+                )
                 return user[0]
             else:
+                logging.warning(
+                    "Authentication failed: decoded access_token not found in database"
+                )
                 return None
         except Exception as e:
             logging.warning(f"load_user got exception {e}")
             return None
     else:
+        logging.debug("No Authorization header present on request")
         return None
 
 
