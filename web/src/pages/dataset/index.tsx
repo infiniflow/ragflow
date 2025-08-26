@@ -30,7 +30,9 @@ export default function DatasetWrapper() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{data.name}</BreadcrumbPage>
+              <BreadcrumbPage className="w-28 whitespace-nowrap text-ellipsis overflow-hidden">
+                {data.name}
+              </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>

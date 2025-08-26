@@ -67,10 +67,14 @@ export function SideBar({ refreshCount }: PropType) {
             {data.name}
           </h3>
           <div className="flex justify-between">
-            <span>{data.doc_num} files</span>
+            <span>
+              {data.doc_num} {t('knowledgeDetails.files')}
+            </span>
             <span>{formatBytes(data.size)}</span>
           </div>
-          <div>Created {formatPureDate(data.create_time)}</div>
+          <div>
+            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+          </div>
         </div>
       </div>
 

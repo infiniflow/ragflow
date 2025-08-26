@@ -84,18 +84,10 @@ def create_agent_session(tenant_id, agent_id):
     session_id=get_uuid()
     canvas = Canvas(cvs.dsl, tenant_id, agent_id)
     canvas.reset()
-    conv = {
-        "id": session_id,
-        "dialog_id": cvs.id,
-        "user_id": user_id,
-        "message": [],
-        "source": "agent",
-        "dsl": cvs.dsl
-    }
-    API4ConversationService.save(**conv)
-
+    
     cvs.dsl = json.loads(str(canvas))
     conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
+    API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
 
@@ -570,6 +562,9 @@ def list_agent_session(tenant_id, agent_id):
                             "chunks" in conv["reference"][chunk_num]):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
+                            # Ensure chunk is a dictionary before calling get method
+                            if not isinstance(chunk, dict):
+                                continue
                             new_chunk = {
                                 "id": chunk.get("chunk_id", chunk.get("id")),
                                 "content": chunk.get("content_with_weight", chunk.get("content")),
