@@ -3,6 +3,7 @@ import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { Edge } from '@xyflow/react';
 import { DefaultOptionType } from 'antd/es/select';
+import { t } from 'i18next';
 import { isEmpty } from 'lodash';
 import get from 'lodash/get';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -145,7 +146,7 @@ export function useBuildBeginVariableOptions() {
   const options = useMemo(() => {
     return [
       {
-        label: <span>Begin Input</span>,
+        label: <span>{t('flow.beginInput')}</span>,
         title: 'Begin Input',
         options: inputs.map((x) => ({
           label: x.name,

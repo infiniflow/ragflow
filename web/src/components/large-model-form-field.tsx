@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { LlmModelType } from '@/constants/knowledge';
+import { t } from 'i18next';
 import { Funnel } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -21,15 +22,15 @@ import { Button } from './ui/button';
 
 const ModelTypes = [
   {
-    title: 'All Models',
+    title: t('flow.allModels'),
     value: 'all',
   },
   {
-    title: 'Text-only Models',
+    title: t('flow.textOnlyModels'),
     value: LlmModelType.Chat,
   },
   {
-    title: 'Multimodal Models',
+    title: t('flow.multimodalModels'),
     value: LlmModelType.Image2text,
   },
 ];

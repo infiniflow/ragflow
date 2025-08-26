@@ -132,7 +132,7 @@ export function ExeSQLFormWidgets({ loading }: { loading: boolean }) {
 
       <div className="flex justify-end">
         <ButtonLoading loading={loading} type="submit">
-          Test
+          {t('test')}
         </ButtonLoading>
       </div>
     </>

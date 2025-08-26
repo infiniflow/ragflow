@@ -20,6 +20,7 @@ import {
 import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
+import { t } from 'i18next';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -630,16 +631,7 @@ export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
   user_prompt: '',
-  sys_prompt: `<role>
-  You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
-</role>
-<instructions>
-  1. Understand the user’s request.  
-  2. Decompose it into logical subtasks.  
-  3. Execute each subtask step by step, reasoning transparently.  
-  4. Validate accuracy and consistency.  
-  5. Summarize the final result clearly.
-</instructions>`,
+  sys_prompt: t('flow.sysPromptDefultValue'),
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
   max_retries: 3,
