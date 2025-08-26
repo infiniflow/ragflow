@@ -5,7 +5,7 @@
     "title_lang": {
  		"zh_CN": "选择知识库工作流"},
 	"description": {
-  		"zh_CN": "从下拉菜单中选择您的知识库，工作流将仅根据所选知识库内容生成回答。"},
+  		"zh_CN": "从下拉菜单中选择知识库，工作流将仅根据所选知识库内容生成回答。"},
 	"canvas_type": "Other",
     "dsl": {
 		"components": {

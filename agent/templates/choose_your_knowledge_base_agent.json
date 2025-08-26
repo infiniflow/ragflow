@@ -5,7 +5,7 @@
     "title_lang": {
   		"zh_CN": "选择知识库智能体"},
 	"description": {
-  		"zh_CN": "从下拉菜单中选择您的知识库，智能体将仅根据所选知识库内容生成回答。"},
+  		"zh_CN": "从下拉菜单中选择知识库，智能体将仅根据所选知识库内容生成回答。"},
 	"canvas_type": "Agent", 
     "dsl": {
 		"components": {
