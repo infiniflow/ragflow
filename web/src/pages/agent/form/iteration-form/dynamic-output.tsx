@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { t } from 'i18next';
 import { X } from 'lucide-react';
 import { ReactNode, useCallback, useMemo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
@@ -107,7 +108,7 @@ export function DynamicOutputForm({ node }: IProps) {
         );
       })}
       <BlockButton onClick={() => append({ name: '', ref: undefined })}>
-        Add
+        {t('common.add')}
       </BlockButton>
     </div>
   );
@@ -120,7 +121,7 @@ export function VariableTitle({ title }: { title: ReactNode }) {
 export function DynamicOutput({ node }: IProps) {
   return (
     <FormContainer>
-      <VariableTitle title={'Output'}></VariableTitle>
+      <VariableTitle title={t('flow.output')}></VariableTitle>
       <DynamicOutputForm node={node}></DynamicOutputForm>
     </FormContainer>
   );

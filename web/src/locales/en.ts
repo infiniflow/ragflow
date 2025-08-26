@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      noResults: 'No results.',
       selectPlaceholder: 'select value',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
@@ -40,6 +41,9 @@ export default {
       previousPage: 'Previous',
       nextPage: 'Next',
       add: 'Add',
+      remove: 'Remove',
+      search: 'Search',
+      noDataFound: 'No data found.',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
         namePlaceholder: 'My MCP Server',
@@ -860,11 +864,85 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      beginInput: 'Begin Input',
+      ref: 'Variable',
+      stockCode: 'Stock Code',
+      apiKeyPlaceholder:
+        'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
+      flowStart: 'Start',
+      flowNum: 'Num',
+      test: 'Test',
+      extractDepth: 'Extract Depth',
+      format: 'Format',
+      basic: 'basic',
+      advanced: 'advanced',
+      general: 'general',
+      searchDepth: 'Search Depth',
+      tavilyTopic: 'Tavily Topic',
+      maxResults: 'Max Results',
+      includeAnswer: 'Include Answer',
+      includeRawContent: 'Include Raw Content',
+      includeImages: 'Include Images',
+      includeImageDescriptions: 'Include Image Descriptions',
+      includeDomains: 'Include Domains',
+      ExcludeDomains: 'Exclude Domains',
+      Days: 'Days',
+      comma: 'Comma',
+      semicolon: 'Semicolon',
+      period: 'Period',
+      lineBreak: 'Line Break',
+      tab: 'Tab',
+      space: 'Space',
+      delimiters: 'Delimiters',
+      merge: 'Merge',
+      split: 'Split',
+      script: 'Script',
+      iterationItemDescription:
+        'It represents the current element in the iteration, which can be referenced and manipulated in subsequent steps.',
+      guidingQuestion: 'Guidance Question',
+      onFailure: 'On Failure',
+      userPromptDefaultValue:
+        'This is the order you need to send to the agent.',
+      search: 'Search',
+      communication: 'Communication',
+      developer: 'Developer',
+      typeCommandOrsearch: 'Type a command or search...',
+      builtIn: 'Built-in',
+      ExceptionDefaultValue: 'Exception default value',
+      exceptionMethod: 'Exception method',
+      maxRounds: 'Max rounds',
+      delayEfterError: 'Delay after error',
+      maxRetries: 'Max retries',
+      advancedSettings: 'Advanced Settings',
+      addTools: 'Add Tools',
+      sysPromptDefultValue: `<role>
+  You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
+</role>
+<instructions>
+  1. Understand the user’s request.  
+  2. Decompose it into logical subtasks.  
+  3. Execute each subtask step by step, reasoning transparently.  
+  4. Validate accuracy and consistency.  
+  5. Summarize the final result clearly.
+</instructions>`,
+      singleLineText: 'Single-line text',
+      multimodalModels: 'Multimodal Models',
+      textOnlyModels: 'Text-only Models',
+      allModels: 'All Models',
+      codeExecDescription: 'Write your custom Python or Javascript logic.',
+      stringTransformDescription:
+        'Modifies text content. Currently supports: Splitting or concatenating text.',
+      foundation: 'Foundation',
+      tools: 'Tools',
+      dataManipulation: 'Data Manipulation',
+      flow: 'Flow',
+      dialog: 'Dialogue',
       cite: 'Cite',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',
       description: 'Description',
+      descriptionMessage: 'This is an agent for a specific task.',
       examples: 'Examples',
       to: 'To',
       msg: 'Messages',
@@ -1289,6 +1367,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       globalVariables: 'Global variables',
       systemPrompt: 'System prompt',
+      userPrompt: 'User prompt',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -1352,10 +1431,15 @@ This delimiter is used to split the input text into several text pieces echo of 
       openingSwitchTip:
         'Your users will see this welcome message at the beginning.',
       modeTip: 'The mode defines how the workflow is initiated.',
+      mode: 'Mode',
+      conversational: 'conversational',
+      task: 'task',
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      queryTip: 'Select the variable you want to use',
       agent: 'Agent',
+      addAgent: 'Add Agent',
       agentDescription:
         'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
       maxRecords: 'Max records',

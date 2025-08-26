@@ -138,7 +138,7 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Type</FormLabel>
+              <FormLabel>{t('type')}</FormLabel>
               <FormControl>
                 <RAGFlowSelect {...field} options={options} />
               </FormControl>
@@ -151,7 +151,7 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Key</FormLabel>
+              <FormLabel>{t('key')}</FormLabel>
               <FormControl>
                 <Input {...field} autoComplete="off" onBlur={handleKeyChange} />
               </FormControl>
@@ -164,7 +164,7 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Name</FormLabel>
+              <FormLabel>{t('name')}</FormLabel>
               <FormControl>
                 <Input {...field} />
               </FormControl>
@@ -177,7 +177,7 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Optional</FormLabel>
+              <FormLabel>{t('optional')}</FormLabel>
               <FormControl>
                 <Switch
                   checked={field.value}
@@ -217,7 +217,7 @@ export function ParameterDialog({
         ></ParameterForm>
         <DialogFooter>
           <Button type="submit" form={FormId}>
-            Confirm
+            {t('modal.okText')}
           </Button>
         </DialogFooter>
       </DialogContent>

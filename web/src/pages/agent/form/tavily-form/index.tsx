@@ -12,6 +12,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -74,12 +75,12 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="search_depth"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Search Depth</FormLabel>
+                <FormLabel>{t('flow.searchDepth')}</FormLabel>
                 <FormControl>
                   <RAGFlowSelect
                     placeholder="shadcn"
                     {...field}
-                    options={buildOptions(TavilySearchDepth)}
+                    options={buildOptions(TavilySearchDepth, t, 'flow')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -91,12 +92,12 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="topic"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>TavilyTopic</FormLabel>
+                <FormLabel>{t('flow.tavilyTopic')}</FormLabel>
                 <FormControl>
                   <RAGFlowSelect
                     placeholder="shadcn"
                     {...field}
-                    options={buildOptions(TavilyTopic)}
+                    options={buildOptions(TavilyTopic, t, 'flow')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -108,7 +109,7 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="max_results"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Max Results</FormLabel>
+                <FormLabel>{t('flow.maxResults')}</FormLabel>
                 <FormControl>
                   <Input type={'number'} {...field}></Input>
                 </FormControl>
@@ -121,7 +122,7 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="days"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Days</FormLabel>
+                <FormLabel>{t('flow.days')}</FormLabel>
                 <FormControl>
                   <Input type={'number'} {...field}></Input>
                 </FormControl>
@@ -134,7 +135,7 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="include_answer"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Answer</FormLabel>
+                <FormLabel>{t('flow.includeAnswer')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -150,7 +151,7 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="include_raw_content"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Raw Content</FormLabel>
+                <FormLabel>{t('flow.includeRawContent')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -166,7 +167,7 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="include_images"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Images</FormLabel>
+                <FormLabel>{t('flow.includeImages')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -182,7 +183,7 @@ function TavilyForm({ node }: INextOperatorForm) {
             name="include_image_descriptions"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Image Descriptions</FormLabel>
+                <FormLabel>{t('flow.includeImageDescriptions')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -195,11 +196,11 @@ function TavilyForm({ node }: INextOperatorForm) {
           />
           <DynamicDomain
             name="include_domains"
-            label={'Include Domains'}
+            label={t('flow.includeDomains')}
           ></DynamicDomain>
           <DynamicDomain
             name="exclude_domains"
-            label={'Exclude Domains'}
+            label={t('flow.ExcludeDomains')}
           ></DynamicDomain>
         </FormContainer>
       </FormWrapper>

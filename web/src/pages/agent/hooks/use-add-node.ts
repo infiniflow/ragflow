@@ -1,6 +1,7 @@
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
+import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -122,8 +123,8 @@ export const useInitializeOperatorParams = () => {
       if (isBottomSubAgent(operatorName, position)) {
         return {
           ...initialValues,
-          description: 'This is an agent for a specific task.',
-          user_prompt: 'This is the order you need to send to the agent.',
+          description: t('flow.descriptionMessage'),
+          user_prompt: t('flow.userPromptDefaultValue'),
         };
       }
 

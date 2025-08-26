@@ -86,7 +86,7 @@ function UserFillUpForm({ node }: INextOperatorForm) {
           render={({ field }) => (
             <FormItem>
               <FormLabel tooltip={t('flow.openingSwitchTip')}>
-                Guiding Question
+                {t('flow.guidingQuestion')}
               </FormLabel>
               <FormControl>
                 <Switch
@@ -104,7 +104,9 @@ function UserFillUpForm({ node }: INextOperatorForm) {
           name={'tips'}
           render={({ field }) => (
             <FormItem>
-              <FormLabel tooltip={t('chat.setAnOpenerTip')}>Message</FormLabel>
+              <FormLabel tooltip={t('chat.setAnOpenerTip')}>
+                {t('flow.msg')}
+              </FormLabel>
               <FormControl>
                 <Textarea
                   rows={5}

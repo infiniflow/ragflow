@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
+import { t } from 'i18next';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback } from 'react';
@@ -41,7 +42,7 @@ export default function Agents() {
         >
           <Button onClick={navigateToAgentTemplates}>
             <Plus className="mr-2 h-4 w-4" />
-            Create Agent
+            {t('flow.createGraph')}
           </Button>
         </ListFilterBar>
       </div>
