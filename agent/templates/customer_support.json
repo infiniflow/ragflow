@@ -3,6 +3,10 @@
     "id": 10,
     "title": "Customer Support",
     "description": "This is an intelligent customer service processing system workflow based on user intent classification. It uses LLM to identify user demand types and transfers them to the corresponding professional agent for processing.",
+    "title_lang": {
+          "zh_CN": "客户支持"},
+    "description": {
+          "zh_CN": "这是一个智能客户服务处理系统工作流，基于用户意图分类。使用大模型来识别用户需求类型，并将需求转移给相应的智能体进行处理。"},
     "canvas_type": "Customer Support",
     "dsl": {
             "components": {
