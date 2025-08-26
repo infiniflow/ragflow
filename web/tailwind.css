@@ -91,6 +91,8 @@
     --input-border: rgba(22, 22, 24, 0.2);
 
     --metallic: #46464a;
+
+    --bg-title: #f6f6f7;
     /* design colors */
 
     --bg-base: #ffffff;
@@ -235,6 +237,8 @@
     --input-border: rgba(255, 255, 255, 0.2);
 
     --metallic: #fafafa;
+
+    --bg-title: #38383a;
     /* design colors */
 
     --bg-base: #161618;
