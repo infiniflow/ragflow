@@ -6,7 +6,7 @@
     "title_lang": {
   		"zh_CN": "客户评价分析"},
 	"description": {
-  		"zh_CN": "自动分类客户评价，使用大模型进行分析，并通过电子邮件将结果发送到相关部门。"},
+  		"zh_CN": "大模型自动分类客户评价，并通过电子邮件将结果发送到相关部门。"},
 	"canvas_type": "Customer Support",
     "dsl": {
 		"components": {

@@ -3,12 +3,10 @@
     "id": 1,
     "title": "Deep Research",
     "description": "For professionals in sales, marketing, policy, or consulting, the Multi-Agent Deep Research Agent conducts structured, multi-step investigations across diverse sources and delivers consulting-style reports with clear citations.",
-      "title_lang": {
-        "zh_CN": "深度研究"
-},
-      "description": {
-  "      zh_CN": "专为销售、市场、政策或咨询领域的专业人士设计，多智能体的深度研究会结合多源信息进行结构化、多步骤地回答问题，并提供附带有清晰的引用。"
-},
+    "title_lang": {
+        "zh_CN": "深度研究"},
+    "description": {
+        "zh_CN": "专为销售、市场、政策或咨询领域的专业人士设计，多智能体的深度研究会结合多源信息进行结构化、多步骤地回答问题，并提供附带有清晰的引用。"},
     "canvas_type": "Recommended",
     "dsl": {
             "components": {

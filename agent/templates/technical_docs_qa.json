@@ -6,7 +6,7 @@
     "title_lang": {
           "zh_CN": "技术文档问答"},
     "description": {
-          "zh_CN": "一个基于知识库的文档问答系统，当用户提出问题时，它会检索相关本地文档以提供准确回答。"},
+          "zh_CN": "基于知识库的文档问答系统，当用户提出问题时，会检索相关本地文档以提供准确回答。"},
     "canvas_type": "Customer Support",
     "dsl": {
             "components": {
