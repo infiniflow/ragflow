@@ -5,6 +5,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
+import { t } from 'i18next';
 import { useFormContext } from 'react-hook-form';
 
 export function DescriptionField() {
@@ -15,7 +16,7 @@ export function DescriptionField() {
       name={`description`}
       render={({ field }) => (
         <FormItem className="flex-1">
-          <FormLabel>Description</FormLabel>
+          <FormLabel>{t('flow.description')}</FormLabel>
           <FormControl>
             <Textarea {...field}></Textarea>
           </FormControl>

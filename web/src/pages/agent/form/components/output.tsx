@@ -1,3 +1,5 @@
+import { t } from 'i18next';
+
 export type OutputType = {
   title: string;
   type?: string;
@@ -17,7 +19,7 @@ export function transferOutputs(outputs: Record<string, any>) {
 export function Output({ list }: OutputProps) {
   return (
     <section className="space-y-2">
-      <div>Output</div>
+      <div>{t('flow.output')}</div>
       <ul>
         {list.map((x, idx) => (
           <li

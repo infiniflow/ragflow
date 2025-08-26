@@ -61,7 +61,7 @@ export function VariableTable({
   const columns: ColumnDef<VariableFormSchemaType>[] = [
     {
       accessorKey: 'key',
-      header: 'key',
+      header: t('flow.key'),
       meta: { cellClassName: 'max-w-30' },
       cell: ({ row }) => {
         const key: string = row.getValue('key');
