@@ -1,5 +1,5 @@
+import message from '@/components/ui/message';
 import authorizationUtil from '@/utils/authorization-util';
-import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'umi';
 
@@ -28,7 +28,7 @@ export const useOAuthCallback = () => {
       authorizationUtil.setAuthorization(auth);
       newQueryParameters.delete('auth');
       setSearchParams(newQueryParameters);
-      navigate('/knowledge');
+      navigate('/');
     }
   }, [
     error,

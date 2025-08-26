@@ -151,6 +151,7 @@ const routes = [
     path: Routes.Root,
     layout: false,
     component: '@/layouts/next',
+    wrappers: ['@/wrappers/auth'],
     routes: [
       {
         path: Routes.Root,
