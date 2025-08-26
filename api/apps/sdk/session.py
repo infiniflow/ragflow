@@ -562,6 +562,9 @@ def list_agent_session(tenant_id, agent_id):
                             "chunks" in conv["reference"][chunk_num]):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
+                            # Ensure chunk is a dictionary before calling get method
+                            if not isinstance(chunk, dict):
+                                continue
                             new_chunk = {
                                 "id": chunk.get("chunk_id", chunk.get("id")),
                                 "content": chunk.get("content_with_weight", chunk.get("content")),
