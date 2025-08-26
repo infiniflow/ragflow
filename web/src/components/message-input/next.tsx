@@ -34,6 +34,7 @@ interface IProps {
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
   stopOutputMessage?(): void;
   onUpload?: NonNullable<FileUploadProps['onUpload']>;
+  removeFile?(file: File): void;
 }
 
 export function NextMessageInput({
@@ -47,6 +48,7 @@ export function NextMessageInput({
   onInputChange,
   stopOutputMessage,
   onPressEnter,
+  removeFile,
 }: IProps) {
   const [files, setFiles] = React.useState<File[]>([]);
 
@@ -75,6 +77,13 @@ export function NextMessageInput({
       submit();
     },
     [submit],
+  );
+
+  const handleRemoveFile = React.useCallback(
+    (file: File) => () => {
+      removeFile?.(file);
+    },
+    [removeFile],
   );
 
   return (
@@ -121,6 +130,7 @@ export function NextMessageInput({
                   variant="secondary"
                   size="icon"
                   className="-top-1 -right-1 absolute size-4 shrink-0 cursor-pointer rounded-full"
+                  onClick={handleRemoveFile(file)}
                 >
                   <X className="size-2.5" />
                 </Button>

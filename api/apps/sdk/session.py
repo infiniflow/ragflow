@@ -84,18 +84,10 @@ def create_agent_session(tenant_id, agent_id):
     session_id=get_uuid()
     canvas = Canvas(cvs.dsl, tenant_id, agent_id)
     canvas.reset()
-    conv = {
-        "id": session_id,
-        "dialog_id": cvs.id,
-        "user_id": user_id,
-        "message": [],
-        "source": "agent",
-        "dsl": cvs.dsl
-    }
-    API4ConversationService.save(**conv)
-
+    
     cvs.dsl = json.loads(str(canvas))
     conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
+    API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
 
@@ -450,37 +442,26 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
 def agent_completions(tenant_id, agent_id):
     req = request.json
 
-    ans = {}
+
     if req.get("stream", True):
-
-        def generate():
-            for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
-                if isinstance(answer, str):
-                    try:
-                        ans = json.loads(answer[5:])  # remove "data:"
-                    except Exception:
-                        continue
-
-                if ans.get("event") != "message":
-                    continue
-
-                yield answer
-
-            yield "data:[DONE]\n\n"
-
-        resp = Response(generate(), mimetype="text/event-stream")
+        resp = Response(agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
-
+    result = {}
     for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])  # remove "data:"
+            if not result:
+                result = ans.copy()
+            else:
+                result["data"]["answer"] += ans["data"]["answer"]
+                result["data"]["reference"] = ans["data"].get("reference", [])
         except Exception as e:
-            return get_result(data=f"**ERROR**: {str(e)}")
-    return get_result(data=ans)
+            return get_error_data_result(str(e))
+    return result
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
@@ -581,6 +562,9 @@ def list_agent_session(tenant_id, agent_id):
                             "chunks" in conv["reference"][chunk_num]):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
+                            # Ensure chunk is a dictionary before calling get method
+                            if not isinstance(chunk, dict):
+                                continue
                             new_chunk = {
                                 "id": chunk.get("chunk_id", chunk.get("id")),
                                 "content": chunk.get("content_with_weight", chunk.get("content")),
@@ -909,7 +893,7 @@ def ask_about_embedded():
     def stream():
         nonlocal req, uid
         try:
-            for ans in ask(req["question"], req["kb_ids"], uid, search_config):
+            for ans in ask(req["question"], req["kb_ids"], uid, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"

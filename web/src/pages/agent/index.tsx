@@ -210,7 +210,9 @@ export default function Agent() {
         ></EmbedDialog>
       )}
       {versionDialogVisible && (
-        <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+        <DropdownProvider>
+          <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+        </DropdownProvider>
       )}
       {settingDialogVisible && (
         <SettingDialog hideModal={hideSettingDialog}></SettingDialog>

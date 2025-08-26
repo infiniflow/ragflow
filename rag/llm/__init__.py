@@ -36,6 +36,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Nvidia = "NVIDIA"
     TogetherAI = "TogetherAI"
     Anthropic = "Anthropic"
+    Ollama = "Ollama"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -59,6 +60,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Nvidia: "nvidia_nim/",
     SupportedLiteLLMProvider.TogetherAI: "together_ai/",
     SupportedLiteLLMProvider.Anthropic: "",  # don't need a prefix
+    SupportedLiteLLMProvider.Ollama: "ollama_chat/",
 }
 
 ChatModel = globals().get("ChatModel", {})

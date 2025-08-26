@@ -6,7 +6,6 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { ChevronRight } from 'lucide-react';
 import { DatasetDropdown } from './dataset-dropdown';
-import { useDisplayOwnerName } from './use-display-owner';
 import { useRenameDataset } from './use-rename-dataset';
 
 export type DatasetCardProps = {
@@ -18,9 +17,6 @@ export function DatasetCard({
   showDatasetRenameModal,
 }: DatasetCardProps) {
   const { navigateToDataset } = useNavigatePage();
-  const displayOwnerName = useDisplayOwnerName();
-
-  const owner = displayOwnerName(dataset.tenant_id, dataset.nickname);
 
   return (
     <HomeCard
@@ -43,7 +39,7 @@ export function SeeAllCard() {
   const { navigateToDatasetList } = useNavigatePage();
 
   return (
-    <Card className="w-40 flex-none" onClick={navigateToDatasetList}>
+    <Card className="w-40 flex-none h-full" onClick={navigateToDatasetList}>
       <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
         See All <ChevronRight className="size-4" />
       </CardContent>
