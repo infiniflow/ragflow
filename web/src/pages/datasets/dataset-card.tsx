@@ -39,7 +39,7 @@ export function SeeAllCard() {
   const { navigateToDatasetList } = useNavigatePage();
 
   return (
-    <Card className="w-40 flex-none" onClick={navigateToDatasetList}>
+    <Card className="w-40 flex-none h-full" onClick={navigateToDatasetList}>
       <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
         See All <ChevronRight className="size-4" />
       </CardContent>
