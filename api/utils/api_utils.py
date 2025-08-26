@@ -354,7 +354,7 @@ def get_parser_config(chunk_method, parser_config):
     if not chunk_method:
         chunk_method = "naive"
 
-    # Define default configurations for each chunk method
+    # Define default configurations for each chunking method
     key_mapping = {
         "naive": {"chunk_token_num": 512, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
