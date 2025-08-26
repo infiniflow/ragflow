@@ -25,6 +25,7 @@ export const useOAuthCallback = () => {
 
     const auth = currentQueryParameters.get('auth');
     if (auth) {
+      localStorage.setItem('oauthToken', auth);
       authorizationUtil.setAuthorization(auth);
       newQueryParameters.delete('auth');
       setSearchParams(newQueryParameters);
