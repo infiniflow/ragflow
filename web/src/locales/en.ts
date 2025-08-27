@@ -916,16 +916,17 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxRetries: 'Max retries',
       advancedSettings: 'Advanced Settings',
       addTools: 'Add Tools',
-      sysPromptDefultValue: `<role>
-  You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
-</role>
-<instructions>
-  1. Understand the user’s request.  
-  2. Decompose it into logical subtasks.  
-  3. Execute each subtask step by step, reasoning transparently.  
-  4. Validate accuracy and consistency.  
-  5. Summarize the final result clearly.
-</instructions>`,
+      sysPromptDefultValue: `
+      <role>
+        You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
+      </role>
+      <instructions>
+        1. Understand the user’s request.  
+        2. Decompose it into logical subtasks.  
+        3. Execute each subtask step by step, reasoning transparently.  
+        4. Validate accuracy and consistency.  
+        5. Summarize the final result clearly.
+      </instructions>`,
       singleLineText: 'Single-line text',
       multimodalModels: 'Multimodal Models',
       textOnlyModels: 'Text-only Models',
