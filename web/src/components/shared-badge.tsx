@@ -8,9 +8,5 @@ export function SharedBadge({ children }: PropsWithChildren) {
     return null;
   }
 
-  return (
-    <span className="bg-text-secondary rounded-sm px-1 text-bg-base text-xs">
-      {children}
-    </span>
-  );
+  return <span className="bg-bg-card rounded-sm px-1 text-xs">{children}</span>;
 }

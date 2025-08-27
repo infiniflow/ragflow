@@ -188,11 +188,7 @@ export const useSendAgentMessage = (
     return answerList[0]?.message_id;
   }, [answerList]);
 
-  useEffect(() => {
-    if (answerList[0]?.session_id) {
-      setSessionId(answerList[0]?.session_id);
-    }
-  }, [answerList]);
+  // const { refetch } = useFetchAgent();
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -258,26 +254,27 @@ export const useSendAgentMessage = (
     },
     [
       agentId,
-      sessionId,
-      send,
-      clearUploadResponseList,
       inputs,
       beginParams,
       uploadResponseList,
+      sessionId,
+      send,
+      clearUploadResponseList,
       setValue,
       removeLatestMessage,
     ],
   );
 
   const sendFormMessage = useCallback(
-    (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
-      send({ ...body, session_id: sessionId });
+    async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([key, val]) => `${key}: ${val.value}`)
           .join('<br/>'),
         role: MessageType.User,
       });
+      await send({ ...body, session_id: sessionId });
+      // refetch();
     },
     [addNewestOneQuestion, send, sessionId],
   );
@@ -345,6 +342,12 @@ export const useSendAgentMessage = (
       addEventListFun(answerList, messageId);
     }
   }, [addEventList, answerList, addEventListFun, messageId]);
+
+  useEffect(() => {
+    if (answerList[0]?.session_id) {
+      setSessionId(answerList[0]?.session_id);
+    }
+  }, [answerList]);
 
   return {
     value,

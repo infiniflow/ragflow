@@ -256,10 +256,10 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 
 def meta_filter(metas: dict, filters: list[dict]):
-    doc_ids = []
+    doc_ids = set([])
 
     def filter_out(v2docs, operator, value):
-        nonlocal doc_ids
+        ids = []
         for input, docids in v2docs.items():
             try:
                 input = float(input)
@@ -284,16 +284,24 @@ def meta_filter(metas: dict, filters: list[dict]):
                 ]:
                 try:
                     if all(conds):
-                        doc_ids.extend(docids)
+                        ids.extend(docids)
+                        break
                 except Exception:
                     pass
+        return ids
 
     for k, v2docs in metas.items():
         for f in filters:
             if k != f["key"]:
                 continue
-            filter_out(v2docs, f["op"], f["value"])
-    return doc_ids
+            ids = filter_out(v2docs, f["op"], f["value"])
+            if not doc_ids:
+                doc_ids = set(ids)
+            else:
+                doc_ids = doc_ids & set(ids)
+            if not doc_ids:
+                return []
+    return list(doc_ids)
 
 
 def chat(dialog, messages, stream=True, **kwargs):

@@ -47,7 +47,7 @@ export function QueryVariable({
       render={({ field }) => (
         <FormItem>
           {label || (
-            <FormLabel tooltip={t('chat.modelTip')}>
+            <FormLabel tooltip={t('flow.queryTip')}>
               {t('flow.query')}
             </FormLabel>
           )}
