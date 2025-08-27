@@ -40,7 +40,7 @@ def retrieval(tenant_id):
     top = int(retrieval_setting.get("top_k", 1024))
     metadata_condition = req.get("metadata_condition",{})
     metas = DocumentService.get_meta_by_kbs([kb_id])
- 
+
     doc_ids = []
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -108,4 +108,3 @@ def convert_conditions(metadata_condition):
     }
     for cond in metadata_condition.get("conditions", [])
 ]
-

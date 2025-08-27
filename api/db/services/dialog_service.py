@@ -278,8 +278,8 @@ def meta_filter(metas: dict, filters: list[dict]):
             all_conditions = conditons + [
                 (operator == "contains", str(value).lower() in str(input).lower()),
                 (operator == "not contains", str(value).lower() not in str(input).lower()),
-                (operator == "starts with", str(input).lower().startswith(str(value).lower())),
-                (operator == "ends with", str(input).lower().endswith(str(value).lower())),
+                (operator == "start with", str(input).lower().startswith(str(value).lower())),
+                (operator == "end with", str(input).lower().endswith(str(value).lower())),
                 (operator == "empty", not input),
                 (operator == "not empty", input),
                 (operator == "=", input == value),
