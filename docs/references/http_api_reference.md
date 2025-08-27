@@ -731,7 +731,7 @@ Failure:
 ```
  ---
 
-## Get dataset's knowledge graph
+### Get knowledge graph
 
 **GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -810,7 +810,7 @@ Failure:
 ```
 ---
 
-## Delete dataset's knowledge graph
+### Delete knowledge graph
 
 **DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
