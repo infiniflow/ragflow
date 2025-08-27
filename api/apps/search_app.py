@@ -155,8 +155,9 @@ def list_search_app():
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
-            tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-            tenants = [m["tenant_id"] for m in tenants]
+            # tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+            # tenants = [m["tenant_id"] for m in tenants]
+            tenants = []
             search_apps, total = SearchService.get_by_tenant_ids(tenants, current_user.id, page_number, items_per_page, orderby, desc, keywords)
         else:
             tenants = owner_ids
