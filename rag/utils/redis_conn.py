@@ -336,7 +336,7 @@ class RedisDB:
 
     def delete_if_equal(self, key: str, expected_value: str) -> bool:
         """
-        Do follwing atomically:
+        Do following atomically:
         Delete a key if its value is equals to the given one, do nothing otherwise.
         """
         return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))

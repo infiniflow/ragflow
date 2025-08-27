@@ -243,7 +243,7 @@ def add_llm():
                 model_name=mdl_nm,
                 base_url=llm["api_base"]
             )
-            arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
+            arr, tc = mdl.similarity("Hello~ RAGFlower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0:
                 raise Exception("Not known.")
         except KeyError:
@@ -271,7 +271,7 @@ def add_llm():
             key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
         )
         try:
-            for resp in mdl.tts("Hello~ Ragflower!"):
+            for resp in mdl.tts("Hello~ RAGFlower!"):
                 pass
         except RuntimeError as e:
             msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
