@@ -469,6 +469,9 @@ class Canvas:
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
 
+    def get_mode(self):
+        return self.components["begin"]["obj"]._param.mode
+
     def set_global_param(self, **kwargs):
         self.globals.update(kwargs)
 
