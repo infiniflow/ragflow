@@ -209,13 +209,13 @@ export const MultiSelect = React.forwardRef<
     const [isAnimating, setIsAnimating] = React.useState(false);
 
     React.useEffect(() => {
-      if (!selectedValues && props.value) {
+      if (!selectedValues?.length && props.value) {
         setSelectedValues(props.value as string[]);
       }
     }, [props.value, selectedValues]);
 
     React.useEffect(() => {
-      if (!selectedValues && !props.value && defaultValue) {
+      if (!selectedValues?.length && !props.value && defaultValue) {
         setSelectedValues(defaultValue);
       }
     }, [defaultValue, props.value, selectedValues]);
