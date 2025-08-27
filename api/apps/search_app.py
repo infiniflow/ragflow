@@ -43,7 +43,7 @@ def create():
         return get_data_error_result(message=f"Search name length is {len(search_name)} which is large than 255.")
     e, _ = TenantService.get_by_id(current_user.id)
     if not e:
-        return get_data_error_result(message="Authorizationd identity.")
+        return get_data_error_result(message="Authorized identity.")
 
     search_name = search_name.strip()
     search_name = duplicate_name(SearchService.query, name=search_name, tenant_id=current_user.id, status=StatusEnum.VALID.value)
@@ -78,7 +78,7 @@ def update():
     tenant_id = req["tenant_id"]
     e, _ = TenantService.get_by_id(tenant_id)
     if not e:
-        return get_data_error_result(message="Authorizationd identity.")
+        return get_data_error_result(message="Authorized identity.")
 
     search_id = req["search_id"]
     if not SearchService.accessible4deletion(search_id, current_user.id):

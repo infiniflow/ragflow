@@ -66,7 +66,7 @@ def set_dialog():
 
     if not is_create:
         if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config['system']:
-            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no knowledge base/Tavily used here.")
+            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no knowledge base / Tavily used here.")
 
         for p in prompt_config["parameters"]:
             if p["optional"]:
