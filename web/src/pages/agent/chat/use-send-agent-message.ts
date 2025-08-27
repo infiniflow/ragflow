@@ -4,7 +4,6 @@ import {
   useHandleMessageInputChange,
   useSelectDerivedMessages,
 } from '@/hooks/logic-hooks';
-import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
   IInputEvent,
@@ -189,7 +188,7 @@ export const useSendAgentMessage = (
     return answerList[0]?.message_id;
   }, [answerList]);
 
-  const { refetch } = useFetchAgent();
+  // const { refetch } = useFetchAgent();
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -247,7 +246,7 @@ export const useSendAgentMessage = (
           setValue(message.content);
           removeLatestMessage();
         } else {
-          refetch(); // pull the message list after sending the message successfully
+          // refetch(); // pull the message list after sending the message successfully
         }
       } catch (error) {
         console.log('🚀 ~ useSendAgentMessage ~ error:', error);
@@ -263,7 +262,6 @@ export const useSendAgentMessage = (
       clearUploadResponseList,
       setValue,
       removeLatestMessage,
-      refetch,
     ],
   );
 
@@ -276,9 +274,9 @@ export const useSendAgentMessage = (
         role: MessageType.User,
       });
       await send({ ...body, session_id: sessionId });
-      refetch();
+      // refetch();
     },
-    [addNewestOneQuestion, refetch, send, sessionId],
+    [addNewestOneQuestion, send, sessionId],
   );
 
   // reset session
