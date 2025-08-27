@@ -145,9 +145,9 @@ export const SelectWithSearch = forwardRef<
           align="start"
         >
           <Command>
-            <CommandInput placeholder="Search ..." />
+            <CommandInput placeholder={t('common.search') + '...'} />
             <CommandList>
-              <CommandEmpty>No data found.</CommandEmpty>
+              <CommandEmpty>{t('common.noDataFound')}</CommandEmpty>
               {options.map((group, idx) => {
                 if (group.options) {
                   return (

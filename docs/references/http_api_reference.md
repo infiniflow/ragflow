@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
@@ -383,7 +383,7 @@ curl --request POST \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
@@ -604,7 +604,7 @@ curl --request PUT \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
