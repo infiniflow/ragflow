@@ -840,7 +840,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       includeImageDescriptions: '包含图片描述',
       includeDomains: '包含域名',
       ExcludeDomains: '排除域名',
-      Days: 'Days',
+      days: '天数',
       comma: '逗号',
       semicolon: '分号',
       period: '句点',

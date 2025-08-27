@@ -864,6 +864,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      days: 'Days',
       beginInput: 'Begin Input',
       ref: 'Variable',
       stockCode: 'Stock Code',
