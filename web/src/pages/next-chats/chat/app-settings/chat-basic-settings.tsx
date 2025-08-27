@@ -13,8 +13,14 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFormContext } from 'react-hook-form';
 
@@ -47,6 +53,9 @@ export default function ChatBasicSetting() {
                   value={field.value}
                   onValueChange={field.onChange}
                   maxFileCount={1}
+                  description={t('photoTip', {
+                    keyPrefix: 'knowledgeConfiguration',
+                  })}
                 />
               </FormControl>
               <FormMessage />

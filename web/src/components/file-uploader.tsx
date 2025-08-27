@@ -158,6 +158,8 @@ interface FileUploaderProps extends React.HTMLAttributes<HTMLDivElement> {
    * @example disabled
    */
   disabled?: boolean;
+
+  description?: string;
 }
 
 export function FileUploader(props: FileUploaderProps) {
@@ -174,6 +176,7 @@ export function FileUploader(props: FileUploaderProps) {
     multiple = false,
     disabled = false,
     className,
+    description,
     ...dropzoneProps
   } = props;
   const { t } = useTranslation();
@@ -302,7 +305,7 @@ export function FileUploader(props: FileUploaderProps) {
                     {t('knowledgeDetails.uploadTitle')}
                   </p>
                   <p className="text-sm text-muted-foreground/70">
-                    {t('knowledgeDetails.uploadDescription')}
+                    {description || t('knowledgeDetails.uploadDescription')}
                     {/* You can upload
                     {maxFileCount > 1
                       ? ` ${maxFileCount === Infinity ? 'multiple' : maxFileCount}
