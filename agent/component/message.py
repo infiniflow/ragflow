@@ -54,6 +54,8 @@ class Message(ComponentBase):
             if k in kwargs:
                 continue
             v = v["value"]
+            if not v:
+                v = ""
             ans = ""
             if isinstance(v, partial):
                 for t in v():
@@ -94,6 +96,8 @@ class Message(ComponentBase):
                 continue
 
             v = self._canvas.get_variable_value(exp)
+            if not v:
+                v = ""
             if isinstance(v, partial):
                 cnt = ""
                 for t in v():

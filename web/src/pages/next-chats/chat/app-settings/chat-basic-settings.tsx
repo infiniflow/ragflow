@@ -2,8 +2,7 @@
 
 import { FileUploader } from '@/components/file-uploader';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { MetadataFilter } from '@/components/metadata-filter';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { TavilyFormField } from '@/components/tavily-form-field';
 import {
@@ -14,28 +13,31 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useFormContext, useWatch } from 'react-hook-form';
-import { DatasetMetadata } from '../../constants';
-import { MetadataFilterConditions } from './metadata-filter-conditions';
+import { useFormContext } from 'react-hook-form';
 
 export default function ChatBasicSetting() {
   const { t } = useTranslate('chat');
   const form = useFormContext();
-  const kbIds: string[] = useWatch({ control: form.control, name: 'kb_ids' });
-  const metadata = useWatch({
-    control: form.control,
-    name: 'meta_data_filter.method',
-  });
-  const hasKnowledge = Array.isArray(kbIds) && kbIds.length > 0;
 
-  const MetadataOptions = Object.values(DatasetMetadata).map((x) => {
-    return {
-      value: x,
-      label: t(`meta.${x}`),
-    };
-  });
+  const languageOptions = [
+    { value: 'English', label: 'English' },
+    { value: 'Chinese', label: 'Chinese' },
+    { value: 'Spanish', label: 'Spanish' },
+    { value: 'French', label: 'French' },
+    { value: 'German', label: 'German' },
+    { value: 'Japanese', label: 'Japanese' },
+    { value: 'Korean', label: 'Korean' },
+    { value: 'Vietnamese', label: 'Vietnamese' },
+  ];
 
   return (
     <div className="space-y-8">
@@ -51,7 +53,6 @@ export default function ChatBasicSetting() {
                   value={field.value}
                   onValueChange={field.onChange}
                   maxFileCount={1}
-                  maxSize={4 * 1024 * 1024}
                 />
               </FormControl>
               <FormMessage />
@@ -68,6 +69,30 @@ export default function ChatBasicSetting() {
             <FormControl>
               <Input {...field}></Input>
             </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="language"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('language')}</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('common.languagePlaceholder')} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {languageOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <FormMessage />
           </FormItem>
         )}
@@ -125,18 +150,7 @@ export default function ChatBasicSetting() {
       ></SwitchFormField>
       <TavilyFormField></TavilyFormField>
       <KnowledgeBaseFormField></KnowledgeBaseFormField>
-      {hasKnowledge && (
-        <RAGFlowFormItem
-          label={t('metadata')}
-          name={'meta_data_filter.method'}
-          tooltip={t('metadataTip')}
-        >
-          <SelectWithSearch options={MetadataOptions} />
-        </RAGFlowFormItem>
-      )}
-      {hasKnowledge && metadata === DatasetMetadata.Manual && (
-        <MetadataFilterConditions kbIds={kbIds}></MetadataFilterConditions>
-      )}
+      <MetadataFilter></MetadataFilter>
     </div>
   );
 }

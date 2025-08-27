@@ -1,6 +1,7 @@
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
+import { DatasetMetadata } from '@/constants/chat';
 import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
 import { transformBase64ToFile, transformFile2Base64 } from '@/utils/file-util';
 import {
@@ -8,13 +9,13 @@ import {
   setLLMSettingEnabledValues,
 } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { omit } from 'lodash';
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { z } from 'zod';
-import { DatasetMetadata } from '../../constants';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatModelSettings } from './chat-model-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
@@ -35,13 +36,18 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
     shouldUnregister: true,
     defaultValues: {
       name: '',
+      icon: [],
       language: 'English',
+      description: '',
+      kb_ids: [],
       prompt_config: {
         quote: true,
         keyword: false,
         tts: false,
         use_kg: false,
         refine_multiturn: true,
+        system: '',
+        parameters: [],
       },
       top_n: 8,
       vector_similarity_weight: 0.2,
@@ -64,7 +70,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
         ? await transformFile2Base64(icon[0])
         : '';
     setDialog({
-      ...data,
+      ...omit(data, 'operator_permission'),
       ...nextValues,
       icon: avatar,
       dialog_id: id,
@@ -89,25 +95,28 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
   }, [data, form]);
 
   return (
-    <section className="p-5  w-[440px] border-l">
+    <section className="p-5  w-[440px] border-l flex flex-col">
       <div className="flex justify-between items-center text-base pb-2">
         {t('chat.chatSetting')}
         <X className="size-4 cursor-pointer" onClick={switchSettingVisible} />
       </div>
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
-          <section className="space-y-6 overflow-auto max-h-[82vh] pr-4">
+        <form
+          onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+          className="flex-1 flex flex-col min-h-0"
+        >
+          <section className="space-y-6 overflow-auto flex-1 pr-4 min-h-0">
             <ChatBasicSetting></ChatBasicSetting>
             <Separator />
             <ChatPromptEngine></ChatPromptEngine>
             <Separator />
             <ChatModelSettings></ChatModelSettings>
           </section>
-          <div className="space-x-5 text-right">
+          <div className="space-x-5 text-right pt-4">
             <Button variant={'outline'} onClick={switchSettingVisible}>
               {t('chat.cancel')}
             </Button>
-            <ButtonLoading className=" my-4" type="submit" loading={loading}>
+            <ButtonLoading type="submit" loading={loading}>
               {t('common.save')}
             </ButtonLoading>
           </div>

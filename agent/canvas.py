@@ -131,7 +131,16 @@ class Canvas:
 
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]
-        self.globals = self.dsl["globals"]
+        if "globals" in self.dsl:
+            self.globals = self.dsl["globals"]
+        else:
+            self.globals = {
+            "sys.query": "",
+            "sys.user_id": "",
+            "sys.conversation_turns": 0,
+            "sys.files": []
+        }
+            
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
 
@@ -417,7 +426,7 @@ class Canvas:
         convs = []
         if window_size <= 0:
             return convs
-        for role, obj in self.history[window_size * -1:]:
+        for role, obj in self.history[window_size * -2:]:
             if isinstance(obj, dict):
                 convs.append({"role": role, "content": obj.get("content", "")})
             else:

@@ -1,4 +1,5 @@
 import { variableEnabledFieldMap } from '@/constants/chat';
+import { TFunction } from 'i18next';
 import omit from 'lodash/omit';
 
 // chat model setting and generate operator
@@ -27,7 +28,17 @@ export const removeUselessFieldsFromValues = (values: any, prefix?: string) => {
   return nextValues;
 };
 
-export function buildOptions(data: Record<string, any>) {
+export function buildOptions(
+  data: Record<string, any>,
+  t?: TFunction<['translation', ...string[]], undefined>,
+  prefix?: string,
+) {
+  if (t) {
+    return Object.values(data).map((val) => ({
+      label: t(`${prefix ? prefix + '.' : ''}${val.toLowerCase()}`),
+      value: val,
+    }));
+  }
   return Object.values(data).map((val) => ({ label: val, value: val }));
 }
 

@@ -90,8 +90,8 @@ export function Sessions({
               'bg-bg-card': conversationId === x.id,
             })}
           >
-            <CardContent className="px-3 py-2 flex justify-between items-center group">
-              {x.name}
+            <CardContent className="px-3 py-2 flex justify-between items-center group gap-1">
+              <div className="truncate">{x.name}</div>
               <ConversationDropdown conversation={x}>
                 <MoreButton></MoreButton>
               </ConversationDropdown>

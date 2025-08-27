@@ -59,8 +59,6 @@ export function ImportMcpForm({ hideModal, onOk }: IModalProps<any>) {
                 <FileUploader
                   value={field.value}
                   onValueChange={field.onChange}
-                  maxFileCount={1}
-                  maxSize={4 * 1024 * 1024}
                   accept={{ '*.json': [FileMimeType.Json] }}
                 />
               </FormControl>

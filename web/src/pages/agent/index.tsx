@@ -63,7 +63,7 @@ function AgentDropdownMenuItem({
 
 export default function Agent() {
   const { id } = useParams();
-  const { navigateToAgentList } = useNavigatePage();
+  const { navigateToAgents } = useNavigatePage();
   const {
     visible: chatDrawerVisible,
     hideModal: hideChatDrawer,
@@ -113,7 +113,7 @@ export default function Agent() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink onClick={navigateToAgentList}>
+                <BreadcrumbLink onClick={navigateToAgents}>
                   Agent
                 </BreadcrumbLink>
               </BreadcrumbItem>
@@ -210,7 +210,9 @@ export default function Agent() {
         ></EmbedDialog>
       )}
       {versionDialogVisible && (
-        <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+        <DropdownProvider>
+          <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
+        </DropdownProvider>
       )}
       {settingDialogVisible && (
         <SettingDialog hideModal={hideSettingDialog}></SettingDialog>

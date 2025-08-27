@@ -16,6 +16,7 @@
 
 from flask import request
 from flask_login import login_required, current_user
+from api.db.services import duplicate_name
 from api.db.services.dialog_service import DialogService
 from api.db import StatusEnum
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -41,6 +42,15 @@ def set_dialog():
         return get_data_error_result(message="Dialog name can't be empty.")
     if len(name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Dialog name length is {len(name)} which is larger than 255")
+
+    if is_create and DialogService.query(tenant_id=current_user.id, name=name.strip()):
+        name = name.strip()
+        name = duplicate_name(
+            DialogService.query,
+            name=name,
+            tenant_id=current_user.id,
+            status=StatusEnum.VALID.value)
+
     description = req.get("description", "A helpful dialog")
     icon = req.get("icon", "")
     top_n = req.get("top_n", 6)

@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
@@ -383,7 +383,7 @@ curl --request POST \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
@@ -604,7 +604,7 @@ curl --request PUT \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
@@ -2656,7 +2656,7 @@ Creates a session with an agent.
 - Body:
   - the required parameters:`str`
   - other parameters:
-    The parameters specified in the **Begin** component.
+    The variables specified in the **Begin** component.
 
 ##### Request example
 
@@ -3000,13 +3000,19 @@ curl --request POST \
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
 - `"inputs"`: (*Body Parameter*)  
-  Parameters specified in the **Begin** component.
+  Variables specified in the **Begin** component.  
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 
+:::tip NOTE
+For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
+`http://{address}/v1/canvas/upload/{agent_id}`  
+*You will get a corresponding file ID from its response body.*
+:::
+
 #### Response
 
-success without `session_id` provided and with no parameters specified in the **Begin** component:
+success without `session_id` provided and with no variables specified in the **Begin** component:
 
 Stream:
 
@@ -3074,7 +3080,7 @@ Non-stream:
 }
 ```
 
-Success without `session_id` provided and with parameters specified in the **Begin** component:
+Success without `session_id` provided and with variables specified in the **Begin** component:
 
 Stream:
 
@@ -3163,7 +3169,7 @@ Non-stream:
 }
 ```
 
-Success with parameters specified in the **Begin** component:
+Success with variables specified in the **Begin** component:
 
 Stream:
 
@@ -3495,7 +3501,7 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/v1/sessions/related_questions`
+**POST** `/api/v1/sessions/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -3510,7 +3516,7 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/v1/sessions/related_questions`
+- URL: `/api/v1/sessions/related_questions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -3522,7 +3528,7 @@ The chat model autonomously determines the number of questions to generate based
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/sessions/related_questions \
+     --url http://{address}/api/v1/sessions/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '

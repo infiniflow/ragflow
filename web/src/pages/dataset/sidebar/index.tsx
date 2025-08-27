@@ -62,15 +62,19 @@ export function SideBar({ refreshCount }: PropType) {
           name={data.name}
           className="size-16"
         ></RAGFlowAvatar>
-        <div className=" text-text-secondary text-xs space-y-1">
-          <h3 className="text-lg font-semibold line-clamp-1 text-text-primary">
+        <div className=" text-text-secondary text-xs space-y-1 overflow-hidden">
+          <h3 className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden">
             {data.name}
           </h3>
           <div className="flex justify-between">
-            <span>{data.doc_num} files</span>
+            <span>
+              {data.doc_num} {t('knowledgeDetails.files')}
+            </span>
             <span>{formatBytes(data.size)}</span>
           </div>
-          <div>Created {formatPureDate(data.create_time)}</div>
+          <div>
+            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+          </div>
         </div>
       </div>
 

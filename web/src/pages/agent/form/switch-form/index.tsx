@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { toLower } from 'lodash';
 import { X } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
@@ -197,7 +198,7 @@ function ConditionCards({
           className="mt-6"
           onClick={() => append({ operator: switchOperatorOptions[0].value })}
         >
-          Add
+          {t('common.add')}
         </BlockButton>
       </div>
     </section>
@@ -268,7 +269,7 @@ function SwitchForm({ node }: IOperatorForm) {
                     className="-translate-y-1"
                     onClick={() => remove(index)}
                   >
-                    Remove <X />
+                    {t('common.remove')} <X />
                   </Button>
                 )}
               </div>
@@ -317,7 +318,7 @@ function SwitchForm({ node }: IOperatorForm) {
             })
           }
         >
-          Add
+          {t('common.add')}
         </BlockButton>
       </FormWrapper>
     </Form>

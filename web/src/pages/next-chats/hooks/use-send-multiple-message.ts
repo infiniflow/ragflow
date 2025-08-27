@@ -1,3 +1,4 @@
+import showMessage from '@/components/ui/message';
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -159,7 +160,7 @@ export function useSendMultipleChatMessage(
       if (res && (res?.response.status !== 200 || res?.data?.code !== 0)) {
         // cancel loading
         setValue(message.content);
-        console.info('removeLatestMessage111');
+        showMessage.error(res.data.message);
         removeLatestMessage(chatBoxId);
       }
     },

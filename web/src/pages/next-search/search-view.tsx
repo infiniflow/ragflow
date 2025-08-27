@@ -83,7 +83,7 @@ export default function SearchingView({
       >
         <h1
           className={cn(
-            'text-4xl font-bold bg-gradient-to-r from-sky-600 from-30% via-sky-500 via-60% to-emerald-500 bg-clip-text cursor-pointer',
+            'text-4xl font-bold bg-gradient-to-l from-[#40EBE3] to-[#4A51FF] bg-clip-text cursor-pointer',
           )}
           onClick={() => {
             setIsSearching?.(false);
@@ -252,7 +252,10 @@ export default function SearchingView({
                           key={idx}
                           variant="transparent"
                           className="bg-bg-card text-text-secondary"
-                          onClick={handleClickRelatedQuestion(x)}
+                          onClick={handleClickRelatedQuestion(
+                            x,
+                            searchData.search_config.summary,
+                          )}
                         >
                           {x}
                         </Button>

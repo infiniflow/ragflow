@@ -1,3 +1,4 @@
+import { FileUploadProps } from '@/components/file-upload';
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
 import {
@@ -14,7 +15,7 @@ import { buildMessageListWithUuid, getConversationId } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { has } from 'lodash';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'umi';
 import {
@@ -395,9 +396,14 @@ export const useDeleteMessage = () => {
   return { data, loading, deleteMessage: mutateAsync };
 };
 
+type UploadParameters = Parameters<NonNullable<FileUploadProps['onUpload']>>;
+
+type X = { file: UploadParameters[0][0]; options: UploadParameters[1] };
+
 export function useUploadAndParseFile() {
   const { conversationId } = useGetChatSearchParams();
   const { t } = useTranslation();
+  const controller = useRef(new AbortController());
 
   const {
     data,
@@ -405,22 +411,48 @@ export function useUploadAndParseFile() {
     mutateAsync,
   } = useMutation({
     mutationKey: [ChatApiAction.UploadAndParse],
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('conversation_id', conversationId);
+    mutationFn: async ({
+      file,
+      options: { onProgress, onSuccess, onError },
+    }: X) => {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('conversation_id', conversationId);
 
-      const { data } = await chatService.uploadAndParse(formData);
+        const { data } = await chatService.uploadAndParse(
+          {
+            signal: controller.current.signal,
+            data: formData,
+            onUploadProgress: ({ progress }) => {
+              onProgress(file, (progress || 0) * 100 - 1);
+            },
+          },
+          true,
+        );
 
-      if (data.code === 0) {
-        message.success(t(`message.uploaded`));
+        onProgress(file, 100);
+
+        if (data.code === 0) {
+          onSuccess(file);
+          message.success(t(`message.uploaded`));
+        } else {
+          onError(file, new Error(data.message));
+        }
+
+        return data;
+      } catch (error) {
+        onError(file, error as Error);
       }
-
-      return data;
     },
   });
 
-  return { data, loading, uploadAndParseFile: mutateAsync };
+  const cancel = useCallback(() => {
+    controller.current.abort();
+    controller.current = new AbortController();
+  }, [controller]);
+
+  return { data, loading, uploadAndParseFile: mutateAsync, cancel };
 }
 
 export const useFetchExternalChatInfo = () => {

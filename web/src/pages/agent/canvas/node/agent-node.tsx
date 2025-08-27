@@ -89,7 +89,7 @@ function InnerAgentNode({
           {(isGotoMethod ||
             exceptionMethod === AgentExceptionMethod.Comment) && (
             <div className="bg-bg-card rounded-sm p-1 flex justify-between gap-2">
-              <span className="text-text-secondary">On Failure</span>
+              <span className="text-text-secondary">{t('flow.onFailure')}</span>
               <span className="truncate flex-1 text-right">
                 {t(`flow.${exceptionMethod}`)}
               </span>

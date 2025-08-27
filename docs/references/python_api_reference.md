@@ -5,7 +5,7 @@ slug: /python_api_reference
 
 # Python API
 
-A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
+A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 :::tip NOTE
 Run the following command to download the Python SDK:

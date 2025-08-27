@@ -19,6 +19,7 @@ type SliderInputSwitchFormFieldProps = {
   name: string;
   label: string;
   defaultValue?: number;
+  onChange?: (value: number) => void;
   className?: string;
   checkName: string;
 };
@@ -30,6 +31,7 @@ export function SliderInputSwitchFormField({
   label,
   name,
   defaultValue,
+  onChange,
   className,
   checkName,
 }: SliderInputSwitchFormFieldProps) {
@@ -66,6 +68,10 @@ export function SliderInputSwitchFormField({
             <FormControl>
               <SingleFormSlider
                 {...field}
+                onChange={(value: number) => {
+                  onChange?.(value);
+                  field.onChange(value);
+                }}
                 max={max}
                 min={min}
                 step={step}
@@ -80,6 +86,10 @@ export function SliderInputSwitchFormField({
                 min={min}
                 step={step}
                 {...field}
+                onChange={(value: number) => {
+                  onChange?.(value);
+                  field.onChange(value);
+                }}
               ></NumberInput>
             </FormControl>
           </div>

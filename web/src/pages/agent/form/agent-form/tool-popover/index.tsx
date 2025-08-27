@@ -8,6 +8,7 @@ import { Operator } from '@/pages/agent/constant';
 import { AgentFormContext, AgentInstanceContext } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
 import { Position } from '@xyflow/react';
+import { t } from 'i18next';
 import { PropsWithChildren, useCallback, useContext, useEffect } from 'react';
 import { useGetAgentMCPIds, useGetAgentToolNames } from '../use-get-tools';
 import { MCPCommand, ToolCommand } from './tool-command';
@@ -65,8 +66,12 @@ export function ToolPopover({ children }: PropsWithChildren) {
       <PopoverContent className="w-80 p-4">
         <Tabs defaultValue={ToolType.Common}>
           <TabsList>
-            <TabsTrigger value={ToolType.Common}>Built-in</TabsTrigger>
-            <TabsTrigger value={ToolType.MCP}>MCP</TabsTrigger>
+            <TabsTrigger value={ToolType.Common} className="bg-bg-card">
+              {t('flow.builtIn')}
+            </TabsTrigger>
+            <TabsTrigger value={ToolType.MCP} className="bg-bg-card">
+              MCP
+            </TabsTrigger>
           </TabsList>
           <TabsContent value={ToolType.Common}>
             <ToolCommand

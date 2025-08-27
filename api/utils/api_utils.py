@@ -17,6 +17,7 @@ import asyncio
 import functools
 import json
 import logging
+import os
 import queue
 import random
 import threading
@@ -353,7 +354,7 @@ def get_parser_config(chunk_method, parser_config):
     if not chunk_method:
         chunk_method = "naive"
 
-    # Define default configurations for each chunk method
+    # Define default configurations for each chunking method
     key_mapping = {
         "naive": {"chunk_token_num": 512, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
@@ -667,7 +668,10 @@ def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Option
 
             for a in range(attempts):
                 try:
-                    result = result_queue.get(timeout=seconds)
+                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                        result = result_queue.get(timeout=seconds)
+                    else:
+                        result = result_queue.get()
                     if isinstance(result, Exception):
                         raise result
                     return result
@@ -682,7 +686,10 @@ def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Option
 
             for a in range(attempts):
                 try:
-                    with trio.fail_after(seconds):
+                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                        with trio.fail_after(seconds):
+                            return await func(*args, **kwargs)
+                    else:
                         return await func(*args, **kwargs)
                 except trio.TooSlowError:
                     if a < attempts - 1:

@@ -307,6 +307,7 @@ def chunk_id(chunk):
 
 async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     global chat_limiter
+    enable_timeout_assertion=os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     chunk = {
         "id": get_uuid(),
         "important_kwd": [ent_name],
@@ -324,7 +325,7 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     ebd = get_embed_cache(embd_mdl.llm_name, ent_name)
     if ebd is None:
         async with chat_limiter:
-            with trio.fail_after(3):
+            with trio.fail_after(3 if enable_timeout_assertion else 30000000):
                 ebd, _ = await trio.to_thread.run_sync(lambda: embd_mdl.encode([ent_name]))
         ebd = ebd[0]
         set_embed_cache(embd_mdl.llm_name, ent_name, ebd)
@@ -362,6 +363,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
 
 
 async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
+    enable_timeout_assertion=os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     chunk = {
         "id": get_uuid(),
         "from_entity_kwd": from_ent_name,
@@ -380,7 +382,7 @@ async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta,
     ebd = get_embed_cache(embd_mdl.llm_name, txt)
     if ebd is None:
         async with chat_limiter:
-            with trio.fail_after(3):
+            with trio.fail_after(3 if enable_timeout_assertion else 300000000):
                 ebd, _ = await trio.to_thread.run_sync(lambda: embd_mdl.encode([txt+f": {meta['description']}"]))
         ebd = ebd[0]
         set_embed_cache(embd_mdl.llm_name, txt, ebd)
@@ -514,9 +516,10 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
     start = now
 
+    enable_timeout_assertion=os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
-        with trio.fail_after(3):
+        with trio.fail_after(3 if enable_timeout_assertion else 30000000):
             doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(tenant_id), kb_id))
         if b % 100 == es_bulk_size and callback:
             callback(msg=f"Insert chunks: {b}/{len(chunks)}")

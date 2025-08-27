@@ -104,7 +104,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
           </RAGFlowFormItem>
           <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
-        <Collapse title={<div>Advanced Settings</div>}>
+        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
               vectorSimilarityWeightName="keywords_similarity_weight"

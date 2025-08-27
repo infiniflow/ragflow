@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -74,7 +74,11 @@ export function InputForm({ onOk }: IModalProps<any>) {
   );
 }
 
-export function DatasetCreatingDialog({ hideModal, onOk }: IModalProps<any>) {
+export function DatasetCreatingDialog({
+  hideModal,
+  onOk,
+  loading,
+}: IModalProps<any>) {
   const { t } = useTranslation();
 
   return (
@@ -85,9 +89,9 @@ export function DatasetCreatingDialog({ hideModal, onOk }: IModalProps<any>) {
         </DialogHeader>
         <InputForm onOk={onOk}></InputForm>
         <DialogFooter>
-          <Button type="submit" form={FormId}>
+          <ButtonLoading type="submit" form={FormId} loading={loading}>
             {t('common.save')}
-          </Button>
+          </ButtonLoading>
         </DialogFooter>
       </DialogContent>
     </Dialog>
