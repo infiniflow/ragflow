@@ -52,7 +52,7 @@ Ecommerce Customer Service Workflow: A template designed to handle enquiries abo
   - Unable to send out messages after file uploads.
 - An OAuth2 authentication failure.
 - A logical error in multi-conditioned metadata searches within a dataset.
-- Citations continually increased in multi-turn conversations.
+- Citations infinitely increased in multi-turn conversations.
 
 ## v0.20.3
 
