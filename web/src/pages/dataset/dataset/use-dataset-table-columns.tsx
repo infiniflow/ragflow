@@ -65,7 +65,8 @@ export function useDatasetTableColumns({
       header: ({ column }) => {
         return (
           <Button
-            variant="ghost"
+            variant="transparent"
+            className="border-none"
             onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           >
             {t('name')}
@@ -103,7 +104,8 @@ export function useDatasetTableColumns({
       header: ({ column }) => {
         return (
           <Button
-            variant="ghost"
+            variant="transparent"
+            className="border-none"
             onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           >
             {t('uploadDate')}

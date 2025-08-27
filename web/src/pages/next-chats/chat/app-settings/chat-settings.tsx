@@ -9,6 +9,7 @@ import {
   setLLMSettingEnabledValues,
 } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { omit } from 'lodash';
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
@@ -35,13 +36,18 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
     shouldUnregister: true,
     defaultValues: {
       name: '',
+      icon: [],
       language: 'English',
+      description: '',
+      kb_ids: [],
       prompt_config: {
         quote: true,
         keyword: false,
         tts: false,
         use_kg: false,
         refine_multiturn: true,
+        system: '',
+        parameters: [],
       },
       top_n: 8,
       vector_similarity_weight: 0.2,
@@ -64,7 +70,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
         ? await transformFile2Base64(icon[0])
         : '';
     setDialog({
-      ...data,
+      ...omit(data, 'operator_permission'),
       ...nextValues,
       icon: avatar,
       dialog_id: id,

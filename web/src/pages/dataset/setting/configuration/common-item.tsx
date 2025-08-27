@@ -29,7 +29,7 @@ export function ChunkMethodItem() {
           <div className="flex items-center">
             <FormLabel
               tooltip={t('chunkMethodTip')}
-              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+              className="text-sm text-muted-foreground whitespace-wrap w-1/4"
             >
               {t('chunkMethod')}
             </FormLabel>
@@ -69,7 +69,7 @@ export function EmbeddingModelItem() {
           <div className="flex items-center">
             <FormLabel
               tooltip={t('embeddingModelTip')}
-              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+              className="text-sm text-muted-foreground whitespace-wrap w-1/4"
             >
               {t('embeddingModel')}
             </FormLabel>

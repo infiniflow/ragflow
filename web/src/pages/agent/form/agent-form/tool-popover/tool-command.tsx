@@ -12,13 +12,14 @@ import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { cn } from '@/lib/utils';
 import { Operator } from '@/pages/agent/constant';
 import OperatorIcon from '@/pages/agent/operator-icon';
+import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const Menus = [
   {
-    label: 'Search',
+    label: t('flow.search'),
     list: [
       Operator.TavilySearch,
       Operator.TavilyExtract,
@@ -34,7 +35,7 @@ const Menus = [
     ],
   },
   {
-    label: 'Communication',
+    label: t('flow.communication'),
     list: [Operator.Email],
   },
   // {
@@ -42,7 +43,7 @@ const Menus = [
   //   list: [],
   // },
   {
-    label: 'Developer',
+    label: t('flow.developer'),
     list: [Operator.GitHub, Operator.ExeSQL, Operator.Code, Operator.Retrieval],
   },
 ];
@@ -116,7 +117,7 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
 
   return (
     <Command>
-      <CommandInput placeholder="Type a command or search..." />
+      <CommandInput placeholder={t('flow.typeCommandOrsearch')} />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
         {Menus.map((x) => (

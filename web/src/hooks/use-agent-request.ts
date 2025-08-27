@@ -390,7 +390,7 @@ export const useUploadCanvasFileWithProgress = (
         files.forEach((file) => {
           onError(file, error as Error);
         });
-        message.error('error', error?.message);
+        message.error(error?.message);
       }
     },
   });

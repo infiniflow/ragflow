@@ -1,6 +1,7 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatDate } from '@/utils/date';
+import { ReactNode } from 'react';
 
 interface IProps {
   data: {
@@ -11,8 +12,9 @@ interface IProps {
   };
   onClick?: () => void;
   moreDropdown: React.ReactNode;
+  sharedBadge?: ReactNode;
 }
-export function HomeCard({ data, onClick, moreDropdown }: IProps) {
+export function HomeCard({ data, onClick, moreDropdown, sharedBadge }: IProps) {
   return (
     <Card
       className="bg-bg-card  border-colors-outline-neutral-standard"
@@ -41,10 +43,11 @@ export function HomeCard({ data, onClick, moreDropdown }: IProps) {
             <div className="whitespace-nowrap overflow-hidden text-ellipsis">
               {data.description}
             </div>
-            <div>
+            <div className="flex justify-between items-center">
               <p className="text-sm opacity-80">
                 {formatDate(data.update_time)}
               </p>
+              {sharedBadge}
             </div>
           </section>
         </div>

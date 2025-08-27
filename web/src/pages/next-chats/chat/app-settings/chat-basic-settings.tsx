@@ -13,6 +13,13 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFormContext } from 'react-hook-form';
@@ -20,6 +27,17 @@ import { useFormContext } from 'react-hook-form';
 export default function ChatBasicSetting() {
   const { t } = useTranslate('chat');
   const form = useFormContext();
+
+  const languageOptions = [
+    { value: 'English', label: 'English' },
+    { value: 'Chinese', label: 'Chinese' },
+    { value: 'Spanish', label: 'Spanish' },
+    { value: 'French', label: 'French' },
+    { value: 'German', label: 'German' },
+    { value: 'Japanese', label: 'Japanese' },
+    { value: 'Korean', label: 'Korean' },
+    { value: 'Vietnamese', label: 'Vietnamese' },
+  ];
 
   return (
     <div className="space-y-8">
@@ -35,6 +53,9 @@ export default function ChatBasicSetting() {
                   value={field.value}
                   onValueChange={field.onChange}
                   maxFileCount={1}
+                  description={t('photoTip', {
+                    keyPrefix: 'knowledgeConfiguration',
+                  })}
                 />
               </FormControl>
               <FormMessage />
@@ -51,6 +72,30 @@ export default function ChatBasicSetting() {
             <FormControl>
               <Input {...field}></Input>
             </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="language"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('language')}</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('common.languagePlaceholder')} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {languageOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <FormMessage />
           </FormItem>
         )}

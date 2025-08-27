@@ -21,6 +21,7 @@ import { Operator } from '@/pages/agent/constant';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
 import OperatorIcon from '@/pages/agent/operator-icon';
 import { Position } from '@xyflow/react';
+import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import {
   PropsWithChildren,
@@ -128,7 +129,9 @@ function AccordionOperators({
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">
-        <AccordionTrigger className="text-xl">Foundation</AccordionTrigger>
+        <AccordionTrigger className="text-xl">
+          {t('flow.foundation')}
+        </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
             operators={[Operator.Agent, Operator.Retrieval]}
@@ -138,7 +141,9 @@ function AccordionOperators({
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-2">
-        <AccordionTrigger className="text-xl">Dialogue </AccordionTrigger>
+        <AccordionTrigger className="text-xl">
+          {t('flow.dialog')}
+        </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
             operators={[Operator.Message, Operator.UserFillUp]}
@@ -148,7 +153,9 @@ function AccordionOperators({
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-3">
-        <AccordionTrigger className="text-xl">Flow</AccordionTrigger>
+        <AccordionTrigger className="text-xl">
+          {t('flow.flow')}
+        </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
             operators={[
@@ -163,7 +170,7 @@ function AccordionOperators({
       </AccordionItem>
       <AccordionItem value="item-4">
         <AccordionTrigger className="text-xl">
-          Data Manipulation
+          {t('flow.dataManipulation')}
         </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
@@ -174,7 +181,9 @@ function AccordionOperators({
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-5">
-        <AccordionTrigger className="text-xl">Tools</AccordionTrigger>
+        <AccordionTrigger className="text-xl">
+          {t('flow.tools')}
+        </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
             operators={[
@@ -244,7 +253,7 @@ export function InnerNextStepDropdown({
       >
         <div className="w-[300px] font-semibold bg-bg-base border border-border rounded-md shadow-lg">
           <div className="px-3 py-2 border-b border-border">
-            <div className="text-sm font-medium">Next Step</div>
+            <div className="text-sm font-medium">{t('flow.nextStep')}</div>
           </div>
           <HideModalContext.Provider value={hideModal}>
             <OnNodeCreatedContext.Provider value={onNodeCreated}>
@@ -273,7 +282,7 @@ export function InnerNextStepDropdown({
         onClick={(e) => e.stopPropagation()}
         className="w-[300px] font-semibold"
       >
-        <DropdownMenuLabel>Next Step</DropdownMenuLabel>
+        <DropdownMenuLabel>{t('flow.nextStep')}</DropdownMenuLabel>
         <HideModalContext.Provider value={hideModal}>
           <AccordionOperators></AccordionOperators>
         </HideModalContext.Provider>

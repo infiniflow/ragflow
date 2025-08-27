@@ -99,13 +99,13 @@ const GoogleForm = ({ node }: INextOperatorForm) => {
           <QueryVariable name="q"></QueryVariable>
         </FormContainer>
         <FormContainer>
-          <ApiKeyField placeholder="YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)"></ApiKeyField>
+          <ApiKeyField placeholder={t('apiKeyPlaceholder')}></ApiKeyField>
           <FormField
             control={form.control}
             name={`start`}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('start')}</FormLabel>
+                <FormLabel>{t('flowStart')}</FormLabel>
                 <FormControl>
                   <NumberInput {...field} className="w-full"></NumberInput>
                 </FormControl>
@@ -118,7 +118,7 @@ const GoogleForm = ({ node }: INextOperatorForm) => {
             name={`num`}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('num')}</FormLabel>
+                <FormLabel>{t('flowNum')}</FormLabel>
                 <FormControl>
                   <NumberInput {...field} className="w-full"></NumberInput>
                 </FormControl>

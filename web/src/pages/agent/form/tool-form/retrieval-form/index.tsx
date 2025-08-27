@@ -8,6 +8,7 @@ import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DescriptionField } from '../../components/description-field';
@@ -41,7 +42,7 @@ const RetrievalForm = () => {
           <DescriptionField></DescriptionField>
           <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
-        <Collapse title={<div>Advanced Settings</div>}>
+        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
               vectorSimilarityWeightName="keywords_similarity_weight"
