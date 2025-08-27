@@ -27,7 +27,8 @@ from api.db.services.canvas_service import UserCanvasService, completionOpenAI
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
-from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap
+from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap, meta_filter
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
@@ -37,7 +38,7 @@ from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_
 from rag.app.tag import label_question
 from rag.prompts import chunks_format
 from rag.prompts.prompt_template import load_prompt
-from rag.prompts.prompts import cross_languages, keyword_extraction
+from rag.prompts.prompts import cross_languages, gen_meta_filter, keyword_extraction
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
@@ -84,7 +85,7 @@ def create_agent_session(tenant_id, agent_id):
     session_id=get_uuid()
     canvas = Canvas(cvs.dsl, tenant_id, agent_id)
     canvas.reset()
-    
+
     cvs.dsl = json.loads(str(canvas))
     conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     API4ConversationService.save(**conv)
@@ -937,6 +938,22 @@ def retrieval_test_embedded():
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
+
+
+    if req.get("search_id", ""):
+        search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
+        meta_data_filter = search_config.get("meta_data_filter", {})
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        if meta_data_filter.get("method") == "auto":
+            chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+            filters = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters))
+            if not doc_ids:
+                doc_ids = None
+        elif meta_data_filter.get("method") == "manual":
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
+            if not doc_ids:
+                doc_ids = None
 
     try:
         tenants = UserTenantService.query(user_id=tenant_id)
