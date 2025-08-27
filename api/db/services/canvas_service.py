@@ -213,7 +213,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     except Exception as e:
                         logging.exception(f"Agent OpenAI-Compatible completionOpenAI parse answer failed: {e}")
                         continue
-                if ans.get("event") != "message" or not ans.get("reference"):
+                if ans.get("event") != "message" or not ans.get("data", {}).get("reference", None):
                     continue
                 content_piece = ans["data"]["content"]
                 completion_tokens += len(tiktokenenc.encode(content_piece))
@@ -260,7 +260,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             ):
                 if isinstance(ans, str):
                     ans = json.loads(ans[5:])
-                if ans.get("event") != "message" or not ans.get("reference"):
+                if ans.get("event") != "message" or not ans.get("data", {}).get("reference", None):
                     continue
                 all_content += ans["data"]["content"]
 

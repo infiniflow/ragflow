@@ -16,8 +16,10 @@
 import json
 import re
 import time
+
 import tiktoken
 from flask import Response, jsonify, request
+
 from agent.canvas import Canvas
 from api import settings
 from api.db import LLMType, StatusEnum
@@ -82,7 +84,7 @@ def create_agent_session(tenant_id, agent_id):
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    session_id=get_uuid()
+    session_id = get_uuid()
     canvas = Canvas(cvs.dsl, tenant_id, agent_id)
     canvas.reset()
 
@@ -445,6 +447,7 @@ def agent_completions(tenant_id, agent_id):
 
     ans = {}
     if req.get("stream", True):
+
         def generate():
             for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
                 if isinstance(answer, str):
@@ -453,7 +456,7 @@ def agent_completions(tenant_id, agent_id):
                     except Exception:
                         continue
 
-                if ans.get("event") != "message" or not ans.get("reference", None):
+                if ans.get("event") != "message" or not ans.get("data", {}).get("reference", None):
                     continue
 
                 yield answer
@@ -467,11 +470,20 @@ def agent_completions(tenant_id, agent_id):
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
+
+    full_content = ""
     for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
+
+            if ans["event"] == "message":
+                full_content += ans["data"]["content"]
+
+            if ans.get("data", {}).get("reference", None):
+                ans["data"]["content"] = full_content
+                return get_result(data=ans)
         except Exception as e:
-           return get_result(data=f"**ERROR**: {str(e)}")
+            return get_result(data=f"**ERROR**: {str(e)}")
     return get_result(data=ans)
 
 
@@ -567,10 +579,7 @@ def list_agent_session(tenant_id, agent_id):
                 if message_num != 0 and messages[message_num]["role"] != "user":
                     chunk_list = []
                     # Add boundary and type checks to prevent KeyError
-                    if (chunk_num < len(conv["reference"]) and
-                            conv["reference"][chunk_num] is not None and
-                            isinstance(conv["reference"][chunk_num], dict) and
-                            "chunks" in conv["reference"][chunk_num]):
+                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             # Ensure chunk is a dictionary before calling get method
@@ -871,15 +880,7 @@ def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
-    return get_result(
-        data={
-            "title": cvs.title,
-            "avatar": cvs.avatar,
-            "inputs": canvas.get_component_input_form("begin"),
-            "prologue": canvas.get_prologue(),
-            "mode": canvas.get_mode()
-        }
-    )
+    return get_result(data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"), "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
 
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
@@ -919,7 +920,7 @@ def ask_about_embedded():
     return resp
 
 
-@manager.route("/searchbots/retrieval_test", methods=['POST'])  # noqa: F821
+@manager.route("/searchbots/retrieval_test", methods=["POST"])  # noqa: F821
 @validate_request("kb_id", "question")
 def retrieval_test_embedded():
     token = request.headers.get("Authorization").split()
@@ -949,7 +950,6 @@ def retrieval_test_embedded():
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
-
     if req.get("search_id", ""):
         search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
         meta_data_filter = search_config.get("meta_data_filter", {})
@@ -969,14 +969,11 @@ def retrieval_test_embedded():
         tenants = UserTenantService.query(user_id=tenant_id)
         for kb_id in kb_ids:
             for tenant in tenants:
-                if KnowledgebaseService.query(
-                        tenant_id=tenant.tenant_id, id=kb_id):
+                if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
                     tenant_ids.append(tenant.tenant_id)
                     break
             else:
-                return get_json_result(
-                    data=False, message='Only owner of knowledgebase authorized for this operation.',
-                    code=settings.RetCode.OPERATING_ERROR)
+                return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
@@ -996,17 +993,11 @@ def retrieval_test_embedded():
             question += keyword_extraction(chat_mdl, question)
 
         labels = label_question(question, [kb])
-        ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
-                               similarity_threshold, vector_similarity_weight, top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
-                               rank_feature=labels
-                               )
+        ranks = settings.retrievaler.retrieval(
+            question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top, doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
+        )
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question,
-                                                   tenant_ids,
-                                                   kb_ids,
-                                                   embd_mdl,
-                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = settings.kg_retrievaler.retrieval(question, tenant_ids, kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -1017,8 +1008,7 @@ def retrieval_test_embedded():
         return get_json_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_json_result(data=False, message='No chunk found! Check the chunk status please!',
-                                   code=settings.RetCode.DATA_ERROR)
+            return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=settings.RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
