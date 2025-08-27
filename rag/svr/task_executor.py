@@ -293,8 +293,7 @@ async def build_chunks(task, progress_callback):
                 docs.append(d)
                 return
 
-            output_buffer = BytesIO()
-            try:
+            with BytesIO() as output_buffer:
                 if isinstance(d["image"], bytes):
                     output_buffer.write(d["image"])
                     output_buffer.seek(0)
@@ -317,8 +316,6 @@ async def build_chunks(task, progress_callback):
                     d["image"].close()
                 del d["image"]  # Remove image reference
                 docs.append(d)
-            finally:
-                output_buffer.close()  # Ensure BytesIO is always closed
         except Exception:
             logging.exception(
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
