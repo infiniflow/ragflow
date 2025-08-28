@@ -102,8 +102,8 @@ export function LlmSettingFieldItems({
         control={form.control}
         name={'parameter'}
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('freedom')}</FormLabel>
+          <FormItem className="flex justify-between items-center">
+            <FormLabel className="flex-1">{t('freedom')}</FormLabel>
             <FormControl>
               <Select
                 {...field}
@@ -112,7 +112,7 @@ export function LlmSettingFieldItems({
                   field.onChange(val);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="flex-1 !m-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

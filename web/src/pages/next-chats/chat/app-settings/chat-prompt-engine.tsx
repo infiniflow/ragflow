@@ -1,5 +1,6 @@
 'use client';
 
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { SwitchFormField } from '@/components/switch-fom-field';
@@ -30,7 +31,7 @@ export function ChatPromptEngine() {
           <FormItem>
             <FormLabel>{t('system')}</FormLabel>
             <FormControl>
-              <Textarea {...field} />
+              <Textarea {...field} rows={8} />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -43,7 +44,13 @@ export function ChatPromptEngine() {
         label={t('multiTurn')}
       ></SwitchFormField>
       <UseKnowledgeGraphFormField name="prompt_config.use_kg"></UseKnowledgeGraphFormField>
+      <SwitchFormField
+        name={'prompt_config.reasoning'}
+        label={t('reasoning')}
+        tooltip={t('reasoningTip')}
+      ></SwitchFormField>
       <RerankFormFields></RerankFormFields>
+      <CrossLanguageFormField></CrossLanguageFormField>
       <DynamicVariableForm></DynamicVariableForm>
     </div>
   );

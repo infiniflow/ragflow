@@ -36,7 +36,6 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
     defaultValues: {
       name: '',
       icon: '',
-      language: 'English',
       description: '',
       kb_ids: [],
       prompt_config: {
@@ -47,6 +46,8 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
         refine_multiturn: true,
         system: '',
         parameters: [],
+        reasoning: false,
+        cross_languages: [],
       },
       top_n: 8,
       vector_similarity_weight: 0.2,
