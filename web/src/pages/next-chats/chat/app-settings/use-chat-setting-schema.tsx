@@ -28,14 +28,13 @@ export function useChatSettingSchema() {
       }),
     ),
     tavily_api_key: z.string().optional(),
+    reasoning: z.boolean().optional(),
+    cross_languages: z.array(z.string()).optional(),
   });
 
   const formSchema = z.object({
     name: z.string().min(1, { message: t('assistantNameMessage') }),
     icon: z.string(),
-    language: z.string().min(1, {
-      message: t('languageMessage'),
-    }),
     description: z.string().optional(),
     kb_ids: z.array(z.string()).min(0, {
       message: t('knowledgeBasesMessage'),
