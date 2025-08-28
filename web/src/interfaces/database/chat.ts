@@ -10,6 +10,7 @@ export interface PromptConfig {
   keyword: boolean;
   refine_multiturn: boolean;
   use_kg: boolean;
+  reasoning: boolean;
 }
 
 export interface Parameter {
