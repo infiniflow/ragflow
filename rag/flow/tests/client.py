@@ -18,13 +18,10 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-
 import trio
-
-from agent.canvas import Canvas
 from api import settings
-from api.utils import get_uuid
 from rag.flow.pipeline import Pipeline
+
 
 def print_logs(pipeline):
     last_logs = "[]"
