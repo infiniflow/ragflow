@@ -18,6 +18,7 @@ import { memo, useCallback } from 'react';
 import { useParams } from 'umi';
 import DebugContent from '../debug-content';
 import { useAwaitCompentData } from '../hooks/use-chat-logic';
+import { useIsTaskMode } from '../hooks/use-get-begin-query';
 
 function AgentChatBox() {
   const {
@@ -47,6 +48,8 @@ function AgentChatBox() {
     sendFormMessage,
     canvasId: canvasId as string,
   });
+
+  const isTaskMode = useIsTaskMode();
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
@@ -109,18 +112,20 @@ function AgentChatBox() {
           </div>
           <div ref={scrollRef} />
         </div>
-        <NextMessageInput
-          value={value}
-          sendLoading={sendLoading}
-          disabled={isWaitting}
-          sendDisabled={sendLoading || isWaitting}
-          isUploading={loading || isWaitting}
-          onPressEnter={handlePressEnter}
-          onInputChange={handleInputChange}
-          stopOutputMessage={stopOutputMessage}
-          onUpload={handleUploadFile}
-          conversationId=""
-        />
+        {isTaskMode || (
+          <NextMessageInput
+            value={value}
+            sendLoading={sendLoading}
+            disabled={isWaitting}
+            sendDisabled={sendLoading || isWaitting}
+            isUploading={loading || isWaitting}
+            onPressEnter={handlePressEnter}
+            onInputChange={handleInputChange}
+            stopOutputMessage={stopOutputMessage}
+            onUpload={handleUploadFile}
+            conversationId=""
+          />
+        )}
       </section>
       <PdfDrawer
         visible={visible}

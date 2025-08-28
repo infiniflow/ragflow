@@ -1,7 +1,10 @@
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IEventList } from '@/hooks/use-send-message';
-import { useSendAgentMessage } from '@/pages/agent/chat/use-send-agent-message';
+import {
+  buildRequestBody,
+  useSendAgentMessage,
+} from '@/pages/agent/chat/use-send-agent-message';
 import trim from 'lodash/trim';
 import { useCallback, useState } from 'react';
 import { useSearchParams } from 'umi';
@@ -32,6 +35,7 @@ export const useGetSharedChatSearchParams = () => {
 
 export const useSendNextSharedMessage = (
   addEventList: (data: IEventList, messageId: string) => void,
+  isTaskMode: boolean,
 ) => {
   const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
   const url = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
@@ -44,14 +48,24 @@ export const useSendNextSharedMessage = (
     showModal: showParameterDialog,
   } = useSetModalState();
 
-  const ret = useSendAgentMessage(url, addEventList, params);
+  const ret = useSendAgentMessage(url, addEventList, params, true);
 
   const ok = useCallback(
     (params: any[]) => {
-      setParams(params);
+      if (isTaskMode) {
+        const msgBody = buildRequestBody('');
+
+        ret.sendMessage({
+          message: msgBody,
+          beginInputs: params,
+        });
+      } else {
+        setParams(params);
+      }
+
       hideParameterDialog();
     },
-    [hideParameterDialog],
+    [hideParameterDialog, isTaskMode, ret],
   );
 
   return {

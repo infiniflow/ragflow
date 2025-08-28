@@ -39,4 +39,5 @@ export type IInputs = {
   title: string;
   inputs: Record<string, BeginQuery>;
   prologue: string;
+  mode: string;
 };

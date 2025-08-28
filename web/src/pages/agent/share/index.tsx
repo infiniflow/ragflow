@@ -14,11 +14,11 @@ import i18n from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
-import { IInputs } from '@/pages/agent/interface';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
-import React, { forwardRef, useCallback, useState } from 'react';
+import React, { forwardRef, useCallback } from 'react';
+import { AgentDialogueMode } from '../constant';
 import {
   useGetSharedChatSearchParams,
   useSendNextSharedMessage,
@@ -42,6 +42,10 @@ const ChatContainer = () => {
     currentEventListWithoutMessageById,
     clearEventList,
   } = useCacheChatLog();
+
+  const { data: inputsData } = useFetchExternalAgentInputs();
+  const isTaskMode = inputsData.mode === AgentDialogueMode.Task;
+
   const {
     handlePressEnter,
     handleInputChange,
@@ -60,20 +64,14 @@ const ChatContainer = () => {
     addNewestOneAnswer,
     ok,
     resetSession,
-  } = useSendNextSharedMessage(addEventList);
+  } = useSendNextSharedMessage(addEventList, isTaskMode);
   const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
     derivedMessages,
     sendFormMessage,
     canvasId: conversationId as string,
   });
   const sendDisabled = useSendButtonDisabled(value);
-  const { data: inputsData } = useFetchExternalAgentInputs();
-  const [agentInfo, setAgentInfo] = useState<IInputs>({
-    avatar: '',
-    title: '',
-    inputs: {},
-    prologue: '',
-  });
+
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
@@ -90,22 +88,12 @@ const ChatContainer = () => {
   }, [locale, visibleAvatar]);
 
   React.useEffect(() => {
-    const { avatar, title, inputs } = inputsData;
-    setAgentInfo({
-      avatar,
-      title,
-      inputs: inputs,
-      prologue: '',
-    });
-  }, [inputsData, setAgentInfo]);
-
-  React.useEffect(() => {
-    if (inputsData.prologue) {
+    if (!isTaskMode && inputsData.prologue) {
       addNewestOneAnswer({
         answer: inputsData.prologue,
       });
     }
-  }, [inputsData.prologue, addNewestOneAnswer]);
+  }, [inputsData.prologue, addNewestOneAnswer, isTaskMode]);
 
   React.useEffect(() => {
     if (inputsData && inputsData.inputs && !isEmpty(inputsData.inputs)) {
@@ -126,8 +114,8 @@ const ChatContainer = () => {
   return (
     <>
       <EmbedContainer
-        title={agentInfo.title}
-        avatar={agentInfo.avatar}
+        title={inputsData.title}
+        avatar={inputsData.avatar}
         handleReset={handleReset}
       >
         <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
@@ -157,8 +145,8 @@ const ChatContainer = () => {
                       derivedMessages?.length - 1 === i
                     }
                     isShare={true}
-                    avatarDialog={agentInfo.avatar}
-                    agentName={agentInfo.title}
+                    avatarDialog={inputsData.avatar}
+                    agentName={inputsData.title}
                     index={i}
                     clickDocumentButton={clickDocumentButton}
                     showLikeButton={false}
@@ -192,23 +180,25 @@ const ChatContainer = () => {
             </div>
             <div ref={scrollRef} />
           </div>
-          <div className="flex w-full justify-center mb-8">
-            <div className="w-5/6">
-              <NextMessageInput
-                isShared
-                value={value}
-                disabled={hasError || isWaitting}
-                sendDisabled={sendDisabled || isWaitting}
-                conversationId={conversationId}
-                onInputChange={handleInputChange}
-                onPressEnter={handlePressEnter}
-                sendLoading={sendLoading}
-                stopOutputMessage={stopOutputMessage}
-                onUpload={handleUploadFile}
-                isUploading={loading || isWaitting}
-              ></NextMessageInput>
+          {isTaskMode || (
+            <div className="flex w-full justify-center mb-8">
+              <div className="w-5/6">
+                <NextMessageInput
+                  isShared
+                  value={value}
+                  disabled={hasError || isWaitting}
+                  sendDisabled={sendDisabled || isWaitting}
+                  conversationId={conversationId}
+                  onInputChange={handleInputChange}
+                  onPressEnter={handlePressEnter}
+                  sendLoading={sendLoading}
+                  stopOutputMessage={stopOutputMessage}
+                  onUpload={handleUploadFile}
+                  isUploading={loading || isWaitting}
+                ></NextMessageInput>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </EmbedContainer>
       {visible && (
@@ -223,7 +213,7 @@ const ChatContainer = () => {
         <ParameterDialog
           // hideModal={hideParameterDialog}
           ok={handleInputsModalOk}
-          data={agentInfo.inputs}
+          data={inputsData.inputs}
         ></ParameterDialog>
       )}
     </>
