@@ -16,12 +16,10 @@ import random
 import trio
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from deepdoc.parser.pdf_parser import RAGFlowPdfParser, PlainParser, VisionParser
+from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from graphrag.utils import get_llm_cache, chat_limiter, set_llm_cache
-from rag.app.naive import Markdown
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.llm.cv_model import Base as VLM
-from rag.nlp import concat_img, naive_merge, naive_merge_with_images
+from rag.nlp import naive_merge, naive_merge_with_images
 from rag.prompts.prompts import keyword_extraction, question_proposal
 
 
