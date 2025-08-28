@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from codecs import ignore_errors
 import logging
 
 from flask import request, jsonify
@@ -35,13 +36,19 @@ def retrieval(tenant_id):
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)
+    ignore_nometa = req.get("ignore_nometa", True)
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
     metadata_condition = req.get("metadata_condition",{})
-    metas = DocumentService.get_meta_by_kbs([kb_id])
+    if ignore_nometa:
+        metas, docs = DocumentService.get_documents_by_kbs([kb_id])
+    else:
+        metas = DocumentService.get_meta_by_kbs([kb_id])
 
     doc_ids = []
+    if ignore_nometa:
+        doc_ids.extend(docs)
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
