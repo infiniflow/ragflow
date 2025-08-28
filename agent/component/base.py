@@ -448,9 +448,11 @@ class ComponentBase(ABC):
     def error(self):
         return self._param.outputs.get("_ERROR", {}).get("value")
 
-    def reset(self):
+    def reset(self, only_output=False):
         for k in self._param.outputs.keys():
             self._param.outputs[k]["value"] = None
+        if only_output:
+            return
         for k in self._param.inputs.keys():
             self._param.inputs[k]["value"] = None
         self._param.debug_inputs = {}

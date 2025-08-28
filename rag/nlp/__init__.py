@@ -554,8 +554,8 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overl
         if num_tokens_from_string(sec) < chunk_token_num:
             add_chunk(sec, pos)
             continue
-        splited_sec = re.split(r"(%s)" % dels, sec, flags=re.DOTALL)
-        for sub_sec in splited_sec:
+        split_sec = re.split(r"(%s)" % dels, sec, flags=re.DOTALL)
+        for sub_sec in split_sec:
             if re.match(f"^{dels}$", sub_sec):
                 continue
             add_chunk(sub_sec, pos)
@@ -600,14 +600,14 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if isinstance(text, tuple):
             text_str = text[0]
             text_pos = text[1] if len(text) > 1 else ""
-            splited_sec = re.split(r"(%s)" % dels, text_str)
-            for sub_sec in splited_sec:
+            split_sec = re.split(r"(%s)" % dels, text_str)
+            for sub_sec in split_sec:
                 if re.match(f"^{dels}$", sub_sec):
                     continue
                 add_chunk(sub_sec, image, text_pos)
         else:
-            splited_sec = re.split(r"(%s)" % dels, text)
-            for sub_sec in splited_sec:
+            split_sec = re.split(r"(%s)" % dels, text)
+            for sub_sec in split_sec:
                 if re.match(f"^{dels}$", sub_sec):
                     continue
                 add_chunk(sub_sec, image)
@@ -684,8 +684,8 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
 
     dels = get_delimiters(delimiter)
     for sec, image in sections:
-        splited_sec = re.split(r"(%s)" % dels, sec)
-        for sub_sec in splited_sec:
+        split_sec = re.split(r"(%s)" % dels, sec)
+        for sub_sec in split_sec:
             if re.match(f"^{dels}$", sub_sec):
                 continue
             add_chunk(sub_sec, image,"")

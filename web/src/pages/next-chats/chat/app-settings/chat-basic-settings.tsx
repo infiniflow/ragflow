@@ -1,6 +1,6 @@
 'use client';
 
-import { FileUploader } from '@/components/file-uploader';
+import { AvatarUpload } from '@/components/avatar-upload';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { SwitchFormField } from '@/components/switch-fom-field';
@@ -13,8 +13,14 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFormContext } from 'react-hook-form';
 
@@ -43,11 +49,7 @@ export default function ChatBasicSetting() {
             <FormItem className="w-full">
               <FormLabel>{t('assistantAvatar')}</FormLabel>
               <FormControl>
-                <FileUploader
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  maxFileCount={1}
-                />
+                <AvatarUpload {...field}></AvatarUpload>
               </FormControl>
               <FormMessage />
             </FormItem>

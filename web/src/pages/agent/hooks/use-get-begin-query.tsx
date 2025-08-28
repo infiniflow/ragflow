@@ -14,7 +14,13 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { BeginId, BeginQueryType, Operator, VariableType } from '../constant';
+import {
+  AgentDialogueMode,
+  BeginId,
+  BeginQueryType,
+  Operator,
+  VariableType,
+} from '../constant';
 import { AgentFormContext } from '../context';
 import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
@@ -27,6 +33,15 @@ export function useSelectBeginNodeDataInputs() {
   return buildBeginInputListFromObject(
     getNode(BeginId)?.data?.form?.inputs ?? {},
   );
+}
+
+export function useIsTaskMode() {
+  const getNode = useGraphStore((state) => state.getNode);
+
+  return useMemo(() => {
+    const node = getNode(BeginId);
+    return node?.data?.form?.mode === AgentDialogueMode.Task;
+  }, [getNode]);
 }
 
 export const useGetBeginNodeDataQuery = () => {

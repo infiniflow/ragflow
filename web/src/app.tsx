@@ -6,6 +6,7 @@ import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
 import deDE from 'antd/locale/de_DE';
 import enUS from 'antd/locale/en_US';
+import ru_RU from 'antd/locale/ru_RU';
 import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
@@ -34,6 +35,7 @@ const AntLanguageMap = {
   en: enUS,
   zh: zhCN,
   'zh-TRADITIONAL': zh_HK,
+  ru: ru_RU,
   vi: vi_VN,
   'pt-BR': pt_BR,
   de: deDE,
