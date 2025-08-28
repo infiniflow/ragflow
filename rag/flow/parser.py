@@ -13,14 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import random
-
 import trio
-
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser, PlainParser, VisionParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.llm.cv_model import Base as VLM
+from deepdoc.parser import ExcelParser
 
 
 class ParserParam(ProcessParamBase):
@@ -34,7 +33,9 @@ class ParserParam(ProcessParamBase):
                 "suffix": ["pdf"],
                 "output_format": "json"
             },
-            "excel": {},
+            "excel": {
+                "output_format": "html"
+            },
             "ppt": {},
             "image": {
                 "parse_method": "ocr"
@@ -82,6 +83,18 @@ class Parser(ProcessBase):
                 continue
             mkdn += b.get("text", "") + "\n"
         self.set_output("markdown", mkdn)
+
+    def _excel(self, blob):
+        self.callback(random.randint(1,5)/100., "Start to work on a Excel.")
+        conf = self._param.setups["excel"]
+        excel_parser = ExcelParser()
+        if conf.get("output_format") == "html":
+            html = excel_parser.html(blob,1000000000)
+            self.set_output("html", html)
+        elif conf.get("output_format") == "json":
+            self.set_output("json", [{"text": txt} for txt in excel_parser(blob) if txt])
+        elif conf.get("output_format") == "markdown":
+            self.set_output("markdown", excel_parser.markdown(blob))
 
     async def _invoke(self, **kwargs):
         function_map = {
