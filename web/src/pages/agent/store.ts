@@ -204,6 +204,7 @@ const useGraphStore = create<RFState>()(
         set({ nodes: nextNodes });
       },
       getNode: (id?: string | null) => {
+        // console.log('getNode', id, get().nodes);
         return get().nodes.find((x) => x.id === id);
       },
       getOperatorTypeFromId: (id?: string | null) => {

@@ -10,7 +10,6 @@ import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import {
   $getRoot,
   $getSelection,
-  $nodesOfType,
   EditorState,
   Klass,
   LexicalNode,
@@ -135,9 +134,8 @@ export function PromptEditor({
   const onValueChange = useCallback(
     (editorState: EditorState) => {
       editorState?.read(() => {
-        const listNodes = $nodesOfType(VariableNode); // to be removed
+        // const listNodes = $nodesOfType(VariableNode); // to be removed
         // const allNodes = $dfs();
-        console.log('🚀 ~ onChange ~ allNodes:', listNodes);
 
         const text = $getRoot().getTextContent();
 

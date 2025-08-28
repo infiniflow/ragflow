@@ -20,7 +20,13 @@ import {
   $isRangeSelection,
   TextNode,
 } from 'lexical';
-import React, { ReactElement, useCallback, useEffect, useRef } from 'react';
+import React, {
+  ReactElement,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
 import * as ReactDOM from 'react-dom';
 
 import { $createVariableNode } from './variable-node';
@@ -31,11 +37,20 @@ import './index.css';
 class VariableInnerOption extends MenuOption {
   label: string;
   value: string;
+  parentLabel: string | JSX.Element;
+  icon?: ReactNode;
 
-  constructor(label: string, value: string) {
+  constructor(
+    label: string,
+    value: string,
+    parentLabel: string | JSX.Element,
+    icon?: ReactNode,
+  ) {
     super(value);
     this.label = label;
     this.value = value;
+    this.parentLabel = parentLabel;
+    this.icon = icon;
   }
 }
 
@@ -111,7 +126,6 @@ export default function VariablePickerMenuPlugin({
 
   const buildNextOptions = useCallback(() => {
     let filteredOptions = options;
-
     if (queryString) {
       const lowerQuery = queryString.toLowerCase();
       filteredOptions = options
@@ -131,23 +145,28 @@ export default function VariablePickerMenuPlugin({
         new VariableOption(
           x.label,
           x.title,
-          x.options.map((y) => new VariableInnerOption(y.label, y.value)),
+          x.options.map((y) => {
+            return new VariableInnerOption(y.label, y.value, x.label, y.icon);
+          }),
         ),
     );
-
     return nextOptions;
   }, [options, queryString]);
 
-  const findLabelByValue = useCallback(
+  const findItemByValue = useCallback(
     (value: string) => {
-      const children = options.reduce<Array<{ label: string; value: string }>>(
-        (pre, cur) => {
-          return pre.concat(cur.options);
-        },
-        [],
-      );
+      const children = options.reduce<
+        Array<{
+          label: string;
+          value: string;
+          parentLabel?: string | ReactNode;
+          icon?: ReactNode;
+        }>
+      >((pre, cur) => {
+        return pre.concat(cur.options);
+      }, []);
 
-      return children.find((x) => x.value === value)?.label;
+      return children.find((x) => x.value === value);
     },
     [options],
   );
@@ -168,13 +187,13 @@ export default function VariablePickerMenuPlugin({
         if (nodeToRemove) {
           nodeToRemove.remove();
         }
-
-        selection.insertNodes([
-          $createVariableNode(
-            (selectedOption as VariableInnerOption).value,
-            selectedOption.label as string,
-          ),
-        ]);
+        const variableNode = $createVariableNode(
+          (selectedOption as VariableInnerOption).value,
+          selectedOption.label as string,
+          selectedOption.parentLabel as string | ReactNode,
+          selectedOption.icon as ReactNode,
+        );
+        selection.insertNodes([variableNode]);
 
         closeMenu();
       });
@@ -190,7 +209,6 @@ export default function VariablePickerMenuPlugin({
       const regex = /{([^}]*)}/g;
       let match;
       let lastIndex = 0;
-
       while ((match = regex.exec(text)) !== null) {
         const { 1: content, index, 0: template } = match;
 
@@ -202,9 +220,17 @@ export default function VariablePickerMenuPlugin({
         }
 
         // Add variable node or text node
-        const label = findLabelByValue(content);
-        if (label) {
-          paragraph.append($createVariableNode(content, label));
+        const nodeItem = findItemByValue(content);
+
+        if (nodeItem) {
+          paragraph.append(
+            $createVariableNode(
+              content,
+              nodeItem.label,
+              nodeItem.parentLabel,
+              nodeItem.icon,
+            ),
+          );
         } else {
           paragraph.append($createTextNode(template));
         }
@@ -225,7 +251,7 @@ export default function VariablePickerMenuPlugin({
         $getRoot().selectEnd();
       }
     },
-    [findLabelByValue],
+    [findItemByValue],
   );
 
   useEffect(() => {

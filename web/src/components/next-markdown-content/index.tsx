@@ -235,7 +235,7 @@ function MarkdownContent({
             <HoverCardTrigger>
               <CircleAlert className="size-4 inline-block" />
             </HoverCardTrigger>
-            <HoverCardContent>
+            <HoverCardContent className="max-w-3xl">
               {renderPopoverContent(chunkIndex)}
             </HoverCardContent>
           </HoverCard>

@@ -64,7 +64,12 @@ const OperatorIcon = ({ name, className }: IProps) => {
 
   if (name === Operator.Begin) {
     return (
-      <div className="inline-block p-1 bg-accent-primary rounded-sm">
+      <div
+        className={cn(
+          'inline-block p-1 bg-accent-primary rounded-sm',
+          className,
+        )}
+      >
         <HousePlus className="rounded size-3" />
       </div>
     );
