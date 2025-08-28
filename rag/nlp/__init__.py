@@ -563,7 +563,8 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overl
     return cks
 
 
-def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
+def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
+    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     if not texts or len(texts) != len(images):
         return [], []
     cks = [""]
@@ -578,7 +579,10 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
+            if cks:
+                overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
+                t = overlapped[int(len(overlapped)*(100-overlapped_percent)/100.):] + t
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)

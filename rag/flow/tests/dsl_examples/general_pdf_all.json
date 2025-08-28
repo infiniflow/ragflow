@@ -1,0 +1,54 @@
+{
+  "components": {
+    "begin": {
+        "obj":{
+            "component_name": "File",
+            "params": {
+            }
+        },
+        "downstream": ["parser:0"],
+        "upstream": []
+    },
+    "parser:0": {
+        "obj": {
+            "component_name": "Parser",
+            "params": {
+              "setups": {
+                "pdf": {
+                  "parse_method": "deepdoc",
+                  "vlm_name": "",
+                  "lang": "Chinese",
+                  "suffix": [
+                    "pdf"
+                  ],
+                  "output_format": "json"
+                }
+              }
+            }
+        },
+        "downstream": ["chunker:0"],
+        "upstream": ["begin"]
+    },
+    "chunker:0": {
+        "obj": {
+            "component_name": "Chunker",
+            "params": {
+              "method": "general",
+              "auto_keywords": 5
+            }
+        },
+        "downstream": ["tokenizer:0"],
+        "upstream": ["chunker:0"]
+    },
+    "tokenizer:0": {
+        "obj": {
+            "component_name": "Tokenizer",
+            "params": {
+            }
+        },
+        "downstream": [],
+        "upstream": ["chunker:0"]
+    }
+  },
+  "path": []
+}
