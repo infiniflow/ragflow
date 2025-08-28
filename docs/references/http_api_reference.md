@@ -302,7 +302,7 @@ data: {
     ]
 }
 
-[DONE]
+data: [DONE]
 ```
 
 Non-stream:
