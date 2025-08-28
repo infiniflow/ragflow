@@ -7,6 +7,7 @@ Reference:
 
 import logging
 import json
+import os
 import re
 from typing import Callable
 from dataclasses import dataclass
@@ -51,6 +52,7 @@ class CommunityReportsExtractor(Extractor):
         self._max_report_length = max_report_length or 1500
 
     async def __call__(self, graph: nx.Graph, callback: Callable | None = None):
+        enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
 
@@ -92,7 +94,7 @@ class CommunityReportsExtractor(Extractor):
             text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
             async with chat_limiter:
                 try:
-                    with trio.move_on_after(180) as cancel_scope:
+                    with trio.move_on_after(180 if enable_timeout_assertion else 1000000000) as cancel_scope:
                         response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], {})
                     if cancel_scope.cancelled_caught:
                         logging.warning("extract_community_report._chat timeout, skipping...")

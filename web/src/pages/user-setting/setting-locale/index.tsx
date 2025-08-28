@@ -7,6 +7,7 @@ function UserSettingLocale() {
       data={translationTable}
       languages={[
         'English',
+        'Rus',
         'Vietnamese',
         'Spanish',
         'zh',

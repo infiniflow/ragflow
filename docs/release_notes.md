@@ -9,8 +9,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4`
 :::
 
 :::danger IMPORTANT
@@ -21,6 +21,38 @@ The embedding models included in a full edition are:
 
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
+
+## v0.20.4
+
+Released on August 27, 2025.
+
+### Improvements
+
+- Agent component: Completes Chinese localization for the Agent component.
+- Introduces the `ENABLE_TIMEOUT_ASSERTION` environment variable to enable or disable timeout assertions for file parsing tasks.
+- Dataset:
+  - Improves Markdown file parsing, with AST support to avoid unintended chunking.
+  - Enhances HTML parsing, supporting bs4-based HTML tag traversal.
+
+### Added models
+
+ZHIPU GLM-4.5
+
+### New Agent templates
+
+Ecommerce Customer Service Workflow: A template designed to handle enquiries about product features and multi-product comparisons using the internal knowledge base, as well as to manage installation appointment bookings.
+
+### Fixed issues
+
+- Dataset:  
+  - Unable to share resources with the team.
+  - Inappropriate restrictions on the number and size of uploaded files.
+- Chat:
+  - Unable to preview referenced files in responses.
+  - Unable to send out messages after file uploads.
+- An OAuth2 authentication failure.
+- A logical error in multi-conditioned metadata searches within a dataset.
+- Citations infinitely increased in multi-turn conversations.
 
 ## v0.20.3
 

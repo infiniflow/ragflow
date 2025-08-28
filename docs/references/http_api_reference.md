@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
@@ -383,7 +383,7 @@ curl --request POST \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
@@ -604,7 +604,7 @@ curl --request PUT \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
@@ -731,7 +731,7 @@ Failure:
 ```
  ---
 
-## Get dataset's knowledge graph
+### Get knowledge graph
 
 **GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -810,7 +810,7 @@ Failure:
 ```
 ---
 
-## Delete dataset's knowledge graph
+### Delete knowledge graph
 
 **DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -3501,7 +3501,7 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/v1/sessions/related_questions`
+**POST** `/api/v1/sessions/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -3516,7 +3516,7 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/v1/sessions/related_questions`
+- URL: `/api/v1/sessions/related_questions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -3528,7 +3528,7 @@ The chat model autonomously determines the number of questions to generate based
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/sessions/related_questions \
+     --url http://{address}/api/v1/sessions/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '

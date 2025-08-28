@@ -28,6 +28,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { RAGFlowSelectOptionType } from '../ui/select';
 import { Separator } from '../ui/separator';
 
@@ -114,7 +115,9 @@ export const SelectWithSearch = forwardRef<
                 <span className="leading-none truncate">{selectLabel}</span>
               </span>
             ) : (
-              <span className="text-muted-foreground">Select value</span>
+              <span className="text-muted-foreground">
+                {t('common.selectPlaceholder')}
+              </span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (
@@ -142,9 +145,9 @@ export const SelectWithSearch = forwardRef<
           align="start"
         >
           <Command>
-            <CommandInput placeholder="Search ..." />
+            <CommandInput placeholder={t('common.search') + '...'} />
             <CommandList>
-              <CommandEmpty>No data found.</CommandEmpty>
+              <CommandEmpty>{t('common.noDataFound')}</CommandEmpty>
               {options.map((group, idx) => {
                 if (group.options) {
                   return (
