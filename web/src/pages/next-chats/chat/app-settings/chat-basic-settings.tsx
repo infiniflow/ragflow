@@ -1,6 +1,6 @@
 'use client';
 
-import { FileUploader } from '@/components/file-uploader';
+import { AvatarUpload } from '@/components/avatar-upload';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { SwitchFormField } from '@/components/switch-fom-field';
@@ -49,14 +49,7 @@ export default function ChatBasicSetting() {
             <FormItem className="w-full">
               <FormLabel>{t('assistantAvatar')}</FormLabel>
               <FormControl>
-                <FileUploader
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  maxFileCount={1}
-                  description={t('photoTip', {
-                    keyPrefix: 'knowledgeConfiguration',
-                  })}
-                />
+                <AvatarUpload {...field}></AvatarUpload>
               </FormControl>
               <FormMessage />
             </FormItem>

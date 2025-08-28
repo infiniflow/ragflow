@@ -3,7 +3,6 @@ import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { DatasetMetadata } from '@/constants/chat';
 import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
-import { transformBase64ToFile, transformFile2Base64 } from '@/utils/file-util';
 import {
   removeUselessFieldsFromValues,
   setLLMSettingEnabledValues,
@@ -36,7 +35,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
     shouldUnregister: true,
     defaultValues: {
       name: '',
-      icon: [],
+      icon: '',
       language: 'English',
       description: '',
       kb_ids: [],
@@ -64,15 +63,10 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
       values,
       'llm_setting.',
     );
-    const icon = nextValues.icon;
-    const avatar =
-      Array.isArray(icon) && icon.length > 0
-        ? await transformFile2Base64(icon[0])
-        : '';
+
     setDialog({
       ...omit(data, 'operator_permission'),
       ...nextValues,
-      icon: avatar,
       dialog_id: id,
     });
   }
@@ -88,7 +82,6 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
 
     const nextData = {
       ...data,
-      icon: data.icon ? [transformBase64ToFile(data.icon)] : [],
       ...llmSettingEnabledValues,
     };
     form.reset(nextData as FormSchemaType);

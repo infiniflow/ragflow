@@ -32,7 +32,7 @@ export function useChatSettingSchema() {
 
   const formSchema = z.object({
     name: z.string().min(1, { message: t('assistantNameMessage') }),
-    icon: z.array(z.instanceof(File)),
+    icon: z.string(),
     language: z.string().min(1, {
       message: t('languageMessage'),
     }),
