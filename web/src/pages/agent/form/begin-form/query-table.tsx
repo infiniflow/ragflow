@@ -53,7 +53,7 @@ export function QueryTable({ data = [], deleteRecord, showModal }: IProps) {
   const columns: ColumnDef<BeginQuery>[] = [
     {
       accessorKey: 'key',
-      header: 'Key',
+      header: t('flow.key'),
       meta: { cellClassName: 'max-w-30' },
       cell: ({ row }) => {
         const key: string = row.getValue('key');

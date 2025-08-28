@@ -6,6 +6,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { t } from 'i18next';
 import { useFormContext } from 'react-hook-form';
 
 interface IApiKeyFieldProps {
@@ -19,7 +20,7 @@ export function ApiKeyField({ placeholder }: IApiKeyFieldProps) {
       name="api_key"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>Api Key</FormLabel>
+          <FormLabel>{t('flow.apiKey')}</FormLabel>
           <FormControl>
             <Input type="password" {...field} placeholder={placeholder}></Input>
           </FormControl>
