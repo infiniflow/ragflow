@@ -48,10 +48,16 @@ export interface IFlowTemplate {
   canvas_type: string;
   create_date: string;
   create_time: number;
-  description: string;
+  description: {
+    en: string;
+    zh: string;
+  };
   dsl: DSL;
   id: string;
-  title: string;
+  title: {
+    en: string;
+    zh: string;
+  };
   update_date: string;
   update_time: number;
 }

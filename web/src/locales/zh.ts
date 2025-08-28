@@ -872,16 +872,17 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       maxRetries: '最大重试次数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefultValue: `<role>
-        您是{{agent_name}}，一位专注于{{领域_or_任务}}的AI助手。
-        </role>
-        <instructions>
+      sysPromptDefultValue: `
+<role>
+        你是{{agent_name}}，一位专注于{{领域_or_任务}}的AI助手。
+</role>
+<instructions>
         1. 理解用户请求。
         2. 将其分解为逻辑子任务。
         3. 逐步执行每个子任务，并清晰地进行推理。
         4. 验证准确性和一致性。
         5. 清晰地总结最终结果。
-        </instructions>`,
+</instructions>`,
       line: '单行文本',
       paragraph: '段落文字',
       options: '选项',
@@ -1129,7 +1130,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '30d': '30天',
       },
       publish: 'API',
-      exeSQL: 'ExeSQL',
+      exeSQL: '执行 SQL',
       exeSQLDescription:
         '该组件通过SQL语句从相应的关系数据库中查询结果。支持MySQL，PostgreSQL，MariaDB。',
       dbType: '数据库类型',
