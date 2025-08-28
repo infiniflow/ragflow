@@ -265,7 +265,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 🔨 소스 코드로 서비스를 시작합니다.
 
-1. uv를 설치하거나 이미 설치된 경우 이 단계를 건너뜁니다:
+1. `uv` 와 `pre-commit` 을 설치하거나, 이미 설치된 경우 이 단계를 건너뜁니다:
 
    ```bash
    pipx install uv pre-commit

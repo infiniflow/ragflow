@@ -271,7 +271,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
 
-1. Instal uv, atau lewati langkah ini jika sudah terinstal:
+1. Instal `uv` dan `pre-commit`, atau lewati langkah ini jika sudah terinstal:
 
    ```bash
    pipx install uv pre-commit
