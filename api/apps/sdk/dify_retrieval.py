@@ -80,7 +80,6 @@ def retrieval(tenant_id):
                                                    [tenant_id],
                                                    [kb_id],
                                                    embd_mdl,
-                                                   doc_ids,
                                                    LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)

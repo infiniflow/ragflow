@@ -71,6 +71,35 @@ interface IModelCardProps {
   handleEditModel: (model: any, factory: LlmItem) => void;
 }
 
+type TagType =
+  | 'LLM'
+  | 'TEXT EMBEDDING'
+  | 'TEXT RE-RANK'
+  | 'TTS'
+  | 'SPEECH2TEXT'
+  | 'IMAGE2TEXT'
+  | 'MODERATION';
+
+const sortTags = (tags: string) => {
+  const orderMap: Record<TagType, number> = {
+    LLM: 1,
+    'TEXT EMBEDDING': 2,
+    'TEXT RE-RANK': 3,
+    TTS: 4,
+    SPEECH2TEXT: 5,
+    IMAGE2TEXT: 6,
+    MODERATION: 7,
+  };
+
+  return tags
+    .split(',')
+    .map((tag) => tag.trim())
+    .sort(
+      (a, b) =>
+        (orderMap[a as TagType] || 999) - (orderMap[b as TagType] || 999),
+    );
+};
+
 const ModelCard = ({ item, clickApiKey, handleEditModel }: IModelCardProps) => {
   const { visible, switchVisible } = useSetModalState();
   const { t } = useTranslate('setting');
@@ -97,7 +126,20 @@ const ModelCard = ({ item, clickApiKey, handleEditModel }: IModelCardProps) => {
               <LlmIcon name={item.name} />
               <Flex vertical gap={'small'}>
                 <b>{item.name}</b>
-                <Text>{item.tags}</Text>
+                <Flex wrap="wrap">
+                  {sortTags(item.tags).map((tag, index) => (
+                    <Tag
+                      key={index}
+                      style={{
+                        fontSize: '12px',
+                        margin: '1px',
+                        paddingInline: '4px',
+                      }}
+                    >
+                      {tag}
+                    </Tag>
+                  ))}
+                </Flex>
               </Flex>
             </Flex>
           </Col>
@@ -399,7 +441,21 @@ const UserSettingModel = () => {
                     <b>
                       <Text ellipsis={{ tooltip: item.name }}>{item.name}</Text>
                     </b>
-                    <Text className={styles.modelTags}>{item.tags}</Text>
+                    <Flex wrap="wrap" style={{ minHeight: '50px' }}>
+                      {sortTags(item.tags).map((tag, index) => (
+                        <Tag
+                          key={index}
+                          style={{
+                            fontSize: '8px',
+                            margin: '1px',
+                            paddingInline: '4px',
+                            height: '22px',
+                          }}
+                        >
+                          {tag}
+                        </Tag>
+                      ))}
+                    </Flex>
                   </Flex>
                 </Flex>
                 <Divider className={styles.modelDivider}></Divider>

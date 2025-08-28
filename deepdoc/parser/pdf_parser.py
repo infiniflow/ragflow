@@ -93,6 +93,7 @@ class RAGFlowPdfParser:
                 model_dir, "updown_concat_xgb.model"))
 
         self.page_from = 0
+        self.column_num = 1
 
     def __char_width(self, c):
         return (c["x1"] - c["x0"]) // max(len(c["text"]), 1)
@@ -427,10 +428,18 @@ class RAGFlowPdfParser:
             i += 1
         self.boxes = bxs
 
-    def _naive_vertical_merge(self):
+    def _naive_vertical_merge(self, zoomin=3):
         bxs = Recognizer.sort_Y_firstly(
             self.boxes, np.median(
                 self.mean_height) / 3)
+
+        column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
+        self.column_num = int(self.page_images[0].size[0] / zoomin / column_width)
+        if column_width < self.page_images[0].size[0] / zoomin / self.column_num:
+            logging.info("Multi-column................... {} {}".format(column_width,
+                  self.page_images[0].size[0] / zoomin / self.column_num))
+            self.boxes = self.sort_X_by_page(self.boxes, column_width / self.column_num)
+
         i = 0
         while i + 1 < len(bxs):
             b = bxs[i]
@@ -1139,20 +1148,94 @@ class RAGFlowPdfParser:
             need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
+    def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
+        start = timer()
+        self.__images__(fnm, zoomin)
+        if callback:
+            callback(0.40, "OCR finished ({:.2f}s)".format(timer() - start))
+
+        start = timer()
+        self._layouts_rec(zoomin)
+        if callback:
+            callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
+        self._table_transformer_job(zoomin)
+        if callback:
+            callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
+        self._text_merge()
+        self._concat_downward()
+        self._naive_vertical_merge(zoomin)
+        if callback:
+            callback(0.92, "Text merged ({:.2f}s)".format(timer() - start))
+
+        start = timer()
+        tbls, figs = self._extract_table_figure(True, zoomin, True, True, True)
+
+        def insert_table_figures(tbls_or_figs, layout_type):
+            def min_rectangle_distance(rect1, rect2):
+                import math
+                pn1, left1, right1, top1, bottom1 = rect1
+                pn2, left2, right2, top2, bottom2 = rect2
+                if (right1 >= left2 and right2 >= left1 and
+                        bottom1 >= top2 and bottom2 >= top1):
+                    return 0 + (pn1-pn2)*10000
+                if right1 < left2:
+                    dx = left2 - right1
+                elif right2 < left1:
+                    dx = left1 - right2
+                else:
+                    dx = 0
+                if bottom1 < top2:
+                    dy = top2 - bottom1
+                elif bottom2 < top1:
+                    dy = top1 - bottom2
+                else:
+                    dy = 0
+                return math.sqrt(dx*dx + dy*dy) + (pn1-pn2)*10000
+
+            for (img, txt), poss in tbls_or_figs:
+                bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
+                dists = [(min_rectangle_distance((pn, left, right, top, bott), rect),i) for i, rect in bboxes for pn, left, right, top, bott in poss]
+                min_i = np.argmin(dists, axis=0)[0]
+                min_i, rect = bboxes[dists[min_i][-1]]
+                if isinstance(txt, list):
+                    txt = "\n".join(txt)
+                self.boxes.insert(min_i, {
+                    "page_number": rect[0], "x0": rect[1], "x1": rect[2], "top": rect[3], "bottom": rect[4], "layout_type": layout_type, "text": txt, "image": img
+                })
+
+        for b in self.boxes:
+            b["position_tag"] = self._line_tag(b, zoomin)
+            b["image"] = self.crop(b["position_tag"], zoomin)
+
+        insert_table_figures(tbls, "table")
+        insert_table_figures(figs, "figure")
+        if callback:
+            callback(1, "Structured ({:.2f}s)".format(timer() - start))
+        return deepcopy(self.boxes)
+
     @staticmethod
     def remove_tag(txt):
         return re.sub(r"@@[\t0-9.-]+?##", "", txt)
 
-    def crop(self, text, ZM=3, need_position=False):
-        imgs = []
+    @staticmethod
+    def extract_positions(txt):
         poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
+        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", txt):
             pn, left, right, top, bottom = tag.strip(
                 "#").strip("@").split("\t")
             left, right, top, bottom = float(left), float(
                 right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")],
                          left, right, top, bottom))
+        return poss
+
+    def crop(self, text, ZM=3, need_position=False):
+        imgs = []
+        poss = self.extract_positions(text)
         if not poss:
             if need_position:
                 return None, None
@@ -1296,8 +1379,8 @@ class VisionParser(RAGFlowPdfParser):
 
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
         callback = kwargs.get("callback", lambda prog, msg: None)
-
-        self.__images__(fnm=filename, zoomin=3, page_from=from_page, page_to=to_page, **kwargs)
+        zoomin = kwargs.get("zoomin", 3)
+        self.__images__(fnm=filename, zoomin=zoomin, page_from=from_page, page_to=to_page, callback=callback)
 
         total_pdf_pages = self.total_page
 
@@ -1311,16 +1394,19 @@ class VisionParser(RAGFlowPdfParser):
             if pdf_page_num < start_page or pdf_page_num >= end_page:
                 continue
 
-            docs = picture_vision_llm_chunk(
+            text = picture_vision_llm_chunk(
                 binary=img_binary,
                 vision_model=self.vision_model,
                 prompt=vision_llm_describe_prompt(page=pdf_page_num+1),
                 callback=callback,
             )
+            if kwargs.get("callback"):
+                kwargs["callback"](idx*1./len(self.page_images), f"Processed: {idx+1}/{len(self.page_images)}")
 
-            if docs:
-                all_docs.append(docs)
-        return [(doc, "") for doc in all_docs], []
+            if text:
+                width, height = self.page_images[idx].size
+                all_docs.append((text, f"{pdf_page_num+1} 0 {width/zoomin} 0 {height/zoomin}"))
+        return all_docs, []
 
 
 if __name__ == "__main__":

@@ -82,7 +82,7 @@ def create() -> Response:
 
     server_name = req.get("name", "")
     if not server_name or len(server_name.encode("utf-8")) > 255:
-        return get_data_error_result(message=f"Invaild MCP name or length is {len(server_name)} which is large than 255.")
+        return get_data_error_result(message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
 
     e, _ = MCPServerService.get_by_name_and_tenant(name=server_name, tenant_id=current_user.id)
     if e:
@@ -90,7 +90,7 @@ def create() -> Response:
 
     url = req.get("url", "")
     if not url:
-        return get_data_error_result(message="Invaild url.")
+        return get_data_error_result(message="Invalid url.")
 
     headers = safe_json_parse(req.get("headers", {}))
     req["headers"] = headers
@@ -141,10 +141,10 @@ def update() -> Response:
         return get_data_error_result(message="Unsupported MCP server type.")
     server_name = req.get("name", mcp_server.name)
     if server_name and len(server_name.encode("utf-8")) > 255:
-        return get_data_error_result(message=f"Invaild MCP name or length is {len(server_name)} which is large than 255.")
+        return get_data_error_result(message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
     url = req.get("url", mcp_server.url)
     if not url:
-        return get_data_error_result(message="Invaild url.")
+        return get_data_error_result(message="Invalid url.")
 
     headers = safe_json_parse(req.get("headers", mcp_server.headers))
     req["headers"] = headers
@@ -218,7 +218,7 @@ def import_multiple() -> Response:
                 continue
 
             if not server_name or len(server_name.encode("utf-8")) > 255:
-                results.append({"server": server_name, "success": False, "message": f"Invaild MCP name or length is {len(server_name)} which is large than 255."})
+                results.append({"server": server_name, "success": False, "message": f"Invalid MCP name or length is {len(server_name)} which is large than 255."})
                 continue
 
             base_name = server_name
@@ -409,7 +409,7 @@ def test_mcp() -> Response:
 
     url = req.get("url", "")
     if not url:
-        return get_data_error_result(message="Invaild MCP url.")
+        return get_data_error_result(message="Invalid MCP url.")
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:

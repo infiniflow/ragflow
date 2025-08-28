@@ -4,7 +4,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { DocumentParserType } from '@/constants/knowledge';
-import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
+import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
 import { useMemo } from 'react';
 import { useParams } from 'umi';
 import { AudioConfiguration } from './configuration/audio';
