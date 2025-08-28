@@ -307,7 +307,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 🔨 Launch service from source for development
 
-1. Install uv, or skip this step if it is already installed:
+1. Install `uv` and `pre-commit`, or skip this step if they are already installed:
 
    ```bash
    pipx install uv pre-commit

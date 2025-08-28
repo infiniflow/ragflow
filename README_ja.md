@@ -266,7 +266,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 🔨 ソースコードからサービスを起動する方法
 
-1. uv をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
+1. `uv` と `pre-commit` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
 
    ```bash
    pipx install uv pre-commit

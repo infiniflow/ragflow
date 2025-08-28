@@ -301,7 +301,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
 
 ## 🔨 以原始碼啟動服務
 
-1. 安裝 uv。如已安裝，可跳過此步驟：
+1. 安裝 `uv` 和 `pre-commit`。如已安裝，可跳過此步驟：
 
    ```bash
    pipx install uv pre-commit
