@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.3">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -183,7 +183,7 @@
 > 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
 > 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
 
-   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.20.3-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.20.3-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.3` 來下載 RAGFlow 鏡像的 `v0.20.3` 完整發行版。
+   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.20.4-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.20.4-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.4` 來下載 RAGFlow 鏡像的 `v0.20.4` 完整發行版。
 
    ```bash
    $ cd ragflow/docker
@@ -196,8 +196,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.20.3           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.20.3-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.20.4           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.20.4-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -301,7 +301,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
 
 ## 🔨 以原始碼啟動服務
 
-1. 安裝 uv。如已安裝，可跳過此步驟：
+1. 安裝 `uv` 和 `pre-commit`。如已安裝，可跳過此步驟：
 
    ```bash
    pipx install uv pre-commit

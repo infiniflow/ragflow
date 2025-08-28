@@ -148,7 +148,7 @@ class MCPToolCallSession(ToolCallSession):
         if result.isError:
             return f"MCP server error: {result.content}"
 
-        # For now we only support text content
+        # For now, we only support text content
         if isinstance(result.content[0], TextContent):
             return result.content[0].text
         else:

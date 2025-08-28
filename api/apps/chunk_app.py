@@ -93,6 +93,7 @@ def list_chunk():
 def get():
     chunk_id = request.args["chunk_id"]
     try:
+        chunk = None
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
