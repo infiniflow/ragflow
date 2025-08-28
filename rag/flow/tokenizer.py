@@ -14,8 +14,6 @@
 #  limitations under the License.
 import random
 import re
-from functools import reduce
-from optparse import check_choice
 
 import numpy as np
 import trio
@@ -25,13 +23,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
 from api.utils.api_utils import timeout
-from deepdoc.parser.pdf_parser import RAGFlowPdfParser, PlainParser, VisionParser
-from graphrag.utils import get_llm_cache, chat_limiter, set_llm_cache
-from rag.app.naive import Markdown
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.llm.cv_model import Base as VLM
-from rag.nlp import concat_img, naive_merge, naive_merge_with_images, rag_tokenizer
-from rag.prompts.prompts import keyword_extraction, question_proposal
+from rag.nlp import rag_tokenizer
 from rag.settings import EMBEDDING_BATCH_SIZE
 from rag.svr.task_executor import embed_limiter
 from rag.utils import truncate

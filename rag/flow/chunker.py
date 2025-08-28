@@ -13,11 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import random
-from functools import reduce
-from optparse import check_choice
-
 import trio
-
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser, PlainParser, VisionParser

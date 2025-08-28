@@ -16,7 +16,7 @@
 
 import re
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 import builtins
 import json
 import os
