@@ -1,7 +1,11 @@
 {
     "id": 13,
-    "title": "ImageLingo",
-    "description": "ImageLingo lets you snap any photo containing text—menus, signs, or documents—and instantly recognize and translate it into your language of choice using advanced AI-powered translation technology.",
+    "title": {
+        "en": "ImageLingo",
+        "zh": "图片解析"},
+    "description": {
+        "en": "ImageLingo lets you snap any photo containing text—menus, signs, or documents—and instantly recognize and translate it into your language of choice using advanced AI-powered translation technology.",
+        "zh": "多模态大模型允许您拍摄任何包含文本的照片——菜单、标志或文档——立即识别并转换成您选择的语言。"},
     "canvas_type": "Consumer App",
     "dsl": {
             "components": {
