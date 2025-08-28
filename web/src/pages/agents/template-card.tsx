@@ -2,10 +2,10 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { IFlowTemplate } from '@/interfaces/database/flow';
+import i18n from '@/locales/config';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-
 interface IProps {
   data: IFlowTemplate;
   isCreate?: boolean;
@@ -18,6 +18,11 @@ export function TemplateCard({ data, showModal, isCreate = false }: IProps) {
   const handleClick = useCallback(() => {
     showModal(data);
   }, [data, showModal]);
+
+  const language = useMemo(() => {
+    return i18n.language || 'en';
+  }, []) as 'en' | 'zh';
+
   return (
     <Card className="border-colors-outline-neutral-standard group relative min-h-40">
       <CardContent className="p-4 ">
@@ -38,11 +43,13 @@ export function TemplateCard({ data, showModal, isCreate = false }: IProps) {
                 avatar={
                   data.avatar ? data.avatar : 'https://github.com/shadcn.png'
                 }
-                name={data?.title || 'CN'}
+                name={data?.title[language] || 'CN'}
               ></RAGFlowAvatar>
-              <div className="text-[18px] font-bold ">{data.title}</div>
+              <div className="text-[18px] font-bold ">
+                {data?.title[language]}
+              </div>
             </div>
-            <p className="break-words">{data.description}</p>
+            <p className="break-words">{data?.description[language]}</p>
             <div className="group-hover:bg-gradient-to-t from-black/70 from-10% via-black/0 via-50% to-black/0 w-full h-full group-hover:block absolute top-0 left-0 hidden rounded-xl">
               <Button
                 variant="default"
