@@ -208,6 +208,8 @@ class Canvas:
         self.message_id = get_uuid()
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
+        for k, cpn in self.components.items():
+            self.components[k]["obj"].reset(True)
 
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
