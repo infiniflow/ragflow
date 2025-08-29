@@ -183,13 +183,13 @@ const RaptorFormFields = () => {
             render={({ field }) => (
               <FormItem className=" items-center space-y-0 ">
                 <div className="flex items-center">
-                  <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
+                  <FormLabel className="text-sm text-muted-foreground whitespace-wrap w-1/4">
                     {t('randomSeed')}
                   </FormLabel>
                   <div className="w-3/4">
                     <FormControl defaultValue={0}>
-                      <div className="flex gap-4">
-                        <Input {...field} defaultValue={0} />
+                      <div className="flex gap-4 items-center">
+                        <Input {...field} defaultValue={0} type="number" />
                         <Button
                           size={'sm'}
                           onClick={handleGenerate}
