@@ -43,6 +43,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Tongyi_Qianwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
+    SupportedLiteLLMProvider.Ollama: "",
 }
 
 
