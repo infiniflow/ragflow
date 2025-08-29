@@ -303,9 +303,37 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen-plus-2025-07-28",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-plus-2025-07-14",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwq-plus-latest",
                     "tags": "LLM,CHAT,132k",
                     "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-flash-2025-07-28",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 },
