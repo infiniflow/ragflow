@@ -2,7 +2,7 @@ import { AvatarUpload } from '@/components/avatar-upload';
 import { FormContainer } from '@/components/form-container';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Button, ButtonLoading } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   FormControl,
   FormField,
@@ -12,25 +12,14 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { PermissionRole } from '@/constants/permission';
-import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { GeneralSavingButton } from './saving-button';
 
 export function GeneralForm() {
   const form = useFormContext();
   const { t } = useTranslation();
-
-  const { saveKnowledgeConfiguration, loading: submitLoading } =
-    useUpdateKnowledge();
-
-  const defaultValues = useMemo(
-    () => form.formState.defaultValues ?? {},
-    [form.formState.defaultValues],
-  );
-  const parser_id = defaultValues['parser_id'];
-  const { id: kb_id } = useParams();
 
   const teamOptions = useMemo(() => {
     return Object.values(PermissionRole).map((x) => ({
@@ -131,30 +120,7 @@ export function GeneralForm() {
         >
           {t('knowledgeConfiguration.cancel')}
         </Button>
-        <ButtonLoading
-          type="button"
-          loading={submitLoading}
-          onClick={() => {
-            (async () => {
-              let isValidate = await form.trigger('name');
-              const { name, description, permission, avatar } =
-                form.getValues();
-
-              if (isValidate) {
-                saveKnowledgeConfiguration({
-                  kb_id,
-                  parser_id,
-                  name,
-                  description,
-                  avatar,
-                  permission,
-                });
-              }
-            })();
-          }}
-        >
-          {t('knowledgeConfiguration.save')}
-        </ButtonLoading>
+        <GeneralSavingButton></GeneralSavingButton>
       </div>
     </>
   );
