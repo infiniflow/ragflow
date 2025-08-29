@@ -77,7 +77,7 @@ export function TestingResult({
           <FilterButton></FilterButton>
         </FilterPopover>
       </div>
-      <section className="flex flex-col gap-5 overflow-auto h-[76vh] mb-5">
+      <section className="flex flex-col gap-5 overflow-auto h-[calc(100vh-241px)] scrollbar-thin mb-5">
         {data.chunks?.map((x) => (
           <FormContainer key={x.chunk_id} className="px-5 py-2.5">
             <ChunkTitle item={x}></ChunkTitle>
