@@ -6,6 +6,7 @@ import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
+import { ReactComponent as SearXNGIcon } from '@/assets/svg/searxng.svg';
 import { ReactComponent as TavilyIcon } from '@/assets/svg/tavily.svg';
 import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
@@ -46,6 +47,7 @@ export const SVGIconMap = {
   [Operator.Google]: GoogleIcon,
   [Operator.GoogleScholar]: GoogleScholarIcon,
   [Operator.PubMed]: PubMedIcon,
+  [Operator.SearXNG]: SearXNGIcon,
   [Operator.TavilyExtract]: TavilyIcon,
   [Operator.TavilySearch]: TavilyIcon,
   [Operator.Wikipedia]: WikipediaIcon,

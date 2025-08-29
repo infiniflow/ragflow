@@ -726,6 +726,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'Um componente que realiza buscas no duckduckgo.com, permitindo especificar o número de resultados de pesquisa usando TopN. Ele complementa as bases de conhecimento existentes.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'Um componente que realiza buscas via URL da instância SearXNG que você fornece. Especifique TopN e URL da instância.',
       channel: 'Canal',
       channelTip: `Realize uma busca por texto ou por notícias na entrada do componente`,
       text: 'Texto',
