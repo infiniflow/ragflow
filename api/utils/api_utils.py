@@ -30,7 +30,6 @@ from io import BytesIO
 from typing import Any, Callable, Coroutine, Optional, Type, Union
 from urllib.parse import quote, urlencode
 from uuid import uuid1
-import types
 
 import requests
 import trio
