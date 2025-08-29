@@ -5,6 +5,7 @@ Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -81,6 +82,9 @@ class GraphExtractor(Extractor):
         glean_result = ""
         if_loop_result = ""
         history = []
+        logging.info(f"Start processing for {chunk_key}: {content[:25]}...")
+        if self.callback:
+            self.callback(msg=f"Start processing for {chunk_key}: {content[:25]}...")
         async with chat_limiter:
             # final_result = await trio.to_thread.run_sync(lambda: self._chat(hint_prompt, [{"role": "user", "content": "Output:"}], gen_conf))
             final_result = await trio.to_thread.run_sync(self._chat, "", [{"role": "user", "content": hint_prompt}], gen_conf)
@@ -106,6 +110,9 @@ class GraphExtractor(Extractor):
                 break
             history.extend([{"role": "assistant", "content": if_loop_result}, {"role": "user", "content": self._continue_prompt}])
 
+        logging.info(f"Completed processing for {chunk_key}: {content[:25]}... after {now_glean_index} gleanings, {token_count} tokens.")
+        if self.callback:
+            self.callback(msg=f"Completed processing for {chunk_key}: {content[:25]}... after {now_glean_index} gleanings, {token_count} tokens.")
         records = split_string_by_multi_markers(
             final_result,
             [self._context_base["record_delimiter"], self._context_base["completion_delimiter"]],

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import os
 import re
 from collections import Counter, defaultdict
 from copy import deepcopy
@@ -42,6 +43,7 @@ from rag.utils import truncate
 GRAPH_FIELD_SEP = "<SEP>"
 DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]
 ENTITY_EXTRACTION_MAX_GLEANINGS = 2
+MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK = int(os.environ.get("MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK", 10))
 
 
 class Extractor:
@@ -101,7 +103,7 @@ class Extractor:
         self.callback = callback
         start_ts = trio.current_time()
 
-        async def extract_all(doc_id, chunks, max_concurrency=4):
+        async def extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK):
             out_results = []
             limiter = trio.Semaphore(max_concurrency)
 
@@ -115,7 +117,7 @@ class Extractor:
 
             return out_results
 
-        out_results = await extract_all(doc_id, chunks, max_concurrency=4)
+        out_results = await extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK)
 
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
