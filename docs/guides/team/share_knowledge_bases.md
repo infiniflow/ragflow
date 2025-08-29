@@ -15,8 +15,4 @@ When ready, you may share your knowledge bases with your team members so that th
 2. Change **Permissions** from **Only me** to **Team**.
 3. Click **Save** to apply your changes.
 
-![share_knowledge_base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/share_knowledge_base.jpg)
-
-*Once completed, your team members will see your shared knowledge bases like this:*
-
-![shared_knowledge_base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/shared_knowledge_base.jpg)
+*Once completed, your team members will see your shared knowledge bases.*
