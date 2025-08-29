@@ -133,6 +133,13 @@ class UserService(CommonService):
                 cls.model.update(user_dict).where(
                     cls.model.id == user_id).execute()
 
+    @classmethod
+    @DB.connection_context()
+    def is_admin(cls, user_id):
+        return cls.model.select().where(
+            cls.model.id == user_id,
+            cls.model.is_superuser == 1).count() > 0
+
 
 class TenantService(CommonService):
     """Service class for managing tenant-related database operations.

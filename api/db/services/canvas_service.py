@@ -213,26 +213,33 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     except Exception as e:
                         logging.exception(f"Agent OpenAI-Compatible completionOpenAI parse answer failed: {e}")
                         continue
-                if ans.get("event") != "message" or not ans.get("data", {}).get("reference", None):
+                if ans.get("event") not in ["message", "message_end"]:
                     continue
-                content_piece = ans["data"]["content"]
+
+                content_piece = ""
+                if ans["event"] == "message":
+                    content_piece = ans["data"]["content"]
+
                 completion_tokens += len(tiktokenenc.encode(content_piece))
 
-                yield "data: " + json.dumps(
-                    get_data_openai(
+                openai_data = get_data_openai(
                         id=session_id or str(uuid4()),
                         model=agent_id,
                         content=content_piece,
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
                         stream=True
-                    ),
-                    ensure_ascii=False
-                ) + "\n\n"
+                    )
+
+                if ans.get("data", {}).get("reference", None):
+                    openai_data["choices"][0]["delta"]["reference"] = ans["data"]["reference"]
+
+                yield "data: " + json.dumps(openai_data, ensure_ascii=False) + "\n\n"
 
             yield "data: [DONE]\n\n"
 
         except Exception as e:
+            logging.exception(e)
             yield "data: " + json.dumps(
                 get_data_openai(
                     id=session_id or str(uuid4()),
@@ -250,6 +257,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     else:
         try:
             all_content = ""
+            reference = {}
             for ans in completion(
                 tenant_id=tenant_id,
                 agent_id=agent_id,
@@ -260,13 +268,18 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             ):
                 if isinstance(ans, str):
                     ans = json.loads(ans[5:])
-                if ans.get("event") != "message" or not ans.get("data", {}).get("reference", None):
+                if ans.get("event") not in ["message", "message_end"]:
                     continue
-                all_content += ans["data"]["content"]
+
+                if ans["event"] == "message":
+                    all_content += ans["data"]["content"]
+
+                if ans.get("data", {}).get("reference", None):
+                    reference.update(ans["data"]["reference"])
 
             completion_tokens = len(tiktokenenc.encode(all_content))
 
-            yield get_data_openai(
+            openai_data = get_data_openai(
                 id=session_id or str(uuid4()),
                 model=agent_id,
                 prompt_tokens=prompt_tokens,
@@ -276,7 +289,12 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 param=None
             )
 
+            if reference:
+                openai_data["choices"][0]["message"]["reference"] = reference
+
+            yield openai_data
         except Exception as e:
+            logging.exception(e)
             yield get_data_openai(
                 id=session_id or str(uuid4()),
                 model=agent_id,

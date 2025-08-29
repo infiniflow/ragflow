@@ -143,7 +143,6 @@ Non-stream:
 }
 ```
 
-
 Failure:
 
 ```json
@@ -200,19 +199,24 @@ curl --request POST \
 - `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
+- `session_id` (*Body parameter*) `string`  
+  Agent session id.
+
 #### Response
 
 Stream:
 
 ```json
+...
+
 data: {
-    "id": "5fa65c94-e316-4954-800a-06dfd5827052",
+    "id": "c39f6f9c83d911f0858253708ecb6573",
     "object": "chat.completion.chunk",
-    "model": "99ee29d6783511f09c921a6272e682d8",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
     "choices": [
         {
             "delta": {
-                "content": "Hello"
+                "content": " terminal"
             },
             "finish_reason": null,
             "index": 0
@@ -220,21 +224,83 @@ data: {
     ]
 }
 
-data: {"id": "518022d9-545b-4100-89ed-ecd9e46fa753", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": "!"}, "finish_reason": null, "index": 0}]}
+data: {
+    "id": "c39f6f9c83d911f0858253708ecb6573",
+    "object": "chat.completion.chunk",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
+    "choices": [
+        {
+            "delta": {
+                "content": "."
+            },
+            "finish_reason": null,
+            "index": 0
+        }
+    ]
+}
 
-data: {"id": "f37c4af0-8187-4c86-8186-048c3c6ffe4e", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " How"}, "finish_reason": null, "index": 0}]}
-
-data: {"id": "3ebc0fcb-0f85-4024-b4a5-3b03234a16df", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " can"}, "finish_reason": null, "index": 0}]}
-
-data: {"id": "efa1f3cf-7bc4-47a4-8e53-cd696f290587", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " I"}, "finish_reason": null, "index": 0}]}
-
-data: {"id": "2eb6f741-50a3-4d3d-8418-88be27895611", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " assist"}, "finish_reason": null, "index": 0}]}
-
-data: {"id": "f1227e4f-bf8b-462c-8632-8f5269492ce9", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " you"}, "finish_reason": null, "index": 0}]}
-
-data: {"id": "35b669d0-b2be-4c0c-88d8-17ff98592b21", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": " today"}, "finish_reason": null, "index": 0}]}
-
-data: {"id": "f00d8a39-af60-4f32-924f-d64106a7fdf1", "object": "chat.completion.chunk", "model": "99ee29d6783511f09c921a6272e682d8", "choices": [{"delta": {"content": "?"}, "finish_reason": null, "index": 0}]}
+data: {
+    "id": "c39f6f9c83d911f0858253708ecb6573",
+    "object": "chat.completion.chunk",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
+    "choices": [
+        {
+            "delta": {
+                "content": "",
+                "reference": {
+                    "chunks": {
+                        "20": {
+                            "id": "4b8935ac0a22deb1",
+                            "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                            "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "document_name": "INSTALL22.md",
+                            "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                            "image_id": "",
+                            "positions": [
+                                [
+                                    12,
+                                    11,
+                                    11,
+                                    11,
+                                    11
+                                ]
+                            ],
+                            "url": null,
+                            "similarity": 0.5697155305154673,
+                            "vector_similarity": 0.7323851005515574,
+                            "term_similarity": 0.5000000005,
+                            "doc_type": ""
+                        }
+                    },
+                    "doc_aggs": {
+                        "INSTALL22.md": {
+                            "doc_name": "INSTALL22.md",
+                            "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "count": 3
+                        },
+                        "INSTALL.md": {
+                            "doc_name": "INSTALL.md",
+                            "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                            "count": 2
+                        },
+                        "INSTALL(1).md": {
+                            "doc_name": "INSTALL(1).md",
+                            "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                            "count": 2
+                        },
+                        "INSTALL3.md": {
+                            "doc_name": "INSTALL3.md",
+                            "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                            "count": 1
+                        }
+                    }
+                }
+            },
+            "finish_reason": null,
+            "index": 0
+        }
+    ]
+}
 
 data: [DONE]
 ```
@@ -249,29 +315,76 @@ Non-stream:
             "index": 0,
             "logprobs": null,
             "message": {
-                "content": "Hello! How can I assist you today?",
+                "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For Windows:\n1. **Download from GitHub**: \n   - Visit the [Neovim releases page](https://github.com/neovim/neovim/releases)\n   - Download the latest Windows installer (nvim-win64.msi)\n   - Run the installer and follow the prompts\n\n2. **Using winget** (Windows Package Manager):\n...",
+                "reference": {
+                    "chunks": {
+                        "20": {
+                            "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                            "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                            "doc_type": "",
+                            "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "document_name": "INSTALL22.md",
+                            "id": "4b8935ac0a22deb1",
+                            "image_id": "",
+                            "positions": [
+                                [
+                                    12,
+                                    11,
+                                    11,
+                                    11,
+                                    11
+                                ]
+                            ],
+                            "similarity": 0.5697155305154673,
+                            "term_similarity": 0.5000000005,
+                            "url": null,
+                            "vector_similarity": 0.7323851005515574
+                        }
+                    },
+                    "doc_aggs": {
+                        "INSTALL(1).md": {
+                            "count": 2,
+                            "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL(1).md"
+                        },
+                        "INSTALL.md": {
+                            "count": 2,
+                            "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL.md"
+                        },
+                        "INSTALL22.md": {
+                            "count": 3,
+                            "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL22.md"
+                        },
+                        "INSTALL3.md": {
+                            "count": 1,
+                            "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL3.md"
+                        }
+                    }
+                },
                 "role": "assistant"
             }
         }
     ],
     "created": null,
-    "id": "17aa4ec5-6d36-40c6-9a96-1b069c216d59",
-    "model": "99ee29d6783511f09c921a6272e682d8",
+    "id": "c39f6f9c83d911f0858253708ecb6573",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
     "object": "chat.completion",
     "param": null,
     "usage": {
-        "completion_tokens": 9,
+        "completion_tokens": 415,
         "completion_tokens_details": {
             "accepted_prediction_tokens": 0,
             "reasoning_tokens": 0,
             "rejected_prediction_tokens": 0
         },
-        "prompt_tokens": 1,
-        "total_tokens": 10
+        "prompt_tokens": 6,
+        "total_tokens": 421
     }
 }
 ```
-
 
 Failure:
 
@@ -729,6 +842,7 @@ Failure:
     "message": "The dataset doesn't exist"
 }
 ```
+
  ---
 
 ### Get knowledge graph
@@ -808,6 +922,7 @@ Failure:
     "message": "The dataset doesn't exist"
 }
 ```
+
 ---
 
 ### Delete knowledge graph
@@ -855,6 +970,7 @@ Failure:
     "message": "The dataset doesn't exist"
 }
 ```
+
 ---
 
 ## FILE MANAGEMENT WITHIN DATASET
@@ -3017,40 +3133,87 @@ success without `session_id` provided and with no variables specified in the **B
 Stream:
 
 ```json
-data:{
-    "event": "message",
-    "message_id": "eb0c0a5e783511f0b9b61a6272e682d8",
-    "created_at": 1755083342,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "Hello"
-    },
-    "session_id": "eaf19a8e783511f0b9b61a6272e682d8"
-}
-
-data:{
-    "event": "message",
-    "message_id": "eb0c0a5e783511f0b9b61a6272e682d8",
-    "created_at": 1755083342,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "!"
-    },
-    "session_id": "eaf19a8e783511f0b9b61a6272e682d8"
-}
-
-data:{
-    "event": "message",
-    "message_id": "eb0c0a5e783511f0b9b61a6272e682d8",
-    "created_at": 1755083342,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": " How"
-    },
-    "session_id": "eaf19a8e783511f0b9b61a6272e682d8"
-}
-
 ...
+
+data: {
+    "event": "message",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
+    "data": {
+        "content": " themes"
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
+}
+
+data: {
+    "event": "message",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
+    "data": {
+        "content": "."
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
+}
+
+data: {
+    "event": "message_end",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
+    "data": {
+        "reference": {
+            "chunks": {
+                "20": {
+                    "id": "4b8935ac0a22deb1",
+                    "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                    "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                    "document_name": "INSTALL22.md",
+                    "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                    "image_id": "",
+                    "positions": [
+                        [
+                            12,
+                            11,
+                            11,
+                            11,
+                            11
+                        ]
+                    ],
+                    "url": null,
+                    "similarity": 0.5705525104787287,
+                    "vector_similarity": 0.7351750337624289,
+                    "term_similarity": 0.5000000005,
+                    "doc_type": ""
+                }
+            },
+            "doc_aggs": {
+                "INSTALL22.md": {
+                    "doc_name": "INSTALL22.md",
+                    "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                    "count": 3
+                },
+                "INSTALL.md": {
+                    "doc_name": "INSTALL.md",
+                    "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                    "count": 2
+                },
+                "INSTALL(1).md": {
+                    "doc_name": "INSTALL(1).md",
+                    "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                    "count": 2
+                },
+                "INSTALL3.md": {
+                    "doc_name": "INSTALL3.md",
+                    "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                    "count": 1
+                }
+            }
+        }
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
+}
 
 data:[DONE]
 ```
@@ -3061,21 +3224,77 @@ Non-stream:
 {
     "code": 0,
     "data": {
-        "created_at": 1755083440,
+        "created_at": 1756363177,
         "data": {
-            "created_at": 547061.147866385,
-            "elapsed_time": 2.595433341921307,
-            "inputs": {},
+            "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal.",
+            "created_at": 18129.044975627,
+            "elapsed_time": 10.0157331670016,
+            "inputs": {
+                "var1": {
+                    "value": "I am var1"
+                },
+                "var2": {
+                    "value": "I am var2"
+                }
+            },
             "outputs": {
-                "_created_time": 547061.149137775,
-                "_elapsed_time": 8.720310870558023e-05,
-                "content": "Hello! How can I assist you today?"
+                "_created_time": 18129.502422278,
+                "_elapsed_time": 0.00013378599760471843,
+                "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal."
+            },
+            "reference": {
+                "chunks": {
+                    "20": {
+                        "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                        "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                        "doc_type": "",
+                        "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                        "document_name": "INSTALL22.md",
+                        "id": "4b8935ac0a22deb1",
+                        "image_id": "",
+                        "positions": [
+                            [
+                                12,
+                                11,
+                                11,
+                                11,
+                                11
+                            ]
+                        ],
+                        "similarity": 0.5705525104787287,
+                        "term_similarity": 0.5000000005,
+                        "url": null,
+                        "vector_similarity": 0.7351750337624289
+                    }
+                },
+                "doc_aggs": {
+                    "INSTALL(1).md": {
+                        "count": 2,
+                        "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL(1).md"
+                    },
+                    "INSTALL.md": {
+                        "count": 2,
+                        "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL.md"
+                    },
+                    "INSTALL22.md": {
+                        "count": 3,
+                        "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL22.md"
+                    },
+                    "INSTALL3.md": {
+                        "count": 1,
+                        "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL3.md"
+                    }
+                }
             }
         },
         "event": "workflow_finished",
-        "message_id": "25807f94783611f095171a6272e682d8",
-        "session_id": "25663198783611f095171a6272e682d8",
-        "task_id": "99ee29d6783511f09c921a6272e682d8"
+        "message_id": "c4692a2683d911f0858253708ecb6573",
+        "session_id": "c39f6f9c83d911f0858253708ecb6573",
+        "task_id": "d1f79142831f11f09cc51795b9eb07c0"
     }
 }
 ```
