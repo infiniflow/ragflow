@@ -7,7 +7,6 @@ interface SpotlightProps {
 
 const Spotlight: React.FC<SpotlightProps> = ({ className }) => {
   const isDark = useIsDarkTheme();
-  console.log('isDark', isDark);
   return (
     <div
       className={`absolute inset-0  opacity-80 ${className} rounded-lg`}

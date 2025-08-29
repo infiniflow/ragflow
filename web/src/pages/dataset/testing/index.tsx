@@ -40,11 +40,13 @@ export default function RetrievalTesting() {
                 <Plus /> Add New Test
               </Button> */}
             </div>
-            <TestingForm
-              loading={loading}
-              setValues={setValues}
-              refetch={refetch}
-            ></TestingForm>
+            <div className="h-[calc(100vh-241px)] overflow-auto scrollbar-thin">
+              <TestingForm
+                loading={loading}
+                setValues={setValues}
+                refetch={refetch}
+              ></TestingForm>
+            </div>
           </div>
           <TestingResult
             data={data}
