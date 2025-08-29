@@ -759,6 +759,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'Komponen yang mengambil hasil pencarian dari duckduckgo.com, dengan TopN menentukan jumlah hasil pencarian. Ini melengkapi basis pengetahuan yang ada.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'Komponen yang melakukan pencarian menggunakan URL instance SearXNG yang Anda berikan. Spesifikasikan TopN dan URL instance.',
       channel: 'Saluran',
       channelTip: `Lakukan pencarian teks atau pencarian berita pada input komponen`,
       text: 'Teks',
