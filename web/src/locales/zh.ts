@@ -135,6 +135,8 @@ export default {
       vectorSimilarityWeight: '相似度相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
+      keywordSimilarityWeight: '关键词相似度权重',
+      keywordSimilarityWeightTip: '',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
       testingLabel: '测试',
@@ -759,6 +761,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       view: '查看',
       modelsToBeAddedTooltip:
         '如果你的模型供应商在这里没有列出，但是宣称 OpenAI-compatible，可以通过选择卡片 OpenAI-API-compatible 设置相关模型。',
+      mcp: 'MCP',
     },
     message: {
       registered: '注册成功',
