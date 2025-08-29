@@ -55,6 +55,7 @@ class Extractor:
         if response:
             return response
         _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
+        response = ""
         for attempt in range(3):
             try:
                 response = self._llm.chat(system_msg[0]["content"], hist, conf)
@@ -101,11 +102,22 @@ class Extractor:
 
         self.callback = callback
         start_ts = trio.current_time()
-        out_results = []
-        async with trio.open_nursery() as nursery:
-            for i, ck in enumerate(chunks):
-                ck = truncate(ck, int(self._llm.max_length*0.8))
-                nursery.start_soon(self._process_single_content, (doc_id, ck), i, len(chunks), out_results)
+
+        async def extract_all(doc_id, chunks, max_concurrency=4):
+            out_results = []
+            limiter = trio.Semaphore(max_concurrency)
+
+            async def worker(chunk_key_dp: tuple[str, str], idx:int, total:int):
+                async with limiter:
+                    await self._process_single_content(chunk_key_dp, idx, total, out_results)
+
+            async with trio.open_nursery() as nursery:
+                for i, ck in enumerate(chunks):
+                    nursery.start_soon(worker, (doc_id, ck), i, len(chunks))
+
+            return out_results
+
+        out_results = await extract_all(doc_id, chunks, max_concurrency=4)
 
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
@@ -250,5 +262,5 @@ class Extractor:
         use_prompt = prompt_template.format(**context_base)
         logging.info(f"Trigger summary: {entity_or_relation_name}")
         async with chat_limiter:
-            summary = await trio.to_thread.run_sync(lambda: self._chat(use_prompt, [{"role": "user", "content": "Output: "}]))
+            summary = await trio.to_thread.run_sync(self._chat, "", [{"role": "user", "content": use_prompt}])
         return summary

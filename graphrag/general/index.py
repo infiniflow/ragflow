@@ -41,7 +41,6 @@ from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 
 
-
 async def run_graphrag(
     row: dict,
     language,
@@ -188,15 +187,13 @@ async def generate_subgraph(
     }
     cid = chunk_id(chunk)
     await trio.to_thread.run_sync(
-        lambda: settings.docStoreConn.delete(
+        settings.docStoreConn.delete,
             {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id
         )
-    )
     await trio.to_thread.run_sync(
-        lambda: settings.docStoreConn.insert(
+        settings.docStoreConn.insert,
             [{"id": cid, **chunk}], search.index_name(tenant_id), kb_id
         )
-    )
     now = trio.current_time()
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph

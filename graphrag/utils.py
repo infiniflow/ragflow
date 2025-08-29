@@ -102,7 +102,7 @@ def get_llm_cache(llmnm, txt, history, genconf):
     k = hasher.hexdigest()
     bin = REDIS_CONN.get(k)
     if not bin:
-        return
+        return None
     return bin
 
 
@@ -428,7 +428,7 @@ async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
         "size": 1,
         "knowledge_graph_kwd": ["graph"]
     }
-    res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id]))
+    res = await trio.to_thread.run_sync( settings.retrievaler.search, conds, search.index_name(tenant_id), [kb_id])
     if not res.total == 0:
         for id in res.ids:
             try:
@@ -449,16 +449,15 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     global chat_limiter
     start = trio.current_time()
 
-    await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph"]}, search.index_name(tenant_id), kb_id))
+    await trio.to_thread.run_sync(settings.docStoreConn.delete, {"knowledge_graph_kwd": ["graph", "subgraph"]}, search.index_name(tenant_id), kb_id)
 
     if change.removed_nodes:
-        await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["entity"], "entity_kwd": sorted(change.removed_nodes)}, search.index_name(tenant_id), kb_id))
-
+        await trio.to_thread.run_sync(settings.docStoreConn.delete, {"knowledge_graph_kwd": ["entity"], "entity_kwd": sorted(change.removed_nodes)}, search.index_name(tenant_id), kb_id)
 
     if change.removed_edges:
         async def del_edges(from_node, to_node):
             async with chat_limiter:
-                await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id))
+                await trio.to_thread.run_sync(settings.docStoreConn.delete, {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id)
         async with trio.open_nursery() as nursery:
             for from_node, to_node in change.removed_edges:
                  nursery.start_soon(del_edges, from_node, to_node)
@@ -477,7 +476,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         "available_int": 0,
         "removed_kwd": "N"
     }]
-    
+
     # generate updated subgraphs
     for source in graph.graph["source_id"]:
         subgraph = graph.subgraph([n for n in graph.nodes if source in graph.nodes[n]["source_id"]]).copy()
@@ -629,7 +628,7 @@ async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None):
                     continue
             elif exclude_rebuild in d["source_id"]:
                 continue
-            
+
             next_graph = json_graph.node_link_graph(json.loads(d["content_with_weight"]), edges="edges")
             merged_graph = nx.compose(graph, next_graph)
             merged_source = {
