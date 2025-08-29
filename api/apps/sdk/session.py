@@ -414,7 +414,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("id", req.get("metadata", {}).get("id", "")),
+                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
                 stream=True,
                 **req,
             ),
@@ -432,7 +432,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("id", req.get("metadata", {}).get("id", "")),
+                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
                 stream=False,
                 **req,
             )
@@ -445,7 +445,6 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
 def agent_completions(tenant_id, agent_id):
     req = request.json
 
-    ans = {}
     if req.get("stream", True):
 
         def generate():
@@ -456,14 +455,13 @@ def agent_completions(tenant_id, agent_id):
                     except Exception:
                         continue
 
-                if ans.get("event") != "message" or not ans.get("data", {}).get("reference", None):
+                if ans.get("event") not in ["message", "message_end"]:
                     continue
 
                 yield answer
 
             yield "data:[DONE]\n\n"
 
-    if req.get("stream", True):
         resp = Response(generate(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
@@ -472,6 +470,8 @@ def agent_completions(tenant_id, agent_id):
         return resp
 
     full_content = ""
+    reference = {}
+    final_ans = ""
     for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
@@ -480,11 +480,14 @@ def agent_completions(tenant_id, agent_id):
                 full_content += ans["data"]["content"]
 
             if ans.get("data", {}).get("reference", None):
-                ans["data"]["content"] = full_content
-                return get_result(data=ans)
+                reference.update(ans["data"]["reference"])
+
+            final_ans = ans
         except Exception as e:
             return get_result(data=f"**ERROR**: {str(e)}")
-    return get_result(data=ans)
+    final_ans["data"]["content"] = full_content
+    final_ans["data"]["reference"] = reference
+    return get_result(data=final_ans)
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821

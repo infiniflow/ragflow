@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 
 export type MultiSelectOptionType = {
   label: React.ReactNode;
@@ -209,13 +210,17 @@ export const MultiSelect = React.forwardRef<
     const [isAnimating, setIsAnimating] = React.useState(false);
 
     React.useEffect(() => {
-      if (!selectedValues?.length && props.value) {
+      if (isEmpty(selectedValues) && !isEmpty(props.value)) {
         setSelectedValues(props.value as string[]);
       }
     }, [props.value, selectedValues]);
 
     React.useEffect(() => {
-      if (!selectedValues?.length && !props.value && defaultValue) {
+      if (
+        isEmpty(selectedValues) &&
+        isEmpty(props.value) &&
+        !isEmpty(defaultValue)
+      ) {
         setSelectedValues(defaultValue);
       }
     }, [defaultValue, props.value, selectedValues]);
