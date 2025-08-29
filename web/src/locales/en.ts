@@ -1005,6 +1005,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'A component that searches from duckduckgo.com, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
       channel: 'Channel',
       channelTip: `Perform text search or news search on the component's input`,
       text: 'Text',
