@@ -7,22 +7,30 @@ export function useUploadFile() {
   const [fileIds, setFileIds] = useState<string[]>([]);
   const [fileMap, setFileMap] = useState<Map<File, string>>(new Map());
 
-  const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
-    useCallback(
-      async (files, options) => {
-        if (Array.isArray(files) && files.length) {
-          const ret = await uploadAndParseFile({ file: files[0], options });
-          if (ret.code === 0 && Array.isArray(ret.data)) {
-            setFileIds((list) => [...list, ...ret.data]);
-            setFileMap((map) => {
-              map.set(files[0], ret.data[0]);
-              return map;
-            });
-          }
+  type FileUploadParameters = Parameters<
+    NonNullable<FileUploadProps['onUpload']>
+  >;
+
+  const handleUploadFile = useCallback(
+    async (
+      files: FileUploadParameters[0],
+      options: FileUploadParameters[1],
+      conversationId?: string,
+    ) => {
+      if (Array.isArray(files) && files.length) {
+        const file = files[0];
+        const ret = await uploadAndParseFile({ file, options, conversationId });
+        if (ret.code === 0 && Array.isArray(ret.data)) {
+          setFileIds((list) => [...list, ...ret.data]);
+          setFileMap((map) => {
+            map.set(files[0], ret.data[0]);
+            return map;
+          });
         }
-      },
-      [uploadAndParseFile],
-    );
+      }
+    },
+    [uploadAndParseFile],
+  );
 
   const clearFileIds = useCallback(() => {
     setFileIds([]);
