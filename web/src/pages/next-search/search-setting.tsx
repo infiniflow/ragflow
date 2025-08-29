@@ -5,7 +5,6 @@ import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
-import { Input } from '@/components/originui/input';
 import { Button } from '@/components/ui/button';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
 import {
@@ -16,6 +15,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import {
   MultiSelect,
   MultiSelectOptionType,
@@ -137,10 +137,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         llm_setting: {
           llm_id: search_config?.chat_id || '',
           parameter: llm_setting?.parameter,
-          temperature: llm_setting?.temperature,
-          top_p: llm_setting?.top_p,
-          frequency_penalty: llm_setting?.frequency_penalty,
-          presence_penalty: llm_setting?.presence_penalty,
+          temperature: llm_setting?.temperature || 0,
+          top_p: llm_setting?.top_p || 0,
+          frequency_penalty: llm_setting?.frequency_penalty || 0,
+          presence_penalty: llm_setting?.presence_penalty || 0,
           temperatureEnabled: llm_setting?.temperature ? true : false,
           topPEnabled: llm_setting?.top_p ? true : false,
           presencePenaltyEnabled: llm_setting?.presence_penalty ? true : false,

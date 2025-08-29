@@ -4,7 +4,10 @@ import {
 } from '@/components/llm-setting-items/next';
 import { MetadataFilterSchema } from '@/components/metadata-filter';
 import { rerankFormSchema } from '@/components/rerank';
-import { vectorSimilarityWeightSchema } from '@/components/similarity-slider';
+import {
+  similarityThresholdSchema,
+  vectorSimilarityWeightSchema,
+} from '@/components/similarity-slider';
 import { topnSchema } from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { z } from 'zod';
@@ -45,6 +48,7 @@ export function useChatSettingSchema() {
     ...LlmSettingEnabledSchema,
     llm_id: z.string().optional(),
     ...vectorSimilarityWeightSchema,
+    ...similarityThresholdSchema,
     ...topnSchema,
     ...MetadataFilterSchema,
   });
