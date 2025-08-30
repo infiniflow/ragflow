@@ -9,7 +9,7 @@ Set variables to be used together with the system prompt for your LLM.
 
 ---
 
-When configuring the system prompt for a chat model, variables play an important role in enhancing flexibility and reusability. With variables, you can dynamically adjust the system prompt to be sent to your model. In the context of RAGFlow, if you have defined variables in the **Chat Configuration** dialogue, except for the system's reserved variable `{knowledge}`, you are required to pass in values for them from RAGFlow's [HTTP API](../../references/http_api_reference.md#converse-with-chat-assistant) or through its [Python SDK](../../references/python_api_reference.md#converse-with-chat-assistant).
+When configuring the system prompt for a chat model, variables play an important role in enhancing flexibility and reusability. With variables, you can dynamically adjust the system prompt to be sent to your model. In the context of RAGFlow, if you have defined variables in **Chat setting**, except for the system's reserved variable `{knowledge}`, you are required to pass in values for them from RAGFlow's [HTTP API](../../references/http_api_reference.md#converse-with-chat-assistant) or through its [Python SDK](../../references/python_api_reference.md#converse-with-chat-assistant).
 
 :::danger IMPORTANT
 In RAGFlow, variables are closely linked with the system prompt. When you add a variable in the **Variable** section, include it in the system prompt. Conversely, when deleting a variable, ensure it is removed from the system prompt; otherwise, an error would occur.
@@ -17,9 +17,7 @@ In RAGFlow, variables are closely linked with the system prompt. When you add a 
 
 ## Where to set variables
 
-Hover your mouse over your chat assistant, click **Edit** to open its **Chat Configuration** dialogue, then click the **Prompt engine** tab. Here, you can work on your variables in the **System prompt** field and the **Variable** section:
-
-![set_variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_engine.jpg)
+![set_variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
 
 ## 1. Manage variables
 
@@ -41,8 +39,6 @@ Besides `{knowledge}`, you can also define your own variables to pair with the s
 
 - **Disabled** (Default): The variable is mandatory and must be provided.
 - **Enabled**: The variable is optional and can be omitted if not needed.
-
-
 
 ## 2. Update system prompt
 
