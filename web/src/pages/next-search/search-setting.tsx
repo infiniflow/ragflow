@@ -21,6 +21,7 @@ import {
   MultiSelectOptionType,
 } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
+import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
@@ -226,11 +227,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   });
 
   const { updateSearch } = useUpdateSearch();
+  const [formSubmitLoading, setFormSubmitLoading] = useState(false);
   const { data: systemSetting } = useFetchTenantInfo();
   const onSubmit = async (
     formData: IUpdateSearchProps & { tenant_id: string },
   ) => {
     try {
+      setFormSubmitLoading(true);
       const { search_config, ...other_formdata } = formData;
       const {
         llm_setting,
@@ -262,6 +265,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       setOpen(false);
     } catch (error) {
       console.error('Failed to update search:', error);
+    } finally {
+      setFormSubmitLoading(false);
     }
   };
   return (
@@ -486,7 +491,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>
-                        <span className="text-destructive mr-1"> *</span>Model
+                        <span className="text-destructive mr-1"> *</span>
+                        {t('chat.model')}
                       </FormLabel>
                       <FormControl>
                         <RAGFlowSelect
@@ -494,7 +500,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                           options={rerankModelOptions}
                           triggerClassName={'bg-bg-input'}
                           // disabled={disabled}
-                          placeholder={'model'}
+                          placeholder={t('chat.model')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -523,6 +529,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         </FormControl>
                         <FormControl>
                           <Input
+                            type={'number'}
                             className="h-7 w-20 bg-bg-card"
                             max={2048}
                             min={0}
@@ -619,7 +626,14 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               >
                 {t('search.cancelText')}
               </Button>
-              <Button type="submit">{t('search.okText')}</Button>
+              <Button type="submit" disabled={formSubmitLoading}>
+                {formSubmitLoading && (
+                  <div className="size-4">
+                    <Spin size="small" />
+                  </div>
+                )}
+                {t('search.okText')}
+              </Button>
             </div>
           </form>
         </Form>
