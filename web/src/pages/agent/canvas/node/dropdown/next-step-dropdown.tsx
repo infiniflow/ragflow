@@ -201,6 +201,7 @@ function AccordionOperators({
               Operator.GitHub,
               Operator.Invoke,
               Operator.WenCai,
+              Operator.SearXNG,
             ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}

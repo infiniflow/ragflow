@@ -44,7 +44,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.20.3 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.20.4 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -184,13 +184,13 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.20.3
+   $ git checkout -f v0.20.4
    ```
 
 3. Use the pre-built Docker images and start up the server:
 
    :::tip NOTE
-   The command below downloads the `v0.20.3-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.20.3-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.3` for the full edition `v0.20.3`.
+   The command below downloads the `v0.20.4-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.20.4-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.4` for the full edition `v0.20.4`.
    :::
 
    ```bash
@@ -207,8 +207,8 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 | RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.20.3`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.20.3-slim`      | &approx;2       | ❌                                        | Stable release           |
+| `v0.20.4`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
+| `v0.20.4-slim`      | &approx;2       | ❌                                        | Stable release           |
 | `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
 | `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
 
@@ -217,7 +217,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 ```
 
 :::danger IMPORTANT
-The embedding models included in `v0.20.3` and `nightly` are:
+The embedding models included in `v0.20.4` and `nightly` are:
 
 - BAAI/bge-large-zh-v1.5
 - maidalun1020/bce-embedding-base_v1
@@ -267,25 +267,16 @@ RAGFlow also supports deploying LLMs locally using Ollama, Xinference, or LocalA
 
 To add and configure an LLM: 
 
-1. Click on your logo on the top right of the page **>** **Model providers**:
+1. Click on your logo on the top right of the page **>** **Model providers**。
 
-   ![add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
-
-2. Click on the desired LLM and update the API key accordingly (DeepSeek-V2 in this case):
-
-   ![update api key](https://github.com/infiniflow/ragflow/assets/93570324/4e5e13ef-a98d-42e6-bcb1-0c6045fc1666)
-
-   *Your added models appear as follows:* 
-
-   ![added available models](https://github.com/infiniflow/ragflow/assets/93570324/d08b80e4-f921-480a-b41d-11832489c916)
+2. Click on the desired LLM and update the API key accordingly.
 
 3. Click **System Model Settings** to select the default models: 
 
    - Chat model, 
    - Embedding model, 
-   - Image-to-text model. 
-
-   ![system model settings](https://github.com/infiniflow/ragflow/assets/93570324/cdcc1da5-4494-44cd-ad5b-1222ed6acc3f)
+   - Image-to-text model,
+   - and more.
 
 > Some models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a specific LLM. And you may need to update your API key to access these models. 
 
@@ -301,7 +292,7 @@ To create your first knowledge base:
 
    _You are taken to the **Configuration** page of your knowledge base._
 
-   ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
+   ![knowledge base configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_knowledge_base.jpg)
 
 3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your knowledge base. 
 
@@ -315,9 +306,7 @@ Once you have selected an embedding model and used it to parse a file, you are n
 
 5. In the uploaded file entry, click the play button to start file parsing:
 
-   ![file parsing](https://github.com/infiniflow/ragflow/assets/93570324/19f273fa-0ab0-435e-bdf4-a47fb080a078)
-
-   _When the file parsing completes, its parsing status changes to **SUCCESS**._
+   ![parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
 
 :::caution NOTE 
 - If your file parsing gets stuck at below 1%, see [this FAQ](./faq.mdx#why-does-my-document-parsing-stall-at-under-one-percent).
@@ -332,13 +321,13 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    _You are taken to the **Chunk** page:_
 
-   ![chunks](https://github.com/infiniflow/ragflow/assets/93570324/0547fd0e-e71b-41f8-8e0e-31649c85fd3d)
+   ![chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg)
 
 2. Hover over each snapshot for a quick view of each chunk.
 
 3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
 
-   ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
+   ![update chunk](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_keyword_question.jpg)
 
 :::caution NOTE
 You can add keywords to a file chunk to improve its ranking for queries containing those keywords. This action increases its keyword weight and can improve its position in search list.
@@ -348,7 +337,7 @@ You can add keywords to a file chunk to improve its ranking for queries containi
 
    _As you can tell from the following, RAGFlow responds with truthful citations._
 
-   ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
+   ![retrieval test](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_test.jpg)
 
 ## Set up an AI chat
 
@@ -370,9 +359,7 @@ Conversations in RAGFlow are based on a particular knowledge base or multiple kn
 
 5. Now, let's start the show:
 
-   ![question1](https://github.com/infiniflow/ragflow/assets/93570324/bb72dd67-b35e-4b2a-87e9-4e4edbd6e677)
-
-   ![question2](https://github.com/infiniflow/ragflow/assets/93570324/7cc585ae-88d0-4aa2-817d-0370b2ad7230)
+   ![chat_thermal_solution](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_thermal_solution.jpg)
 
 
 :::tip NOTE

@@ -27,6 +27,7 @@ const Menus = [
       // Operator.Bing,
       Operator.DuckDuckGo,
       Operator.Wikipedia,
+      Operator.SearXNG,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.GoogleScholar,

@@ -33,7 +33,7 @@ export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
 export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
   return (
     <Tooltip>
-      <TooltipTrigger>
+      <TooltipTrigger tabIndex={-1}>
         <Info className="size-3 ml-2" />
       </TooltipTrigger>
       <TooltipContent>
@@ -107,7 +107,7 @@ export const AntToolTip: React.FC<AntToolTipProps> = ({
       {visible && title && (
         <div
           className={cn(
-            'absolute z-50 px-2.5 py-1.5 text-xs text-white bg-gray-800 rounded-sm shadow-sm whitespace-nowrap',
+            'absolute z-50 px-2.5 py-2 text-xs text-text-primary bg-muted rounded-sm shadow-sm whitespace-wrap',
             getPlacementClasses(),
             className,
           )}
@@ -115,7 +115,7 @@ export const AntToolTip: React.FC<AntToolTipProps> = ({
           {title}
           <div
             className={cn(
-              'absolute w-2 h-2 bg-gray-800',
+              'absolute w-2 h-2  bg-muted ',
               placement === 'top' &&
                 'bottom-[-4px] left-1/2 transform -translate-x-1/2 rotate-45',
               placement === 'bottom' &&
