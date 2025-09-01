@@ -39,6 +39,7 @@ export default function Agents() {
           title="Agents"
           searchString={searchString}
           onSearchChange={handleInputChange}
+          icon="agent"
         >
           <Button onClick={navigateToAgentTemplates}>
             <Plus className="mr-2 h-4 w-4" />
