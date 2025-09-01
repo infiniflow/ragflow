@@ -39,6 +39,7 @@ export default function ChatList() {
       <div className="px-8 pt-8">
         <ListFilterBar
           title="Chat apps"
+          icon="chat"
           onSearchChange={handleInputChange}
           searchString={searchString}
         >
