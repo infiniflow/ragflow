@@ -18,7 +18,9 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+
 import trio
+
 from api import settings
 from rag.flow.pipeline import Pipeline
 
@@ -34,16 +36,16 @@ def print_logs(pipeline):
         last_logs = logs_str
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     dsl_default_path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "dsl_examples",
         "general_pdf_all.json",
     )
-    parser.add_argument('-s', '--dsl', default=dsl_default_path, help="input dsl", action='store', required=True)
-    parser.add_argument('-d', '--doc_id', default=False, help="Document ID", action='store', required=True)
-    parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
+    parser.add_argument("-s", "--dsl", default=dsl_default_path, help="input dsl", action="store", required=True)
+    parser.add_argument("-d", "--doc_id", default=False, help="Document ID", action="store", required=True)
+    parser.add_argument("-t", "--tenant_id", default=False, help="Tenant ID", action="store", required=True)
     args = parser.parse_args()
 
     settings.init_settings()
@@ -55,3 +57,4 @@ if __name__ == '__main__':
 
     trio.run(pipeline.run)
     thr.result()
+

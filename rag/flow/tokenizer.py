@@ -67,19 +67,19 @@ class Tokenizer(ProcessBase):
         @timeout(60)
         def batch_encode(txts):
             nonlocal embedding_model
-            return embedding_model.encode([truncate(c, embedding_model.max_length-10) for c in txts])
+            return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
 
         cnts_ = np.array([])
         for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
-                vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i: i + EMBEDDING_BATCH_SIZE]))
+                vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + EMBEDDING_BATCH_SIZE]))
             if len(cnts_) == 0:
                 cnts_ = vts
             else:
                 cnts_ = np.concatenate((cnts_, vts), axis=0)
             token_count += c
             if i % 33 == 32:
-                self.callback(i*1./len(texts)/parts/EMBEDDING_BATCH_SIZE + 0.5*(parts-1))
+                self.callback(i * 1.0 / len(texts) / parts / EMBEDDING_BATCH_SIZE + 0.5 * (parts - 1))
 
         cnts = cnts_
         title_w = float(self._param.filename_embd_weight)
@@ -94,7 +94,7 @@ class Tokenizer(ProcessBase):
     async def _invoke(self, **kwargs):
         parts = sum(["full_text" in self._param.search_method, "embedding" in self._param.search_method])
         if "full_text" in self._param.search_method:
-            self.callback(random.randint(1,5)/100., "Start to tokenize.")
+            self.callback(random.randint(1, 5) / 100.0, "Start to tokenize.")
             if kwargs.get("chunks"):
                 chunks = kwargs["chunks"]
                 for i, ck in enumerate(chunks):
@@ -105,12 +105,10 @@ class Tokenizer(ProcessBase):
                     ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
-                        self.callback(i*1./len(chunks)/parts)
+                        self.callback(i * 1.0 / len(chunks) / parts)
             elif kwargs.get("output_format") in ["markdown", "text"]:
-                ck = {
-                    "text": kwargs.get(kwargs["output_format"], "")
-                }
-                if "full_text"  in self._param.search_method:
+                ck = {"text": kwargs.get(kwargs["output_format"], "")}
+                if "full_text" in self._param.search_method:
                     ck["content_ltks"] = rag_tokenizer.tokenize(kwargs.get(kwargs["output_format"], ""))
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                 chunks = [ck]
@@ -120,15 +118,15 @@ class Tokenizer(ProcessBase):
                     ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
-                        self.callback(i*1./len(chunks)/parts)
+                        self.callback(i * 1.0 / len(chunks) / parts)
 
-            self.callback(1./parts, "Finish tokenizing.")
+            self.callback(1.0 / parts, "Finish tokenizing.")
 
         if "embedding" in self._param.search_method:
-            self.callback(random.randint(1,5)/100. + 0.5*(parts-1), "Start embedding inference.")
+            self.callback(random.randint(1, 5) / 100.0 + 0.5 * (parts - 1), "Start embedding inference.")
             chunks, token_count = await self._embedding(kwargs.get("name", ""), chunks)
             self.set_output("embedding_token_consumption", token_count)
 
-            self.callback(1., "Finish embedding.")
+            self.callback(1.0, "Finish embedding.")
 
         self.set_output("chunks", chunks)

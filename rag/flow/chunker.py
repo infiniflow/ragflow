@@ -13,11 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import random
+
 import trio
+
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
-from graphrag.utils import get_llm_cache, chat_limiter, set_llm_cache
+from graphrag.utils import chat_limiter, get_llm_cache, set_llm_cache
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.nlp import naive_merge, naive_merge_with_images
 from rag.prompts.prompts import keyword_extraction, question_proposal
@@ -35,10 +37,7 @@ class ChunkerParam(ProcessParamBase):
         self.auto_keywords = 0
         self.auto_questions = 0
         self.tag_sets = []
-        self.llm_setting = {
-            "llm_name": "",
-            "lang": "Chinese"
-        }
+        self.llm_setting = {"llm_name": "", "lang": "Chinese"}
 
     def check(self):
         self.check_valid_value(self.method.lower(), "Chunk method abnormal.", self.method_options)
@@ -53,22 +52,18 @@ class Chunker(ProcessBase):
     component_name = "Chunker"
 
     def _general(self, **kwargs):
-        self.callback(random.randint(1,5)/100., "Start to chunk via `General`.")
+        self.callback(random.randint(1, 5) / 100.0, "Start to chunk via `General`.")
         if kwargs.get("output_format") in ["markdown", "text"]:
             cks = naive_merge(kwargs.get(kwargs["output_format"]), self._param.chunk_token_size, self._param.delimiter, self._param.overlapped_percent)
             return [{"text": c} for c in cks]
 
         sections, section_images = [], []
         for o in kwargs["json"]:
-            sections.append((o["text"], o.get("position_tag","")))
+            sections.append((o["text"], o.get("position_tag", "")))
             section_images.append(o.get("image"))
 
-        chunks, images = naive_merge_with_images(sections, section_images,self._param.chunk_token_size, self._param.delimiter, self._param.overlapped_percent)
-        return [{
-            "text": RAGFlowPdfParser.remove_tag(c),
-            "image": img,
-            "positions": RAGFlowPdfParser.extract_positions(c)
-        } for c,img in zip(chunks,images)]
+        chunks, images = naive_merge_with_images(sections, section_images, self._param.chunk_token_size, self._param.delimiter, self._param.overlapped_percent)
+        return [{"text": RAGFlowPdfParser.remove_tag(c), "image": img, "positions": RAGFlowPdfParser.extract_positions(c)} for c, img in zip(chunks, images)]
 
     def _q_and_a(self, **kwargs):
         pass

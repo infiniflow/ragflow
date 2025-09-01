@@ -13,13 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import random
+
 import trio
+
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from deepdoc.parser.pdf_parser import RAGFlowPdfParser, PlainParser, VisionParser
+from deepdoc.parser import ExcelParser
+from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.llm.cv_model import Base as VLM
-from deepdoc.parser import ExcelParser
 
 
 class ParserParam(ProcessParamBase):
@@ -27,19 +29,15 @@ class ParserParam(ProcessParamBase):
         super().__init__()
         self.setups = {
             "pdf": {
-                "parse_method": "deepdoc", # deepdoc/plain_text/vlm
+                "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
                 "vlm_name": "",
                 "lang": "Chinese",
                 "suffix": ["pdf"],
-                "output_format": "json"
+                "output_format": "json",
             },
-            "excel": {
-                "output_format": "html"
-            },
+            "excel": {"output_format": "html"},
             "ppt": {},
-            "image": {
-                "parse_method": "ocr"
-            },
+            "image": {"parse_method": "ocr"},
             "email": {},
             "text": {},
             "audio": {},
@@ -56,14 +54,14 @@ class Parser(ProcessBase):
     component_name = "Parser"
 
     def _pdf(self, blob):
-        self.callback(random.randint(1,5)/100., "Start to work on a PDF.")
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
         if conf.get("parse_method") == "deepdoc":
             bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
         elif conf.get("parse_method") == "plain_text":
-            lines,_ = PlainParser()(blob)
-            bboxes = [{"text": t} for t,_ in lines]
+            lines, _ = PlainParser()(blob)
+            bboxes = [{"text": t} for t, _ in lines]
         else:
             assert conf.get("vlm_name")
             vision_model = LLMBundle(self._canvas.tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self.setups["pdf"].get("lang"))
@@ -85,11 +83,11 @@ class Parser(ProcessBase):
         self.set_output("markdown", mkdn)
 
     def _excel(self, blob):
-        self.callback(random.randint(1,5)/100., "Start to work on a Excel.")
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Excel.")
         conf = self._param.setups["excel"]
         excel_parser = ExcelParser()
         if conf.get("output_format") == "html":
-            html = excel_parser.html(blob,1000000000)
+            html = excel_parser.html(blob, 1000000000)
             self.set_output("html", html)
         elif conf.get("output_format") == "json":
             self.set_output("json", [{"text": txt} for txt in excel_parser(blob) if txt])
@@ -105,3 +103,4 @@ class Parser(ProcessBase):
                 continue
             await trio.to_thread.run_sync(function_map[p_type], kwargs["blob"])
             break
+
