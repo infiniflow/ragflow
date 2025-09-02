@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
 
 ---
 
@@ -845,7 +845,7 @@ Failure:
 
  ---
 
-### Get knowledge graph
+### Get dataset's knowledge graph
 
 **GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -925,7 +925,7 @@ Failure:
 
 ---
 
-### Delete knowledge graph
+### Delete dataset's knowledge graph
 
 **DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
