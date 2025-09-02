@@ -128,7 +128,6 @@ class LLM(ComponentBase):
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
-        print(f"{vars=} xxxxxxxxxxxxxxxxxxx", flush=True)
         sys_prompt = self._param.sys_prompt
         for k, o in vars.items():
             args[k] = o["value"]
@@ -201,7 +200,6 @@ class LLM(ComponentBase):
 
         prompt, msg = self._prepare_prompt_variables()
         error = ""
-        print(f"{msg=} rrrrrrrrrrrrrrrrr", flush=True)
 
         if self._param.output_structure:
             prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
