@@ -17,16 +17,10 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChatSheet } from '../chat/chat-sheet';
 import { AgentBackground } from '../components/background';
-import {
-  AgentChatContext,
-  AgentChatLogContext,
-  AgentInstanceContext,
-  HandleContext,
-} from '../context';
+import { AgentInstanceContext, HandleContext } from '../context';
 
 import FormSheet from '../form-sheet/next';
 import {
@@ -36,16 +30,13 @@ import {
 } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
-import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useMoveNote } from '../hooks/use-move-note';
 import { useDropdownManager } from './context';
 
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
-  useShowLogSheet,
 } from '../hooks/use-show-drawer';
-import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
@@ -134,19 +125,6 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideDrawer,
   });
 
-  const {
-    addEventList,
-    setCurrentMessageId,
-    currentEventListWithoutMessageById,
-    clearEventList,
-    currentMessageId,
-  } = useCacheChatLog();
-
-  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
-    setCurrentMessageId,
-  });
-  const [lastSendLoading, setLastSendLoading] = useState(false);
-
   const { handleBeforeDelete } = useBeforeDelete();
 
   const { addCanvasNode, addNoteNode } = useAddNode(reactFlowInstance);
@@ -154,19 +132,6 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { ref, showImage, hideImage, imgVisible, mouse } = useMoveNote();
 
   const { theme } = useTheme();
-
-  useEffect(() => {
-    if (!chatVisible) {
-      clearEventList();
-    }
-  }, [chatVisible, clearEventList]);
-  const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
-    if (messageId === currentMessageId) {
-      setLastSendLoading(loading);
-    } else {
-      setLastSendLoading(false);
-    }
-  };
 
   const isDarkTheme = useIsDarkTheme();
 
@@ -353,32 +318,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           ></FormSheet>
         </AgentInstanceContext.Provider>
       )}
-      {chatVisible && (
-        <AgentChatContext.Provider
-          value={{ showLogSheet, setLastSendLoadingFunc }}
-        >
-          <AgentChatLogContext.Provider
-            value={{ addEventList, setCurrentMessageId }}
-          >
-            <ChatSheet hideModal={hideRunOrChatDrawer}></ChatSheet>
-          </AgentChatLogContext.Provider>
-        </AgentChatContext.Provider>
-      )}
       {runVisible && (
         <RunSheet
           hideModal={hideRunOrChatDrawer}
           showModal={showChatModal}
         ></RunSheet>
-      )}
-      {logSheetVisible && (
-        <LogSheet
-          hideModal={hideLogSheet}
-          currentEventListWithoutMessageById={
-            currentEventListWithoutMessageById
-          }
-          currentMessageId={currentMessageId}
-          sendLoading={lastSendLoading}
-        ></LogSheet>
       )}
     </div>
   );
