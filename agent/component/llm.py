@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+from copy import deepcopy
 from typing import Any, Generator
 import json_repair
 from functools import partial
@@ -141,7 +142,7 @@ class LLM(ComponentBase):
         for p in self._param.prompts:
             if msg and msg[-1]["role"] == p["role"]:
                 continue
-            msg.append(p)
+            msg.append(deepcopy(p))
 
         sys_prompt = self.string_format(sys_prompt, args)
         for m in msg:
