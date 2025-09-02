@@ -4,35 +4,15 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
-import { z } from 'zod';
-import {
-  ISearchAppProps,
-  useCreateSearch,
-  useFetchSearchList,
-  useRenameSearch,
-} from './hooks';
+import { useFetchSearchList, useRenameSearch } from './hooks';
 import { SearchCard } from './search-card';
-const searchFormSchema = z.object({
-  name: z.string().min(1, {
-    message: 'Name is required',
-  }),
-});
-
-type SearchFormValues = z.infer<typeof searchFormSchema> & {
-  search_id?: string;
-};
 
 export default function SearchList() {
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('search');
-  const { navigateToSearch } = useNavigatePage();
-  const { isLoading, createSearch } = useCreateSearch();
   const [isEdit, setIsEdit] = useState(false);
-  const [searchData, setSearchData] = useState<ISearchAppProps | null>(null);
   const {
     data: list,
     searchParams,
@@ -102,7 +82,8 @@ export default function SearchList() {
       {list?.data.total && list?.data.total > 0 && (
         <div className="px-8 mb-4">
           <RAGFlowPagination
-            {...pick(searchParams, 'current', 'pageSize')}
+            current={searchParams.page}
+            pageSize={searchParams.page_size}
             total={list?.data.total}
             onChange={handlePageChange}
           />
