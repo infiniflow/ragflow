@@ -1534,6 +1534,7 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
+            "num_retries": self.max_retries,
             **kwargs,
         }
         if stream:
