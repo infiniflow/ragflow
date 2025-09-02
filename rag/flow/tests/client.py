@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ if __name__ == "__main__":
         "dsl_examples",
         "general_pdf_all.json",
     )
-    parser.add_argument("-s", "--dsl", default=dsl_default_path, help="input dsl", action="store", required=True)
+    parser.add_argument("-s", "--dsl", default=dsl_default_path, help="input dsl", action="store", required=False)
     parser.add_argument("-d", "--doc_id", default=False, help="Document ID", action="store", required=True)
     parser.add_argument("-t", "--tenant_id", default=False, help="Tenant ID", action="store", required=True)
     args = parser.parse_args()
@@ -57,4 +57,3 @@ if __name__ == "__main__":
 
     trio.run(pipeline.run)
     thr.result()
-

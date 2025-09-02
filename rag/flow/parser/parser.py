@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ class ParserParam(ProcessParamBase):
         }
 
     def check(self):
+        # TODO: Pydandic
         if self.setups["pdf"].get("parse_method") not in ["deepdoc", "plain_text"]:
             assert self.setups["pdf"].get("vlm_name"), "No VLM specified."
             assert self.setups["pdf"].get("lang"), "No language specified."
@@ -103,4 +104,3 @@ class Parser(ProcessBase):
                 continue
             await trio.to_thread.run_sync(function_map[p_type], kwargs["blob"])
             break
-
