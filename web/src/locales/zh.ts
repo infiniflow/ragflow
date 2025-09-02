@@ -440,6 +440,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       delete: '删除',
     },
     chat: {
+      createChat: '创建聊天',
       newConversation: '新会话',
       createAssistant: '新建助理',
       assistantSetting: '助理设置',
@@ -1436,7 +1437,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       cancelText: '取消',
     },
     search: {
-      createSearch: '新建查询',
+      createSearch: '创建查询',
       searchGreeting: '今天我能为你做些什么？',
       profile: '隐藏个人资料',
       locale: '语言',

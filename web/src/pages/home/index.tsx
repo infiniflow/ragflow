@@ -7,8 +7,10 @@ const Home = () => {
     <div className="mx-8">
       <section>
         <NextBanner></NextBanner>
-        <Datasets></Datasets>
-        <Applications></Applications>
+        <section className="h-[calc(100dvh-260px)] overflow-auto scrollbar-thin">
+          <Datasets></Datasets>
+          <Applications></Applications>
+        </section>
       </section>
     </div>
   );
