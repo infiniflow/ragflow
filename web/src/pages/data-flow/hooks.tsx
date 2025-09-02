@@ -8,12 +8,10 @@ import {
 } from '@xyflow/react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 // import { shallow } from 'zustand/shallow';
-import { settledModelVariableMap } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { humanId } from 'human-id';
-import { get, lowerFirst, omit } from 'lodash';
-import { UseFormReturn } from 'react-hook-form';
+import { get, lowerFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
 import {
   initialAgentValues,
@@ -62,7 +60,6 @@ import {
 } from './constant';
 import useGraphStore, { RFState } from './store';
 import {
-  buildCategorizeObjectFromList,
   generateNodeNamesWithIncreasingIndex,
   getNodeDragHandle,
   getRelativePositionToIterationNode,
@@ -257,82 +254,6 @@ export const useHandleDrop = () => {
   );
 
   return { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance };
-};
-
-export const useHandleFormValuesChange = (
-  operatorName: Operator,
-  id?: string,
-  form?: UseFormReturn,
-) => {
-  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
-  const handleValuesChange = useCallback(
-    (changedValues: any, values: any) => {
-      let nextValues: any = values;
-      // Fixed the issue that the related form value does not change after selecting the freedom field of the model
-      if (
-        Object.keys(changedValues).length === 1 &&
-        'parameter' in changedValues &&
-        changedValues['parameter'] in settledModelVariableMap
-      ) {
-        nextValues = {
-          ...values,
-          ...settledModelVariableMap[
-            changedValues['parameter'] as keyof typeof settledModelVariableMap
-          ],
-        };
-      }
-      if (id) {
-        updateNodeForm(id, nextValues);
-      }
-    },
-    [updateNodeForm, id],
-  );
-
-  useEffect(() => {
-    const subscription = form?.watch((value, { name, type, values }) => {
-      if (id && name) {
-        console.log(
-          '🚀 ~ useEffect ~ value:',
-          name,
-          type,
-          values,
-          operatorName,
-        );
-        let nextValues: any = value;
-
-        // Fixed the issue that the related form value does not change after selecting the freedom field of the model
-        if (
-          name === 'parameter' &&
-          value['parameter'] in settledModelVariableMap
-        ) {
-          nextValues = {
-            ...value,
-            ...settledModelVariableMap[
-              value['parameter'] as keyof typeof settledModelVariableMap
-            ],
-          };
-        }
-
-        const categoryDescriptionRegex = /items\.\d+\.name/g;
-        if (
-          operatorName === Operator.Categorize &&
-          categoryDescriptionRegex.test(name)
-        ) {
-          nextValues = {
-            ...omit(value, 'items'),
-            category_description: buildCategorizeObjectFromList(value.items),
-          };
-        }
-        // Manually triggered form updates are synchronized to the canvas
-        if (type) {
-          updateNodeForm(id, nextValues);
-        }
-      }
-    });
-    return () => subscription?.unsubscribe();
-  }, [form, form?.watch, id, operatorName, updateNodeForm]);
-
-  return { handleValuesChange };
 };
 
 export const useValidateConnection = () => {
