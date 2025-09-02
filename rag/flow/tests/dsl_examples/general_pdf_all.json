@@ -1,15 +1,15 @@
 {
   "components": {
-    "begin": {
+    "File": {
         "obj":{
             "component_name": "File",
             "params": {
             }
         },
-        "downstream": ["parser:0"],
+        "downstream": ["Parser:0"],
         "upstream": []
     },
-    "parser:0": {
+    "Parser:0": {
         "obj": {
             "component_name": "Parser",
             "params": {
@@ -26,10 +26,10 @@
               }
             }
         },
-        "downstream": ["chunker:0"],
-        "upstream": ["begin"]
+        "downstream": ["Chunker:0"],
+        "upstream": ["Begin"]
     },
-    "chunker:0": {
+    "Chunker:0": {
         "obj": {
             "component_name": "Chunker",
             "params": {
@@ -37,17 +37,17 @@
               "auto_keywords": 5
             }
         },
-        "downstream": ["tokenizer:0"],
-        "upstream": ["chunker:0"]
+        "downstream": ["Tokenizer:0"],
+        "upstream": ["Parser:0"]
     },
-    "tokenizer:0": {
+    "Tokenizer:0": {
         "obj": {
             "component_name": "Tokenizer",
             "params": {
             }
         },
         "downstream": [],
-        "upstream": ["chunker:0"]
+        "upstream": ["Chunker:0"]
     }
   },
   "path": []

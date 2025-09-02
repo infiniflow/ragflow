@@ -27,6 +27,17 @@ from rag.llm.cv_model import Base as VLM
 class ParserParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
+        self.allowed_output_format = {
+            "pdf": ["json", "markdown"],
+            "excel": ["json", "markdown", "html"],
+            "ppt": [],
+            "image": [],
+            "email": [],
+            "text": [],
+            "audio": [],
+            "video": [],
+        }
+
         self.setups = {
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
@@ -45,10 +56,19 @@ class ParserParam(ProcessParamBase):
         }
 
     def check(self):
-        # TODO: Pydandic
-        if self.setups["pdf"].get("parse_method") not in ["deepdoc", "plain_text"]:
-            assert self.setups["pdf"].get("vlm_name"), "No VLM specified."
-            assert self.setups["pdf"].get("lang"), "No language specified."
+        pdf_config = self.setups.get("pdf", {})
+        if pdf_config:
+            pdf_parse_method = pdf_config.get("parse_method", "")
+            self.check_valid_value(pdf_parse_method.lower(), "Parse method abnormal.", ["deepdoc", "plain_text", "vlm"])
+
+            if pdf_parse_method not in ["deepdoc", "plain_text"]:
+                self.check_empty(pdf_config.get("vlm_name"), "No VLM specified.")
+
+            pdf_language = pdf_config.get("lang", "")
+            self.check_empty(pdf_language, "No language specified.")
+
+            pdf_output_format = pdf_config.get("output_format", "")
+            self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
 
 
 class Parser(ProcessBase):
@@ -86,6 +106,7 @@ class Parser(ProcessBase):
     def _excel(self, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Excel.")
         conf = self._param.setups["excel"]
+        self.set_output("output_format", conf["output_format"])
         excel_parser = ExcelParser()
         if conf.get("output_format") == "html":
             html = excel_parser.html(blob, 1000000000)

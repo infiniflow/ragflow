@@ -28,7 +28,24 @@ from rag.prompts.prompts import keyword_extraction, question_proposal
 class ChunkerParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
-        self.method_options = ["general", "q&a", "resume", "manual", "table", "paper", "book", "laws", "presentation", "one"]
+        self.method_options = [
+            # General
+            "general",
+            "one"
+            "table",
+            # Customer Service
+            "q&a",
+            "manual",
+            # Recruitment
+            "resume",
+            # Education & Research
+            "book",
+            "paper",
+            "laws",
+            "presentation",
+            # Other
+            # "Tag" # TODO: Other method
+        ]
         self.method = "general"
         self.chunk_token_size = 512
         self.delimiter = "\n"

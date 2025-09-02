@@ -73,7 +73,7 @@ class Pipeline(Graph):
     async def run(self, **kwargs):
         st = time.perf_counter()
         if not self.path:
-            self.path.append("begin")
+            self.path.append("File")
 
         if self._doc_id:
             DocumentService.update_by_id(
