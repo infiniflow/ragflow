@@ -114,11 +114,7 @@ export default function SearchList() {
     <section className="w-full h-full flex flex-col">
       <div className="px-8 pt-8">
         <ListFilterBar
-          icon={
-            <div className="rounded-sm bg-emerald-400 bg-gradient-to-t from-emerald-400 via-emerald-400 to-emerald-200 p-1 size-6 flex justify-center items-center">
-              <Search size={14} className="font-bold m-auto" />
-            </div>
-          }
+          icon="search"
           title="Search apps"
           showFilter={false}
           onSearchChange={(e) => handleSearchChange(e.target.value)}
