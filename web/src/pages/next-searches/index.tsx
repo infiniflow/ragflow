@@ -15,7 +15,6 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import searchService from '@/services/search-service';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { pick } from 'lodash';
 import { Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -146,7 +145,8 @@ export default function SearchList() {
       {list?.data.total && list?.data.total > 0 && (
         <div className="px-8 mb-4">
           <RAGFlowPagination
-            {...pick(searchParams, 'current', 'pageSize')}
+            current={searchParams.page}
+            pageSize={searchParams.page_size}
             total={list?.data.total}
             onChange={handlePageChange}
           />
