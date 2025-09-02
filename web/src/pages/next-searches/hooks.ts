@@ -85,7 +85,7 @@ interface SearchListResponse {
 export const useFetchSearchList = (params?: SearchListParams) => {
   const [searchParams, setSearchParams] = useState<SearchListParams>({
     page: 1,
-    page_size: 10,
+    page_size: 50,
     ...params,
   });
 
