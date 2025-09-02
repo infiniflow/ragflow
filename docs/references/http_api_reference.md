@@ -731,7 +731,7 @@ Failure:
 ```
  ---
 
-## Get dataset's knowledge graph
+### Get dataset's knowledge graph
 
 **GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -810,7 +810,7 @@ Failure:
 ```
 ---
 
-## Delete dataset's knowledge graph
+### Delete dataset's knowledge graph
 
 **DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -1692,7 +1692,8 @@ Retrieves chunks from specified datasets.
   - `"rerank_id"`: `string`  
   - `"keyword"`: `boolean`  
   - `"highlight"`: `boolean`
-  - `"cross_languages"`: `list[string]`  
+  - `"cross_languages"`: `list[string]`
+  - `"metadata_condition"`: `object`
 
 ##### Request example
 
@@ -1739,7 +1740,8 @@ curl --request POST \
   - `false`: Disable highlighting of matched terms (default).
 - `"cross_languages"`: (*Body parameter*) `list[string]`  
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
-
+- `"metadata_condition"`: (*Body parameter*), `object`
+  The metadata condition for filtering chunks.
 #### Response
 
 Success:
