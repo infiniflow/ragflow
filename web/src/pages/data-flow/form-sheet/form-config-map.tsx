@@ -32,7 +32,6 @@ import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TavilyExtractForm from '../form/tavily-extract-form';
 import TavilyForm from '../form/tavily-form';
-import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
 import UserFillUpForm from '../form/user-fill-up-form';
 import WenCaiForm from '../form/wencai-form';
@@ -150,9 +149,6 @@ export const FormConfigMap = {
   },
   [Operator.IterationStart]: {
     component: IterationStartForm,
-  },
-  [Operator.Tool]: {
-    component: ToolForm,
   },
   [Operator.TavilySearch]: {
     component: TavilyForm,

@@ -1,5 +1,3 @@
-import EmbedDialog from '@/components/embed-dialog';
-import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -17,7 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -27,14 +24,11 @@ import {
   Download,
   History,
   LaptopMinimalCheck,
-  Logs,
-  ScreenShare,
   Settings,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
@@ -62,7 +56,6 @@ function AgentDropdownMenuItem({
 }
 
 export default function DataFlow() {
-  const { id } = useParams();
   const { navigateToAgents } = useNavigatePage();
   const {
     visible: chatDrawerVisible,
@@ -101,9 +94,6 @@ export default function DataFlow() {
     showModal: showSettingDialog,
   } = useSetModalState();
 
-  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
-    useShowEmbedModal();
-  const { navigateToAgentLogs } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
 
   return (
@@ -143,13 +133,6 @@ export default function DataFlow() {
             <History />
             {t('flow.historyversion')}
           </Button>
-          <Button
-            variant={'secondary'}
-            onClick={navigateToAgentLogs(id as string)}
-          >
-            <Logs />
-            {t('flow.log')}
-          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -172,15 +155,6 @@ export default function DataFlow() {
                 <Settings />
                 {t('flow.setting')}
               </AgentDropdownMenuItem>
-              {location.hostname !== 'demo.ragflow.io' && (
-                <>
-                  <DropdownMenuSeparator />
-                  <AgentDropdownMenuItem onClick={showEmbedModal}>
-                    <ScreenShare />
-                    {t('common.embedIntoSite')}
-                  </AgentDropdownMenuItem>
-                </>
-              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -199,16 +173,7 @@ export default function DataFlow() {
           onOk={onFileUploadOk}
         ></UploadAgentDialog>
       )}
-      {embedVisible && (
-        <EmbedDialog
-          visible={embedVisible}
-          hideModal={hideEmbedModal}
-          token={id!}
-          from={SharedFrom.Agent}
-          beta={beta}
-          isAgent
-        ></EmbedDialog>
-      )}
+
       {versionDialogVisible && (
         <DropdownProvider>
           <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
