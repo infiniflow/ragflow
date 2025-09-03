@@ -1,5 +1,5 @@
 # base stage
-FROM ubuntu:22.04 AS base
+FROM registry.cn-hangzhou.aliyuncs.com/tecpie/ubuntu:22.04 AS base
 USER root
 SHELL ["/bin/bash", "-c"]
 
@@ -137,6 +137,9 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
         dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_arm64.deb; \
     fi
 
+# Install LibreOffice
+RUN apt update && \
+    apt install -y libreoffice
 
 # builder stage
 FROM base AS builder
@@ -201,6 +204,7 @@ COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
 COPY mcp mcp
 COPY plugin plugin
+COPY mineru mineru
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./

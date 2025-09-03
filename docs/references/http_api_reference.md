@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
 
 ---
 
@@ -845,7 +845,7 @@ Failure:
 
  ---
 
-### Get knowledge graph
+### Get dataset's knowledge graph
 
 **GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -925,7 +925,7 @@ Failure:
 
 ---
 
-### Delete knowledge graph
+### Delete dataset's knowledge graph
 
 **DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
 
@@ -1462,6 +1462,57 @@ Failure:
 {
     "code": 102,
     "message": "`document_ids` is required"
+}
+```
+
+---
+
+
+### Preview document
+
+**GET** `/api/v1/datasets/{dataset_id}/documents/preview/{document_id}`
+
+Previews a document from a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/documents/preview/{document_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Output:
+  - `'{PATH_TO_THE_FILE}'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/preview/{document_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --output ./ragflow.txt
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `documents_id`: (*Path parameter*)  
+  The ID of the document to preview.
+
+#### Response
+
+Success:
+
+```json
+This is a test to verify the file preview feature.
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "You do not own the dataset 7898da028a0511efbf750242ac1220005."
 }
 ```
 
@@ -3026,6 +3077,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
+  - `"name`: `string`
   - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"session_id"`: `string` (optional)

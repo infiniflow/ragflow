@@ -702,3 +702,24 @@ def set_meta():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+@manager.route("/preview/<doc_id>", methods=["GET"])  # noqa: F821
+# @login_required
+def preview(doc_id):
+    try:
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+
+        b, n = File2DocumentService.get_preview_address(doc_id)
+        response = flask.make_response(STORAGE_IMPL.get(b, n))
+
+        ext = re.search(r"\.([^.]+)$", doc.name)
+        if ext:
+            if doc.type == FileType.VISUAL.value:
+                response.headers.set("Content-Type", "image/%s" % ext.group(1))
+            else:
+                response.headers.set("Content-Type", "application/pdf")
+        return response
+    except Exception as e:
+        return server_error_response(e)

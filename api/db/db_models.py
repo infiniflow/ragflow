@@ -704,6 +704,7 @@ class File2Document(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     file_id = CharField(max_length=32, null=True, help_text="file id", index=True)
     document_id = CharField(max_length=32, null=True, help_text="document id", index=True)
+    pdf_file_id = CharField(max_length=32, null=True, help_text="pdf file id", index=True)
 
     class Meta:
         db_table = "file2document"
@@ -790,6 +791,8 @@ class API4Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    source_user_id = CharField(max_length=255, null=True, help_text="source_user_id")
+    name = CharField(max_length=255, null=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
@@ -1009,6 +1012,14 @@ def migrate_db():
     except Exception:
         pass
     try:
+        migrate(migrator.add_column("api_4_conversation", "name", CharField(max_length=255, null=True, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("file2document", "pdf_file_id", CharField(max_length=32,null=False, help_text="pdf file id", index=True)))
+    except Exception:
+        pass
+    try:
         migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
     except Exception:
         pass
@@ -1020,13 +1031,16 @@ def migrate_db():
         migrate(migrator.add_column("dialog", "meta_data_filter", JSONField(null=True, default={})))
     except Exception:
         pass
-
     try:
         migrate(migrator.alter_column_type("canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title")))
     except Exception:
         pass
     try:
         migrate(migrator.alter_column_type("canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "source_user_id", CharField(max_length=255, null=True, help_text="source_user_id")))
     except Exception:
         pass
     try:

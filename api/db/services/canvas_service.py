@@ -171,6 +171,7 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
+            "name": kwargs.get("name", "New conversation"),
             "user_id": user_id,
             "message": [],
             "source": "agent",

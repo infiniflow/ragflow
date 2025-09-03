@@ -25,6 +25,7 @@ from rag.utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, PlainParser, DocxParser
 from docx import Document
 from PIL import Image
+from mineru.parser.pdf_parser import RemoteMinerUParser
 
 
 class Pdf(PdfParser):
@@ -189,6 +190,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         pdf_parser = Pdf()
         if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
+        elif parser_config.get("layout_recognize", "DeepDOC") == "MinerU":
+            pdf_parser = RemoteMinerUParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:

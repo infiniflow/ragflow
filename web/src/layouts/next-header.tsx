@@ -106,7 +106,7 @@ export function Header() {
   }, [navigate]);
 
   return (
-    <section className="p-5 pr-14 flex justify-between items-center ">
+    <section className="flex items-center justify-between p-5 pr-14 ">
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}

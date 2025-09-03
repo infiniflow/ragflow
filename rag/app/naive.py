@@ -34,7 +34,7 @@ from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, Mark
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
-
+from mineru.parser.pdf_parser import RemoteMinerUParser
 
 class Docx(DocxParser):
     def __init__(self):
@@ -471,6 +471,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()
+            elif layout_recognizer == "MinerU":
+                pdf_parser = RemoteMinerUParser()
             else:
                 vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=layout_recognizer, lang=lang)
                 pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
