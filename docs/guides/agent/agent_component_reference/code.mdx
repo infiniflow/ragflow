@@ -136,62 +136,57 @@ Please try again shortly or increase the pool size in the configuration to impro
 
 ### How to import my own Python or JavaScript packages into Sandbox?
 
-To install the additional dependencies for your Python packages:
+To import your Python packages, update **sandbox_base_image/python/requirements.txt** to install the required dependencies. For example, to add the `openpyxl` package, proceed with the following command lines:
 
-```bash
-(ragflow) ➜ ragflow/sandbox main ✓ pwd
+```bash {4,6}
+(ragflow) ➜ ragflow/sandbox main ✓ pwd # make sure you are in the right directory
+/home/infiniflow/workspace/ragflow/sandbox
+
+(ragflow) ➜ ragflow/sandbox main ✓ echo "openpyxl" >> sandbox_base_image/python/requirements.txt # add the package to the requirements.txt file
+
+(ragflow) ➜ ragflow/sandbox main ✗ cat sandbox_base_image/python/requirements.txt # make sure the package is added
+numpy
+pandas
+requests
+openpyxl # here it is
+
+(ragflow) ➜ ragflow/sandbox main ✗ make # rebuild the docker image, this command will rebuild the iamge and start the service immediately. To build image only, using `make build` instead.
+
+(ragflow) ➜ ragflow/sandbox main ✗ docker exec -it sandbox_python_0 /bin/bash # entering container to check if the package is installed
+
+
+# in the container
+nobody@ffd8a7dd19da:/workspace$ python # launch python shell
+Python 3.11.13 (main, Aug 12 2025, 22:46:03) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import openpyxl # import the package to verify installation
+>>>
+# That's okay!
 ```
 
-```bash
-(ragflow) ➜ ragflow/sandbox main ✓ ls
-```
-
-```bash
-(ragflow) ➜ ragflow/sandbox main ✓ echo "openpyxl" >> sandbox_base_image/python/requirements.txt
-```
-
-```bash
-(ragflow) ➜ ragflow/sandbox main ✗ cat sandbox_base_image/python/requirements.txt 
-```
-
-```bash
-(ragflow) ➜ ragflow/sandbox main ✗ make
-```
-
-```bash
-(ragflow) ➜ ragflow/sandbox main ✗ docker exec -it sandbox_python_0 /bin/bash
-```
-
-To install the additional dependencies for your JavaScript packages:
+To import your JavaScript packages, navigate to `sandbox_base_image/nodejs` and use `npm` to install the required packages. For example, to add the `lodash` package, run the following commands:
 
 ```bash
 (ragflow) ➜ ragflow/sandbox main ✓ pwd
 /home/infiniflow/workspace/ragflow/sandbox
 
-```
-
-```bash
 (ragflow) ➜ ragflow/sandbox main ✓ cd sandbox_base_image/nodejs
-```
 
-```bash
 (ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ npm install lodash 
-```
 
-```bash
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✗ make
-make: *** No targets specified and no makefile found.  Stop.
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✗ lg
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ ls
-node_modules  Dockerfile  package-lock.json  package.json
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ cd ..                       
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image main ✓ ls
-nodejs  python
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image main ✓ cd ..
-(ragflow) ➜ ragflow/sandbox main ✓ ls
-asserts  executor_manager  sandbox_base_image  scripts  tests  docker-compose.yml  Makefile  pyproject.toml  README.md  uv.lock
-(ragflow) ➜ ragflow/sandbox main ✓ pwd
-/home/infiniflow/workspace/ragflow/sandbox
-(ragflow) ➜ ragflow/sandbox main ✓ cd sandbox_base_image/nodejs
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ npm install lodash
+(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ cd ../.. # go back to sandbox root directory
+
+(ragflow) ➜ ragflow/sandbox main ✗ make # rebuild the docker image, this command will rebuild the iamge and start the service immediately. To build image only, using `make build` instead.
+
+(ragflow) ➜ ragflow/sandbox main ✗ docker exec -it sandbox_nodejs_0 /bin/bash # entering container to check if the package is installed
+
+# in the container
+nobody@dd4bbcabef63:/workspace$ npm list lodash # verify via npm list
+/workspace
+`-- lodash@4.17.21 extraneous
+
+nobody@dd4bbcabef63:/workspace$ ls node_modules | grep lodash # or verify via listing node_modules
+lodash
+
+# That's okay!
 ```
