@@ -793,6 +793,7 @@ class API4Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    source_user_id = CharField(max_length=255, null=True, help_text="source_user_id")
     name = CharField(max_length=255, null=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
@@ -1030,13 +1031,16 @@ def migrate_db():
         migrate(migrator.add_column("dialog", "meta_data_filter", JSONField(null=True, default={})))
     except Exception:
         pass
-
     try:
         migrate(migrator.alter_column_type("canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title")))
     except Exception:
         pass
     try:
         migrate(migrator.alter_column_type("canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "source_user_id", CharField(max_length=255, null=True, help_text="source_user_id")))
     except Exception:
         pass
     logging.disable(logging.NOTSET)
