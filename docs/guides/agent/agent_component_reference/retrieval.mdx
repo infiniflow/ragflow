@@ -27,7 +27,7 @@ The corresponding configuration panel appears to the right of the canvas. Use th
 
 ### 2. Input query variable(s)
 
-The **Retrieval** component relies on query variables to specify its queries. 
+The **Retrieval** component depends on query variables to specify its queries. 
 
 :::caution IMPORTANT
 - If you use the **Retrieval** component as a standalone workflow module, input query variables in the **Input Variables** text box.
@@ -42,7 +42,7 @@ You can specify one or multiple knowledge bases to retrieve data from. If select
 
 ### 4. Expand **Advanced Settings** to configure the retrieval method
 
-By default, a combination of weighted keyword similarity and weighted vector cosine similarity is used during retrieval. If a rerank model is selected, a combination of weighted keyword similarity and weighted reranking score will be used for retrieval.
+By default, a combination of weighted keyword similarity and weighted vector cosine similarity is used for retrieval. If a rerank model is selected, a combination of weighted keyword similarity and weighted reranking score will be used instead.
 
 As a starter, you can skip this step to stay with the default retrieval method.
 
@@ -57,9 +57,9 @@ If your user query is different from the languages of the knowledge bases, you c
 
 ### 6. Test retrieval results
 
-Click the triangle button on the top of canvas to test the retrieval results.
+Click the **Run** button on the top of canvas to test the retrieval results.
 
-### 6. Choose the next component
+### 7. Choose the next component
 
 When necessary, click the **+** button on the **Retrieval** component to choose the next component in the worflow from the dropdown list.
 
