@@ -330,6 +330,8 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
     sudo apt-get install libjemalloc-dev
     # centos
     sudo yum instalar jemalloc
+    # mac
+    sudo brew install jemalloc
     ```
 
 6. Lance o serviço de back-end:
