@@ -21,6 +21,7 @@ from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from graphrag.utils import chat_limiter, get_llm_cache, set_llm_cache
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.chunker.schema import ChunkerFromUpstream
 from rag.nlp import naive_merge, naive_merge_with_images
 from rag.prompts.prompts import keyword_extraction, question_proposal
 
@@ -31,8 +32,7 @@ class ChunkerParam(ProcessParamBase):
         self.method_options = [
             # General
             "general",
-            "one"
-            "table",
+            "onetable",
             # Customer Service
             "q&a",
             "manual",
@@ -68,45 +68,72 @@ class ChunkerParam(ProcessParamBase):
 class Chunker(ProcessBase):
     component_name = "Chunker"
 
-    def _general(self, **kwargs):
+    def _general(self, from_upstream: ChunkerFromUpstream):
         self.callback(random.randint(1, 5) / 100.0, "Start to chunk via `General`.")
-        if kwargs.get("output_format") in ["markdown", "text"]:
-            cks = naive_merge(kwargs.get(kwargs["output_format"]), self._param.chunk_token_size, self._param.delimiter, self._param.overlapped_percent)
+        if from_upstream.output_format in ["markdown", "text"]:
+            if from_upstream.output_format == "markdown":
+                payload = from_upstream.markdown_result
+            else:  # == "text"
+                payload = from_upstream.text_result
+
+            if not payload:
+                payload = ""
+
+            cks = naive_merge(
+                payload,
+                self._param.chunk_token_size,
+                self._param.delimiter,
+                self._param.overlapped_percent,
+            )
             return [{"text": c} for c in cks]
 
         sections, section_images = [], []
-        for o in kwargs["json"]:
-            sections.append((o["text"], o.get("position_tag", "")))
+        for o in from_upstream.json_result or []:
+            sections.append((o.get("text", ""), o.get("position_tag", "")))
             section_images.append(o.get("image"))
 
-        chunks, images = naive_merge_with_images(sections, section_images, self._param.chunk_token_size, self._param.delimiter, self._param.overlapped_percent)
-        return [{"text": RAGFlowPdfParser.remove_tag(c), "image": img, "positions": RAGFlowPdfParser.extract_positions(c)} for c, img in zip(chunks, images)]
+        chunks, images = naive_merge_with_images(
+            sections,
+            section_images,
+            self._param.chunk_token_size,
+            self._param.delimiter,
+            self._param.overlapped_percent,
+        )
 
-    def _q_and_a(self, **kwargs):
+        return [
+            {
+                "text": RAGFlowPdfParser.remove_tag(c),
+                "image": img,
+                "positions": RAGFlowPdfParser.extract_positions(c),
+            }
+            for c, img in zip(chunks, images)
+        ]
+
+    def _q_and_a(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _resume(self, **kwargs):
+    def _resume(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _manual(self, **kwargs):
+    def _manual(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _table(self, **kwargs):
+    def _table(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _paper(self, **kwargs):
+    def _paper(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _book(self, **kwargs):
+    def _book(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _laws(self, **kwargs):
+    def _laws(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _presentation(self, **kwargs):
+    def _presentation(self, from_upstream: ChunkerFromUpstream):
         pass
 
-    def _one(self, **kwargs):
+    def _one(self, from_upstream: ChunkerFromUpstream):
         pass
 
     async def _invoke(self, **kwargs):
@@ -122,7 +149,14 @@ class Chunker(ProcessBase):
             "presentation": self._presentation,
             "one": self._one,
         }
-        chunks = function_map[self._param.method](**kwargs)
+
+        try:
+            from_upstream = ChunkerFromUpstream.model_validate(kwargs)
+        except Exception as e:
+            self.set_output("_ERROR", f"Input error: {str(e)}")
+            return
+
+        chunks = function_map[self._param.method](from_upstream)
         llm_setting = self._param.llm_setting
 
         async def auto_keywords():

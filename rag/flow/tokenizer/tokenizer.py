@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import logging
 import random
 import re
 
@@ -24,6 +25,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
 from api.utils.api_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.tokenizer.schema import TokenizerFromUpstream
 from rag.nlp import rag_tokenizer
 from rag.settings import EMBEDDING_BATCH_SIZE
 from rag.svr.task_executor import embed_limiter
@@ -92,11 +94,17 @@ class Tokenizer(ProcessBase):
         return chunks, token_count
 
     async def _invoke(self, **kwargs):
+        try:
+            from_upstream = TokenizerFromUpstream.model_validate(kwargs)
+        except Exception as e:
+            self.set_output("_ERROR", f"Input error: {str(e)}")
+            return
+
         parts = sum(["full_text" in self._param.search_method, "embedding" in self._param.search_method])
         if "full_text" in self._param.search_method:
             self.callback(random.randint(1, 5) / 100.0, "Start to tokenize.")
-            if kwargs.get("chunks"):
-                chunks = kwargs["chunks"]
+            if from_upstream.chunks:
+                chunks = from_upstream.chunks
                 for i, ck in enumerate(chunks):
                     if ck.get("questions"):
                         ck["question_tks"] = rag_tokenizer.tokenize("\n".join(ck["questions"]))
@@ -106,14 +114,22 @@ class Tokenizer(ProcessBase):
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
                         self.callback(i * 1.0 / len(chunks) / parts)
-            elif kwargs.get("output_format") in ["markdown", "text"]:
-                ck = {"text": kwargs.get(kwargs["output_format"], "")}
+            elif from_upstream.output_format in ["markdown", "text"]:
+                if from_upstream.output_format == "markdown":
+                    payload = from_upstream.markdown_result
+                else:  # == "text"
+                    payload = from_upstream.text_result
+
+                if not payload:
+                    return ""
+
+                ck = {"text": payload}
                 if "full_text" in self._param.search_method:
                     ck["content_ltks"] = rag_tokenizer.tokenize(kwargs.get(kwargs["output_format"], ""))
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                 chunks = [ck]
             else:
-                chunks = kwargs["json"]
+                chunks = from_upstream.json_result
                 for i, ck in enumerate(chunks):
                     ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
@@ -125,7 +141,10 @@ class Tokenizer(ProcessBase):
         if "embedding" in self._param.search_method:
             self.callback(random.randint(1, 5) / 100.0 + 0.5 * (parts - 1), "Start embedding inference.")
 
-            chunks, token_count = await self._embedding(kwargs.get("name", ""), chunks)
+            if from_upstream.name.strip() == "":
+                logging.warning("Tokenizer: empty name provided from upstream, embedding may be not accurate.")
+
+            chunks, token_count = await self._embedding(from_upstream.name, chunks)
             self.set_output("embedding_token_consumption", token_count)
 
             self.callback(1.0, "Finish embedding.")

@@ -21,6 +21,7 @@ from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
 
 
@@ -120,8 +121,14 @@ class Parser(ProcessBase):
         function_map = {
             "pdf": self._pdf,
         }
+        try:
+            from_upstream = ParserFromUpstream.model_validate(kwargs)
+        except Exception as e:
+            self.set_output("_ERROR", f"Input error: {str(e)}")
+            return
+
         for p_type, conf in self._param.setups.items():
-            if kwargs.get("name", "").split(".")[-1].lower() not in conf.get("suffix", []):
+            if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await trio.to_thread.run_sync(function_map[p_type], kwargs["blob"])
+            await trio.to_thread.run_sync(function_map[p_type], from_upstream.blob)
             break

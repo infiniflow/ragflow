@@ -103,6 +103,7 @@ class Pipeline(Graph):
                 nursery.start_soon(invoke)
             if cpn_obj.error():
                 self.error = "[ERROR]" + cpn_obj.error()
+                self.callback(cpn_obj.component_name, -1, self.error)
                 break
             idx += 1
             self.path.extend(cpn_obj.get_downstream())
