@@ -350,7 +350,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True))
+        ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         if ans:
             yield ans
             return
@@ -578,7 +578,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield res
 
 
-def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
+def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
     sys_prompt = "You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question."
     user_prompt = """
 Table name: {};
@@ -614,6 +614,13 @@ Please write the SQL, only SQL, without any other explanations or text.
                         break
                     flds.append(k)
                 sql = "select doc_id,docnm_kwd," + ",".join(flds) + sql[8:]
+
+        if kb_ids:
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+            if "where" not in sql.lower():
+                sql += f" WHERE {kb_filter}"
+            else:
+                sql += f" AND {kb_filter}"
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
