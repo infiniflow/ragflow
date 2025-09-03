@@ -18,7 +18,7 @@ import logging
 import time
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db import TenantPermission
+from api.db import CanvasCategory, TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
@@ -31,6 +31,12 @@ from peewee import fn
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
 
+class DataFlowTemplateService(CommonService):
+    """
+    Alias of CanvasTemplateService
+    """
+    model = CanvasTemplate
+
 
 class UserCanvasService(CommonService):
     model = UserCanvas
@@ -38,13 +44,14 @@ class UserCanvasService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, tenant_id,
-                 page_number, items_per_page, orderby, desc, id, title):
+                 page_number, items_per_page, orderby, desc, id, title, canvas_category=CanvasCategory.Agent):
         agents = cls.model.select()
         if id:
             agents = agents.where(cls.model.id == id)
         if title:
             agents = agents.where(cls.model.title == title)
         agents = agents.where(cls.model.user_id == tenant_id)
+        agents = agents.where(cls.model.canvas_category == canvas_category)
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -71,6 +78,7 @@ class UserCanvasService(CommonService):
                 cls.model.create_time,
                 cls.model.create_date,
                 cls.model.update_date,
+                cls.model.canvas_category,
                 User.nickname,
                 User.avatar.alias('tenant_avatar'),
             ]
@@ -87,7 +95,7 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
                           page_number, items_per_page,
-                          orderby, desc, keywords,
+                          orderby, desc, keywords, canvas_category=CanvasCategory.Agent,
                           ):
         fields = [
             cls.model.id,
@@ -98,7 +106,8 @@ class UserCanvasService(CommonService):
             cls.model.permission,
             User.nickname,
             User.avatar.alias('tenant_avatar'),
-            cls.model.update_time
+            cls.model.update_time,
+            cls.model.canvas_category,
         ]
         if keywords:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
@@ -113,6 +122,7 @@ class UserCanvasService(CommonService):
                                                                 TenantPermission.TEAM.value)) | (
                     cls.model.user_id == user_id))
             )
+        agents = agents.where(cls.model.canvas_category == canvas_category)
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
