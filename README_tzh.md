@@ -343,6 +343,8 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    sudo apt-get install libjemalloc-dev
    # centos
    sudo yum install jemalloc
+   # mac
+   sudo brew install jemalloc
    ```
 
 6. 啟動後端服務：
