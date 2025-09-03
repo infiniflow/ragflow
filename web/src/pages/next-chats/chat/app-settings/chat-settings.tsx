@@ -1,14 +1,14 @@
-import { Button, ButtonLoading } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { DatasetMetadata } from '@/constants/chat';
 import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
-import { transformBase64ToFile, transformFile2Base64 } from '@/utils/file-util';
 import {
   removeUselessFieldsFromValues,
   setLLMSettingEnabledValues,
 } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { omit } from 'lodash';
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
@@ -18,6 +18,7 @@ import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatModelSettings } from './chat-model-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
+import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
 
 type ChatSettingsProps = { switchSettingVisible(): void };
@@ -35,8 +36,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
     shouldUnregister: true,
     defaultValues: {
       name: '',
-      icon: [],
-      language: 'English',
+      icon: '',
       description: '',
       kb_ids: [],
       prompt_config: {
@@ -47,8 +47,11 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
         refine_multiturn: true,
         system: '',
         parameters: [],
+        reasoning: false,
+        cross_languages: [],
       },
       top_n: 8,
+      similarity_threshold: 0.2,
       vector_similarity_weight: 0.2,
       top_k: 1024,
       meta_data_filter: {
@@ -63,15 +66,10 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
       values,
       'llm_setting.',
     );
-    const icon = nextValues.icon;
-    const avatar =
-      Array.isArray(icon) && icon.length > 0
-        ? await transformFile2Base64(icon[0])
-        : '';
+
     setDialog({
-      ...data,
+      ...omit(data, 'operator_permission'),
       ...nextValues,
-      icon: avatar,
       dialog_id: id,
     });
   }
@@ -87,7 +85,6 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
 
     const nextData = {
       ...data,
-      icon: data.icon ? [transformBase64ToFile(data.icon)] : [],
       ...llmSettingEnabledValues,
     };
     form.reset(nextData as FormSchemaType);
@@ -115,9 +112,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
             <Button variant={'outline'} onClick={switchSettingVisible}>
               {t('chat.cancel')}
             </Button>
-            <ButtonLoading type="submit" loading={loading}>
-              {t('common.save')}
-            </ButtonLoading>
+            <SavingButton loading={loading}></SavingButton>
           </div>
         </form>
       </Form>

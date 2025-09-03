@@ -30,14 +30,16 @@ export default function DatasetWrapper() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{data.name}</BreadcrumbPage>
+              <BreadcrumbPage className="w-28 whitespace-nowrap text-ellipsis overflow-hidden">
+                {data.name}
+              </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
       <div className="flex flex-1 min-h-0">
         <SideBar></SideBar>
-        <div className="flex-1">
+        <div className="flex-1 overflow-auto">
           <Outlet />
         </div>
       </div>

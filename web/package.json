@@ -23,7 +23,7 @@
     "@antv/g2": "^5.2.10",
     "@antv/g6": "^5.0.10",
     "@hookform/resolvers": "^3.9.1",
-    "@js-preview/excel": "^1.7.8",
+    "@js-preview/excel": "^1.7.14",
     "@lexical/react": "^0.23.1",
     "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-accordion": "^1.2.3",

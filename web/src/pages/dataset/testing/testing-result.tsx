@@ -6,6 +6,7 @@ import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { ITestingChunk } from '@/interfaces/database/knowledge';
+import { t } from 'i18next';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 
@@ -66,7 +67,7 @@ export function TestingResult({
     <div className="p-4 flex-1">
       <div className="flex justify-between pb-2.5">
         <span className="text-text-primary font-semibold text-2xl">
-          Test results
+          {t('knowledgeDetails.testResults')}
         </span>
         <FilterPopover
           filters={filters}
@@ -76,7 +77,7 @@ export function TestingResult({
           <FilterButton></FilterButton>
         </FilterPopover>
       </div>
-      <section className="flex flex-col gap-5 overflow-auto h-[76vh] mb-5">
+      <section className="flex flex-col gap-5 overflow-auto h-[calc(100vh-241px)] scrollbar-thin mb-5">
         {data.chunks?.map((x) => (
           <FormContainer key={x.chunk_id} className="px-5 py-2.5">
             <ChunkTitle item={x}></ChunkTitle>

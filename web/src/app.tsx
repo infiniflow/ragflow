@@ -2,11 +2,11 @@ import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
 import i18n from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
 import deDE from 'antd/locale/de_DE';
 import enUS from 'antd/locale/en_US';
+import ru_RU from 'antd/locale/ru_RU';
 import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
@@ -35,6 +35,7 @@ const AntLanguageMap = {
   en: enUS,
   zh: zhCN,
   'zh-TRADITIONAL': zh_HK,
+  ru: ru_RU,
   vi: vi_VN,
   'pt-BR': pt_BR,
   de: deDE,
@@ -85,7 +86,7 @@ function Root({ children }: React.PropsWithChildren) {
         <Sonner position={'top-right'} expand richColors closeButton></Sonner>
         <Toaster />
       </ConfigProvider>
-      <ReactQueryDevtools buttonPosition={'top-left'} initialIsOpen={false} />
+      {/* <ReactQueryDevtools buttonPosition={'top-left'} initialIsOpen={false} /> */}
     </>
   );
 }

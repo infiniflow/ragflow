@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -15,29 +15,30 @@
 #
 import json
 import logging
+import os
+
 import networkx as nx
 import trio
 
 from api import settings
 from api.utils import get_uuid
 from api.utils.api_utils import timeout
-from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
-from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
-from graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from graphrag.entity_resolution import EntityResolution
+from graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from graphrag.general.extractor import Extractor
+from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
+from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
 from graphrag.utils import (
-    graph_merge,
-    get_graph,
-    set_graph,
+    GraphChange,
     chunk_id,
     does_graph_contains,
+    get_graph,
+    graph_merge,
+    set_graph,
     tidy_graph,
-    GraphChange,
 )
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
-
 
 
 async def run_graphrag(
@@ -49,19 +50,16 @@ async def run_graphrag(
     embedding_model,
     callback,
 ):
+    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
-    for d in settings.retrievaler.chunk_list(
-        doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"]
-    ):
+    for d in settings.retrievaler.chunk_list(doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"]):
         chunks.append(d["content_with_weight"])
 
-    with trio.fail_after(max(120, len(chunks)*120)):
+    with trio.fail_after(max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000):
         subgraph = await generate_subgraph(
-            LightKGExt
-            if "method" not in row["kb_parser_config"].get("graphrag", {}) or row["kb_parser_config"]["graphrag"]["method"] != "general"
-            else GeneralKGExt,
+            LightKGExt if "method" not in row["kb_parser_config"].get("graphrag", {}) or row["kb_parser_config"]["graphrag"]["method"] != "general" else GeneralKGExt,
             tenant_id,
             kb_id,
             doc_id,
@@ -174,9 +172,7 @@ async def generate_subgraph(
 
     subgraph.graph["source_id"] = [doc_id]
     chunk = {
-        "content_with_weight": json.dumps(
-            nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False
-        ),
+        "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
         "knowledge_graph_kwd": "subgraph",
         "kb_id": kb_id,
         "source_id": [doc_id],
@@ -184,22 +180,14 @@ async def generate_subgraph(
         "removed_kwd": "N",
     }
     cid = chunk_id(chunk)
-    await trio.to_thread.run_sync(
-        lambda: settings.docStoreConn.delete(
-            {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id
-        )
-    )
-    await trio.to_thread.run_sync(
-        lambda: settings.docStoreConn.insert(
-            [{"id": cid, **chunk}], search.index_name(tenant_id), kb_id
-        )
-    )
+    await trio.to_thread.run_sync(settings.docStoreConn.delete, {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id)
+    await trio.to_thread.run_sync(settings.docStoreConn.insert, [{"id": cid, **chunk}], search.index_name(tenant_id), kb_id)
     now = trio.current_time()
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph
 
 
-@timeout(60*3)
+@timeout(60 * 3)
 async def merge_subgraph(
     tenant_id: str,
     kb_id: str,
@@ -225,13 +213,11 @@ async def merge_subgraph(
 
     await set_graph(tenant_id, kb_id, embedding_model, new_graph, change, callback)
     now = trio.current_time()
-    callback(
-        msg=f"merging subgraph for doc {doc_id} into the global graph done in {now - start:.2f} seconds."
-    )
+    callback(msg=f"merging subgraph for doc {doc_id} into the global graph done in {now - start:.2f} seconds.")
     return new_graph
 
 
-@timeout(60*30, 1)
+@timeout(60 * 30, 1)
 async def resolve_entities(
     graph,
     subgraph_nodes: set[str],
@@ -257,7 +243,7 @@ async def resolve_entities(
     callback(msg=f"Graph resolution done in {now - start:.2f}s.")
 
 
-@timeout(60*30, 1)
+@timeout(60 * 30, 1)
 async def extract_community(
     graph,
     tenant_id: str,
@@ -277,9 +263,7 @@ async def extract_community(
     doc_ids = graph.graph["source_id"]
 
     now = trio.current_time()
-    callback(
-        msg=f"Graph extracted {len(cr.structured_output)} communities in {now - start:.2f}s."
-    )
+    callback(msg=f"Graph extracted {len(cr.structured_output)} communities in {now - start:.2f}s.")
     start = now
     chunks = []
     for stru, rep in zip(community_structure, community_reports):
@@ -292,9 +276,7 @@ async def extract_community(
             "docnm_kwd": stru["title"],
             "title_tks": rag_tokenizer.tokenize(stru["title"]),
             "content_with_weight": json.dumps(obj, ensure_ascii=False),
-            "content_ltks": rag_tokenizer.tokenize(
-                obj["report"] + " " + obj["evidences"]
-            ),
+            "content_ltks": rag_tokenizer.tokenize(obj["report"] + " " + obj["evidences"]),
             "knowledge_graph_kwd": "community_report",
             "weight_flt": stru["weight"],
             "entities_kwd": stru["entities"],
@@ -303,9 +285,7 @@ async def extract_community(
             "source_id": list(doc_ids),
             "available_int": 0,
         }
-        chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(
-            chunk["content_ltks"]
-        )
+        chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
         chunks.append(chunk)
 
     await trio.to_thread.run_sync(
@@ -317,13 +297,11 @@ async def extract_community(
     )
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(tenant_id), kb_id))
+        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b : b + es_bulk_size], search.index_name(tenant_id), kb_id))
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             raise Exception(error_message)
 
     now = trio.current_time()
-    callback(
-        msg=f"Graph indexed {len(cr.structured_output)} communities in {now - start:.2f}s."
-    )
+    callback(msg=f"Graph indexed {len(cr.structured_output)} communities in {now - start:.2f}s.")
     return community_structure, community_reports

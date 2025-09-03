@@ -17,6 +17,7 @@ import asyncio
 import functools
 import json
 import logging
+import os
 import queue
 import random
 import threading
@@ -55,6 +56,30 @@ from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
+def serialize_for_json(obj):
+    """
+    Recursively serialize objects to make them JSON serializable.
+    Handles ModelMetaclass and other non-serializable objects.
+    """
+    if hasattr(obj, '__dict__'):
+        # For objects with __dict__, try to serialize their attributes
+        try:
+            return {key: serialize_for_json(value) for key, value in obj.__dict__.items() 
+                   if not key.startswith('_')}
+        except (AttributeError, TypeError):
+            return str(obj)
+    elif hasattr(obj, '__name__'):
+        # For classes and metaclasses, return their name
+        return f"<{obj.__module__}.{obj.__name__}>" if hasattr(obj, '__module__') else f"<{obj.__name__}>"
+    elif isinstance(obj, (list, tuple)):
+        return [serialize_for_json(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: serialize_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+    else:
+        # Fallback: convert to string representation
+        return str(obj)
 
 def request(**kwargs):
     sess = requests.Session()
@@ -127,7 +152,11 @@ def server_error_response(e):
     except BaseException:
         pass
     if len(e.args) > 1:
-        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+        try:
+            serialized_data = serialize_for_json(e.args[1])
+            return get_json_result(code= settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=serialized_data)
+        except Exception:
+            return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=None)
     if repr(e).find("index_not_found_exception") >= 0:
         return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
 
@@ -353,7 +382,7 @@ def get_parser_config(chunk_method, parser_config):
     if not chunk_method:
         chunk_method = "naive"
 
-    # Define default configurations for each chunk method
+    # Define default configurations for each chunking method
     key_mapping = {
         "naive": {"chunk_token_num": 512, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
@@ -667,7 +696,10 @@ def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Option
 
             for a in range(attempts):
                 try:
-                    result = result_queue.get(timeout=seconds)
+                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                        result = result_queue.get(timeout=seconds)
+                    else:
+                        result = result_queue.get()
                     if isinstance(result, Exception):
                         raise result
                     return result
@@ -682,7 +714,10 @@ def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Option
 
             for a in range(attempts):
                 try:
-                    with trio.fail_after(seconds):
+                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                        with trio.fail_after(seconds):
+                            return await func(*args, **kwargs)
+                    else:
                         return await func(*args, **kwargs)
                 except trio.TooSlowError:
                     if a < attempts - 1:

@@ -739,6 +739,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'duckduckgo.comから検索を行うコンポーネントで、TopNを使用して検索結果の数を指定します。既存のナレッジベースを補完します。',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
       channel: 'チャンネル',
       channelTip: `コンポーネントの入力に対してテキスト検索またはニュース検索を実行します`,
       text: 'テキスト',

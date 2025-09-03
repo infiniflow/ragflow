@@ -303,9 +303,37 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen-plus-2025-07-28",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-plus-2025-07-14",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwq-plus-latest",
                     "tags": "LLM,CHAT,132k",
                     "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-flash-2025-07-28",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -533,22 +561,64 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "glm-4.5",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.5-x",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.5-air",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.5-airx",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.5-flash",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.5v",
+                    "tags": "LLM,IMAGE2TEXT,64,",
+                    "max_tokens": 64000,
+                    "model_type": "image2text",
+                    "is_tools": false
+                },
+                {
                     "llm_name": "glm-4-plus",
-                    "tags": "LLM,CHAT,",
+                    "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "glm-4-0520",
-                    "tags": "LLM,CHAT,",
+                    "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "glm-4",
-                    "tags": "LLM,CHAT,",
+                    "tags":"LLM,CHAT,128K",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
