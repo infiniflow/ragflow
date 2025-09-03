@@ -4,6 +4,7 @@ import {
 } from '@/components/similarity-slider';
 import {
   AgentGlobals,
+  AgentGlobalsSysQueryWithBrace,
   CodeTemplateStrMap,
   ProgrammingLanguage,
 } from '@/constants/agent';
@@ -247,7 +248,7 @@ const initialQueryBaseValues = {
 };
 
 export const initialRetrievalValues = {
-  query: AgentGlobals.SysQuery,
+  query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
   top_k: 1024,
   kb_ids: [],
