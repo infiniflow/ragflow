@@ -136,9 +136,9 @@ Please try again shortly or increase the pool size in the configuration to impro
 
 ### How to import my own Python or JavaScript packages into Sandbox?
 
-To import your Python packages, edit **sandbox_base_image/python/requirements.txt** to install the required dependencies. For example, to add the `openpyxl` package, add the following lines to the file:
+To import your Python packages, update **sandbox_base_image/python/requirements.txt** to install the required dependencies. For example, to add the `openpyxl` package, proceed with the following command lines:
 
-```bash
+```bash {4,6}
 (ragflow) ➜ ragflow/sandbox main ✓ pwd # make sure you are in the right directory
 /home/infiniflow/workspace/ragflow/sandbox
 
