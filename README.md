@@ -71,10 +71,7 @@
 
 ## 💡 What is RAGFlow?
 
-[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document
-understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models)
-to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted
-data.
+[RAGFlow](https://ragflow.io/) is a leading open-source Retrieval-Augmented Generation (RAG) engine that fuses cutting-edge RAG with Agent capabilities to create a superior context layer for LLMs. It offers a streamlined RAG workflow adaptable to enterprises of any scale. Powered by a converged context engine and pre-built agent templates, RAGFlow enables developers to transform complex data into high-fidelity, production-ready AI systems with exceptional efficiency and precision.
 
 ## 🎮 Demo
 
@@ -351,7 +348,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    # mac
    sudo brew install jemalloc
    ```
-   
+
 6. Launch backend service:
 
    ```bash
