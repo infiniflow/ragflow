@@ -3,12 +3,14 @@
   "author": "bill",
   "scripts": {
     "build": "umi build",
+    "build-storybook": "storybook build",
     "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",
     "postinstall": "umi setup",
     "lint": "umi lint --eslint-only",
     "prepare": "cd .. && husky web/.husky",
     "setup": "umi setup",
     "start": "npm run dev",
+    "storybook": "storybook dev -p 6006",
     "test": "jest --no-cache --coverage"
   },
   "lint-staged": {
@@ -116,6 +118,10 @@
   "devDependencies": {
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
     "@redux-devtools/extension": "^3.3.0",
+    "@storybook/addon-docs": "^9.1.4",
+    "@storybook/addon-onboarding": "^9.1.4",
+    "@storybook/addon-webpack5-compiler-swc": "^4.0.1",
+    "@storybook/react-webpack5": "^9.1.4",
     "@testing-library/jest-dom": "^6.4.5",
     "@testing-library/react": "^15.0.7",
     "@types/dompurify": "^3.0.5",
@@ -133,6 +139,7 @@
     "@welldone-software/why-did-you-render": "^8.0.3",
     "cross-env": "^7.0.3",
     "eslint-plugin-check-file": "^2.8.0",
+    "eslint-plugin-storybook": "^9.1.4",
     "eslint-webpack-plugin": "^4.1.0",
     "html-loader": "^5.1.0",
     "husky": "^9.0.11",
@@ -144,6 +151,7 @@
     "prettier-plugin-packagejson": "^2.4.9",
     "react-dev-inspector": "^2.0.1",
     "remark-loader": "^6.0.0",
+    "storybook": "^9.1.4",
     "tailwindcss": "^3",
     "terser-webpack-plugin": "^5.3.11",
     "ts-node": "^10.9.2",
