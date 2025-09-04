@@ -918,7 +918,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTools: 'Add Tools',
       sysPromptDefultValue: `
       <role>
-        You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
+        You are a helpful assistant, an AI assistant specialized in problem-solving for the user. 
+        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
       </role>
       <instructions>
         1. Understand the user’s request.  
@@ -1498,6 +1499,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       goto: 'Fail Branch',
       comment: 'Default Value',
+      sqlStatement: 'SQL Statement',
+      sqlStatementTip:
+        'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
     },
     llmTools: {
       bad_calculator: {
