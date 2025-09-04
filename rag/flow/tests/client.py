@@ -25,7 +25,7 @@ from api import settings
 from rag.flow.pipeline import Pipeline
 
 
-def print_logs(pipeline):
+def print_logs(pipeline: Pipeline):
     last_logs = "[]"
     while True:
         time.sleep(5)
@@ -54,6 +54,8 @@ if __name__ == "__main__":
 
     exe = ThreadPoolExecutor(max_workers=5)
     thr = exe.submit(print_logs, pipeline)
+
+    # queue_dataflow(dsl=open(args.dsl, "r").read(), tenant_id=args.tenant_id, doc_id=args.doc_id, task_id="xxxx", flow_id="xxx", priority=0)
 
     trio.run(pipeline.run)
     thr.result()
