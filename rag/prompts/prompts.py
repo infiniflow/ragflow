@@ -88,7 +88,7 @@ def message_fit_in(msg, max_length=4000):
         return max_length, msg
 
     m = msg_[-1]["content"]
-    m = encoder.decode(encoder.encode(m)[: max_length - ll2])
+    m = encoder.decode(encoder.encode(m)[: max_length - ll])
     msg[-1]["content"] = m
     return max_length, msg
 
