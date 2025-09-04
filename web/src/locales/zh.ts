@@ -878,7 +878,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       addTools: '添加工具',
       sysPromptDefultValue: `
 <role>
-        你是{{agent_name}}，一位专注于{{领域_or_任务}}的AI助手。
+  你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
+  如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。
 </role>
 <instructions>
         1. 理解用户请求。
@@ -1413,6 +1414,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         httpRequest: '请求接口',
         wenCai: '查询财务数据',
       },
+      sqlStatement: 'SQL 语句',
+      sqlStatementTip:
+        '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
     },
     footer: {
       profile: 'All rights reserved @ React',
