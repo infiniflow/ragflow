@@ -63,10 +63,10 @@ class ParserParam(ProcessParamBase):
             self.check_valid_value(pdf_parse_method.lower(), "Parse method abnormal.", ["deepdoc", "plain_text", "vlm"])
 
             if pdf_parse_method not in ["deepdoc", "plain_text"]:
-                self.check_empty(pdf_config.get("vlm_name"), "No VLM specified.")
+                self.check_empty(pdf_config.get("vlm_name"), "VLM")
 
             pdf_language = pdf_config.get("lang", "")
-            self.check_empty(pdf_language, "No language specified.")
+            self.check_empty(pdf_language, "Language")
 
             pdf_output_format = pdf_config.get("output_format", "")
             self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
@@ -86,23 +86,24 @@ class Parser(ProcessBase):
             bboxes = [{"text": t} for t, _ in lines]
         else:
             assert conf.get("vlm_name")
-            vision_model = LLMBundle(self._canvas.tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self.setups["pdf"].get("lang"))
-            lines, _ = VisionParser(vision_model=vision_model)(bin, callback=self.callback)
+            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
+            lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
                 pn, x0, x1, top, bott = poss.split(" ")
-                bboxes.append({"page_number": int(pn), "x0": int(x0), "x1": int(x1), "top": int(top), "bottom": int(bott), "text": t})
-
-        self.set_output("json", bboxes)
-        mkdn = ""
-        for b in bboxes:
-            if b.get("layout_type", "") == "title":
-                mkdn += "\n## "
-            if b.get("layout_type", "") == "figure":
-                mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
-                continue
-            mkdn += b.get("text", "") + "\n"
-        self.set_output("markdown", mkdn)
+                bboxes.append({"page_number": int(pn), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
+        if conf.get("output_format") == "json":
+            self.set_output("json", bboxes)
+        if conf.get("output_format") == "markdown":
+            mkdn = ""
+            for b in bboxes:
+                if b.get("layout_type", "") == "title":
+                    mkdn += "\n## "
+                if b.get("layout_type", "") == "figure":
+                    mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
+                    continue
+                mkdn += b.get("text", "") + "\n"
+            self.set_output("markdown", mkdn)
 
     def _excel(self, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Excel.")
