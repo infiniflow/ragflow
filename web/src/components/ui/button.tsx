@@ -65,24 +65,14 @@ Button.displayName = 'Button';
 
 export const ButtonLoading = React.forwardRef<
   HTMLButtonElement,
-  ButtonProps & { loading?: boolean }
+  Omit<ButtonProps, 'asChild'> & { loading?: boolean }
 >(
   (
-    {
-      className,
-      variant,
-      size,
-      asChild = false,
-      children,
-      loading = false,
-      disabled,
-      ...props
-    },
+    { className, variant, size, children, loading = false, disabled, ...props },
     ref,
   ) => {
-    const Comp = asChild ? Slot : 'button';
     return (
-      <Comp
+      <Button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
@@ -90,7 +80,7 @@ export const ButtonLoading = React.forwardRef<
       >
         {loading && <Loader2 className="animate-spin" />}
         {children}
-      </Comp>
+      </Button>
     );
   },
 );
