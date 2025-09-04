@@ -7,3 +7,6 @@
 /src/.umi-test
 /dist
 .swc
+
+*storybook.log
+storybook-static
