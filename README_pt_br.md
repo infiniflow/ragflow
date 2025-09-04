@@ -67,7 +67,7 @@
 
 ## 💡 O que é o RAGFlow?
 
-[RAGFlow](https://ragflow.io/) é um mecanismo RAG (Geração Aumentada por Recuperação) de código aberto baseado em entendimento profundo de documentos. Ele oferece um fluxo de trabalho RAG simplificado para empresas de qualquer porte, combinando LLMs (Modelos de Linguagem de Grande Escala) para fornecer capacidades de perguntas e respostas verídicas, respaldadas por citações bem fundamentadas de diversos dados complexos formatados.
+[RAGFlow](https://ragflow.io/) é um mecanismo de RAG (Retrieval-Augmented Generation) open-source líder que fusiona tecnologias RAG de ponta com funcionalidades Agent para criar uma camada contextual superior para LLMs. Oferece um fluxo de trabalho RAG otimizado adaptável a empresas de qualquer escala. Alimentado por um motor de contexto convergente e modelos Agent pré-construídos, o RAGFlow permite que desenvolvedores transformem dados complexos em sistemas de IA de alta fidelidade e pronto para produção com excepcional eficiência e precisão.
 
 ## 🎮 Demo
 
