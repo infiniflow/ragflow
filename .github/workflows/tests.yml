@@ -67,6 +67,7 @@ jobs:
 
       - name: Start ragflow:nightly-slim
         run: |
+          sudo docker compose -f docker/docker-compose.yml down --volumes --remove-orphans
           echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
