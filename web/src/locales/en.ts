@@ -99,6 +99,7 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      processLog: 'Process Log',
       created: 'Created',
       learnMore: 'Learn More',
       general: 'General',
@@ -187,6 +188,7 @@ export default {
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
+      close: 'Close',
       rerankModel: 'Rerank model',
       rerankPlaceholder: 'Please select',
       rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
@@ -230,6 +232,15 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      teamPlaceholder: 'Please select a team.',
+      dataFlowPlaceholder: 'Please select a data flow.',
+      buildItFromScratch: 'Build it from scratch',
+      useRAPTORToEnhanceRetrieval: 'Use RAPTOR to Enhance Retrieval',
+      extractKnowledgeGraph: 'Extract Knowledge Graph',
+      dataFlow: 'Data Flow',
+      parseType: 'Parse Type',
+      manualSetup: 'Manual Setup',
+      builtIn: 'Built-in',
       titleDescription:
         'Update your knowledge base configuration here, particularly the chunking method.',
       name: 'Knowledge base name',
