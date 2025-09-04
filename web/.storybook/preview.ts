@@ -1,4 +1,7 @@
 import type { Preview } from '@storybook/react-webpack5';
+import { createElement } from 'react';
+import { TooltipProvider } from '../src/components/ui/tooltip';
+
 import '../tailwind.css';
 
 const preview: Preview = {
@@ -10,6 +13,9 @@ const preview: Preview = {
       },
     },
   },
+  decorators: [
+    (Story) => createElement(TooltipProvider, null, createElement(Story)),
+  ],
 };
 
 export default preview;
