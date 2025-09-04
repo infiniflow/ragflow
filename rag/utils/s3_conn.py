@@ -81,11 +81,10 @@ class RAGFlowS3:
             if self.endpoint_url:
                 s3_params['endpoint_url'] = self.endpoint_url
             
-            # Configure signature_version and addressing_style through Config object
             if self.signature_version:
-                config_kwargs['signature_version'] = self.signature_version
+                s3_params['signature_version'] = self.signature_version
             if self.addressing_style:
-                config_kwargs['s3'] = {'addressing_style': self.addressing_style}
+                s3_params['addressing_style'] = self.addressing_style
             
             if config_kwargs:
                 s3_params['config'] = Config(**config_kwargs)
