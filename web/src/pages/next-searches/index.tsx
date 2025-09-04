@@ -49,7 +49,7 @@ export default function SearchList() {
       <div className="px-8 pt-8">
         <ListFilterBar
           icon="search"
-          title="Search apps"
+          title={t('searchApps')}
           showFilter={false}
           onSearchChange={(e) => handleSearchChange(e.target.value)}
         >
