@@ -3811,7 +3811,7 @@ Lists agents.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={agent_name}&id={agent_id}`
+- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -3819,7 +3819,7 @@ Lists agents.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={agent_name}&id={agent_id} \
+     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3837,7 +3837,7 @@ curl --request GET \
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the agent to retrieve.
-- `name`: (*Filter parameter*), `string`  
+- `title`: (*Filter parameter*), `string`  
   The name of the agent to retrieve.
 
 #### Response
