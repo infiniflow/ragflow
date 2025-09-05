@@ -133,59 +133,6 @@ services:
       retries: 5
     restart: on-failure
 
-  mysql:
-    # mysql:5.7 linux/arm64 image is unavailable.
-    image: mysql:8.0.39
-    container_name: ragflow-mysql
-    env_file: .env
-    environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
-      - TZ=${TIMEZONE}
-    command:
-      --max_connections=1000
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
-      --default-authentication-plugin=mysql_native_password
-      --tls_version="TLSv1.2,TLSv1.3"
-      --init-file /data/application/init.sql
-      --binlog_expire_logs_seconds=604800
-    ports:
-      - ${MYSQL_PORT}:3306
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./init.sql:/data/application/init.sql
-    networks:
-      - ragflow
-    healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    restart: on-failure
-
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
-    container_name: ragflow-minio
-    command: server --console-address ":9001" /data
-    ports:
-      - ${MINIO_PORT}:9000
-      - ${MINIO_CONSOLE_PORT}:9001
-    env_file: .env
-    environment:
-      - MINIO_ROOT_USER=${MINIO_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
-      - TZ=${TIMEZONE}
-    volumes:
-      - minio_data:/data
-    networks:
-      - ragflow
-    restart: on-failure
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
   redis:
     # swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/valkey/valkey:8
     image: valkey/valkey:8

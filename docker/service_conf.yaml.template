@@ -1,19 +1,19 @@
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
-mysql:
-  name: '${MYSQL_DBNAME:-rag_flow}'
-  user: '${MYSQL_USER:-root}'
-  password: '${MYSQL_PASSWORD:-infini_rag_flow}'
-  host: '${MYSQL_HOST:-mysql}'
-  port: 3306
-  max_connections: 900
-  stale_timeout: 300
-  max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
-minio:
-  user: '${MINIO_USER:-rag_flow}'
-  password: '${MINIO_PASSWORD:-infini_rag_flow}'
-  host: '${MINIO_HOST:-minio}:9000'
+# mysql:
+#   name: '${MYSQL_DBNAME:-rag_flow}'
+#   user: '${MYSQL_USER:-root}'
+#   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
+#   host: '${MYSQL_HOST:-mysql}'
+#   port: 3306
+#   max_connections: 900
+#   stale_timeout: 300
+#   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
+# minio:
+#   user: '${MINIO_USER:-rag_flow}'
+#   password: '${MINIO_PASSWORD:-infini_rag_flow}'
+#   host: '${MINIO_HOST:-minio}:9000'
 es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
@@ -30,23 +30,23 @@ redis:
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
 
-# postgres:
-#   name: '${POSTGRES_DBNAME:-rag_flow}'
-#   user: '${POSTGRES_USER:-rag_flow}'
-#   password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
-#   host: '${POSTGRES_HOST:-postgres}'
-#   port: 5432
-#   max_connections: 100
-#   stale_timeout: 30
-# s3:
-#   access_key: 'access_key'
-#   secret_key: 'secret_key'
-#   region: 'region'
-#   endpoint_url: 'endpoint_url'
-#   bucket: 'bucket'
-#   prefix_path: 'prefix_path'
-#   signature_version: 'v4'
-#   addressing_style: 'path'
+postgres:
+  name: '${POSTGRES_DBNAME:-rag_flow}'
+  user: '${POSTGRES_USER:-rag_flow}'
+  password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
+  host: '${POSTGRES_HOST:-postgres}'
+  port: 5432
+  max_connections: 100
+  stale_timeout: 30
+s3:
+  access_key: '${S3_ACCESS_KEY}'
+  secret_key: '${S3_SECRET_KEY}'
+  region: '${S3_REGION}'
+  endpoint_url: '${S3_ENDPOINT_URL}'
+  bucket: '${S3_BUCKET}'
+  prefix_path: 'ragflow'
+  signature_version: 'v4'
+  addressing_style: 'path'
 # oss:
 #   access_key: '${ACCESS_KEY}'
 #   secret_key: '${SECRET_KEY}'

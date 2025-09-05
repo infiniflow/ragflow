@@ -3,9 +3,6 @@ include:
 # To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
 services:
   ragflow:
-    depends_on:
-      mysql:
-        condition: service_healthy
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:
@@ -43,6 +40,8 @@ services:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=${HF_ENDPOINT-}
       - MACOS=${MACOS-}
+      - DATABASE_TYPE=POSTGRES
+      - STORAGE_IMPL=AWS_S3
     networks:
       - ragflow
     restart: on-failure
