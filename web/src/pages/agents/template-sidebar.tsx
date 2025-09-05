@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
+import { lowerFirst } from 'lodash';
 import {
   Box,
   ChartPie,
@@ -23,26 +25,38 @@ const menuItems = [
     items: [
       {
         icon: Sparkle,
-        label: MenuItemKey.Recommended,
+        label: t('flow.' + lowerFirst(MenuItemKey.Recommended)),
         key: MenuItemKey.Recommended,
       },
-      { icon: Box, label: MenuItemKey.Agent, key: MenuItemKey.Agent },
+      {
+        icon: Box,
+        label: t('flow.' + lowerFirst(MenuItemKey.Agent)),
+        key: MenuItemKey.Agent,
+      },
       {
         icon: MessageCircleCode,
-        label: MenuItemKey.CustomerSupport,
+        label: t(
+          'flow.' + lowerFirst(MenuItemKey.CustomerSupport).replace(' ', ''),
+        ),
         key: MenuItemKey.CustomerSupport,
       },
       {
         icon: ChartPie,
-        label: MenuItemKey.Marketing,
+        label: t('flow.' + lowerFirst(MenuItemKey.Marketing)),
         key: MenuItemKey.Marketing,
       },
       {
         icon: Component,
-        label: MenuItemKey.ConsumerApp,
+        label: t(
+          'flow.' + lowerFirst(MenuItemKey.ConsumerApp.replace(' ', '')),
+        ),
         key: MenuItemKey.ConsumerApp,
       },
-      { icon: PencilRuler, label: MenuItemKey.Other, key: MenuItemKey.Other },
+      {
+        icon: PencilRuler,
+        label: t('flow.' + lowerFirst(MenuItemKey.Other)),
+        key: MenuItemKey.Other,
+      },
     ],
   },
 ];

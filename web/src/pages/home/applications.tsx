@@ -26,8 +26,8 @@ export function Applications() {
 
   const options = useMemo(
     () => [
-      { value: Routes.Chats, label: t('header.chat') },
-      { value: Routes.Searches, label: t('header.search') },
+      { value: Routes.Chats, label: t('chat.chatApps') },
+      { value: Routes.Searches, label: t('search.searchApps') },
       { value: Routes.Agents, label: t('header.flow') },
     ],
     [t],

@@ -3,6 +3,7 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
+      selectAll: 'Select All',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
@@ -37,6 +38,7 @@ export default {
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
       submit: 'Submit',
+      clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
@@ -145,7 +147,8 @@ export default {
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
-      keywordSimilarityWeightTip: '',
+      keywordSimilarityWeightTip:
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',
@@ -441,6 +444,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      messagePlaceholder: 'Type your message here...',
+      exit: 'Exit',
+      multipleModels: 'Multiple Models',
+      applyModelConfigs: 'Apply model configs',
+      conversations: 'Conversations',
+      chatApps: 'Chat Apps',
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant settings',
@@ -839,6 +848,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       hint: 'hint',
     },
     fileManager: {
+      files: 'Files',
       name: 'Name',
       uploadDate: 'Upload Date',
       knowledgeBase: 'Dataset',
@@ -864,6 +874,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      recommended: 'Recommended',
+      customerSupport: 'Customer Support',
+      marketing: 'Marketing',
+      consumerApp: 'Consumer App',
+      other: 'Other',
+      agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
       ref: 'Variable',
@@ -1527,6 +1543,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       editMCP: 'Edit MCP',
     },
     search: {
+      searchApps: 'Search Apps',
       createSearch: 'Create Search',
       searchGreeting: 'How can I help you today ？',
       profile: 'Hide Profile',
@@ -1550,6 +1567,16 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+    },
+    language: {
+      english: 'English',
+      chinese: 'Chinese',
+      spanish: 'Spanish',
+      french: 'French',
+      german: 'German',
+      japanese: 'Japanese',
+      korean: 'Korean',
+      vietnamese: 'Vietnamese',
     },
   },
 };

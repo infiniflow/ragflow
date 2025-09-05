@@ -397,7 +397,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               name="search_config.similarity_threshold"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Similarity Threshold</FormLabel>
+                  <FormLabel
+                    tooltip={t('knowledgeDetails.similarityThresholdTip')}
+                  >
+                    {t('knowledgeDetails.similarityThreshold')}
+                  </FormLabel>
                   <div
                     className={cn(
                       'flex items-center gap-4 justify-between',
@@ -433,9 +437,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               name="search_config.vector_similarity_weight"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>Vector
-                    Similarity Weight
+                  <FormLabel
+                    tooltip={t('knowledgeDetails.vectorSimilarityWeightTip')}
+                  >
+                    <span className="text-destructive mr-1"> *</span>
+                    {t('knowledgeDetails.vectorSimilarityWeight')}
                   </FormLabel>
                   <div
                     className={cn(

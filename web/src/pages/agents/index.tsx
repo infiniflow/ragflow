@@ -36,7 +36,7 @@ export default function Agents() {
     <section className="flex flex-col w-full flex-1">
       <div className="px-8 pt-8 ">
         <ListFilterBar
-          title="Agents"
+          title={t('flow.agents')}
           searchString={searchString}
           onSearchChange={handleInputChange}
           icon="agent"

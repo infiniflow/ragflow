@@ -43,7 +43,7 @@ export default function ChatBasicSetting() {
         name="name"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>{t('assistantName')}</FormLabel>
+            <FormLabel required>{t('assistantName')}</FormLabel>
             <FormControl>
               <Input {...field}></Input>
             </FormControl>
@@ -69,7 +69,9 @@ export default function ChatBasicSetting() {
         name={'prompt_config.empty_response'}
         render={({ field }) => (
           <FormItem>
-            <FormLabel>{t('emptyResponse')}</FormLabel>
+            <FormLabel tooltip={t('emptyResponseTip')}>
+              {t('emptyResponse')}
+            </FormLabel>
             <FormControl>
               <Textarea {...field}></Textarea>
             </FormControl>
@@ -82,7 +84,9 @@ export default function ChatBasicSetting() {
         name={'prompt_config.prologue'}
         render={({ field }) => (
           <FormItem>
-            <FormLabel>{t('setAnOpener')}</FormLabel>
+            <FormLabel tooltip={t('setAnOpenerTip')}>
+              {t('setAnOpener')}
+            </FormLabel>
             <FormControl>
               <Textarea {...field}></Textarea>
             </FormControl>
@@ -93,14 +97,17 @@ export default function ChatBasicSetting() {
       <SwitchFormField
         name={'prompt_config.quote'}
         label={t('quote')}
+        tooltip={t('quoteTip')}
       ></SwitchFormField>
       <SwitchFormField
         name={'prompt_config.keyword'}
         label={t('keyword')}
+        tooltip={t('keywordTip')}
       ></SwitchFormField>
       <SwitchFormField
         name={'prompt_config.tts'}
         label={t('tts')}
+        tooltip={t('ttsTip')}
       ></SwitchFormField>
       <TavilyFormField></TavilyFormField>
       <KnowledgeBaseFormField></KnowledgeBaseFormField>

@@ -38,7 +38,7 @@ export default function ChatList() {
     <section className="flex flex-col w-full flex-1">
       <div className="px-8 pt-8">
         <ListFilterBar
-          title="Chat apps"
+          title={t('chat.chatApps')}
           icon="chat"
           onSearchChange={handleInputChange}
           searchString={searchString}

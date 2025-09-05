@@ -14,6 +14,7 @@ export function MaxTokenNumberFormField({ max = 2048, initialValue }: IProps) {
     <SliderInputFormField
       name={'parser_config.chunk_token_num'}
       label={t('chunkTokenNumber')}
+      tooltip={t('chunkTokenNumberTip')}
       max={max}
       defaultValue={initialValue ?? 0}
       layout={FormLayout.Horizontal}
