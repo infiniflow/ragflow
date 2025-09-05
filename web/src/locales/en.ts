@@ -99,6 +99,10 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      overview: 'Overview',
+      success: 'Success',
+      failed: 'Failed',
+      completed: 'Completed',
       processLog: 'Process Log',
       created: 'Created',
       learnMore: 'Learn More',

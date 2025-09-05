@@ -44,7 +44,7 @@ export enum Routes {
   UserSetting = '/user-setting',
   DataFlows = '/data-flows',
   DataFlow = '/data-flow',
-  DataSetOverview = '/data-set-overview',
+  DataSetOverview = '/dataset-overview',
 }
 
 const routes = [

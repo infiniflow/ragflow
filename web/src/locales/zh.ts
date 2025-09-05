@@ -91,6 +91,10 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      overview: '概览',
+      success: '成功',
+      failed: '失败',
+      completed: '已完成',
       processLog: '处理进度日志',
       created: '创建于',
       learnMore: '了解更多',

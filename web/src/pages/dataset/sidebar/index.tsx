@@ -36,7 +36,7 @@ export function SideBar({ refreshCount }: PropType) {
     const list = [
       {
         icon: DatabaseZap,
-        label: t(`knowledgeDetails.Overview`),
+        label: t(`knowledgeDetails.overview`),
         key: Routes.DataSetOverview,
       },
       {
