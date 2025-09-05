@@ -41,7 +41,6 @@ function MyComponent() {
 \`\`\`
 
 ### Features
-- Supports image upload with drag & drop
 - Image preview with hover effects
 - Remove button to clear selected image
 - Base64 encoding for easy handling
