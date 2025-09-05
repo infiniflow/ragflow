@@ -32,6 +32,7 @@ import * as ReactDOM from 'react-dom';
 import { $createVariableNode } from './variable-node';
 
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
+import { PromptIdentity } from '../../agent-form/use-build-prompt-options';
 import { ProgrammaticTag } from './constant';
 import './index.css';
 class VariableInnerOption extends MenuOption {
@@ -108,11 +109,18 @@ function VariablePickerMenuItem({
   );
 }
 
+export type VariablePickerMenuPluginProps = {
+  value?: string;
+  extraOptions?: Array<{
+    label: string;
+    title: string;
+    options: Array<{ label: string; value: string; icon?: ReactNode }>;
+  }>;
+};
 export default function VariablePickerMenuPlugin({
   value,
-}: {
-  value?: string;
-}): JSX.Element {
+  extraOptions,
+}: VariablePickerMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
   const isFirstRender = useRef(true);
 
@@ -122,10 +130,10 @@ export default function VariablePickerMenuPlugin({
 
   const [queryString, setQueryString] = React.useState<string | null>('');
 
-  const options = useBuildQueryVariableOptions();
+  let options = useBuildQueryVariableOptions();
 
   const buildNextOptions = useCallback(() => {
-    let filteredOptions = options;
+    let filteredOptions = [...options, ...(extraOptions ?? [])];
     if (queryString) {
       const lowerQuery = queryString.toLowerCase();
       filteredOptions = options
@@ -140,7 +148,7 @@ export default function VariablePickerMenuPlugin({
         .filter((x) => x.options.length > 0);
     }
 
-    const nextOptions: VariableOption[] = filteredOptions.map(
+    const finalOptions: VariableOption[] = filteredOptions.map(
       (x) =>
         new VariableOption(
           x.label,
@@ -150,8 +158,8 @@ export default function VariablePickerMenuPlugin({
           }),
         ),
     );
-    return nextOptions;
-  }, [options, queryString]);
+    return finalOptions;
+  }, [extraOptions, options, queryString]);
 
   const findItemByValue = useCallback(
     (value: string) => {
@@ -173,7 +181,7 @@ export default function VariablePickerMenuPlugin({
 
   const onSelectOption = useCallback(
     (
-      selectedOption: VariableOption | VariableInnerOption,
+      selectedOption: VariableInnerOption,
       nodeToRemove: TextNode | null,
       closeMenu: () => void,
     ) => {
@@ -193,7 +201,11 @@ export default function VariablePickerMenuPlugin({
           selectedOption.parentLabel as string | ReactNode,
           selectedOption.icon as ReactNode,
         );
-        selection.insertNodes([variableNode]);
+        if (selectedOption.parentLabel === PromptIdentity) {
+          selection.insertText(selectedOption.value);
+        } else {
+          selection.insertNodes([variableNode]);
+        }
 
         closeMenu();
       });
@@ -269,7 +281,13 @@ export default function VariablePickerMenuPlugin({
   return (
     <LexicalTypeaheadMenuPlugin<VariableOption | VariableInnerOption>
       onQueryChange={setQueryString}
-      onSelectOption={onSelectOption}
+      onSelectOption={(option, textNodeContainingQuery, closeMenu) =>
+        onSelectOption(
+          option as VariableInnerOption, // Only the second level menu can be selected
+          textNodeContainingQuery,
+          closeMenu,
+        )
+      }
       triggerFn={checkForTriggerMatch}
       options={buildNextOptions()}
       menuRenderFn={(anchorElementRef, { selectOptionAndCleanUp }) => {

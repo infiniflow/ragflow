@@ -25,6 +25,7 @@ const {
   fetchAgentAvatar,
   fetchAgentLogs,
   fetchExternalAgentInputs,
+  prompt,
 } = api;
 
 const methods = {
@@ -110,6 +111,10 @@ const methods = {
   },
   fetchExternalAgentInputs: {
     url: fetchExternalAgentInputs,
+    method: 'get',
+  },
+  fetchPrompt: {
+    url: prompt,
     method: 'get',
   },
 } as const;

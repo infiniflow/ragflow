@@ -1518,6 +1518,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       sqlStatement: 'SQL Statement',
       sqlStatementTip:
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
+      frameworkPrompts: 'Framework Prompts',
     },
     llmTools: {
       bad_calculator: {

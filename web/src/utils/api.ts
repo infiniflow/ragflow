@@ -164,6 +164,7 @@ export default {
     `${api_host}/canvas/${canvasId}/sessions`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
+  prompt: `${api_host}/canvas/prompts`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,

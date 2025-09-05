@@ -29,7 +29,9 @@ import { PasteHandlerPlugin } from './paste-handler-plugin';
 import theme from './theme';
 import { VariableNode } from './variable-node';
 import { VariableOnChangePlugin } from './variable-on-change-plugin';
-import VariablePickerMenuPlugin from './variable-picker-plugin';
+import VariablePickerMenuPlugin, {
+  VariablePickerMenuPluginProps,
+} from './variable-picker-plugin';
 
 // Catch any errors that occur during Lexical updates and log them
 // or throw them as needed. If you don't throw them, Lexical will
@@ -52,7 +54,8 @@ type IProps = {
   value?: string;
   onChange?: (value?: string) => void;
   placeholder?: ReactNode;
-} & PromptContentProps;
+} & PromptContentProps &
+  Pick<VariablePickerMenuPluginProps, 'extraOptions'>;
 
 function PromptContent({
   showToolbar = true,
@@ -122,6 +125,7 @@ export function PromptEditor({
   placeholder,
   showToolbar,
   multiLine = true,
+  extraOptions,
 }: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
@@ -170,7 +174,10 @@ export function PromptEditor({
           }
           ErrorBoundary={LexicalErrorBoundary}
         />
-        <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
+        <VariablePickerMenuPlugin
+          value={value}
+          extraOptions={extraOptions}
+        ></VariablePickerMenuPlugin>
         <PasteHandlerPlugin />
         <VariableOnChangePlugin
           onChange={onValueChange}

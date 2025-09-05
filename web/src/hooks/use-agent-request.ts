@@ -51,6 +51,7 @@ export const enum AgentApiAction {
   FetchAgentAvatar = 'fetchAgentAvatar',
   FetchExternalAgentInputs = 'fetchExternalAgentInputs',
   SetAgentSetting = 'setAgentSetting',
+  FetchPrompt = 'fetchPrompt',
 }
 
 export const EmptyDsl = {
@@ -636,4 +637,25 @@ export const useSetAgentSetting = () => {
   });
 
   return { data, loading, setAgentSetting: mutateAsync };
+};
+
+export const useFetchPrompt = () => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<Record<string, string>>({
+    queryKey: [AgentApiAction.FetchPrompt],
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await agentService.fetchPrompt();
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, refetch };
 };
