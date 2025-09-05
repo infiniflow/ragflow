@@ -83,7 +83,7 @@ export default function TestingForm({
         <FormContainer className="p-10">
           <SimilaritySliderFormField
             vectorSimilarityWeightName="keywords_similarity_weight"
-            isTooltipShown
+            isTooltipShown={true}
           ></SimilaritySliderFormField>
           <RerankFormFields></RerankFormFields>
           <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
