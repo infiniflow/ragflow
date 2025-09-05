@@ -1,4 +1,5 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
+import message from '@/components/ui/message';
 import { ResponseType } from '@/interfaces/database/base';
 import {
   IDocumentInfo,
@@ -12,7 +13,6 @@ import i18n from '@/locales/config';
 import kbService, { listDocument } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { message } from 'antd';
 import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'umi';
