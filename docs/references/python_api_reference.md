@@ -921,7 +921,7 @@ chunk.update({"content":"sdfx..."})
 ### Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,highlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,cross_languages:list[str]=None,metadata_condition: dict=None) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -971,16 +971,13 @@ Indicates whether to enable keyword-based matching:
 - `True`: Enable keyword-based matching.
 - `False`: Disable keyword-based matching (default).
 
-##### highlight: `bool`
-
-Specifies whether to enable highlighting of matched terms in the results:
-
-- `True`: Enable highlighting of matched terms.
-- `False`: Disable highlighting of matched terms (default).
-
 ##### cross_languages:  `list[string]`  
 
 The languages that should be translated into, in order to achieve keywords retrievals in different languages.
+
+##### metadata_condition: `dict`
+
+filter condition for meta_fields
 
 #### Returns
 
