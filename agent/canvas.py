@@ -481,7 +481,7 @@ class Canvas(Graph):
         except Exception as e:
             logging.exception(e)
 
-    def add_refernce(self, chunks: list[object], doc_infos: list[object]):
+    def add_reference(self, chunks: list[object], doc_infos: list[object]):
         if not self.retrieval:
             self.retrieval = [{"chunks": {}, "doc_aggs": {}}]
 
