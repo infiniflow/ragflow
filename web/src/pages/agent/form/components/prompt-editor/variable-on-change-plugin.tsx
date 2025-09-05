@@ -3,7 +3,7 @@ import { EditorState, LexicalEditor } from 'lexical';
 import { useEffect } from 'react';
 import { ProgrammaticTag } from './constant';
 
-interface IProps {
+interface VariableOnChangePluginProps {
   onChange: (
     editorState: EditorState,
     editor?: LexicalEditor,
@@ -11,7 +11,9 @@ interface IProps {
   ) => void;
 }
 
-export function VariableOnChangePlugin({ onChange }: IProps) {
+export function VariableOnChangePlugin({
+  onChange,
+}: VariableOnChangePluginProps) {
   // Access the editor through the LexicalComposerContext
   const [editor] = useLexicalComposerContext();
   // Wrap our listener in useEffect to handle the teardown and avoid stale references.
