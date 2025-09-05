@@ -561,7 +561,7 @@ def merge_tuples(list1, list2):
     return result
 
 
-async def get_entity_type2sampels(idxnms, kb_ids: list):
+async def get_entity_type2samples(idxnms, kb_ids: list):
     es_res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids, "size": 10000, "fields": ["content_with_weight"]}, idxnms, kb_ids))
 
     res = defaultdict(list)
