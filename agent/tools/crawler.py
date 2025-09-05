@@ -64,5 +64,5 @@ class Crawler(ToolBase, ABC):
             elif self._param.extract_type == 'markdown':
                 return result.markdown
             elif self._param.extract_type == 'content':
-                result.extracted_content
+                return result.extracted_content
             return result.markdown
