@@ -36,6 +36,7 @@ from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
 from api.utils.file_utils import filename_type, read_potential_broken_pdf
+from rag.flow.pipeline import Pipeline
 
 
 @manager.route("/templates", methods=["GET"])  # noqa: F821
@@ -102,32 +103,32 @@ def get(canvas_id):
 @login_required
 def run():
     req = request.json
+    flow_id = req.get("id", "")
     doc_id = req.get("doc_id", "")
+    if not all([flow_id, doc_id]):
+        return get_data_error_result(message="id and doc_id are required.")
+
     if not DocumentService.get_by_id(doc_id):
         return get_data_error_result(message=f"Document for {doc_id} not found.")
+
     user_id = req.get("user_id", current_user.id)
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    if not UserCanvasService.accessible(flow_id, current_user.id):
         return get_json_result(data=False, message="Only owner of canvas authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
-    e, cvs = UserCanvasService.get_by_id(req["id"])
+    e, cvs = UserCanvasService.get_by_id(flow_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    try:
-        canvas = Canvas(cvs.dsl, current_user.id, req["id"])
-    except Exception as e:
-        return server_error_response(e)
-
-    flow_id = get_uuid()
     task_id = get_uuid()
 
-    dsl_str = json.dumps(canvas.dsl, ensure_ascii=False)
-    queue_dataflow(dsl=dsl_str, tenant_id=user_id, doc_id=doc_id, task_id=task_id, flow_id=flow_id, priority=0)
+    ok, error_message = queue_dataflow(dsl=cvs.dsl, tenant_id=user_id, doc_id=doc_id, task_id=task_id, flow_id=flow_id, priority=0)
+    if not ok:
+        return server_error_response(error_message)
 
-    return get_json_result(data=True)
+    return get_json_result(data={"task_id": task_id, "flow_id": flow_id})
 
 
 @manager.route("/reset", methods=["POST"])  # noqa: F821
@@ -135,16 +136,23 @@ def run():
 @login_required
 def reset():
     req = request.json
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    flow_id = req.get("id", "")
+    if not flow_id:
+        return get_data_error_result(message="id is required.")
+
+    if not UserCanvasService.accessible(flow_id, current_user.id):
         return get_json_result(data=False, message="Only owner of canvas authorized for this operation.", code=RetCode.OPERATING_ERROR)
+
+    task_id = req.get("task_id", "")
+
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
             return get_data_error_result(message="canvas not found.")
 
-        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        canvas.reset()
-        req["dsl"] = json.loads(str(canvas))
+        dataflow = Pipeline(dsl=json.dumps(user_canvas.dsl), tenant_id=current_user.id, flow_id=flow_id, task_id=task_id)
+        dataflow.reset()
+        req["dsl"] = json.loads(str(dataflow))
         UserCanvasService.update_by_id(req["id"], {"dsl": req["dsl"]})
         return get_json_result(data=req["dsl"])
     except Exception as e:
@@ -217,17 +225,18 @@ def upload(canvas_id):
 @manager.route("/input_form", methods=["GET"])  # noqa: F821
 @login_required
 def input_form():
-    cvs_id = request.args.get("id")
+    flow_id = request.args.get("id")
     cpn_id = request.args.get("component_id")
     try:
-        e, user_canvas = UserCanvasService.get_by_id(cvs_id)
+        e, user_canvas = UserCanvasService.get_by_id(flow_id)
         if not e:
             return get_data_error_result(message="canvas not found.")
-        if not UserCanvasService.query(user_id=current_user.id, id=cvs_id):
+        if not UserCanvasService.query(user_id=current_user.id, id=flow_id):
             return get_json_result(data=False, message="Only owner of canvas authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
-        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        return get_json_result(data=canvas.get_component_input_form(cpn_id))
+        dataflow = Pipeline(dsl=json.dumps(user_canvas.dsl), tenant_id=current_user.id, flow_id=flow_id, task_id="")
+
+        return get_json_result(data=dataflow.get_component_input_form(cpn_id))
     except Exception as e:
         return server_error_response(e)
 
@@ -318,12 +327,9 @@ def setting():
         return get_data_error_result(message="canvas not found.")
     flow = flow.to_dict()
     flow["title"] = req["title"]
-    if req["description"]:
-        flow["description"] = req["description"]
-    if req["permission"]:
-        flow["permission"] = req["permission"]
-    if req["avatar"]:
-        flow["avatar"] = req["avatar"]
+    for key in ("description", "permission", "avatar"):
+        if value := req.get(key):
+            flow[key] = value
 
     num = UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
@@ -332,10 +338,16 @@ def setting():
 @manager.route("/trace", methods=["GET"])  # noqa: F821
 def trace():
     dataflow_id = request.args.get("dataflow_id")
-    e, dataflow = UserCanvasService.get_by_id(dataflow_id)
+    task_id = request.args.get("task_id")
+    if not all([dataflow_id, task_id]):
+        return get_data_error_result(message="dataflow_id and task_id are required.")
+
+    e, dataflow_canvas = UserCanvasService.get_by_id(dataflow_id)
     if not e:
         return get_data_error_result(message="dataflow not found.")
 
+    dsl_str = json.dumps(dataflow_canvas.dsl, ensure_ascii=False)
+    dataflow = Pipeline(dsl=dsl_str, tenant_id=dataflow_canvas.user_id, flow_id=dataflow_id, task_id=task_id)
     log = dataflow.fetch_logs()
 
     return get_json_result(data=log)

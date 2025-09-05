@@ -42,6 +42,9 @@ class TokenizerParam(ProcessParamBase):
         for v in self.search_method:
             self.check_valid_value(v.lower(), "Chunk method abnormal.", ["full_text", "embedding"])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {}
+
 
 class Tokenizer(ProcessBase):
     component_name = "Tokenizer"

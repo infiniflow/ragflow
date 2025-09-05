@@ -472,7 +472,12 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str, priority: int, callback=None):
+def queue_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str, priority: int, callback=None) -> tuple[bool, str]:
+    """
+    Returns a tuple (success: bool, error_message: str).
+    """
+    _ = callback
+
     task = dict(
     id=get_uuid() if not task_id else task_id,
     doc_id=doc_id,
@@ -485,7 +490,12 @@ def queue_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str,
     TaskService.model.delete().where(TaskService.model.id == task["id"]).execute()
     bulk_insert_into_db(model=Task, data_source=[task], replace_on_conflict=True)
 
-    task["tenant_id"]=tenant_id,
+    kb_id = DocumentService.get_knowledgebase_id(doc_id)
+    if not kb_id:
+        return False, f"Can't find KB of this document: {doc_id}"
+
+    task["kb_id"] = kb_id
+    task["tenant_id"] = tenant_id
     task["task_type"] = "dataflow"
     task["dsl"] = dsl
     task["dataflow_id"] = get_uuid() if not flow_id else flow_id
@@ -493,4 +503,6 @@ def queue_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str,
     if not REDIS_CONN.queue_product(
         get_svr_queue_name(priority), message=task
     ):
-        raise RuntimeError("Can't access Redis. Please check the Redis' status.")
+        return False, "Can't access Redis. Please check the Redis' status."
+
+    return True, ""

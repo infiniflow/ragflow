@@ -229,9 +229,10 @@ async def collect():
     task_type = msg.get("task_type", "")
     task["task_type"] = task_type
     if task_type == "dataflow":
-        task["tenant_id"]=msg.get("tenant_id", ""),
+        task["tenant_id"]=msg.get("tenant_id", "")
         task["dsl"] = msg.get("dsl", "")
         task["dataflow_id"] = msg.get("dataflow_id", get_uuid())
+        task["kb_id"] = msg.get("kb_id", "")
     return redis_msg, task
 
 

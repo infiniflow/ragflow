@@ -35,7 +35,10 @@ class ProcessParamBase(ComponentParamBase):
 class ProcessBase(ComponentBase):
     def __init__(self, pipeline, id, param: ProcessParamBase):
         super().__init__(pipeline, id, param)
-        self.callback = partial(self._canvas.callback, self.component_name)
+        if hasattr(self._canvas, "callback"):
+            self.callback = partial(self._canvas.callback, self.component_name)
+        else:
+            self.callback = partial(lambda *args, **kwargs: None, self.component_name)
 
     async def invoke(self, **kwargs) -> dict[str, Any]:
         self.set_output("_created_time", time.perf_counter())

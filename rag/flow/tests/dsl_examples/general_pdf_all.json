@@ -22,6 +22,14 @@
                     "pdf"
                   ],
                   "output_format": "json"
+                },
+                "excel": {
+                  "output_format": "html",
+                  "suffix": [
+                    "xls",
+                    "xlsx",
+                    "csv"
+                  ]
                 }
               }
             }

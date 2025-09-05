@@ -47,9 +47,14 @@ class ParserParam(ProcessParamBase):
                 "suffix": ["pdf"],
                 "output_format": "json",
             },
-            "excel": {"output_format": "html"},
+            "excel": {
+                "output_format": "html",
+                "suffix": ["xls", "xlsx", "csv"],
+            },
             "ppt": {},
-            "image": {"parse_method": "ocr"},
+            "image": {
+                "parse_method": "ocr",
+            },
             "email": {},
             "text": {},
             "audio": {},
@@ -70,6 +75,19 @@ class ParserParam(ProcessParamBase):
 
             pdf_output_format = pdf_config.get("output_format", "")
             self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
+
+        excel_config = self.setups.get("excel", "")
+        if excel_config:
+            excel_output_format = excel_config.get("output_format", "")
+            self.check_valid_value(excel_output_format, "Excel output format abnormal.", self.allowed_output_format["excel"])
+
+        image_config = self.setups.get("image", "")
+        if image_config:
+            image_parse_method = image_config.get("parse_method", "")
+            self.check_valid_value(image_parse_method.lower(), "Parse method abnormal.", ["ocr"])
+
+    def get_input_form(self) -> dict[str, dict]:
+        return {}
 
 
 class Parser(ProcessBase):
@@ -121,6 +139,7 @@ class Parser(ProcessBase):
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
+            "excel": self._excel,
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)

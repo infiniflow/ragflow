@@ -10,7 +10,7 @@ class ChunkerFromUpstream(BaseModel):
     name: str
     blob: bytes
 
-    output_format: Literal["json", "markdown", "text", "html"]
+    output_format: Literal["json", "markdown", "text", "html"] | None = Field(default=None)
 
     json_result: list[dict[str, Any]] | None = Field(default=None, alias="json")
     markdown_result: str | None = Field(default=None, alias="markdown")
@@ -19,5 +19,5 @@ class ChunkerFromUpstream(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    def to_dict(self, *, exclude_none: bool = True) -> dict:
-        return self.model_dump(by_alias=True, exclude_none=exclude_none)
+    # def to_dict(self, *, exclude_none: bool = True) -> dict:
+    #     return self.model_dump(by_alias=True, exclude_none=exclude_none)

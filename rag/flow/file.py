@@ -27,6 +27,9 @@ class FileParam(ProcessParamBase):
     def check(self):
         pass
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {}
+
 
 class File(ProcessBase):
     component_name = "File"

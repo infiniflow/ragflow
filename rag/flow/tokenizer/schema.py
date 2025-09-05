@@ -10,9 +10,9 @@ class TokenizerFromUpstream(BaseModel):
     name: str = ""
     blob: bytes
 
-    output_format: Literal["json", "markdown", "text", "html"]
+    output_format: Literal["json", "markdown", "text", "html"] | None = Field(default=None)
 
-    chunks: list[dict[str, Any]] | None = None
+    chunks: list[dict[str, Any]] | None = Field(default=None)
 
     json_result: list[dict[str, Any]] | None = Field(default=None, alias="json")
     markdown_result: str | None = Field(default=None, alias="markdown")

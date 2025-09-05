@@ -64,6 +64,9 @@ class ChunkerParam(ProcessParamBase):
         self.check_nonnegative_number(self.auto_questions, "Auto-question value: (0, 10]")
         self.check_decimal_float(self.overlapped_percent, "Overlapped percentage: [0, 1)")
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {}
+
 
 class Chunker(ProcessBase):
     component_name = "Chunker"
