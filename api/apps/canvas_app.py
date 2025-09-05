@@ -418,12 +418,10 @@ def setting():
         return get_data_error_result(message="canvas not found.")
     flow = flow.to_dict()
     flow["title"] = req["title"]
-    if req["description"]:
-        flow["description"] = req["description"]
-    if req["permission"]:
-        flow["permission"] = req["permission"]
-    if req["avatar"]:
-        flow["avatar"] = req["avatar"]
+
+    for key in ["description", "permission", "avatar"]:
+        if value := req.get(key):
+            flow[key] = value
 
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)

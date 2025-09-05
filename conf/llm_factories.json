@@ -2690,21 +2690,21 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "Qwen3-Embedding-8B",
+                    "llm_name": "Qwen/Qwen3-Embedding-8B",
                     "tags": "TEXT EMBEDDING,TEXT RE-RANK,32k",
                     "max_tokens": 32000,
                     "model_type": "embedding",
                     "is_tools": false
                 },
                 {
-                    "llm_name": "Qwen3-Embedding-4B",
+                    "llm_name": "Qwen/Qwen3-Embedding-4B",
                     "tags": "TEXT EMBEDDING,TEXT RE-RANK,32k",
                     "max_tokens": 32000,
                     "model_type": "embedding",
                     "is_tools": false
                 },
                 {
-                    "llm_name": "Qwen3-Embedding-0.6B",
+                    "llm_name": "Qwen/Qwen3-Embedding-0.6B",
                     "tags": "TEXT EMBEDDING,TEXT RE-RANK,32k",
                     "max_tokens": 32000,
                     "model_type": "embedding",
