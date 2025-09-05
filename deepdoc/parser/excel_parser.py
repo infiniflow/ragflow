@@ -124,7 +124,7 @@ class RAGFlowExcelParser:
                         if c.value is None:
                             tb += "<td></td>"
                         else:
-                            tb += f"<td>{c.value}</td>"
+                            tb += f"<td>{escape(_fmt(c.value))}</td>"
                     tb += "</tr>"
                 tb += "</table>\n"
                 tb_chunks.append(tb)
