@@ -15,7 +15,6 @@ import { useMemo } from 'react';
 import { BeginId, Operator } from '../constant';
 import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
-import { useCalculateSheetRight } from '../hooks/use-calculate-sheet-right';
 import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
@@ -47,8 +46,6 @@ const FormSheet = ({
 
   const currentFormMap = FormConfigMap[operatorName];
 
-  const right = useCalculateSheetRight();
-
   const OperatorForm = currentFormMap?.component ?? EmptyContent;
 
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
@@ -68,8 +65,8 @@ const FormSheet = ({
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className={cn('top-20 p-0 flex flex-col pb-20 ', {
-          [right]: chatVisible,
+        className={cn('top-20 p-0 flex flex-col pb-20', {
+          'right-[620px]': chatVisible,
         })}
         closeIcon={false}
       >

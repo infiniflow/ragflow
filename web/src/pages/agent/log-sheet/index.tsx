@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils';
 import { NotebookText } from 'lucide-react';
 import 'react18-json-view/src/style.css';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
-import { useCalculateSheetRight } from '../hooks/use-calculate-sheet-right';
 import { WorkFlowTimeline } from './workflow-timeline';
 
 type LogSheetProps = IModalProps<any> &
@@ -24,11 +23,9 @@ export function LogSheet({
   currentMessageId,
   sendLoading,
 }: LogSheetProps) {
-  const right = useCalculateSheetRight();
-
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
-      <SheetContent className={cn('top-20', right)}>
+      <SheetContent className={cn('top-20 right-[620px]')}>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
             <NotebookText className="size-4" />
