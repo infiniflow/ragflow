@@ -338,6 +338,13 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen3-max-preview",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwen3-coder-480b-a35b-instruct",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
