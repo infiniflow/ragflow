@@ -49,5 +49,5 @@ class StorageFactory:
         return cls.storage_mapping[storage]()
 
 
-STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
+STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'AWS_S3')
 STORAGE_IMPL = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])

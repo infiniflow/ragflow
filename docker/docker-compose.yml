@@ -1,27 +1,6 @@
-include:
-  - ./docker-compose-base.yml
-# To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
 services:
   ragflow:
-    depends_on:
-      mysql:
-        condition: service_healthy
     image: ${RAGFLOW_IMAGE}
-    # Example configuration to set up an MCP server:
-    # command:
-    #   - --enable-mcpserver
-    #   - --mcp-host=0.0.0.0
-    #   - --mcp-port=9382
-    #   - --mcp-base-url=http://127.0.0.1:9380
-    #   - --mcp-script-path=/ragflow/mcp/server/server.py
-    #   - --mcp-mode=self-host
-    #   - --mcp-host-api-key=ragflow-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    # Optional transport flags for MCP (customize if needed).
-    # Host mode need to combined with --no-transport-streamable-http-enabled flag, namely, host+streamable-http is not supported yet.
-    # The following are enabled by default unless explicitly disabled with --no-<flag>.
-    #   - --no-transport-sse-enabled # Disable legacy SSE endpoints (/sse and /messages/)
-    #   - --no-transport-streamable-http-enabled #  Disable Streamable HTTP transport (/mcp endpoint)
-    #   - --no-json-response # Disable JSON response mode in Streamable HTTP transport (instead of SSE over HTTP)
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
@@ -29,7 +8,7 @@ services:
       - 443:443
       - 5678:5678
       - 5679:5679
-      - 9382:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
+      - 9382:9382
     volumes:
       - ./ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
@@ -43,32 +22,177 @@ services:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=${HF_ENDPOINT-}
       - MACOS=${MACOS-}
+      - DATABASE_TYPE=POSTGRES
+      - STORAGE_IMPL=AWS_S3
     networks:
       - ragflow
     restart: on-failure
-    # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
-    # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-  # executor:
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   image: ${RAGFLOW_IMAGE}
-  #   container_name: ragflow-executor
-  #   volumes:
-  #     - ./ragflow-logs:/ragflow/logs
-  #     - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
-  #   env_file: .env
-  #   environment:
-  #     - TZ=${TIMEZONE}
-  #     - HF_ENDPOINT=${HF_ENDPOINT}
-  #     - MACOS=${MACOS}
-  #   entrypoint: "/ragflow/entrypoint_task_executor.sh 1 3"
-  #   networks:
-  #     - ragflow
-  #   restart: on-failure
-  #   # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
-  #   # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
+
+  es01:
+    container_name: ragflow-es-01
+    profiles:
+      - elasticsearch
+    image: elasticsearch:${STACK_VERSION}
+    volumes:
+      - esdata01:/usr/share/elasticsearch/data
+    ports:
+      - ${ES_PORT}:9200
+    env_file: .env
+    environment:
+      - node.name=es01
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=false
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
+      - TZ=${TIMEZONE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: on-failure
+
+  opensearch01:
+    container_name: ragflow-opensearch-01
+    profiles:
+      - opensearch
+    image: hub.icert.top/opensearchproject/opensearch:2.19.1
+    volumes:
+      - osdata01:/usr/share/opensearch/data
+    ports:
+      - ${OS_PORT}:9201
+    env_file: .env
+    environment:
+      - node.name=opensearch01
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
+      - bootstrap.memory_lock=false
+      - discovery.type=single-node
+      - plugins.security.disabled=false
+      - plugins.security.ssl.http.enabled=false
+      - plugins.security.ssl.transport.enabled=true
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
+      - TZ=${TIMEZONE}
+      - http.port=9201
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:9201"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: on-failure
+
+  infinity:
+    container_name: ragflow-infinity
+    profiles:
+      - infinity
+    image: infiniflow/infinity:v0.6.0-dev5
+    volumes:
+      - infinity_data:/var/infinity
+      - ./infinity_conf.toml:/infinity_conf.toml
+    command: ["-f", "/infinity_conf.toml"]
+    ports:
+      - ${INFINITY_THRIFT_PORT}:23817
+      - ${INFINITY_HTTP_PORT}:23820
+      - ${INFINITY_PSQL_PORT}:5432
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 500000
+        hard: 500000
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "curl", "http://localhost:23820/admin/node/current"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    restart: on-failure
+
+  sandbox-executor-manager:
+    container_name: ragflow-sandbox-executor-manager
+    profiles:
+      - sandbox
+    image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
+    privileged: true
+    ports:
+      - ${SANDBOX_EXECUTOR_MANAGER_PORT-9385}:9385
+    env_file: .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ragflow
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TIMEZONE}
+      - SANDBOX_EXECUTOR_MANAGER_POOL_SIZE=${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-3}
+      - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE:-infiniflow/sandbox-base-python:latest}
+      - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE:-infiniflow/sandbox-base-nodejs:latest}
+      - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
+      - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s}
+    healthcheck:
+      test: ["CMD", "curl", "http://localhost:9385/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+
+  redis:
+    image: valkey/valkey:8
+    container_name: ragflow-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
+    env_file: .env
+    ports:
+      - ${REDIS_PORT}:6379
+    volumes:
+      - redis_data:/data
+    networks:
+      - ragflow
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  esdata01:
+    driver: local
+  osdata01:
+    driver: local
+  infinity_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  ragflow:
+    driver: bridge
