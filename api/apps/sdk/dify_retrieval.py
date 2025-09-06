@@ -24,7 +24,7 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
-from api.db.services.dialog_service import meta_filter
+from api.db.services.dialog_service import meta_filter, convert_conditions
 
 
 @manager.route("/dify/retrieval", methods=["POST"])  # noqa: F821
@@ -98,6 +98,7 @@ def retrieval(tenant_id):
         logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
 
+
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
@@ -113,3 +114,4 @@ def convert_conditions(metadata_condition):
     }
     for cond in metadata_condition.get("conditions", [])
 ]
+

@@ -1,4 +1,4 @@
-import { Button, ButtonLoading } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { DatasetMetadata } from '@/constants/chat';
@@ -18,6 +18,7 @@ import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatModelSettings } from './chat-model-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
+import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
 
 type ChatSettingsProps = { switchSettingVisible(): void };
@@ -50,6 +51,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
         cross_languages: [],
       },
       top_n: 8,
+      similarity_threshold: 0.2,
       vector_similarity_weight: 0.2,
       top_k: 1024,
       meta_data_filter: {
@@ -110,9 +112,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
             <Button variant={'outline'} onClick={switchSettingVisible}>
               {t('chat.cancel')}
             </Button>
-            <ButtonLoading type="submit" loading={loading}>
-              {t('common.save')}
-            </ButtonLoading>
+            <SavingButton loading={loading}></SavingButton>
           </div>
         </form>
       </Form>

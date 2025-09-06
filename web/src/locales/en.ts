@@ -3,6 +3,7 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
+      selectAll: 'Select All',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
@@ -37,6 +38,7 @@ export default {
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
       submit: 'Submit',
+      clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
@@ -145,7 +147,8 @@ export default {
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
-      keywordSimilarityWeightTip: '',
+      keywordSimilarityWeightTip:
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',
@@ -441,6 +444,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      messagePlaceholder: 'Type your message here...',
+      exit: 'Exit',
+      multipleModels: 'Multiple Models',
+      applyModelConfigs: 'Apply model configs',
+      conversations: 'Conversations',
+      chatApps: 'Chat Apps',
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant settings',
@@ -839,6 +848,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       hint: 'hint',
     },
     fileManager: {
+      files: 'Files',
       name: 'Name',
       uploadDate: 'Upload Date',
       knowledgeBase: 'Dataset',
@@ -864,6 +874,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      recommended: 'Recommended',
+      customerSupport: 'Customer Support',
+      marketing: 'Marketing',
+      consumerApp: 'Consumer App',
+      other: 'Other',
+      agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
       ref: 'Variable',
@@ -918,7 +934,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTools: 'Add Tools',
       sysPromptDefultValue: `
       <role>
-        You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
+        You are a helpful assistant, an AI assistant specialized in problem-solving for the user. 
+        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
       </role>
       <instructions>
         1. Understand the user’s request.  
@@ -1005,6 +1022,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'A component that searches from duckduckgo.com, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
       channel: 'Channel',
       channelTip: `Perform text search or news search on the component's input`,
       text: 'Text',
@@ -1495,6 +1515,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       goto: 'Fail Branch',
       comment: 'Default Value',
+      sqlStatement: 'SQL Statement',
+      sqlStatementTip:
+        'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
+      frameworkPrompts: 'Framework Prompts',
     },
     llmTools: {
       bad_calculator: {
@@ -1520,6 +1544,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       editMCP: 'Edit MCP',
     },
     search: {
+      searchApps: 'Search Apps',
       createSearch: 'Create Search',
       searchGreeting: 'How can I help you today ？',
       profile: 'Hide Profile',
@@ -1543,6 +1568,16 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+    },
+    language: {
+      english: 'English',
+      chinese: 'Chinese',
+      spanish: 'Spanish',
+      french: 'French',
+      german: 'German',
+      japanese: 'Japanese',
+      korean: 'Korean',
+      vietnamese: 'Vietnamese',
     },
   },
 };

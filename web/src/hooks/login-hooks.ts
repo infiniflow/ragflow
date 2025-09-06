@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import userService, {
   getLoginChannels,
@@ -5,7 +6,7 @@ import userService, {
 } from '@/services/user-service';
 import authorizationUtil, { redirectToLogin } from '@/utils/authorization-util';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Form, message } from 'antd';
+import { Form } from 'antd';
 import { FormInstance } from 'antd/lib';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -50,8 +51,6 @@ export const useLoginWithChannel = () => {
 };
 
 export const useLogin = () => {
-  const { t } = useTranslation();
-
   const {
     data,
     isPending: loading,
@@ -62,7 +61,6 @@ export const useLogin = () => {
       const { data: res = {}, response } = await userService.login(params);
       if (res.code === 0) {
         const { data } = res;
-        message.success(t('message.logged'));
         const authorization = response.headers.get(Authorization);
         const token = data.access_token;
         const userInfo = {

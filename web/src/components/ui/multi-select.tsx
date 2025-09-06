@@ -29,6 +29,8 @@ import {
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
+import { isEmpty } from 'lodash';
 
 export type MultiSelectOptionType = {
   label: React.ReactNode;
@@ -192,7 +194,7 @@ export const MultiSelect = React.forwardRef<
       onValueChange,
       variant,
       defaultValue = [],
-      placeholder = 'Select options',
+      placeholder = t('common.selectPlaceholder'),
       animation = 0,
       maxCount = 3,
       modalPopover = false,
@@ -209,13 +211,17 @@ export const MultiSelect = React.forwardRef<
     const [isAnimating, setIsAnimating] = React.useState(false);
 
     React.useEffect(() => {
-      if (!selectedValues?.length && props.value) {
+      if (isEmpty(selectedValues) && !isEmpty(props.value)) {
         setSelectedValues(props.value as string[]);
       }
     }, [props.value, selectedValues]);
 
     React.useEffect(() => {
-      if (!selectedValues?.length && !props.value && defaultValue) {
+      if (
+        isEmpty(selectedValues) &&
+        isEmpty(props.value) &&
+        !isEmpty(defaultValue)
+      ) {
         setSelectedValues(defaultValue);
       }
     }, [defaultValue, props.value, selectedValues]);
@@ -374,7 +380,7 @@ export const MultiSelect = React.forwardRef<
         >
           <Command>
             <CommandInput
-              placeholder="Search..."
+              placeholder={t('common.search') + '...'}
               onKeyDown={handleInputKeyDown}
             />
             <CommandList>
@@ -396,7 +402,7 @@ export const MultiSelect = React.forwardRef<
                     >
                       <CheckIcon className="h-4 w-4" />
                     </div>
-                    <span>(Select All)</span>
+                    <span>({t('common.selectAll')})</span>
                   </CommandItem>
                 )}
                 {!options.some((x) => 'options' in x) &&
@@ -452,7 +458,7 @@ export const MultiSelect = React.forwardRef<
                     onSelect={() => setIsPopoverOpen(false)}
                     className="flex-1 justify-center cursor-pointer max-w-full"
                   >
-                    Close
+                    {t('common.close')}
                   </CommandItem>
                 </div>
               </CommandGroup>

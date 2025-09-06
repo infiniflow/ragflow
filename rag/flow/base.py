@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,13 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import time
-import os
 import logging
+import os
+import time
 from functools import partial
 from typing import Any
+
 import trio
-from agent.component.base import ComponentParamBase, ComponentBase
+
+from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
 
@@ -31,14 +33,16 @@ class ProcessParamBase(ComponentParamBase):
 
 
 class ProcessBase(ComponentBase):
-
     def __init__(self, pipeline, id, param: ProcessParamBase):
         super().__init__(pipeline, id, param)
-        self.callback = partial(self._canvas.callback, self.component_name)
+        if hasattr(self._canvas, "callback"):
+            self.callback = partial(self._canvas.callback, self.component_name)
+        else:
+            self.callback = partial(lambda *args, **kwargs: None, self.component_name)
 
     async def invoke(self, **kwargs) -> dict[str, Any]:
         self.set_output("_created_time", time.perf_counter())
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             self.set_output(k, v)
         try:
             with trio.fail_after(self._param.timeout):
@@ -54,6 +58,6 @@ class ProcessBase(ComponentBase):
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60))
     async def _invoke(self, **kwargs):
         raise NotImplementedError()

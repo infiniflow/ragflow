@@ -239,7 +239,7 @@ class Base(ABC):
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
@@ -293,7 +293,7 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     def chat(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
 
@@ -324,7 +324,7 @@ class Base(ABC):
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
@@ -374,7 +374,7 @@ class Base(ABC):
                         if not tol:
                             total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                         else:
-                            total_tokens += tol
+                            total_tokens = tol
 
                         finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
                         if finish_reason == "length":
@@ -410,7 +410,7 @@ class Base(ABC):
                     if not tol:
                         total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                     else:
-                        total_tokens += tol
+                        total_tokens = tol
                     answer += resp.choices[0].delta.content
                     yield resp.choices[0].delta.content
 
@@ -427,7 +427,7 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
@@ -576,7 +576,7 @@ class BaiChuanChat(Base):
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -641,7 +641,7 @@ class ZhipuChat(Base):
         return super().chat_with_tools(system, history, gen_conf)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -705,7 +705,7 @@ class LocalLLM(Base):
     def _prepare_prompt(self, system, history, gen_conf):
         from rag.svr.jina_server import Prompt
 
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         return Prompt(message=history, gen_conf=gen_conf)
 
@@ -792,7 +792,7 @@ class MiniMaxChat(Base):
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
@@ -865,7 +865,7 @@ class MistralChat(Base):
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
@@ -1089,7 +1089,7 @@ class HunyuanChat(Base):
 
         _gen_conf = {}
         _history = [{k.capitalize(): v for k, v in item.items()} for item in history]
-        if system:
+        if system and history and history[0].get("role") != "system":
             _history.insert(0, {"Role": "system", "Content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -1362,7 +1362,7 @@ class LiteLLMBase(ABC):
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip('/')
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -1534,6 +1534,7 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
+            "num_retries": self.max_retries,
             **kwargs,
         }
         if stream:
@@ -1565,7 +1566,7 @@ class LiteLLMBase(ABC):
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
@@ -1630,7 +1631,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def chat(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
 
@@ -1662,7 +1663,7 @@ class LiteLLMBase(ABC):
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
@@ -1787,7 +1788,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
