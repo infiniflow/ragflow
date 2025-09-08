@@ -8,12 +8,11 @@ import {
 import { DocumentType } from '@/constants/knowledge';
 import { useRemoveDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import ProcessLogModal from '@/pages/datasets/process-log-modal';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { downloadDocument } from '@/utils/file-util';
 import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { isParserRunning } from './utils';
 
@@ -32,7 +31,7 @@ export function DatasetActionCell({
   const { id, run, type } = record;
   const isRunning = isParserRunning(run);
   const isVirtualDocument = type === DocumentType.Virtual;
-  const [isModalVisible, setIsModalVisible] = useState(false);
+
   const { removeDocument } = useRemoveDocument();
 
   const onDownloadDocument = useCallback(() => {
@@ -49,18 +48,6 @@ export function DatasetActionCell({
   const handleRename = useCallback(() => {
     showRenameModal(record);
   }, [record, showRenameModal]);
-
-  const taskInfo = {
-    taskId: '#9527',
-    fileName: 'PRD for DealBees 1.2 (1).text',
-    fileSize: '2.4G',
-    source: 'Github',
-    task: 'Parse',
-    state: 'Running',
-    startTime: '14/03/2025 14:53:39',
-    duration: '800',
-    details: 'PRD for DealBees 1.2 (1).text',
-  };
 
   return (
     <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
@@ -80,9 +67,6 @@ export function DatasetActionCell({
             className="border-none hover:bg-bg-card text-text-primary"
             disabled={isRunning}
             size={'sm'}
-            onClick={() => {
-              setIsModalVisible(true);
-            }}
           >
             <Eye />
           </Button>
@@ -129,11 +113,6 @@ export function DatasetActionCell({
           <Trash2 />
         </Button>
       </ConfirmDeleteDialog>
-      <ProcessLogModal
-        visible={isModalVisible}
-        onCancel={() => setIsModalVisible(false)}
-        taskInfo={taskInfo}
-      />
     </section>
   );
 }

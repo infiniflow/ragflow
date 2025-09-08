@@ -99,6 +99,23 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      generateKnowledgeGraph:
+        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+      generateRaptor:
+        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+      generate: 'Generate',
+      raptor: 'Raptor',
+      knowledgeGraph: 'Knowledge Graph',
+      processingType: 'Processing Type',
+      dataPipeline: 'Data Pipeline',
+      operations: 'Operations',
+      status: 'Status',
+      task: 'Task',
+      startDate: 'Start Date',
+      source: 'Source',
+      fileName: 'File Name',
+      datasetLogs: 'Dataset Logs',
+      fileLogs: 'File Logs',
       overview: 'Overview',
       success: 'Success',
       failed: 'Failed',

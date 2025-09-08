@@ -1,3 +1,7 @@
+import FileStatusBadge from '@/components/file-status-badge';
+import { FileIcon } from '@/components/icon-font';
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
@@ -8,6 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import ProcessLogModal from '@/pages/datasets/process-log-modal';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -19,9 +26,10 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { Copy, Eye } from 'lucide-react';
-import { FC, useMemo, useState } from 'react';
-import FileStatusBadge from './file-status-badge';
+import { TFunction } from 'i18next';
+import { ClipboardList, Eye } from 'lucide-react';
+import { Dispatch, FC, SetStateAction, useMemo, useState } from 'react';
+import { LogTabs, processingType } from './dataset-common';
 
 interface DocumentLog {
   id: string;
@@ -43,9 +51,15 @@ interface FileLogsTableProps {
   };
   setPagination: (pagination: { page: number; pageSize: number }) => void;
   loading?: boolean;
+  active: (typeof LogTabs)[keyof typeof LogTabs];
 }
 
-export const useFileLogsTableColumns = () => {
+export const getFileLogsTableColumns = (
+  t: TFunction<'translation', string>,
+  setIsModalVisible: Dispatch<SetStateAction<boolean>>,
+  navigateToDataflowResult: any,
+) => {
+  // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<DocumentLog>[] = [
     {
       id: 'select',
@@ -75,87 +89,160 @@ export const useFileLogsTableColumns = () => {
     },
     {
       accessorKey: 'fileName',
-      header: 'File Name',
+      header: t('fileName'),
       cell: ({ row }) => (
-        <div className="flex items-center gap-2 text-text-primary">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M14 2H6a2 2 0 0 0-2 2v16h2"></path>
-            <path d="M14 2v4a2 2 0 0 0 2 2h4"></path>
-          </svg>
+        <div
+          className="flex items-center gap-2 text-text-primary"
+          onClick={navigateToDataflowResult(
+            row.original.id,
+            row.original.kb_id,
+          )}
+        >
+          <FileIcon name={row.original.fileName}></FileIcon>
           {row.original.fileName}
         </div>
       ),
     },
     {
       accessorKey: 'source',
-      header: 'Source',
+      header: t('source'),
       cell: ({ row }) => (
         <div className="text-text-primary">{row.original.source}</div>
       ),
     },
     {
       accessorKey: 'pipeline',
-      header: 'Data Pipeline',
+      header: t('dataPipeline'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="10"></circle>
-            <path d="M12 8v4"></path>
-            <path d="M12 16h.01"></path>
-          </svg>
+          <RAGFlowAvatar
+            avatar={null}
+            name={row.original.pipeline}
+            className="size-4"
+          />
           {row.original.pipeline}
         </div>
       ),
     },
     {
       accessorKey: 'startDate',
-      header: 'Start Date',
+      header: t('startDate'),
       cell: ({ row }) => (
         <div className="text-text-primary">{row.original.startDate}</div>
       ),
     },
     {
       accessorKey: 'task',
-      header: 'Task',
+      header: t('task'),
       cell: ({ row }) => (
         <div className="text-text-primary">{row.original.task}</div>
       ),
     },
     {
       accessorKey: 'status',
-      header: 'States',
+      header: t('status'),
       cell: ({ row }) => <FileStatusBadge status={row.original.status} />,
     },
     {
       id: 'operations',
-      header: 'Operations',
+      header: t('operations'),
       cell: ({ row }) => (
-        <div className="flex justify-end space-x-2">
-          <Button variant="ghost" size="sm" className="p-1">
-            <Eye className="w-4 h-4" />
+        <div className="flex justify-start space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-1"
+            onClick={() => {
+              setIsModalVisible(true);
+            }}
+          >
+            <Eye />
           </Button>
           <Button variant="ghost" size="sm" className="p-1">
-            <Copy className="w-4 h-4" />
+            <ClipboardList />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  return columns;
+};
+
+export const getDatasetLogsTableColumns = (
+  t: TFunction<'translation', string>,
+  setIsModalVisible: Dispatch<SetStateAction<boolean>>,
+  navigateToDataflowResult: any,
+) => {
+  // const { t } = useTranslate('knowledgeDetails');
+  const columns: ColumnDef<DocumentLog>[] = [
+    {
+      id: 'select',
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          checked={table.getIsAllRowsSelected()}
+          onChange={table.getToggleAllRowsSelectedHandler()}
+          className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+          className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+        />
+      ),
+    },
+    {
+      accessorKey: 'id',
+      header: 'ID',
+      cell: ({ row }) => (
+        <div className="text-text-primary">{row.original.id}</div>
+      ),
+    },
+    {
+      accessorKey: 'startDate',
+      header: t('startDate'),
+      cell: ({ row }) => (
+        <div className="text-text-primary">{row.original.startDate}</div>
+      ),
+    },
+    {
+      accessorKey: 'processingType',
+      header: t('processingType'),
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 text-text-primary">
+          {processingType.knowledgeGraph === row.original.processingType && (
+            <SvgIcon name={`data-flow/knowledgegraph`} width={24}></SvgIcon>
+          )}
+          {processingType.raptor === row.original.processingType && (
+            <SvgIcon name={`data-flow/raptor`} width={24}></SvgIcon>
+          )}
+          {row.original.processingType}
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'status',
+      header: t('status'),
+      cell: ({ row }) => <FileStatusBadge status={row.original.status} />,
+    },
+    {
+      id: 'operations',
+      header: t('operations'),
+      cell: ({ row }) => (
+        <div className="flex justify-start space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-1"
+            onClick={() => {
+              setIsModalVisible(true);
+            }}
+          >
+            <Eye />
           </Button>
         </div>
       ),
@@ -170,12 +257,24 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   pagination,
   setPagination,
   loading,
+  active = LogTabs.FILE_LOGS,
 }) => {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState({});
-
-  const columns = useFileLogsTableColumns();
+  const { t } = useTranslate('knowledgeDetails');
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const { navigateToDataflowResult } = useNavigatePage();
+  const columns = useMemo(() => {
+    console.log('columns', active);
+    return active === LogTabs.FILE_LOGS
+      ? getFileLogsTableColumns(t, setIsModalVisible, navigateToDataflowResult)
+      : getDatasetLogsTableColumns(
+          t,
+          setIsModalVisible,
+          navigateToDataflowResult,
+        );
+  }, [active, t]);
 
   const currentPagination = useMemo(
     () => ({
@@ -206,10 +305,20 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       ? Math.ceil(pagination.total / pagination.pageSize)
       : 0,
   });
-
+  const taskInfo = {
+    taskId: '#9527',
+    fileName: 'PRD for DealBees 1.2 (1).text',
+    fileSize: '2.4G',
+    source: 'Github',
+    task: 'Parse',
+    state: 'Running',
+    startTime: '14/03/2025 14:53:39',
+    duration: '800',
+    details: 'PRD for DealBees 1.2 (1).text',
+  };
   return (
-    <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-350px)]">
+    <div className="w-full h-[calc(100vh-350px)]">
+      <Table rootClassName="max-h-[calc(100vh-380px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -251,7 +360,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end py-4 absolute bottom-3 right-3">
+      <div className="flex items-center justify-end py-4 absolute bottom-3 right-12">
         <div className="space-x-2">
           <RAGFlowPagination
             {...{ current: pagination.current, pageSize: pagination.pageSize }}
@@ -260,6 +369,11 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           />
         </div>
       </div>
+      <ProcessLogModal
+        visible={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        taskInfo={taskInfo}
+      />
     </div>
   );
 };

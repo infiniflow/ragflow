@@ -125,6 +125,16 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataflowResult = useCallback(
+    (id: string, knowledgeId?: string) => () => {
+      navigate(
+        // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
+        `${Routes.DataflowResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
+      );
+    },
+    [navigate],
+  );
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -144,5 +154,6 @@ export const useNavigatePage = () => {
     navigateToFiles,
     navigateToAgentList,
     navigateToOldProfile,
+    navigateToDataflowResult,
   };
 };

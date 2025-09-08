@@ -4,8 +4,9 @@ import {
   FileChartLine,
   HardDriveDownload,
 } from 'lucide-react';
-import { FC } from 'react';
+import { FC, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
 import FileLogsTable from './overview-table';
 
@@ -27,7 +28,9 @@ const StatCard: FC<StatCardProps> = ({ title, value, children, icon }) => {
         {icon}
       </div>
       <div className="text-2xl font-bold text-text-primary">{value}</div>
-      {children}
+      <div className="h-12 w-full flex items-center">
+        <div className="flex-1">{children}</div>
+      </div>
     </div>
   );
 };
@@ -45,6 +48,8 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
   failed,
 }) => {
   const { t } = useTranslation();
+  const successPrecentage = (success / total) * 100;
+  const failedPrecentage = (failed / total) * 100;
   return (
     <div className="flex items-center flex-col gap-2">
       <div className="flex justify-between w-full text-sm text-text-secondary">
@@ -63,18 +68,29 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
           <span>{t('knowledgeDetails.completed')}</span>
         </div>
       </div>
-      <div className="text-sm font-bold text-text-primary">{total}</div>
+      <div className="w-full flex rounded-full h-3 bg-bg-card text-sm font-bold text-text-primary">
+        <div
+          className=" rounded-full h-3 bg-accent-primary"
+          style={{ width: successPrecentage + '%' }}
+        ></div>
+        <div
+          className=" rounded-full h-3 bg-state-error"
+          style={{ width: failedPrecentage + '%' }}
+        ></div>
+      </div>
     </div>
   );
 };
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
-
+  const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
+    LogTabs.FILE_LOGS,
+  );
   const mockData = Array(30)
     .fill(0)
     .map((_, i) => ({
       id: i === 0 ? '#952734' : `14`,
-      fileName: 'PRD for DealBees 1.2 (1).text',
+      fileName: 'PRD for DealBees 1.2 (1).txt',
       source: 'GitHub',
       pipeline: i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
       startDate: '14/03/2025 14:53:39',
@@ -95,12 +111,15 @@ const FileLogsPage: FC = () => {
     total: 100,
   };
 
+  const changeActiveLogs = (active: (typeof LogTabs)[keyof typeof LogTabs]) => {
+    setActive(active);
+  };
   const handlePaginationChange = (page: number, pageSize: number) => {
     console.log('Pagination changed:', { page, pageSize });
   };
 
   return (
-    <div className="p-5 min-w-[880px]">
+    <div className="p-5 min-w-[880px] border-border border rounded-lg mr-5">
       {/* Stats Cards */}
       <div className="grid grid-cols-3 md:grid-cols-3 gap-4 mb-6">
         <StatCard title="Total Files" value={2827} icon={<FileChartLine />}>
@@ -115,17 +134,12 @@ const FileLogsPage: FC = () => {
           />
         </StatCard>
         <StatCard title="Processing" value={156} icon={<Cpu />}>
-          <CardFooterProcess
-            total={100}
-            success={8}
-            failed={2}
-            completed={15}
-          />
+          <CardFooterProcess total={20} success={8} failed={2} completed={15} />
         </StatCard>
       </div>
 
       {/* Tabs & Search */}
-      <DatasetFilter />
+      <DatasetFilter active={active} setActive={changeActiveLogs} />
 
       {/* Table */}
       <FileLogsTable
@@ -133,6 +147,7 @@ const FileLogsPage: FC = () => {
         pagination={pagination}
         setPagination={handlePaginationChange}
         pageCount={10}
+        active={active}
       />
     </div>
   );
