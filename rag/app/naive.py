@@ -42,7 +42,7 @@ class Docx(DocxParser):
 
     def get_picture(self, document, paragraph):
         imgs = paragraph._element.xpath('.//pic:pic')
-        if not img:
+        if not imgs:
             return None
         res_img = None
         for img in imgs:
