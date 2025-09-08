@@ -55,30 +55,32 @@ function OperatorItemList({
   const onNodeCreated = useContext(OnNodeCreatedContext);
   const { t } = useTranslation();
 
-  const handleClick = (operator: Operator) => {
-    const contextData = handleContext || {
-      nodeId: '',
-      id: '',
-      type: 'source' as const,
-      position: Position.Right,
-      isFromConnectionDrag: true,
+  const handleClick =
+    (operator: Operator): React.MouseEventHandler<HTMLElement> =>
+    (e) => {
+      const contextData = handleContext || {
+        nodeId: '',
+        id: '',
+        type: 'source' as const,
+        position: Position.Right,
+        isFromConnectionDrag: true,
+      };
+
+      const mockEvent = mousePosition
+        ? {
+            clientX: mousePosition.x,
+            clientY: mousePosition.y,
+          }
+        : e;
+
+      const newNodeId = addCanvasNode(operator, contextData)(mockEvent);
+
+      if (onNodeCreated && newNodeId) {
+        onNodeCreated(newNodeId);
+      }
+
+      hideModal?.();
     };
-
-    const mockEvent = mousePosition
-      ? {
-          clientX: mousePosition.x,
-          clientY: mousePosition.y,
-        }
-      : undefined;
-
-    const newNodeId = addCanvasNode(operator, contextData)(mockEvent);
-
-    if (onNodeCreated && newNodeId) {
-      onNodeCreated(newNodeId);
-    }
-
-    hideModal?.();
-  };
 
   const renderOperatorItem = (operator: Operator) => {
     const commonContent = (
@@ -92,12 +94,12 @@ function OperatorItemList({
       <Tooltip key={operator}>
         <TooltipTrigger asChild>
           {isCustomDropdown ? (
-            <li onClick={() => handleClick(operator)}>{commonContent}</li>
+            <li onClick={handleClick(operator)}>{commonContent}</li>
           ) : (
             <DropdownMenuItem
               key={operator}
               className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start"
-              onClick={() => handleClick(operator)}
+              onClick={handleClick(operator)}
               onSelect={() => hideModal?.()}
             >
               <OperatorIcon name={operator} />

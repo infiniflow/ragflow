@@ -89,6 +89,9 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  Parser = 'Parser',
+  Chunker = 'Chunker',
+  Tokenizer = 'Tokenizer',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];

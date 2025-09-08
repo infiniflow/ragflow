@@ -3,6 +3,7 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
+      selectAll: 'Select All',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
@@ -37,6 +38,7 @@ export default {
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
       submit: 'Submit',
+      clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
@@ -44,6 +46,7 @@ export default {
       remove: 'Remove',
       search: 'Search',
       noDataFound: 'No data found.',
+      noData: 'No data',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
         namePlaceholder: 'My MCP Server',
@@ -158,6 +161,10 @@ export default {
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
+      noTestResultsForRuned:
+        'No relevant results found. Try adjusting your query or parameters.',
+      noTestResultsForNotRuned:
+        'No test has been run yet. Results will appear here.',
       testingDescription:
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
@@ -167,7 +174,8 @@ export default {
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
-      keywordSimilarityWeightTip: '',
+      keywordSimilarityWeightTip:
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',
@@ -473,6 +481,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      messagePlaceholder: 'Type your message here...',
+      exit: 'Exit',
+      multipleModels: 'Multiple Models',
+      applyModelConfigs: 'Apply model configs',
+      conversations: 'Conversations',
+      chatApps: 'Chat Apps',
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant settings',
@@ -871,6 +885,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       hint: 'hint',
     },
     fileManager: {
+      files: 'Files',
       name: 'Name',
       uploadDate: 'Upload Date',
       knowledgeBase: 'Dataset',
@@ -896,6 +911,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      recommended: 'Recommended',
+      customerSupport: 'Customer Support',
+      marketing: 'Marketing',
+      consumerApp: 'Consumer App',
+      other: 'Other',
+      agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
       ref: 'Variable',
@@ -950,7 +971,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTools: 'Add Tools',
       sysPromptDefultValue: `
       <role>
-        You are {{agent_name}}, an AI assistant specialized in {{domain_or_task}}.
+        You are a helpful assistant, an AI assistant specialized in problem-solving for the user. 
+        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
       </role>
       <instructions>
         1. Understand the user’s request.  
@@ -1530,6 +1552,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       goto: 'Fail Branch',
       comment: 'Default Value',
+      sqlStatement: 'SQL Statement',
+      sqlStatementTip:
+        'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
+      frameworkPrompts: 'Framework Prompts',
     },
     llmTools: {
       bad_calculator: {
@@ -1555,6 +1581,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       editMCP: 'Edit MCP',
     },
     search: {
+      searchApps: 'Search Apps',
       createSearch: 'Create Search',
       searchGreeting: 'How can I help you today ？',
       profile: 'Hide Profile',
@@ -1578,6 +1605,20 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+    },
+    language: {
+      english: 'English',
+      chinese: 'Chinese',
+      spanish: 'Spanish',
+      french: 'French',
+      german: 'German',
+      japanese: 'Japanese',
+      korean: 'Korean',
+      vietnamese: 'Vietnamese',
+    },
+    pagination: {
+      total: 'Total {{total}}',
+      page: 'Page',
     },
   },
 };

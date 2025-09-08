@@ -22,7 +22,7 @@ export function Datasets() {
     <section>
       <h2 className="text-2xl font-bold mb-6 flex gap-2.5 items-center">
         <IconFont name="data" className="size-8"></IconFont>
-        {t('header.knowledgeBase')}
+        {t('header.dataset')}
       </h2>
       <div className="flex gap-6">
         {loading ? (

@@ -239,7 +239,7 @@ export default function SearchingView({
                 searchData.search_config.related_search && (
                   <div className="mt-14 w-full overflow-hidden opacity-100 max-h-96">
                     <p className="text-text-primary mb-2 text-xl">
-                      {t('relatedSearch')}
+                      {t('search.relatedSearch')}
                     </p>
                     <div className="mt-2 flex flex-wrap justify-start gap-2">
                       {relatedQuestions?.map((x, idx) => (
@@ -262,7 +262,7 @@ export default function SearchingView({
           </div>
 
           {total > 0 && (
-            <div className="mt-8 px-8 pb-8">
+            <div className="mt-8 px-8 pb-8 text-base">
               <RAGFlowPagination
                 current={pagination.current}
                 pageSize={pagination.pageSize}
