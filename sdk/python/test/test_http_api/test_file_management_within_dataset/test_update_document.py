@@ -173,10 +173,10 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
-            if chunk_method != "":
-                assert res["data"]["docs"][0]["chunk_method"] == chunk_method
-            else:
+            if chunk_method == "":
                 assert res["data"]["docs"][0]["chunk_method"] == "naive"
+            else:
+                assert res["data"]["docs"][0]["chunk_method"] == chunk_method
         else:
             assert res["message"] == expected_message
 
@@ -228,7 +228,7 @@ class TestDocumentsUpdated:
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
             pytest.param(
-                {"process_duation": 1.0},
+                {"process_duration": 1.0},
                 102,
                 "The input parameters are invalid.",
                 marks=pytest.mark.skip(reason="issues/6104"),
@@ -532,10 +532,7 @@ class TestUpdateDocumentParserConfig:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documnets(get_http_api_auth, dataset_id, {"id": document_ids[0]})
-            if parser_config != {}:
-                for k, v in parser_config.items():
-                    assert res["data"]["docs"][0]["parser_config"][k] == v
-            else:
+            if parser_config == {}:
                 assert res["data"]["docs"][0]["parser_config"] == {
                     "chunk_token_num": 128,
                     "delimiter": r"\n",
@@ -543,5 +540,8 @@ class TestUpdateDocumentParserConfig:
                     "layout_recognize": "DeepDOC",
                     "raptor": {"use_raptor": False},
                 }
+            else:
+                for k, v in parser_config.items():
+                    assert res["data"]["docs"][0]["parser_config"][k] == v
         if expected_code != 0 or expected_message:
             assert res["message"] == expected_message

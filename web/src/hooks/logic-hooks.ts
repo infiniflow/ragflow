@@ -12,7 +12,7 @@ import { PaginationProps, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
-import { omit } from 'lodash';
+import { has, isEmpty, omit } from 'lodash';
 import {
   ChangeEventHandler,
   useCallback,
@@ -27,6 +27,14 @@ import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
 
+export function usePrevious<T>(value: T) {
+  const ref = useRef<T>();
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+  return ref.current;
+}
+
 export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
   const [currentRecord, setCurrentRecord] = useState<T>({} as T);
 
@@ -35,20 +43,6 @@ export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
   };
 
   return { currentRecord, setRecord };
-};
-
-export const useHandleSearchChange = () => {
-  const [searchString, setSearchString] = useState('');
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const value = e.target.value;
-      setSearchString(value);
-    },
-    [],
-  );
-
-  return { handleInputChange, searchString };
 };
 
 export const useChangeLanguage = () => {
@@ -82,9 +76,12 @@ export const useGetPaginationWithRouter = () => {
 
   const setCurrentPagination = useCallback(
     (pagination: { page: number; pageSize?: number }) => {
+      if (pagination.pageSize !== pageSize) {
+        pagination.page = 1; // Reset to first page if pageSize changes
+      }
       setPaginationParams(pagination.page, pagination.pageSize);
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const pagination: PaginationProps = useMemo(() => {
@@ -104,6 +101,21 @@ export const useGetPaginationWithRouter = () => {
     pagination,
     setPagination: setCurrentPagination,
   };
+};
+
+export const useHandleSearchChange = () => {
+  const [searchString, setSearchString] = useState('');
+  const { setPagination } = useGetPaginationWithRouter();
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setSearchString(value);
+      setPagination({ page: 1 });
+    },
+    [setPagination],
+  );
+
+  return { handleInputChange, searchString };
 };
 
 export const useGetPagination = () => {
@@ -154,11 +166,43 @@ export const useFetchAppConf = () => {
   return appConf;
 };
 
+function useSetDoneRecord() {
+  const [doneRecord, setDoneRecord] = useState<Record<string, boolean>>({});
+
+  const clearDoneRecord = useCallback(() => {
+    setDoneRecord({});
+  }, []);
+
+  const setDoneRecordById = useCallback((id: string, val: boolean) => {
+    setDoneRecord((prev) => ({ ...prev, [id]: val }));
+  }, []);
+
+  const allDone = useMemo(() => {
+    return Object.values(doneRecord).every((val) => val);
+  }, [doneRecord]);
+
+  useEffect(() => {
+    if (!isEmpty(doneRecord) && allDone) {
+      clearDoneRecord();
+    }
+  }, [allDone, clearDoneRecord, doneRecord]);
+
+  return {
+    doneRecord,
+    setDoneRecord,
+    setDoneRecordById,
+    clearDoneRecord,
+    allDone,
+  };
+}
+
 export const useSendMessageWithSse = (
   url: string = api.completeConversation,
 ) => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
+  const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
+    useSetDoneRecord();
   const timer = useRef<any>();
   const sseRef = useRef<AbortController>();
 
@@ -176,6 +220,17 @@ export const useSendMessageWithSse = (
     }, 1000);
   }, []);
 
+  const setDoneValue = useCallback(
+    (body: any, value: boolean) => {
+      if (has(body, 'chatBoxId')) {
+        setDoneRecordById(body.chatBoxId, value);
+      } else {
+        setDone(value);
+      }
+    },
+    [setDoneRecordById],
+  );
+
   const send = useCallback(
     async (
       body: any,
@@ -183,14 +238,14 @@ export const useSendMessageWithSse = (
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       initializeSseRef();
       try {
-        setDone(false);
+        setDoneValue(body, false);
         const response = await fetch(url, {
           method: 'POST',
           headers: {
             [Authorization]: getAuthorization(),
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(omit(body, 'chatBoxId')),
           signal: controller?.signal || sseRef.current?.signal,
         });
 
@@ -206,7 +261,6 @@ export const useSendMessageWithSse = (
           if (x) {
             const { done, value } = x;
             if (done) {
-              console.info('done');
               resetAnswer();
               break;
             }
@@ -214,36 +268,45 @@ export const useSendMessageWithSse = (
               const val = JSON.parse(value?.data || '');
               const d = val?.data;
               if (typeof d !== 'boolean') {
-                console.info('data:', d);
                 setAnswer({
                   ...d,
                   conversationId: body?.conversation_id,
+                  chatBoxId: body.chatBoxId,
                 });
               }
             } catch (e) {
-              console.warn(e);
+              // Swallow parse errors silently
             }
           }
         }
-        console.info('done?');
-        setDone(true);
+        setDoneValue(body, true);
         resetAnswer();
         return { data: await res, response };
       } catch (e) {
-        setDone(true);
-        resetAnswer();
+        setDoneValue(body, true);
 
-        console.warn(e);
+        resetAnswer();
+        // Swallow fetch errors silently
       }
     },
-    [initializeSseRef, url, resetAnswer],
+    [initializeSseRef, setDoneValue, url, resetAnswer],
   );
 
   const stopOutputMessage = useCallback(() => {
     sseRef.current?.abort();
   }, []);
 
-  return { send, answer, done, setDone, resetAnswer, stopOutputMessage };
+  return {
+    send,
+    answer,
+    done,
+    doneRecord,
+    allDone,
+    setDone,
+    resetAnswer,
+    stopOutputMessage,
+    clearDoneRecord,
+  };
 };
 
 export const useSpeechWithSse = (url: string = api.tts) => {
@@ -263,7 +326,7 @@ export const useSpeechWithSse = (url: string = api.tts) => {
           message.error(res?.message);
         }
       } catch (error) {
-        console.warn('🚀 ~ error:', error);
+        // Swallow errors silently
       }
       return response;
     },
@@ -275,20 +338,61 @@ export const useSpeechWithSse = (url: string = api.tts) => {
 
 //#region chat hooks
 
-export const useScrollToBottom = (messages?: unknown) => {
+export const useScrollToBottom = (
+  messages?: unknown,
+  containerRef?: React.RefObject<HTMLDivElement>,
+) => {
   const ref = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = useCallback(() => {
-    if (messages) {
-      ref.current?.scrollIntoView({ behavior: 'instant' });
-    }
-  }, [messages]); // If the message changes, scroll to the bottom
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const isAtBottomRef = useRef(true);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [scrollToBottom]);
+    isAtBottomRef.current = isAtBottom;
+  }, [isAtBottom]);
 
-  return ref;
+  const checkIfUserAtBottom = useCallback(() => {
+    if (!containerRef?.current) return true;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    return Math.abs(scrollTop + clientHeight - scrollHeight) < 25;
+  }, [containerRef]);
+
+  useEffect(() => {
+    if (!containerRef?.current) return;
+    const container = containerRef.current;
+
+    const handleScroll = () => {
+      setIsAtBottom(checkIfUserAtBottom());
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    handleScroll();
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [containerRef, checkIfUserAtBottom]);
+
+  // Imperative scroll function
+  const scrollToBottom = useCallback(() => {
+    if (containerRef?.current) {
+      const container = containerRef.current;
+      container.scrollTo({
+        top: container.scrollHeight - container.clientHeight,
+        behavior: 'smooth',
+      });
+    }
+  }, [containerRef]);
+
+  useEffect(() => {
+    if (!messages) return;
+    if (!containerRef?.current) return;
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (isAtBottomRef.current) {
+          scrollToBottom();
+        }
+      }, 100);
+    });
+  }, [messages, containerRef, scrollToBottom]);
+
+  return { scrollRef: ref, isAtBottom, scrollToBottom };
 };
 
 export const useHandleMessageInputChange = () => {
@@ -310,7 +414,12 @@ export const useHandleMessageInputChange = () => {
 export const useSelectDerivedMessages = () => {
   const [derivedMessages, setDerivedMessages] = useState<IMessage[]>([]);
 
-  const ref = useScrollToBottom(derivedMessages);
+  const messageContainerRef = useRef<HTMLDivElement>(null);
+
+  const { scrollRef, scrollToBottom } = useScrollToBottom(
+    derivedMessages,
+    messageContainerRef,
+  );
 
   const addNewestQuestion = useCallback(
     (message: Message, answer: string = '') => {
@@ -334,11 +443,57 @@ export const useSelectDerivedMessages = () => {
     [],
   );
 
+  const addNewestOneQuestion = useCallback((message: Message) => {
+    setDerivedMessages((pre) => {
+      return [
+        ...pre,
+        {
+          ...message,
+          id: buildMessageUuid(message), // The message id is generated on the front end,
+          // and the message id returned by the back end is the same as the question id,
+          //  so that the pair of messages can be deleted together when deleting the message
+        },
+      ];
+    });
+  }, []);
+
   // Add the streaming message to the last item in the message list
   const addNewestAnswer = useCallback((answer: IAnswer) => {
     setDerivedMessages((pre) => {
       return [
         ...(pre?.slice(0, -1) ?? []),
+        {
+          role: MessageType.Assistant,
+          content: answer.answer,
+          reference: answer.reference,
+          id: buildMessageUuid({
+            id: answer.id,
+            role: MessageType.Assistant,
+          }),
+          prompt: answer.prompt,
+          audio_binary: answer.audio_binary,
+          ...omit(answer, 'reference'),
+        },
+      ];
+    });
+  }, []);
+
+  // Add the streaming message to the last item in the message list
+  const addNewestOneAnswer = useCallback((answer: IAnswer) => {
+    setDerivedMessages((pre) => {
+      const idx = pre.findIndex((x) => x.id === answer.id);
+
+      if (idx !== -1) {
+        return pre.map((x) => {
+          if (x.id === answer.id) {
+            return { ...x, ...answer, content: answer.answer };
+          }
+          return x;
+        });
+      }
+
+      return [
+        ...(pre ?? []),
         {
           role: MessageType.Assistant,
           content: answer.answer,
@@ -398,15 +553,34 @@ export const useSelectDerivedMessages = () => {
     [setDerivedMessages],
   );
 
+  const removeAllMessages = useCallback(() => {
+    setDerivedMessages([]);
+  }, [setDerivedMessages]);
+
+  const removeAllMessagesExceptFirst = useCallback(() => {
+    setDerivedMessages((list) => {
+      if (list.length <= 1) {
+        return list;
+      }
+      return list.slice(0, 1);
+    });
+  }, [setDerivedMessages]);
+
   return {
-    ref,
+    scrollRef,
+    messageContainerRef,
     derivedMessages,
     setDerivedMessages,
     addNewestQuestion,
     addNewestAnswer,
     removeLatestMessage,
     removeMessageById,
+    addNewestOneQuestion,
+    addNewestOneAnswer,
     removeMessagesAfterCurrentMessage,
+    removeAllMessages,
+    scrollToBottom,
+    removeAllMessagesExceptFirst,
   };
 };
 

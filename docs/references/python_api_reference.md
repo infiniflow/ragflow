@@ -5,7 +5,7 @@ slug: /python_api_reference
 
 # Python API
 
-A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
+A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 :::tip NOTE
 Run the following command to download the Python SDK:
@@ -69,21 +69,31 @@ from openai import OpenAI
 model = "model"
 client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
 
+stream = True
+reference = True
+
 completion = client.chat.completions.create(
     model=model,
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Who are you?"},
+        {"role": "assistant", "content": "I am an AI assistant named..."},
+        {"role": "user", "content": "Can you tell me how to install neovim"},
     ],
-    stream=True
+    stream=stream,
+    extra_body={"reference": reference}
 )
 
-stream = True
 if stream:
-    for chunk in completion:
-        print(chunk)
+for chunk in completion:
+    print(chunk)
+    if reference and chunk.choices[0].finish_reason == "stop":
+        print(f"Reference:\n{chunk.choices[0].delta.reference}")
+        print(f"Final content:\n{chunk.choices[0].delta.final_content}")
 else:
     print(completion.choices[0].message.content)
+    if reference:
+        print(completion.choices[0].message.reference)
 ```
 
 ## DATASET MANAGEMENT
@@ -100,7 +110,6 @@ RAGFlow.create_dataset(
     embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
     permission: str = "me", 
     chunk_method: str = "naive",
-    pagerank: int = 0,
     parser_config: DataSet.ParserConfig = None
 ) -> DataSet
 ```
@@ -148,16 +157,12 @@ The chunking method of the dataset to create. Available options:
 - `"one"`: One
 - `"email"`: Email
 
-##### pagerank, `int`
-
-The pagerank of the dataset to create. Defaults to `0`.
-
 ##### parser_config
 
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
+  `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
 - `chunk_method`=`"qa"`:  
   `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manuel"`:  
@@ -466,7 +471,7 @@ dataset = rag_object.list_datasets(id='id')
 dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
-doc.update([{"parser_config": {"chunk_token_count": 256}}, {"chunk_method": "manual"}])
+doc.update([{"parser_config": {"chunk_token_num": 256}}, {"chunk_method": "manual"}])
 ```
 
 ---
@@ -502,7 +507,16 @@ print(doc)
 ### List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 30, order_by:str = "create_time", desc: bool = True) -> list[Document]
+Dataset.list_documents(
+    id: str = None,
+    keywords: str = None,
+    page: int = 1,
+    page_size: int = 30,
+    order_by: str = "create_time",
+    desc: bool = True,
+    create_time_from: int = 0,
+    create_time_to: int = 0
+) -> list[Document]
 ```
 
 Lists documents in the current dataset.
@@ -536,6 +550,12 @@ The field by which documents should be sorted. Available options:
 
 Indicates whether the retrieved documents should be sorted in descending order. Defaults to `True`.
 
+##### create_time_from: `int`
+Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to 0.
+
+##### create_time_to: `int`
+Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to 0.
+
 #### Returns
 
 - Success: A list of `Document` objects.
@@ -557,7 +577,7 @@ A `Document` object contains the following attributes:
 - `progress`: `float` The current processing progress as a percentage. Defaults to `0.0`.
 - `progress_msg`: `str` A message indicating the current progress status. Defaults to `""`.
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
-- `process_duation`: `float` Duration of the processing in seconds. Defaults to `0.0`.
+- `process_duration`: `float` Duration of the processing in seconds. Defaults to `0.0`.
 - `run`: `str` The document's processing status:
   - `"UNSTART"`  (default)
   - `"RUNNING"`
@@ -901,7 +921,7 @@ chunk.update({"content":"sdfx..."})
 ### Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,highlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,cross_languages:list[str]=None,metadata_condition: dict=None) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -951,12 +971,13 @@ Indicates whether to enable keyword-based matching:
 - `True`: Enable keyword-based matching.
 - `False`: Disable keyword-based matching (default).
 
-##### highlight: `bool`
+##### cross_languages:  `list[string]`  
 
-Specifies whether to enable highlighting of matched terms in the results:
+The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 
-- `True`: Enable highlighting of matched terms.
-- `False`: Disable highlighting of matched terms (default).
+##### metadata_condition: `dict`
+
+filter condition for meta_fields
 
 #### Returns
 

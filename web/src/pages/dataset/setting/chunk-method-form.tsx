@@ -1,4 +1,6 @@
+import { Button } from '@/components/ui/button';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 
 import { DocumentParserType } from '@/constants/knowledge';
 import { useMemo } from 'react';
@@ -17,6 +19,7 @@ import { QAConfiguration } from './configuration/qa';
 import { ResumeConfiguration } from './configuration/resume';
 import { TableConfiguration } from './configuration/table';
 import { TagConfiguration } from './configuration/tag';
+import { SavingButton } from './saving-button';
 
 const ConfigurationComponentMap = {
   [DocumentParserType.Naive]: NaiveConfiguration,
@@ -42,6 +45,7 @@ function EmptyComponent() {
 
 export function ChunkMethodForm() {
   const form = useFormContext();
+  const { t } = useTranslation();
 
   const finalParserId: DocumentParserType = useWatch({
     control: form.control,
@@ -55,8 +59,22 @@ export function ChunkMethodForm() {
   }, [finalParserId]);
 
   return (
-    <section className="overflow-auto max-h-[76vh]">
-      <ConfigurationComponent></ConfigurationComponent>
+    <section className="h-full flex flex-col">
+      <div className="overflow-auto flex-1 min-h-0">
+        <ConfigurationComponent></ConfigurationComponent>
+      </div>
+      <div className="text-right pt-4 flex justify-end gap-3">
+        <Button
+          type="reset"
+          className="bg-transparent text-color-white hover:bg-transparent border-gray-500 border-[1px]"
+          onClick={() => {
+            form.reset();
+          }}
+        >
+          {t('knowledgeConfiguration.cancel')}
+        </Button>
+        <SavingButton></SavingButton>
+      </div>
     </section>
   );
 }

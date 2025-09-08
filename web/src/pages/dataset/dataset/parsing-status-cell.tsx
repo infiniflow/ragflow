@@ -6,25 +6,31 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleX, Play, RefreshCw } from 'lucide-react';
-import { useCallback } from 'react';
+import { CircleX, RefreshCw } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RunningStatus } from './constant';
-import { ParsingCard } from './parsing-card';
+import { DocumentType, RunningStatus } from './constant';
+import { ParsingCard, PopoverContent } from './parsing-card';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import { UseSaveMetaShowType } from './use-save-meta';
 import { isParserRunning } from './utils';
-
 const IconMap = {
-  [RunningStatus.UNSTART]: <Play />,
-  [RunningStatus.RUNNING]: <CircleX />,
-  [RunningStatus.CANCEL]: <RefreshCw />,
-  [RunningStatus.DONE]: <RefreshCw />,
-  [RunningStatus.FAIL]: <RefreshCw />,
+  [RunningStatus.UNSTART]: (
+    <div className="w-0 h-0 border-l-[10px] border-l-accent-primary border-t-8 border-r-4 border-b-8 border-transparent"></div>
+  ),
+  [RunningStatus.RUNNING]: <CircleX size={14} color="var(--state-error)" />,
+  [RunningStatus.CANCEL]: <RefreshCw size={14} color="var(--accent-primary)" />,
+  [RunningStatus.DONE]: <RefreshCw size={14} color="var(--accent-primary)" />,
+  [RunningStatus.FAIL]: <RefreshCw size={14} color="var(--accent-primary)" />,
 };
 
 export function ParsingStatusCell({
@@ -55,13 +61,17 @@ export function ParsingStatusCell({
     showSetMetaModal(record);
   }, [record, showSetMetaModal]);
 
+  const showParse = useMemo(() => {
+    return record.type !== DocumentType.Virtual;
+  }, [record]);
+
   return (
-    <section className="flex gap-2 items-center">
-      <div className="w-28 flex items-center justify-between">
+    <section className="flex gap-8 items-center">
+      <div className="w-[100px] text-ellipsis overflow-hidden flex items-center justify-between">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant={'ghost'} size={'sm'}>
-              {parser_id}
+            <Button variant={'transparent'} className="border-none" size={'sm'}>
+              {parser_id === 'naive' ? 'general' : parser_id}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
@@ -73,33 +83,43 @@ export function ParsingStatusCell({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Separator orientation="vertical" className="h-2.5" />
       </div>
-      <ConfirmDeleteDialog
-        title={t(`knowledgeDetails.redo`, { chunkNum: chunk_num })}
-        hidden={isZeroChunk || isRunning}
-        onOk={handleOperationIconClick(true)}
-        onCancel={handleOperationIconClick(false)}
-      >
-        <Button
-          variant={'ghost'}
-          size={'sm'}
-          onClick={
-            isZeroChunk || isRunning
-              ? handleOperationIconClick(false)
-              : () => {}
-          }
-        >
-          {operationIcon}
-        </Button>
-      </ConfirmDeleteDialog>
-      {isParserRunning(run) ? (
-        <div className="flex items-center gap-1">
-          <Progress value={p} className="h-1 flex-1 min-w-10" />
-          {p}%
-        </div>
-      ) : (
-        <ParsingCard record={record}></ParsingCard>
+      {showParse && (
+        <>
+          <ConfirmDeleteDialog
+            title={t(`knowledgeDetails.redo`, { chunkNum: chunk_num })}
+            hidden={isZeroChunk || isRunning}
+            onOk={handleOperationIconClick(true)}
+            onCancel={handleOperationIconClick(false)}
+          >
+            <div
+              className="cursor-pointer flex items-center gap-3"
+              onClick={
+                isZeroChunk || isRunning
+                  ? handleOperationIconClick(false)
+                  : () => {}
+              }
+            >
+              <Separator orientation="vertical" className="h-2.5" />
+              {operationIcon}
+            </div>
+          </ConfirmDeleteDialog>
+          {isParserRunning(run) ? (
+            <HoverCard>
+              <HoverCardTrigger asChild>
+                <div className="flex items-center gap-1">
+                  <Progress value={p} className="h-1 flex-1 min-w-10" />
+                  {p}%
+                </div>
+              </HoverCardTrigger>
+              <HoverCardContent className="w-[40vw]">
+                <PopoverContent record={record}></PopoverContent>
+              </HoverCardContent>
+            </HoverCard>
+          ) : (
+            <ParsingCard record={record}></ParsingCard>
+          )}
+        </>
       )}
     </section>
   );

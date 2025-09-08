@@ -165,9 +165,9 @@ export default {
       html4excel: 'ExcelをHTMLに変換',
       html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dev/enable_excel2html をご覧ください。`,
       autoKeywords: '自動キーワード',
-      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。`,
+      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
       autoQuestions: '自動質問',
-      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。`,
+      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -453,6 +453,7 @@ export default {
     },
     setting: {
       profile: 'プロファイル',
+      avatar: 'アバター‌',
       profileDescription: 'ここで写真と個人情報を更新してください。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
@@ -503,11 +504,12 @@ export default {
       apiKeyTip:
         'APIキーは、対応するLLMサプライヤーに登録することで取得できます。',
       showMoreModels: 'さらにモデルを表示',
+      hideModels: 'モデルを隠す',
       baseUrl: 'ベースURL',
       baseUrlTip:
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
       modify: '変更',
-      systemModelSettings: 'デフォルトモデルを設定',
+      systemModelSettings: 'デフォルトモデルを設定する',
       chatModel: 'チャットモデル',
       chatModelTip:
         '新しく作成されたナレッジベースが使用するデフォルトのチャットLLM。',
@@ -528,6 +530,8 @@ export default {
       workspace: 'ワークスペース',
       upgrade: 'アップグレード',
       addLlmTitle: 'LLMを追加',
+      editLlmTitle: '{{name}}モデルを編集',
+      editModel: 'モデルを編集',
       modelName: 'モデル名',
       modelID: 'モデルID',
       modelUid: 'モデルUID',
@@ -596,7 +600,7 @@ export default {
         'Google Cloudサービスアカウントキーをbase64形式で入力してください',
       addGoogleRegion: 'Google Cloudリージョン',
       GoogleRegionMessage: 'Google Cloudリージョンを入力してください',
-      modelProvidersWarn: `まず<b>設定 > モデルプロバイダー</b>で埋め込みモデルとLLMの両方を追加してください。その後、「システムモデル設定」で設定します。`,
+      modelProvidersWarn: `まず<b>設定 > モデルプロバイダー</b>で埋め込みモデルとLLMの両方を追加してください。その後、「デフォルトモデルを設定する」で設定します。`,
       apiVersion: 'APIバージョン',
       apiVersionMessage: 'APIバージョンを入力してください',
       add: '追加',
@@ -735,6 +739,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'duckduckgo.comから検索を行うコンポーネントで、TopNを使用して検索結果の数を指定します。既存のナレッジベースを補完します。',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
       channel: 'チャンネル',
       channelTip: `コンポーネントの入力に対してテキスト検索またはニュース検索を実行します`,
       text: 'テキスト',

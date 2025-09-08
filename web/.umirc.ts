@@ -3,6 +3,7 @@ import TerserPlugin from 'terser-webpack-plugin';
 import { defineConfig } from 'umi';
 import { appName } from './src/conf.json';
 import routes from './src/routes';
+const ESLintPlugin = require('eslint-webpack-plugin');
 
 export default defineConfig({
   title: appName,
@@ -16,6 +17,7 @@ export default defineConfig({
   icons: {},
   hash: true,
   favicons: ['/logo.svg'],
+  headScripts: [{ src: '/iconfont.js', defer: true }],
   clickToComponent: {},
   history: {
     type: 'browser',
@@ -50,6 +52,15 @@ export default defineConfig({
     memo.module.rule('markdown').test(/\.md$/).type('asset/source');
 
     memo.optimization.minimizer('terser').use(TerserPlugin); // Fixed the issue that the page displayed an error after packaging lexical with terser
+
+    // memo.plugin('eslint').use(ESLintPlugin, [
+    //   {
+    //     extensions: ['js', 'ts', 'tsx'],
+    //     failOnError: true,
+    //     exclude: ['**/node_modules/**', '**/mfsu**', '**/mfsu-virtual-entry**'],
+    //     files: ['src/**/*.{js,ts,tsx}'],
+    //   },
+    // ]);
 
     return memo;
   },

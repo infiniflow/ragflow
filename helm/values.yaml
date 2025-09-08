@@ -1,17 +1,27 @@
 # Based on docker compose .env file
+
+# Global image pull secrets configuration
+imagePullSecrets: []
+
 env:
   # The type of doc engine to use.
   # Available options:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
+  # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
   # DOC_ENGINE: elasticsearch
   DOC_ENGINE: infinity
+  # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
 
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
+
+  # The password for OpenSearch.
+  # At least one uppercase letter, one lowercase letter, one digit, and one special character
+  OPENSEARCH_PASSWORD: infini_rag_flow_OS_01
 
   # The password for MySQL
   MYSQL_PASSWORD: infini_rag_flow_helm
@@ -26,31 +36,6 @@ env:
   # The password for Redis
   REDIS_PASSWORD: infini_rag_flow_helm
 
-  # The RAGFlow Docker image to download.
-  # Defaults to the v0.19.0-slim edition, which is the RAGFlow Docker image without embedding models.
-  RAGFLOW_IMAGE: infiniflow/ragflow:v0.19.0-slim
-  #
-  # To download the RAGFlow Docker image with embedding models, uncomment the following line instead:
-  # RAGFLOW_IMAGE: infiniflow/ragflow:v0.19.0
-  #
-  # The Docker image of the v0.19.0 edition includes:
-  # - Built-in embedding models:
-  #   - BAAI/bge-large-zh-v1.5
-  #   - BAAI/bge-reranker-v2-m3
-  #   - maidalun1020/bce-embedding-base_v1
-  #   - maidalun1020/bce-reranker-base_v1
-  # - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-  #   - BAAI/bge-base-en-v1.5
-  #   - BAAI/bge-large-en-v1.5
-  #   - BAAI/bge-small-en-v1.5
-  #   - BAAI/bge-small-zh-v1.5
-  #   - jinaai/jina-embeddings-v2-base-en
-  #   - jinaai/jina-embeddings-v2-small-en
-  #   - nomic-ai/nomic-embed-text-v1.5
-  #   - sentence-transformers/all-MiniLM-L6-v2
-  #
-  #
-
   # The local time zone.
   TIMEZONE: "Asia/Shanghai"
 
@@ -62,7 +47,41 @@ env:
   # MAX_CONTENT_LENGTH: "134217728"
   # After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
+  # The number of document chunks processed in a single batch during document parsing.
+  DOC_BULK_SIZE: 4
+
+  # The number of text chunks processed in a single batch during embedding vectorization.
+  EMBEDDING_BATCH_SIZE: 16
+
 ragflow:
+  image:
+    repository: infiniflow/ragflow
+    tag: v0.20.4-slim
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  # Optional service configuration overrides
+  # to be written to local.service_conf.yaml
+  # inside the RAGFlow container
+  # https://ragflow.io/docs/dev/configurations#service-configuration
+  service_conf:
+
+  # Optional yaml formatted override for the
+  # llm_factories.json file inside the RAGFlow
+  # container.
+  llm_factories:
+    # factory_llm_infos:
+    # - name: OpenAI-API-Compatible
+    #   logo: ""
+    #   tags: "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION"
+    #   status: "1"
+    #   llm:
+    #     - llm_name: my-custom-llm
+    #       tags: "LLM,CHAT,"
+    #       max_tokens: 100000
+    #       model_type: chat
+    #       is_tools: false
+
+  # Kubernetes configuration
   deployment:
     strategy:
     resources:
@@ -77,7 +96,9 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.6.0-dev3
+    tag: v0.6.0-dev5
+    pullPolicy: IfNotPresent
+    pullSecrets: []
   storage:
     className:
     capacity: 5Gi
@@ -88,6 +109,47 @@ infinity:
     type: ClusterIP
 
 elasticsearch:
+  image:
+    repository: elasticsearch
+    tag: "8.11.3"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  initContainers:
+    alpine:
+      repository: alpine
+      tag: latest
+      pullPolicy: IfNotPresent
+    busybox:
+      repository: busybox
+      tag: latest
+      pullPolicy: IfNotPresent
+  storage:
+    className:
+    capacity: 20Gi
+  deployment:
+    strategy:
+    resources:
+      requests:
+        cpu: "4"
+        memory: "16Gi"
+  service:
+    type: ClusterIP
+
+opensearch:
+  image:
+    repository: opensearchproject/opensearch
+    tag: 2.19.1
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  initContainers:
+    alpine:
+      repository: alpine
+      tag: latest
+      pullPolicy: IfNotPresent
+    busybox:
+      repository: busybox
+      tag: latest
+      pullPolicy: IfNotPresent
   storage:
     className:
     capacity: 20Gi
@@ -104,6 +166,8 @@ minio:
   image:
     repository: quay.io/minio/minio
     tag: RELEASE.2023-12-20T01-00-02Z
+    pullPolicy: IfNotPresent
+    pullSecrets: []
   storage:
     className:
     capacity: 5Gi
@@ -117,6 +181,8 @@ mysql:
   image:
     repository: mysql
     tag: 8.0.39
+    pullPolicy: IfNotPresent
+    pullSecrets: []
   storage:
     className:
     capacity: 5Gi
@@ -130,11 +196,18 @@ redis:
   image:
     repository: valkey/valkey
     tag: 8
+    pullPolicy: IfNotPresent
+    pullSecrets: []
   storage:
     className:
     capacity: 5Gi
   persistence:
     enabled: true
+    # Set's the retention policy for the persistent storage (only available in k8s 1.32 or later)
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    # retentionPolicy:
+      # whenDeleted: Delete
+      # whenScaled: Delete
   deployment:
     strategy:
     resources:

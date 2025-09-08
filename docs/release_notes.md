@@ -9,8 +9,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4`
 :::
 
 :::danger IMPORTANT
@@ -21,6 +21,148 @@ The embedding models included in a full edition are:
 
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
+
+## v0.20.4
+
+Released on August 27, 2025.
+
+### Improvements
+
+- Agent component: Completes Chinese localization for the Agent component.
+- Introduces the `ENABLE_TIMEOUT_ASSERTION` environment variable to enable or disable timeout assertions for file parsing tasks.
+- Dataset:
+  - Improves Markdown file parsing, with AST support to avoid unintended chunking.
+  - Enhances HTML parsing, supporting bs4-based HTML tag traversal.
+
+### Added models
+
+ZHIPU GLM-4.5
+
+### New Agent templates
+
+Ecommerce Customer Service Workflow: A template designed to handle enquiries about product features and multi-product comparisons using the internal knowledge base, as well as to manage installation appointment bookings.
+
+### Fixed issues
+
+- Dataset:  
+  - Unable to share resources with the team.
+  - Inappropriate restrictions on the number and size of uploaded files.
+- Chat:
+  - Unable to preview referenced files in responses.
+  - Unable to send out messages after file uploads.
+- An OAuth2 authentication failure.
+- A logical error in multi-conditioned metadata searches within a dataset.
+- Citations infinitely increased in multi-turn conversations.
+
+## v0.20.3
+
+Released on August 20, 2025.
+
+### Improvements
+
+- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
+- Search and Chat: Introduces document-level metadata filtering, allowing automatic or manual filtering during chats or searches.
+- Search: Supports creating search apps tailored to various business scenarios
+- Chat: Supports comparing answer performance of up to three chat model settings on a single **Chat** page.
+- Agent:  
+  - Implements a toggle in the **Agent** component to enable or disable citation.  
+  - Introduces a drag-and-drop method for creating components.  
+- Documentation: Corrects inaccuracies in the API reference.
+
+### New Agent templates
+
+- Report Agent: A template for generating summary reports in internal question-answering scenarios, supporting the display of tables and formulae.  [#9427](https://github.com/infiniflow/ragflow/pull/9427)
+
+### Fixed issues
+
+- The timeout mechanism introduced in v0.20.0 caused tasks like GraphRAG to halt.
+- Predefined opening greeting in the **Agent** component was missing during conversations.  
+- An automatic line break issue in the prompt editor.  
+- A memory leak issue caused by PyPDF. [#9469](https://github.com/infiniflow/ragflow/pull/9469)
+
+### API changes
+
+#### Deprecated
+
+[Create session with agent](./references/http_api_reference.md#create-session-with-agent)
+
+## v0.20.1
+
+Released on August 8, 2025.
+
+### New Features
+
+- The **Retrieval** component now supports the dynamic specification of knowledge base names using variables.
+- The user interface now includes a French language option.
+
+### Added Models
+
+- GPT-5
+- Claude 4.1
+
+### New agent templates (both workflow and agentic)
+
+- SQL Assistant Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
+- Choose Your Knowledge Base Workflow: Lets users select a knowledge base to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+
+### Fixed Issues
+
+- The **Agent** component was unable to invoke models installed via vLLM.
+- Agents could not be shared with the team.
+- Embedding an Agent into a webpage was not functioning properly.
+
+## v0.20.0
+
+Released on August 4, 2025.
+
+### Compatibility changes
+
+From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and all existing Agents from previous versions must be rebuilt following the upgrade.
+
+### New features
+
+- Unified orchestration of both Agents and Workflows.
+- A comprehensive refactor of the Agent, greatly enhancing its capabilities and usability, with support for Multi-Agent configurations, planning and reflection, and visual functionalities.
+- Fully implemented MCP functionality, allowing for MCP Server import, Agents functioning as MCP Clients, and RAGFlow itself operating as an MCP Server.
+- Access to runtime logs for Agents.
+- Chat histories with Agents available through the management panel.
+- Integration of a new, more robust version of Infinity, enabling the auto-tagging functionality with Infinity as the underlying document engine.
+- An OpenAI-compatible API that supports file reference information.
+- Support for new models, including Kimi K2, Grok 4, and Voyage embedding.
+- RAGFlow’s codebase is now mirrored on Gitee.
+- Introduction of a new model provider, Gitee AI.
+
+### New agent templates introduced
+
+- Multi-Agent based Deep Research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
+- An intelligent Q&A chatbot leveraging internal knowledge bases, designed for customer service and training scenarios.
+- A resume analysis template used by the RAGFlow team to screen, analyze, and record candidate information.
+- A blog generation workflow that transforms raw ideas into SEO-friendly blog content.
+- An intelligent customer service workflow.
+- A user feedback analysis template that directs user feedback to appropriate teams through semantic analysis.
+- Trip Planner: Uses web search and map MCP servers to assist with travel planning.
+- Image Lingo: Translates content from uploaded photos.
+- An information search assistant that retrieves answers from both internal knowledge bases and the web.
+
+## v0.19.1
+
+Released on June 23, 2025.
+
+### Fixed issues
+
+- A memory leak issue during high-concurrency requests.
+- Large file parsing freezes when GraphRAG entity resolution is enabled. [#8223](https://github.com/infiniflow/ragflow/pull/8223)
+- A context error occurring when using Sandbox in standalone mode. [#8340](https://github.com/infiniflow/ragflow/pull/8340)
+- An excessive CPU usage issue caused by Ollama. [#8216](https://github.com/infiniflow/ragflow/pull/8216)
+- A bug in the Code Component. [#7949](https://github.com/infiniflow/ragflow/pull/7949)
+- Added support for models installed via Ollama or VLLM when creating a knowledge base through the API. [#8069](https://github.com/infiniflow/ragflow/pull/8069)
+- Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/infiniflow/ragflow/pull/8149)
+
+### Added models
+
+- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
+- Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
 
 ## v0.19.0
 
@@ -33,7 +175,7 @@ Released on May 26, 2025.
 - Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
 - Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model and OpenAI’s latest ChatGPT o3 inference model.
 
-> The following features are contributed by our community contributors:
+> The following features have been contributed by our community:
 
 - Agent component: Enables tool calling within the Generate Component. Thanks to [notsyncing](https://github.com/notsyncing).
 - Markdown rendering: Image references in a markdown file can be displayed after chunking. Thanks to [Woody-Hu](https://github.com/Woody-Hu).
@@ -104,7 +246,7 @@ From this release onwards, if you still see RAGFlow's responses being cut short 
 
 - Unable to add models via Ollama/Xinference, an issue introduced in v0.17.1.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -165,7 +307,7 @@ The following is a screenshot of a conversation that integrates Deep Research:
 
 ![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -240,7 +382,7 @@ This release fixes the following issues:
 - Using the **Table** parsing method results in information loss.
 - Miscellaneous API issues.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -276,7 +418,7 @@ Released on December 18, 2024.
 - Upgrades the Document Layout Analysis model in DeepDoc.
 - Significantly enhances the retrieval performance when using [Infinity](https://github.com/infiniflow/infinity) as document engine.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -333,7 +475,7 @@ This approach eliminates the need to manually update **service_config.yaml** aft
 Ensure that you [upgrade **both** your code **and** Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -492,7 +634,7 @@ While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker
 If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a RAGFlow Docker image.
 :::
 
-### Related APIs
+### API changes
 
 #### HTTP API
 
@@ -513,7 +655,7 @@ Released on May 21, 2024.
 - Supports monitoring of system components, including Elasticsearch, MySQL, Redis, and MinIO.
 - Supports disabling **Layout Recognition** in the GENERAL chunking method to reduce file chunking time.
 
-### Related APIs
+### API changes
 
 #### HTTP API
 

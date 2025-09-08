@@ -28,7 +28,7 @@ def validate_document_parse_done(auth, dataset_id, document_ids):
         doc = res["data"]["docs"][0]
         assert doc["run"] == "DONE"
         assert len(doc["process_begin_at"]) > 0
-        assert doc["process_duation"] > 0
+        assert doc["process_duration"] > 0
         assert doc["progress"] > 0
         assert "Task done" in doc["progress_msg"]
 
@@ -92,13 +92,13 @@ class TestDocumentsParseStop:
 
         res = stop_parse_documnets(get_http_api_auth, dataset_id, payload)
         assert res["code"] == expected_code
-        if expected_code != 0:
-            assert res["message"] == expected_message
-        else:
+        if expected_code == 0:
             completed_document_ids = list(set(document_ids) - set(payload["document_ids"]))
             condition(get_http_api_auth, dataset_id, completed_document_ids)
             validate_document_parse_cancel(get_http_api_auth, dataset_id, payload["document_ids"])
             validate_document_parse_done(get_http_api_auth, dataset_id, completed_document_ids)
+        else:
+            assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(

@@ -3,7 +3,7 @@ import {
   KeywordIcon,
   QWeatherIcon,
   WikipediaIcon,
-} from '@/assets/icon/Icon';
+} from '@/assets/icon/next-icon';
 import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
 import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
@@ -411,7 +411,7 @@ export const initialRetrievalValues = {
 };
 
 export const initialBeginValues = {
-  prologue: `Hi! I'm your assistant, what can I do for you?`,
+  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const variableCheckBoxFieldMap = Object.keys(
@@ -834,6 +834,10 @@ export const LanguageOptions = [
   {
     value: 'de',
     label: 'Deutsch',
+  },
+  {
+    value: 'fr',
+    label: 'Français',
   },
   {
     value: 'et',

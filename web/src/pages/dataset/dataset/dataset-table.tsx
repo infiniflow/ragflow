@@ -119,7 +119,7 @@ export function DatasetTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[82vh]">
+      <Table rootClassName="max-h-[calc(100vh-222px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -144,6 +144,7 @@ export function DatasetTable({
               <TableRow
                 key={row.id}
                 data-state={row.getIsSelected() && 'selected'}
+                className="group"
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell
@@ -164,7 +165,7 @@ export function DatasetTable({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end  py-4">
+      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-3">
         <div className="space-x-2">
           <RAGFlowPagination
             {...pick(pagination, 'current', 'pageSize')}

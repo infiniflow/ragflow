@@ -15,275 +15,109 @@
 #
 #  AFTER UPDATING THIS FILE, PLEASE ENSURE THAT docs/references/supported_models.mdx IS ALSO UPDATED for consistency!
 #
-from .embedding_model import (
-    OllamaEmbed,
-    LocalAIEmbed,
-    OpenAIEmbed,
-    AzureEmbed,
-    XinferenceEmbed,
-    QWenEmbed,
-    ZhipuEmbed,
-    FastEmbed,
-    YoudaoEmbed,
-    BaiChuanEmbed,
-    JinaEmbed,
-    DefaultEmbedding,
-    MistralEmbed,
-    BedrockEmbed,
-    GeminiEmbed,
-    NvidiaEmbed,
-    LmStudioEmbed,
-    OpenAI_APIEmbed,
-    CoHereEmbed,
-    TogetherAIEmbed,
-    PerfXCloudEmbed,
-    UpstageEmbed,
-    SILICONFLOWEmbed,
-    ReplicateEmbed,
-    BaiduYiyanEmbed,
-    VoyageEmbed,
-    HuggingFaceEmbed,
-    VolcEngineEmbed,
-    GPUStackEmbed,
-)
-from .chat_model import (
-    GptTurbo,
-    AzureChat,
-    ZhipuChat,
-    QWenChat,
-    OllamaChat,
-    LocalAIChat,
-    XinferenceChat,
-    MoonshotChat,
-    DeepSeekChat,
-    VolcEngineChat,
-    BaiChuanChat,
-    MiniMaxChat,
-    MistralChat,
-    GeminiChat,
-    BedrockChat,
-    GroqChat,
-    OpenRouterChat,
-    StepFunChat,
-    NvidiaChat,
-    LmStudioChat,
-    OpenAI_APIChat,
-    CoHereChat,
-    LeptonAIChat,
-    TogetherAIChat,
-    PerfXCloudChat,
-    UpstageChat,
-    NovitaAIChat,
-    SILICONFLOWChat,
-    PPIOChat,
-    YiChat,
-    ReplicateChat,
-    HunyuanChat,
-    SparkChat,
-    BaiduYiyanChat,
-    AnthropicChat,
-    GoogleChat,
-    HuggingFaceChat,
-    GPUStackChat,
-    ModelScopeChat,
-)
 
-from .cv_model import (
-    GptV4,
-    AzureGptV4,
-    OllamaCV,
-    XinferenceCV,
-    QWenCV,
-    Zhipu4V,
-    LocalCV,
-    GeminiCV,
-    OpenRouterCV,
-    LocalAICV,
-    NvidiaCV,
-    LmStudioCV,
-    StepFunCV,
-    OpenAI_APICV,
-    TogetherAICV,
-    YiCV,
-    HunyuanCV,
-    AnthropicCV,
-    SILICONFLOWCV,
-    GPUStackCV,
-)
+import importlib
+import inspect
 
-from .rerank_model import (
-    LocalAIRerank,
-    DefaultRerank,
-    JinaRerank,
-    YoudaoRerank,
-    XInferenceRerank,
-    NvidiaRerank,
-    LmStudioRerank,
-    OpenAI_APIRerank,
-    CoHereRerank,
-    TogetherAIRerank,
-    SILICONFLOWRerank,
-    BaiduYiyanRerank,
-    VoyageRerank,
-    QWenRerank,
-    GPUStackRerank,
-    HuggingfaceRerank,
-)
+from strenum import StrEnum
 
-from .sequence2txt_model import (
-    GPTSeq2txt,
-    QWenSeq2txt,
-    AzureSeq2txt,
-    XinferenceSeq2txt,
-    TencentCloudSeq2txt,
-    GPUStackSeq2txt,
-)
 
-from .tts_model import (
-    FishAudioTTS,
-    QwenTTS,
-    OpenAITTS,
-    SparkTTS,
-    XinferenceTTS,
-    GPUStackTTS,
-    SILICONFLOWTTS,
-)
+class SupportedLiteLLMProvider(StrEnum):
+    Tongyi_Qianwen = "Tongyi-Qianwen"
+    Dashscope = "Dashscope"
+    Bedrock = "Bedrock"
+    Moonshot = "Moonshot"
+    xAI = "xAI"
+    DeepInfra = "DeepInfra"
+    Groq = "Groq"
+    Cohere = "Cohere"
+    Gemini = "Gemini"
+    DeepSeek = "DeepSeek"
+    Nvidia = "NVIDIA"
+    TogetherAI = "TogetherAI"
+    Anthropic = "Anthropic"
+    Ollama = "Ollama"
 
-EmbeddingModel = {
-    "Ollama": OllamaEmbed,
-    "LocalAI": LocalAIEmbed,
-    "OpenAI": OpenAIEmbed,
-    "Azure-OpenAI": AzureEmbed,
-    "Xinference": XinferenceEmbed,
-    "Tongyi-Qianwen": QWenEmbed,
-    "ZHIPU-AI": ZhipuEmbed,
-    "FastEmbed": FastEmbed,
-    "Youdao": YoudaoEmbed,
-    "BaiChuan": BaiChuanEmbed,
-    "Jina": JinaEmbed,
-    "BAAI": DefaultEmbedding,
-    "Mistral": MistralEmbed,
-    "Bedrock": BedrockEmbed,
-    "Gemini": GeminiEmbed,
-    "NVIDIA": NvidiaEmbed,
-    "LM-Studio": LmStudioEmbed,
-    "OpenAI-API-Compatible": OpenAI_APIEmbed,
-    "VLLM": OpenAI_APIEmbed,
-    "Cohere": CoHereEmbed,
-    "TogetherAI": TogetherAIEmbed,
-    "PerfXCloud": PerfXCloudEmbed,
-    "Upstage": UpstageEmbed,
-    "SILICONFLOW": SILICONFLOWEmbed,
-    "Replicate": ReplicateEmbed,
-    "BaiduYiyan": BaiduYiyanEmbed,
-    "Voyage AI": VoyageEmbed,
-    "HuggingFace": HuggingFaceEmbed,
-    "VolcEngine": VolcEngineEmbed,
-    "GPUStack": GPUStackEmbed,
+
+FACTORY_DEFAULT_BASE_URL = {
+    SupportedLiteLLMProvider.Tongyi_Qianwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
+    SupportedLiteLLMProvider.Ollama: "",
 }
 
-CvModel = {
-    "OpenAI": GptV4,
-    "Azure-OpenAI": AzureGptV4,
-    "Ollama": OllamaCV,
-    "Xinference": XinferenceCV,
-    "Tongyi-Qianwen": QWenCV,
-    "ZHIPU-AI": Zhipu4V,
-    "Moonshot": LocalCV,
-    "Gemini": GeminiCV,
-    "OpenRouter": OpenRouterCV,
-    "LocalAI": LocalAICV,
-    "NVIDIA": NvidiaCV,
-    "LM-Studio": LmStudioCV,
-    "StepFun": StepFunCV,
-    "OpenAI-API-Compatible": OpenAI_APICV,
-    "VLLM": OpenAI_APICV,
-    "TogetherAI": TogetherAICV,
-    "01.AI": YiCV,
-    "Tencent Hunyuan": HunyuanCV,
-    "Anthropic": AnthropicCV,
-    "SILICONFLOW": SILICONFLOWCV,
-    "GPUStack": GPUStackCV,
+
+LITELLM_PROVIDER_PREFIX = {
+    SupportedLiteLLMProvider.Tongyi_Qianwen: "dashscope/",
+    SupportedLiteLLMProvider.Dashscope: "dashscope/",
+    SupportedLiteLLMProvider.Bedrock: "bedrock/",
+    SupportedLiteLLMProvider.Moonshot: "moonshot/",
+    SupportedLiteLLMProvider.xAI: "xai/",
+    SupportedLiteLLMProvider.DeepInfra: "deepinfra/",
+    SupportedLiteLLMProvider.Groq: "groq/",
+    SupportedLiteLLMProvider.Cohere: "",  # don't need a prefix
+    SupportedLiteLLMProvider.Gemini: "gemini/",
+    SupportedLiteLLMProvider.DeepSeek: "deepseek/",
+    SupportedLiteLLMProvider.Nvidia: "nvidia_nim/",
+    SupportedLiteLLMProvider.TogetherAI: "together_ai/",
+    SupportedLiteLLMProvider.Anthropic: "",  # don't need a prefix
+    SupportedLiteLLMProvider.Ollama: "ollama_chat/",
 }
 
-ChatModel = {
-    "OpenAI": GptTurbo,
-    "Azure-OpenAI": AzureChat,
-    "ZHIPU-AI": ZhipuChat,
-    "Tongyi-Qianwen": QWenChat,
-    "Ollama": OllamaChat,
-    "LocalAI": LocalAIChat,
-    "Xinference": XinferenceChat,
-    "Moonshot": MoonshotChat,
-    "DeepSeek": DeepSeekChat,
-    "VolcEngine": VolcEngineChat,
-    "BaiChuan": BaiChuanChat,
-    "MiniMax": MiniMaxChat,
-    "Mistral": MistralChat,
-    "Gemini": GeminiChat,
-    "Bedrock": BedrockChat,
-    "Groq": GroqChat,
-    "OpenRouter": OpenRouterChat,
-    "StepFun": StepFunChat,
-    "NVIDIA": NvidiaChat,
-    "LM-Studio": LmStudioChat,
-    "OpenAI-API-Compatible": OpenAI_APIChat,
-    "VLLM": OpenAI_APIChat,
-    "Cohere": CoHereChat,
-    "LeptonAI": LeptonAIChat,
-    "TogetherAI": TogetherAIChat,
-    "PerfXCloud": PerfXCloudChat,
-    "Upstage": UpstageChat,
-    "NovitaAI": NovitaAIChat,
-    "SILICONFLOW": SILICONFLOWChat,
-    "PPIO": PPIOChat,
-    "01.AI": YiChat,
-    "Replicate": ReplicateChat,
-    "Tencent Hunyuan": HunyuanChat,
-    "XunFei Spark": SparkChat,
-    "BaiduYiyan": BaiduYiyanChat,
-    "Anthropic": AnthropicChat,
-    "Google Cloud": GoogleChat,
-    "HuggingFace": HuggingFaceChat,
-    "GPUStack": GPUStackChat,
-    "ModelScope":ModelScopeChat,
+ChatModel = globals().get("ChatModel", {})
+CvModel = globals().get("CvModel", {})
+EmbeddingModel = globals().get("EmbeddingModel", {})
+RerankModel = globals().get("RerankModel", {})
+Seq2txtModel = globals().get("Seq2txtModel", {})
+TTSModel = globals().get("TTSModel", {})
+
+
+MODULE_MAPPING = {
+    "chat_model": ChatModel,
+    "cv_model": CvModel,
+    "embedding_model": EmbeddingModel,
+    "rerank_model": RerankModel,
+    "sequence2txt_model": Seq2txtModel,
+    "tts_model": TTSModel,
 }
 
-RerankModel = {
-    "LocalAI": LocalAIRerank,
-    "BAAI": DefaultRerank,
-    "Jina": JinaRerank,
-    "Youdao": YoudaoRerank,
-    "Xinference": XInferenceRerank,
-    "NVIDIA": NvidiaRerank,
-    "LM-Studio": LmStudioRerank,
-    "OpenAI-API-Compatible": OpenAI_APIRerank,
-    "VLLM": CoHereRerank,
-    "Cohere": CoHereRerank,
-    "TogetherAI": TogetherAIRerank,
-    "SILICONFLOW": SILICONFLOWRerank,
-    "BaiduYiyan": BaiduYiyanRerank,
-    "Voyage AI": VoyageRerank,
-    "Tongyi-Qianwen": QWenRerank,
-    "GPUStack": GPUStackRerank,
-    "HuggingFace": HuggingfaceRerank,
-}
+package_name = __name__
 
-Seq2txtModel = {
-    "OpenAI": GPTSeq2txt,
-    "Tongyi-Qianwen": QWenSeq2txt,
-    "Azure-OpenAI": AzureSeq2txt,
-    "Xinference": XinferenceSeq2txt,
-    "Tencent Cloud": TencentCloudSeq2txt,
-    "GPUStack": GPUStackSeq2txt,
-}
+for module_name, mapping_dict in MODULE_MAPPING.items():
+    full_module_name = f"{package_name}.{module_name}"
+    module = importlib.import_module(full_module_name)
 
-TTSModel = {
-    "Fish Audio": FishAudioTTS,
-    "Tongyi-Qianwen": QwenTTS,
-    "OpenAI": OpenAITTS,
-    "XunFei Spark": SparkTTS,
-    "Xinference": XinferenceTTS,
-    "GPUStack": GPUStackTTS,
-    "SILICONFLOW": SILICONFLOWTTS,
-}
+    base_class = None
+    lite_llm_base_class = None
+    for name, obj in inspect.getmembers(module):
+        if inspect.isclass(obj):
+            if name == "Base":
+                base_class = obj
+            elif name == "LiteLLMBase":
+                lite_llm_base_class = obj
+                assert hasattr(obj, "_FACTORY_NAME"), "LiteLLMbase should have _FACTORY_NAME field."
+                if hasattr(obj, "_FACTORY_NAME"):
+                    if isinstance(obj._FACTORY_NAME, list):
+                        for factory_name in obj._FACTORY_NAME:
+                            mapping_dict[factory_name] = obj
+                    else:
+                        mapping_dict[obj._FACTORY_NAME] = obj
+
+    if base_class is not None:
+        for _, obj in inspect.getmembers(module):
+            if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class and hasattr(obj, "_FACTORY_NAME"):
+                if isinstance(obj._FACTORY_NAME, list):
+                    for factory_name in obj._FACTORY_NAME:
+                        mapping_dict[factory_name] = obj
+                else:
+                    mapping_dict[obj._FACTORY_NAME] = obj
+
+
+__all__ = [
+    "ChatModel",
+    "CvModel",
+    "EmbeddingModel",
+    "RerankModel",
+    "Seq2txtModel",
+    "TTSModel",
+]

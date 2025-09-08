@@ -25,7 +25,7 @@ class TestDocumentsUpdated:
         "name, expected_message",
         [
             ("new_name.txt", ""),
-            (f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt", "The name should be less than 128 bytes"),
+            (f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt", ""),
             (0, "AttributeError"),
             (None, "AttributeError"),
             ("", "The extension of file can't be changed"),
@@ -141,7 +141,7 @@ class TestDocumentsUpdated:
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
             pytest.param(
-                {"process_duation": 1.0},
+                {"process_duration": 1.0},
                 "The input parameters are invalid",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
@@ -207,7 +207,7 @@ class TestUpdateDocumentParserConfig:
             (
                 "naive",
                 {
-                    "chunk_token_num": 128,
+                    "chunk_token_num": 512,
                     "layout_recognize": "DeepDOC",
                     "html4excel": False,
                     "delimiter": r"\n",
@@ -401,11 +401,12 @@ class TestUpdateDocumentParserConfig:
                 expected_config = DataSet.ParserConfig(
                     client,
                     {
-                        "chunk_token_num": 128,
+                        "chunk_token_num": 512,
                         "delimiter": r"\n",
                         "html4excel": False,
                         "layout_recognize": "DeepDOC",
                         "raptor": {"use_raptor": False},
+                        "graphrag": {"use_graphrag": False},
                     },
                 )
                 assert str(updated_doc.parser_config) == str(expected_config), str(updated_doc)

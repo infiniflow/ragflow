@@ -16,7 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, batch_create_chat_assistants, delete_chat_assistants, list_chat_assistants
+from common import batch_create_chat_assistants, delete_chat_assistants, list_chat_assistants
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -52,16 +53,16 @@ class TestChatAssistantsDelete:
             pytest.param(lambda r: {"ids": r}, 0, "", 0, marks=pytest.mark.p1),
         ],
     )
-    def test_basic_scenarios(self, api_key, add_chat_assistants_func, payload, expected_code, expected_message, remaining):
+    def test_basic_scenarios(self, HttpApiAuth, add_chat_assistants_func, payload, expected_code, expected_message, remaining):
         _, _, chat_assistant_ids = add_chat_assistants_func
         if callable(payload):
             payload = payload(chat_assistant_ids)
-        res = delete_chat_assistants(api_key, payload)
+        res = delete_chat_assistants(HttpApiAuth, payload)
         assert res["code"] == expected_code
         if res["code"] != 0:
             assert res["message"] == expected_message
 
-        res = list_chat_assistants(api_key)
+        res = list_chat_assistants(HttpApiAuth)
         assert len(res["data"]) == remaining
 
     @pytest.mark.parametrize(
@@ -72,55 +73,55 @@ class TestChatAssistantsDelete:
             pytest.param(lambda r: {"ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
-    def test_delete_partial_invalid_id(self, api_key, add_chat_assistants_func, payload):
+    def test_delete_partial_invalid_id(self, HttpApiAuth, add_chat_assistants_func, payload):
         _, _, chat_assistant_ids = add_chat_assistants_func
         if callable(payload):
             payload = payload(chat_assistant_ids)
-        res = delete_chat_assistants(api_key, payload)
+        res = delete_chat_assistants(HttpApiAuth, payload)
         assert res["code"] == 0
         assert res["data"]["errors"][0] == "Assistant(invalid_id) not found."
         assert res["data"]["success_count"] == 5
 
-        res = list_chat_assistants(api_key)
+        res = list_chat_assistants(HttpApiAuth)
         assert len(res["data"]) == 0
 
     @pytest.mark.p3
-    def test_repeated_deletion(self, api_key, add_chat_assistants_func):
+    def test_repeated_deletion(self, HttpApiAuth, add_chat_assistants_func):
         _, _, chat_assistant_ids = add_chat_assistants_func
-        res = delete_chat_assistants(api_key, {"ids": chat_assistant_ids})
+        res = delete_chat_assistants(HttpApiAuth, {"ids": chat_assistant_ids})
         assert res["code"] == 0
 
-        res = delete_chat_assistants(api_key, {"ids": chat_assistant_ids})
+        res = delete_chat_assistants(HttpApiAuth, {"ids": chat_assistant_ids})
         assert res["code"] == 102
         assert "not found" in res["message"]
 
     @pytest.mark.p3
-    def test_duplicate_deletion(self, api_key, add_chat_assistants_func):
+    def test_duplicate_deletion(self, HttpApiAuth, add_chat_assistants_func):
         _, _, chat_assistant_ids = add_chat_assistants_func
-        res = delete_chat_assistants(api_key, {"ids": chat_assistant_ids + chat_assistant_ids})
+        res = delete_chat_assistants(HttpApiAuth, {"ids": chat_assistant_ids + chat_assistant_ids})
         assert res["code"] == 0
         assert "Duplicate assistant ids" in res["data"]["errors"][0]
         assert res["data"]["success_count"] == 5
 
-        res = list_chat_assistants(api_key)
+        res = list_chat_assistants(HttpApiAuth)
         assert res["code"] == 0
 
     @pytest.mark.p3
-    def test_concurrent_deletion(self, api_key):
+    def test_concurrent_deletion(self, HttpApiAuth):
         count = 100
-        ids = batch_create_chat_assistants(api_key, count)
+        ids = batch_create_chat_assistants(HttpApiAuth, count)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(delete_chat_assistants, api_key, {"ids": ids[i : i + 1]}) for i in range(count)]
+            futures = [executor.submit(delete_chat_assistants, HttpApiAuth, {"ids": ids[i : i + 1]}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
-    def test_delete_10k(self, api_key):
-        ids = batch_create_chat_assistants(api_key, 1_000)
-        res = delete_chat_assistants(api_key, {"ids": ids})
+    def test_delete_10k(self, HttpApiAuth):
+        ids = batch_create_chat_assistants(HttpApiAuth, 1_000)
+        res = delete_chat_assistants(HttpApiAuth, {"ids": ids})
         assert res["code"] == 0
 
-        res = list_chat_assistants(api_key)
+        res = list_chat_assistants(HttpApiAuth)
         assert len(res["data"]) == 0

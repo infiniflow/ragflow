@@ -6,8 +6,8 @@
 
 <p align="center">
   <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DBEDFA"></a>
-  <a href="./README_tzh.md"><img alt="繁體中文文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DFE0E5"></a>
+  <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.19.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -71,22 +71,22 @@
 
 ## 💡 What is RAGFlow?
 
-[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document
-understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models)
-to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted
-data.
+[RAGFlow](https://ragflow.io/) is a leading open-source Retrieval-Augmented Generation (RAG) engine that fuses cutting-edge RAG with Agent capabilities to create a superior context layer for LLMs. It offers a streamlined RAG workflow adaptable to enterprises of any scale. Powered by a converged context engine and pre-built agent templates, RAGFlow enables developers to transform complex data into high-fidelity, production-ready AI systems with exceptional efficiency and precision.
 
 ## 🎮 Demo
 
 Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
-<img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 Latest Updates
 
+- 2025-08-08 Supports OpenAI's latest GPT-5 series models.
+- 2025-08-04 Supports new models, including Kimi K2 and Grok 4.
+- 2025-08-01 Supports agentic workflow and MCP.
 - 2025-05-23 Adds a Python/JavaScript code executor component to Agent.
 - 2025-05-05 Supports cross-language query.
 - 2025-03-19 Supports using a multi-modal model to make sense of images within PDF or DOCX files.
@@ -187,7 +187,7 @@ releases! 🌟
 > All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
 > If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
 
-   > The command below downloads the `v0.19.0-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.19.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.19.0` for the full edition `v0.19.0`.
+   > The command below downloads the `v0.20.4-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.20.4-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.4` for the full edition `v0.20.4`.
 
    ```bash
    $ cd ragflow/docker
@@ -200,8 +200,8 @@ releases! 🌟
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    |-------------------|-----------------|-----------------------|--------------------------|
-   | v0.19.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.19.0-slim      | &approx;2       | ❌                   | Stable release            |
+   | v0.20.4           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.20.4-slim      | &approx;2       | ❌                   | Stable release            |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                   | _Unstable_ nightly build  |
 
@@ -304,7 +304,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 🔨 Launch service from source for development
 
-1. Install uv, or skip this step if it is already installed:
+1. Install `uv` and `pre-commit`, or skip this step if they are already installed:
 
    ```bash
    pipx install uv pre-commit
@@ -345,8 +345,10 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    sudo apt-get install libjemalloc-dev
    # centos
    sudo yum install jemalloc
+   # mac
+   sudo brew install jemalloc
    ```
-   
+
 6. Launch backend service:
 
    ```bash

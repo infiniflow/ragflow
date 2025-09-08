@@ -16,7 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT, create_session_with_chat_assistant, delete_chat_assistants, list_session_with_chat_assistants
+from common import create_session_with_chat_assistant, delete_chat_assistants, list_session_with_chat_assistants
+from configs import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -53,14 +54,14 @@ class TestSessionWithChatAssistantCreate:
             ({"name": "case insensitive"}, 0, ""),
         ],
     )
-    def test_name(self, api_key, add_chat_assistants, payload, expected_code, expected_message):
+    def test_name(self, HttpApiAuth, add_chat_assistants, payload, expected_code, expected_message):
         _, _, chat_assistant_ids = add_chat_assistants
         if payload["name"] == "duplicated_name":
-            create_session_with_chat_assistant(api_key, chat_assistant_ids[0], payload)
+            create_session_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         elif payload["name"] == "case insensitive":
-            create_session_with_chat_assistant(api_key, chat_assistant_ids[0], {"name": payload["name"].upper()})
+            create_session_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], {"name": payload["name"].upper()})
 
-        res = create_session_with_chat_assistant(api_key, chat_assistant_ids[0], payload)
+        res = create_session_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["name"] == payload["name"]
@@ -76,16 +77,16 @@ class TestSessionWithChatAssistantCreate:
             ("invalid_chat_assistant_id", 102, "You do not own the assistant."),
         ],
     )
-    def test_invalid_chat_assistant_id(self, api_key, chat_assistant_id, expected_code, expected_message):
-        res = create_session_with_chat_assistant(api_key, chat_assistant_id, {"name": "valid_name"})
+    def test_invalid_chat_assistant_id(self, HttpApiAuth, chat_assistant_id, expected_code, expected_message):
+        res = create_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, {"name": "valid_name"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_concurrent_create_session(self, api_key, add_chat_assistants):
+    def test_concurrent_create_session(self, HttpApiAuth, add_chat_assistants):
         count = 1000
         _, _, chat_assistant_ids = add_chat_assistants
-        res = list_session_with_chat_assistants(api_key, chat_assistant_ids[0])
+        res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_ids[0])
         if res["code"] != 0:
             assert False, res
         sessions_count = len(res["data"])
@@ -94,7 +95,7 @@ class TestSessionWithChatAssistantCreate:
             futures = [
                 executor.submit(
                     create_session_with_chat_assistant,
-                    api_key,
+                    HttpApiAuth,
                     chat_assistant_ids[0],
                     {"name": f"session with chat assistant test {i}"},
                 )
@@ -103,16 +104,16 @@ class TestSessionWithChatAssistantCreate:
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
-        res = list_session_with_chat_assistants(api_key, chat_assistant_ids[0], {"page_size": count * 2})
+        res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_ids[0], {"page_size": count * 2})
         if res["code"] != 0:
             assert False, res
         assert len(res["data"]) == sessions_count + count
 
     @pytest.mark.p3
-    def test_add_session_to_deleted_chat_assistant(self, api_key, add_chat_assistants):
+    def test_add_session_to_deleted_chat_assistant(self, HttpApiAuth, add_chat_assistants):
         _, _, chat_assistant_ids = add_chat_assistants
-        res = delete_chat_assistants(api_key, {"ids": [chat_assistant_ids[0]]})
+        res = delete_chat_assistants(HttpApiAuth, {"ids": [chat_assistant_ids[0]]})
         assert res["code"] == 0
-        res = create_session_with_chat_assistant(api_key, chat_assistant_ids[0], {"name": "valid_name"})
+        res = create_session_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], {"name": "valid_name"})
         assert res["code"] == 102
         assert res["message"] == "You do not own the assistant."

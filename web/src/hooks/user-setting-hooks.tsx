@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
@@ -18,7 +19,7 @@ import userService, {
   listTenantUser,
 } from '@/services/user-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Modal, message } from 'antd';
+import { Modal } from 'antd';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';

@@ -114,7 +114,7 @@ export default function VariablePickerMenuPlugin({
     minLength: 0,
   });
 
-  const [queryString, setQueryString] = React.useState<string| null>('');
+  const [queryString, setQueryString] = React.useState<string | null>('');
 
   const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
 
@@ -224,6 +224,9 @@ export default function VariablePickerMenuPlugin({
       }
 
       $getRoot().clear().append(paragraph);
+      if ($isRangeSelection($getSelection())) {
+        $getRoot().selectEnd();
+      }
     },
     [findLabelByValue],
   );

@@ -282,6 +282,7 @@ export default {
     },
     setting: {
       profile: 'Perfil',
+      avatar: 'Avatar',
       profileDescription: 'Actualiza tu foto y tus datos personales aquí.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',
@@ -335,6 +336,7 @@ export default {
       apiKeyTip:
         'La clave API puede obtenerse registrándose con el proveedor correspondiente de LLM.',
       showMoreModels: 'Mostrar más modelos',
+      hideModels: 'Ocultar modelos',
       baseUrl: 'URL base',
       baseUrlTip:
         'Si tu clave API es de OpenAI, ignora esto. Cualquier otro proveedor intermedio proporcionará esta URL base junto con la clave API.',
@@ -431,7 +433,7 @@ export default {
       addGoogleRegion: 'Región de Google Cloud',
       GoogleRegionMessage: '¡Por favor ingresa la Región de Google Cloud!',
       modelProvidersWarn:
-        'Por favor agrega tanto el modelo de embeddings como el LLM en <b>Configuración > Proveedores de Modelos</b> primero.',
+        'Por favor agrega tanto el modelo de embeddings como el LLM en <b>Configuración > Proveedores de Modelos</b> primero. Luego, configúralos en "Establecer modelos predeterminados".',
       apiVersion: 'Versión de la API',
       apiVersionMessage: '¡Por favor ingresa la versión de la API!',
       modelsToBeAddedTooltip:
@@ -569,6 +571,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'Un componente que recupera resultados de búsqueda de duckduckgo.com, con TopN especificando el número de resultados de búsqueda. Complementa las bases de conocimiento existentes.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'Un componente que realiza búsquedas mediante la URL de la instancia de SearXNG que usted proporcione. Especifique TopN y la URL de la instancia.',
       channel: 'Canal',
       channelTip:
         'Realizar búsqueda de texto o búsqueda de noticias en la entrada del componente.',

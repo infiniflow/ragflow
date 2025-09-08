@@ -31,7 +31,7 @@ RAPTOR (Recursive Abstractive Processing for Tree Organized Retrieval) can also 
 
 The system's default chat model is used to generate knowledge graph. Before proceeding, ensure that you have a chat model properly configured:
 
-![Image](https://github.com/user-attachments/assets/6bc34279-68c3-4d99-8d20-b7bd1dafc1c1)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
 
 ## Configurations
 
@@ -74,7 +74,7 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 3. Click **Knowledge graph** to view the details of the generated graph.
 4. To use the created knowledge graph, do either of the following:
    
-   - In your **Chat Configuration** dialogue, click the **Assistant settings** tab to add the corresponding knowledge base(s) and click the **Prompt engine** tab to switch on the **Use knowledge graph** toggle.
+   - In the **Chat setting** panel of your chat app, switch on the **Use knowledge graph** toggle.
    - If you are using an agent, click the **Retrieval** agent component to specify the knowledge base(s) and switch on the **Use knowledge graph** toggle.
 
 ## Frequently asked questions
@@ -94,3 +94,7 @@ To remove the generated knowledge graph, delete all related files in your knowle
 ### Where is the created knowledge graph stored?
 
 All chunks of the created knowledge graph are stored in RAGFlow's document engine: either Elasticsearch or [Infinity](https://github.com/infiniflow/infinity).
+
+### How to export a created knowledge graph?
+
+Nope. Exporting a created knowledge graph is not supported. If you still consider this feature essential, please [raise an issue](https://github.com/infiniflow/ragflow/issues) explaining your use case and its importance.

@@ -49,11 +49,11 @@ class TestChatAssistantUpdate:
 
     @pytest.mark.p3
     def test_avatar(self, client, add_chat_assistants_func, tmp_path):
-        _, _, chat_assistants = add_chat_assistants_func
+        dataset, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
 
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": chat_assistant.dataset_ids}
+        payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": [dataset.id]}
 
         chat_assistant.update(payload)
         updated_chat = client.list_chats(id=chat_assistant.id)[0]
@@ -96,9 +96,9 @@ class TestChatAssistantUpdate:
         ],
     )
     def test_llm(self, client, add_chat_assistants_func, llm, expected_message):
-        _, _, chat_assistants = add_chat_assistants_func
+        dataset, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
-        payload = {"name": "llm_test", "dataset_ids": chat_assistant.dataset_ids, "llm": llm}
+        payload = {"name": "llm_test", "llm": llm, "dataset_ids": [dataset.id]}
 
         if expected_message:
             with pytest.raises(Exception) as excinfo:
@@ -173,9 +173,9 @@ class TestChatAssistantUpdate:
         ],
     )
     def test_prompt(self, client, add_chat_assistants_func, prompt, expected_message):
-        _, _, chat_assistants = add_chat_assistants_func
+        dataset, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
-        payload = {"name": "prompt_test", "dataset_ids": chat_assistant.dataset_ids, "prompt": prompt}
+        payload = {"name": "prompt_test", "prompt": prompt, "dataset_ids": [dataset.id]}
 
         if expected_message:
             with pytest.raises(Exception) as excinfo:
@@ -200,7 +200,7 @@ class TestChatAssistantUpdate:
                         "variables": [{"key": "knowledge", "optional": False}],
                         "rerank_model": "",
                         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
-                        "opener": "Hi! I'm your assistant, what can I do for you?",
+                        "opener": "Hi! I'm your assistant. What can I do for you?",
                         "show_quote": True,
                         "prompt": 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.',
                     },

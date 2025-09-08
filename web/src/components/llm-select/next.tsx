@@ -1,28 +1,44 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { forwardRef, memo, useState } from 'react';
+import { forwardRef, memo, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
 
-interface IProps {
+export interface NextInnerLLMSelectProps {
   id?: string;
   value?: string;
   onInitialValue?: (value: string, option: any) => void;
-  onChange?: (value: string, option: any) => void;
+  onChange?: (value: string) => void;
   disabled?: boolean;
+  filter?: string;
+  showSpeech2TextModel?: boolean;
 }
 
 const NextInnerLLMSelect = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  IProps
->(({ value, disabled }, ref) => {
+  NextInnerLLMSelectProps
+>(({ value, disabled, filter, showSpeech2TextModel = false }, ref) => {
+  const { t } = useTranslation();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
+
+  const ttsModel = useMemo(() => {
+    return showSpeech2TextModel ? [LlmModelType.Speech2text] : [];
+  }, [showSpeech2TextModel]);
+
+  const modelTypes = useMemo(() => {
+    if (filter === LlmModelType.Chat) {
+      return [LlmModelType.Chat];
+    } else if (filter === LlmModelType.Image2text) {
+      return [LlmModelType.Image2text, ...ttsModel];
+    } else {
+      return [LlmModelType.Chat, LlmModelType.Image2text, ...ttsModel];
+    }
+  }, [filter, ttsModel]);
+
+  const modelOptions = useComposeLlmOptionsByModelTypes(modelTypes);
 
   return (
     <Select disabled={disabled} value={value}>
@@ -35,7 +51,7 @@ const NextInnerLLMSelect = forwardRef<
             }}
             ref={ref}
           >
-            <SelectValue>
+            <SelectValue placeholder={t('common.pleaseSelect')}>
               {
                 modelOptions
                   .flatMap((x) => x.options)
@@ -45,7 +61,7 @@ const NextInnerLLMSelect = forwardRef<
           </SelectTrigger>
         </PopoverTrigger>
         <PopoverContent side={'left'}>
-          <LlmSettingFieldItems></LlmSettingFieldItems>
+          <LlmSettingFieldItems options={modelOptions}></LlmSettingFieldItems>
         </PopoverContent>
       </Popover>
     </Select>

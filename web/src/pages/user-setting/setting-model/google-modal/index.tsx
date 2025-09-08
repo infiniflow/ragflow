@@ -47,7 +47,7 @@ const GoogleModal = ({
       onCancel={hideModal}
       okButtonProps={{ loading }}
     >
-      <Form>
+      <Form form={form}>
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
@@ -56,6 +56,7 @@ const GoogleModal = ({
         >
           <Select placeholder={t('modelTypeMessage')}>
             <Option value="chat">chat</Option>
+            <Option value="image2text">image2text</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
@@ -109,7 +110,7 @@ const GoogleModal = ({
               type: 'number',
               message: t('maxTokensInvalidMessage'),
             },
-            ({ getFieldValue }) => ({
+            ({}) => ({
               validator(_, value) {
                 if (value < 0) {
                   return Promise.reject(new Error(t('maxTokensMinMessage')));

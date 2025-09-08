@@ -40,7 +40,7 @@ export default function Dataset() {
     handleFilterSubmit,
     loading,
   } = useFetchDocumentList();
-  const { filters } = useSelectDatasetFilters();
+  const { filters, onOpenChange } = useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -58,22 +58,21 @@ export default function Dataset() {
     rowSelection,
     setRowSelection,
   });
-
   return (
-    <section className="p-5">
+    <section className="p-5 min-w-[880px]">
       <ListFilterBar
         title="Dataset"
         onSearchChange={handleInputChange}
         searchString={searchString}
         value={filterValue}
         onChange={handleFilterSubmit}
+        onOpenChange={onOpenChange}
         filters={filters}
         leftPanel={
           <div className="items-start">
-            <div className="pb-1">Dataset</div>
+            <div className="pb-1">{t('knowledgeDetails.dataset')}</div>
             <div className="text-text-sub-title-invert text-sm">
-              Please wait for your files to finish parsing before starting an
-              AI-powered chat.
+              {t('knowledgeDetails.datasetDescription')}
             </div>
           </div>
         }
@@ -91,7 +90,7 @@ export default function Dataset() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={showCreateModal}>
-              {t('fileManager.newFolder')}
+              {t('knowledgeDetails.emptyFiles')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -112,6 +111,7 @@ export default function Dataset() {
           hideModal={hideDocumentUploadModal}
           onOk={onDocumentUploadOk}
           loading={documentUploadLoading}
+          showParseOnCreation
         ></FileUploadDialog>
       )}
       {createVisible && (

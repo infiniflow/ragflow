@@ -6,8 +6,8 @@
 
 <p align="center">
   <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DFE0E5"></a>
-  <a href="./README_tzh.md"><img alt="繁體中文文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DBEDFA"></a>
+  <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.19.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -70,19 +70,22 @@
 
 ## 💡 RAGFlow 是什么？
 
-[RAGFlow](https://ragflow.io/) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
+[RAGFlow](https://ragflow.io/) 是一款领先的开源检索增强生成（RAG）引擎，通过融合前沿的 RAG 技术与 Agent 能力，为大型语言模型提供卓越的上下文层。它提供可适配任意规模企业的端到端 RAG 工作流，凭借融合式上下文引擎与预置的 Agent 模板，助力开发者以极致效率与精度将复杂数据转化为高可信、生产级的人工智能系统。
 
 ## 🎮 Demo 试用
 
 请登录网址 [https://demo.ragflow.io](https://demo.ragflow.io) 试用 demo。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
-<img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 近期更新
 
+- 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型.
+- 2025-08-04 新增对 Kimi K2 和 Grok 4 等模型的支持.
+- 2025-08-01 支持 agentic workflow 和 MCP。
 - 2025-05-23 Agent 新增 Python/JS 代码执行器组件。
 - 2025-05-05 支持跨语言查询。
 - 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述.
@@ -180,7 +183,7 @@
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。
 
-   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.19.0-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.19.0-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.19.0` 来下载 RAGFlow 镜像的 `v0.19.0` 完整发行版。
+   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.20.4-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.20.4-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.4` 来下载 RAGFlow 镜像的 `v0.20.4` 完整发行版。
 
    ```bash
    $ cd ragflow/docker
@@ -193,8 +196,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.19.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.19.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.20.4           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.20.4-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -298,7 +301,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
 
 ## 🔨 以源代码启动服务
 
-1. 安装 uv。如已经安装，可跳过本步骤：
+1. 安装 `uv` 和 `pre-commit`。如已经安装，可跳过本步骤：
 
    ```bash
    pipx install uv pre-commit
@@ -339,6 +342,8 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    sudo apt-get install libjemalloc-dev
    # centos
    sudo yum install jemalloc
+   # mac
+   sudo brew install jemalloc
    ```
 
 6. 启动后端服务：

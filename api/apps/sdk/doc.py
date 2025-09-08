@@ -25,19 +25,22 @@ from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
 
 from api import settings
+from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileSource, FileType, LLMType, ParserType, TaskStatus
 from api.db.db_models import File, Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle, TenantLLMService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks
+from api.db.services.dialog_service import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import keyword_extraction
+from rag.prompts import cross_languages, keyword_extraction
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -129,8 +132,8 @@ def upload(dataset_id, tenant_id):
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_result(message="No file selected!", code=settings.RetCode.ARGUMENT_ERROR)
-        if len(file_obj.filename.encode("utf-8")) >= 128:
-            return get_result(message="File name should be less than 128 bytes.", code=settings.RetCode.ARGUMENT_ERROR)
+        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            return get_result(message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
     """
     # total size
     total_size = 0
@@ -247,9 +250,9 @@ def update_doc(tenant_id, dataset_id, document_id):
         DocumentService.update_meta_fields(document_id, req["meta_fields"])
 
     if "name" in req and req["name"] != doc.name:
-        if len(req["name"].encode("utf-8")) >= 128:
+        if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             return get_result(
-                message="The name should be less than 128 bytes.",
+                message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
                 code=settings.RetCode.ARGUMENT_ERROR,
             )
         if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
@@ -299,7 +302,7 @@ def update_doc(tenant_id, dataset_id, document_id):
                 doc.kb_id,
                 doc.token_num * -1,
                 doc.chunk_num * -1,
-                doc.process_duation * -1,
+                doc.process_duration * -1,
             )
             if not e:
                 return get_error_data_result(message="Document not found!")
@@ -455,6 +458,18 @@ def list_docs(dataset_id, tenant_id):
         required: false
         default: true
         description: Order in descending.
+    - in: query
+        name: create_time_from
+        type: integer
+        required: false
+        default: 0
+        description: Unix timestamp for filtering documents created after this time. 0 means no filter.
+      - in: query
+        name: create_time_to
+        type: integer
+        required: false
+        default: 0
+        description: Unix timestamp for filtering documents created before this time. 0 means no filter.
       - in: header
         name: Authorization
         type: string
@@ -516,22 +531,33 @@ def list_docs(dataset_id, tenant_id):
         desc = True
     docs, tol = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, id, name)
 
+    create_time_from = int(request.args.get("create_time_from", 0))
+    create_time_to = int(request.args.get("create_time_to", 0))
+
+    if create_time_from or create_time_to:
+        filtered_docs = []
+        for doc in docs:
+            doc_create_time = doc.get("create_time", 0)
+            if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
+                filtered_docs.append(doc)
+        docs = filtered_docs
+
     # rename key's name
     renamed_doc_list = []
+    key_mapping = {
+        "chunk_num": "chunk_count",
+        "kb_id": "dataset_id",
+        "token_num": "token_count",
+        "parser_id": "chunk_method",
+    }
+    run_mapping = {
+        "0": "UNSTART",
+        "1": "RUNNING",
+        "2": "CANCEL",
+        "3": "DONE",
+        "4": "FAIL",
+    }
     for doc in docs:
-        key_mapping = {
-            "chunk_num": "chunk_count",
-            "kb_id": "dataset_id",
-            "token_num": "token_count",
-            "parser_id": "chunk_method",
-        }
-        run_mapping = {
-            "0": "UNSTART",
-            "1": "RUNNING",
-            "2": "CANCEL",
-            "3": "DONE",
-            "4": "FAIL",
-        }
         renamed_doc = {}
         for key, value in doc.items():
             if key == "run":
@@ -1325,6 +1351,9 @@ def retrieval_test(tenant_id):
             highlight:
               type: boolean
               description: Whether to highlight matched content.
+            metadata_condition:
+              type: object
+              description: metadata filter condition.
       - in: header
         name: Authorization
         type: string
@@ -1381,12 +1410,17 @@ def retrieval_test(tenant_id):
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
+    langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
     doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
     for doc_id in doc_ids:
         if doc_id not in doc_ids_list:
             return get_error_data_result(f"The datasets don't own the document {doc_id}")
+    if not doc_ids:
+        metadata_condition = req.get("metadata_condition", {})
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        doc_ids = meta_filter(metas, convert_conditions(metadata_condition))
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
@@ -1404,6 +1438,9 @@ def retrieval_test(tenant_id):
         rerank_mdl = None
         if req.get("rerank_id"):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
+
+        if langs:
+            question = cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)

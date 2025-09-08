@@ -48,9 +48,9 @@ class TestAuthorization:
 
 class TestRquest:
     @pytest.mark.p3
-    def test_content_type_bad(self, api_key):
+    def test_content_type_bad(self, HttpApiAuth):
         BAD_CONTENT_TYPE = "text/xml"
-        res = create_dataset(api_key, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
+        res = create_dataset(HttpApiAuth, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
         assert res["code"] == 101, res
         assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
 
@@ -63,8 +63,8 @@ class TestRquest:
         ],
         ids=["malformed_json_syntax", "invalid_request_payload_type"],
     )
-    def test_payload_bad(self, api_key, payload, expected_message):
-        res = create_dataset(api_key, data=payload)
+    def test_payload_bad(self, HttpApiAuth, payload, expected_message):
+        res = create_dataset(HttpApiAuth, data=payload)
         assert res["code"] == 101, res
         assert res["message"] == expected_message, res
 
@@ -72,17 +72,17 @@ class TestRquest:
 @pytest.mark.usefixtures("clear_datasets")
 class TestCapability:
     @pytest.mark.p3
-    def test_create_dataset_1k(self, api_key):
+    def test_create_dataset_1k(self, HttpApiAuth):
         for i in range(1_000):
             payload = {"name": f"dataset_{i}"}
-            res = create_dataset(api_key, payload)
+            res = create_dataset(HttpApiAuth, payload)
             assert res["code"] == 0, f"Failed to create dataset {i}"
 
     @pytest.mark.p3
-    def test_create_dataset_concurrent(self, api_key):
+    def test_create_dataset_concurrent(self, HttpApiAuth):
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(create_dataset, api_key, {"name": f"dataset_{i}"}) for i in range(count)]
+            futures = [executor.submit(create_dataset, HttpApiAuth, {"name": f"dataset_{i}"}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
@@ -94,8 +94,8 @@ class TestDatasetCreate:
     @given(name=valid_names())
     @example("a" * 128)
     @settings(max_examples=20)
-    def test_name(self, api_key, name):
-        res = create_dataset(api_key, {"name": name})
+    def test_name(self, HttpApiAuth, name):
+        res = create_dataset(HttpApiAuth, {"name": name})
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
 
@@ -111,49 +111,49 @@ class TestDatasetCreate:
         ],
         ids=["empty_name", "space_name", "too_long_name", "invalid_name", "None_name"],
     )
-    def test_name_invalid(self, api_key, name, expected_message):
+    def test_name_invalid(self, HttpApiAuth, name, expected_message):
         payload = {"name": name}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p3
-    def test_name_duplicated(self, api_key):
+    def test_name_duplicated(self, HttpApiAuth):
         name = "duplicated_name"
         payload = {"name": name}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 103, res
         assert res["message"] == f"Dataset name '{name}' already exists", res
 
     @pytest.mark.p3
-    def test_name_case_insensitive(self, api_key):
+    def test_name_case_insensitive(self, HttpApiAuth):
         name = "CaseInsensitive"
         payload = {"name": name.upper()}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
         payload = {"name": name.lower()}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 103, res
         assert res["message"] == f"Dataset name '{name.lower()}' already exists", res
 
     @pytest.mark.p2
-    def test_avatar(self, api_key, tmp_path):
+    def test_avatar(self, HttpApiAuth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
             "name": "avatar",
             "avatar": f"data:image/png;base64,{encode_avatar(fn)}",
         }
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
     @pytest.mark.p2
-    def test_avatar_exceeds_limit_length(self, api_key):
+    def test_avatar_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "String should have at most 65535 characters" in res["message"], res
 
@@ -168,55 +168,55 @@ class TestDatasetCreate:
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
     )
-    def test_avatar_invalid_prefix(self, api_key, tmp_path, name, prefix, expected_message):
+    def test_avatar_invalid_prefix(self, HttpApiAuth, tmp_path, name, prefix, expected_message):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
             "name": name,
             "avatar": f"{prefix}{encode_avatar(fn)}",
         }
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p3
-    def test_avatar_unset(self, api_key):
+    def test_avatar_unset(self, HttpApiAuth):
         payload = {"name": "avatar_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["avatar"] is None, res
 
     @pytest.mark.p3
-    def test_avatar_none(self, api_key):
+    def test_avatar_none(self, HttpApiAuth):
         payload = {"name": "avatar_none", "avatar": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["avatar"] is None, res
 
     @pytest.mark.p2
-    def test_description(self, api_key):
+    def test_description(self, HttpApiAuth):
         payload = {"name": "description", "description": "description"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] == "description", res
 
     @pytest.mark.p2
-    def test_description_exceeds_limit_length(self, api_key):
+    def test_description_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
-    def test_description_unset(self, api_key):
+    def test_description_unset(self, HttpApiAuth):
         payload = {"name": "description_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] is None, res
 
     @pytest.mark.p3
-    def test_description_none(self, api_key):
+    def test_description_none(self, HttpApiAuth):
         payload = {"name": "description_none", "description": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] is None, res
 
@@ -230,9 +230,9 @@ class TestDatasetCreate:
         ],
         ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
     )
-    def test_embedding_model(self, api_key, name, embedding_model):
+    def test_embedding_model(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == embedding_model, res
 
@@ -247,9 +247,9 @@ class TestDatasetCreate:
         ],
         ids=["unknown_llm_name", "unknown_llm_factory", "tenant_no_auth_default_tenant_llm", "tenant_no_auth"],
     )
-    def test_embedding_model_invalid(self, api_key, name, embedding_model):
+    def test_embedding_model_invalid(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
@@ -260,36 +260,38 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
+            ("empty", ""),
+            ("space", " "),
             ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
             ("missing_model_name", "@BAAI"),
             ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
             ("whitespace_only_model_name", " @BAAI"),
             ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
         ],
-        ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+        ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
-    def test_embedding_model_format(self, api_key, name, embedding_model):
+    def test_embedding_model_format(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        if name == "missing_at":
+        if name in ["empty", "space", "missing_at"]:
             assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
             assert "Both model_name and provider must be non-empty strings" in res["message"], res
 
     @pytest.mark.p2
-    def test_embedding_model_unset(self, api_key):
+    def test_embedding_model_unset(self, HttpApiAuth):
         payload = {"name": "embedding_model_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == "BAAI/bge-large-zh-v1.5@BAAI", res
 
     @pytest.mark.p2
-    def test_embedding_model_none(self, api_key):
+    def test_embedding_model_none(self, HttpApiAuth):
         payload = {"name": "embedding_model_none", "embedding_model": None}
-        res = create_dataset(api_key, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid string" in res["message"], res
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["embedding_model"] == "BAAI/bge-large-zh-v1.5@BAAI", res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -297,15 +299,12 @@ class TestDatasetCreate:
         [
             ("me", "me"),
             ("team", "team"),
-            ("me_upercase", "ME"),
-            ("team_upercase", "TEAM"),
-            ("whitespace", " ME "),
         ],
-        ids=["me", "team", "me_upercase", "team_upercase", "whitespace"],
+        ids=["me", "team"],
     )
-    def test_permission(self, api_key, name, permission):
+    def test_permission(self, HttpApiAuth, name, permission):
         payload = {"name": name, "permission": permission}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["permission"] == permission.lower().strip(), res
 
@@ -316,26 +315,29 @@ class TestDatasetCreate:
             ("empty", ""),
             ("unknown", "unknown"),
             ("type_error", list()),
+            ("me_upercase", "ME"),
+            ("team_upercase", "TEAM"),
+            ("whitespace", " ME "),
         ],
-        ids=["empty", "unknown", "type_error"],
+        ids=["empty", "unknown", "type_error", "me_upercase", "team_upercase", "whitespace"],
     )
-    def test_permission_invalid(self, api_key, name, permission):
+    def test_permission_invalid(self, HttpApiAuth, name, permission):
         payload = {"name": name, "permission": permission}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101
         assert "Input should be 'me' or 'team'" in res["message"]
 
     @pytest.mark.p2
-    def test_permission_unset(self, api_key):
+    def test_permission_unset(self, HttpApiAuth):
         payload = {"name": "permission_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["permission"] == "me", res
 
     @pytest.mark.p3
-    def test_permission_none(self, api_key):
+    def test_permission_none(self, HttpApiAuth):
         payload = {"name": "permission_none", "permission": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be 'me' or 'team'" in res["message"], res
 
@@ -358,9 +360,9 @@ class TestDatasetCreate:
         ],
         ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
     )
-    def test_chunk_method(self, api_key, name, chunk_method):
+    def test_chunk_method(self, HttpApiAuth, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["chunk_method"] == chunk_method, res
 
@@ -374,70 +376,25 @@ class TestDatasetCreate:
         ],
         ids=["empty", "unknown", "type_error"],
     )
-    def test_chunk_method_invalid(self, api_key, name, chunk_method):
+    def test_chunk_method_invalid(self, HttpApiAuth, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
 
     @pytest.mark.p2
-    def test_chunk_method_unset(self, api_key):
+    def test_chunk_method_unset(self, HttpApiAuth):
         payload = {"name": "chunk_method_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["chunk_method"] == "naive", res
 
     @pytest.mark.p3
-    def test_chunk_method_none(self, api_key):
+    def test_chunk_method_none(self, HttpApiAuth):
         payload = {"name": "chunk_method_none", "chunk_method": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "name, pagerank",
-        [
-            ("pagerank_min", 0),
-            ("pagerank_mid", 50),
-            ("pagerank_max", 100),
-        ],
-        ids=["min", "mid", "max"],
-    )
-    def test_pagerank(self, api_key, name, pagerank):
-        payload = {"name": name, "pagerank": pagerank}
-        res = create_dataset(api_key, payload)
-        assert res["code"] == 0, res
-        assert res["data"]["pagerank"] == pagerank, res
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "name, pagerank, expected_message",
-        [
-            ("pagerank_min_limit", -1, "Input should be greater than or equal to 0"),
-            ("pagerank_max_limit", 101, "Input should be less than or equal to 100"),
-        ],
-        ids=["min_limit", "max_limit"],
-    )
-    def test_pagerank_invalid(self, api_key, name, pagerank, expected_message):
-        payload = {"name": name, "pagerank": pagerank}
-        res = create_dataset(api_key, payload)
-        assert res["code"] == 101, res
-        assert expected_message in res["message"], res
-
-    @pytest.mark.p3
-    def test_pagerank_unset(self, api_key):
-        payload = {"name": "pagerank_unset"}
-        res = create_dataset(api_key, payload)
-        assert res["code"] == 0, res
-        assert res["data"]["pagerank"] == 0, res
-
-    @pytest.mark.p3
-    def test_pagerank_none(self, api_key):
-        payload = {"name": "pagerank_unset", "pagerank": None}
-        res = create_dataset(api_key, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid integer" in res["message"], res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -543,9 +500,9 @@ class TestDatasetCreate:
             "raptor_random_seed_min",
         ],
     )
-    def test_parser_config(self, api_key, name, parser_config):
+    def test_parser_config(self, HttpApiAuth, name, parser_config):
         payload = {"name": name, "parser_config": parser_config}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         for k, v in parser_config.items():
             if isinstance(v, dict):
@@ -560,57 +517,57 @@ class TestDatasetCreate:
         [
             ("auto_keywords_min_limit", {"auto_keywords": -1}, "Input should be greater than or equal to 0"),
             ("auto_keywords_max_limit", {"auto_keywords": 33}, "Input should be less than or equal to 32"),
-            ("auto_keywords_float_not_allowed", {"auto_keywords": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("auto_keywords_type_invalid", {"auto_keywords": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("auto_keywords_float_not_allowed", {"auto_keywords": 3.14}, "Input should be a valid integer"),
+            ("auto_keywords_type_invalid", {"auto_keywords": "string"}, "Input should be a valid integer"),
             ("auto_questions_min_limit", {"auto_questions": -1}, "Input should be greater than or equal to 0"),
             ("auto_questions_max_limit", {"auto_questions": 11}, "Input should be less than or equal to 10"),
-            ("auto_questions_float_not_allowed", {"auto_questions": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("auto_questions_type_invalid", {"auto_questions": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("auto_questions_float_not_allowed", {"auto_questions": 3.14}, "Input should be a valid integer"),
+            ("auto_questions_type_invalid", {"auto_questions": "string"}, "Input should be a valid integer"),
             ("chunk_token_num_min_limit", {"chunk_token_num": 0}, "Input should be greater than or equal to 1"),
             ("chunk_token_num_max_limit", {"chunk_token_num": 2049}, "Input should be less than or equal to 2048"),
-            ("chunk_token_num_float_not_allowed", {"chunk_token_num": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("chunk_token_num_type_invalid", {"chunk_token_num": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("chunk_token_num_float_not_allowed", {"chunk_token_num": 3.14}, "Input should be a valid integer"),
+            ("chunk_token_num_type_invalid", {"chunk_token_num": "string"}, "Input should be a valid integer"),
             ("delimiter_empty", {"delimiter": ""}, "String should have at least 1 character"),
-            ("html4excel_type_invalid", {"html4excel": "string"}, "Input should be a valid boolean, unable to interpret input"),
+            ("html4excel_type_invalid", {"html4excel": "string"}, "Input should be a valid boolean"),
             ("tag_kb_ids_not_list", {"tag_kb_ids": "1,2"}, "Input should be a valid list"),
             ("tag_kb_ids_int_in_list", {"tag_kb_ids": [1, 2]}, "Input should be a valid string"),
             ("topn_tags_min_limit", {"topn_tags": 0}, "Input should be greater than or equal to 1"),
             ("topn_tags_max_limit", {"topn_tags": 11}, "Input should be less than or equal to 10"),
-            ("topn_tags_float_not_allowed", {"topn_tags": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("topn_tags_type_invalid", {"topn_tags": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("topn_tags_float_not_allowed", {"topn_tags": 3.14}, "Input should be a valid integer"),
+            ("topn_tags_type_invalid", {"topn_tags": "string"}, "Input should be a valid integer"),
             ("filename_embd_weight_min_limit", {"filename_embd_weight": -1}, "Input should be greater than or equal to 0"),
             ("filename_embd_weight_max_limit", {"filename_embd_weight": 1.1}, "Input should be less than or equal to 1"),
-            ("filename_embd_weight_type_invalid", {"filename_embd_weight": "string"}, "Input should be a valid number, unable to parse string as a number"),
+            ("filename_embd_weight_type_invalid", {"filename_embd_weight": "string"}, "Input should be a valid number"),
             ("task_page_size_min_limit", {"task_page_size": 0}, "Input should be greater than or equal to 1"),
-            ("task_page_size_float_not_allowed", {"task_page_size": 3.14}, "Input should be a valid integer, got a number with a fractional part"),
-            ("task_page_size_type_invalid", {"task_page_size": "string"}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("task_page_size_float_not_allowed", {"task_page_size": 3.14}, "Input should be a valid integer"),
+            ("task_page_size_type_invalid", {"task_page_size": "string"}, "Input should be a valid integer"),
             ("pages_not_list", {"pages": "1,2"}, "Input should be a valid list"),
             ("pages_not_list_in_list", {"pages": ["1,2"]}, "Input should be a valid list"),
-            ("pages_not_int_list", {"pages": [["string1", "string2"]]}, "Input should be a valid integer, unable to parse string as an integer"),
-            ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean, unable to interpret input"),
+            ("pages_not_int_list", {"pages": [["string1", "string2"]]}, "Input should be a valid integer"),
+            ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ("graphrag_entity_types_not_list", {"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ("graphrag_entity_types_not_str_in_list", {"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
             ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
             ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
-            ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean, unable to interpret input"),
-            ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean, unable to interpret input"),
-            ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean, unable to interpret input"),
+            ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
+            ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
+            ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ("raptor_prompt_empty", {"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ("raptor_prompt_space", {"raptor": {"prompt": " "}}, "String should have at least 1 character"),
             ("raptor_max_token_min_limit", {"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_token_max_limit", {"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer, got a number with a fractional part"),
-            ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
+            ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
             ("raptor_threshold_min_limit", {"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
             ("raptor_threshold_max_limit", {"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number, unable to parse string as a number"),
+            ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number"),
             ("raptor_max_cluster_min_limit", {"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_cluster_max_limit", {"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
-            ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer, got a number with a fractional par"),
-            ("raptor_max_cluster_type_invalid", {"raptor": {"max_cluster": "string"}}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
+            ("raptor_max_cluster_type_invalid", {"raptor": {"max_cluster": "string"}}, "Input should be a valid integer"),
             ("raptor_random_seed_min_limit", {"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
-            ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer, got a number with a fractional part"),
-            ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer, unable to parse string as an integer"),
+            ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
+            ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
             ("parser_config_type_invalid", {"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
         ],
         ids=[
@@ -670,49 +627,52 @@ class TestDatasetCreate:
             "parser_config_type_invalid",
         ],
     )
-    def test_parser_config_invalid(self, api_key, name, parser_config, expected_message):
+    def test_parser_config_invalid(self, HttpApiAuth, name, parser_config, expected_message):
         payload = {"name": name, "parser_config": parser_config}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p2
-    def test_parser_config_empty(self, api_key):
+    def test_parser_config_empty(self, HttpApiAuth):
         payload = {"name": "parser_config_empty", "parser_config": {}}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p2
-    def test_parser_config_unset(self, api_key):
+    def test_parser_config_unset(self, HttpApiAuth):
         payload = {"name": "parser_config_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": r"\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p3
-    def test_parser_config_none(self, api_key):
+    def test_parser_config_none(self, HttpApiAuth):
         payload = {"name": "parser_config_none", "parser_config": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
-            "chunk_token_num": 128,
+            "chunk_token_num": 512,
             "delimiter": "\\n",
             "html4excel": False,
             "layout_recognize": "DeepDOC",
             "raptor": {"use_raptor": False},
+            "graphrag": {"use_graphrag": False},
         }, res
 
     @pytest.mark.p2
@@ -730,10 +690,72 @@ class TestDatasetCreate:
             {"name": "chunk_count", "chunk_count": 1},
             {"name": "token_num", "token_num": 1},
             {"name": "status", "status": "1"},
+            {"name": "pagerank", "pagerank": 50},
             {"name": "unknown_field", "unknown_field": "unknown_field"},
         ],
     )
-    def test_unsupported_field(self, api_key, payload):
-        res = create_dataset(api_key, payload)
+    def test_unsupported_field(self, HttpApiAuth, payload):
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res
+
+
+@pytest.mark.usefixtures("clear_datasets")
+class TestParserConfigBugFix:
+    @pytest.mark.p1
+    def test_parser_config_missing_raptor_and_graphrag(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_missing_fields", "parser_config": {"chunk_token_num": 1024}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, "raptor field should be present"
+        assert "graphrag" in parser_config, "graphrag field should be present"
+        assert parser_config["raptor"]["use_raptor"] is False, "raptor.use_raptor should default to False"
+        assert parser_config["graphrag"]["use_graphrag"] is False, "graphrag.use_graphrag should default to False"
+        assert parser_config["chunk_token_num"] == 1024, "User-provided chunk_token_num should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_raptor(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_only_raptor", "parser_config": {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert parser_config["raptor"]["use_raptor"] is True, "User-provided raptor.use_raptor should be preserved"
+        assert "graphrag" in parser_config, "graphrag field should be present"
+        assert parser_config["graphrag"]["use_graphrag"] is False, "graphrag.use_graphrag should default to False"
+
+    @pytest.mark.p1
+    def test_parser_config_with_only_graphrag(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_only_graphrag", "parser_config": {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, "raptor field should be present"
+        assert parser_config["raptor"]["use_raptor"] is False, "raptor.use_raptor should default to False"
+        assert parser_config["graphrag"]["use_graphrag"] is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p1
+    def test_parser_config_with_both_fields(self, HttpApiAuth):
+        payload = {"name": "test_parser_config_both_fields", "parser_config": {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert parser_config["raptor"]["use_raptor"] is True, "User-provided raptor.use_raptor should be preserved"
+        assert parser_config["graphrag"]["use_graphrag"] is True, "User-provided graphrag.use_graphrag should be preserved"
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
+    def test_parser_config_different_chunk_methods(self, HttpApiAuth, chunk_method):
+        payload = {"name": f"test_parser_config_{chunk_method}", "chunk_method": chunk_method, "parser_config": {"chunk_token_num": 512}}
+        res = create_dataset(HttpApiAuth, payload)
+        assert res["code"] == 0, res
+
+        parser_config = res["data"]["parser_config"]
+        assert "raptor" in parser_config, f"raptor field should be present for {chunk_method}"
+        assert "graphrag" in parser_config, f"graphrag field should be present for {chunk_method}"
+        assert parser_config["raptor"]["use_raptor"] is False, f"raptor.use_raptor should default to False for {chunk_method}"
+        assert parser_config["graphrag"]["use_graphrag"] is False, f"graphrag.use_graphrag should default to False for {chunk_method}"

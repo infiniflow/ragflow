@@ -4,19 +4,40 @@ import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 
 export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {}
+  extends React.InputHTMLAttributes<HTMLInputElement> {
+  value?: string | number | readonly string[] | undefined;
+}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, value, onChange, ...props }, ref) => {
+    const isControlled = value !== undefined;
+    const { defaultValue, ...restProps } = props;
+    const inputValue = isControlled ? value : defaultValue;
+    const handleChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+      if (type === 'number') {
+        const numValue = e.target.value === '' ? '' : Number(e.target.value);
+        onChange?.({
+          ...e,
+          target: {
+            ...e.target,
+            value: numValue,
+          },
+        } as React.ChangeEvent<HTMLInputElement>);
+      } else {
+        onChange?.(e);
+      }
+    };
     return (
       <input
         type={type}
         className={cn(
-          'flex h-8 w-full rounded-md border border-input bg-colors-background-inverse-weak px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+          'flex h-8 w-full rounded-md border border-input bg-bg-card px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         ref={ref}
-        {...props}
+        value={inputValue ?? ''}
+        onChange={handleChange}
+        {...restProps}
       />
     );
   },
@@ -110,3 +131,22 @@ if (process.env.NODE_ENV !== 'production') {
 export const BlurInput = React.memo(InnerBlurInput);
 
 export { ExpandedInput, Input, SearchInput };
+
+type NumberInputProps = { onChange?(value: number): void } & InputProps;
+
+export const NumberInput = React.forwardRef<
+  HTMLInputElement,
+  NumberInputProps & { value: Value; onChange(value: Value): void }
+>(function NumberInput({ onChange, ...props }, ref) {
+  return (
+    <Input
+      type="number"
+      onChange={(ev) => {
+        const value = ev.target.value;
+        onChange?.(value === '' ? 0 : Number(value)); // convert to number
+      }}
+      {...props}
+      ref={ref}
+    ></Input>
+  );
+});

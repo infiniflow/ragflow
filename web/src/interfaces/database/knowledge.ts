@@ -69,7 +69,7 @@ export interface IKnowledgeFile {
   name: string;
   parser_id: string;
   process_begin_at?: any;
-  process_duation: number;
+  process_duration: number;
   progress: number; // parsing process
   progress_msg: string; // parsing log
   run: RunningStatus; // parsing status
@@ -150,6 +150,7 @@ export interface INextTestingResult {
   doc_aggs: ITestingDocument[];
   total: number;
   labels?: Record<string, number>;
+  isRuned?: boolean;
 }
 
 export type IRenameTag = { fromTag: string; toTag: string };

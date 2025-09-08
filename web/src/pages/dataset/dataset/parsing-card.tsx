@@ -17,7 +17,7 @@ function Dot({ run }: { run: RunningStatus }) {
   const runningStatus = RunningStatusMap[run];
   return (
     <span
-      className={'size-2 inline-block rounded'}
+      className={'size-1 inline-block rounded'}
       style={{ backgroundColor: runningStatus.color }}
     ></span>
   );
@@ -53,9 +53,9 @@ export const PopoverContent = ({ record }: IProps) => {
       children: record.process_begin_at,
     },
     {
-      key: 'knowledgeDetails.process_duation',
+      key: 'knowledgeDetails.process_duration',
       label: t('processDuration'),
-      children: `${record.process_duation.toFixed(2)} s`,
+      children: `${record.process_duration.toFixed(2)} s`,
     },
     {
       key: 'progress_msg',
@@ -89,7 +89,7 @@ export function ParsingCard({ record }: IProps) {
   return (
     <HoverCard>
       <HoverCardTrigger asChild>
-        <Button variant={'ghost'} size={'sm'}>
+        <Button variant={'transparent'} className="border-none" size={'sm'}>
           <Dot run={record.run}></Dot>
         </Button>
       </HoverCardTrigger>

@@ -1,3 +1,4 @@
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import {
   FormControl,
@@ -8,8 +9,7 @@ import {
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
-import { UserOutlined } from '@ant-design/icons';
-import { Avatar, Flex, Form, InputNumber, Select, Slider, Space } from 'antd';
+import { Flex, Form, InputNumber, Select, Slider, Space } from 'antd';
 import DOMPurify from 'dompurify';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -27,8 +27,11 @@ export const TagSetItem = () => {
       value: x.id,
       icon: () => (
         <Space>
-          <Avatar size={20} icon={<UserOutlined />} src={x.avatar} />
-          {x.name}
+          <RAGFlowAvatar
+            name={x.name}
+            avatar={x.avatar}
+            className="size-4"
+          ></RAGFlowAvatar>
         </Space>
       ),
     }));
@@ -38,31 +41,39 @@ export const TagSetItem = () => {
       control={form.control}
       name="parser_config.tag_kb_ids"
       render={({ field }) => (
-        <FormItem>
-          <FormLabel
-            tooltip={
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(
-                    t('knowledgeConfiguration.tagSetTip'),
-                  ),
-                }}
-              ></div>
-            }
-          >
-            {t('knowledgeConfiguration.tagSet')}
-          </FormLabel>
-          <FormControl>
-            <MultiSelect
-              options={knowledgeOptions}
-              onValueChange={field.onChange}
-              placeholder={t('chat.knowledgeBasesMessage')}
-              variant="inverted"
-              maxCount={0}
-              {...field}
-            />
-          </FormControl>
-          <FormMessage />
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+              tooltip={
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(
+                      t('knowledgeConfiguration.tagSetTip'),
+                    ),
+                  }}
+                ></div>
+              }
+            >
+              {t('knowledgeConfiguration.tagSet')}
+            </FormLabel>
+            <div className="w-3/4">
+              <FormControl>
+                <MultiSelect
+                  options={knowledgeOptions}
+                  onValueChange={field.onChange}
+                  placeholder={t('chat.knowledgeBasesMessage')}
+                  variant="inverted"
+                  maxCount={10}
+                  {...field}
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />

@@ -1,0 +1,63 @@
+{
+  "components": {
+    "File": {
+        "obj":{
+            "component_name": "File",
+            "params": {
+            }
+        },
+        "downstream": ["Parser:0"],
+        "upstream": []
+    },
+    "Parser:0": {
+        "obj": {
+            "component_name": "Parser",
+            "params": {
+              "setups": {
+                "pdf": {
+                  "parse_method": "deepdoc",
+                  "vlm_name": "",
+                  "lang": "Chinese",
+                  "suffix": [
+                    "pdf"
+                  ],
+                  "output_format": "json"
+                },
+                "excel": {
+                  "output_format": "html",
+                  "suffix": [
+                    "xls",
+                    "xlsx",
+                    "csv"
+                  ]
+                }
+              }
+            }
+        },
+        "downstream": ["Chunker:0"],
+        "upstream": ["Begin"]
+    },
+    "Chunker:0": {
+        "obj": {
+            "component_name": "Chunker",
+            "params": {
+              "method": "general",
+              "auto_keywords": 5
+            }
+        },
+        "downstream": ["Tokenizer:0"],
+        "upstream": ["Parser:0"]
+    },
+    "Tokenizer:0": {
+        "obj": {
+            "component_name": "Tokenizer",
+            "params": {
+            }
+        },
+        "downstream": [],
+        "upstream": ["Chunker:0"]
+    }
+  },
+  "path": []
+}
+

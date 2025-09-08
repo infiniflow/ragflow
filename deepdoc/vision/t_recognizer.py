@@ -84,13 +84,13 @@ def get_table_html(img, tb_cpns, ocr):
     clmns = LayoutRecognizer.layouts_cleanup(boxes, clmns, 5, 0.5)
 
     for b in boxes:
-        ii = LayoutRecognizer.find_overlapped_with_threashold(b, rows, thr=0.3)
+        ii = LayoutRecognizer.find_overlapped_with_threshold(b, rows, thr=0.3)
         if ii is not None:
             b["R"] = ii
             b["R_top"] = rows[ii]["top"]
             b["R_bott"] = rows[ii]["bottom"]
 
-        ii = LayoutRecognizer.find_overlapped_with_threashold(b, headers, thr=0.3)
+        ii = LayoutRecognizer.find_overlapped_with_threshold(b, headers, thr=0.3)
         if ii is not None:
             b["H_top"] = headers[ii]["top"]
             b["H_bott"] = headers[ii]["bottom"]
@@ -104,7 +104,7 @@ def get_table_html(img, tb_cpns, ocr):
             b["C_left"] = clmns[ii]["x0"]
             b["C_right"] = clmns[ii]["x1"]
 
-        ii = LayoutRecognizer.find_overlapped_with_threashold(b, spans, thr=0.3)
+        ii = LayoutRecognizer.find_overlapped_with_threshold(b, spans, thr=0.3)
         if ii is not None:
             b["H_top"] = spans[ii]["top"]
             b["H_bott"] = spans[ii]["bottom"]

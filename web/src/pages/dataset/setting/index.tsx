@@ -1,13 +1,20 @@
-import { ButtonLoading } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs-underlined';
 import { DocumentParserType } from '@/constants/knowledge';
+import { PermissionRole } from '@/constants/permission';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
-import CategoryPanel from './category-panel';
 import { ChunkMethodForm } from './chunk-method-form';
+import ChunkMethodLearnMore from './chunk-method-learn-more';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
@@ -31,12 +38,13 @@ const enum MethodValue {
 }
 
 export default function DatasetSettings() {
+  const { t } = useTranslation();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
       parser_id: DocumentParserType.Naive,
-      permission: 'me',
+      permission: PermissionRole.Me,
       parser_config: {
         layout_recognize: DocumentType.DeepDOC,
         chunk_token_num: 512,
@@ -47,10 +55,6 @@ export default function DatasetSettings() {
         topn_tags: 3,
         raptor: {
           use_raptor: false,
-          max_token: 256,
-          threshold: 0.1,
-          max_cluster: 64,
-          random_seed: 0,
         },
         graphrag: {
           use_graphrag: false,
@@ -64,6 +68,10 @@ export default function DatasetSettings() {
 
   useFetchKnowledgeConfigurationOnMount(form);
 
+  const [currentTab, setCurrentTab] = useState<
+    'generalForm' | 'chunkMethodForm'
+  >('generalForm'); // currnet Tab state
+
   const parserId = useWatch({
     control: form.control,
     name: 'parser_id',
@@ -74,37 +82,56 @@ export default function DatasetSettings() {
   }
 
   return (
-    <section className="p-5 ">
+    <section className="p-5 h-full flex flex-col">
       <TopTitle
-        title={'Configuration'}
-        description={`  Update your knowledge base configuration here, particularly the chunk
-          method.`}
+        title={t('knowledgeDetails.configuration')}
+        description={t('knowledgeConfiguration.titleDescription')}
       ></TopTitle>
-      <div className="flex gap-14">
+      <div className="flex gap-14 flex-1 min-h-0">
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 basis-full"
+            className="space-y-6 flex-1"
           >
-            <Tabs defaultValue="account">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="account">Account</TabsTrigger>
-                <TabsTrigger value="password">Password</TabsTrigger>
+            <Tabs
+              defaultValue="generalForm"
+              onValueChange={(val) => {
+                setCurrentTab(val);
+              }}
+              className="h-full flex flex-col"
+            >
+              <TabsList className="grid bg-transparent grid-cols-2 rounded-none text-foreground">
+                <TabsTrigger
+                  value="generalForm"
+                  className="group bg-transparent p-0 !border-transparent"
+                >
+                  <div className="flex w-full h-full justify-center	items-center">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-foreground	">
+                      {t('knowledgeDetails.general')}
+                    </span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="chunkMethodForm"
+                  className="group bg-transparent p-0 !border-transparent"
+                >
+                  <div className="flex w-full h-full justify-center	items-center">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-foreground	">
+                      {t('knowledgeDetails.chunkMethodTab')}
+                    </span>
+                  </div>
+                </TabsTrigger>
               </TabsList>
-              <TabsContent value="account">
+              <TabsContent value="generalForm" className="flex-1 min-h-0">
                 <GeneralForm></GeneralForm>
               </TabsContent>
-              <TabsContent value="password">
+              <TabsContent value="chunkMethodForm" className="flex-1 min-h-0">
                 <ChunkMethodForm></ChunkMethodForm>
               </TabsContent>
             </Tabs>
-            <div className="text-right">
-              <ButtonLoading type="submit">Submit</ButtonLoading>
-            </div>
           </form>
         </Form>
-
-        <CategoryPanel chunkMethod={parserId}></CategoryPanel>
+        <ChunkMethodLearnMore tab={currentTab} parserId={parserId} />
       </div>
     </section>
   );

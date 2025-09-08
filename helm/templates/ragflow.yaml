@@ -25,9 +25,21 @@ spec:
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
         checksum/config-ragflow: {{ include (print $.Template.BasePath "/ragflow_config.yaml") . | sha256sum }}
     spec:
+      {{- if or .Values.imagePullSecrets .Values.ragflow.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.ragflow.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
       containers:
       - name: ragflow
-        image: {{ .Values.env.RAGFLOW_IMAGE }}
+        image: {{ .Values.ragflow.image.repository }}:{{ .Values.ragflow.image.tag }}
+        {{- with .Values.ragflow.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
         ports:
           - containerPort: 80
             name: http
@@ -43,6 +55,16 @@ spec:
           - mountPath: /etc/nginx/nginx.conf
             subPath: nginx.conf
             name: nginx-config-volume
+          {{- with .Values.ragflow.service_conf }}
+          - mountPath: /ragflow/conf/local.service_conf.yaml
+            subPath: local.service_conf.yaml
+            name: service-conf-volume
+          {{- end }}
+          {{- with .Values.ragflow.llm_factories }}
+          - mountPath: /ragflow/conf/llm_factories.json
+            subPath: llm_factories.json
+            name: service-conf-volume
+          {{- end }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
@@ -54,6 +76,9 @@ spec:
         - name: nginx-config-volume
           configMap:
             name: nginx-config
+        - name: service-conf-volume
+          configMap:
+            name: ragflow-service-config
 ---
 apiVersion: v1
 kind: Service
