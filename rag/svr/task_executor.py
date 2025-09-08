@@ -21,10 +21,12 @@ import sys
 import threading
 import time
 
+from api.utils import get_uuid
 from api.utils.api_utils import timeout
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
+from rag.flow.pipeline import Pipeline
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
 
 import logging
@@ -223,7 +225,14 @@ async def collect():
         logging.warning(f"collect task {msg['id']} {state}")
         redis_msg.ack()
         return None, None
-    task["task_type"] = msg.get("task_type", "")
+
+    task_type = msg.get("task_type", "")
+    task["task_type"] = task_type
+    if task_type == "dataflow":
+        task["tenant_id"]=msg.get("tenant_id", "")
+        task["dsl"] = msg.get("dsl", "")
+        task["dataflow_id"] = msg.get("dataflow_id", get_uuid())
+        task["kb_id"] = msg.get("kb_id", "")
     return redis_msg, task
 
 
@@ -473,6 +482,15 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     return tk_count, vector_size
 
 
+async def run_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str, callback=None):
+    _ = callback
+
+    pipeline = Pipeline(dsl=dsl, tenant_id=tenant_id, doc_id=doc_id, task_id=task_id, flow_id=flow_id)
+    pipeline.reset()
+
+    await pipeline.run()
+
+
 @timeout(3600)
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     chunks = []
@@ -558,15 +576,20 @@ async def do_handle_task(task):
 
     init_kb(task, vector_size)
 
-    # Either using RAPTOR or Standard chunking methods
-    if task.get("task_type", "") == "raptor":
+    task_type = task.get("task_type", "")
+    if task_type == "dataflow":
+        task_dataflow_dsl = task["dsl"]
+        task_dataflow_id = task["dataflow_id"]
+        await run_dataflow(dsl=task_dataflow_dsl, tenant_id=task_tenant_id, doc_id=task_doc_id, task_id=task_id, flow_id=task_dataflow_id, callback=None)
+        return
+    elif task_type == "raptor":
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
             chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
-    elif task.get("task_type", "") == "graphrag":
+    elif task_type == "graphrag":
         if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
             progress_callback(prog=-1.0, msg="Internal configuration error.")
             return
