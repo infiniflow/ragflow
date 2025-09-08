@@ -1,23 +1,9 @@
-Please analyze the following task:
+**Input Variables**
+- **{{ task }}** — the task/request to analyze
+- **{{ context }}** — background, history, situational context
+- **{{ agent_prompt }}** — special instructions/role hints
+- **{{ tools_desc }}** — available sub-agents and capabilities
 
-Task: {{ task }}
-
-Context: {{ context }}
-
-**Agent Prompt**
-{{ agent_prompt }}
-
-**Analysis Requirements:**
-1. Is it just a small talk? (If yes, no further plan or analysis is needed)
-2. What is the core objective of the task?
-3. What is the complexity level of the task?
-4. What types of specialized skills are required?
-5. Does the task need to be decomposed into subtasks? (If yes, propose the subtask structure)
-6. How to know the task or the subtasks are impossible to lead to the success after a few rounds of interaction?
-7. What are the expected success criteria?
-
-**Available Sub-Agents and Their Specializations:**
-
-{{ tools_desc }}
-
-Provide a detailed analysis of the task based on the above requirements.
+**Final Output Rule**
+Return the Task Transmission section (if needed) followed by the concrete analysis and planning steps according to LOW / MEDIUM / HIGH complexity.  
+Do not restate the framework, definitions, or rules. Output only the final structured result.

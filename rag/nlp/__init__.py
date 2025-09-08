@@ -687,8 +687,20 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
             tk_nums[-1] += tnum
 
     dels = get_delimiters(delimiter)
+    line = ""
     for sec, image in sections:
-        split_sec = re.split(r"(%s)" % dels, sec)
+        if not image:
+            line += sec + "\n"
+            continue
+        split_sec = re.split(r"(%s)" % dels, line + sec)
+        for sub_sec in split_sec:
+            if re.match(f"^{dels}$", sub_sec):
+                continue
+            add_chunk(sub_sec, image,"")
+        line = ""
+
+    if line:
+        split_sec = re.split(r"(%s)" % dels, line)
         for sub_sec in split_sec:
             if re.match(f"^{dels}$", sub_sec):
                 continue
