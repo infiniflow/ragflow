@@ -75,6 +75,14 @@ class BaiduVDBConnection(DocStoreConnection):
             raise Exception(f"Mapping file not found at {fp_mapping}")
         self.mapping = json.load(open(fp_mapping))
         healthy = self.health()
+        self.query_fields_boosts = {
+            "title_tks": 10,
+            "title_sm_tks": 5,
+            "important_tks": 20,
+            "question_tks": 20,
+            "content_ltks": 2,
+            "content_sm_ltks": 1,
+        }
         if healthy["err"] == "":
             logger.info(f"BaiduVDB {settings.BAIDUVDB['endpoint']} is healthy.")
         else:
@@ -333,7 +341,13 @@ class BaiduVDBConnection(DocStoreConnection):
     def _matchTextExpr2Bm25SearchReq(self, m: MatchTextExpr, filter: str) -> BM25SearchRequest:
         search_text_cond = list()
         for field in m.fields:
-            search_text_cond.append(f"{field}:{m.matching_text}")
+            boost = 1
+            if field in self.query_fields_boosts:
+                boost = self.query_fields_boosts[field]
+            if boost != 1:
+                search_text_cond.append(f"{field}:{m.matching_text}^{boost}")
+            else:
+                search_text_cond.append(f"{field}:{m.matching_text}")
         search_text = " OR ".join(search_text_cond)
         return BM25SearchRequest(
             index_name=self.tks_inverted_idx,
