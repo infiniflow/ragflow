@@ -23,7 +23,7 @@
                   ],
                   "output_format": "json"
                 },
-                "excel": {
+                "spreadsheet": {
                   "output_format": "html",
                   "suffix": [
                     "xls",

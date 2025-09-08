@@ -30,7 +30,7 @@ class ParserParam(ProcessParamBase):
         super().__init__()
         self.allowed_output_format = {
             "pdf": ["json", "markdown"],
-            "excel": ["json", "markdown", "html"],
+            "spreadsheet": ["json", "markdown", "html"],
             "ppt": [],
             "image": [],
             "email": [],
@@ -47,7 +47,7 @@ class ParserParam(ProcessParamBase):
                 "suffix": ["pdf"],
                 "output_format": "json",
             },
-            "excel": {
+            "spreadsheet": {
                 "output_format": "html",
                 "suffix": ["xls", "xlsx", "csv"],
             },
@@ -76,10 +76,10 @@ class ParserParam(ProcessParamBase):
             pdf_output_format = pdf_config.get("output_format", "")
             self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
 
-        excel_config = self.setups.get("excel", "")
-        if excel_config:
-            excel_output_format = excel_config.get("output_format", "")
-            self.check_valid_value(excel_output_format, "Excel output format abnormal.", self.allowed_output_format["excel"])
+        spreadsheet_config = self.setups.get("spreadsheet", "")
+        if spreadsheet_config:
+            spreadsheet_output_format = spreadsheet_config.get("output_format", "")
+            self.check_valid_value(spreadsheet_output_format, "Spreadsheet output format abnormal.", self.allowed_output_format["spreadsheet"])
 
         image_config = self.setups.get("image", "")
         if image_config:
@@ -104,6 +104,8 @@ class Parser(ProcessBase):
             bboxes = [{"text": t} for t, _ in lines]
         else:
             assert conf.get("vlm_name")
+            print("@@@@@@@@@@@@@@@@@@@@@@2")
+            print(f"{conf=}", flush=True)
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
@@ -123,23 +125,25 @@ class Parser(ProcessBase):
                 mkdn += b.get("text", "") + "\n"
             self.set_output("markdown", mkdn)
 
-    def _excel(self, blob):
-        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Excel.")
-        conf = self._param.setups["excel"]
+    def _spreadsheet(self, blob):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
+        conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
-        excel_parser = ExcelParser()
+        print("spreadsheet {conf=}", flush=True)
+        spreadsheet_parser = ExcelParser()
         if conf.get("output_format") == "html":
-            html = excel_parser.html(blob, 1000000000)
+            print("???????????????????????????????????????", flush=True)
+            html = spreadsheet_parser.html(blob, 1000000000)
             self.set_output("html", html)
         elif conf.get("output_format") == "json":
-            self.set_output("json", [{"text": txt} for txt in excel_parser(blob) if txt])
+            self.set_output("json", [{"text": txt} for txt in spreadsheet_parser(blob) if txt])
         elif conf.get("output_format") == "markdown":
-            self.set_output("markdown", excel_parser.markdown(blob))
+            self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
-            "excel": self._excel,
+            "spreadsheet": self._spreadsheet,
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
