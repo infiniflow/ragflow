@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import AgentCanvas from './canvas';
+import DataFlowCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
@@ -161,10 +161,10 @@ export default function DataFlow() {
       </PageHeader>
       <ReactFlowProvider>
         <DropdownProvider>
-          <AgentCanvas
+          <DataFlowCanvas
             drawerVisible={chatDrawerVisible}
             hideDrawer={hideChatDrawer}
-          ></AgentCanvas>
+          ></DataFlowCanvas>
         </DropdownProvider>
       </ReactFlowProvider>
       {fileUploadVisible && (

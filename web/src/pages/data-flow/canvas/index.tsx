@@ -18,7 +18,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentBackground } from '../components/background';
 import { AgentInstanceContext, HandleContext } from '../context';
@@ -41,6 +41,7 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import ChunkerNode from './node/chunker-node';
 import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
@@ -49,11 +50,13 @@ import { KeywordNode } from './node/keyword-node';
 import { LogicNode } from './node/logic-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
+import ParserNode from './node/parser-node';
 import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
+import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
 
 export const nodeTypes: NodeTypes = {
@@ -76,6 +79,9 @@ export const nodeTypes: NodeTypes = {
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
   toolNode: ToolNode,
+  parserNode: ParserNode,
+  chunkerNode: ChunkerNode,
+  tokenizerNode: TokenizerNode,
 };
 
 const edgeTypes = {
@@ -87,7 +93,7 @@ interface IProps {
   hideDrawer(): void;
 }
 
-function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
+function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { t } = useTranslation();
   const {
     nodes,
@@ -323,4 +329,4 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   );
 }
 
-export default AgentCanvas;
+export default memo(DataFlowCanvas);
