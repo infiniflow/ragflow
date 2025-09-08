@@ -262,7 +262,7 @@ export default function SearchingView({
           </div>
 
           {total > 0 && (
-            <div className="mt-8 px-8 pb-8">
+            <div className="mt-8 px-8 pb-8 text-base">
               <RAGFlowPagination
                 current={pagination.current}
                 pageSize={pagination.pageSize}

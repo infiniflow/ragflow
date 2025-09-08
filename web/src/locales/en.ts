@@ -46,6 +46,7 @@ export default {
       remove: 'Remove',
       search: 'Search',
       noDataFound: 'No data found.',
+      noData: 'No data',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
         namePlaceholder: 'My MCP Server',
@@ -138,6 +139,10 @@ export default {
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
+      noTestResultsForRuned:
+        'No relevant results found. Try adjusting your query or parameters.',
+      noTestResultsForNotRuned:
+        'No test has been run yet. Results will appear here.',
       testingDescription:
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
@@ -1578,6 +1583,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+    },
+    pagination: {
+      total: 'Total {{total}}',
+      page: 'Page',
     },
   },
 };

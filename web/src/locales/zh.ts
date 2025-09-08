@@ -45,6 +45,7 @@ export default {
       remove: '移除',
       search: '搜索',
       noDataFound: '没有找到数据。',
+      noData: '暂无数据',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
     },
     login: {
@@ -129,6 +130,8 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
+      noTestResultsForRuned: '未找到相关结果，请尝试调整查询语句或参数',
+      noTestResultsForNotRuned: '尚未运行测试，结果会显示在这里',
       testingDescription:
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
@@ -1492,6 +1495,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       japanese: '日语',
       korean: '韩语',
       vietnamese: '越南语',
+    },
+    pagination: {
+      total: '总共 {{total}} 条',
+      page: '页',
     },
   },
 };
