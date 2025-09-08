@@ -518,7 +518,7 @@ def hierarchical_merge(bull, sections, depth):
     return res
 
 
-def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
+def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     if not sections:
         return []
@@ -534,7 +534,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overl
             pos = ""
         if tnum < 8:
             pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num  
+        # Ensure that the length of the merged chunk does not exceed chunk_token_num
         if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
@@ -638,10 +638,10 @@ def concat_img(img1, img2):
         return img2
     if not img1 and not img2:
         return None
-    
+
     if img1 is img2:
         return img1
-    
+
     if isinstance(img1, Image.Image) and isinstance(img2, Image.Image):
         pixel_data1 = img1.tobytes()
         pixel_data2 = img2.tobytes()
