@@ -24,12 +24,19 @@
                   "output_format": "json"
                 },
                 "spreadsheet": {
-                  "output_format": "html",
                   "suffix": [
                     "xls",
                     "xlsx",
                     "csv"
-                  ]
+                  ],
+                  "output_format": "html"
+                },
+                "word": {
+                  "suffix": [
+                    "doc",
+                    "docx"
+                  ],
+                  "output_format": "json"
                 }
               }
             }
