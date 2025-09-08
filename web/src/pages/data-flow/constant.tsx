@@ -317,7 +317,7 @@ export const initialCodeValues = {
 
 export const initialWaitingDialogueValues = {};
 
-export const initialChunkerValues = {};
+export const initialChunkerValues = { outputs: {} };
 
 export const initialTokenizerValues = {};
 
@@ -388,7 +388,7 @@ export const initialStringTransformValues = {
   },
 };
 
-export const initialParserValues = {};
+export const initialParserValues = { outputs: {} };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
