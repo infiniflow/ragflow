@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { memo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { initialGoogleValues } from '../../constant';
@@ -81,7 +82,7 @@ export function GoogleFormWidgets() {
   );
 }
 
-const GoogleForm = ({ node }: INextOperatorForm) => {
+const ParserForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslate('flow');
   const defaultValues = useFormValues(initialGoogleValues, node);
 
@@ -136,4 +137,4 @@ const GoogleForm = ({ node }: INextOperatorForm) => {
   );
 };
 
-export default GoogleForm;
+export default memo(ParserForm);

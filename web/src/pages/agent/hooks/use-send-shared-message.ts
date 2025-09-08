@@ -48,7 +48,12 @@ export const useSendNextSharedMessage = (
     showModal: showParameterDialog,
   } = useSetModalState();
 
-  const ret = useSendAgentMessage(url, addEventList, params, true);
+  const ret = useSendAgentMessage({
+    url,
+    addEventList,
+    beginParams: params,
+    isShared: true,
+  });
 
   const ok = useCallback(
     (params: any[]) => {

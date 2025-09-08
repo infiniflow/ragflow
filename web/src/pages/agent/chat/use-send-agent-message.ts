@@ -194,12 +194,19 @@ export const buildRequestBody = (value: string = '') => {
   return msgBody;
 };
 
-export const useSendAgentMessage = (
-  url?: string,
-  addEventList?: (data: IEventList, messageId: string) => void,
-  beginParams?: any[],
-  isShared?: boolean,
-) => {
+export const useSendAgentMessage = ({
+  url,
+  addEventList,
+  beginParams,
+  isShared,
+  refetch,
+}: {
+  url?: string;
+  addEventList?: (data: IEventList, messageId: string) => void;
+  beginParams?: any[];
+  isShared?: boolean;
+  refetch?: () => void;
+}) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
@@ -211,8 +218,6 @@ export const useSendAgentMessage = (
   }, [answerList]);
 
   const isTaskMode = useIsTaskMode();
-
-  // const { refetch } = useFetchAgent(); // This will cause the shared page to also send a request
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -277,7 +282,7 @@ export const useSendAgentMessage = (
           setValue(message.content);
           removeLatestMessage();
         } else {
-          // refetch(); // pull the message list after sending the message successfully
+          refetch?.(); // pull the message list after sending the message successfully
         }
       } catch (error) {
         console.log('🚀 ~ useSendAgentMessage ~ error:', error);
@@ -293,6 +298,7 @@ export const useSendAgentMessage = (
       clearUploadResponseList,
       setValue,
       removeLatestMessage,
+      refetch,
     ],
   );
 
@@ -305,9 +311,9 @@ export const useSendAgentMessage = (
         role: MessageType.User,
       });
       await send({ ...body, session_id: sessionId });
-      // refetch();
+      refetch?.();
     },
-    [addNewestOneQuestion, send, sessionId],
+    [addNewestOneQuestion, refetch, send, sessionId],
   );
 
   // reset session

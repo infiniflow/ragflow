@@ -14,6 +14,7 @@ import {
   NodeTypes,
   Position,
   ReactFlow,
+  ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
@@ -23,11 +24,7 @@ import { AgentBackground } from '../components/background';
 import { AgentInstanceContext, HandleContext } from '../context';
 
 import FormSheet from '../form-sheet/next';
-import {
-  useHandleDrop,
-  useSelectCanvasData,
-  useValidateConnection,
-} from '../hooks';
+import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useMoveNote } from '../hooks/use-move-note';
@@ -104,8 +101,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
-  const { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance } =
-    useHandleDrop();
+  const [reactFlowInstance, setReactFlowInstance] =
+    useState<ReactFlowInstance<any, any>>();
 
   const {
     onNodeClick,
@@ -237,10 +234,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onConnect={onConnect}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          onDrop={onDrop}
           onConnectStart={OnConnectStart}
           onConnectEnd={OnConnectEnd}
-          onDragOver={onDragOver}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onInit={setReactFlowInstance}

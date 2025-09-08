@@ -21,6 +21,7 @@ import { useAwaitCompentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
 
 function AgentChatBox() {
+  const { data: canvasInfo, refetch } = useFetchAgent();
   const {
     value,
     scrollRef,
@@ -33,13 +34,12 @@ function AgentChatBox() {
     sendFormMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
-  } = useSendAgentMessage();
+  } = useSendAgentMessage({ refetch });
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
-  const { data: canvasInfo } = useFetchAgent();
   const { id: canvasId } = useParams();
   const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
 
