@@ -21,7 +21,7 @@ class NodeEmbeddings:
     embeddings: np.ndarray
 
 
-def embed_nod2vec(
+def embed_node2vec(
     graph: nx.Graph | nx.DiGraph,
     dimensions: int = 1536,
     num_walks: int = 10,
@@ -44,13 +44,13 @@ def embed_nod2vec(
     return NodeEmbeddings(embeddings=lcc_tensors[0], nodes=lcc_tensors[1])
 
 
-def run(graph: nx.Graph, args: dict[str, Any]) -> NodeEmbeddings:
+def run(graph: nx.Graph, args: dict[str, Any]) -> dict:
     """Run method definition."""
     if args.get("use_lcc", True):
         graph = stable_largest_connected_component(graph)
 
     # create graph embedding using node2vec
-    embeddings = embed_nod2vec(
+    embeddings = embed_node2vec(
         graph=graph,
         dimensions=args.get("dimensions", 1536),
         num_walks=args.get("num_walks", 10),
