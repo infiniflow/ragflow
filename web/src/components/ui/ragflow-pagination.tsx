@@ -33,11 +33,7 @@ export function RAGFlowPagination({
 
   const sizeChangerOptions: RAGFlowSelectOptionType[] = useMemo(() => {
     return [10, 20, 50, 100].map((x) => ({
-      label: (
-        <span>
-          {x} / {t('pagination.page')}
-        </span>
-      ),
+      label: <span>{t('pagination.page', { page: x })}</span>,
       value: x.toString(),
     }));
   }, []);
