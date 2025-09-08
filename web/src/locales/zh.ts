@@ -1498,7 +1498,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     },
     pagination: {
       total: '总共 {{total}} 条',
-      page: '页',
+      page: '{{page}}条/页',
     },
   },
 };
