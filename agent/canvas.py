@@ -16,6 +16,7 @@
 import base64
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -300,9 +301,11 @@ class Canvas(Graph):
                                 yield decorate("message", {"content": m})
                                 _m += m
                         cpn_obj.set_output("content", _m)
+                        cite = re.search(r"\[ID:[ 0-9]+\]", _m)
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
-                    yield decorate("message_end", {"reference": self.get_reference()})
+                        cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
+                    yield decorate("message_end", {"reference": self.get_reference() if cite else None})
 
                     while partials:
                         _cpn_obj = self.get_component_obj(partials[0])
