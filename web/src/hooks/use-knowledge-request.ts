@@ -72,12 +72,14 @@ export const useTestRetrieval = () => {
       chunks: [],
       doc_aggs: [],
       total: 0,
+      isRuned: false,
     },
     enabled: false,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.retrieval_test(queryParams);
-      return data?.data ?? {};
+      const result = data?.data ?? {};
+      return { ...result, isRuned: true };
     },
   });
 
