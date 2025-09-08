@@ -2788,6 +2788,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.1",
+                    "tags": "LLM,CHAT,160k",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3.1",
+                    "tags": "LLM,CHAT,160",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
