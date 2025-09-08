@@ -756,6 +756,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "kimi-k2-0905-preview",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2-turbo-preview",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "kimi-latest",
                     "tags": "LLM,CHAT,8k,32k,128k",
                     "max_tokens": 131072,
@@ -2795,6 +2809,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.1",
+                    "tags": "LLM,CHAT,160k",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3.1",
+                    "tags": "LLM,CHAT,160",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
@@ -4446,6 +4474,21 @@
                     "max_tokens": 10240,
                     "model_type": "rerank",
                     "is_tools": false
+                }
+            ]
+        },
+        {
+            "name": "Meituan",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "LongCat-Flash-Chat",
+                    "tags": "LLM,CHAT,8000",
+                    "max_tokens": 8000,
+                    "model_type": "chat",
+                    "is_tools": true
                 }
             ]
         }
