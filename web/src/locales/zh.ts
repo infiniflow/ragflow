@@ -81,7 +81,7 @@ export default {
       flow: '智能体',
       search: '搜索',
       welcome: '欢迎来到',
-      dataset: '数据集',
+      dataset: '知识库',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -104,7 +104,7 @@ export default {
       retrievalTestingDescription:
         '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
       Parse: '解析',
-      dataset: '数据集',
+      dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
       knowledgeGraph: '知识图谱',
@@ -1474,7 +1474,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       name: '姓名',
       avatar: '头像',
       description: '描述',
-      datasets: '数据集',
+      datasets: '知识库',
       rerankModel: 'rerank 模型',
       AISummary: 'AI 总结',
       enableWebSearch: '启用网页搜索',
