@@ -1,7 +1,11 @@
 {
     "id": 17,
-    "title": "SQL Assistant",
-    "description": "SQL Assistant is an AI-powered tool that lets business users turn plain-English questions into fully formed SQL queries. Simply type your question (e.g., “Show me last quarter’s top 10 products by revenue”) and SQL Assistant generates the exact SQL, runs it against your database, and returns the results in seconds. ",
+    "title": {
+        "en": "SQL Assistant",
+        "zh": "SQL助理"},
+    "description": {
+        "en": "SQL Assistant is an AI-powered tool that lets business users turn plain-English questions into fully formed SQL queries. Simply type your question (e.g., “Show me last quarter’s top 10 products by revenue”) and SQL Assistant generates the exact SQL, runs it against your database, and returns the results in seconds. ",
+        "zh": "用户能够将简单文本问题转化为完整的SQL查询并输出结果。只需输入您的问题（例如，“展示上个季度前十名按收入排序的产品”），SQL助理就会生成精确的SQL语句，对其运行您的数据库，并几秒钟内返回结果。"},
     "canvas_type": "Marketing",
     "dsl": {
             "components": {

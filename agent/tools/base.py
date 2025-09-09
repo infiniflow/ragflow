@@ -166,7 +166,7 @@ class ToolBase(ComponentBase):
                 "count": 1,
                 "url": url
             })
-        self._canvas.add_refernce(chunks, aggs)
+        self._canvas.add_reference(chunks, aggs)
         self.set_output("formalized_content", "\n".join(kb_prompt({"chunks": chunks, "doc_aggs": aggs}, 200000, True)))
 
     def thoughts(self) -> str:

@@ -93,7 +93,8 @@ class MCPToolCallSession(ToolCallSession):
                             msg = f"Timeout initializing client_session for server {self._mcp_server.id}"
                             logging.error(msg)
                             await self._process_mcp_tasks(None, msg)
-            except Exception:
+            except Exception as e:
+                logging.exception(e)
                 msg = "Connection failed (possibly due to auth error). Please check authentication settings first"
                 await self._process_mcp_tasks(None, msg)
 
@@ -148,7 +149,7 @@ class MCPToolCallSession(ToolCallSession):
         if result.isError:
             return f"MCP server error: {result.content}"
 
-        # For now we only support text content
+        # For now, we only support text content
         if isinstance(result.content[0], TextContent):
             return result.content[0].text
         else:

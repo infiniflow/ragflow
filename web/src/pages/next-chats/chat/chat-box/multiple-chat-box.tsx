@@ -23,6 +23,7 @@ import {
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { isEmpty, omit } from 'lodash';
 import { ListCheck, Plus, Trash2 } from 'lucide-react';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
@@ -139,7 +140,7 @@ const ChatCard = forwardRef(function ChatCard(
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Apply model configs</p>
+                <p>{t('chat.applyModelConfigs')}</p>
               </TooltipContent>
             </Tooltip>
             {!isLatestChat || chatBoxIds.length === 3 ? (

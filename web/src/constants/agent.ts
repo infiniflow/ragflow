@@ -24,3 +24,5 @@ export enum AgentGlobals {
   SysConversationTurns = 'sys.conversation_turns',
   SysFiles = 'sys.files',
 }
+
+export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;

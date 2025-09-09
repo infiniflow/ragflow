@@ -1,8 +1,12 @@
 
 {
     "id": 15,
-    "title": "CV Analysis and Candidate Evaluation",
-    "description": "This is a workflow that helps companies evaluate resumes, HR uploads a job description first, then submits multiple resumes via the chat window for evaluation.",
+    "title": {
+        "en": "CV Analysis and Candidate Evaluation",
+        "zh": "简历分析和候选人评估"},
+    "description": {
+        "en": "This is a workflow that helps companies evaluate resumes, HR uploads a job description first, then submits multiple resumes via the chat window for evaluation.",
+        "zh": "帮助公司评估简历的工作流。HR首先上传职位描述，通过聊天窗口提交多份简历进行评估。"},
     "canvas_type": "Other",
     "dsl": {
             "components": {

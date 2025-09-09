@@ -18,6 +18,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { t } from 'i18next';
 import { FilterChange, FilterCollection, FilterValue } from './interface';
 
 export type CheckboxFormMultipleProps = {
@@ -134,10 +135,10 @@ function CheckboxFormMultiple({
             size={'sm'}
             onClick={onReset}
           >
-            Clear
+            {t('common.clear')}
           </Button>
           <Button type="submit" size={'sm'}>
-            Submit
+            {t('common.submit')}
           </Button>
         </div>
       </form>

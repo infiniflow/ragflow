@@ -43,7 +43,7 @@ class DeepLParam(ComponentParamBase):
 
 
 class DeepL(ComponentBase, ABC):
-    component_name = "GitHub"
+    component_name = "DeepL"
 
     def _run(self, history, **kwargs):
         ans = self.get_input()

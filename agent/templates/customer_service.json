@@ -1,8 +1,12 @@
 
 {
     "id": 2,
-    "title": "Multi-Agent Customer Support",
-    "description": "This is a multi-agent system for intelligent customer service processing based on user intent classification. It uses the lead-agent to identify the type of user needs, assign tasks to sub-agents for processing.",
+    "title": {
+        "en": "Multi-Agent Customer Support",
+        "zh": "多智能体客服"},
+    "description": {
+        "en": "This is a multi-agent system for intelligent customer service processing based on user intent classification. It uses the lead-agent to identify the type of user needs, assign tasks to sub-agents for processing.",
+        "zh": "多智能体系统，用于智能客服场景。基于用户意图分类，使用主智能体识别用户需求类型，并将任务分配给子智能体进行处理。"},
     "canvas_type": "Agent",
     "dsl": {
             "components": {

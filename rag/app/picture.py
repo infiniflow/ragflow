@@ -78,15 +78,12 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
     txt = ""
 
     try:
-        img_binary = io.BytesIO()
-        img.save(img_binary, format='JPEG')
-        img_binary.seek(0)
-
-        ans = clean_markdown_block(vision_model.describe_with_prompt(img_binary.read(), prompt))
-
-        txt += "\n" + ans
-
-        return txt
+        with io.BytesIO() as img_binary:
+            img.save(img_binary, format='JPEG')
+            img_binary.seek(0)
+            ans = clean_markdown_block(vision_model.describe_with_prompt(img_binary.read(), prompt))
+            txt += "\n" + ans
+            return txt
 
     except Exception as e:
         callback(-1, str(e))

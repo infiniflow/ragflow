@@ -1,8 +1,12 @@
 {
     "id": 18,
-    "title": "Choose Your Knowledge Base Workflow",
-    "description": "Select your desired knowledge base from the dropdown menu. The retrieval assistant will only use data from your selected knowledge base to generate responses.",
-    "canvas_type": "Other",
+    "title": {
+		"en": "Choose Your Knowledge Base Workflow",
+		"zh": "选择知识库工作流"},
+    "description": {
+		"en": "Select your desired knowledge base from the dropdown menu. The retrieval assistant will only use data from your selected knowledge base to generate responses.",
+		"zh": "从下拉菜单中选择知识库，工作流将仅根据所选知识库内容生成回答。"},
+	"canvas_type": "Other",
     "dsl": {
 		"components": {
 			"Agent:ProudDingosShout": {

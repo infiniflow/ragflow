@@ -225,6 +225,14 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   };
 
   const OnConnectEnd = (event: MouseEvent | TouchEvent) => {
+    const target = event.target as HTMLElement;
+    // Clicking Handle will also trigger OnConnectEnd.
+    // To solve the problem that the operator on the right side added by clicking Handle will overlap with the original operator, this event is blocked here.
+    // TODO: However, a better way is to add both operators in the same way as OnConnectEnd.
+    if (target?.classList.contains('react-flow__handle')) {
+      return;
+    }
+
     if ('clientX' in event && 'clientY' in event) {
       const { clientX, clientY } = event;
       setDropdownPosition({ x: clientX, y: clientY });

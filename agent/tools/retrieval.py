@@ -163,7 +163,7 @@ class Retrieval(ToolBase, ABC):
             self.set_output("formalized_content", self._param.empty_response)
             return
 
-        self._canvas.add_refernce(kbinfos["chunks"], kbinfos["doc_aggs"])
+        self._canvas.add_reference(kbinfos["chunks"], kbinfos["doc_aggs"])
         form_cnt = "\n".join(kb_prompt(kbinfos, 200000, True))
         self.set_output("formalized_content", form_cnt)
         return form_cnt

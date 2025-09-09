@@ -16,7 +16,7 @@ Knowledge base, hallucination-free chat, and file management are the three pilla
 
 With multiple knowledge bases, you can build more flexible, diversified question answering. To create your first knowledge base:
 
-![create knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/110541ed-6cea-4a03-a11c-414a0948ba80)
+![create knowledge base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_knowledge_base.jpg)
 
 _Each time a knowledge base is created, a folder with the same name is generated in the **root/.knowledgebase** directory._
 
@@ -24,7 +24,7 @@ _Each time a knowledge base is created, a folder with the same name is generated
 
 The following screenshot shows the configuration page of a knowledge base. A proper configuration of your knowledge base is crucial for future AI chats. For example, choosing the wrong embedding model or chunking method would cause unexpected semantic loss or mismatched answers in chats. 
 
-![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
+![knowledge base configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_knowledge_base.jpg)
 
 This section covers the following topics:
 
@@ -56,7 +56,7 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 
 You can also change a file's chunking method on the **Datasets** page.
 
-![change chunking method](https://github.com/infiniflow/ragflow/assets/93570324/ac116353-2793-42b2-b181-65e7082bed42)
+![change chunking method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embedded_chat_app.jpg)
 
 ### Select embedding model
 
@@ -82,10 +82,8 @@ While uploading files directly to a knowledge base seems more convenient, we *hi
 
 File parsing is a crucial topic in knowledge base configuration. The meaning of file parsing in RAGFlow is twofold: chunking files based on file layout and building embedding and full-text (keyword) indexes on these chunks. After having selected the chunking method and embedding model, you can start parsing a file:
 
-![parse file](https://github.com/infiniflow/ragflow/assets/93570324/5311f166-6426-447f-aa1f-bd488f1cfc7b)
+![parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
 
-- Click the play button next to **UNSTART** to start file parsing.
-- Click the red-cross icon and then refresh, if your file parsing stalls for a long time. 
 - As shown above, RAGFlow allows you to use a different chunking method for a particular file, offering flexibility beyond the default method. 
 - As shown above, RAGFlow allows you to enable or disable individual files, offering finer control over knowledge base-based AI chats. 
 
@@ -97,13 +95,13 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
    _You are taken to the **Chunk** page:_
 
-   ![chunks](https://github.com/infiniflow/ragflow/assets/93570324/0547fd0e-e71b-41f8-8e0e-31649c85fd3d)
+   ![chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg)
 
 2. Hover over each snapshot for a quick view of each chunk.
 
-3. Double-click the chunked texts to add keywords or make *manual* changes where necessary:
+3. Double-click the chunked texts to add keywords, questions, tags, or make *manual* changes where necessary:
 
-   ![update chunk](https://github.com/infiniflow/ragflow/assets/93570324/1d84b408-4e9f-46fd-9413-8c1059bf9c76)
+   ![update chunk](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_keyword_question.jpg)
 
 :::caution NOTE
 You can add keywords to a file chunk to increase its ranking for queries containing those keywords. This action increases its keyword weight and can improve its position in search list.  
@@ -113,7 +111,7 @@ You can add keywords to a file chunk to increase its ranking for queries contain
 
    _As you can tell from the following, RAGFlow responds with truthful citations._
 
-   ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
+   ![retrieval test](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_test.jpg)
 
 ### Run retrieval testing
 
@@ -124,13 +122,11 @@ RAGFlow uses multiple recall of both full-text search and vector search in its c
 
 See [Run retrieval test](./run_retrieval_test.md) for details.
 
-![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
-
 ## Search for knowledge base
 
-As of RAGFlow v0.20.3, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
+As of RAGFlow v0.20.4, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
-![search knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/836ae94c-2438-42be-879e-c7ad2a59693e)
+![search knowledge base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 
 ## Delete knowledge base
 
@@ -139,4 +135,4 @@ You are allowed to delete a knowledge base. Hover your mouse over the three dot 
 - The files uploaded directly to the knowledge base are gone;  
 - The file references, which you created from within **File Management**, are gone, but the associated files still exist in **File Management**. 
 
-![delete knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/fec7a508-6cfe-4bca-af90-81d3fdb94098)
+![delete knowledge base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_datasets.jpg)

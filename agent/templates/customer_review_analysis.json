@@ -1,9 +1,13 @@
 
 {
     "id": 11,
-    "title": "Customer Review Analysis",
-    "description": "Automatically classify customer reviews using LLM (Large Language Model) and route them via email to the relevant departments.",
-    "canvas_type": "Customer Support",
+    "title": {
+		"en": "Customer Review Analysis",
+		"zh": "客户评价分析"},
+    "description": {
+		"en": "Automatically classify customer reviews using LLM (Large Language Model) and route them via email to the relevant departments.",
+		"zh": "大模型将自动分类客户评价，并通过电子邮件将结果发送到相关部门。"},
+	"canvas_type": "Customer Support",
     "dsl": {
 		"components": {
 			"Categorize:FourTeamsFold": {

@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.3">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -70,7 +70,7 @@
 
 ## 💡 RAGFlow 是什麼？
 
-[RAGFlow](https://ragflow.io/) 是一款基於深度文件理解所建構的開源 RAG（Retrieval-Augmented Generation）引擎。 RAGFlow 可以為各種規模的企業及個人提供一套精簡的 RAG 工作流程，結合大語言模型（LLM）針對用戶各類不同的複雜格式數據提供可靠的問答以及有理有據的引用。
+[RAGFlow](https://ragflow.io/) 是一款領先的開源 RAG（Retrieval-Augmented Generation）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑藉融合式上下文引擎與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
 
 ## 🎮 Demo 試用
 
@@ -183,7 +183,7 @@
 > 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
 > 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
 
-   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.20.3-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.20.3-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.3` 來下載 RAGFlow 鏡像的 `v0.20.3` 完整發行版。
+   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.20.4-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.20.4-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.4` 來下載 RAGFlow 鏡像的 `v0.20.4` 完整發行版。
 
    ```bash
    $ cd ragflow/docker
@@ -196,8 +196,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.20.3           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.20.3-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.20.4           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.20.4-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -301,7 +301,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
 
 ## 🔨 以原始碼啟動服務
 
-1. 安裝 uv。如已安裝，可跳過此步驟：
+1. 安裝 `uv` 和 `pre-commit`。如已安裝，可跳過此步驟：
 
    ```bash
    pipx install uv pre-commit
@@ -343,6 +343,8 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    sudo apt-get install libjemalloc-dev
    # centos
    sudo yum install jemalloc
+   # mac
+   sudo brew install jemalloc
    ```
 
 6. 啟動後端服務：

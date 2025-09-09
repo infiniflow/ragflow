@@ -1,3 +1,4 @@
+import Empty from '@/components/empty/empty';
 import { FormContainer } from '@/components/form-container';
 import { FilterButton } from '@/components/list-filter-bar';
 import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
@@ -38,6 +39,7 @@ type TestingResultProps = Pick<
   | 'page'
   | 'pageSize'
   | 'onPaginationChange'
+  | 'loading'
 >;
 
 export function TestingResult({
@@ -45,6 +47,7 @@ export function TestingResult({
   handleFilterSubmit,
   page,
   pageSize,
+  loading,
   onPaginationChange,
   data,
 }: TestingResultProps) {
@@ -77,20 +80,42 @@ export function TestingResult({
           <FilterButton></FilterButton>
         </FilterPopover>
       </div>
-      <section className="flex flex-col gap-5 overflow-auto h-[76vh] mb-5">
-        {data.chunks?.map((x) => (
-          <FormContainer key={x.chunk_id} className="px-5 py-2.5">
-            <ChunkTitle item={x}></ChunkTitle>
-            <p className="!mt-2.5"> {x.content_with_weight}</p>
-          </FormContainer>
-        ))}
-      </section>
-      <RAGFlowPagination
-        total={data.total}
-        onChange={onPaginationChange}
-        current={page}
-        pageSize={pageSize}
-      ></RAGFlowPagination>
+      {data.chunks?.length > 0 && !loading && (
+        <>
+          <section className="flex flex-col gap-5 overflow-auto h-[calc(100vh-241px)] scrollbar-thin mb-5">
+            {data.chunks?.map((x) => (
+              <FormContainer key={x.chunk_id} className="px-5 py-2.5">
+                <ChunkTitle item={x}></ChunkTitle>
+                <p className="!mt-2.5"> {x.content_with_weight}</p>
+              </FormContainer>
+            ))}
+          </section>
+          <RAGFlowPagination
+            total={data.total}
+            onChange={onPaginationChange}
+            current={page}
+            pageSize={pageSize}
+          ></RAGFlowPagination>
+        </>
+      )}
+      {!data.chunks?.length && !loading && (
+        <div className="flex justify-center items-center w-full h-[calc(100vh-241px)]">
+          <div>
+            <Empty>
+              {data.isRuned && (
+                <div className="text-text-secondary">
+                  {t('knowledgeDetails.noTestResultsForRuned')}
+                </div>
+              )}
+              {!data.isRuned && (
+                <div className="text-text-secondary">
+                  {t('knowledgeDetails.noTestResultsForNotRuned')}
+                </div>
+              )}
+            </Empty>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

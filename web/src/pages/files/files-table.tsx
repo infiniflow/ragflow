@@ -48,7 +48,7 @@ import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
-import { isFolderType } from './util';
+import { isFolderType, isKnowledgeBaseType } from './util';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -112,6 +112,7 @@ export function FilesTable({
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
           aria-label="Select row"
+          disabled={!row.getCanSelect()}
         />
       ),
       enableSorting: false,
@@ -247,7 +248,9 @@ export function FilesTable({
     onRowSelectionChange: setRowSelection,
 
     manualPagination: true, //we're doing manual "server-side" pagination
-
+    enableRowSelection(row) {
+      return !isKnowledgeBaseType(row.original.source_type);
+    },
     state: {
       sorting,
       columnFilters,

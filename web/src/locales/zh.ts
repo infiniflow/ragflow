@@ -3,6 +3,7 @@ export default {
     common: {
       noResults: '无结果。',
       selectPlaceholder: '请选择',
+      selectAll: '全选',
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       ok: '是',
@@ -36,6 +37,7 @@ export default {
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
       submit: '提交',
+      clear: '清空',
       embedIntoSite: '嵌入网站',
       previousPage: '上一页',
       nextPage: '下一页',
@@ -43,6 +45,7 @@ export default {
       remove: '移除',
       search: '搜索',
       noDataFound: '没有找到数据。',
+      noData: '暂无数据',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
     },
     login: {
@@ -105,7 +108,7 @@ export default {
       testing: '检索测试',
       configuration: '配置',
       knowledgeGraph: '知识图谱',
-      files: '文件',
+      files: '个文件',
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
@@ -127,6 +130,8 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
+      noTestResultsForRuned: '未找到相关结果，请尝试调整查询语句或参数',
+      noTestResultsForNotRuned: '尚未运行测试，结果会显示在这里',
       testingDescription:
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
@@ -134,6 +139,9 @@ export default {
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
       vectorSimilarityWeight: '相似度相似度权重',
       vectorSimilarityWeightTip:
+        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
+      keywordSimilarityWeight: '关键词相似度权重',
+      keywordSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
@@ -438,6 +446,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       delete: '删除',
     },
     chat: {
+      messagePlaceholder: '请输入消息...',
+      exit: '退出',
+      multipleModels: '多模型',
+      applyModelConfigs: '应用模型配置',
+      conversations: '会话',
+      chatApps: '聊天',
+      createChat: '创建聊天',
       newConversation: '新会话',
       createAssistant: '新建助理',
       assistantSetting: '助理设置',
@@ -759,6 +774,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       view: '查看',
       modelsToBeAddedTooltip:
         '如果你的模型供应商在这里没有列出，但是宣称 OpenAI-compatible，可以通过选择卡片 OpenAI-API-compatible 设置相关模型。',
+      mcp: 'MCP',
     },
     message: {
       registered: '注册成功',
@@ -794,6 +810,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       hint: '提示',
     },
     fileManager: {
+      files: '文件',
       name: '名称',
       uploadDate: '上传日期',
       knowledgeBase: '知识库',
@@ -818,6 +835,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      recommended: '推荐',
+      customerSupport: '客户支持',
+      marketing: '营销',
+      consumerApp: '消费者应用',
+      other: '其他',
+      agents: '智能体',
       beginInput: '开始输入',
       seconds: '秒',
       ref: '引用变量',
@@ -840,7 +863,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       includeImageDescriptions: '包含图片描述',
       includeDomains: '包含域名',
       ExcludeDomains: '排除域名',
-      Days: 'Days',
+      days: '天数',
       comma: '逗号',
       semicolon: '分号',
       period: '句点',
@@ -872,16 +895,18 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       maxRetries: '最大重试次数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefultValue: `<role>
-        您是{{agent_name}}，一位专注于{{领域_or_任务}}的AI助手。
-        </role>
-        <instructions>
+      sysPromptDefultValue: `
+<role>
+  你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
+  如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。
+</role>
+<instructions>
         1. 理解用户请求。
         2. 将其分解为逻辑子任务。
         3. 逐步执行每个子任务，并清晰地进行推理。
         4. 验证准确性和一致性。
         5. 清晰地总结最终结果。
-        </instructions>`,
+</instructions>`,
       line: '单行文本',
       paragraph: '段落文字',
       options: '选项',
@@ -970,6 +995,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
       channel: '频道',
       channelTip: '针对该组件的输入进行文本搜索或新闻搜索',
       text: '文本',
@@ -1129,7 +1157,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '30d': '30天',
       },
       publish: 'API',
-      exeSQL: 'ExeSQL',
+      exeSQL: '执行 SQL',
       exeSQLDescription:
         '该组件通过SQL语句从相应的关系数据库中查询结果。支持MySQL，PostgreSQL，MariaDB。',
       dbType: '数据库类型',
@@ -1405,6 +1433,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         httpRequest: '请求接口',
         wenCai: '查询财务数据',
       },
+      sqlStatement: 'SQL 语句',
+      sqlStatementTip:
+        '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
+      frameworkPrompts: '框架',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1429,7 +1461,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       cancelText: '取消',
     },
     search: {
-      createSearch: '新建查询',
+      searchApps: '搜索',
+      createSearch: '创建查询',
       searchGreeting: '今天我能为你做些什么？',
       profile: '隐藏个人资料',
       locale: '语言',
@@ -1452,6 +1485,20 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       descriptionValue: '你是一位智能助手。',
       okText: '保存',
       cancelText: '返回',
+    },
+    language: {
+      english: '英语',
+      chinese: '中文',
+      spanish: '西班牙语',
+      french: '法语',
+      german: '德语',
+      japanese: '日语',
+      korean: '韩语',
+      vietnamese: '越南语',
+    },
+    pagination: {
+      total: '总共 {{total}} 条',
+      page: '{{page}}条/页',
     },
   },
 };

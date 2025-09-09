@@ -39,6 +39,7 @@ import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
 import { AgentTools, Agents } from './agent-tools';
+import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -84,6 +85,8 @@ function AgentForm({ node }: INextOperatorForm) {
   );
 
   const defaultValues = useValues(node);
+
+  const { extraOptions } = useBuildPromptExtraPromptOptions();
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
     (x) => ({
@@ -150,6 +153,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     {...field}
                     placeholder={t('flow.messagePlaceholder')}
                     showToolbar={false}
+                    extraOptions={extraOptions}
                   ></PromptEditor>
                 </FormControl>
               </FormItem>

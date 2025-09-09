@@ -1,8 +1,12 @@
 {
     "id": 19,
-    "title": "Choose Your Knowledge Base Agent",
-    "description": "Select your desired knowledge base from the dropdown menu. The Agent will only retrieve from the selected knowledge base and use this content  to generate responses.",
-    "canvas_type": "Agent", 
+    "title": {
+		"en": "Choose Your Knowledge Base Agent",
+		"zh": "选择知识库智能体"},
+    "description": {
+		"en": "Select your desired knowledge base from the dropdown menu. The Agent will only retrieve from the selected knowledge base and use this content  to generate responses.",
+		"zh": "从下拉菜单中选择知识库，智能体将仅根据所选知识库内容生成回答。"},
+	"canvas_type": "Agent", 
     "dsl": {
 		"components": {
 			"Agent:BraveParksJoke": {

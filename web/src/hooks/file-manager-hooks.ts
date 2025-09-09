@@ -1,10 +1,11 @@
+import message from '@/components/ui/message';
 import { ResponseType } from '@/interfaces/database/base';
 import { IFolder } from '@/interfaces/database/file-manager';
 import { IConnectRequestBody } from '@/interfaces/request/file-manager';
 import fileManagerService from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { PaginationProps, UploadFile, message } from 'antd';
+import { PaginationProps, UploadFile } from 'antd';
 import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'umi';

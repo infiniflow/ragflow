@@ -24,7 +24,7 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
-from api.db.services.dialog_service import meta_filter
+from api.db.services.dialog_service import meta_filter, convert_conditions
 
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
@@ -74,7 +74,6 @@ def retrieval(tenant_id):
                                                    [tenant_id],
                                                    [kb_id],
                                                    embd_mdl,
-                                                   doc_ids,
                                                    LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
@@ -102,19 +101,4 @@ def retrieval(tenant_id):
         logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
 
-def convert_conditions(metadata_condition):
-    if metadata_condition is None:
-        metadata_condition = {}
-    op_mapping = {
-        "is": "=",
-        "not is": "≠"
-    }
-    return [
-    {
-        "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
-        "key": cond["name"],
-        "value": cond["value"]
-    }
-    for cond in metadata_condition.get("conditions", [])
-]
 

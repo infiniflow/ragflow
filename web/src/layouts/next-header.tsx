@@ -111,7 +111,7 @@ export function Header() {
         <img
           src={'/logo.svg'}
           alt="logo"
-          className="size-10 mr-[12]"
+          className="size-10 mr-[12] cursor-pointer"
           onClick={handleLogoClick}
         />
         <a

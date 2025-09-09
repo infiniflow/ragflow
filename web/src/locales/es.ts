@@ -571,6 +571,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'Un componente que recupera resultados de búsqueda de duckduckgo.com, con TopN especificando el número de resultados de búsqueda. Complementa las bases de conocimiento existentes.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'Un componente que realiza búsquedas mediante la URL de la instancia de SearXNG que usted proporcione. Especifique TopN y la URL de la instancia.',
       channel: 'Canal',
       channelTip:
         'Realizar búsqueda de texto o búsqueda de noticias en la entrada del componente.',

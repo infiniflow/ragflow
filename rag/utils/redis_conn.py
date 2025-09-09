@@ -317,11 +317,12 @@ class RedisDB:
         self.__open__()
     return None
 
-  def delete_if_equal(self, key: str, expected_value: str) -> bool:
-    """
-        Do follwing atomically:
+    def delete_if_equal(self, key: str, expected_value: str) -> bool:
+      """
+        Do following atomically:
         Delete a key if its value is equals to the given one, do nothing otherwise.
         """
+
     return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
 
   def delete(self, key) -> bool:

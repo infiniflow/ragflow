@@ -50,8 +50,9 @@ del _package_path, _import_submodules, _extract_classes_from_module
 
 
 def component_class(class_name):
-    m = importlib.import_module("agent.component")
-    try:
-        return getattr(m, class_name)
-    except Exception:
-        return getattr(importlib.import_module("agent.tools"), class_name)
+    for mdl in ["agent.component", "agent.tools", "rag.flow"]:
+        try:
+            return getattr(importlib.import_module(mdl), class_name)
+        except Exception:
+            pass
+    assert False, f"Can't import {class_name}"

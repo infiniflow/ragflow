@@ -5,6 +5,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { IModalProps } from '@/interfaces/common';
+import { cn } from '@/lib/utils';
 import { NotebookText } from 'lucide-react';
 import 'react18-json-view/src/style.css';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
@@ -24,7 +25,7 @@ export function LogSheet({
 }: LogSheetProps) {
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
-      <SheetContent className="top-20 right-[620px]">
+      <SheetContent className={cn('top-20 right-[620px]')}>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
             <NotebookText className="size-4" />

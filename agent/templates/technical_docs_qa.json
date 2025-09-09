@@ -1,8 +1,12 @@
 
 {
     "id": 9,
-    "title": "Technical Docs QA",
-    "description": "This is a document question-and-answer system based on a knowledge base. When a user asks a question, it retrieves relevant document content to provide accurate answers.",
+    "title": {
+        "en": "Technical Docs QA",
+        "zh": "技术文档问答"},
+    "description": {
+        "en": "This is a document question-and-answer system based on a knowledge base. When a user asks a question, it retrieves relevant document content to provide accurate answers.",
+        "zh": "基于知识库的文档问答系统，当用户提出问题时，会检索相关本地文档并提供准确回答。"},
     "canvas_type": "Customer Support",
     "dsl": {
             "components": {

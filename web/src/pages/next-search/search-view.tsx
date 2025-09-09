@@ -1,6 +1,7 @@
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { Input } from '@/components/originui/input';
+import { SkeletonCard } from '@/components/skeleton-card';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -8,7 +9,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
-import { Skeleton } from '@/components/ui/skeleton';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import DOMPurify from 'dompurify';
@@ -157,11 +157,7 @@ export default function SearchingView({
                   {t('search.AISummary')}
                 </div>
                 {isEmpty(answer) && sendingLoading ? (
-                  <div className="space-y-2 mt-2">
-                    <Skeleton className="h-4 w-full bg-bg-card" />
-                    <Skeleton className="h-4 w-full bg-bg-card" />
-                    <Skeleton className="h-4 w-2/3 bg-bg-card" />
-                  </div>
+                  <SkeletonCard className=" mt-2" />
                 ) : (
                   answer.answer && (
                     <div className="border rounded-lg p-4 mt-3 max-h-52 overflow-auto scrollbar-none">
@@ -195,12 +191,9 @@ export default function SearchingView({
                 <>
                   {chunks.map((chunk, index) => {
                     return (
-                      <>
-                        <div
-                          key={chunk.chunk_id}
-                          className="w-full flex flex-col"
-                        >
-                          <div className="w-full">
+                      <div key={index}>
+                        <div className="w-full flex flex-col">
+                          <div className="w-full highlightContent">
                             <ImageWithPopover
                               id={chunk.img_id}
                             ></ImageWithPopover>
@@ -215,10 +208,12 @@ export default function SearchingView({
                                   className="text-sm text-text-primary mb-1"
                                 ></div>
                               </PopoverTrigger>
-                              <PopoverContent className="text-text-primary">
-                                <HightLightMarkdown>
-                                  {chunk.content_with_weight}
-                                </HightLightMarkdown>
+                              <PopoverContent className="text-text-primary !w-full max-w-lg ">
+                                <div className="max-h-96 overflow-auto scrollbar-thin">
+                                  <HightLightMarkdown>
+                                    {chunk.content_with_weight}
+                                  </HightLightMarkdown>
+                                </div>
                               </PopoverContent>
                             </Popover>
                           </div>
@@ -235,7 +230,7 @@ export default function SearchingView({
                         {index < chunks.length - 1 && (
                           <div className="w-full border-b border-border-default/80 mt-6"></div>
                         )}
-                      </>
+                      </div>
                     );
                   })}
                 </>
@@ -244,7 +239,7 @@ export default function SearchingView({
                 searchData.search_config.related_search && (
                   <div className="mt-14 w-full overflow-hidden opacity-100 max-h-96">
                     <p className="text-text-primary mb-2 text-xl">
-                      {t('relatedSearch')}
+                      {t('search.relatedSearch')}
                     </p>
                     <div className="mt-2 flex flex-wrap justify-start gap-2">
                       {relatedQuestions?.map((x, idx) => (
@@ -267,7 +262,7 @@ export default function SearchingView({
           </div>
 
           {total > 0 && (
-            <div className="mt-8 px-8 pb-8">
+            <div className="mt-8 px-8 pb-8 text-base">
               <RAGFlowPagination
                 current={pagination.current}
                 pageSize={pagination.pageSize}

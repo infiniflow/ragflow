@@ -9,7 +9,7 @@ export const formSchema = z.object({
   }),
   // avatar: z.instanceof(File),
   avatar: z.any().nullish(),
-  permission: z.string(),
+  permission: z.string().optional(),
   parser_id: z.string(),
   embd_id: z.string(),
   parser_config: z

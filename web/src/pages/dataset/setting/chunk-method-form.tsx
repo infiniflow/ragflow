@@ -1,12 +1,9 @@
 import { Button } from '@/components/ui/button';
-import { Loader2Icon } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { DocumentParserType } from '@/constants/knowledge';
-import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
 import { useMemo } from 'react';
-import { useParams } from 'umi';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
 import { EmailConfiguration } from './configuration/email';
@@ -22,6 +19,7 @@ import { QAConfiguration } from './configuration/qa';
 import { ResumeConfiguration } from './configuration/resume';
 import { TableConfiguration } from './configuration/table';
 import { TagConfiguration } from './configuration/tag';
+import { SavingButton } from './saving-button';
 
 const ConfigurationComponentMap = {
   [DocumentParserType.Naive]: NaiveConfiguration,
@@ -48,11 +46,6 @@ function EmptyComponent() {
 export function ChunkMethodForm() {
   const form = useFormContext();
   const { t } = useTranslation();
-  // const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
-  const { id: kb_id } = useParams();
-
-  const { saveKnowledgeConfiguration, loading: submitLoading } =
-    useUpdateKnowledge();
 
   const finalParserId: DocumentParserType = useWatch({
     control: form.control,
@@ -80,37 +73,7 @@ export function ChunkMethodForm() {
         >
           {t('knowledgeConfiguration.cancel')}
         </Button>
-        <Button
-          disabled={submitLoading}
-          onClick={() => {
-            (async () => {
-              try {
-                let beValid = await form.formControl.trigger();
-                if (beValid) {
-                  // setSubmitLoading(true);
-                  // let postData = form.formState.values;
-                  // console.log('submit form -->', form);
-                  // delete postData['avatar']; // has submitted in first form general
-                  form.handleSubmit(async (values) => {
-                    console.log('saveKnowledgeConfiguration: ', values);
-                    delete values['avatar'];
-                    await saveKnowledgeConfiguration({
-                      kb_id,
-                      ...values,
-                    });
-                  })();
-                }
-              } catch (e) {
-                console.log(e);
-              } finally {
-                // setSubmitLoading(false);
-              }
-            })();
-          }}
-        >
-          {submitLoading && <Loader2Icon className="animate-spin" />}
-          {t('knowledgeConfiguration.save')}
-        </Button>
+        <SavingButton></SavingButton>
       </div>
     </section>
   );

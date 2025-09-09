@@ -124,12 +124,18 @@ class RAGFlowExcelParser:
                         if c.value is None:
                             tb += "<td></td>"
                         else:
-                            tb += f"<td>{c.value}</td>"
+                            tb += f"<td>{escape(_fmt(c.value))}</td>"
                     tb += "</tr>"
                 tb += "</table>\n"
                 tb_chunks.append(tb)
 
         return tb_chunks
+
+    def markdown(self, fnm):
+        import pandas as pd
+        file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
+        df = pd.read_excel(file_like_object)
+        return df.to_markdown(index=False)
 
     def __call__(self, fnm):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm

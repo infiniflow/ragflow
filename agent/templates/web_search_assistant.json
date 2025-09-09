@@ -1,9 +1,13 @@
 
 {
     "id": 16,
-    "title": "WebSearch Assistant",
-    "description": "A chat assistant template that integrates information extracted from a knowledge base and web searches to respond to queries. Let's start by setting up your knowledge base in 'Retrieval'!",
-    "canvas_type": "Other",
+    "title": {
+		"en": "WebSearch Assistant",
+		"zh": "网页搜索助手"},
+    "description": {
+		"en": "A chat assistant template that integrates information extracted from a knowledge base and web searches to respond to queries. Let's start by setting up your knowledge base in 'Retrieval'!",
+		"zh": "集成了从知识库和网络搜索中提取的信息回答用户问题。让我们从设置您的知识库开始检索！"},
+	"canvas_type": "Other",
     "dsl": {
 		"components": {
 			"Agent:SmartSchoolsCross": {

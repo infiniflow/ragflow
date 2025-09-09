@@ -140,11 +140,11 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="flex justify-start items-start">
-                  <div className="flex items-center gap-0">
+                  <div className="flex items-center gap-1">
                     <span>{t('chunk.question')}</span>
                     <HoverCard>
                       <HoverCardTrigger asChild>
-                        <span className="text-xs mt-[-3px] text-center scale-[90%] font-thin text-primary cursor-pointer rounded-full w-[16px] h-[16px] border-muted-foreground/50 border">
+                        <span className="text-xs mt-[0px] text-center scale-[90%] text-text-secondary cursor-pointer rounded-full w-[17px] h-[17px] border-text-secondary border-2">
                           ?
                         </span>
                       </HoverCardTrigger>

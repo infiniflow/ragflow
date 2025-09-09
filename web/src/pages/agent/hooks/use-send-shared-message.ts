@@ -1,10 +1,16 @@
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { IEventList } from '@/hooks/use-send-message';
-import { useSendAgentMessage } from '@/pages/agent/chat/use-send-agent-message';
+import {
+  buildRequestBody,
+  useSendAgentMessage,
+} from '@/pages/agent/chat/use-send-agent-message';
+import { isEmpty } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'umi';
+import { AgentDialogueMode } from '../constant';
 
 export const useSendButtonDisabled = (value: string) => {
   return trim(value) === '';
@@ -35,8 +41,12 @@ export const useSendNextSharedMessage = (
 ) => {
   const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
   const url = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
+  const { data: inputsData } = useFetchExternalAgentInputs();
 
   const [params, setParams] = useState<any[]>([]);
+  const sendedTaskMessage = useRef<boolean>(false);
+
+  const isTaskMode = inputsData.mode === AgentDialogueMode.Task;
 
   const {
     visible: parameterDialogVisible,
@@ -44,20 +54,52 @@ export const useSendNextSharedMessage = (
     showModal: showParameterDialog,
   } = useSetModalState();
 
-  const ret = useSendAgentMessage(url, addEventList, params);
+  const ret = useSendAgentMessage({
+    url,
+    addEventList,
+    beginParams: params,
+    isShared: true,
+  });
 
   const ok = useCallback(
     (params: any[]) => {
-      setParams(params);
+      if (isTaskMode) {
+        const msgBody = buildRequestBody('');
+
+        ret.sendMessage({
+          message: msgBody,
+          beginInputs: params,
+        });
+      } else {
+        setParams(params);
+      }
+
       hideParameterDialog();
     },
-    [hideParameterDialog],
+    [hideParameterDialog, isTaskMode, ret],
   );
+
+  const runTask = useCallback(() => {
+    if (
+      isTaskMode &&
+      isEmpty(inputsData?.inputs) &&
+      !sendedTaskMessage.current
+    ) {
+      ok([]);
+      sendedTaskMessage.current = true;
+    }
+  }, [inputsData?.inputs, isTaskMode, ok]);
+
+  useEffect(() => {
+    runTask();
+  }, [runTask]);
 
   return {
     ...ret,
     hasError: false,
     parameterDialogVisible,
+    inputsData,
+    isTaskMode,
     hideParameterDialog,
     showParameterDialog,
     ok,
