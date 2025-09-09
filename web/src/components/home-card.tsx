@@ -44,7 +44,7 @@ export function HomeCard({ data, onClick, moreDropdown, sharedBadge }: IProps) {
               {data.description}
             </div>
             <div className="flex justify-between items-center">
-              <p className="text-sm opacity-80">
+              <p className="text-sm opacity-80 whitespace-nowrap">
                 {formatDate(data.update_time)}
               </p>
               {sharedBadge}
