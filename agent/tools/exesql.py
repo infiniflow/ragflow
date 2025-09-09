@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import os
 import re
 from abc import ABC
@@ -93,8 +94,20 @@ class ExeSQL(ToolBase, ABC):
         sql = kwargs.get("sql")
         if not sql:
             raise Exception("SQL for `ExeSQL` MUST not be empty.")
-        sqls = sql.split(";")
 
+        vars = self.get_input_elements_from_text(sql)
+        args = {}
+        for k, o in vars.items():
+            args[k] = o["value"]
+            if not isinstance(args[k], str):
+                try:
+                    args[k] = json.dumps(args[k], ensure_ascii=False)
+                except Exception:
+                    args[k] = str(args[k])
+            self.set_input_value(k, args[k])
+        sql = self.string_format(sql, args)
+
+        sqls = sql.split(";")
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
