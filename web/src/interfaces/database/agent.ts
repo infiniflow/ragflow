@@ -38,7 +38,7 @@ export type DSLComponents = Record<string, IOperator>;
 export interface DSL {
   components: DSLComponents;
   history: any[];
-  path?: string[][];
+  path?: string[];
   answer?: any[];
   graph?: IGraph;
   messages: Message[];
