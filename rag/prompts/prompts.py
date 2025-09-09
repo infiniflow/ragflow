@@ -434,3 +434,51 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
     except Exception:
         logging.exception(f"Loading json failure: {ans}")
     return []
+
+
+TOC_DETECTION = load_prompt("toc_detection")
+def detect_table_of_contents(sections, chat_mdl):
+    template = PROMPT_JINJA_ENV.from_string(SUMMARY4MEMORY)
+    toc_secs = []
+    for sec in sections:
+        system_prompt = template.render(page_txt=sec)
+        user_prompt = "Only JSON please."
+        _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+        ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
+        ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+        try:
+            ans = json_repair.loads(ans)
+            if not ans["exists"]:
+                break
+            toc_secs.append(sec)
+        except Exception:
+            logging.exception(f"Loading json failure: {ans}")
+
+    return toc_secs
+
+
+TOC_EXTRACTION = load_prompt("toc_extraction")
+TOC_EXTRACTION_CONTINUE = load_prompt("toc_extraction_continue")
+def extract_table_of_contents(toc_pages, chat_mdl):
+    if not toc_pages:
+        return []
+    def gen_json(system_prompt):
+        user_prompt = "Only JSON please."
+        _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+        ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
+        ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+        try:
+            return json_repair.loads(ans)
+        except Exception:
+            logging.exception(f"Loading json failure: {ans}")
+        return []
+
+    toc_arr = gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION).render(toc_page=toc_pages[0]))
+    for p in toc_pages[1:]:
+        _toc_arr = gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION_CONTINUE).render(toc_page=p))
+        toc_arr.extend(_toc_arr)
+
+    return toc_arr
+
+
+
