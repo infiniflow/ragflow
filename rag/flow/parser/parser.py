@@ -31,6 +31,7 @@ class ParserParam(ProcessParamBase):
         self.allowed_output_format = {
             "pdf": ["json", "markdown"],
             "excel": ["json", "markdown", "html"],
+            "markdown": ["json"],
             "ppt": [],
             "image": [],
             "email": [],
@@ -50,6 +51,10 @@ class ParserParam(ProcessParamBase):
             "excel": {
                 "output_format": "html",
                 "suffix": ["xls", "xlsx", "csv"],
+            },
+            "markdown": {
+                "suffix": ["md", "markdown"],
+                "output_format": "json",
             },
             "ppt": {},
             "image": {
@@ -136,10 +141,50 @@ class Parser(ProcessBase):
         elif conf.get("output_format") == "markdown":
             self.set_output("markdown", excel_parser.markdown(blob))
 
+    def _markdown(self, from_upstream: ParserFromUpstream):
+        from functools import reduce
+
+        from rag.app.naive import Markdown as naive_markdown_parser
+        from rag.nlp import concat_img
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
+
+        blob = from_upstream.blob
+        name = from_upstream.name
+        conf = self._param.setups["markdown"]
+        self.set_output("output_format", conf["output_format"])
+
+        print("markdown {conf=}", flush=True)
+
+        markdown_parser = naive_markdown_parser()
+        sections, tables = markdown_parser(name, blob, separate_tables=False)
+
+        # json
+        assert conf.get("output_format") == "json", "have to be json for doc"
+        if conf.get("output_format") == "json":
+            json_results = []
+
+            for section_text, _ in sections:
+                json_result = {
+                    "text": section_text,
+                }
+
+                images = markdown_parser.get_pictures(section_text) if section_text else None
+                if images:
+                    # If multiple images found, combine them using concat_img
+                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
+                    json_result["image"] = combined_image
+
+                json_results.append(json_result)
+
+            self.set_output("json", json_results)
+
+
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
             "excel": self._excel,
+            "markdown": self._markdown,
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)

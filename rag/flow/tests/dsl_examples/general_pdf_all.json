@@ -30,7 +30,13 @@
                     "xlsx",
                     "csv"
                   ]
-                }
+                },
+                "markdown": {
+                  "suffix": [
+                    "md",
+                    "markdown"
+                  ],
+                  "output_format": "json"
               }
             }
         },
