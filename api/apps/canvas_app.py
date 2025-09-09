@@ -476,7 +476,7 @@ def sessions(canvas_id):
 def prompts():
     from rag.prompts.prompts import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
     return get_json_result(data={
-        "task_analysis": ANALYZE_TASK_SYSTEM + ANALYZE_TASK_USER,
+        "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,
         "reflection": REFLECT,
         #"context_summary": SUMMARY4MEMORY,
