@@ -418,12 +418,10 @@ def setting():
         return get_data_error_result(message="canvas not found.")
     flow = flow.to_dict()
     flow["title"] = req["title"]
-    if req["description"]:
-        flow["description"] = req["description"]
-    if req["permission"]:
-        flow["permission"] = req["permission"]
-    if req["avatar"]:
-        flow["avatar"] = req["avatar"]
+
+    for key in ["description", "permission", "avatar"]:
+        if value := req.get(key):
+            flow[key] = value
 
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
@@ -472,3 +470,16 @@ def sessions(canvas_id):
     except Exception as e:
         return server_error_response(e)
 
+
+@manager.route('/prompts', methods=['GET'])  # noqa: F821
+@login_required
+def prompts():
+    from rag.prompts.prompts import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+    return get_json_result(data={
+        "task_analysis": ANALYZE_TASK_SYSTEM + ANALYZE_TASK_USER,
+        "plan_generation": NEXT_STEP,
+        "reflection": REFLECT,
+        #"context_summary": SUMMARY4MEMORY,
+        #"context_ranking": RANK_MEMORY,
+        "citation_guidelines": CITATION_PROMPT_TEMPLATE
+    })

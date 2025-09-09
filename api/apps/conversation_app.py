@@ -400,6 +400,8 @@ def related_questions():
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT, chat_id)
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
     prompt = load_prompt("related_question")
     ans = chat_mdl.chat(
         prompt,

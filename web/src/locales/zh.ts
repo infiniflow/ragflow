@@ -3,6 +3,7 @@ export default {
     common: {
       noResults: '无结果。',
       selectPlaceholder: '请选择',
+      selectAll: '全选',
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       ok: '是',
@@ -36,6 +37,7 @@ export default {
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
       submit: '提交',
+      clear: '清空',
       embedIntoSite: '嵌入网站',
       previousPage: '上一页',
       nextPage: '下一页',
@@ -43,6 +45,7 @@ export default {
       remove: '移除',
       search: '搜索',
       noDataFound: '没有找到数据。',
+      noData: '暂无数据',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
     },
     login: {
@@ -105,7 +108,7 @@ export default {
       testing: '检索测试',
       configuration: '配置',
       knowledgeGraph: '知识图谱',
-      files: '文件',
+      files: '个文件',
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
@@ -127,6 +130,8 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
+      noTestResultsForRuned: '未找到相关结果，请尝试调整查询语句或参数',
+      noTestResultsForNotRuned: '尚未运行测试，结果会显示在这里',
       testingDescription:
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
@@ -136,7 +141,8 @@ export default {
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
-      keywordSimilarityWeightTip: '',
+      keywordSimilarityWeightTip:
+        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
       testingLabel: '测试',
@@ -440,6 +446,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       delete: '删除',
     },
     chat: {
+      messagePlaceholder: '请输入消息...',
+      exit: '退出',
+      multipleModels: '多模型',
+      applyModelConfigs: '应用模型配置',
+      conversations: '会话',
+      chatApps: '聊天',
       createChat: '创建聊天',
       newConversation: '新会话',
       createAssistant: '新建助理',
@@ -798,6 +810,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       hint: '提示',
     },
     fileManager: {
+      files: '文件',
       name: '名称',
       uploadDate: '上传日期',
       knowledgeBase: '知识库',
@@ -822,6 +835,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      recommended: '推荐',
+      customerSupport: '客户支持',
+      marketing: '营销',
+      consumerApp: '消费者应用',
+      other: '其他',
+      agents: '智能体',
       beginInput: '开始输入',
       seconds: '秒',
       ref: '引用变量',
@@ -1417,6 +1436,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       sqlStatement: 'SQL 语句',
       sqlStatementTip:
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
+      frameworkPrompts: '框架',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1441,6 +1461,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       cancelText: '取消',
     },
     search: {
+      searchApps: '搜索',
       createSearch: '创建查询',
       searchGreeting: '今天我能为你做些什么？',
       profile: '隐藏个人资料',
@@ -1464,6 +1485,20 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       descriptionValue: '你是一位智能助手。',
       okText: '保存',
       cancelText: '返回',
+    },
+    language: {
+      english: '英语',
+      chinese: '中文',
+      spanish: '西班牙语',
+      french: '法语',
+      german: '德语',
+      japanese: '日语',
+      korean: '韩语',
+      vietnamese: '越南语',
+    },
+    pagination: {
+      total: '总共 {{total}} 条',
+      page: '{{page}}条/页',
     },
   },
 };

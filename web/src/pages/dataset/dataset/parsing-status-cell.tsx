@@ -67,7 +67,7 @@ export function ParsingStatusCell({
 
   return (
     <section className="flex gap-8 items-center">
-      <div className="w-fit flex items-center justify-between">
+      <div className="w-[100px] text-ellipsis overflow-hidden flex items-center justify-between">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant={'transparent'} className="border-none" size={'sm'}>

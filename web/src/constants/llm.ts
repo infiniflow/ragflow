@@ -55,6 +55,7 @@ export enum LLMFactory {
   Grok = 'Grok',
   XAI = 'xAI',
   TokenPony = 'TokenPony',
+  Meituan = 'Meituan',
 }
 
 // Please lowercase the file name
@@ -115,4 +116,5 @@ export const IconMap = {
   [LLMFactory.Grok]: 'grok',
   [LLMFactory.XAI]: 'xai',
   [LLMFactory.TokenPony]: 'token-pony',
+  [LLMFactory.Meituan]: 'longcat',
 };

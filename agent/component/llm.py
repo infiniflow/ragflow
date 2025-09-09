@@ -145,12 +145,23 @@ class LLM(ComponentBase):
             msg.append(deepcopy(p))
 
         sys_prompt = self.string_format(sys_prompt, args)
+        user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)
         for m in msg:
             m["content"] = self.string_format(m["content"], args)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
-            sys_prompt += citation_prompt()
+            sys_prompt += citation_prompt(user_defined_prompt)
 
-        return sys_prompt, msg
+        return sys_prompt, msg, user_defined_prompt
+
+    def _extract_prompts(self, sys_prompt):
+        pts = {}
+        for tag in ["TASK_ANALYSIS", "PLAN_GENERATION", "REFLECTION", "CONTEXT_SUMMARY", "CONTEXT_RANKING", "CITATION_GUIDELINES"]:
+            r = re.search(rf"<{tag}>(.*?)</{tag}>", sys_prompt, flags=re.DOTALL|re.IGNORECASE)
+            if not r:
+                continue
+            pts[tag.lower()] = r.group(1)
+            sys_prompt = re.sub(rf"<{tag}>(.*?)</{tag}>", "", sys_prompt, flags=re.DOTALL|re.IGNORECASE)
+        return pts, sys_prompt
 
     def _generate(self, msg:list[dict], **kwargs) -> str:
         if not self.imgs:
@@ -198,7 +209,7 @@ class LLM(ComponentBase):
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
-        prompt, msg = self._prepare_prompt_variables()
+        prompt, msg, _ = self._prepare_prompt_variables()
         error = ""
 
         if self._param.output_structure:
@@ -262,11 +273,11 @@ class LLM(ComponentBase):
             answer += ans
         self.set_output("content", answer)
 
-    def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str):
-        summ = tool_call_summary(self.chat_mdl, func_name, params, results)
+    def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
+        summ = tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)
         logging.info(f"[MEMORY]: {summ}")
         self._canvas.add_memory(user, assist, summ)
 
     def thoughts(self) -> str:
-        _, msg = self._prepare_prompt_variables()
+        _, msg,_ = self._prepare_prompt_variables()
         return "⌛Give me a moment—starting from: \n\n" + re.sub(r"(User's query:|[\\]+)", '', msg[-1]['content'], flags=re.DOTALL) + "\n\nI’ll figure out our best next move."
