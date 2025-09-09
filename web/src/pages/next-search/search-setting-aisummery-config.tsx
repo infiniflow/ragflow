@@ -186,6 +186,7 @@ export function LlmSettingFieldItems({
         checkName={getFieldWithPrefix('temperatureEnabled')}
         label="temperature"
         max={1}
+        min={0}
         step={0.01}
         onChange={() => {
           checkParameterIsEquel();
@@ -197,6 +198,7 @@ export function LlmSettingFieldItems({
         label="topP"
         max={1}
         step={0.01}
+        min={0}
         onChange={() => {
           checkParameterIsEquel();
         }}
@@ -207,6 +209,7 @@ export function LlmSettingFieldItems({
         label="presencePenalty"
         max={1}
         step={0.01}
+        min={0}
         onChange={() => {
           checkParameterIsEquel();
         }}
@@ -217,6 +220,7 @@ export function LlmSettingFieldItems({
         label="frequencyPenalty"
         max={1}
         step={0.01}
+        min={0}
         onChange={() => {
           checkParameterIsEquel();
         }}

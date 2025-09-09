@@ -158,7 +158,7 @@ PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip
 
 
 def citation_prompt(user_defined_prompts: dict={}) -> str:
-    template = PROMPT_JINJA_ENV.from_string(CITATION_PROMPT_TEMPLATE)
+    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("citation_guidelines", CITATION_PROMPT_TEMPLATE))
     return template.render()
 
 
@@ -343,9 +343,12 @@ def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict], use
     tools_desc = tool_schema(tools_description)
     context = ""
 
-    template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_USER)
+    if user_defined_prompts.get("task_analysis"):
+        template = PROMPT_JINJA_ENV.from_string(user_defined_prompts["task_analysis"])
+    else:
+        template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_SYSTEM + "\n\n" + ANALYZE_TASK_USER)
     context = template.render(task=task_name, context=context, agent_prompt=prompt, tools_desc=tools_desc)
-    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": context}], {})
+    kwd = chat_mdl.chat(context, [{"role": "user", "content": "Please analyze it."}])
     if isinstance(kwd, tuple):
         kwd = kwd[0]
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
@@ -358,7 +361,7 @@ def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc, 
     if not tools_description:
         return ""
     desc = tool_schema(tools_description)
-    template = PROMPT_JINJA_ENV.from_string(NEXT_STEP)
+    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("plan_generation", NEXT_STEP))
     user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
     hist = deepcopy(history)
     if hist[-1]["role"] == "user":
@@ -375,7 +378,7 @@ def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc, 
 def reflect(chat_mdl, history: list[dict], tool_call_res: list[Tuple], user_defined_prompts: dict={}):
     tool_calls = [{"name": p[0], "result": p[1]} for p in tool_call_res]
     goal = history[1]["content"]
-    template = PROMPT_JINJA_ENV.from_string(REFLECT)
+    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("reflection", REFLECT))
     user_prompt = template.render(goal=goal, tool_calls=tool_calls)
     hist = deepcopy(history)
     if hist[-1]["role"] == "user":
