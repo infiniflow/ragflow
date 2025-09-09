@@ -436,18 +436,22 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
     return []
 
 
+def gen_json(system_prompt:str, user_prompt:str, chat_mdl):
+    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+    ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
+    ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+    try:
+        return json_repair.loads(ans)
+    except Exception:
+        logging.exception(f"Loading json failure: {ans}")
+
+
 TOC_DETECTION = load_prompt("toc_detection")
 def detect_table_of_contents(sections, chat_mdl):
-    template = PROMPT_JINJA_ENV.from_string(SUMMARY4MEMORY)
     toc_secs = []
     for sec in sections:
-        system_prompt = template.render(page_txt=sec)
-        user_prompt = "Only JSON please."
-        _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-        ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
-        ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+        ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_DETECTION).render(page_txt=sec), "Only JSON please.", chat_mdl)
         try:
-            ans = json_repair.loads(ans)
             if not ans["exists"]:
                 break
             toc_secs.append(sec)
@@ -462,23 +466,57 @@ TOC_EXTRACTION_CONTINUE = load_prompt("toc_extraction_continue")
 def extract_table_of_contents(toc_pages, chat_mdl):
     if not toc_pages:
         return []
-    def gen_json(system_prompt):
-        user_prompt = "Only JSON please."
-        _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-        ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
-        ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
-        try:
-            return json_repair.loads(ans)
-        except Exception:
-            logging.exception(f"Loading json failure: {ans}")
-        return []
 
-    toc_arr = gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION).render(toc_page=toc_pages[0]))
+    toc_arr = gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION).render(toc_page=toc_pages[0]), "Only JSON please.", chat_mdl)
+    if not toc_arr:
+        toc_arr = []
     for p in toc_pages[1:]:
-        _toc_arr = gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION_CONTINUE).render(toc_page=p))
+        _toc_arr = gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION_CONTINUE).render(toc_page=p), "Only JSON please.", chat_mdl)
         toc_arr.extend(_toc_arr)
 
     return toc_arr
+
+
+TOC_INDEX = load_prompt("toc_index")
+def table_of_contents_index(toc_arr: list[dict], sections: list[str], chat_mdl):
+    i, j = 0, 0
+    while i< len(toc_arr) and j < len(sections):
+        it = toc_arr[i]
+        if not it.get("indices"):
+            it["indices"] = []
+
+        if re.search(rf"%s[ ]*%s"%(it["structure"], it["title"]), sections[j]):
+            it["indices"].append(j)
+            j += 1
+            continue
+
+        ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_INDEX).render(toc_item=json.dumps(it, ensure_ascii=False, indent=2)), "Only JSON please.", chat_mdl)
+        try:
+            if ans["include"]:
+                it["indices"].append(j)
+                j += 1
+                continue
+        except Exception:
+            logging.exception(f"Loading json failure: {ans}")
+
+        if i == 0:
+            j += 1
+            continue
+
+        toc_arr[i-1]["indices"].append(j)
+        j += 1
+
+    if j < len(sections):
+        toc_arr.append({
+            "structure": None,
+            "title": "Other",
+            "indices": [idx for idx in range(j, len(sections))]
+        })
+
+    return toc_arr
+
+
+
 
 
 
