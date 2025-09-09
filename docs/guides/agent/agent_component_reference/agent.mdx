@@ -18,6 +18,10 @@ An **Agent** component fine-tunes the LLM and sets its prompt. From v0.20.4 onwa
 
 An **Agent** component is essential when you need the LLM to assist with summarizing, translating, or controlling various tasks. 
 
+## Prerequisites
+
+## Quickstart
+
 ## Configurations
 
 ### Model
@@ -63,7 +67,7 @@ An **Agent** component relies on keys (variables) to specify its data inputs. It
 
 ### User prompt
 
-The user-defined prompt. Defaults to `sys.query`, the user query.
+The user-defined prompt. Defaults to `sys.query`, the user query. As a rule of thumb, if you use the **Agent** component as a standalone module (not as a planner), you usually need to specify the correspondent **Retrieval** component's output variable (`formalized_content`) here as part of the input for the LLM. 
 
 
 ### Tools 
@@ -101,3 +105,7 @@ Increasing this value will significantly extend your agent's response time.
 ### Output
 
 The global variable name for the output of the **Agent** component, which can be referenced by other components in the workflow.
+
+## Frequently asked questions
+
+### How to reduce response time?
