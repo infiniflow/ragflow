@@ -134,7 +134,9 @@ export function KnowledgeBaseFormField({
       name="kb_ids"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>{t('chat.knowledgeBases')}</FormLabel>
+          <FormLabel tooltip={t('chat.knowledgeBasesTip')}>
+            {t('chat.knowledgeBases')}
+          </FormLabel>
           <FormControl>
             <MultiSelect
               options={options}

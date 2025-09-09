@@ -114,7 +114,7 @@ export default function Agent() {
             <BreadcrumbList>
               <BreadcrumbItem>
                 <BreadcrumbLink onClick={navigateToAgents}>
-                  Agent
+                  {t('header.flow')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />

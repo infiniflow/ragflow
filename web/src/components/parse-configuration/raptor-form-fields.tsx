@@ -95,7 +95,9 @@ const RaptorFormFields = () => {
                   tooltip={t('useRaptorTip')}
                   className="text-sm text-muted-foreground w-1/4 whitespace-break-spaces"
                 >
-                  {t('useRaptor')}
+                  <div className="w-auto xl:w-20 2xl:w-24 3xl:w-28 4xl:w-auto ">
+                    {t('useRaptor')}
+                  </div>
                 </FormLabel>
                 <div className="w-3/4">
                   <FormControl>

@@ -55,7 +55,7 @@ export default function Datasets() {
   return (
     <section className="py-4 flex-1 flex flex-col">
       <ListFilterBar
-        title={t('header.knowledgeBase')}
+        title={t('header.dataset')}
         searchString={searchString}
         onSearchChange={handleInputChange}
         value={filterValue}

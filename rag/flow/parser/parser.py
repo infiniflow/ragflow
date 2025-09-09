@@ -134,10 +134,8 @@ class Parser(ProcessBase):
         elif conf.get("parse_method") == "plain_text":
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
-        else:  # vlm
+        else:
             assert conf.get("vlm_name")
-            print("@@@@@@@@@@@@@@@@@@@@@@2")
-            print(f"{conf=}", flush=True)
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
@@ -168,7 +166,6 @@ class Parser(ProcessBase):
         print("spreadsheet {conf=}", flush=True)
         spreadsheet_parser = ExcelParser()
         if conf.get("output_format") == "html":
-            print("???????????????????????????????????????", flush=True)
             html = spreadsheet_parser.html(blob, 1000000000)
             self.set_output("html", html)
         elif conf.get("output_format") == "json":

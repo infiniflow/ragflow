@@ -155,7 +155,10 @@ class Base(ABC):
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        if kwargs.get("stop") or "stop" in gen_conf:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        else:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
         for resp in response:
             if not resp.choices:
                 continue
@@ -374,7 +377,7 @@ class Base(ABC):
                         if not tol:
                             total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                         else:
-                            total_tokens += tol
+                            total_tokens = tol
 
                         finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
                         if finish_reason == "length":
@@ -410,7 +413,7 @@ class Base(ABC):
                     if not tol:
                         total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                     else:
-                        total_tokens += tol
+                        total_tokens = tol
                     answer += resp.choices[0].delta.content
                     yield resp.choices[0].delta.content
 
@@ -1350,6 +1353,15 @@ class Ai302Chat(Base):
     def __init__(self, key, model_name, base_url="https://api.302.ai/v1", **kwargs):
         if not base_url:
             base_url = "https://api.302.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class MeituanChat(Base):
+    _FACTORY_NAME = "Meituan"
+
+    def __init__(self, key, model_name, base_url="https://api.longcat.chat/openai", **kwargs):
+        if not base_url:
+            base_url = "https://api.longcat.chat/openai"
         super().__init__(key, model_name, base_url, **kwargs)
 
 

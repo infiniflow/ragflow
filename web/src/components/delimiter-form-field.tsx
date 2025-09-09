@@ -52,6 +52,7 @@ export function DelimiterFormField() {
           <FormItem className=" items-center space-y-0 ">
             <div className="flex items-center gap-1">
               <FormLabel
+                required
                 tooltip={t('knowledgeDetails.delimiterTip')}
                 className="text-sm text-muted-foreground whitespace-break-spaces w-1/4"
               >
