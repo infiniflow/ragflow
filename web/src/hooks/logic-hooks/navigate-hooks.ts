@@ -129,7 +129,7 @@ export const useNavigatePage = () => {
     (id: string, knowledgeId?: string) => () => {
       navigate(
         // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.DataflowResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
+        `${Routes.DataflowResult}/${id}`,
       );
     },
     [navigate],

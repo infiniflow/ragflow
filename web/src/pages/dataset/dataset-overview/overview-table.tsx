@@ -57,7 +57,10 @@ interface FileLogsTableProps {
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
   setIsModalVisible: Dispatch<SetStateAction<boolean>>,
-  navigateToDataflowResult: any,
+  navigateToDataflowResult: (
+    id: string,
+    knowledgeId?: string | undefined,
+  ) => () => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<DocumentLog>[] = [
@@ -158,7 +161,12 @@ export const getFileLogsTableColumns = (
           >
             <Eye />
           </Button>
-          <Button variant="ghost" size="sm" className="p-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-1"
+            onClick={navigateToDataflowResult(row.original.id)}
+          >
             <ClipboardList />
           </Button>
         </div>
@@ -172,7 +180,6 @@ export const getFileLogsTableColumns = (
 export const getDatasetLogsTableColumns = (
   t: TFunction<'translation', string>,
   setIsModalVisible: Dispatch<SetStateAction<boolean>>,
-  navigateToDataflowResult: any,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<DocumentLog>[] = [
@@ -269,11 +276,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     console.log('columns', active);
     return active === LogTabs.FILE_LOGS
       ? getFileLogsTableColumns(t, setIsModalVisible, navigateToDataflowResult)
-      : getDatasetLogsTableColumns(
-          t,
-          setIsModalVisible,
-          navigateToDataflowResult,
-        );
+      : getDatasetLogsTableColumns(t, setIsModalVisible);
   }, [active, t]);
 
   const currentPagination = useMemo(
