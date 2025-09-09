@@ -82,6 +82,7 @@ export default function SearchPage() {
                 searchText={searchText}
                 setSearchText={setSearchText}
                 userInfo={userInfo}
+                canSearch={!checkOpenSetting}
               />
             </div>
           )}
