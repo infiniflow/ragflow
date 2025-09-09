@@ -2,6 +2,7 @@ import { Operator } from '../constant';
 import AgentForm from '../form/agent-form';
 import BeginForm from '../form/begin-form';
 import CategorizeForm from '../form/categorize-form';
+import ChunkerForm from '../form/chunker-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
 import EmailForm from '../form/email-form';
@@ -11,11 +12,13 @@ import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
+import ParserForm from '../form/parser-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
+import TokenizerForm from '../form/tokenizer-form';
 import UserFillUpForm from '../form/user-fill-up-form';
 
 export const FormConfigMap = {
@@ -81,5 +84,14 @@ export const FormConfigMap = {
   },
   [Operator.StringTransform]: {
     component: StringTransformForm,
+  },
+  [Operator.Parser]: {
+    component: ParserForm,
+  },
+  [Operator.Chunker]: {
+    component: ChunkerForm,
+  },
+  [Operator.Tokenizer]: {
+    component: TokenizerForm,
   },
 };

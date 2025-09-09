@@ -17,9 +17,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IModalProps } from '@/interfaces/common';
-import { Operator } from '@/pages/agent/constant';
-import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
-import OperatorIcon from '@/pages/agent/operator-icon';
 import { Position } from '@xyflow/react';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
@@ -32,6 +29,9 @@ import {
   useRef,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Operator } from '../../../constant';
+import { AgentInstanceContext, HandleContext } from '../../../context';
+import OperatorIcon from '../../../operator-icon';
 
 type OperatorItemProps = {
   operators: Operator[];
@@ -134,7 +134,13 @@ function AccordionOperators({
         </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
-            operators={[Operator.Agent, Operator.Retrieval]}
+            operators={[
+              Operator.Agent,
+              Operator.Retrieval,
+              Operator.Parser,
+              Operator.Chunker,
+              Operator.Tokenizer,
+            ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}
           ></OperatorItemList>
@@ -186,23 +192,7 @@ function AccordionOperators({
         </AccordionTrigger>
         <AccordionContent className="flex flex-col gap-4 text-balance">
           <OperatorItemList
-            operators={[
-              Operator.TavilySearch,
-              Operator.TavilyExtract,
-              Operator.ExeSQL,
-              Operator.Google,
-              Operator.YahooFinance,
-              Operator.Email,
-              Operator.DuckDuckGo,
-              Operator.Wikipedia,
-              Operator.GoogleScholar,
-              Operator.ArXiv,
-              Operator.PubMed,
-              Operator.GitHub,
-              Operator.Invoke,
-              Operator.WenCai,
-              Operator.SearXNG,
-            ]}
+            operators={[Operator.ExeSQL, Operator.Email, Operator.Invoke]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}
           ></OperatorItemList>

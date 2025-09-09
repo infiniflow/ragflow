@@ -14,7 +14,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
-import { initialParserValues } from '../../constant';
+import { initialChunkerValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -25,7 +25,7 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 
-const outputList = buildOutputList(initialParserValues.outputs);
+const outputList = buildOutputList(initialChunkerValues.outputs);
 
 export const GoogleFormPartialSchema = {
   api_key: z.string(),
@@ -82,9 +82,9 @@ export function GoogleFormWidgets() {
   );
 }
 
-const ParserForm = ({ node }: INextOperatorForm) => {
+const ChunkerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslate('flow');
-  const defaultValues = useFormValues(initialParserValues, node);
+  const defaultValues = useFormValues(initialChunkerValues, node);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
@@ -137,4 +137,4 @@ const ParserForm = ({ node }: INextOperatorForm) => {
   );
 };
 
-export default memo(ParserForm);
+export default memo(ChunkerForm);

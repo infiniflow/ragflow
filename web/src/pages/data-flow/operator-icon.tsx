@@ -1,6 +1,11 @@
 import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
-import { HousePlus } from 'lucide-react';
+import {
+  FileChartColumnIncreasing,
+  Grid3x3,
+  HousePlus,
+  ListMinus,
+} from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -25,13 +30,19 @@ export const OperatorIconMap = {
   [Operator.Email]: 'sendemail-0',
 };
 
+export const SVGIconMap = {
+  [Operator.Parser]: FileChartColumnIncreasing,
+  [Operator.Chunker]: Grid3x3,
+  [Operator.Tokenizer]: ListMinus,
+};
+
 const Empty = () => {
   return <div className="hidden"></div>;
 };
 
 const OperatorIcon = ({ name, className }: IProps) => {
   const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap] || Empty;
-  const SvgIcon = Empty;
+  const SvgIcon = SVGIconMap[name as keyof typeof SVGIconMap] || Empty;
 
   if (name === Operator.Begin) {
     return (
@@ -49,7 +60,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   return typeof Icon === 'string' ? (
     <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
   ) : (
-    <SvgIcon></SvgIcon>
+    <SvgIcon className="size-5"></SvgIcon>
   );
 };
 
