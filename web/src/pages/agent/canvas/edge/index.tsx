@@ -39,7 +39,7 @@ function InnerButtonEdge({
     targetPosition,
   });
   const selectedStyle = useMemo(() => {
-    return selected ? { strokeWidth: 1, stroke: 'rgba(76, 164, 231, 1)' } : {};
+    return selected ? { strokeWidth: 1, stroke: 'var(--accent-primary)' } : {};
   }, [selected]);
 
   const onEdgeClick = () => {
@@ -49,31 +49,21 @@ function InnerButtonEdge({
   // highlight the nodes that the workflow passes through
   const { data: flowDetail } = useFetchAgent();
 
-  const graphPath = useMemo(() => {
-    // TODO: this will be called multiple times
+  const showHighlight = useMemo(() => {
     const path = flowDetail?.dsl?.path ?? [];
-    // The second to last
-    const previousGraphPath: string[] = path.at(-2) ?? [];
-    let graphPath: string[] = path.at(-1) ?? [];
-    // The last of the second to last article
-    const previousLatestElement = previousGraphPath.at(-1);
-    if (previousGraphPath.length > 0 && previousLatestElement) {
-      graphPath = [previousLatestElement, ...graphPath];
-    }
-    return Array.isArray(graphPath) ? graphPath : [];
-  }, [flowDetail.dsl?.path]);
-
-  const highlightStyle = useMemo(() => {
-    const idx = graphPath.findIndex((x) => x === source);
+    const idx = path.findIndex((x) => x === target);
     if (idx !== -1) {
-      // The set of elements following source
-      const slicedGraphPath = graphPath.slice(idx + 1);
-      if (slicedGraphPath.some((x) => x === target)) {
-        return { strokeWidth: 1, stroke: 'red' };
+      let index = idx - 1;
+      while (index >= 0) {
+        if (path[index] === source) {
+          return { strokeWidth: 1, stroke: 'var(--accent-primary)' };
+        }
+        index--;
       }
+      return {};
     }
     return {};
-  }, [source, target, graphPath]);
+  }, [flowDetail?.dsl?.path, source, target]);
 
   const visible = useMemo(() => {
     return (
@@ -89,8 +79,8 @@ function InnerButtonEdge({
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
-        style={{ ...style, ...selectedStyle, ...highlightStyle }}
-        className="text-text-secondary"
+        style={{ ...style, ...selectedStyle, ...showHighlight }}
+        className={cn('text-text-secondary')}
       />
 
       <EdgeLabelRenderer>

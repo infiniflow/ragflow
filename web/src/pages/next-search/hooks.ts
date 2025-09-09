@@ -536,6 +536,6 @@ export const useCheckSettings = (data: ISearchAppDetailProps) => {
   const { search_config, name } = data;
   const { kb_ids } = search_config;
   return {
-    openSetting: kb_ids && kb_ids.length && name ? false : true,
+    openSetting: kb_ids && kb_ids.length > 0 && name ? false : true,
   };
 };
