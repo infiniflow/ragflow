@@ -1573,6 +1573,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+      chooseDataset: 'Please select a dataset first',
     },
     language: {
       english: 'English',

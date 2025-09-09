@@ -1485,6 +1485,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       descriptionValue: '你是一位智能助手。',
       okText: '保存',
       cancelText: '返回',
+      chooseDataset: '请先选择知识库',
     },
     language: {
       english: '英语',
