@@ -160,7 +160,7 @@ class LLM(ComponentBase):
             if not r:
                 continue
             pts[tag.lower()] = r.group(1)
-            sys_prompt = re.sub(rf"<{tag}>(.*?)</{tag}>", sys_prompt, flags=re.DOTALL|re.IGNORECASE)
+            sys_prompt = re.sub(rf"<{tag}>(.*?)</{tag}>", "", sys_prompt, flags=re.DOTALL|re.IGNORECASE)
         return pts, sys_prompt
 
     def _generate(self, msg:list[dict], **kwargs) -> str:

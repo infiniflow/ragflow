@@ -320,6 +320,8 @@ def construct_error_response(e):
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
+        if os.environ.get("DISABLE_SDK"):
+            return get_json_result(data=False, message="`Authorization` can't be empty")
         authorization_str = flask_request.headers.get("Authorization")
         if not authorization_str:
             return get_json_result(data=False, message="`Authorization` can't be empty")
