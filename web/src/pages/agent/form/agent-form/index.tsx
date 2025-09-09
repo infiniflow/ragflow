@@ -86,7 +86,7 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
-  const { extraOptions } = useBuildPromptExtraPromptOptions();
+  const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
     (x) => ({
