@@ -346,7 +346,7 @@ def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict], use
     if user_defined_prompts.get("task_analysis"):
         template = PROMPT_JINJA_ENV.from_string(user_defined_prompts["task_analysis"])
     else:
-        template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_SYSTEM + "\n" + ANALYZE_TASK_USER)
+        template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_SYSTEM + "\n\n" + ANALYZE_TASK_USER)
     context = template.render(task=task_name, context=context, agent_prompt=prompt, tools_desc=tools_desc)
     kwd = chat_mdl.chat(context, [{"role": "user", "content": "Please analyze it."}])
     if isinstance(kwd, tuple):
