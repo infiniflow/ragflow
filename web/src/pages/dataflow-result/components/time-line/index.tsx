@@ -6,55 +6,56 @@ import {
   ListPlus,
   PlayIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo } from 'react';
+export const TimelineNodeObj = {
+  begin: {
+    id: 1,
+    title: 'Begin',
+    icon: <PlayIcon size={13} />,
+    clickable: false,
+  },
+  parser: { id: 2, title: 'Parser', icon: <FilePlayIcon size={13} /> },
+  chunker: { id: 3, title: 'Chunker', icon: <Grid3x2 size={13} /> },
+  indexer: {
+    id: 4,
+    title: 'Indexer',
+    icon: <ListPlus size={13} />,
+    clickable: false,
+  },
+  complete: {
+    id: 5,
+    title: 'Complete',
+    icon: <CheckLine size={13} />,
+    clickable: false,
+  },
+};
 
-const TimelineDataFlow = () => {
-  const [activeStep, setActiveStep] = useState(2);
+export interface TimelineDataFlowProps {
+  activeId: number | string;
+  activeFunc: (id: number | string) => void;
+}
+const TimelineDataFlow = ({ activeFunc, activeId }: TimelineDataFlowProps) => {
+  // const [activeStep, setActiveStep] = useState(2);
+  const timelineNodes: TimelineNode[] = useMemo(() => {
+    const nodes: TimelineNode[] = [];
+    Object.keys(TimelineNodeObj).forEach((key) => {
+      nodes.push({
+        ...TimelineNodeObj[key as keyof typeof TimelineNodeObj],
+        className: 'w-32',
+        completed: false,
+      });
+    });
+    return nodes;
+  }, []);
 
-  const timelineNodes: TimelineNode[] = [
-    {
-      id: 1,
-      title: 'Begin',
-      icon: <PlayIcon size={13} />,
-      className: 'w-32',
-      completed: false,
-      clickable: false,
-    },
-    {
-      id: 2,
-      title: 'Parser',
-      icon: <FilePlayIcon size={13} />,
-      completed: false,
-      className: 'w-32',
-      content: '2m45s',
-    },
-    {
-      id: 3,
-      title: 'Chunker',
-      icon: <Grid3x2 size={13} />,
-      completed: false,
-      className: 'w-32',
-    },
-    {
-      id: 4,
-      title: 'Indexer',
-      className: 'w-32',
-      icon: <ListPlus size={13} />,
-      completed: false,
-      clickable: false,
-    },
-    {
-      id: 5,
-      title: 'Complete',
-      className: 'w-32',
-      icon: <CheckLine size={13} />,
-      completed: false,
-      clickable: false,
-    },
-  ];
-
+  const activeStep = useMemo(() => {
+    const index = timelineNodes.findIndex((node) => node.id === activeId);
+    return index > -1 ? index + 1 : 0;
+  }, [activeId, timelineNodes]);
   const handleStepChange = (step: number, id: string | number) => {
-    setActiveStep(step);
+    // setActiveStep(step);
+    activeFunc?.(id);
+    console.log(step, id);
   };
 
   return (

@@ -1,5 +1,5 @@
 import { useFetchNextChunkList } from '@/hooks/use-chunk-request';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DocumentPreview from './components/document-preview';
 import { useGetChunkHighlights, useHandleChunkCardClick } from './hooks';
@@ -22,14 +22,16 @@ import {
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { ChunkerContainer } from './chunker';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
-import TimelineDataFlow from './components/time-line';
+import TimelineDataFlow, { TimelineNodeObj } from './components/time-line';
 import styles from './index.less';
+import ParserContainer from './parser';
 
 const Chunk = () => {
   const {
     data: { documentInfo },
   } = useFetchNextChunkList();
   const { selectedChunkId } = useHandleChunkCardClick();
+  const [activeStepId, setActiveStepId] = useState<number | string>(0);
   const { data: dataset } = useFetchKnowledgeBaseConfiguration();
 
   const { t } = useTranslation();
@@ -55,6 +57,9 @@ const Chunk = () => {
     return 'unknown';
   }, [documentInfo]);
 
+  const handleStepChange = (id: number | string) => {
+    setActiveStepId(id);
+  };
   return (
     <>
       <PageHeader>
@@ -83,7 +88,10 @@ const Chunk = () => {
         </Breadcrumb>
       </PageHeader>
       <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
-        <TimelineDataFlow />
+        <TimelineDataFlow
+          activeFunc={handleStepChange}
+          activeId={activeStepId}
+        />
       </div>
       <div className={styles.chunkPage}>
         <div className="flex flex-1 gap-8">
@@ -101,7 +109,8 @@ const Chunk = () => {
               ></DocumentPreview>
             </section>
           </div>
-          <ChunkerContainer />
+          {activeStepId === TimelineNodeObj.chunker.id && <ChunkerContainer />}
+          {activeStepId === TimelineNodeObj.parser.id && <ParserContainer />}
         </div>
       </div>
     </>

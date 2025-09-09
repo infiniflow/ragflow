@@ -127,3 +127,10 @@ export const useUpdateChunk = () => {
     documentId,
   };
 };
+
+export const useFetchParserList = () => {
+  const [loading, setLoading] = useState(false);
+  return {
+    loading,
+  };
+};
