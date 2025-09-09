@@ -479,7 +479,7 @@ def prompts():
         "task_analysis": ANALYZE_TASK_SYSTEM + ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,
         "reflection": REFLECT,
-        "context_summary": SUMMARY4MEMORY,
-        "context_ranking": RANK_MEMORY,
+        #"context_summary": SUMMARY4MEMORY,
+        #"context_ranking": RANK_MEMORY,
         "citation_guidelines": CITATION_PROMPT_TEMPLATE
     })
