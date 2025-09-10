@@ -9,10 +9,17 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import { Banknote, Database, FileSearch2, GitGraph } from 'lucide-react';
-import { useMemo } from 'react';
+import {
+  Banknote,
+  Database,
+  FileSearch2,
+  GitGraph,
+  UmbrellaOff,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
+import RiskIdentifyModal from './risk-identify-modal';
 
 type PropType = {
   refreshCount?: number;
@@ -25,6 +32,14 @@ export function SideBar({ refreshCount }: PropType) {
   const { data } = useFetchKnowledgeBaseConfiguration(refreshCount);
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
+  const [showRiskModal, setShowRiskModal] = useState(false);
+  const handleClick = (key: string) => {
+    if (key === 'risk-identify') {
+      setShowRiskModal(true);
+    } else {
+      handleMenuClick(key)();
+    }
+  };
 
   const items = useMemo(() => {
     const list = [
@@ -42,6 +57,11 @@ export function SideBar({ refreshCount }: PropType) {
         icon: Banknote,
         label: t(`knowledgeDetails.configuration`),
         key: Routes.DatasetSetting,
+      },
+      {
+        icon: UmbrellaOff,
+        label: t(`knowledgeDetails.riskIdentify`),
+        key: 'risk-identify',
       },
     ];
     if (!isEmpty(routerData?.graph)) {
@@ -92,7 +112,7 @@ export function SideBar({ refreshCount }: PropType) {
                   'text-text-primary': active,
                 },
               )}
-              onClick={handleMenuClick(item.key)}
+              onClick={() => handleClick(item.key)}
             >
               <item.icon className="size-4" />
               <span>{item.label}</span>
@@ -100,6 +120,10 @@ export function SideBar({ refreshCount }: PropType) {
           );
         })}
       </div>
+      <RiskIdentifyModal
+        setShowRiskModal={setShowRiskModal}
+        showRiskModal={showRiskModal}
+      />
     </aside>
   );
 }

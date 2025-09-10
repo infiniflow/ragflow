@@ -225,6 +225,7 @@ export default {
       plainText: 'Naive',
       reRankModelWaring: '重排序模型非常耗时。',
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
+      riskIdentify: '风险识别',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',

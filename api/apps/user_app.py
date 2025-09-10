@@ -588,44 +588,44 @@ def rollback_user_registration(user_id):
 
 
 def user_register(user_id, user):
-    user["id"] = user_id
-    tenant = {
-        "id": user_id,
-        "name": user["nickname"] + "‘s Kingdom",
-        "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
-        "asr_id": settings.ASR_MDL,
-        "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL,
-        "rerank_id": settings.RERANK_MDL,
-    }
-    usr_tenant = {
-        "tenant_id": user_id,
-        "user_id": user_id,
-        "invited_by": user_id,
-        "role": UserTenantRole.OWNER,
-    }
-    file_id = get_uuid()
-    file = {
-        "id": file_id,
-        "parent_id": file_id,
-        "tenant_id": user_id,
-        "created_by": user_id,
-        "name": "/",
-        "type": FileType.FOLDER.value,
-        "size": 0,
-        "location": "",
-    }
+  user["id"] = user_id
+  tenant = {
+      "id": user_id,
+      "name": user["nickname"] + "‘s Kingdom",
+      "llm_id": settings.CHAT_MDL,
+      "embd_id": settings.EMBEDDING_MDL,
+      "asr_id": settings.ASR_MDL,
+      "parser_ids": settings.PARSERS,
+      "img2txt_id": settings.IMAGE2TEXT_MDL,
+      "rerank_id": settings.RERANK_MDL,
+  }
+  usr_tenant = {
+      "tenant_id": user_id,
+      "user_id": user_id,
+      "invited_by": user_id,
+      "role": UserTenantRole.OWNER,
+  }
+  file_id = get_uuid()
+  file = {
+      "id": file_id,
+      "parent_id": file_id,
+      "tenant_id": user_id,
+      "created_by": user_id,
+      "name": "/",
+      "type": FileType.FOLDER.value,
+      "size": 0,
+      "location": "",
+  }
 
-    tenant_llm = get_init_tenant_llm(user_id)
+  tenant_llm = get_init_tenant_llm(user_id)
 
-    if not UserService.save(**user):
-        return
-    TenantService.insert(**tenant)
-    UserTenantService.insert(**usr_tenant)
-    TenantLLMService.insert_many(tenant_llm)
-    FileService.insert(file)
-    return UserService.query(email=user["email"])
+  if not UserService.save(**user):
+    return
+  TenantService.insert(**tenant)
+  UserTenantService.insert(**usr_tenant)
+  TenantLLMService.insert_many(tenant_llm)
+  FileService.insert(file)
+  return UserService.query(email=user["email"])
 
 
 @manager.route("/register", methods=["POST"])  # noqa: F821
@@ -800,10 +800,10 @@ def set_tenant_info():
         schema:
           type: object
     """
-    req = request.json
-    try:
-        tid = req.pop("tenant_id")
-        TenantService.update_by_id(tid, req)
-        return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
+  req = request.json
+  try:
+    tid = req.pop("tenant_id")
+    TenantService.update_by_id(tid, req)
+    return get_json_result(data=True)
+  except Exception as e:
+    return server_error_response(e)
