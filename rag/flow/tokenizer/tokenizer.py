@@ -117,11 +117,13 @@ class Tokenizer(ProcessBase):
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
                         self.callback(i * 1.0 / len(chunks) / parts)
-            elif from_upstream.output_format in ["markdown", "text"]:
+            elif from_upstream.output_format in ["markdown", "text", "html"]:
                 if from_upstream.output_format == "markdown":
                     payload = from_upstream.markdown_result
-                else:  # == "text"
+                elif from_upstream.output_format == "text":
                     payload = from_upstream.text_result
+                else:  # == "html"
+                    payload = from_upstream.html_result
 
                 if not payload:
                     return ""

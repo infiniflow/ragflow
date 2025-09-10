@@ -291,6 +291,10 @@ def retrieval_test():
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
+    if not kb_ids:
+        return get_json_result(data=False, message='Please specify dataset firstly.',
+                               code=settings.RetCode.DATA_ERROR)
+
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
