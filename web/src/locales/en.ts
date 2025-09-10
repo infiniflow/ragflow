@@ -932,7 +932,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       builtIn: 'Built-in',
       ExceptionDefaultValue: 'Exception default value',
       exceptionMethod: 'Exception method',
-      maxRounds: 'Max rounds',
+      maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
       maxRetries: 'Max retries',
       advancedSettings: 'Advanced Settings',
@@ -1573,6 +1573,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+      chooseDataset: 'Please select a dataset first',
     },
     language: {
       english: 'English',
