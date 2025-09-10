@@ -57,13 +57,6 @@ const FormSchema = z.object({
   //   )
   //   .optional(),
   message_history_window_size: z.coerce.number(),
-  tools: z
-    .array(
-      z.object({
-        component_name: z.string(),
-      }),
-    )
-    .optional(),
   ...LlmSettingSchema,
   max_retries: z.coerce.number(),
   delay_after_error: z.coerce.number().optional(),
