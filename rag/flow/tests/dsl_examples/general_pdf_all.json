@@ -23,13 +23,20 @@
                   ],
                   "output_format": "json"
                 },
-                "excel": {
-                  "output_format": "html",
+                "spreadsheet": {
                   "suffix": [
                     "xls",
                     "xlsx",
                     "csv"
-                  ]
+                  ],
+                  "output_format": "html"
+                },
+                "word": {
+                  "suffix": [
+                    "doc",
+                    "docx"
+                  ],
+                  "output_format": "json"
                 }
               }
             }

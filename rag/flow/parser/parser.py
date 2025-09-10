@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import logging
 import random
 
 import trio
@@ -29,8 +30,18 @@ class ParserParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
         self.allowed_output_format = {
-            "pdf": ["json", "markdown"],
-            "excel": ["json", "markdown", "html"],
+            "pdf": [
+                "json",
+                "markdown",
+            ],
+            "spreadsheet": [
+                "json",
+                "markdown",
+                "html",
+            ],
+            "word": [
+                "json",
+            ],
             "ppt": [],
             "image": [],
             "email": [],
@@ -44,12 +55,25 @@ class ParserParam(ProcessParamBase):
                 "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
                 "vlm_name": "",
                 "lang": "Chinese",
-                "suffix": ["pdf"],
+                "suffix": [
+                    "pdf",
+                ],
                 "output_format": "json",
             },
-            "excel": {
+            "spreadsheet": {
                 "output_format": "html",
-                "suffix": ["xls", "xlsx", "csv"],
+                "suffix": [
+                    "xls",
+                    "xlsx",
+                    "csv",
+                ],
+            },
+            "word": {
+                "suffix": [
+                    "doc",
+                    "docx",
+                ],
+                "output_format": "json",
             },
             "ppt": {},
             "image": {
@@ -76,10 +100,15 @@ class ParserParam(ProcessParamBase):
             pdf_output_format = pdf_config.get("output_format", "")
             self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
 
-        excel_config = self.setups.get("excel", "")
-        if excel_config:
-            excel_output_format = excel_config.get("output_format", "")
-            self.check_valid_value(excel_output_format, "Excel output format abnormal.", self.allowed_output_format["excel"])
+        spreadsheet_config = self.setups.get("spreadsheet", "")
+        if spreadsheet_config:
+            spreadsheet_output_format = spreadsheet_config.get("output_format", "")
+            self.check_valid_value(spreadsheet_output_format, "Spreadsheet output format abnormal.", self.allowed_output_format["spreadsheet"])
+
+        doc_config = self.setups.get("doc", "")
+        if doc_config:
+            doc_output_format = doc_config.get("output_format", "")
+            self.check_valid_value(doc_output_format, "Word processer document output format abnormal.", self.allowed_output_format["doc"])
 
         image_config = self.setups.get("image", "")
         if image_config:
@@ -93,10 +122,13 @@ class ParserParam(ProcessParamBase):
 class Parser(ProcessBase):
     component_name = "Parser"
 
-    def _pdf(self, blob):
+    def _pdf(self, from_upstream: ParserFromUpstream):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
+
+        blob = from_upstream.blob
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
+
         if conf.get("parse_method") == "deepdoc":
             bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
         elif conf.get("parse_method") == "plain_text":
@@ -110,6 +142,7 @@ class Parser(ProcessBase):
             for t, poss in lines:
                 pn, x0, x1, top, bott = poss.split(" ")
                 bboxes.append({"page_number": int(pn), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
+
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
         if conf.get("output_format") == "markdown":
@@ -123,23 +156,53 @@ class Parser(ProcessBase):
                 mkdn += b.get("text", "") + "\n"
             self.set_output("markdown", mkdn)
 
-    def _excel(self, blob):
-        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Excel.")
-        conf = self._param.setups["excel"]
+    def _spreadsheet(self, from_upstream: ParserFromUpstream):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
+
+        blob = from_upstream.blob
+        conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
-        excel_parser = ExcelParser()
+
+        print("spreadsheet {conf=}", flush=True)
+        spreadsheet_parser = ExcelParser()
         if conf.get("output_format") == "html":
-            html = excel_parser.html(blob, 1000000000)
+            html = spreadsheet_parser.html(blob, 1000000000)
             self.set_output("html", html)
         elif conf.get("output_format") == "json":
-            self.set_output("json", [{"text": txt} for txt in excel_parser(blob) if txt])
+            self.set_output("json", [{"text": txt} for txt in spreadsheet_parser(blob) if txt])
         elif conf.get("output_format") == "markdown":
-            self.set_output("markdown", excel_parser.markdown(blob))
+            self.set_output("markdown", spreadsheet_parser.markdown(blob))
+
+    def _word(self, from_upstream: ParserFromUpstream):
+        from tika import parser as  word_parser
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
+
+        blob = from_upstream.blob
+        name = from_upstream.name
+        conf = self._param.setups["word"]
+        self.set_output("output_format", conf["output_format"])
+
+        print("word {conf=}", flush=True)
+        doc_parsed = word_parser.from_buffer(blob)
+
+        sections = []
+        if doc_parsed.get("content"):
+            sections = doc_parsed["content"].split("\n")
+            sections = [{"text": section} for section in sections if section]
+        else:
+            logging.warning(f"tika.parser got empty content from {name}.")
+
+        # json
+        assert conf.get("output_format") == "json", "have to be json for doc"
+        if conf.get("output_format") == "json":
+            self.set_output("json", sections)
 
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
-            "excel": self._excel,
+            "spreadsheet": self._spreadsheet,
+            "word": self._word,
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
@@ -150,5 +213,5 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await trio.to_thread.run_sync(function_map[p_type], from_upstream.blob)
+            await trio.to_thread.run_sync(function_map[p_type], from_upstream)
             break
