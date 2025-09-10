@@ -124,7 +124,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for knowledge base
 
-As of RAGFlow v0.20.4, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
+As of RAGFlow v0.20.5, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
 ![search knowledge base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 
