@@ -75,6 +75,10 @@ class ParserParam(ProcessParamBase):
                 ],
                 "output_format": "json",
             },
+            "markdown": {
+                "suffix": ["md", "markdown"],
+                "output_format": "json",
+            },
             "ppt": {},
             "image": {
                 "parse_method": "ocr",
@@ -198,11 +202,51 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             self.set_output("json", sections)
 
+    def _markdown(self, from_upstream: ParserFromUpstream):
+        from functools import reduce
+
+        from rag.app.naive import Markdown as naive_markdown_parser
+        from rag.nlp import concat_img
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
+
+        blob = from_upstream.blob
+        name = from_upstream.name
+        conf = self._param.setups["markdown"]
+        self.set_output("output_format", conf["output_format"])
+
+        print("markdown {conf=}", flush=True)
+
+        markdown_parser = naive_markdown_parser()
+        sections, tables = markdown_parser(name, blob, separate_tables=False)
+
+        # json
+        assert conf.get("output_format") == "json", "have to be json for doc"
+        if conf.get("output_format") == "json":
+            json_results = []
+
+            for section_text, _ in sections:
+                json_result = {
+                    "text": section_text,
+                }
+
+                images = markdown_parser.get_pictures(section_text) if section_text else None
+                if images:
+                    # If multiple images found, combine them using concat_img
+                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
+                    json_result["image"] = combined_image
+
+                json_results.append(json_result)
+
+            self.set_output("json", json_results)
+
+
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
+            "markdown": self._markdown,
             "spreadsheet": self._spreadsheet,
-            "word": self._word,
+            "word": self._word
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
