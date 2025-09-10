@@ -26,7 +26,7 @@ import {
   EmbeddingModelItem,
   ParseTypeItem,
   TeamItem,
-} from '../dataset/setting/configuration/common-item';
+} from '../dataset/dataset-setting/configuration/common-item';
 
 const FormId = 'dataset-creating-form';
 
@@ -84,7 +84,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
-        <EmbeddingModelItem />
+        <EmbeddingModelItem line={2} />
         <ParseTypeItem />
         {parseType === 2 && (
           <>

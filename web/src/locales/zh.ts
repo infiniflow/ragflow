@@ -246,6 +246,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
       dataFlowPlaceholder: '请选择数据流',
       buildItFromScratch: '去Scratch构建',

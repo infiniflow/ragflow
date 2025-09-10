@@ -45,6 +45,7 @@ export enum Routes {
   DataFlows = '/data-flows',
   DataFlow = '/data-flow',
   DataSetOverview = '/dataset-overview',
+  DataSetSetting = '/dataset-setting',
   DataflowResult = '/dataflow-result',
 }
 
@@ -278,6 +279,10 @@ const routes = [
       {
         path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.DataSetOverview}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DataSetSetting}`,
       },
     ],
   },

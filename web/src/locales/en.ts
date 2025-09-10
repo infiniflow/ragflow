@@ -261,6 +261,7 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      enableAutoGenerate: 'Enable Auto Generate',
       teamPlaceholder: 'Please select a team.',
       dataFlowPlaceholder: 'Please select a data flow.',
       buildItFromScratch: 'Build it from scratch',
