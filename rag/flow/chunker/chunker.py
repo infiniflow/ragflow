@@ -73,11 +73,13 @@ class Chunker(ProcessBase):
 
     def _general(self, from_upstream: ChunkerFromUpstream):
         self.callback(random.randint(1, 5) / 100.0, "Start to chunk via `General`.")
-        if from_upstream.output_format in ["markdown", "text"]:
+        if from_upstream.output_format in ["markdown", "text", "html"]:
             if from_upstream.output_format == "markdown":
                 payload = from_upstream.markdown_result
-            else:  # == "text"
+            elif from_upstream.output_format == "text":
                 payload = from_upstream.text_result
+            else:  # == "html"
+                payload = from_upstream.html_result
 
             if not payload:
                 payload = ""
@@ -90,6 +92,7 @@ class Chunker(ProcessBase):
             )
             return [{"text": c} for c in cks]
 
+        # json
         sections, section_images = [], []
         for o in from_upstream.json_result or []:
             sections.append((o.get("text", ""), o.get("position_tag", "")))
