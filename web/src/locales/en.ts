@@ -932,7 +932,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       builtIn: 'Built-in',
       ExceptionDefaultValue: 'Exception default value',
       exceptionMethod: 'Exception method',
-      maxRounds: 'Max rounds',
+      maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
       maxRetries: 'Max retries',
       advancedSettings: 'Advanced Settings',

@@ -890,7 +890,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
       exceptionMethod: '异常处理方法',
-      maxRounds: '最大轮数',
+      maxRounds: '最大反思轮数',
       delayEfterError: '错误后延迟',
       maxRetries: '最大重试次数',
       advancedSettings: '高级设置',

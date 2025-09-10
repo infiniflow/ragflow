@@ -31,7 +31,7 @@ import {
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
-import { isBottomSubAgent } from '../../utils';
+import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
 import { buildOutputList } from '../../utils/build-output-list';
 import { DescriptionField } from '../components/description-field';
 import { FormWrapper } from '../components/form-wrapper';
@@ -231,18 +231,20 @@ function AgentForm({ node }: INextOperatorForm) {
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name={`max_rounds`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>{t('flow.maxRounds')}</FormLabel>
-                  <FormControl>
-                    <NumberInput {...field}></NumberInput>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+            {hasSubAgentOrTool(edges, node?.id) && (
+              <FormField
+                control={form.control}
+                name={`max_rounds`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>{t('flow.maxRounds')}</FormLabel>
+                    <FormControl>
+                      <NumberInput {...field}></NumberInput>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            )}
             <FormField
               control={form.control}
               name={`exception_method`}
