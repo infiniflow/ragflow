@@ -934,7 +934,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       exceptionMethod: 'Exception method',
       maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
-      maxRetries: 'Max retries',
+      maxRetries: 'Max reflection rounds',
       advancedSettings: 'Advanced Settings',
       addTools: 'Add Tools',
       sysPromptDefultValue: `
