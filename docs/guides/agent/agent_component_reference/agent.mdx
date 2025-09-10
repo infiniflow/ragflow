@@ -72,27 +72,30 @@ An **Agent** component relies on keys (variables) to specify its data inputs. It
 From v0.20.5 onwards, four framework-level prompt blocks are available in the **System prompt** field. Type `/` or click **(x)** to view them; they appear under the **Framework** entry in the dropdown menu.
 
 - `task_analysis` prompt block
+  - This block is responsible for analyzing tasks — either a user task or a task assigned by the lead Agent when the **Agent** component is acting as a Sub-Agent.
   - Reference design: [analyze_task_system.md](https://github.com/infiniflow/ragflow/blob/main/rag/prompts/analyze_task_system.md) and [analyze_task_user.md](https://github.com/infiniflow/ragflow/blob/main/rag/prompts/analyze_task_user.md)
-  - Available *only* when this **Agent** component is acting as a lead Agent.
+  - Available *only* when this **Agent** component is acting as a planner, with either tools or sub-Agents under it.
   - Input variables:
     - `agent_prompt`: The system prompt.
     - `task`: The user prompt for either a lead Agent or a sub-Agent. The lead Agent's user prompt is defined by the user, while a sub-Agent's user prompt is defined by the lead Agent when delegating tasks.
     - `tool_desc`: A description of the tools and sub_Agent that can be called.
     - `context`: The operational context, which stores interactions between the Agent, tools, and sub-agents; initially empty.
 - `plan_generation` prompt block
+  - This block creates a plan for the **Agent** component to execute next, based on the task analysis results.
   - Reference design: [next_step.md](https://github.com/infiniflow/ragflow/blob/main/rag/prompts/next_step.md)
-  - Available *only* when this **Agent** component is acting as a lead Agent.
+  - Available *only* when this **Agent** component is acting as a planner, with either tools or sub-Agents under it.
   - Input variables:
-    - `task_analisys`: The analysis result of the current task.
-    - `desc`: A description of the tool or sub-Agent currently being called.
+    - `task_analysis`: The analysis result of the current task.
+    - `desc`: A description of the tools or sub-Agents currently being called.
     - `today`: The date of today.
 - `reflection` prompt block
+  - This block enables the **Agent** component to reflect, improving task accuracy and efficiency.
   - Reference design: [reflect.md](https://github.com/infiniflow/ragflow/blob/main/rag/prompts/reflect.md)
-  - Available *only* when this **Agent** component is acting as a lead Agent.
+  - Available *only* when this **Agent** component is acting as a planner, with either tools or sub-Agents under it.
   - Input variables:
     - `goal`: The goal of the current task. It is the user prompt for either a lead Agent or a sub-Agent. The lead Agent's user prompt is defined by the user, while a sub-Agent's user prompt is defined by the lead Agent.
     - `tool_calls`: The history of tool calling
-    - `call.name`：The names of the tools called.
+    - `call.name`：The name of the tool called.
     - `call.result`：The result of tool calling
 - `citation_guidelines` prompt block
   - Reference design: [citation_prompt.md](https://github.com/infiniflow/ragflow/blob/main/rag/prompts/citation_prompt.md)
