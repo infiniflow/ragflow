@@ -124,17 +124,19 @@ class Base(ABC):
                 mime = "image/jpeg"
             b64 = base64.b64encode(data).decode("utf-8")
             return f"data:{mime};base64,{b64}"
-        buffered = BytesIO()
-        fmt = "JPEG"
-        try:
-            image.save(buffered, format="JPEG")
-        except Exception:
-            buffered = BytesIO()  # reset buffer before saving PNG
-            image.save(buffered, format="PNG")
-            fmt = "PNG"
-        data = buffered.getvalue()
-        b64 = base64.b64encode(data).decode("utf-8")
-        mime = f"image/{fmt.lower()}"
+        with BytesIO() as buffered:
+            fmt = "JPEG"
+            try:
+                image.save(buffered, format="JPEG")
+            except Exception:
+                 # reset buffer before saving PNG
+                buffered.seek(0)
+                buffered.truncate()
+                image.save(buffered, format="PNG")
+                fmt = "PNG"
+            data = buffered.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+            mime = f"image/{fmt.lower()}"
         return f"data:{mime};base64,{b64}"
 
     def prompt(self, b64):
