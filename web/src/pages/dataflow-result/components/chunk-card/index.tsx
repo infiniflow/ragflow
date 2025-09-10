@@ -64,9 +64,9 @@ const ChunkCard = ({
   const [open, setOpen] = useState<boolean>(false);
   return (
     <Card
-      className={classNames(styles.chunkCard, {
-        [`${theme === 'dark' ? styles.cardSelectedDark : styles.cardSelected}`]:
-          selected,
+      className={classNames('rounded-lg w-full py-3 px-3', {
+        'bg-bg-title': selected,
+        'bg-bg-input': !selected,
       })}
     >
       <div className="flex items-start justify-between gap-2">

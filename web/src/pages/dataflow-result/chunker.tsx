@@ -15,6 +15,7 @@ import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
+import RerunButton from './components/rerun-button';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -24,6 +25,7 @@ import {
 import styles from './index.less';
 const ChunkerContainer = () => {
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
+  const [isChange, setIsChange] = useState(false);
   const { t } = useTranslation();
   const {
     data: { documentInfo, data = [], total },
@@ -128,8 +130,18 @@ const ChunkerContainer = () => {
       showSelectedChunkWarning();
     }
   }, [selectedChunkIds, documentId, removeChunk, showSelectedChunkWarning]);
+
+  const handleChunkEditSave = (e: any) => {
+    setIsChange(true);
+    onChunkUpdatingOk(e);
+  };
   return (
     <>
+      {isChange && (
+        <div className=" absolute top-2 right-6">
+          <RerunButton />
+        </div>
+      )}
       <div
         className={classNames(
           { [styles.pagePdfWrapper]: isPdf },
@@ -137,15 +149,13 @@ const ChunkerContainer = () => {
         )}
       >
         <Spin spinning={loading} className={styles.spin} size="large">
-          <div className="h-[100px] flex flex-col justify-end pb-[5px]">
+          <div className="h-[50px] flex flex-row justify-between items-end pb-[5px]">
             <div>
-              <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
-              <div className="text-[14px] text-[#979AAB]">
+              <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
+              <div className="text-[12px] text-text-secondary italic">
                 {t('chunk.chunkResultTip')}
               </div>
             </div>
-          </div>
-          <div className=" rounded-[16px] bg-[#FFF]/10 pl-[20px] pb-[20px] pt-[20px] box-border	mb-2">
             <ChunkResultBar
               handleInputChange={handleInputChange}
               searchString={searchString}
@@ -155,6 +165,8 @@ const ChunkerContainer = () => {
               selectAllChunk={selectAllChunk}
               handleSetAvailable={handleSetAvailable}
             />
+          </div>
+          <div className=" rounded-[16px] box-border	mb-2">
             <div className="pt-[5px] pb-[5px]">
               <CheckboxSets
                 selectAllChunk={selectAllChunk}
@@ -164,7 +176,7 @@ const ChunkerContainer = () => {
                 selectedChunkIds={selectedChunkIds}
               />
             </div>
-            <div className={styles.pageContent}>
+            <div className="h-[calc(100vh-280px)] overflow-y-auto pr-2 scrollbar-thin">
               <div
                 className={classNames(
                   styles.chunkContainer,
@@ -209,7 +221,9 @@ const ChunkerContainer = () => {
           hideModal={hideChunkUpdatingModal}
           visible={chunkUpdatingVisible}
           loading={chunkUpdatingLoading}
-          onOk={onChunkUpdatingOk}
+          onOk={(e) => {
+            handleChunkEditSave(e);
+          }}
           parserId={documentInfo.parser_id}
         />
       )}

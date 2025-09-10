@@ -12,8 +12,8 @@ export default ({ size, name, create_date }: Props) => {
   const dateStr = formatDate(create_date);
   return (
     <div>
-      <h2 className="text-[24px]">{name}</h2>
-      <div className="text-[#979AAB] pt-[5px]">
+      <h2 className="text-[16px]">{name}</h2>
+      <div className="text-text-secondary text-[12px] pt-[5px]">
         Size：{sizeName} Uploaded Time：{dateStr}
       </div>
     </div>

@@ -94,9 +94,9 @@ const Chunk = () => {
         />
       </div>
       <div className={styles.chunkPage}>
-        <div className="flex flex-1 gap-8">
+        <div className="flex flex-none gap-8 border border-border mt-[26px] p-3 rounded-lg h-[calc(100vh-100px)]">
           <div className="w-2/5">
-            <div className="h-[100px] flex flex-col justify-end pb-[5px]">
+            <div className="h-[50px] flex flex-col justify-end pb-[5px]">
               <DocumentHeader {...documentInfo} />
             </div>
             <section className={styles.documentPreview}>
@@ -109,6 +109,7 @@ const Chunk = () => {
               ></DocumentPreview>
             </section>
           </div>
+          <div className="h-dvh border-r -mt-3"></div>
           {activeStepId === TimelineNodeObj.chunker.id && <ChunkerContainer />}
           {activeStepId === TimelineNodeObj.parser.id && <ParserContainer />}
         </div>

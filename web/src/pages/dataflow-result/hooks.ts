@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import {
   useCreateChunk,
   useDeleteChunk,
@@ -7,7 +8,9 @@ import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { buildChunkHighlights } from '@/utils/document-util';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { IHighlight } from 'react-pdf-highlighter';
 import { ChunkTextMode } from './constant';
 
@@ -133,4 +136,50 @@ export const useFetchParserList = () => {
   return {
     loading,
   };
+};
+
+export const useRerunDataflow = () => {
+  const [loading, setLoading] = useState(false);
+  return {
+    loading,
+  };
+};
+
+export const useFetchPaserText = () => {
+  const initialText =
+    '第一行文本\n\t第二行缩进文本\n第三行  多个空格 第一行文本\n\t第二行缩进文本\n第三行 ' +
+    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
+    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
+    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
+    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
+    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
+    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格';
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<string>(initialText);
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  const {
+    // data,
+    // isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['createChunk'],
+    mutationFn: async (payload: any) => {
+      // let service = kbService.create_chunk;
+      // if (payload.chunk_id) {
+      //   service = kbService.set_chunk;
+      // }
+      // const { data } = await service(payload);
+      // if (data.code === 0) {
+      message.success(t('message.created'));
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+      }, 1000); // Delay to ensure the list is updated
+      // }
+      // return data?.code;
+    },
+  });
+
+  return { data, loading, rerun: mutateAsync };
 };

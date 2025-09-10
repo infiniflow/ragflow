@@ -60,21 +60,24 @@ export default ({
     changeChunkTextMode(value);
   };
   return (
-    <div className="flex pr-[25px]">
-      <div className="flex items-center gap-4 bg-bg-card text-muted-foreground w-fit h-[35px] rounded-md px-4 py-2">
+    <div className="flex gap-2">
+      <div className="flex items-center gap-1 bg-bg-card text-muted-foreground w-fit h-[35px] rounded-md p-1">
         {textSelectOptions.map((option) => (
           <div
             key={option.value}
-            className={cn('flex items-center cursor-pointer', {
-              'text-primary': option.value === textSelectValue,
-            })}
+            className={cn(
+              'flex items-center cursor-pointer px-4 py-1 rounded-md',
+              {
+                'text-primary bg-bg-base': option.value === textSelectValue,
+                'text-text-primary': option.value !== textSelectValue,
+              },
+            )}
             onClick={() => changeTextSelectValue(option.value)}
           >
             {option.label}
           </div>
         ))}
       </div>
-      <div className="ml-auto"></div>
       <Input
         className="bg-bg-card text-muted-foreground"
         style={{ width: 200 }}
@@ -83,7 +86,6 @@ export default ({
         onChange={handleInputChange}
         value={searchString}
       />
-      <div className="w-[20px]"></div>
       <Popover>
         <PopoverTrigger asChild>
           <Button className="bg-bg-card text-muted-foreground hover:bg-card">
@@ -94,8 +96,11 @@ export default ({
           {filterContent}
         </PopoverContent>
       </Popover>
-      <div className="w-[20px]"></div>
-      <Button onClick={() => createChunk()} className="bg-bg-card text-primary">
+      <Button
+        onClick={() => createChunk()}
+        variant={'secondary'}
+        className="bg-bg-card text-muted-foreground hover:bg-card"
+      >
         <Plus size={44} />
       </Button>
     </div>
