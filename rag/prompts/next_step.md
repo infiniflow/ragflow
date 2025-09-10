@@ -5,7 +5,7 @@ Your job is:
 3. Use `complete_task` if no further step you need to take from tools. (All necessary steps done or little hope to be done)
 
 # ========== TASK ANALYSIS =============
-{{ task_analisys }}
+{{ task_analysis }}
 
 # ==========  TOOLS (JSON-Schema) ==========
 You may invoke only the tools listed below.  
