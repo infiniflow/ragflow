@@ -27,9 +27,11 @@ export default function AgentTemplates() {
   const [selectMenuItem, setSelectMenuItem] = useState<string>(
     MenuItemKey.Recommended,
   );
+
   useEffect(() => {
     setTemplateList(list);
   }, [list]);
+
   const {
     visible: creatingVisible,
     hideModal: hideCreatingModal,

@@ -4,6 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Form,
   FormControl,
@@ -14,10 +16,76 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { IModalProps } from '@/interfaces/common';
+import { cn } from '@/lib/utils';
 import { TagRenameId } from '@/pages/add-knowledge/constant';
+import { BrainCircuit, Check, Route } from 'lucide-react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export function CreateAgentForm({ hideModal, onOk }: IModalProps<any>) {
+export type CreateAgentFormProps = IModalProps<any> & {
+  shouldChooseAgent?: boolean;
+};
+
+enum FlowType {
+  Agent = 'agent',
+  Flow = 'flow',
+}
+
+type FlowTypeCardProps = {
+  value?: FlowType;
+  onChange?: (value: FlowType) => void;
+};
+function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
+  const handleChange = useCallback(
+    (value: FlowType) => () => {
+      onChange?.(value);
+    },
+    [onChange],
+  );
+
+  return (
+    <section className="flex gap-10">
+      {Object.values(FlowType).map((val) => {
+        const isActive = value === val;
+        return (
+          <Card
+            key={val}
+            className={cn('flex-1 rounded-lg  border bg-transparent', {
+              'border-bg-base': isActive,
+              'border-border-default': !isActive,
+            })}
+          >
+            <CardContent
+              onClick={handleChange(val)}
+              className={cn(
+                'cursor-pointer p-5 text-text-secondary flex justify-between items-center',
+                {
+                  'text-text-primary': isActive,
+                },
+              )}
+            >
+              <div className="flex gap-2">
+                {val === FlowType.Agent ? (
+                  <BrainCircuit className="size-6" />
+                ) : (
+                  <Route className="size-6" />
+                )}
+                <p>{val}</p>
+              </div>
+              {isActive && <Check />}
+            </CardContent>
+          </Card>
+        );
+      })}
+    </section>
+  );
+}
+
+export function CreateAgentForm({
+  hideModal,
+  onOk,
+  shouldChooseAgent = false,
+}: CreateAgentFormProps) {
   const { t } = useTranslation();
   const FormSchema = z.object({
     name: z
@@ -28,11 +96,12 @@ export function CreateAgentForm({ hideModal, onOk }: IModalProps<any>) {
       .trim(),
     tag: z.string().trim().optional(),
     description: z.string().trim().optional(),
+    type: z.nativeEnum(FlowType).optional(),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
-    defaultValues: { name: '' },
+    defaultValues: { name: '', type: FlowType.Agent },
   });
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
@@ -49,12 +118,17 @@ export function CreateAgentForm({ hideModal, onOk }: IModalProps<any>) {
         className="space-y-6"
         id={TagRenameId}
       >
+        {shouldChooseAgent && (
+          <RAGFlowFormItem required name="type" label={t('common.type')}>
+            <FlowTypeCards></FlowTypeCards>
+          </RAGFlowFormItem>
+        )}
         <FormField
           control={form.control}
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('common.name')}</FormLabel>
+              <FormLabel required>{t('common.name')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('common.namePlaceholder')}
@@ -66,40 +140,6 @@ export function CreateAgentForm({ hideModal, onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
-        {/* <FormField
-          control={form.control}
-          name="tag"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('flow.tag')}</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder={t('flow.tagPlaceholder')}
-                  {...field}
-                  autoComplete="off"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('flow.description')}</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder={t('flow.descriptionPlaceholder')}
-                  {...field}
-                  autoComplete="off"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        /> */}
       </form>
     </Form>
   );
