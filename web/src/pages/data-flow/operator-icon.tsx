@@ -1,20 +1,11 @@
-import { ReactComponent as ArxivIcon } from '@/assets/svg/arxiv.svg';
-import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
-import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
-import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
-import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
-import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
-import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
-import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
-import { ReactComponent as SearXNGIcon } from '@/assets/svg/searxng.svg';
-import { ReactComponent as TavilyIcon } from '@/assets/svg/tavily.svg';
-import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
-import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
-import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
-
 import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
-import { HousePlus } from 'lucide-react';
+import {
+  FileChartColumnIncreasing,
+  Grid3x3,
+  HousePlus,
+  ListMinus,
+} from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -40,20 +31,9 @@ export const OperatorIconMap = {
 };
 
 export const SVGIconMap = {
-  [Operator.ArXiv]: ArxivIcon,
-  [Operator.GitHub]: GithubIcon,
-  [Operator.Bing]: BingIcon,
-  [Operator.DuckDuckGo]: DuckIcon,
-  [Operator.Google]: GoogleIcon,
-  [Operator.GoogleScholar]: GoogleScholarIcon,
-  [Operator.PubMed]: PubMedIcon,
-  [Operator.SearXNG]: SearXNGIcon,
-  [Operator.TavilyExtract]: TavilyIcon,
-  [Operator.TavilySearch]: TavilyIcon,
-  [Operator.Wikipedia]: WikipediaIcon,
-  [Operator.YahooFinance]: YahooFinanceIcon,
-  [Operator.WenCai]: WenCaiIcon,
-  [Operator.Crawler]: CrawlerIcon,
+  [Operator.Parser]: FileChartColumnIncreasing,
+  [Operator.Chunker]: Grid3x3,
+  [Operator.Tokenizer]: ListMinus,
 };
 
 const Empty = () => {
@@ -80,7 +60,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   return typeof Icon === 'string' ? (
     <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
   ) : (
-    <SvgIcon className={cn('size-5 fill-current', className)}></SvgIcon>
+    <SvgIcon className="size-5"></SvgIcon>
   );
 };
 

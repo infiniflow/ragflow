@@ -8,11 +8,6 @@ import {
   ProgrammingLanguage,
 } from '@/constants/agent';
 
-export enum AgentDialogueMode {
-  Conversational = 'conversational',
-  Task = 'task',
-}
-
 import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
@@ -21,17 +16,6 @@ import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 import { t } from 'i18next';
-
-// DuckDuckGo's channel options
-export enum Channel {
-  Text = 'text',
-  News = 'news',
-}
-
-export enum PromptRole {
-  User = 'user',
-  Assistant = 'assistant',
-}
 
 import {
   Circle,
@@ -44,6 +28,16 @@ import {
   WrapText,
 } from 'lucide-react';
 
+export enum PromptRole {
+  User = 'user',
+  Assistant = 'assistant',
+}
+
+export enum AgentDialogueMode {
+  Conversational = 'conversational',
+  Task = 'task',
+}
+
 export const BeginId = 'begin';
 
 export enum Operator {
@@ -54,26 +48,9 @@ export enum Operator {
   Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
   KeywordExtract = 'KeywordExtract',
-  Baidu = 'Baidu',
-  DuckDuckGo = 'DuckDuckGo',
-  Wikipedia = 'Wikipedia',
-  PubMed = 'PubMed',
-  ArXiv = 'ArXiv',
-  Google = 'Google',
-  Bing = 'Bing',
-  GoogleScholar = 'GoogleScholar',
-  DeepL = 'DeepL',
-  GitHub = 'GitHub',
-  BaiduFanyi = 'BaiduFanyi',
-  QWeather = 'QWeather',
   ExeSQL = 'ExeSQL',
   Switch = 'Switch',
-  WenCai = 'WenCai',
-  AkShare = 'AkShare',
-  YahooFinance = 'YahooFinance',
-  Jin10 = 'Jin10',
   Concentrator = 'Concentrator',
-  TuShare = 'TuShare',
   Note = 'Note',
   Crawler = 'Crawler',
   Invoke = 'Invoke',
@@ -84,11 +61,8 @@ export enum Operator {
   WaitingDialogue = 'WaitingDialogue',
   Agent = 'Agent',
   Tool = 'Tool',
-  TavilySearch = 'TavilySearch',
-  TavilyExtract = 'TavilyExtract',
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
-  SearXNG = 'SearXNG',
   Parser = 'Parser',
   Chunker = 'Chunker',
   Tokenizer = 'Tokenizer',
@@ -112,112 +86,6 @@ export const AgentOperatorList = [
   Operator.WaitingDialogue,
   Operator.Note,
   Operator.Agent,
-];
-
-export const componentMenuList = [
-  {
-    name: Operator.Retrieval,
-  },
-  {
-    name: Operator.Categorize,
-  },
-  {
-    name: Operator.Message,
-  },
-
-  {
-    name: Operator.RewriteQuestion,
-  },
-  {
-    name: Operator.KeywordExtract,
-  },
-  {
-    name: Operator.Switch,
-  },
-  {
-    name: Operator.Concentrator,
-  },
-  {
-    name: Operator.Iteration,
-  },
-  {
-    name: Operator.Code,
-  },
-  {
-    name: Operator.WaitingDialogue,
-  },
-  {
-    name: Operator.Agent,
-  },
-  {
-    name: Operator.Note,
-  },
-  {
-    name: Operator.DuckDuckGo,
-  },
-  {
-    name: Operator.Baidu,
-  },
-  {
-    name: Operator.Wikipedia,
-  },
-  {
-    name: Operator.PubMed,
-  },
-  {
-    name: Operator.ArXiv,
-  },
-  {
-    name: Operator.Google,
-  },
-  {
-    name: Operator.Bing,
-  },
-  {
-    name: Operator.GoogleScholar,
-  },
-  {
-    name: Operator.DeepL,
-  },
-  {
-    name: Operator.GitHub,
-  },
-  {
-    name: Operator.BaiduFanyi,
-  },
-  {
-    name: Operator.QWeather,
-  },
-  {
-    name: Operator.ExeSQL,
-  },
-  {
-    name: Operator.WenCai,
-  },
-  {
-    name: Operator.AkShare,
-  },
-  {
-    name: Operator.YahooFinance,
-  },
-  {
-    name: Operator.Jin10,
-  },
-  {
-    name: Operator.TuShare,
-  },
-  {
-    name: Operator.Crawler,
-  },
-  {
-    name: Operator.Invoke,
-  },
-  {
-    name: Operator.Email,
-  },
-  {
-    name: Operator.SearXNG,
-  },
 ];
 
 export const SwitchOperatorOptions = [
@@ -331,161 +199,6 @@ export const initialKeywordExtractValues = {
   top_n: 3,
   ...initialQueryBaseValues,
 };
-export const initialDuckValues = {
-  top_n: 10,
-  channel: Channel.Text,
-  query: AgentGlobals.SysQuery,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialSearXNGValues = {
-  top_n: '10',
-  searxng_url: '',
-  query: AgentGlobals.SysQuery,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialBaiduValues = {
-  top_n: 10,
-  ...initialQueryBaseValues,
-};
-
-export const initialWikipediaValues = {
-  top_n: 10,
-  language: 'en',
-  query: AgentGlobals.SysQuery,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialPubMedValues = {
-  top_n: 12,
-  email: '',
-  query: AgentGlobals.SysQuery,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialArXivValues = {
-  top_n: 12,
-  sort_by: 'relevance',
-  query: AgentGlobals.SysQuery,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialGoogleValues = {
-  q: AgentGlobals.SysQuery,
-  start: 0,
-  num: 12,
-  api_key: '',
-  country: 'us',
-  language: 'en',
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialBingValues = {
-  top_n: 10,
-  channel: 'Webpages',
-  api_key:
-    'YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
-  country: 'CH',
-  language: 'en',
-  query: '',
-};
-
-export const initialGoogleScholarValues = {
-  top_n: 12,
-  sort_by: 'relevance',
-  patents: true,
-  query: AgentGlobals.SysQuery,
-  year_low: undefined,
-  year_high: undefined,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialDeepLValues = {
-  top_n: 5,
-  auth_key: 'relevance',
-};
-
-export const initialGithubValues = {
-  top_n: 5,
-  query: AgentGlobals.SysQuery,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialBaiduFanyiValues = {
-  appid: 'xxx',
-  secret_key: 'xxx',
-  trans_type: 'translate',
-  ...initialQueryBaseValues,
-};
-
-export const initialQWeatherValues = {
-  web_apikey: 'xxx',
-  type: 'weather',
-  user_type: 'free',
-  time_period: 'now',
-  ...initialQueryBaseValues,
-};
 
 export const initialExeSqlValues = {
   sql: '',
@@ -523,53 +236,7 @@ export const initialSwitchValues = {
   [SwitchElseTo]: [],
 };
 
-export const initialWenCaiValues = {
-  top_n: 20,
-  query_type: 'stock',
-  query: AgentGlobals.SysQuery,
-  outputs: {
-    report: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
-
-export const initialYahooFinanceValues = {
-  stock_code: '',
-  info: true,
-  history: false,
-  financials: false,
-  balance_sheet: false,
-  cash_flow_statement: false,
-  news: true,
-  outputs: {
-    report: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialJin10Values = {
-  type: 'flash',
-  secret_key: 'xxx',
-  flash_type: '1',
-  contain: '',
-  filter: '',
-  ...initialQueryBaseValues,
-};
-
 export const initialConcentratorValues = {};
-
-export const initialTuShareValues = {
-  token: 'xxx',
-  src: 'eastmoney',
-  start_date: '2024-01-01 09:00:00',
-  ...initialQueryBaseValues,
-};
 
 export const initialNoteValues = {
   text: '',
@@ -650,6 +317,10 @@ export const initialCodeValues = {
 
 export const initialWaitingDialogueValues = {};
 
+export const initialChunkerValues = { outputs: {} };
+
+export const initialTokenizerValues = {};
+
 export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
@@ -717,66 +388,7 @@ export const initialStringTransformValues = {
   },
 };
 
-export enum TavilySearchDepth {
-  Basic = 'basic',
-  Advanced = 'advanced',
-}
-
-export enum TavilyTopic {
-  News = 'news',
-  General = 'general',
-}
-
-export const initialTavilyValues = {
-  api_key: '',
-  query: AgentGlobals.SysQuery,
-  search_depth: TavilySearchDepth.Basic,
-  topic: TavilyTopic.General,
-  max_results: 5,
-  days: 7,
-  include_answer: false,
-  include_raw_content: true,
-  include_images: false,
-  include_image_descriptions: false,
-  include_domains: [],
-  exclude_domains: [],
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export enum TavilyExtractDepth {
-  Basic = 'basic',
-  Advanced = 'advanced',
-}
-
-export enum TavilyExtractFormat {
-  Text = 'text',
-  Markdown = 'markdown',
-}
-
-export const initialTavilyExtractValues = {
-  urls: '',
-  extract_depth: TavilyExtractDepth.Basic,
-  format: TavilyExtractFormat.Markdown,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
+export const initialParserValues = { outputs: {} };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -818,27 +430,9 @@ export const RestrictedUpstreamMap = {
     Operator.Message,
     Operator.Relevant,
   ],
-  [Operator.Baidu]: [Operator.Begin, Operator.Retrieval],
-  [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
-  [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
-  [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Google]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
-  [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
-  [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
-  [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
-  [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
-  [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
-  [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
-  [Operator.WenCai]: [Operator.Begin],
-  [Operator.AkShare]: [Operator.Begin],
-  [Operator.YahooFinance]: [Operator.Begin],
-  [Operator.Jin10]: [Operator.Begin],
   [Operator.Concentrator]: [Operator.Begin],
-  [Operator.TuShare]: [Operator.Begin],
   [Operator.Crawler]: [Operator.Begin],
   [Operator.Note]: [],
   [Operator.Invoke]: [Operator.Begin],
@@ -848,8 +442,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Code]: [Operator.Begin],
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
-  [Operator.TavilySearch]: [Operator.Begin],
-  [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
   [Operator.Tool]: [Operator.Begin],
@@ -863,27 +455,9 @@ export const NodeMap = {
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
-  [Operator.DuckDuckGo]: 'ragNode',
-  [Operator.Baidu]: 'ragNode',
-  [Operator.Wikipedia]: 'ragNode',
-  [Operator.PubMed]: 'ragNode',
-  [Operator.ArXiv]: 'ragNode',
-  [Operator.Google]: 'ragNode',
-  [Operator.Bing]: 'ragNode',
-  [Operator.GoogleScholar]: 'ragNode',
-  [Operator.DeepL]: 'ragNode',
-  [Operator.GitHub]: 'ragNode',
-  [Operator.BaiduFanyi]: 'ragNode',
-  [Operator.QWeather]: 'ragNode',
-  [Operator.SearXNG]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.Concentrator]: 'logicNode',
-  [Operator.WenCai]: 'ragNode',
-  [Operator.AkShare]: 'ragNode',
-  [Operator.YahooFinance]: 'ragNode',
-  [Operator.Jin10]: 'ragNode',
-  [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
@@ -894,10 +468,11 @@ export const NodeMap = {
   [Operator.WaitingDialogue]: 'ragNode',
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
-  [Operator.TavilySearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',
-  [Operator.TavilyExtract]: 'ragNode',
+  [Operator.Parser]: 'parserNode',
+  [Operator.Chunker]: 'chunkerNode',
+  [Operator.Tokenizer]: 'tokenizerNode',
 };
 
 export enum BeginQueryType {

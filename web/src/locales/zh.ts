@@ -81,7 +81,7 @@ export default {
       flow: '智能体',
       search: '搜索',
       welcome: '欢迎来到',
-      dataset: '数据集',
+      dataset: '知识库',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -122,7 +122,7 @@ export default {
       retrievalTestingDescription:
         '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
       Parse: '解析',
-      dataset: '数据集',
+      dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
       knowledgeGraph: '知识图谱',
@@ -919,9 +919,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
       exceptionMethod: '异常处理方法',
-      maxRounds: '最大轮数',
+      maxRounds: '最大反思轮数',
       delayEfterError: '错误后延迟',
-      maxRetries: '最大重试次数',
+      maxRetries: '最大反思轮数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -1465,7 +1465,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       sqlStatement: 'SQL 语句',
       sqlStatementTip:
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
-      frameworkPrompts: '框架提示词',
+      frameworkPrompts: '框架',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1503,7 +1503,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       name: '姓名',
       avatar: '头像',
       description: '描述',
-      datasets: '数据集',
+      datasets: '知识库',
       rerankModel: 'rerank 模型',
       AISummary: 'AI 总结',
       enableWebSearch: '启用网页搜索',
@@ -1514,6 +1514,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       descriptionValue: '你是一位智能助手。',
       okText: '保存',
       cancelText: '返回',
+      chooseDataset: '请先选择知识库',
     },
     language: {
       english: '英语',
@@ -1527,7 +1528,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     },
     pagination: {
       total: '总共 {{total}} 条',
-      page: '页',
+      page: '{{page}}条/页',
     },
     dataflowParser: {
       parseSummary: '解析摘要',

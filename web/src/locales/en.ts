@@ -965,9 +965,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       builtIn: 'Built-in',
       ExceptionDefaultValue: 'Exception default value',
       exceptionMethod: 'Exception method',
-      maxRounds: 'Max rounds',
+      maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
-      maxRetries: 'Max retries',
+      maxRetries: 'Max reflection rounds',
       advancedSettings: 'Advanced Settings',
       addTools: 'Add Tools',
       sysPromptDefultValue: `
@@ -1556,7 +1556,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       sqlStatement: 'SQL Statement',
       sqlStatementTip:
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
-      frameworkPrompts: 'Framework Prompts',
+      frameworkPrompts: 'Framework',
     },
     llmTools: {
       bad_calculator: {
@@ -1606,6 +1606,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+      chooseDataset: 'Please select a dataset first',
     },
     language: {
       english: 'English',
@@ -1619,7 +1620,7 @@ This delimiter is used to split the input text into several text pieces echo of 
     },
     pagination: {
       total: 'Total {{total}}',
-      page: 'Page',
+      page: '{{page}} /Page',
     },
     dataflowParser: {
       parseSummary: 'Parse Summary',
