@@ -41,8 +41,8 @@ export interface DSL {
   path?: string[];
   answer?: any[];
   graph?: IGraph;
-  messages: Message[];
-  reference: IReference[];
+  messages?: Message[];
+  reference?: IReference[];
   globals: Record<string, any>;
   retrieval: IReference[];
 }
