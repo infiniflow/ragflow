@@ -88,7 +88,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: 
+          tags: |
             infiniflow/ragflow:${{ env.RELEASE_TAG }}
             infiniflow/ragflow:latest-full
           file: Dockerfile
@@ -100,7 +100,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: 
+          tags: |
             infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim 
             infiniflow/ragflow:latest-slim
           file: Dockerfile
