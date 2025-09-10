@@ -37,9 +37,17 @@
                     "docx"
                   ],
                   "output_format": "json"
+                },
+                "markdown": {
+                  "suffix": [
+                    "md",
+                    "markdown"
+                  ],
+                  "output_format": "json"
                 }
               }
             }
+          }
         },
         "downstream": ["Chunker:0"],
         "upstream": ["Begin"]
