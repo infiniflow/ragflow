@@ -783,7 +783,7 @@ export default {
         'Un composant qui recherche sur duckduckgo.com, vous permettant de spécifier le nombre de résultats avec TopN. Il complète les bases de connaissances existantes.',
       searXNG: 'SearXNG',
       searXNGDescription:
-        'Un composant qui effectue des recherches via la URL de l\'instance de SearXNG que vous fournissez. Spécifiez TopN et l\'URL de l\'instance.',
+        "Un composant qui effectue des recherches via la URL de l'instance de SearXNG que vous fournissez. Spécifiez TopN et l'URL de l'instance.",
       channel: 'Canal',
       channelTip:
         "Effectuer une recherche de texte ou d'actualités sur l'entrée du composant",
