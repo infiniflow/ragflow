@@ -62,7 +62,7 @@ function AgentChatBox() {
 
   return (
     <>
-      <section className="flex flex-1 flex-col px-5 h-[90vh]">
+      <section className="flex flex-1 flex-col px-5 h-[85vh]">
         <div className="flex-1 overflow-auto" ref={messageContainerRef}>
           <div>
             {/* <Spin spinning={sendLoading}> */}
