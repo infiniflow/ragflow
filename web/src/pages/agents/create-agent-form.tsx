@@ -6,30 +6,19 @@ import { z } from 'zod';
 
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import { Form } from '@/components/ui/form';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { BrainCircuit, Check, Route } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FlowType } from './constant';
+import { NameFormField, NameFormSchema } from './name-form-field';
 
 export type CreateAgentFormProps = IModalProps<any> & {
   shouldChooseAgent?: boolean;
 };
-
-enum FlowType {
-  Agent = 'agent',
-  Flow = 'flow',
-}
 
 type FlowTypeCardProps = {
   value?: FlowType;
@@ -51,7 +40,7 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
           <Card
             key={val}
             className={cn('flex-1 rounded-lg  border bg-transparent', {
-              'border-bg-base': isActive,
+              'border-text-primary': isActive,
               'border-border-default': !isActive,
             })}
           >
@@ -81,30 +70,28 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
   );
 }
 
+export const FormSchema = z.object({
+  ...NameFormSchema,
+  tag: z.string().trim().optional(),
+  description: z.string().trim().optional(),
+  type: z.nativeEnum(FlowType).optional(),
+});
+
+export type FormSchemaType = z.infer<typeof FormSchema>;
+
 export function CreateAgentForm({
   hideModal,
   onOk,
   shouldChooseAgent = false,
 }: CreateAgentFormProps) {
   const { t } = useTranslation();
-  const FormSchema = z.object({
-    name: z
-      .string()
-      .min(1, {
-        message: t('common.namePlaceholder'),
-      })
-      .trim(),
-    tag: z.string().trim().optional(),
-    description: z.string().trim().optional(),
-    type: z.nativeEnum(FlowType).optional(),
-  });
 
-  const form = useForm<z.infer<typeof FormSchema>>({
+  const form = useForm<FormSchemaType>({
     resolver: zodResolver(FormSchema),
     defaultValues: { name: '', type: FlowType.Agent },
   });
 
-  async function onSubmit(data: z.infer<typeof FormSchema>) {
+  async function onSubmit(data: FormSchemaType) {
     const ret = await onOk?.(data);
     if (ret) {
       hideModal?.();
@@ -123,23 +110,7 @@ export function CreateAgentForm({
             <FlowTypeCards></FlowTypeCards>
           </RAGFlowFormItem>
         )}
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel required>{t('common.name')}</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder={t('common.namePlaceholder')}
-                  {...field}
-                  autoComplete="off"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <NameFormField></NameFormField>
       </form>
     </Form>
   );

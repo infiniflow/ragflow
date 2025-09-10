@@ -8,7 +8,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
-import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
 import { t } from 'i18next';
@@ -17,6 +16,9 @@ import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
 import { useCallback } from 'react';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
+import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
+import { UploadAgentDialog } from './upload-agent-dialog';
+import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
 
 export default function Agents() {
@@ -34,10 +36,19 @@ export default function Agents() {
   } = useRenameAgent();
 
   const {
-    visible: creatingVisible,
-    hideModal: hideCreatingModal,
-    showModal: showCreatingModal,
-  } = useSetModalState();
+    creatingVisible,
+    hideCreatingModal,
+    showCreatingModal,
+    loading,
+    handleCreateAgentOrPipeline,
+  } = useCreateAgentOrPipeline();
+
+  const {
+    handleImportJson,
+    fileUploadVisible,
+    onFileUploadOk,
+    hideFileUploadModal,
+  } = useHandleImportJsonFile();
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -77,7 +88,10 @@ export default function Agents() {
                 <ClipboardPlus />
                 Create from Template
               </DropdownMenuItem>
-              <DropdownMenuItem justifyBetween={false}>
+              <DropdownMenuItem
+                justifyBetween={false}
+                onClick={handleImportJson}
+              >
                 <FileInput />
                 Import json file
               </DropdownMenuItem>
@@ -115,12 +129,18 @@ export default function Agents() {
       )}
       {creatingVisible && (
         <CreateAgentDialog
-          loading={false}
+          loading={loading}
           visible={creatingVisible}
           hideModal={hideCreatingModal}
           shouldChooseAgent
-          onOk={() => {}}
+          onOk={handleCreateAgentOrPipeline}
         ></CreateAgentDialog>
+      )}
+      {fileUploadVisible && (
+        <UploadAgentDialog
+          hideModal={hideFileUploadModal}
+          onOk={onFileUploadOk}
+        ></UploadAgentDialog>
       )}
     </section>
   );
