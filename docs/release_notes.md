@@ -32,7 +32,7 @@ Released on September 10, 2025.
 - Agent Prompt Framework exposed: Developers can now customize and override framework-level prompts in the system prompt section, enhancing flexibility and control.
 - Execute SQL Component Enhanced: Replaced the original variable reference component with a text input field, allowing free-form SQL writing with variable support.
 - Chat: Re-enabled Reasoning and Cross-language search.
-- Retrieval API Enhanced: Added metadata filtering support to the Retrieve chunks method.
+- Retrieval API Enhanced: Added metadata filtering support to the [Retrieve chunks](https://ragflow.io/docs/dev/http_api_reference#retrieve-chunks) method.
 
 ### Added models
 
