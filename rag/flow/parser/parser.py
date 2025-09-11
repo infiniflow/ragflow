@@ -266,10 +266,10 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             result = [{"text": text_content}]
+            self.set_output("json", result)
         else:
             result = text_content
-
-        self.set_output("json", result)
+            self.set_output("text", result)
 
     async def _invoke(self, **kwargs):
         function_map = {
