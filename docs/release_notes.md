@@ -28,11 +28,11 @@ Released on September 10, 2025.
 
 ### Improvements
 
-- Agent Performance Optimized: Improved planning and reflection speed for simple tasks; optimized concurrent tool calls for parallelizable scenarios, significantly reducing overall response time.
-- Agent Prompt Framework exposed: Developers can now customize and override framework-level prompts in the system prompt section, enhancing flexibility and control.
-- Execute SQL Component Enhanced: Replaced the original variable reference component with a text input field, allowing free-form SQL writing with variable support.
-- Chat: Re-enabled Reasoning and Cross-language search.
-- Retrieval API Enhanced: Added metadata filtering support to the [Retrieve chunks](https://ragflow.io/docs/dev/http_api_reference#retrieve-chunks) method.
+- Agent: 
+  - Agent Performance Optimized: Improves planning and reflection speed for simple tasks; optimizes concurrent tool calls for parallelizable scenarios, significantly reducing overall response time.
+  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control. See [here](./guides/agent/agent_component_reference/agent.mdx#advanced-usage).
+  - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables.
+- Chat: Re-enables **Reasoning** and **Cross-language search**.
 
 ### Added models
 
@@ -44,8 +44,22 @@ Released on September 10, 2025.
 ### Fixed issues
 
 - Dataset: Deleted files remained searchable.
-- Chat: Unable to chat with an Ollama model. 
-- Agent: Resolved issues including cite toggle failure, task mode requiring dialogue triggers, repeated answers in multi-turn dialogues, and duplicate summarization of parallel execution results.
+- Chat: Unable to chat with an Ollama model.
+- Agent:
+  - A **Cite** toggle failure.
+  - An Agent in task mode still required a dialogue to trigger.
+  - Repeated answers in multi-turn dialogues.
+  - Duplicate summarization of parallel execution results.
+
+### API changes
+
+#### HTTP APIs
+
+- Adds a body parameter `"metadata_condition"` to the [Retrieve chunks](./references/http_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
+
+#### Python APIs
+
+- Adds a parameter `metadata_condition` to the [Retrieve chunks](./references/python_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
 
 ## v0.20.4
 
