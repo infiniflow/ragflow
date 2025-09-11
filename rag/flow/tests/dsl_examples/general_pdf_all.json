@@ -44,9 +44,12 @@
                     "markdown"
                   ],
                   "output_format": "json"
+                },
+                "text": {
+                  "suffix": ["txt"],
+                  "output_format": "json"
                 }
               }
-            }
           }
         },
         "downstream": ["Chunker:0"],
