@@ -1856,7 +1856,7 @@ curl --request POST \
   - `false`: Disable highlighting of matched terms (default).
 - `"cross_languages"`: (*Body parameter*) `list[string]`  
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
-- `"metadata_condition"`: (*Body parameter*), `object`
+- `"metadata_condition"`: (*Body parameter*), `object`  
   The metadata condition for filtering chunks.
 #### Response
 
