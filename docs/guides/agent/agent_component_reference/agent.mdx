@@ -64,7 +64,7 @@ When necessary, click the **+** button on the **Agent** component to choose the 
 ## Connect to an MCP server as a client
 
 :::danger IMPORTANT
-In this section, we assume your **Agent** is configured as a planner, with a Tavily tool beneath it.
+In this section, we assume your **Agent** will be configured as a planner, with a Tavily tool beneath it.
 :::
 
 ### 1. Navigate to the MCP configuration page
@@ -85,7 +85,7 @@ Update your MCP server's name, URL (including the API key), server type, and oth
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_tools.jpg)
 
-2. Click **built-in** to show the available MCP servers.
+2. Click **MCP** to show the available MCP servers.
 
 3. Select your MCP server:
 
@@ -93,10 +93,13 @@ Update your MCP server's name, URL (including the API key), server type, and oth
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/choose_tavily_mcp_server.jpg)
 
+### 5. Update system prompt to specify trigger conditions (Optional)
 
-### 5. View the availabe tools of your MCP server
+To ensure reliable tool calls, you may specify within the system prompt which tasks should trigger each tool call.
 
-On the canvas, click the newly-populated Tavily server to view the tools it offers:
+### 6. View the availabe tools of your MCP server
+
+On the canvas, click the newly-populated Tavily server to view and select its available tools:
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_mcp_server.jpg)
 
