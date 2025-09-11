@@ -5,13 +5,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { lowerFirst } from 'lodash';
 import { Play, X } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BeginId, Operator } from '../constant';
 import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
@@ -60,7 +60,7 @@ const FormSheet = ({
     );
   }, [clickedToolId, operatorName]);
 
-  const { t } = useTranslate('flow');
+  const { t } = useTranslation();
 
   return (
     <Sheet open={visible} modal={false}>
@@ -80,7 +80,7 @@ const FormSheet = ({
                 <div className="flex-1">MCP Config</div>
               ) : (
                 <div className="flex items-center gap-1 flex-1">
-                  <label htmlFor="">{t('title')}</label>
+                  <label htmlFor="">{t('flow.title')}</label>
                   {node?.id === BeginId ? (
                     <span>{t(BeginId)}</span>
                   ) : (
@@ -106,7 +106,7 @@ const FormSheet = ({
             {isMcp || (
               <span>
                 {t(
-                  `${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
+                  `dataflow.${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
                 )}
               </span>
             )}
