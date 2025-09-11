@@ -17,9 +17,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import {
+  DataExtractKnowledgeItem,
+  DataFlowItem,
+  EmbeddingModelItem,
+  ParseTypeItem,
+  TeamItem,
+} from '../dataset/dataset-setting/configuration/common-item';
 
 const FormId = 'dataset-creating-form';
 
@@ -33,19 +40,24 @@ export function InputForm({ onOk }: IModalProps<any>) {
         message: t('knowledgeList.namePlaceholder'),
       })
       .trim(),
+    parseType: z.number().optional(),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: '',
+      parseType: 1,
     },
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     onOk?.(data.name);
   }
-
+  const parseType = useWatch({
+    control: form.control,
+    name: 'parseType',
+  });
   return (
     <Form {...form}>
       <form
@@ -58,7 +70,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('knowledgeList.name')}</FormLabel>
+              <FormLabel>
+                <span className="text-destructive mr-1"> *</span>
+                {t('knowledgeList.name')}
+              </FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('knowledgeList.namePlaceholder')}
@@ -69,6 +84,15 @@ export function InputForm({ onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
+        <EmbeddingModelItem line={2} />
+        <ParseTypeItem />
+        {parseType === 2 && (
+          <>
+            <DataFlowItem />
+            <DataExtractKnowledgeItem />
+            <TeamItem />
+          </>
+        )}
       </form>
     </Form>
   );

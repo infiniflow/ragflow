@@ -44,6 +44,9 @@ export enum Routes {
   UserSetting = '/user-setting',
   DataFlows = '/data-flows',
   DataFlow = '/data-flow',
+  DataSetOverview = '/dataset-overview',
+  DataSetSetting = '/dataset-setting',
+  DataflowResult = '/dataflow-result',
 }
 
 const routes = [
@@ -273,7 +276,20 @@ const routes = [
         path: `${Routes.DatasetBase}${Routes.KnowledgeGraph}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.KnowledgeGraph}`,
       },
+      {
+        path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DataSetOverview}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DataSetSetting}`,
+      },
     ],
+  },
+  {
+    path: `${Routes.DataflowResult}/:id`,
+    layout: false,
+    component: `@/pages${Routes.DataflowResult}`,
   },
   {
     path: `${Routes.ParsedResult}/chunks`,
