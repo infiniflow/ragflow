@@ -1,4 +1,5 @@
 import { Input } from '@/components/originui/input';
+import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
 import { IUserInfo } from '@/interfaces/database/user-setting';
 import { cn } from '@/lib/utils';
@@ -6,7 +7,6 @@ import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import './index.less';
-import Spotlight from './spotlight';
 
 export default function SearchPage({
   isSearching,
