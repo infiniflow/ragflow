@@ -3,10 +3,22 @@ import React from 'react';
 
 interface SpotlightProps {
   className?: string;
+  opcity?: number;
+  coverage?: number;
 }
-
-const Spotlight: React.FC<SpotlightProps> = ({ className }) => {
+/**
+ *
+ * @param opcity 0~1 default 0.5
+ * @param coverage 0~100 default 60
+ * @returns
+ */
+const Spotlight: React.FC<SpotlightProps> = ({
+  className,
+  opcity = 0.5,
+  coverage = 60,
+}) => {
   const isDark = useIsDarkTheme();
+  const rgb = isDark ? '255, 255, 255' : '194, 221, 243';
   return (
     <div
       className={`absolute inset-0  opacity-80 ${className} rounded-lg`}
@@ -18,9 +30,7 @@ const Spotlight: React.FC<SpotlightProps> = ({ className }) => {
       <div
         className="absolute inset-0"
         style={{
-          background: isDark
-            ? 'radial-gradient(circle at 50% 190%, #fff4 0%, #fff0 60%)'
-            : 'radial-gradient(circle at 50% 190%, #E4F3FF 0%, #E4F3FF00  60%)',
+          background: `radial-gradient(circle at 50% 190%, rgba(${rgb},${opcity}) 0%, rgba(${rgb},0) ${coverage}%)`,
           pointerEvents: 'none',
         }}
       ></div>

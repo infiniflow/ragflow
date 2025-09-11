@@ -15,6 +15,7 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
+import Generate from './generate';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';
@@ -59,69 +60,74 @@ export default function Dataset() {
     setRowSelection,
   });
   return (
-    <section className="p-5 min-w-[880px]">
-      <ListFilterBar
-        title="Dataset"
-        onSearchChange={handleInputChange}
-        searchString={searchString}
-        value={filterValue}
-        onChange={handleFilterSubmit}
-        onOpenChange={onOpenChange}
-        filters={filters}
-        leftPanel={
-          <div className="items-start">
-            <div className="pb-1">{t('knowledgeDetails.dataset')}</div>
-            <div className="text-text-sub-title-invert text-sm">
-              {t('knowledgeDetails.datasetDescription')}
+    <>
+      <div className="absolute top-4 right-5">
+        <Generate />
+      </div>
+      <section className="p-5 min-w-[880px]">
+        <ListFilterBar
+          title="Dataset"
+          onSearchChange={handleInputChange}
+          searchString={searchString}
+          value={filterValue}
+          onChange={handleFilterSubmit}
+          onOpenChange={onOpenChange}
+          filters={filters}
+          leftPanel={
+            <div className="items-start">
+              <div className="pb-1">{t('knowledgeDetails.dataset')}</div>
+              <div className="text-text-sub-title-invert text-sm">
+                {t('knowledgeDetails.datasetDescription')}
+              </div>
             </div>
-          </div>
-        }
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size={'sm'}>
-              <Upload />
-              {t('knowledgeDetails.addFile')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56">
-            <DropdownMenuItem onClick={showDocumentUploadModal}>
-              {t('fileManager.uploadFile')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={showCreateModal}>
-              {t('knowledgeDetails.emptyFiles')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </ListFilterBar>
-      {rowSelectionIsEmpty || (
-        <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
-      )}
-      <DatasetTable
-        documents={documents}
-        pagination={pagination}
-        setPagination={setPagination}
-        rowSelection={rowSelection}
-        setRowSelection={setRowSelection}
-        loading={loading}
-      ></DatasetTable>
-      {documentUploadVisible && (
-        <FileUploadDialog
-          hideModal={hideDocumentUploadModal}
-          onOk={onDocumentUploadOk}
-          loading={documentUploadLoading}
-          showParseOnCreation
-        ></FileUploadDialog>
-      )}
-      {createVisible && (
-        <RenameDialog
-          hideModal={hideCreateModal}
-          onOk={onCreateOk}
-          loading={createLoading}
-          title={'File Name'}
-        ></RenameDialog>
-      )}
-    </section>
+          }
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size={'sm'}>
+                <Upload />
+                {t('knowledgeDetails.addFile')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuItem onClick={showDocumentUploadModal}>
+                {t('fileManager.uploadFile')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={showCreateModal}>
+                {t('knowledgeDetails.emptyFiles')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ListFilterBar>
+        {rowSelectionIsEmpty || (
+          <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
+        )}
+        <DatasetTable
+          documents={documents}
+          pagination={pagination}
+          setPagination={setPagination}
+          rowSelection={rowSelection}
+          setRowSelection={setRowSelection}
+          loading={loading}
+        ></DatasetTable>
+        {documentUploadVisible && (
+          <FileUploadDialog
+            hideModal={hideDocumentUploadModal}
+            onOk={onDocumentUploadOk}
+            loading={documentUploadLoading}
+            showParseOnCreation
+          ></FileUploadDialog>
+        )}
+        {createVisible && (
+          <RenameDialog
+            hideModal={hideCreateModal}
+            onOk={onCreateOk}
+            loading={createLoading}
+            title={'File Name'}
+          ></RenameDialog>
+        )}
+      </section>
+    </>
   );
 }

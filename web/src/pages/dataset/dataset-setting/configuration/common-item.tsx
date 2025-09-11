@@ -9,6 +9,7 @@ import { Radio } from '@/components/ui/radio';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
+import { cn } from '@/lib/utils';
 import { ArrowUpRight } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import {
@@ -58,7 +59,7 @@ export function ChunkMethodItem() {
   );
 }
 
-export function EmbeddingModelItem() {
+export function EmbeddingModelItem({ line = 1 }: { line?: 1 | 2 }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
@@ -70,16 +71,19 @@ export function EmbeddingModelItem() {
       name={'embd_id'}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
-          <div className="">
+          <div className={cn({ 'flex items-center': line === 1 })}>
             <FormLabel
               required
               tooltip={t('embeddingModelTip')}
-              className="text-sm  whitespace-wrap "
+              className={cn('text-sm  whitespace-wrap ', {
+                'w-1/4': line === 1,
+              })}
             >
-              <span className="text-destructive mr-1"> *</span>
               {t('embeddingModel')}
             </FormLabel>
-            <div className="text-muted-foreground">
+            <div
+              className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
+            >
               <FormControl>
                 <RAGFlowSelect
                   {...field}
@@ -273,6 +277,42 @@ export function TeamItem() {
                   {...field}
                   placeholder={t('teamPlaceholder')}
                   options={[{ value: '0', label: t('teamDefault') }]}
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
+        </FormItem>
+      )}
+    />
+  );
+}
+
+export function EnableAutoGenerateItem() {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name={'enableAutoGenerate'}
+      render={({ field }) => (
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('enableAutoGenerateTip')}
+              className="text-sm  whitespace-wrap w-1/4"
+            >
+              {t('enableAutoGenerate')}
+            </FormLabel>
+            <div className="text-muted-foreground w-3/4">
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
                 />
               </FormControl>
             </div>
