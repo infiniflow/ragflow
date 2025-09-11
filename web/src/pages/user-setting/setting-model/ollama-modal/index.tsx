@@ -37,6 +37,7 @@ const llmFactoryToUrlMap = {
     'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
   [LLMFactory.GPUStack]: 'https://docs.gpustack.ai/latest/quickstart',
   [LLMFactory.VLLM]: 'https://docs.vllm.ai/en/latest/',
+  [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 type LlmFactory = keyof typeof llmFactoryToUrlMap;
 
