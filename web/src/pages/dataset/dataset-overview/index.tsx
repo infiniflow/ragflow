@@ -89,12 +89,12 @@ const FileLogsPage: FC = () => {
   const mockData = Array(30)
     .fill(0)
     .map((_, i) => ({
-      id: i === 0 ? '#952734' : `14`,
+      id: i === 0 ? '952734' : `14`,
       fileName: 'PRD for DealBees 1.2 (1).txt',
       source: 'GitHub',
       pipeline: i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
       startDate: '14/03/2025 14:53:39',
-      task: i === 0 ? 'Parse' : 'Parser',
+      task: i === 0 ? 'chunck' : 'Parser',
       status:
         i === 0
           ? 'Success'
