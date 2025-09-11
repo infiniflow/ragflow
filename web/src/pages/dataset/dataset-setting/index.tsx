@@ -1,3 +1,4 @@
+import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
@@ -76,8 +77,9 @@ export default function DatasetSettings() {
             onSubmit={form.handleSubmit(onSubmit)}
             className="space-y-6 flex-1"
           >
-            <div className="w-[768px]">
+            <div className="w-[768px] h-[calc(100vh-220px)] overflow-y-auto scrollbar-thin">
               <GeneralForm></GeneralForm>
+              <Divider />
               <ChunkMethodForm></ChunkMethodForm>
             </div>
           </form>
