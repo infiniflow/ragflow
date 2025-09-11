@@ -41,37 +41,43 @@ class Docx(DocxParser):
         pass
 
     def get_picture(self, document, paragraph):
-        img = paragraph._element.xpath('.//pic:pic')
-        if not img:
+        imgs = paragraph._element.xpath('.//pic:pic')
+        if not imgs:
             return None
-        img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')
-        if not embed:
-            return None
-        embed = embed[0]
-        try:
-            related_part = document.part.related_parts[embed]
-            image_blob = related_part.image.blob
-        except UnrecognizedImageError:
-            logging.info("Unrecognized image format. Skipping image.")
-            return None
-        except UnexpectedEndOfFileError:
-            logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
-            return None
-        except InvalidImageStreamError:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        except UnicodeDecodeError:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        except Exception:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        try:
-            image = Image.open(BytesIO(image_blob)).convert('RGB')
-            return image
-        except Exception:
-            return None
+        res_img = None
+        for img in imgs:
+            embed = img.xpath('.//a:blip/@r:embed')
+            if not embed:
+                continue
+            embed = embed[0]
+            try:
+                related_part = document.part.related_parts[embed]
+                image_blob = related_part.image.blob
+            except UnrecognizedImageError:
+                logging.info("Unrecognized image format. Skipping image.")
+                continue
+            except UnexpectedEndOfFileError:
+                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+                continue
+            except InvalidImageStreamError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except UnicodeDecodeError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except Exception:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            try:
+                image = Image.open(BytesIO(image_blob)).convert('RGB')
+                if res_img is None:
+                    res_img = image
+                else:
+                    res_img = concat_img(res_img, image)
+            except Exception:
+                continue
+
+        return res_img
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
