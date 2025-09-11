@@ -9,13 +9,7 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import {
-  Banknote,
-  Database,
-  DatabaseZap,
-  FileSearch2,
-  GitGraph,
-} from 'lucide-react';
+import { Banknote, Database, FileSearch2, GitGraph } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -39,11 +33,6 @@ export function SideBar({ refreshCount }: PropType) {
       //   label: t(`knowledgeDetails.overview`),
       //   key: Routes.DataSetOverview,
       // },
-      {
-        icon: DatabaseZap,
-        label: t(`knowledgeDetails.overview`),
-        key: Routes.DataSetOverview,
-      },
       {
         icon: Database,
         label: t(`knowledgeDetails.dataset`),
