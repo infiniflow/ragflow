@@ -1628,5 +1628,13 @@ This delimiter is used to split the input text into several text pieces echo of 
       rerunFromCurrentStep: 'Rerun From Current Step',
       rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
     },
+    dataflow: {
+      parser: 'Parser',
+      parserDescription: 'Parser',
+      chunker: 'Chunker',
+      chunkerDescription: 'Chunker',
+      tokenizer: 'Tokenizer',
+      tokenizerDescription: 'Tokenizer',
+    },
   },
 };

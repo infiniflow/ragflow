@@ -1536,5 +1536,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       rerunFromCurrentStep: '从当前步骤重新运行',
       rerunFromCurrentStepTip: '已修改，点击重新运行。',
     },
+    dataflow: {
+      parser: '解析器',
+      parserDescription: '解析器',
+      chunker: '分块器',
+      chunkerDescription: '分块器',
+      tokenizer: '分词器',
+      tokenizerDescription: '分词器',
+    },
   },
 };
