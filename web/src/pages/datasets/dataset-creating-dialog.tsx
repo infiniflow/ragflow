@@ -17,9 +17,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import {
+  DataExtractKnowledgeItem,
+  DataFlowItem,
+  EmbeddingModelItem,
+  ParseTypeItem,
+  TeamItem,
+} from '../dataset/dataset-setting/configuration/common-item';
 
 const FormId = 'dataset-creating-form';
 
@@ -47,6 +54,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
   function onSubmit(data: z.infer<typeof FormSchema>) {
     onOk?.(data.name);
   }
+  const parseType = useWatch({
+    control: form.control,
+    name: 'parseType',
+  });
   return (
     <Form {...form}>
       <form
@@ -73,6 +84,15 @@ export function InputForm({ onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
+        <EmbeddingModelItem line={2} />
+        <ParseTypeItem />
+        {parseType === 2 && (
+          <>
+            <DataFlowItem />
+            <DataExtractKnowledgeItem />
+            <TeamItem />
+          </>
+        )}
       </form>
     </Form>
   );
