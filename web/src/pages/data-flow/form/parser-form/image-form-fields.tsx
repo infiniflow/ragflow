@@ -1,3 +1,4 @@
+import { FileType } from '../../constant';
 import {
   LargeModelFormField,
   OutputFormatFormField,
@@ -11,7 +12,10 @@ export function ImageFormFields({ prefix }: CommonProps) {
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
       {/* Multimodal Model */}
       <LargeModelFormField prefix={prefix}></LargeModelFormField>
-      <OutputFormatFormField prefix={prefix}></OutputFormatFormField>
+      <OutputFormatFormField
+        prefix={prefix}
+        fileType={FileType.Image}
+      ></OutputFormatFormField>
     </>
   );
 }

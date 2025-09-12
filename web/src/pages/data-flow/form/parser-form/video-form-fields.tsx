@@ -1,15 +1,21 @@
 import {
   LargeModelFormField,
   OutputFormatFormField,
+  OutputFormatFormFieldProps,
 } from './common-form-fields';
-import { CommonProps } from './interface';
 
-export function VideoFormFields({ prefix }: CommonProps) {
+export function VideoFormFields({
+  prefix,
+  fileType,
+}: OutputFormatFormFieldProps) {
   return (
     <>
       {/* Multimodal Model */}
       <LargeModelFormField prefix={prefix}></LargeModelFormField>
-      <OutputFormatFormField prefix={prefix}></OutputFormatFormField>
+      <OutputFormatFormField
+        prefix={prefix}
+        fileType={fileType}
+      ></OutputFormatFormField>
     </>
   );
 }
