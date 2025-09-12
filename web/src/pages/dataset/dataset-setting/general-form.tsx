@@ -17,7 +17,7 @@ export function GeneralForm() {
   const { t } = useTranslation();
 
   return (
-    <section className="space-y-4">
+    <>
       <FormField
         control={form.control}
         name="name"
@@ -87,6 +87,6 @@ export function GeneralForm() {
       />
       <PermissionFormField></PermissionFormField>
       <EmbeddingModelItem></EmbeddingModelItem>
-    </section>
+    </>
   );
 }

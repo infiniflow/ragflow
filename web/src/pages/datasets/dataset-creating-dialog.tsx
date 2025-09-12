@@ -1,3 +1,4 @@
+import { DataFlowItem } from '@/components/data-pipeline-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,17 +16,15 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
-  DataExtractKnowledgeItem,
-  DataFlowItem,
   EmbeddingModelItem,
   ParseTypeItem,
-  TeamItem,
 } from '../dataset/dataset-setting/configuration/common-item';
 
 const FormId = 'dataset-creating-form';
@@ -58,6 +57,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
     control: form.control,
     name: 'parseType',
   });
+  const { navigateToAgents } = useNavigatePage();
   return (
     <Form {...form}>
       <form
@@ -88,9 +88,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
         <ParseTypeItem />
         {parseType === 2 && (
           <>
-            <DataFlowItem />
-            <DataExtractKnowledgeItem />
-            <TeamItem />
+            <DataFlowItem
+              toDataPipeline={navigateToAgents}
+              formFieldName="data_flow"
+            />
           </>
         )}
       </form>
