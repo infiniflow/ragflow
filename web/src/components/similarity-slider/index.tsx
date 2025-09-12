@@ -1,5 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Slider } from 'antd';
+import { z } from 'zod';
+import { SliderInputFormField } from '../slider-input-form-field';
 
 type FieldType = {
   similarity_threshold?: number;
@@ -40,3 +42,65 @@ const SimilaritySlider = ({
 };
 
 export default SimilaritySlider;
+
+interface SimilaritySliderFormFieldProps {
+  vectorSimilarityWeightName?: string;
+  isTooltipShown?: boolean;
+}
+
+export const initialSimilarityThresholdValue = {
+  similarity_threshold: 0.2,
+};
+export const initialKeywordsSimilarityWeightValue = {
+  keywords_similarity_weight: 0.7,
+};
+
+export const similarityThresholdSchema = { similarity_threshold: z.number() };
+
+export const keywordsSimilarityWeightSchema = {
+  keywords_similarity_weight: z.number(),
+};
+
+export const vectorSimilarityWeightSchema = {
+  vector_similarity_weight: z.number(),
+};
+
+export const initialVectorSimilarityWeightValue = {
+  vector_similarity_weight: 0.3,
+};
+
+export function SimilaritySliderFormField({
+  vectorSimilarityWeightName = 'vector_similarity_weight',
+  isTooltipShown,
+}: SimilaritySliderFormFieldProps) {
+  const { t } = useTranslate('knowledgeDetails');
+  const isVector = vectorSimilarityWeightName === 'vector_similarity_weight';
+
+  return (
+    <>
+      <SliderInputFormField
+        name={'similarity_threshold'}
+        label={t('similarityThreshold')}
+        max={1}
+        step={0.01}
+        tooltip={isTooltipShown && t('similarityThresholdTip')}
+      ></SliderInputFormField>
+      <SliderInputFormField
+        name={vectorSimilarityWeightName}
+        label={t(
+          isVector ? 'vectorSimilarityWeight' : 'keywordSimilarityWeight',
+        )}
+        max={1}
+        step={0.01}
+        tooltip={
+          isTooltipShown &&
+          t(
+            isVector
+              ? 'vectorSimilarityWeightTip'
+              : 'keywordSimilarityWeightTip',
+          )
+        }
+      ></SliderInputFormField>
+    </>
+  );
+}

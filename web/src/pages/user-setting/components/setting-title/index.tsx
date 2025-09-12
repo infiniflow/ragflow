@@ -27,7 +27,10 @@ const SettingTitle = ({
       </div>
       {showRightButton && (
         <Button type={'primary'} onClick={clickButton}>
-          <SettingOutlined></SettingOutlined> {t('systemModelSettings')}
+          <Flex align="center" gap={4}>
+            <SettingOutlined />
+            {t('systemModelSettings')}
+          </Flex>
         </Button>
       )}
     </Flex>

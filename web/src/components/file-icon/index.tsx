@@ -18,7 +18,9 @@ const FileIcon = ({ name, id }: IProps) => {
   const fileThumbnail = fileThumbnails[id];
 
   useEffect(() => {
-    setDocumentIds([id]);
+    if (id) {
+      setDocumentIds([id]);
+    }
   }, [id, setDocumentIds]);
 
   return fileThumbnail ? (

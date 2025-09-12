@@ -1,8 +1,9 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { CloseOutlined, PlusOutlined } from '@ant-design/icons';
+import { useUpdateNodeInternals } from '@xyflow/react';
 import {
   Button,
-  Card,
+  Collapse,
   Flex,
   Form,
   FormListFieldData,
@@ -19,7 +20,6 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { useUpdateNodeInternals } from 'reactflow';
 import { Operator } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
 
@@ -97,13 +97,65 @@ const NameInput = ({
   );
 };
 
-const DynamicCategorize = ({ nodeId }: IProps) => {
-  const updateNodeInternals = useUpdateNodeInternals();
+const FormSet = ({ nodeId, field }: IProps & { field: FormListFieldData }) => {
   const form = Form.useFormInstance();
+  const { t } = useTranslate('flow');
   const buildCategorizeToOptions = useBuildFormSelectOptions(
     Operator.Categorize,
     nodeId,
   );
+
+  return (
+    <section>
+      <Form.Item
+        label={t('categoryName')}
+        name={[field.name, 'name']}
+        validateTrigger={['onChange', 'onBlur']}
+        rules={[
+          {
+            required: true,
+            whitespace: true,
+            message: t('nameMessage'),
+          },
+        ]}
+      >
+        <NameInput
+          otherNames={getOtherFieldValues(form, 'items', field, 'name')}
+          validate={(errors: string[]) =>
+            form.setFields([
+              {
+                name: ['items', field.name, 'name'],
+                errors,
+              },
+            ])
+          }
+        ></NameInput>
+      </Form.Item>
+      <Form.Item label={t('description')} name={[field.name, 'description']}>
+        <Input.TextArea rows={3} />
+      </Form.Item>
+      <Form.Item label={t('examples')} name={[field.name, 'examples']}>
+        <Input.TextArea rows={3} />
+      </Form.Item>
+      <Form.Item label={t('nextStep')} name={[field.name, 'to']}>
+        <Select
+          allowClear
+          options={buildCategorizeToOptions(
+            getOtherFieldValues(form, 'items', field, 'to'),
+          )}
+        />
+      </Form.Item>
+      <Form.Item hidden name={[field.name, 'index']}>
+        <Input />
+      </Form.Item>
+    </section>
+  );
+};
+
+const DynamicCategorize = ({ nodeId }: IProps) => {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const form = Form.useFormInstance();
+
   const { t } = useTranslate('flow');
 
   return (
@@ -122,74 +174,35 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
             });
             if (nodeId) updateNodeInternals(nodeId);
           };
+
           return (
             <Flex gap={18} vertical>
               {fields.map((field) => (
-                <Card
+                <Collapse
                   size="small"
                   key={field.key}
                   className={styles.caseCard}
-                  extra={
-                    <CloseOutlined
-                      onClick={() => {
-                        remove(field.name);
-                      }}
-                    />
-                  }
-                >
-                  <Form.Item
-                    label={t('name')}
-                    name={[field.name, 'name']}
-                    validateTrigger={['onChange', 'onBlur']}
-                    rules={[
-                      {
-                        required: true,
-                        whitespace: true,
-                        message: t('nameMessage'),
-                      },
-                    ]}
-                  >
-                    <NameInput
-                      otherNames={getOtherFieldValues(
-                        form,
-                        'items',
-                        field,
-                        'name',
-                      )}
-                      validate={(errors: string[]) =>
-                        form.setFields([
-                          {
-                            name: ['items', field.name, 'name'],
-                            errors,
-                          },
-                        ])
-                      }
-                    ></NameInput>
-                  </Form.Item>
-                  <Form.Item
-                    label={t('description')}
-                    name={[field.name, 'description']}
-                  >
-                    <Input.TextArea rows={3} />
-                  </Form.Item>
-                  <Form.Item
-                    label={t('examples')}
-                    name={[field.name, 'examples']}
-                  >
-                    <Input.TextArea rows={3} />
-                  </Form.Item>
-                  <Form.Item label={t('to')} name={[field.name, 'to']}>
-                    <Select
-                      allowClear
-                      options={buildCategorizeToOptions(
-                        getOtherFieldValues(form, 'items', field, 'to'),
-                      )}
-                    />
-                  </Form.Item>
-                  <Form.Item hidden name={[field.name, 'index']}>
-                    <Input />
-                  </Form.Item>
-                </Card>
+                  items={[
+                    {
+                      key: field.key,
+                      label: (
+                        <div className="flex justify-between">
+                          <span>
+                            {form.getFieldValue(['items', field.name, 'name'])}
+                          </span>
+                          <CloseOutlined
+                            onClick={() => {
+                              remove(field.name);
+                            }}
+                          />
+                        </div>
+                      ),
+                      children: (
+                        <FormSet nodeId={nodeId} field={field}></FormSet>
+                      ),
+                    },
+                  ]}
+                ></Collapse>
               ))}
 
               <Button
@@ -199,7 +212,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                 className={styles.addButton}
                 icon={<PlusOutlined />}
               >
-                {t('addItem')}
+                {t('addCategory')}
               </Button>
             </Flex>
           );

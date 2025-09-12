@@ -18,7 +18,7 @@ const DeepLForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <TopNItem initialValue={5}></TopNItem>
       <Form.Item label={t('authKey')} name={'auth_key'}>
         <Select options={options}></Select>

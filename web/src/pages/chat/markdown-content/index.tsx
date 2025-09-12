@@ -1,60 +1,84 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { IReference } from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
-import { Button, Flex, Popover, Space } from 'antd';
+import { Button, Flex, Popover } from 'antd';
 import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
+import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
 import { useTranslation } from 'react-i18next';
+
+import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
+
+import {
+  preprocessLaTeX,
+  replaceThinkToSection,
+  showImage,
+} from '@/utils/chat';
+import { currentReg, replaceTextByOldReg } from '../utils';
+
+import classNames from 'classnames';
+import { omit } from 'lodash';
+import { pipe } from 'lodash/fp';
 import styles from './index.less';
 
-const reg = /(#{2}\d+\${2})/g;
-const curReg = /(~{2}\d+\${2})/g;
-
-const getChunkIndex = (match: string) => Number(match.slice(2, -2));
+const getChunkIndex = (match: string) => Number(match);
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
   reference,
   clickDocumentButton,
   content,
-  loading,
 }: {
   content: string;
   loading: boolean;
   reference: IReference;
-  clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+  clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
 }) => {
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
+    // let text = DOMPurify.sanitize(content);
     let text = content;
     if (text === '') {
       text = t('chat.searching');
     }
-    return loading ? text?.concat('~~2$$') : text;
-  }, [content, loading, t]);
+    const nextText = replaceTextByOldReg(text);
+    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+  }, [content, t]);
 
   useEffect(() => {
-    setDocumentIds(reference?.doc_aggs?.map((x) => x.doc_id) ?? []);
+    const docAggs = reference?.doc_aggs;
+    setDocumentIds(Array.isArray(docAggs) ? docAggs.map((x) => x.doc_id) : []);
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
-    (documentId: string, chunk: IChunk, isPdf: boolean) => () => {
-      if (!isPdf) {
-        return;
-      }
-      clickDocumentButton?.(documentId, chunk);
-    },
+    (
+      documentId: string,
+      chunk: IReferenceChunk,
+      isPdf: boolean,
+      documentUrl?: string,
+    ) =>
+      () => {
+        if (!isPdf) {
+          if (!documentUrl) {
+            return;
+          }
+          window.open(documentUrl, '_blank');
+        } else {
+          clickDocumentButton?.(documentId, chunk);
+        }
+      },
     [clickDocumentButton],
   );
 
@@ -75,23 +99,46 @@ const MarkdownContent = ({
     };
   };
 
-  const getPopoverContent = useCallback(
+  const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
       const chunks = reference?.chunks ?? [];
       const chunkItem = chunks[chunkIndex];
       const document = reference?.doc_aggs?.find(
-        (x) => x?.doc_id === chunkItem?.doc_id,
+        (x) => x?.doc_id === chunkItem?.document_id,
       );
       const documentId = document?.doc_id;
+      const documentUrl = document?.url;
       const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
-      const imageId = chunkItem?.img_id;
+      const imageId = chunkItem?.image_id;
+
+      return {
+        documentUrl,
+        fileThumbnail,
+        fileExtension,
+        imageId,
+        chunkItem,
+        documentId,
+        document,
+      };
+    },
+    [fileThumbnails, reference],
+  );
+
+  const getPopoverContent = useCallback(
+    (chunkIndex: number) => {
+      const {
+        documentUrl,
+        fileThumbnail,
+        fileExtension,
+        imageId,
+        chunkItem,
+        documentId,
+        document,
+      } = getReferenceInfo(chunkIndex);
+
       return (
-        <Flex
-          key={chunkItem?.chunk_id}
-          gap={10}
-          className={styles.referencePopoverWrapper}
-        >
+        <div key={chunkItem?.id} className="flex gap-2">
           {imageId && (
             <Popover
               placement="left"
@@ -108,12 +155,12 @@ const MarkdownContent = ({
               ></Image>
             </Popover>
           )}
-          <Space direction={'vertical'}>
+          <div className={'space-y-2 max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content_with_weight),
+                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
               }}
-              className={styles.chunkContentText}
+              className={classNames(styles.chunkContentText)}
             ></div>
             {documentId && (
               <Flex gap={'small'}>
@@ -131,61 +178,93 @@ const MarkdownContent = ({
                 )}
                 <Button
                   type="link"
-                  className={styles.documentLink}
+                  className={classNames(styles.documentLink, 'text-wrap')}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
                     fileExtension === 'pdf',
+                    documentUrl,
                   )}
                 >
                   {document?.doc_name}
                 </Button>
               </Flex>
             )}
-          </Space>
-        </Flex>
+          </div>
+        </div>
       );
     },
-    [reference, fileThumbnails, handleDocumentButtonClick],
+    [getReferenceInfo, handleDocumentButtonClick],
   );
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, reg, (match, i) => {
+      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
-        return (
+
+        const { documentUrl, fileExtension, imageId, chunkItem, documentId } =
+          getReferenceInfo(chunkIndex);
+
+        const docType = chunkItem?.doc_type;
+
+        return showImage(docType) ? (
+          <Image
+            id={imageId}
+            className={styles.referenceInnerChunkImage}
+            onClick={
+              documentId
+                ? handleDocumentButtonClick(
+                    documentId,
+                    chunkItem,
+                    fileExtension === 'pdf',
+                    documentUrl,
+                  )
+                : () => {}
+            }
+          ></Image>
+        ) : (
           <Popover content={getPopoverContent(chunkIndex)} key={i}>
             <InfoCircleOutlined className={styles.referenceIcon} />
           </Popover>
         );
       });
 
-      replacedText = reactStringReplace(replacedText, curReg, (match, i) => (
-        <span className={styles.cursor} key={i}></span>
-      ));
+      // replacedText = reactStringReplace(replacedText, curReg, (match, i) => (
+      //   <span className={styles.cursor} key={i}></span>
+      // ));
 
       return replacedText;
     },
-    [getPopoverContent],
+    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
   );
 
   return (
     <Markdown
-      rehypePlugins={[rehypeWrapReference]}
-      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      className={styles.markdownContentWrapper}
       components={
         {
           'custom-typography': ({ children }: { children: string }) =>
             renderReference(children),
           code(props: any) {
-            const { children, className, node, ...rest } = props;
+            const { children, className, ...rest } = props;
+            const restProps = omit(rest, 'node');
             const match = /language-(\w+)/.exec(className || '');
             return match ? (
-              <SyntaxHighlighter {...rest} PreTag="div" language={match[1]}>
+              <SyntaxHighlighter
+                {...restProps}
+                PreTag="div"
+                language={match[1]}
+                wrapLongLines
+              >
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>
             ) : (
-              <code {...rest} className={className}>
+              <code
+                {...restProps}
+                className={classNames(className, 'text-wrap')}
+              >
                 {children}
               </code>
             );

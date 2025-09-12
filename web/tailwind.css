@@ -35,8 +35,98 @@
 
     --radius: 0.5rem;
 
-    --background-inverse-standard: rgba(58, 56, 65, 0.15);
+    --background-inverse-standard: rgba(230, 227, 246, 0.15);
     --background-inverse-standard-foreground: rgb(92, 81, 81);
+    --colors-background-inverse-standard: rgba(29, 26, 44, 0.1);
+    --colors-background-inverse-strong: rgba(11, 10, 18, 0.8);
+    --colors-background-inverse-weak: rgba(17, 16, 23, 0.1);
+    --colors-background-neutral-standard: white;
+    --colors-background-neutral-strong: rgba(226, 223, 246, 1);
+    --colors-background-functional-solid-danger: rgba(222, 17, 53, 1);
+    --colors-background-core-strong: rgba(98, 72, 246, 1);
+    --colors-background-sentiment-solid-primary: rgba(127, 105, 255, 1);
+    --colors-background-core-standard: rgb(90, 75, 254);
+
+    --button-blue-text: rgb(22, 119, 255);
+
+    --colors-outline-sentiment-primary: rgba(127, 105, 255, 1);
+    --colors-outline-neutral-strong: rgba(112, 107, 107, 0.15);
+    --colors-outline-neutral-standard: rgba(53, 51, 65, 0.1);
+
+    --colors-text-core-standard: rgba(127, 105, 255, 1);
+    --colors-text-neutral-strong: rgba(17, 16, 23, 1);
+    --colors-text-neutral-standard: rgba(152, 148, 176, 1);
+    --colors-text-neutral-weak: rgba(170, 160, 197, 1);
+    --colors-text-functional-danger: rgba(255, 81, 81, 1);
+    --colors-text-inverse-strong: rgba(255, 255, 255, 1);
+    --colors-text-persist-light: rgba(255, 255, 255, 1);
+    --colors-text-inverse-weak: rgba(184, 181, 203, 1);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --background-inverse-strong: rgba(255, 255, 255, 0.15);
+
+    --background-badge: rgba(22, 22, 24, 0.5);
+    --text-badge: rgba(151, 154, 171, 1);
+
+    --text-title: rgba(22, 22, 24, 1);
+    --text-sub-title: rgba(151, 154, 171, 1);
+    --text-sub-title-invert: rgba(91, 93, 106, 1);
+
+    --background-header-bar: rgba(0, 0, 0, 0.05);
+    --text-title-invert: rgba(255, 255, 255, 1);
+    --background-card: rgba(22, 22, 24, 0.05);
+
+    --background-note: rgba(22, 22, 24, 0.1);
+
+    --background-highlight: rgba(76, 164, 231, 0.1);
+
+    --input-border: rgba(22, 22, 24, 0.2);
+
+    --metallic: #46464a;
+
+    --bg-title: #f6f6f7;
+    /* design colors */
+
+    --bg-base: #ffffff;
+    /* card color , dividing line */
+    --bg-card: rgba(0, 0, 0, 0.05);
+    --bg-component: #ffffff;
+    --bg-input: rgba(255, 255, 255, 0);
+    --bg-accent: rgba(76, 164, 231, 0.05);
+    /* Button ,Body text, Input completed text */
+    --text-primary: #161618;
+    --text-secondary: #75787a;
+    --text-disabled: #b2b5b7;
+    /* input placeholder color */
+    --text-input-tip: #b2b5b7;
+    /* Input  default color */
+    --border-default: rgba(0, 0, 0, 0.2);
+    /* Input accent color */
+    --border-accent: #000000;
+    --border-button: rgba(0, 0, 0, 0.1);
+    /* Regulators, parsing, switches, variables */
+    --accent-primary: #00beb4;
+    /* Output Variables Box */
+    --bg-accent: rgba(76, 164, 231, 0.05);
+
+    --state-success: #3ba05c;
+    --state-warning: #faad14;
+    --state-error: #d8494b;
+
+    --team-group: #5ab77e;
+    --team-member: #5c96c8;
+    --team-department: #8866d3;
+    --bg-group: rgba(90, 183, 126, 0.1);
+    --bg-member: rgba(92, 150, 200, 0.1);
+    --bg-department: rgba(136, 102, 211, 0.1);
   }
 
   .dark {
@@ -82,6 +172,86 @@
 
     --background-inverse-strong: rgba(255, 255, 255, 0.15);
     --background-inverse-strong-foreground: rgba(255, 255, 255, 1);
+
+    --background-core-weak: rgb(101, 75, 248);
+    --background-core-weak-foreground: rgba(255, 255, 255, 1);
+
+    --background-badge: rgba(22, 22, 24, 0.5);
+    --text-badge: rgba(151, 154, 171, 1);
+
+    --colors-background-core-standard: rgba(137, 126, 255, 1);
+    --colors-background-core-strong: rgba(152, 147, 255, 1);
+    --colors-background-core-weak: rgba(101, 75, 248, 1);
+    --colors-background-functional-solid-danger: rgba(255, 57, 92, 1);
+    --colors-background-functional-solid-notice: rgba(255, 208, 94, 1);
+    --colors-background-functional-solid-positive: rgba(74, 225, 145, 1);
+    --colors-background-functional-transparent-danger: rgba(234, 50, 83, 0.2);
+    --colors-background-functional-transparent-notice: rgba(248, 208, 111, 0.5);
+    --colors-background-functional-transparent-positive: rgba(
+      65,
+      203,
+      130,
+      0.5
+    );
+    --colors-background-inverse-standard: rgba(230, 227, 246, 0.15);
+    --colors-background-inverse-strong: rgba(255, 255, 255, 0.8);
+    --colors-background-neutral-standard: rgba(11, 10, 18, 1);
+    --colors-background-neutral-strong: rgba(29, 26, 44, 1);
+    --colors-background-neutral-weak: rgba(17, 16, 23, 1);
+    --colors-background-sentiment-solid-primary: rgba(146, 118, 255, 1);
+
+    --colors-outline-sentiment-primary: rgba(146, 118, 255, 1);
+    --colors-outline-neutral-strong: rgba(255, 255, 255, 0.15);
+    --colors-outline-neutral-standard: rgba(230, 227, 246, 0.1);
+
+    --colors-text-core-standard: rgba(137, 126, 255, 1);
+    --colors-text-neutral-strong: rgba(255, 255, 255, 1);
+    --colors-text-neutral-standard: rgba(230, 227, 246, 1);
+    --colors-text-neutral-weak: rgba(170, 160, 197, 1);
+    --colors-text-functional-danger: rgba(255, 81, 81, 1);
+    --colors-text-inverse-strong: rgba(17, 16, 23, 1);
+    --colors-text-persist-light: rgba(255, 255, 255, 1);
+    --colors-text-inverse-weak: rgba(84, 80, 106, 1);
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --text-title: rgba(255, 255, 255, 1);
+    --text-sub-title: rgba(91, 93, 106, 1);
+    --text-sub-title-invert: rgba(151, 154, 171, 1);
+    --background-header-bar: rgba(11, 11, 12, 1);
+
+    --text-title-invert: rgba(22, 22, 24, 1);
+
+    --background-card: rgba(255, 255, 255, 0.05);
+    --background-note: rgba(255, 255, 255, 0.05);
+
+    --background-highlight: rgba(76, 164, 231, 0.1);
+
+    --input-border: rgba(255, 255, 255, 0.2);
+
+    --metallic: #fafafa;
+
+    --bg-title: #38383a;
+    /* design colors */
+
+    --bg-base: #161618;
+    --bg-card: rgba(255, 255, 255, 0.05);
+    --bg-component: #202025;
+    --bg-input: rgba(255, 255, 255, 0.05);
+    --text-primary: #f6f6f7;
+    --text-secondary: #b2b5b7;
+    --text-disabled: #75787a;
+    --text-input-tip: #75787a;
+    --border-default: rgba(255, 255, 255, 0.2);
+    --border-accent: #ffffff;
+    --border-button: rgba(255, 255, 255, 0.1);
   }
 }
 
@@ -90,9 +260,65 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-bg-base text-text-primary;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;
+  }
+
+  /* https://tailwindcss.com/docs/preflight */
+
+  h1 {
+    @apply text-2xl font-bold;
+  }
+  h2 {
+    @apply text-xl font-semibold;
+  }
+  h3 {
+    @apply text-lg font-medium;
+  }
+
+  h4 {
+    @apply text-base font-normal;
+  }
+
+  img,
+  video {
+    max-width: none;
+  }
+}
+
+@layer utilities {
+  .scrollbar-auto {
+    /* hide scrollbar */
+    scrollbar-width: none;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-auto::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+  }
+
+  .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  .dark .scrollbar-auto:hover::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:focus::-webkit-scrollbar-thumb,
+  .dark .scrollbar-auto:active::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.3);
   }
 }

@@ -13,8 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import json
+import logging
 from datetime import datetime
+import json
 
 from flask_login import login_required, current_user
 
@@ -22,7 +23,7 @@ from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
-from api.settings import DATABASE_TYPE
+from api import settings
 from api.utils import current_timestamp, datetime_format
 from api.utils.api_utils import (
     get_json_result,
@@ -31,14 +32,12 @@ from api.utils.api_utils import (
     generate_confirmation_token,
 )
 from api.versions import get_ragflow_version
-from api.settings import docStoreConn
 from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
 
-
-@manager.route("/version", methods=["GET"])
+@manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
 def version():
     """
@@ -61,7 +60,7 @@ def version():
     return get_json_result(data=get_ragflow_version())
 
 
-@manager.route("/status", methods=["GET"])
+@manager.route("/status", methods=["GET"])  # noqa: F821
 @login_required
 def status():
     """
@@ -98,10 +97,10 @@ def status():
     res = {}
     st = timer()
     try:
-        res["doc_store"] = docStoreConn.health()
-        res["doc_store"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
+        res["doc_engine"] = settings.docStoreConn.health()
+        res["doc_engine"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
     except Exception as e:
-        res["doc_store"] = {
+        res["doc_engine"] = {
             "type": "unknown",
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
@@ -128,13 +127,13 @@ def status():
     try:
         KnowledgebaseService.get_by_id("x")
         res["database"] = {
-            "database": DATABASE_TYPE.lower(),
+            "database": settings.DATABASE_TYPE.lower(),
             "status": "green",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
         }
     except Exception as e:
         res["database"] = {
-            "database": DATABASE_TYPE.lower(),
+            "database": settings.DATABASE_TYPE.lower(),
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
             "error": str(e),
@@ -155,31 +154,22 @@ def status():
             "error": str(e),
         }
 
+    task_executor_heartbeats = {}
     try:
-        v = REDIS_CONN.get("TASKEXE")
-        if not v:
-            raise Exception("No task executor running!")
-        obj = json.loads(v)
-        color = "green"
-        for id in obj.keys():
-            arr = obj[id]
-            if len(arr) == 1:
-                obj[id] = [0]
-            else:
-                obj[id] = [arr[i + 1] - arr[i] for i in range(len(arr) - 1)]
-            elapsed = max(obj[id])
-            if elapsed > 50:
-                color = "yellow"
-            if elapsed > 120:
-                color = "red"
-        res["task_executor"] = {"status": color, "elapsed": obj}
-    except Exception as e:
-        res["task_executor"] = {"status": "red", "error": str(e)}
+        task_executors = REDIS_CONN.smembers("TASKEXE")
+        now = datetime.now().timestamp()
+        for task_executor_id in task_executors:
+            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60*30, now)
+            heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
+            task_executor_heartbeats[task_executor_id] = heartbeats
+    except Exception:
+        logging.exception("get task executor heartbeats failed!")
+    res["task_executor_heartbeats"] = task_executor_heartbeats
 
     return get_json_result(data=res)
 
 
-@manager.route("/new_token", methods=["POST"])
+@manager.route("/new_token", methods=["POST"])  # noqa: F821
 @login_required
 def new_token():
     """
@@ -210,10 +200,11 @@ def new_token():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        tenant_id = tenants[0].tenant_id
+        tenant_id = [tenant for tenant in tenants if tenant.role == 'owner'][0].tenant_id
         obj = {
             "tenant_id": tenant_id,
             "token": generate_confirmation_token(tenant_id),
+            "beta": generate_confirmation_token(generate_confirmation_token(tenant_id)).replace("ragflow-", "")[:32],
             "create_time": current_timestamp(),
             "create_date": datetime_format(datetime.now()),
             "update_time": None,
@@ -228,7 +219,7 @@ def new_token():
         return server_error_response(e)
 
 
-@manager.route("/token_list", methods=["GET"])
+@manager.route("/token_list", methods=["GET"])  # noqa: F821
 @login_required
 def token_list():
     """
@@ -264,13 +255,19 @@ def token_list():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        objs = APITokenService.query(tenant_id=tenants[0].tenant_id)
-        return get_json_result(data=[o.to_dict() for o in objs])
+        tenant_id = [tenant for tenant in tenants if tenant.role == 'owner'][0].tenant_id
+        objs = APITokenService.query(tenant_id=tenant_id)
+        objs = [o.to_dict() for o in objs]
+        for o in objs:
+            if not o["beta"]:
+                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace("ragflow-", "")[:32]
+                APITokenService.filter_update([APIToken.tenant_id == tenant_id, APIToken.token == o["token"]], o)
+        return get_json_result(data=objs)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route("/token/<token>", methods=["DELETE"])
+@manager.route("/token/<token>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm(token):
     """
@@ -300,3 +297,25 @@ def rm(token):
         [APIToken.tenant_id == current_user.id, APIToken.token == token]
     )
     return get_json_result(data=True)
+
+
+@manager.route('/config', methods=['GET'])  # noqa: F821
+def get_config():
+    """
+    Get system configuration.
+    ---
+    tags:
+        - System
+    responses:
+        200:
+            description: Return system configuration
+            schema:
+                type: object
+                properties:
+                    registerEnable:
+                        type: integer 0 means disabled, 1 means enabled
+                        description: Whether user registration is enabled
+    """
+    return get_json_result(data={
+        "registerEnabled": settings.REGISTER_ENABLED
+    })

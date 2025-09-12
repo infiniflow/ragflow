@@ -1,3 +1,5 @@
+import { FileMimeType } from '@/constants/common';
+import fileManagerService from '@/services/file-manager-service';
 import { UploadFile } from 'antd';
 
 export const transformFile2Base64 = (val: any): Promise<any> => {
@@ -5,7 +7,41 @@ export const transformFile2Base64 = (val: any): Promise<any> => {
     const reader = new FileReader();
     reader.readAsDataURL(val);
     reader.onload = (): void => {
-      resolve(reader.result);
+      // Create image object
+      const img = new Image();
+      img.src = reader.result as string;
+
+      img.onload = () => {
+        // Create canvas
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Calculate compressed dimensions, set max width/height to 800px
+        let width = img.width;
+        let height = img.height;
+        const maxSize = 100;
+
+        if (width > height && width > maxSize) {
+          height = (height * maxSize) / width;
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = (width * maxSize) / height;
+          height = maxSize;
+        }
+
+        // Set canvas dimensions
+        canvas.width = width;
+        canvas.height = height;
+
+        // Draw image
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Convert to base64, maintain original format and transparency
+        const compressedBase64 = canvas.toDataURL('image/png');
+        resolve(compressedBase64);
+      };
+
+      img.onerror = reject;
     };
     reader.onerror = reject;
   });
@@ -62,28 +98,44 @@ export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
   return '';
 };
 
-export const downloadFile = ({
-  url,
+async function fetchDocumentBlob(id: string, mimeType?: FileMimeType) {
+  const response = await fileManagerService.getDocumentFile({}, id);
+  const blob = new Blob([response.data], {
+    type: mimeType || response.data.type,
+  });
+
+  return blob;
+}
+
+export async function previewHtmlFile(id: string) {
+  const blob = await fetchDocumentBlob(id, FileMimeType.Html);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+export const downloadFileFromBlob = (blob: Blob, name?: string) => {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  if (name) {
+    a.download = name;
+  }
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
+
+export const downloadDocument = async ({
+  id,
   filename,
-  target,
 }: {
-  url: string;
+  id: string;
   filename?: string;
-  target?: string;
 }) => {
-  const downloadElement = document.createElement('a');
-  downloadElement.style.display = 'none';
-  downloadElement.href = url;
-  if (target) {
-    downloadElement.target = '_blank';
-  }
-  downloadElement.rel = 'noopener noreferrer';
-  if (filename) {
-    downloadElement.download = filename;
-  }
-  document.body.appendChild(downloadElement);
-  downloadElement.click();
-  document.body.removeChild(downloadElement);
+  const blob = await fetchDocumentBlob(id);
+  downloadFileFromBlob(blob, filename);
 };
 
 const Units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
@@ -97,4 +149,35 @@ export const formatBytes = (x: string | number) => {
   }
 
   return n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + Units[l];
+};
+
+export const downloadJsonFile = async (
+  data: Record<string, any>,
+  fileName: string,
+) => {
+  const blob = new Blob([JSON.stringify(data)], { type: FileMimeType.Json });
+  downloadFileFromBlob(blob, fileName);
+};
+
+export function transformBase64ToFileWithPreview(
+  dataUrl: string,
+  filename: string = 'file',
+) {
+  const file = transformBase64ToFile(dataUrl, filename);
+
+  (file as any).preview = dataUrl;
+
+  return file;
+}
+
+export const getBase64FromFileList = async (fileList?: File[]) => {
+  if (Array.isArray(fileList) && fileList.length > 0) {
+    const file = fileList[0];
+    if (file) {
+      const base64 = await transformFile2Base64(file);
+      return base64;
+    }
+  }
+
+  return '';
 };

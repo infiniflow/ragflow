@@ -1,10 +1,11 @@
 ---
-sidebar_position: 0
+sidebar_position: 1
 slug: /supported_models
 ---
 
 # Supported models
-import APITable from '../../src/components/APITable';
+
+import APITable from '@site/src/components/APITable';
 
 A complete list of models supported by RAGFlow, which will continue to expand.
 
@@ -12,7 +13,7 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 <APITable>
 ```
 
-| Provider              | Chat               | Embedding          | Rerank             | Multimodal         | ASR                | TTS                |
+| Provider              | Chat               | Embedding          | Rerank             | Img2txt            | Speech2txt         | TTS                |
 | --------------------- | ------------------ | ------------------ | ------------------ | ------------------ | ------------------ | ------------------ |
 | Anthropic             | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | Azure-OpenAI          | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: | :heavy_check_mark: |                    |
@@ -26,6 +27,7 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 | Fish Audio            |                    |                    |                    |                    |                    | :heavy_check_mark: |
 | Gemini                | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
 | Google Cloud          | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| GPUStack              | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: | :heavy_check_mark: |
 | Groq                  | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | HuggingFace           | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
 | Jina                  |                    | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |
@@ -34,8 +36,9 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 | LM-Studio             | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
 | MiniMax               | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | Mistral               | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| ModelScope            | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | Moonshot              | :heavy_check_mark: |                    |                    | :heavy_check_mark: |                    |                    |
-| novita.ai             | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| Novita AI             | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
 | NVIDIA                | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
 | Ollama                | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
 | OpenAI                | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
@@ -43,6 +46,7 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 | OpenRouter            | :heavy_check_mark: |                    |                    | :heavy_check_mark: |                    |                    |
 | PerfXCloud            | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
 | Replicate             | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| PPIO                  | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | SILICONFLOW           | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
 | StepFun               | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | Tencent Hunyuan       | :heavy_check_mark: |                    |                    |                    |                    |                    |
@@ -50,17 +54,25 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 | TogetherAI            | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
 | Tongyi-Qianwen        | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Upstage               | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| VLLM                  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
 | VolcEngine            | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | Voyage AI             |                    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
 | Xinference            | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | XunFei Spark          | :heavy_check_mark: |                    |                    |                    |                    | :heavy_check_mark: |
+| xAI                   | :heavy_check_mark: |                    |                    | :heavy_check_mark: |                    |                    |
 | Youdao                |                    | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |
 | ZHIPU-AI              | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
 | 01.AI                 | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| DeepInfra             | :heavy_check_mark: | :heavy_check_mark: |                    |                    | :heavy_check_mark: | :heavy_check_mark: |
+| 302.AI                | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
 
 ```mdx-code-block
 </APITable>
 ```
+
+:::danger IMPORTANT
+If your model is not listed here but has APIs compatible with those of OpenAI, click **OpenAI-API-Compatible** on the **Model providers** page to configure your model.
+:::
 
 :::note
 The list of supported models is extracted from [this source](https://github.com/infiniflow/ragflow/blob/main/rag/llm/__init__.py) and may not be the most current. For the latest supported model list, please refer to the Python file.

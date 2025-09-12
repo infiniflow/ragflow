@@ -130,7 +130,8 @@
       },
       {
         "string": {
-          "match": "*_(with_weight|list)$",
+          "match_pattern": "regex",
+          "match": "^.*_(with_weight|list)$",
           "mapping": {
             "type": "text",
             "index": "false",
@@ -139,10 +140,18 @@
         }
       },
       {
-        "string": {
+        "rank_feature": {
           "match": "*_fea",
           "mapping": {
             "type": "rank_feature"
+          }
+        }
+      },
+      {
+        "rank_features": {
+          "match": "*_feas",
+          "mapping": {
+            "type": "rank_features"
           }
         }
       },

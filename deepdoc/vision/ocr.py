@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,7 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import gc
+import logging
 import copy
 import time
 import os
@@ -18,12 +22,17 @@ import os
 from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
-from .operators import *
+from rag.settings import PARALLEL_DEVICES
+from .operators import *  # noqa: F403
+from . import operators
+import math
 import numpy as np
+import cv2
 import onnxruntime as ort
 
 from .postprocess import build_post_process
 
+loaded_models = {}
 
 def transform(data, ops=None):
     """ transform """
@@ -53,16 +62,33 @@ def create_operators(op_param_list, global_config=None):
         param = {} if operator[op_name] is None else operator[op_name]
         if global_config is not None:
             param.update(global_config)
-        op = eval(op_name)(**param)
+        op = getattr(operators, op_name)(**param)
         ops.append(op)
     return ops
 
 
-def load_model(model_dir, nm):
+def load_model(model_dir, nm, device_id: int | None = None):
     model_file_path = os.path.join(model_dir, nm + ".onnx")
+    model_cached_tag = model_file_path + str(device_id) if device_id is not None else model_file_path
+
+    global loaded_models
+    loaded_model = loaded_models.get(model_cached_tag)
+    if loaded_model:
+        logging.info(f"load_model {model_file_path} reuses cached model")
+        return loaded_model
+
     if not os.path.exists(model_file_path):
         raise ValueError("not find model file path {}".format(
             model_file_path))
+
+    def cuda_is_available():
+        try:
+            import torch
+            if torch.cuda.is_available() and torch.cuda.device_count() > device_id:
+                return True
+        except Exception:
+            return False
+        return False
 
     options = ort.SessionOptions()
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
@@ -70,23 +96,37 @@ def load_model(model_dir, nm):
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 2
 
-    if ort.get_device() == "GPU":
-        # options.log_severity_level = 0  # Enable verbose logging
-        options.enable_cpu_mem_arena = False
+    # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
+    # Shrink GPU memory after execution
+    run_options = ort.RunOptions()
+    if cuda_is_available():
+        cuda_provider_options = {
+            "device_id": device_id, # Use specific GPU
+            "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
+            "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
+        }
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
-            providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            providers=['CUDAExecutionProvider'],
+            provider_options=[cuda_provider_options]
+            )
+        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:" + str(device_id))
+        logging.info(f"load_model {model_file_path} uses GPU")
     else:
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
             providers=['CPUExecutionProvider'])
-    return sess, sess.get_inputs()[0]
+        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
+        logging.info(f"load_model {model_file_path} uses CPU")
+    loaded_model = (sess, run_options)
+    loaded_models[model_cached_tag] = loaded_model
+    return loaded_model
 
 
-class TextRecognizer(object):
-    def __init__(self, model_dir):
+class TextRecognizer:
+    def __init__(self, model_dir, device_id: int | None = None):
         self.rec_image_shape = [int(v) for v in "3, 48, 320".split(",")]
         self.rec_batch_num = 16
         postprocess_params = {
@@ -95,7 +135,8 @@ class TextRecognizer(object):
             "use_space_char": True
         }
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.input_tensor = load_model(model_dir, 'rec')
+        self.predictor, self.run_options = load_model(model_dir, 'rec', device_id)
+        self.input_tensor = self.predictor.get_inputs()[0]
 
     def resize_norm_img(self, img, max_wh_ratio):
         imgC, imgH, imgW = self.rec_image_shape
@@ -307,6 +348,12 @@ class TextRecognizer(object):
 
         return img
 
+    def close(self):
+        # close session and release manually
+        logging.info('Close TextRecognizer.')
+        del self.predictor
+        gc.collect()
+
     def __call__(self, img_list):
         img_num = len(img_list)
         # Calculate the aspect ratio of all text bars
@@ -341,7 +388,7 @@ class TextRecognizer(object):
             input_dict[self.input_tensor.name] = norm_img_batch
             for i in range(100000):
                 try:
-                    outputs = self.predictor.run(None, input_dict)
+                    outputs = self.predictor.run(None, input_dict, self.run_options)
                     break
                 except Exception as e:
                     if i >= 3:
@@ -354,9 +401,12 @@ class TextRecognizer(object):
 
         return rec_res, time.time() - st
 
+    def __del__(self):
+        self.close()
 
-class TextDetector(object):
-    def __init__(self, model_dir):
+
+class TextDetector:
+    def __init__(self, model_dir, device_id: int | None = None):
         pre_process_list = [{
             'DetResizeForTest': {
                 'limit_side_len': 960,
@@ -380,7 +430,8 @@ class TextDetector(object):
                               "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
 
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.input_tensor = load_model(model_dir, 'det')
+        self.predictor, self.run_options = load_model(model_dir, 'det', device_id)
+        self.input_tensor = self.predictor.get_inputs()[0]
 
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
@@ -437,6 +488,11 @@ class TextDetector(object):
         dt_boxes = np.array(dt_boxes_new)
         return dt_boxes
 
+    def close(self):
+        logging.info("Close TextDetector.")
+        del self.predictor
+        gc.collect()
+
     def __call__(self, img):
         ori_im = img.copy()
         data = {'image': img}
@@ -453,7 +509,7 @@ class TextDetector(object):
         input_dict[self.input_tensor.name] = img
         for i in range(100000):
             try:
-                outputs = self.predictor.run(None, input_dict)
+                outputs = self.predictor.run(None, input_dict, self.run_options)
                 break
             except Exception as e:
                 if i >= 3:
@@ -466,8 +522,11 @@ class TextDetector(object):
 
         return dt_boxes, time.time() - st
 
+    def __del__(self):
+        self.close()
 
-class OCR(object):
+
+class OCR:
     def __init__(self, model_dir=None):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
@@ -485,14 +544,32 @@ class OCR(object):
                 model_dir = os.path.join(
                         get_project_base_directory(),
                         "rag/res/deepdoc")
-                self.text_detector = TextDetector(model_dir)
-                self.text_recognizer = TextRecognizer(model_dir)
-            except Exception as e:
+                
+                # Append muti-gpus task to the list
+                if PARALLEL_DEVICES > 0:
+                    self.text_detector = []
+                    self.text_recognizer = []
+                    for device_id in range(PARALLEL_DEVICES):
+                        self.text_detector.append(TextDetector(model_dir, device_id))
+                        self.text_recognizer.append(TextRecognizer(model_dir, device_id))
+                else:
+                    self.text_detector = [TextDetector(model_dir)]
+                    self.text_recognizer = [TextRecognizer(model_dir)]
+
+            except Exception:
                 model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
                                               local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
                                               local_dir_use_symlinks=False)
-                self.text_detector = TextDetector(model_dir)
-                self.text_recognizer = TextRecognizer(model_dir)
+                
+                if PARALLEL_DEVICES > 0:
+                    self.text_detector = []
+                    self.text_recognizer = []
+                    for device_id in range(PARALLEL_DEVICES):
+                        self.text_detector.append(TextDetector(model_dir, device_id))
+                        self.text_recognizer.append(TextRecognizer(model_dir, device_id))
+                else:
+                    self.text_detector = [TextDetector(model_dir)]
+                    self.text_recognizer = [TextRecognizer(model_dir)]
 
         self.drop_score = 0.5
         self.crop_image_res_index = 0
@@ -528,7 +605,29 @@ class OCR(object):
             flags=cv2.INTER_CUBIC)
         dst_img_height, dst_img_width = dst_img.shape[0:2]
         if dst_img_height * 1.0 / dst_img_width >= 1.5:
-            dst_img = np.rot90(dst_img)
+            # Try original orientation
+            rec_result = self.text_recognizer[0]([dst_img])
+            text, score = rec_result[0][0]
+            best_score = score
+            best_img = dst_img
+
+            # Try clockwise 90° rotation
+            rotated_cw = np.rot90(dst_img, k=3)
+            rec_result = self.text_recognizer[0]([rotated_cw])
+            rotated_cw_text, rotated_cw_score = rec_result[0][0]
+            if rotated_cw_score > best_score:
+                best_score = rotated_cw_score
+                best_img = rotated_cw
+
+            # Try counter-clockwise 90° rotation
+            rotated_ccw = np.rot90(dst_img, k=1)
+            rec_result = self.text_recognizer[0]([rotated_ccw])
+            rotated_ccw_text, rotated_ccw_score = rec_result[0][0]
+            if rotated_ccw_score > best_score:
+                best_img = rotated_ccw
+
+            # Use the best image
+            dst_img = best_img
         return dst_img
 
     def sorted_boxes(self, dt_boxes):
@@ -554,14 +653,17 @@ class OCR(object):
                     break
         return _boxes
 
-    def detect(self, img):
+    def detect(self, img, device_id: int | None = None):
+        if device_id is None:
+            device_id = 0
+
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
 
         if img is None:
             return None, None, time_dict
 
         start = time.time()
-        dt_boxes, elapse = self.text_detector(img)
+        dt_boxes, elapse = self.text_detector[device_id](img)
         time_dict['det'] = elapse
 
         if dt_boxes is None:
@@ -572,24 +674,41 @@ class OCR(object):
         return zip(self.sorted_boxes(dt_boxes), [
                    ("", 0) for _ in range(len(dt_boxes))])
 
-    def recognize(self, ori_im, box):
+    def recognize(self, ori_im, box, device_id: int | None = None):
+        if device_id is None:
+            device_id = 0
+
         img_crop = self.get_rotate_crop_image(ori_im, box)
 
-        rec_res, elapse = self.text_recognizer([img_crop])
+        rec_res, elapse = self.text_recognizer[device_id]([img_crop])
         text, score = rec_res[0]
         if score < self.drop_score:
             return ""
         return text
 
-    def __call__(self, img, cls=True):
+    def recognize_batch(self, img_list, device_id: int | None = None):
+        if device_id is None:
+            device_id = 0
+        rec_res, elapse = self.text_recognizer[device_id](img_list)
+        texts = []
+        for i in range(len(rec_res)):
+            text, score = rec_res[i]
+            if score < self.drop_score:
+                text = ""
+            texts.append(text)
+        return texts
+
+    def __call__(self, img, device_id = 0, cls=True):
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
+        if device_id is None:
+            device_id = 0
 
         if img is None:
             return None, None, time_dict
 
         start = time.time()
         ori_im = img.copy()
-        dt_boxes, elapse = self.text_detector(img)
+        dt_boxes, elapse = self.text_detector[device_id](img)
         time_dict['det'] = elapse
 
         if dt_boxes is None:
@@ -606,7 +725,7 @@ class OCR(object):
             img_crop = self.get_rotate_crop_image(ori_im, tmp_box)
             img_crop_list.append(img_crop)
 
-        rec_res, elapse = self.text_recognizer(img_crop_list)
+        rec_res, elapse = self.text_recognizer[device_id](img_crop_list)
 
         time_dict['rec'] = elapse
 

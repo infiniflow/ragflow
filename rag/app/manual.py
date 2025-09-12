@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ class Pdf(PdfParser):
                  to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
         start = timer()
-        callback(msg="OCR is running...")
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -44,28 +44,30 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished.")
-        # for bb in self.boxes:
-        #    for b in bb:
-        #        print(b)
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR: {}".format(timer() - start))
 
+        start = timer()
         self._layouts_rec(zoomin)
-        callback(0.65, "Layout analysis finished.")
+        callback(0.65, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts: {}".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.67, "Table analysis finished.")
+        callback(0.67, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
         self._filter_forpages()
-        callback(0.68, "Text merging finished")
+        callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
 
         # clean mess
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
-        return [(b["text"], b.get("layout_no", ""), self.get_position(b, zoomin))
+        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin))
                 for i, b in enumerate(self.boxes)], tbls
 
 
@@ -157,6 +159,8 @@ class Docx(DocxParser):
                         if c.text == r.cells[j].text:
                             span += 1
                             i = j
+                        else:
+                            break
                     i += 1
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
@@ -170,6 +174,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
         Only pdf is supported.
     """
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     pdf_parser = None
     doc = {
         "docnm_kwd": filename
@@ -179,16 +186,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainParser()
+        pdf_parser = Pdf()
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:
-            sections = [(t, l, [[0] * 5]) for t, l in sections]
+            sections = [(t, lvl, [[0] * 5]) for t, lvl in sections]
         # set pivot using the most frequent type of title,
         # then merge between 2 pivot
-        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.1:
+        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
             max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
             most_level = max(0, max_lvl - 1)
             levels = []
@@ -206,7 +213,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         else:
             bull = bullets_category([txt for txt, _, _ in sections])
             most_level, levels = title_frequency(
-                bull, [(txt, l) for txt, l, poss in sections])
+                bull, [(txt, lvl) for txt, lvl, _ in sections])
 
         assert len(sections) == len(levels)
         sec_ids = []
@@ -215,12 +222,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             if lvl <= most_level and i > 0 and lvl != levels[i - 1]:
                 sid += 1
             sec_ids.append(sid)
-            # print(lvl, self.boxes[i]["text"], most_level, sid)
 
         sections = [(txt, sec_ids[i], poss)
                     for i, (txt, _, poss) in enumerate(sections)]
         for (img, rows), poss in tbls:
-            if not rows: continue
+            if not rows:
+                continue
             sections.append((rows if isinstance(rows, str) else rows[0], -1,
                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 
@@ -250,14 +257,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         return res
 
-    if re.search(r"\.docx$", filename, re.IGNORECASE):
+    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
-            d['image'] = image
+            if image:
+                d['image'] = image
+                d["doc_type_kwd"] = "image"
             tokenize(d, text, eng)
             res.append(d)
         return res

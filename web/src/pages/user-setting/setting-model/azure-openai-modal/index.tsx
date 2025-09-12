@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select, Switch } from 'antd';
+import { Form, Input, InputNumber, Modal, Select, Switch } from 'antd';
 import omit from 'lodash/omit';
 
 type FieldType = IAddLlmRequestBody & {
@@ -33,6 +33,7 @@ const AzureOpenAIModal = ({
       ...omit(values, ['vision']),
       model_type: modelType,
       llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
     };
     console.info(data);
 
@@ -45,9 +46,15 @@ const AzureOpenAIModal = ({
       { value: 'image2text', label: 'image2text' },
     ],
   };
-  const getOptions = (factory: string) => {
+  const getOptions = () => {
     return optionsMap.Default;
   };
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
   return (
     <Modal
       title={t('addLlmTitle', { name: llmFactory })}
@@ -82,14 +89,17 @@ const AzureOpenAIModal = ({
           name="api_base"
           rules={[{ required: true, message: t('baseUrlNameMessage') }]}
         >
-          <Input placeholder={t('baseUrlNameMessage')} />
+          <Input
+            placeholder={t('baseUrlNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('apiKey')}
           name="api_key"
           rules={[{ required: false, message: t('apiKeyMessage') }]}
         >
-          <Input placeholder={t('apiKeyMessage')} />
+          <Input placeholder={t('apiKeyMessage')} onKeyDown={handleKeyDown} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('modelName')}
@@ -97,7 +107,10 @@ const AzureOpenAIModal = ({
           initialValue="gpt-3.5-turbo"
           rules={[{ required: true, message: t('modelNameMessage') }]}
         >
-          <Input placeholder={t('modelNameMessage')} />
+          <Input
+            placeholder={t('modelNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('apiVersion')}
@@ -105,8 +118,36 @@ const AzureOpenAIModal = ({
           initialValue="2024-02-01"
           rules={[{ required: false, message: t('apiVersionMessage') }]}
         >
-          <Input placeholder={t('apiVersionMessage')} />
+          <Input
+            placeholder={t('apiVersionMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>
             getFieldValue('model_type') === 'chat' && (

@@ -4,12 +4,17 @@ import { cn } from '@/lib/utils';
 
 const Table = React.forwardRef<
   HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
+  React.HTMLAttributes<HTMLTableElement> & { rootClassName?: string }
+>(({ className, rootClassName, ...props }, ref) => (
+  <div
+    className={cn(
+      'relative w-full overflow-auto rounded-2xl bg-bg-card scrollbar-none',
+      rootClassName,
+    )}
+  >
     <table
       ref={ref}
-      className={cn('w-full caption-bottom text-sm', className)}
+      className={cn('w-full caption-bottom text-sm ', className)}
       {...props}
     />
   </div>
@@ -20,7 +25,11 @@ const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn('[&_tr]:border-b', className)} {...props} />
+  <thead
+    ref={ref}
+    className={cn('[&_tr]:border-b top-0 sticky bg-bg-title z-10', className)}
+    {...props}
+  />
 ));
 TableHeader.displayName = 'TableHeader';
 
@@ -58,7 +67,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      'border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted',
+      'border-b border-border-button transition-colors hover:bg-bg-card data-[state=selected]:bg-bg-card',
       className,
     )}
     {...props}
@@ -73,7 +82,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0',
+      'h-12 px-4 text-left align-middle font-normal text-text-secondary [&:has([role=checkbox])]:pr-0 ',
       className,
     )}
     {...props}
@@ -87,7 +96,10 @@ const TableCell = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <td
     ref={ref}
-    className={cn('p-4 align-middle [&:has([role=checkbox])]:pr-0', className)}
+    className={cn(
+      'p-4 align-middle [&:has([role=checkbox])]:pr-0 text-text-primary font-normal',
+      className,
+    )}
     {...props}
   />
 ));

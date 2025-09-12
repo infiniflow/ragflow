@@ -3,9 +3,10 @@ import {
   EdgeLabelRenderer,
   EdgeProps,
   getBezierPath,
-} from 'reactflow';
+} from '@xyflow/react';
 import useGraphStore from '../../store';
 
+import { useTheme } from '@/components/theme-provider';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { useMemo } from 'react';
 import styles from './index.less';
@@ -33,7 +34,7 @@ export function ButtonEdge({
     targetY,
     targetPosition,
   });
-
+  const { theme } = useTheme();
   const selectedStyle = useMemo(() => {
     return selected ? { strokeWidth: 2, stroke: '#1677ff' } : {};
   }, [selected]);
@@ -43,8 +44,6 @@ export function ButtonEdge({
   };
 
   // highlight the nodes that the workflow passes through
-  // const queryClient = useQueryClient();
-  // const flowDetail = queryClient.getQueryData<IFlow>(['flowDetail']);
   const { data: flowDetail } = useFetchFlow();
 
   const graphPath = useMemo(() => {
@@ -89,11 +88,14 @@ export function ButtonEdge({
             // everything inside EdgeLabelRenderer has no pointer events by default
             // if you have an interactive element, set pointer-events: all
             pointerEvents: 'all',
+            zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}
           className="nodrag nopan"
         >
           <button
-            className={styles.edgeButton}
+            className={
+              theme === 'dark' ? styles.edgeButtonDark : styles.edgeButton
+            }
             type="button"
             onClick={onEdgeClick}
           >

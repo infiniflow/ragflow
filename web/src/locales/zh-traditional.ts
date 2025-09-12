@@ -15,6 +15,7 @@ export default {
       edit: '編輯',
       upload: '上傳',
       english: '英語',
+      portugueseBr: '葡萄牙語 (巴西)',
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
       language: '語言',
@@ -32,6 +33,11 @@ export default {
       s: '秒',
       pleaseSelect: '請選擇',
       pleaseInput: '請輸入',
+      submit: '提交',
+      embedIntoSite: '嵌入網站',
+      previousPage: '上一頁',
+      nextPage: '下一頁',
+      add: '添加',
     },
     login: {
       login: '登入',
@@ -63,8 +69,9 @@ export default {
       setting: '用戶設置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: 'Agent',
+      flow: '智能體',
       search: '搜尋',
+      welcome: '歡迎來到',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -74,11 +81,13 @@ export default {
       namePlaceholder: '請輸入名稱',
       doc: '文件',
       searchKnowledgePlaceholder: '搜索',
+      noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
       dataset: '數據集',
       testing: '檢索測試',
       configuration: '配置',
+      knowledgeGraph: '知識圖譜',
       files: '文件',
       name: '名稱',
       namePlaceholder: '請輸入名稱',
@@ -91,18 +100,21 @@ export default {
       webCrawl: '網頁抓取',
       chunkNumber: '分塊數',
       uploadDate: '上傳日期',
-      chunkMethod: '解析方法',
+      chunkMethod: '切片方法',
       enabled: '啟用',
       disabled: '禁用',
       action: '動作',
       parsingStatus: '解析狀態',
+      parsingStatusTip:
+        '文件解析時間取決於多種因素。如果啟用了知識圖譜、RAPTOR、自動問題提取、自動關鍵詞提取等功能，解析時間將會顯著延長。如果解析進度條長時間未更新，請參考這兩條常見問題解答FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
-      testingDescription: '最後一步！成功後，剩下的就交給Infiniflow AI吧。',
+      testingDescription:
+        '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
-        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',
+        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 0.2，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
       vectorSimilarityWeight: '關鍵字相似度權重',
       vectorSimilarityWeightTip:
         '我們使用混合相似性評分來評估兩行文本之間的距離。它是加權關鍵字相似性和矢量餘弦相似性或rerank得分（0〜1）。兩個權重的總和為1.0。',
@@ -116,8 +128,8 @@ export default {
       view: '看法',
       filesSelected: '選定的文件',
       upload: '上傳',
-      run: '啟動',
-      runningStatus0: '未啟動',
+      run: '解析',
+      runningStatus0: '未解析',
       runningStatus1: '解析中',
       runningStatus2: '取消',
       runningStatus3: '成功',
@@ -129,9 +141,9 @@ export default {
       fromMessage: '缺少起始頁碼',
       toPlaceholder: '到',
       toMessage: '缺少結束頁碼（不包含）',
-      layoutRecognize: '佈局識別',
+      layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行佈局分析，以更好地識別文檔結構，找到標題、文本塊、圖像和表格的位置。如果沒有此功能，則只能獲取 PDF 的純文本。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dev/select_pdf_parser。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
@@ -141,40 +153,73 @@ export default {
       selectFiles: '選擇文件',
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。嚴禁上傳公司數據或其他違禁文件。',
+      uploadDescription:
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
       rerankModel: 'rerank模型',
       rerankPlaceholder: '請選擇',
-      rerankTip: `如果是空的。它使用查詢和塊的嵌入來構成矢量餘弦相似性。否則，它使用rerank評分代替矢量餘弦相似性。`,
+      rerankTip: `非必選項：若不選擇 rerank 模型，系統將默認採用關鍵詞相似度與向量餘弦相似度相結合的混合查詢方式；如果設定了 rerank 模型，則混合查詢中的向量相似度部分將被 rerank 打分替代。請注意：採用 rerank 模型會非常耗時。如需選用 rerank 模型，建議使用 SaaS 的 rerank 模型服務；如果你傾向使用本地部署的 rerank 模型，請務必確保你使用 docker-compose-gpu.yml 啟動 RAGFlow。`,
       topK: 'Top-K',
-      topKTip: `K塊將被送入Rerank型號。`,
-      delimiter: `分段標識符`,
+      topKTip: `與 Rerank 模型配合使用，用於設定傳給 Rerank 模型的文本塊數量。`,
+      delimiter: `文字分段標識符`,
+      delimiterTip:
+        '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
       html4excel: '表格轉HTML',
-      html4excelTip: `Excel 是否會被解析為 HTML 表格。如果為 FALSE，Excel 中的每一行都會形成一個區塊。`,
+      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dev/enable_excel2html。`,
       autoKeywords: '自動關鍵字',
-      autoKeywordsTip: `在查詢此類關鍵字時，為每個區塊提取 N 個關鍵字以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。 `,
+      autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自動問題',
-      autoQuestionsTip: `在查詢此類問題時，為每個區塊提取 N 個問題以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。如果發生錯誤，此功能不會破壞整個分塊過程，除了將空結果新增至原始區塊。 `,
+      autoQuestionsTip: `為了提高排名分數，請使用「系統模型設定」中定義的聊天模型，為每個知識庫區塊提取 N 個問題。 請注意：這會消耗額外的 token。 結果可在區塊列表中查看和編輯。 問題提取錯誤不會阻止分塊過程； 空結果將被添加到原始區塊。詳情請參見 https://ragflow.io/docs/dev/autokeyword_autoquestion。 `,
+      redo: '是否清空已有 {{chunkNum}}個 chunk？',
+      setMetaData: '設定元數據',
+      pleaseInputJson: '請輸入JSON',
+      documentMetaTips: `<p>元資料為 Json 格式（不可搜尋）。如果提示中包含該文件的任何部分，它將被添加到 LLM 提示中。
+<p>範例：</p>
+<b>元資料是：</b><br>
+<code>
+  {
+      "Author": "Alex Dowson",
+      "Date": "2024-11-12"
+  }
+</code><br>
+<b>提示將是：</b><br>
+<p>文檔：文檔名稱</p>
+<p>作者：Alex Dowson</p>
+<p>日期：2024-11-12</p>
+<p>相關片段如下：</p>
+<ul>
+<li>這是區塊內容....</li>
+<li>這是區塊內容....</li>
+</ul>
+`,
+      metaData: '元資料',
+      deleteDocumentConfirmContent:
+        '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
+      plainText: 'Naive',
+      reRankModelWaring: '重排序模型非常耗時。',
+      theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
-      titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
+      titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
+      photoTip: '你可以上傳4MB的文件',
       description: '描述',
-      language: '語言',
+      language: '文件語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '塊Token數',
+      chunkTokenNumber: '建議文本塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
-        '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
+        '知識庫的預設嵌入模型。一旦知識庫已有資料區塊，則無法更改。若要切換到不同的預設嵌入模型，必須刪除知識庫中所有現有的資料區塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
-      chunkTokenNumberTip: '它大致確定了一個塊的Token數量。',
-      chunkMethod: '解析方法',
+      chunkTokenNumberTip:
+        '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
+      chunkMethod: '切片方法',
       chunkMethodTip: '說明位於右側。',
       upload: '上傳',
       english: '英語',
@@ -187,7 +232,7 @@ export default {
       cancel: '取消',
       methodTitle: '分塊方法說明',
       methodExamples: '示例',
-      methodExamplesDescription: '提出以下屏幕截圖以促進理解。',
+      methodExamplesDescription: '為方便您理解，我們附上相關截圖供您參考。',
       dialogueExamplesTitle: '對話示例',
       methodEmpty: '這將顯示知識庫類別的可視化解釋',
       book: `<p>支持的文件格式為<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -202,7 +247,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式為<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -220,14 +265,14 @@ export default {
       此塊方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
     </p>
     <li>
-      如果文件以<b> excel </b>格式，則應由兩個列組成
+      如果文件是<b> excel </b>格式，則應由兩個列組成
       沒有標題：一個提出問題，另一個用於答案，
       答案列之前的問題列。多張紙是
       只要列正確結構，就可以接受。
     </li>
     <li>
-      如果文件以<b> csv/txt </b>格式為
-      用作分開問題和答案的定界符。
+      如果文件是<b> csv/txt </b>格式
+      以 UTF-8 編碼且用 TAB 作分開問題和答案的定界符。
     </li>
     <p>
       <i>
@@ -242,7 +287,7 @@ export default {
         您只需與<i>'ragflow'</i>交談即可列出所有符合資格的候選人。
         </p>
           `,
-      table: `支持<p><b>excel</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的大語言模型能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
+      table: `支持<p><b>XLSX</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的大語言模型能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
       picture: `
        <p>支持圖像文件。視頻即將推出。</p><p>
         如果圖片中有文字，則應用 OCR 提取文字作為其文字描述。
@@ -262,9 +307,20 @@ export default {
 連續的文字將被分割成多個片段，每個片段大約有 512 個令牌數。
 <p>接下來，區塊將傳送到LLM以提取知識圖譜和思維導圖的節點和關係。
 
-<p>請注意您需要指定的條目類型。</p></p>`,
-      useRaptor: '使用RAPTOR文件增強策略',
-      useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
+<p>請注意您需要指定的條目類型。</p>`,
+      tag: `<p>使用「Tag」分塊方法的知識庫用作標籤集。其他知識庫可以使用它來標記自己的塊，對這些知識庫的查詢也將使用此標籤集進行標記。</p>
+<p>標籤集<b>不會</b>直接參與 RAG 過程。</p>
+<p>標籤知識庫中的每個塊都是一個獨立的描述-標籤對。</p>
+
+<p>支援的檔案格式包括<b>XLSX</b>和<b>CSV/TXT</b>檔案格式。</p>
+<p>如果檔案是<b>XLSX</b>格式，則應包含兩欄，不帶標題：一欄用於標籤描述，另一欄用於標籤名稱，描述欄位於標籤欄之前。如果欄結構正確，則可以接受多個工作表。</p>
+<p>如果檔案是<b>CSV/TXT</b>格式，則必須使用UTF-8編碼，並使用TAB作為分隔符來分隔描述和標籤。</p>
+<p>標籤欄中，標籤之間用英文逗號分隔。</p>
+<i>不符合上述規則的文字行將被忽略。</i>
+`,
+      useRaptor: '使用 RAPTOR 文件增強策略',
+      useRaptorTip:
+        '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/dev/enable_raptor',
       prompt: '提示詞',
       promptMessage: '提示詞是必填項',
       promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：
@@ -278,11 +334,47 @@ export default {
       maxClusterMessage: '最大聚類數是必填項',
       randomSeed: '隨機種子',
       randomSeedMessage: '隨機種子是必填項',
-      promptTip: 'LLM提示用於總結。',
-      maxTokenTip: '用於匯總的最大token數。',
-      thresholdTip: '閾值越大，聚類越少。',
-      maxClusterTip: '最大聚類數。',
+      promptTip:
+        '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
+      maxTokenTip: '用於設定每個被總結的文字塊的最大 token 數。',
+      thresholdTip:
+        '在 RAPTOR 中，數據塊會根據它們的語義相似性進行聚類。閾值參數設定了數據塊被分到同一組所需的最小相似度。閾值越高，每個聚類中的數據塊越少；閾值越低，則每個聚類中的數據塊越多。',
+      maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
+      pageRank: '頁面排名',
+      pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dev/set_page_rank。`,
+      tagName: '標籤',
+      frequency: '頻次',
+      searchTags: '搜尋標籤',
+      tagCloud: '雲端',
+      tagTable: '表',
+      tagSet: '標籤庫',
+      topnTags: 'Top-N 標籤',
+      tagSetTip: `
+      <p>請選擇一個或多個標籤集或標籤知識庫，用於對知識庫中的每個文本塊進行標記。</p>
+      <p>對這些文本塊的查詢也將自動關聯相應標籤。</p>
+      <p>此功能基於文本相似度，能夠為數據集的文本塊批量添加更多領域知識，從而顯著提高檢索準確性。該功能還能提升大量文本塊的操作效率。</p>
+      <p>為了更好地理解標籤集的作用，以下是標籤集和關鍵詞之間的主要區別：</p>
+      <ul>
+        <li>標籤集是一個由用戶定義和管理的封閉集，而自動生成的關鍵詞屬於開放集合。</li>
+        <li>在給你的知識庫文本塊批量打標籤之前，你需要先生成標籤集作為樣本。</li>
+        <li>自動關鍵詞功能中的關鍵詞由 LLM 生成，此過程相對耗時，並且會產生一定的 Token 消耗。</li>
+      </ul>
+      <p>詳情請參閱 https://ragflow.io/docs/dev/use_tag_sets。</p>
+ `,
+      tags: '標籤',
+      addTag: '增加標籤',
+      useGraphRag: '提取知識圖譜',
+      useGraphRagTip:
+        '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
+      graphRagMethod: '方法',
+      graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”<br>
+ 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，`,
+      resolution: '實體歸一化',
+      resolutionTip: `解析過程會將具有相同意義的實體合併在一起，使知識圖譜更簡潔、更準確。應合併以下實體：川普總統、唐納德·川普、唐納德·J·川普、唐納德·約翰·川普`,
+      community: '社群報告生成',
+      communityTip:
+        '區塊被聚集成層次化的社區，其中實體和關係透過更高層次的抽象將每個部分連接起來。然後，我們使用 LLM 產生每個社群的摘要，即社群報告。更多資訊：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: '解析塊',
@@ -294,7 +386,7 @@ export default {
       search: '搜尋',
       all: '所有',
       enabled: '啟用',
-      disabled: '禁用的',
+      disabled: '禁用',
       keyword: '關鍵詞',
       function: '函數',
       chunkMessage: '請輸入值！',
@@ -302,6 +394,13 @@ export default {
       ellipse: '省略',
       graph: '知識圖譜',
       mind: '心智圖',
+      question: '問題',
+      questionTip: `如果存在給定的問題，則區塊的嵌入將基於它們。`,
+      chunkResult: '切片結果',
+      chunkResultTip: `查看用於嵌入和召回的切片段落`,
+      enable: '啟用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新會話',
@@ -312,9 +411,9 @@ export default {
       chat: '聊天',
       newChat: '新建聊天',
       send: '發送',
-      sendPlaceholder: '消息概要助手...',
+      sendPlaceholder: '給助理髮送消息...',
       chatConfiguration: '聊天配置',
-      chatConfigurationDescription: '在這裡，為你的專業知識庫裝扮專屬助手！💕',
+      chatConfigurationDescription: '為你的知識庫配置專屬聊天助手！💕',
       assistantName: '助理姓名',
       assistantNameMessage: '助理姓名是必填項',
       namePlaceholder: '例如 賈維斯簡歷',
@@ -322,27 +421,28 @@ export default {
       language: '語言',
       emptyResponse: '空回复',
       emptyResponseTip: `如果在知識庫中沒有檢索到用戶的問題，它將使用它作為答案。如果您希望 LLM 在未檢索到任何內容時提出自己的意見，請將此留空。`,
+      emptyResponseMessage: `當知識庫中沒有檢索到任何相關內容時，將觸發空響應。由於未選擇任何知識庫，因此刪除“空響應”。`,
       setAnOpener: '設置開場白',
       setAnOpenerInitial: `你好！我是你的助理，有什麼可以幫到你的嗎？`,
       setAnOpenerTip: '您想如何歡迎您的客戶？',
       knowledgeBases: '知識庫',
       knowledgeBasesMessage: '請選擇',
-      knowledgeBasesTip: '選擇關聯的知識庫。',
-      system: '系統',
+      knowledgeBasesTip:
+        '選擇關聯的知識庫。新建或空的知識庫不會在下拉選單中顯示。',
+      system: '系統提示词',
       systemInitialValue: `你是一個智能助手，請總結知識庫的內容來回答問題，請列舉知識庫中的數據詳細回答。當所有知識庫內容都與問題無關時，你的回答必須包括“知識庫中未找到您要的答案！”這句話。回答需要考慮聊天歷史。
       以下是知識庫：
       {knowledge}
       以上是知識庫。`,
       systemMessage: '請輸入',
       systemTip:
-        '當LLM回答問題時，你需要LLM遵循的說明，比如角色設計、答案長度和答案語言等。',
+        '當LLM回答問題時，你需要LLM遵循的說明，比如角色設計、答案長度和答案語言等。如果您的模型原生支持推理，您可以在提示中加入 //no_thinking 以停止推理。',
       topN: 'Top N',
       topNTip: `並非所有相似度得分高於“相似度閾值”的塊都會被提供給法學碩士。LLM 只能看到這些“Top N”塊。`,
       variable: '變量',
-      variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-        这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
-        “知识”是一个非常特殊的变量，它将用检索到的块填充。
-        “System”中的所有变量都应该用大括号括起来。`,
+      variableTip: `你可以透過對話 API，並配合變數設定來動態調整大模型的系統提示詞。
+      {knowledge}為系統預留變數，代表從指定知識庫召回的文本塊。
+     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/dev/set_chat_variables。`,
       add: '新增',
       key: '關鍵字',
       optional: '可選的',
@@ -350,10 +450,11 @@ export default {
       model: '模型',
       modelTip: '大語言聊天模型',
       modelMessage: '請選擇',
-      freedom: '自由',
+      freedom: '自由度',
       improvise: '即興創作',
       precise: '精確',
       balance: '平衡',
+      custom: '自定義',
       freedomTip: `“精確”意味著法學碩士會保守並謹慎地回答你的問題。“即興發揮”意味著你希望法學碩士能夠自由地暢所欲言。“平衡”是謹慎與自由之間的平衡。`,
       temperature: '溫度',
       temperatureMessage: '溫度是必填項',
@@ -363,8 +464,8 @@ export default {
       topPMessage: 'Top P 是必填項',
       topPTip:
         '該參數也稱為“核心採樣”，它設置一個閾值來選擇較小的單詞集進行採樣。它專注於最可能的單詞，剔除不太可能的單詞。',
-      presencePenalty: '出席處罰',
-      presencePenaltyMessage: '出席處罰是必填項',
+      presencePenalty: '存在處罰',
+      presencePenaltyMessage: '存在處罰是必填項',
       presencePenaltyTip:
         '這會通過懲罰對話中已經出現的單詞來阻止模型重複相同的信息。',
       frequencyPenalty: '頻率懲罰',
@@ -375,6 +476,8 @@ export default {
       maxTokensMessage: '最大token數是必填項',
       maxTokensTip:
         '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensInvalidMessage: '請輸入有效的最大標記數。',
+      maxTokensMinMessage: '最大標記數不能小於 0。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
       selfRag: 'Self-RAG',
@@ -403,6 +506,7 @@ export default {
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
       tokenError: '請先創建 API Token!',
+      betaError: '請先在系統設定中申請API密鑰。',
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上傳中',
@@ -417,15 +521,41 @@ export default {
       multiTurnTip:
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
+      description: '助理描述',
+      descriptionPlaceholder:
+        '例如 你是一個專業的簡曆助手，隻能回答簡曆的問題。',
+      useKnowledgeGraph: '使用知識圖譜',
+      useKnowledgeGraph提示:
+        '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
+      keyword: '關鍵字分析',
+      keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。對於長查詢效果良好，但會增加回應時間。`,
+      reasoning: '推理',
+      reasoningTip:
+        '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
+      tavilyApiKeyTip:
+        '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
+      tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
+      tavilyApiKeyHelp: '如何獲取？',
+      crossLanguage: '跨語言搜尋',
+      crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
     },
     setting: {
       profile: '概述',
+      avatar: '头像',
+      avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      maxTokens: '最大token數',
+      maxTokensMessage: '最大token數是必填項',
+      maxTokensTip:
+        '這設置了模型輸出的最大長度，以標記（單詞或單詞片段）的數量來衡量。',
+      maxTokensInvalidMessage: '請輸入有效的最大標記數。',
+      maxTokensMinMessage: '最大標記數不能小於 0。',
       password: '密碼',
       passwordDescription: '請輸入您當前的密碼以更改您的密碼。',
       model: '模型提供商',
       modelDescription: '在此設置模型參數和 API KEY。',
       team: '團隊',
+      api: 'API',
       logout: '登出',
       system: '系統',
       username: '使用者名稱',
@@ -445,6 +575,7 @@ export default {
       currentPassword: '當前密碼',
       currentPasswordMessage: '請輸入當前密碼',
       newPassword: '新密碼',
+      changePassword: '修改密碼',
       newPasswordMessage: '請輸入新密碼',
       newPasswordDescription: '您的新密碼必須超過 8 個字符。',
       confirmPassword: '確認新密碼',
@@ -458,25 +589,28 @@ export default {
       apiKeyMessage: '請輸入api key（如果是本地部署的模型，請忽略它）',
       apiKeyTip: 'API key可以通過註冊相應的LLM供應商來獲取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隱藏模型',
       baseUrl: 'base-url',
       baseUrlTip:
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
       modify: '修改',
-      systemModelSettings: '系統模型設置',
+      systemModelSettings: '設定預設模型',
       chatModel: '聊天模型',
-      chatModelTip: '所有新創建的知識庫都會使用默認的聊天LLM。',
+      chatModelTip: '所有新創建的知識庫都會使用默認的聊天模型。',
       ttsModel: '語音合成模型',
-      ttsModelTip: '默認的tts模型會被用於在對話過程中請求語音生成時使用。',
+      ttsModelTip:
+        '默認的tts模型會被用於在對話過程中請求語音生成時使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       embeddingModel: '嵌入模型',
-      embeddingModelTip: '所有新創建的知識庫都將使用的默認嵌入模型。',
+      embeddingModelTip:
+        '如未顯示可選模型，請檢查你是否在使用 RAGFlow slim 版（不含嵌入模型）；或根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
       img2txtModel: 'img2Txt模型',
       img2txtModelTip:
-        '所有新創建的知識庫都將使用默認的多模塊模型。它可以描述圖片或視頻。',
-      sequence2txtModel: 'sequence2Txt模型',
+        '所有新創建的知識庫都將使用默認的 img2txt 模型。它可以描述圖片或視頻。如未顯示可選模型，請根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
+      sequence2txtModel: 'speech2Txt模型',
       sequence2txtModelTip:
-        '所有新創建的知識庫都將使用默認的 ASR 模型。使用此模型將語音翻譯為相應的文本。',
+        '所有新創建的知識庫都將使用默認的 ASR 模型。使用此模型將語音翻譯為相應的文本。如未顯示可選模型，請根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
       rerankModel: 'rerank模型',
-      rerankModelTip: `默認的重讀模型用於用戶問題檢索到重讀塊。`,
+      rerankModelTip: `默認的 reranking 模型。如未顯示可選模型，請根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。`,
       workspace: '工作空間',
       upgrade: '升級',
       addLlmTitle: '添加Llm',
@@ -485,7 +619,7 @@ export default {
       modelUid: '模型uid',
       modelType: '模型類型',
       addLlmBaseUrl: '基礎 Url',
-      vision: '是否支持Vision',
+      vision: '是否支持 Vision',
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
       baseUrlNameMessage: '請輸入基礎 Url！',
@@ -547,7 +681,7 @@ export default {
         '請輸入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 區域',
       GoogleRegionMessage: '請輸入 Google Cloud 區域',
-      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「系統模型設定」中設定它們。`,
+      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「設定預設模型」中設定它們。`,
       add: '添加',
       updateDate: '更新日期',
       role: '角色',
@@ -556,6 +690,21 @@ export default {
       refuse: '拒絕',
       teamMembers: '團隊成員',
       joinedTeams: '加入的團隊',
+      sureDelete: '您確定刪除該成員嗎？',
+      quit: '退出',
+      sureQuit: '確定退出加入的團隊嗎？',
+      secretKey: '密鑰',
+      publicKey: '公鑰',
+      secretKeyMessage: '請輸入私钥',
+      publicKeyMessage: '請輸入公钥',
+      hostMessage: '請輸入 host',
+      configuration: '配置',
+      langfuseDescription:
+        '追蹤、評估、提示管理和指標以調試和改進您的 LLM 應用程式。',
+      viewLangfuseSDocumentation: '查看 Langfuse 的文檔',
+      view: '查看',
+      modelsToBeAddedTooltip:
+        '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
     },
     message: {
       registered: '註冊成功',
@@ -574,7 +723,7 @@ export default {
       202: '一個請求已經進入後台排隊（異步任務）。',
       204: '刪除數據成功。',
       400: '發出的請求有錯誤，服務器沒有進行新建或修改數據的操作。',
-      401: '用戶沒有權限（Token、用戶名、密碼錯誤）。',
+      401: '請重新登入。',
       403: '用戶得到授權，但是訪問是被禁止的。',
       404: '發出的請求針對的是不存在的記錄，服務器沒有進行操作。',
       406: '請求的格式不可得。',
@@ -600,18 +749,38 @@ export default {
       pleaseSelect: '請選擇',
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
+      parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。嚴禁上傳公司數據或其他違禁文件。',
+      uploadDescription:
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
-      uploadLimit: '文件大小不能超過10M，文件總數不超過128個',
+      uploadLimit:
+        '本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。',
       destinationFolder: '目標資料夾',
     },
     flow: {
+      line: '單行文本',
+      paragraph: '段落文字',
+      options: '選項',
+      file: '文件',
+      integer: '數字',
+      boolean: '布爾值',
+      multimodalModels: '多模態模型',
+      textOnlyModels: '進文本模型',
+      allModels: '所有模型',
+      codeExecDescription: '用 Python 或者 Javascript 編寫自定義邏輯',
+      stringTransformDescription:
+        '修改文本内容，目前支持文本分割、文本拼接操作',
+      foundation: '基礎',
+      tools: '工具',
+      dataManipulation: '數據操控',
+      flow: '流程',
+      dialog: '對話',
       cite: '引用',
       citeTip: 'citeTip',
       name: '名稱',
@@ -620,7 +789,8 @@ export default {
       examples: '範例',
       to: '下一步',
       msg: '訊息',
-      messagePlaceholder: '訊息',
+      msgTip: '輸出上游組件的變數內容或自行輸入的文字。',
+      messagePlaceholder: '請輸入您的訊息內容，使用‘/’快速插入變數。',
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       addMessage: '新增訊息',
@@ -643,16 +813,16 @@ export default {
       generateDescription: `此元件用於呼叫LLM生成文本，請注意提示的設定。`,
       categorizeDescription: `此組件用於對文字進行分類。請指定類別的名稱、描述和範例。每個類別都指向不同的下游組件。`,
       relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
-      rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。只有「檢索」可作為其下游。`,
+      rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。`,
       messageDescription:
-        '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
+        '此元件用來傳回工作流程最後產生的資料內容和原先設定的文字內容。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
       switchDescription: `該組件用於根據前面組件的輸出評估條件，並相應地引導執行流程。通過定義各種情況並指定操作，或在不滿足條件時採取默認操作，實現複雜的分支邏輯。`,
       wikipediaDescription: `此元件用於從 https://www.wikipedia.org/ 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。`,
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
 以上就是你需要總結的內容。`,
-      createGraph: '建立 Agent',
+      createGraph: '創建智能體',
       createFromTemplates: '從模板創建',
       retrieval: '知識檢索',
       generate: '生成回答',
@@ -675,13 +845,16 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要採用的搜尋結果數。',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        '該組件通過您提供的 SearXNG 實例地址進行搜索。請設置 Top N 和實例 URL。',
       channel: '頻道',
       channelTip: '針對該組件的輸入進行文字搜尋或新聞搜索',
       text: '文字',
       news: '新聞',
       messageHistoryWindowSize: '歷史訊息視窗大小',
       messageHistoryWindowSizeTip:
-        'LLM需要查看的對話記錄的視窗大小。越大越好。但要注意LLM的最大內容長度。',
+        'LLM 需要查看的對話歷史視窗大小。越大越好，但要注意 LLM 的最大 Token 數。',
       wikipedia: '維基百科',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -703,7 +876,7 @@ export default {
       bingDescription:
         '此元件用於從 https://www.bing.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 和 Bing Subscription-Key 指定您需要適配的搜尋結果數量。',
       apiKey: 'API KEY',
-      country: '國家',
+      country: '國家和地區',
       language: '語言',
       googleScholar: '谷歌學術',
       googleScholarDescription: `該元件用於從 https://scholar.google.com/ 取得搜尋結果。通常，它充當知識庫的補充。 Top N 指定您需要調整的搜尋結果的數量。`,
@@ -865,7 +1038,7 @@ export default {
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用該模板',
+      useTemplate: '使用',
       wenCai: '問財',
       queryType: '查詢類型',
       wenCaiDescription:
@@ -985,6 +1158,45 @@ export default {
       content: '內容',
       operationResults: '運行結果',
       autosaved: '已自動儲存',
+      optional: '可選項',
+      pasteFileLink: '貼上文件連結',
+      testRun: '試運行',
+      template: '模板轉換',
+      templateDescription:
+        '此元件用於排版各種元件的輸出。1、支持Jinja2模板，會先將輸入轉為對象後進行模板渲染2、同時保留原使用{參數}字符串替換的方式',
+      jsonUploadTypeErrorMessage: '請上傳json檔',
+      jsonUploadContentErrorMessage: 'json 檔案錯誤',
+      iterationDescription: `此元件首先透過「分隔符號」將輸入拆分為陣列。
+對數組中的元素依序執行相同的操作步驟，直到輸出所有結果，可以理解為任務批次處理器。
+
+例如，在長文本翻譯迭代節點內，如果所有內容都輸入到LLM節點，則可能會達到單次對話限制。上游節點可以先將長文本拆分為多個分片，並配合迭代節點對每個分片進行批次翻譯，避免達到單次對話的LLM訊息限制。`,
+      delimiterTip: `此分隔符號用於將輸入文字分割成多個文字片段，其中的回顯將作為每次迭代的輸入項執行。`,
+      delimiterOptions: {
+        comma: '逗號',
+        lineBreak: '換行',
+        tab: '製表符',
+        underline: '底線',
+        diagonal: '斜線',
+        minus: '連字符',
+        semicolon: '分號',
+      },
+      addVariable: '新增變數',
+      variableSettings: '變數設定',
+      systemPrompt: '系統提示詞',
+      addCategory: '新增分類',
+      categoryName: '分類名稱',
+      nextStep: '下一步',
+      insertVariableTip: `輸入 / 插入變數`,
+      promptMessage: '提示詞是必填項',
+      promptTip:
+        '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
+      code: '程式碼',
+      codeDescription: '它允許開發人員編寫自訂 Python 邏輯。',
+      inputVariables: '輸入變數',
+      runningHintText: '正在運行...🕞',
+      openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
+      modeTip: '模式定義工作流程如何啟動。 ',
+      beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
     },
     footer: {
       profile: '“保留所有權利 @ react”',
@@ -993,6 +1205,20 @@ export default {
       file: '文件',
       knowledge: '知識',
       chat: '聊天',
+    },
+    modal: {
+      okText: '確認',
+      cancelText: '取消',
+    },
+    search: {
+      createSearch: '新建查詢',
+      searchGreeting: '今天我能為你做些什麽？',
+      profile: '隱藏個人資料',
+      locale: '語言',
+      embedCode: '嵌入代碼',
+      id: 'ID',
+      copySuccess: '複製成功',
+      welcomeBack: '歡迎回來',
     },
   },
 };

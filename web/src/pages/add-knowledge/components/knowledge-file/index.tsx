@@ -7,7 +7,7 @@ import {
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { getExtension } from '@/utils/document-util';
-import { Divider, Flex, Switch, Table, Typography } from 'antd';
+import { Divider, Flex, Switch, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 import CreateFileModal from './create-file-modal';
@@ -20,6 +20,7 @@ import {
   useHandleWebCrawl,
   useNavigateToOtherPage,
   useRenameDocument,
+  useShowMetaModal,
 } from './hooks';
 import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
@@ -27,9 +28,12 @@ import RenameModal from './rename-modal';
 import WebCrawlModal from './web-crawl-modal';
 
 import FileUploadModal from '@/components/file-upload-modal';
+import { RunningStatus } from '@/constants/knowledge';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatDate } from '@/utils/date';
+import { CircleHelp } from 'lucide-react';
 import styles from './index.less';
+import { SetMetaModal } from './set-meta-modal';
 
 const { Text } = Typography;
 
@@ -67,6 +71,10 @@ const KnowledgeFile = () => {
     showDocumentUploadModal,
     onDocumentUploadOk,
     documentUploadLoading,
+    uploadFileList,
+    setUploadFileList,
+    uploadProgress,
+    setUploadProgress,
   } = useHandleUploadDocument();
   const {
     webCrawlUploadVisible,
@@ -78,6 +86,14 @@ const KnowledgeFile = () => {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
+
+  const {
+    showSetMetaModal,
+    hideSetMetaModal,
+    setMetaVisible,
+    setMetaLoading,
+    onSetMetaModalOk,
+  } = useShowMetaModal(currentRecord.id);
 
   const rowSelection = useGetRowSelection();
 
@@ -142,9 +158,21 @@ const KnowledgeFile = () => {
       ),
     },
     {
-      title: t('parsingStatus'),
+      title: (
+        <span className="flex items-center gap-2">
+          {t('parsingStatus')}
+          <Tooltip title={t('parsingStatusTip')}>
+            <CircleHelp className="size-3" />
+          </Tooltip>
+        </span>
+      ),
       dataIndex: 'run',
       key: 'run',
+      filters: Object.values(RunningStatus).map((value) => ({
+        text: t(`runningStatus${value}`),
+        value: value,
+      })),
+      onFilter: (value, record: IDocumentInfo) => record.run === value,
       render: (text, record) => {
         return <ParsingStatusCell record={record}></ParsingStatusCell>;
       },
@@ -157,6 +185,7 @@ const KnowledgeFile = () => {
           setCurrentRecord={setRecord}
           showRenameModal={showRenameModal}
           showChangeParserModal={showChangeParserModal}
+          showSetMetaModal={showSetMetaModal}
           record={record}
         ></ParsingActionCell>
       ),
@@ -180,6 +209,7 @@ const KnowledgeFile = () => {
         showDocumentUploadModal={showDocumentUploadModal}
         searchString={searchString}
         handleInputChange={handleInputChange}
+        documents={documents}
       ></DocumentToolbar>
       <Table
         rowKey="id"
@@ -218,6 +248,10 @@ const KnowledgeFile = () => {
         hideModal={hideDocumentUploadModal}
         loading={documentUploadLoading}
         onOk={onDocumentUploadOk}
+        uploadFileList={uploadFileList}
+        setUploadFileList={setUploadFileList}
+        uploadProgress={uploadProgress}
+        setUploadProgress={setUploadProgress}
       ></FileUploadModal>
       <WebCrawlModal
         visible={webCrawlUploadVisible}
@@ -225,6 +259,15 @@ const KnowledgeFile = () => {
         loading={webCrawlUploadLoading}
         onOk={onWebCrawlUploadOk}
       ></WebCrawlModal>
+      {setMetaVisible && (
+        <SetMetaModal
+          visible={setMetaVisible}
+          hideModal={hideSetMetaModal}
+          onOk={onSetMetaModalOk}
+          loading={setMetaLoading}
+          initialMetaData={currentRecord.meta_fields}
+        ></SetMetaModal>
+      )}
     </div>
   );
 };

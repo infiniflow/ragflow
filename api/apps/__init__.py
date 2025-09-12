@@ -22,24 +22,26 @@ from flask import Blueprint, Flask
 from werkzeug.wrappers.request import Request
 from flask_cors import CORS
 from flasgger import Swagger
+from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.db import StatusEnum
 from api.db.db_models import close_connection
 from api.db.services import UserService
 from api.utils import CustomJSONEncoder, commands
 
+from flask_mail import Mail
 from flask_session import Session
 from flask_login import LoginManager
-from api.settings import SECRET_KEY
-from api.settings import API_VERSION
+from api import settings
 from api.utils.api_utils import server_error_response
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+from api.constants import API_VERSION
 
 __all__ = ["app"]
 
 Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
 app = Flask(__name__)
+smtp_mail_server = Mail()
 
 # Add this at the beginning of your file to configure Swagger UI
 swagger_config = {
@@ -78,13 +80,12 @@ app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
 app.errorhandler(Exception)(server_error_response)
 
-
 ## convince for dev and debug
 # app.config["LOGIN_DISABLED"] = True
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["MAX_CONTENT_LENGTH"] = int(
-    os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024)
+    os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
 )
 
 Session(app)
@@ -108,9 +109,9 @@ def search_pages_path(pages_dir):
 def register_page(page_path):
     path = f"{page_path}"
 
-    page_name = page_path.stem.rstrip("_app")
+    page_name = page_path.stem.removesuffix("_app")
     module_name = ".".join(
-        page_path.parts[page_path.parts.index("api") : -1] + (page_name,)
+        page_path.parts[page_path.parts.index("api"): -1] + (page_name,)
     )
 
     spec = spec_from_file_location(module_name, page_path)
@@ -120,8 +121,9 @@ def register_page(page_path):
     sys.modules[module_name] = page
     spec.loader.exec_module(page)
     page_name = getattr(page, "page_name", page_name)
+    sdk_path = "\\sdk\\" if sys.platform.startswith("win") else "/sdk/"
     url_prefix = (
-        f"/api/{API_VERSION}" if "/sdk/" in path else f"/{API_VERSION}/{page_name}"
+        f"/api/{API_VERSION}" if sdk_path in path else f"/{API_VERSION}/{page_name}"
     )
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
@@ -141,20 +143,33 @@ client_urls_prefix = [
 
 @login_manager.request_loader
 def load_user(web_request):
-    jwt = Serializer(secret_key=SECRET_KEY)
+    jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = web_request.headers.get("Authorization")
     if authorization:
         try:
             access_token = str(jwt.loads(authorization))
+
+            if not access_token or not access_token.strip():
+                logging.warning("Authentication attempt with empty access token")
+                return None
+
+            # Access tokens should be UUIDs (32 hex characters)
+            if len(access_token.strip()) < 32:
+                logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
+                return None
+
             user = UserService.query(
                 access_token=access_token, status=StatusEnum.VALID.value
             )
             if user:
+                if not user[0].access_token or not user[0].access_token.strip():
+                    logging.warning(f"User {user[0].email} has empty access_token in database")
+                    return None
                 return user[0]
             else:
                 return None
-        except Exception:
-            logging.exception("load_user got exception")
+        except Exception as e:
+            logging.warning(f"load_user got exception {e}")
             return None
     else:
         return None

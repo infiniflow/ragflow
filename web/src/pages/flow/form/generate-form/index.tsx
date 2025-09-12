@@ -1,15 +1,20 @@
 import LLMSelect from '@/components/llm-select';
 import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
+import { PromptEditor } from '@/components/prompt-editor';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input, Switch } from 'antd';
-import { useSetLlmSetting } from '../../hooks';
+import { Form, Switch } from 'antd';
 import { IOperatorForm } from '../../interface';
-import DynamicParameters from './dynamic-parameters';
+import LLMToolsSelect from '@/components/llm-tools-select';
+import { useState } from 'react';
 
-const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
-  useSetLlmSetting(form);
+  const [isCurrentLlmSupportTools, setCurrentLlmSupportTools] = useState(false);
+
+  const onLlmSelectChanged = (_: string, option: any) => {
+    setCurrentLlmSupportTools(option.is_tools);
+  };
 
   return (
     <Form
@@ -24,13 +29,13 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         label={t('model', { keyPrefix: 'chat' })}
         tooltip={t('modelTip', { keyPrefix: 'chat' })}
       >
-        <LLMSelect></LLMSelect>
+        <LLMSelect onInitialValue={onLlmSelectChanged} onChange={onLlmSelectChanged}></LLMSelect>
       </Form.Item>
       <Form.Item
         name={['prompt']}
-        label="System"
+        label={t('systemPrompt')}
         initialValue={t('promptText')}
-        tooltip={t('promptTip', { keyPrefix: 'knowledgeConfiguration' })}
+        tooltip={t('promptTip')}
         rules={[
           {
             required: true,
@@ -38,7 +43,15 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
           },
         ]}
       >
-        <Input.TextArea rows={8} />
+        {/* <Input.TextArea rows={8}></Input.TextArea> */}
+        <PromptEditor></PromptEditor>
+      </Form.Item>
+      <Form.Item
+        name={'llm_enabled_tools'}
+        label={t('modelEnabledTools', { keyPrefix: 'chat' })}
+        tooltip={t('modelEnabledToolsTip', { keyPrefix: 'chat' })}
+      >
+        <LLMToolsSelect disabled={!isCurrentLlmSupportTools}></LLMToolsSelect>
       </Form.Item>
       <Form.Item
         name={['cite']}
@@ -52,7 +65,6 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       <MessageHistoryWindowSizeItem
         initialValue={12}
       ></MessageHistoryWindowSizeItem>
-      <DynamicParameters nodeId={node?.id}></DynamicParameters>
     </Form>
   );
 };

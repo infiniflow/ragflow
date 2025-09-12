@@ -1,0 +1,8 @@
+{
+  "label": "MCP",
+  "position": 40,
+  "link": {
+    "type": "generated-index",
+    "description": "Guides and references on accessing RAGFlow's knowledge bases via MCP."
+  }
+}

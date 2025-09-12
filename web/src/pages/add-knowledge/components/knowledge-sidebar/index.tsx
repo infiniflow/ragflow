@@ -1,7 +1,10 @@
 import { ReactComponent as ConfigurationIcon } from '@/assets/svg/knowledge-configration.svg';
 import { ReactComponent as DatasetIcon } from '@/assets/svg/knowledge-dataset.svg';
 import { ReactComponent as TestingIcon } from '@/assets/svg/knowledge-testing.svg';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/knowledge-hooks';
+import {
+  useFetchKnowledgeBaseConfiguration,
+  useFetchKnowledgeGraph,
+} from '@/hooks/knowledge-hooks';
 import {
   useGetKnowledgeSearchParams,
   useSecondPathName,
@@ -14,6 +17,8 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'umi';
 import { KnowledgeRouteKey } from '../../constant';
 
+import { isEmpty } from 'lodash';
+import { GitGraph } from 'lucide-react';
 import styles from './index.less';
 
 const KnowledgeSidebar = () => {
@@ -22,13 +27,14 @@ const KnowledgeSidebar = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
-  const [collapsed, setCollapsed] = useState(false);
   const { t } = useTranslation();
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
   const handleSelect: MenuProps['onSelect'] = (e) => {
     navigate(`/knowledge/${e.key}?id=${knowledgeId}`);
   };
+
+  const { data } = useFetchKnowledgeGraph();
 
   type MenuItem = Required<MenuProps>['items'][number];
 
@@ -54,7 +60,7 @@ const KnowledgeSidebar = () => {
   );
 
   const items: MenuItem[] = useMemo(() => {
-    return [
+    const list = [
       getItem(
         KnowledgeRouteKey.Dataset, // TODO: Change icon color when selected
         KnowledgeRouteKey.Dataset,
@@ -71,17 +77,20 @@ const KnowledgeSidebar = () => {
         <ConfigurationIcon />,
       ),
     ];
-  }, [getItem]);
 
-  useEffect(() => {
-    if (windowWidth.width > 957) {
-      setCollapsed(false);
-    } else {
-      setCollapsed(true);
+    if (!isEmpty(data?.graph)) {
+      list.push(
+        getItem(
+          KnowledgeRouteKey.KnowledgeGraph,
+          KnowledgeRouteKey.KnowledgeGraph,
+          <GitGraph />,
+        ),
+      );
     }
-  }, [windowWidth.width]);
 
-  // 标记一下
+    return list;
+  }, [data, getItem]);
+
   useEffect(() => {
     const widthSize = () => {
       const width = getWidth();

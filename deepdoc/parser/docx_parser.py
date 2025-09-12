@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -30,7 +33,7 @@ class RAGFlowDocxParser:
     def __compose_table_content(self, df):
 
         def blockType(b):
-            patt = [
+            pattern = [
                 ("^(20|19)[0-9]{2}[年/-][0-9]{1,2}[月/-][0-9]{1,2}日*$", "Dt"),
                 (r"^(20|19)[0-9]{2}年$", "Dt"),
                 (r"^(20|19)[0-9]{2}[年/-][0-9]{1,2}月*$", "Dt"),
@@ -44,10 +47,10 @@ class RAGFlowDocxParser:
                 (r"^[0-9.,+-]+[0-9A-Za-z/$￥%<>（）()' -]+$", "NE"),
                 (r"^.{1}$", "Sg")
             ]
-            for p, n in patt:
+            for p, n in pattern:
                 if re.search(p, b):
                     return n
-            tks = [t for t in rag_tokenizer.tokenize(b).split(" ") if len(t) > 1]
+            tks = [t for t in rag_tokenizer.tokenize(b).split() if len(t) > 1]
             if len(tks) > 3:
                 if len(tks) < 12:
                     return "Tx"
@@ -66,7 +69,7 @@ class RAGFlowDocxParser:
         max_type = max(max_type.items(), key=lambda x: x[1])[0]
 
         colnm = len(df.iloc[0, :])
-        hdrows = [0]  # header is not nessesarily appear in the first line
+        hdrows = [0]  # header is not necessarily appear in the first line
         if max_type == "Nu":
             for r in range(1, len(df)):
                 tys = Counter([blockType(str(df.iloc[r, j]))

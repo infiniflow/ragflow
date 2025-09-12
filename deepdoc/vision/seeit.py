@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -28,11 +31,11 @@ def save_results(image_list, results, labels, output_dir='output/', threshold=0.
         logging.debug("save result to: " + out_path)
 
 
-def draw_box(im, result, lables, threshold=0.5):
+def draw_box(im, result, labels, threshold=0.5):
     draw_thickness = min(im.size) // 320
     draw = ImageDraw.Draw(im)
-    color_list = get_color_map_list(len(lables))
-    clsid2color = {n.lower():color_list[i] for i,n in enumerate(lables)}
+    color_list = get_color_map_list(len(labels))
+    clsid2color = {n.lower():color_list[i] for i,n in enumerate(labels)}
     result = [r for r in result if r["score"] >= threshold]
 
     for dt in result:

@@ -21,7 +21,7 @@ const DuckDuckGoForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <TopNItem initialValue={10}></TopNItem>
       <Form.Item
         label={t('channel')}

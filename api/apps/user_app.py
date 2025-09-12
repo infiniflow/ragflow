@@ -13,51 +13,42 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import json
+import logging
 import re
+import secrets
 from datetime import datetime
 
-from flask import request, session, redirect
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import login_required, current_user, login_user, logout_user
+from flask import redirect, request, session
+from flask_login import current_user, login_required, login_user, logout_user
+from werkzeug.security import check_password_hash, generate_password_hash
 
+from api import settings
+from api.apps.auth import get_auth_client
+from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
-from api.db.services.llm_service import TenantLLMService, LLMService
-from api.utils.api_utils import (
-    server_error_response,
-    validate_request,
-    get_data_error_result,
-)
+from api.db.services.file_service import FileService
+from api.db.services.llm_service import get_init_tenant_llm
+from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils import (
-    get_uuid,
-    get_format_time,
-    decrypt,
-    download_img,
     current_timestamp,
     datetime_format,
+    decrypt,
+    download_img,
+    get_format_time,
+    get_uuid,
 )
-from api.db import UserTenantRole, FileType
-from api.settings import (
-    RetCode,
-    GITHUB_OAUTH,
-    FEISHU_OAUTH,
-    CHAT_MDL,
-    EMBEDDING_MDL,
-    ASR_MDL,
-    IMAGE2TEXT_MDL,
-    PARSERS,
-    API_KEY,
-    LLM_FACTORY,
-    LLM_BASE_URL,
-    RERANK_MDL,
+from api.utils.api_utils import (
+    construct_response,
+    get_data_error_result,
+    get_json_result,
+    server_error_response,
+    validate_request,
 )
-from api.db.services.user_service import UserService, TenantService, UserTenantService
-from api.db.services.file_service import FileService
-from api.utils.api_utils import get_json_result, construct_response
 
 
-@manager.route("/login", methods=["POST", "GET"])
+@manager.route("/login", methods=["POST", "GET"])  # noqa: F821
 def login():
     """
     User login endpoint.
@@ -89,16 +80,14 @@ def login():
           type: object
     """
     if not request.json:
-        return get_json_result(
-            data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!"
-        )
+        return get_json_result(data=False, code=settings.RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
 
     email = request.json.get("email", "")
     users = UserService.query(email=email)
     if not users:
         return get_json_result(
             data=False,
-            code=RetCode.AUTHENTICATION_ERROR,
+            code=settings.RetCode.AUTHENTICATION_ERROR,
             message=f"Email: {email} is not registered!",
         )
 
@@ -106,9 +95,7 @@ def login():
     try:
         password = decrypt(password)
     except BaseException:
-        return get_json_result(
-            data=False, code=RetCode.SERVER_ERROR, message="Fail to crypt password"
-        )
+        return get_json_result(data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
     if user:
@@ -123,14 +110,136 @@ def login():
     else:
         return get_json_result(
             data=False,
-            code=RetCode.AUTHENTICATION_ERROR,
+            code=settings.RetCode.AUTHENTICATION_ERROR,
             message="Email and password do not match!",
         )
 
 
-@manager.route("/github_callback", methods=["GET"])
+@manager.route("/login/channels", methods=["GET"])  # noqa: F821
+def get_login_channels():
+    """
+    Get all supported authentication channels.
+    """
+    try:
+        channels = []
+        for channel, config in settings.OAUTH_CONFIG.items():
+            channels.append(
+                {
+                    "channel": channel,
+                    "display_name": config.get("display_name", channel.title()),
+                    "icon": config.get("icon", "sso"),
+                }
+            )
+        return get_json_result(data=channels)
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(data=[], message=f"Load channels failure, error: {str(e)}", code=settings.RetCode.EXCEPTION_ERROR)
+
+
+@manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
+def oauth_login(channel):
+    channel_config = settings.OAUTH_CONFIG.get(channel)
+    if not channel_config:
+        raise ValueError(f"Invalid channel name: {channel}")
+    auth_cli = get_auth_client(channel_config)
+
+    state = get_uuid()
+    session["oauth_state"] = state
+    auth_url = auth_cli.get_authorization_url(state)
+    return redirect(auth_url)
+
+
+@manager.route("/oauth/callback/<channel>", methods=["GET"])  # noqa: F821
+def oauth_callback(channel):
+    """
+    Handle the OAuth/OIDC callback for various channels dynamically.
+    """
+    try:
+        channel_config = settings.OAUTH_CONFIG.get(channel)
+        if not channel_config:
+            raise ValueError(f"Invalid channel name: {channel}")
+        auth_cli = get_auth_client(channel_config)
+
+        # Check the state
+        state = request.args.get("state")
+        if not state or state != session.get("oauth_state"):
+            return redirect("/?error=invalid_state")
+        session.pop("oauth_state", None)
+
+        # Obtain the authorization code
+        code = request.args.get("code")
+        if not code:
+            return redirect("/?error=missing_code")
+
+        # Exchange authorization code for access token
+        token_info = auth_cli.exchange_code_for_token(code)
+        access_token = token_info.get("access_token")
+        if not access_token:
+            return redirect("/?error=token_failed")
+
+        id_token = token_info.get("id_token")
+
+        # Fetch user info
+        user_info = auth_cli.fetch_user_info(access_token, id_token=id_token)
+        if not user_info.email:
+            return redirect("/?error=email_missing")
+
+        # Login or register
+        users = UserService.query(email=user_info.email)
+        user_id = get_uuid()
+
+        if not users:
+            try:
+                try:
+                    avatar = download_img(user_info.avatar_url)
+                except Exception as e:
+                    logging.exception(e)
+                    avatar = ""
+
+                users = user_register(
+                    user_id,
+                    {
+                        "access_token": get_uuid(),
+                        "email": user_info.email,
+                        "avatar": avatar,
+                        "nickname": user_info.nickname,
+                        "login_channel": channel,
+                        "last_login_time": get_format_time(),
+                        "is_superuser": False,
+                    },
+                )
+
+                if not users:
+                    raise Exception(f"Failed to register {user_info.email}")
+                if len(users) > 1:
+                    raise Exception(f"Same email: {user_info.email} exists!")
+
+                # Try to log in
+                user = users[0]
+                login_user(user)
+                return redirect(f"/?auth={user.get_id()}")
+
+            except Exception as e:
+                rollback_user_registration(user_id)
+                logging.exception(e)
+                return redirect(f"/?error={str(e)}")
+
+        # User exists, try to log in
+        user = users[0]
+        user.access_token = get_uuid()
+        login_user(user)
+        user.save()
+        return redirect(f"/?auth={user.get_id()}")
+    except Exception as e:
+        logging.exception(e)
+        return redirect(f"/?error={str(e)}")
+
+
+@manager.route("/github_callback", methods=["GET"])  # noqa: F821
 def github_callback():
     """
+    **Deprecated**, Use `/oauth/callback/<channel>` instead.
+
     GitHub OAuth callback endpoint.
     ---
     tags:
@@ -150,10 +259,10 @@ def github_callback():
     import requests
 
     res = requests.post(
-        GITHUB_OAUTH.get("url"),
+        settings.GITHUB_OAUTH.get("url"),
         data={
-            "client_id": GITHUB_OAUTH.get("client_id"),
-            "client_secret": GITHUB_OAUTH.get("secret_key"),
+            "client_id": settings.GITHUB_OAUTH.get("client_id"),
+            "client_secret": settings.GITHUB_OAUTH.get("secret_key"),
             "code": request.args.get("code"),
         },
         headers={"Accept": "application/json"},
@@ -213,7 +322,7 @@ def github_callback():
     return redirect("/?auth=%s" % user.get_id())
 
 
-@manager.route("/feishu_callback", methods=["GET"])
+@manager.route("/feishu_callback", methods=["GET"])  # noqa: F821
 def feishu_callback():
     """
     Feishu OAuth callback endpoint.
@@ -235,11 +344,11 @@ def feishu_callback():
     import requests
 
     app_access_token_res = requests.post(
-        FEISHU_OAUTH.get("app_access_token_url"),
+        settings.FEISHU_OAUTH.get("app_access_token_url"),
         data=json.dumps(
             {
-                "app_id": FEISHU_OAUTH.get("app_id"),
-                "app_secret": FEISHU_OAUTH.get("app_secret"),
+                "app_id": settings.FEISHU_OAUTH.get("app_id"),
+                "app_secret": settings.FEISHU_OAUTH.get("app_secret"),
             }
         ),
         headers={"Content-Type": "application/json; charset=utf-8"},
@@ -249,10 +358,10 @@ def feishu_callback():
         return redirect("/?error=%s" % app_access_token_res)
 
     res = requests.post(
-        FEISHU_OAUTH.get("user_access_token_url"),
+        settings.FEISHU_OAUTH.get("user_access_token_url"),
         data=json.dumps(
             {
-                "grant_type": FEISHU_OAUTH.get("grant_type"),
+                "grant_type": settings.FEISHU_OAUTH.get("grant_type"),
                 "code": request.args.get("code"),
             }
         ),
@@ -265,7 +374,7 @@ def feishu_callback():
     if res["code"] != 0:
         return redirect("/?error=%s" % res["message"])
 
-    if "contact:user.email:readonly" not in res["data"]["scope"].split(" "):
+    if "contact:user.email:readonly" not in res["data"]["scope"].split():
         return redirect("/?error=contact:user.email:readonly not in scope")
     session["access_token"] = res["data"]["access_token"]
     session["access_token_from"] = "feishu"
@@ -322,9 +431,7 @@ def user_info_from_feishu(access_token):
         "Content-Type": "application/json; charset=utf-8",
         "Authorization": f"Bearer {access_token}",
     }
-    res = requests.get(
-        "https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers
-    )
+    res = requests.get("https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers)
     user_info = res.json()["data"]
     user_info["email"] = None if user_info.get("email") == "" else user_info["email"]
     return user_info
@@ -334,21 +441,17 @@ def user_info_from_github(access_token):
     import requests
 
     headers = {"Accept": "application/json", "Authorization": f"token {access_token}"}
-    res = requests.get(
-        f"https://api.github.com/user?access_token={access_token}", headers=headers
-    )
+    res = requests.get(f"https://api.github.com/user?access_token={access_token}", headers=headers)
     user_info = res.json()
     email_info = requests.get(
         f"https://api.github.com/user/emails?access_token={access_token}",
         headers=headers,
     ).json()
-    user_info["email"] = next(
-        (email for email in email_info if email["primary"] == True), None
-    )["email"]
+    user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
     return user_info
 
 
-@manager.route("/logout", methods=["GET"])
+@manager.route("/logout", methods=["GET"])  # noqa: F821
 @login_required
 def log_out():
     """
@@ -364,13 +467,13 @@ def log_out():
         schema:
           type: object
     """
-    current_user.access_token = ""
+    current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
     current_user.save()
     logout_user()
     return get_json_result(data=True)
 
 
-@manager.route("/setting", methods=["POST"])
+@manager.route("/setting", methods=["POST"])  # noqa: F821
 @login_required
 def setting_user():
     """
@@ -404,12 +507,10 @@ def setting_user():
     request_data = request.json
     if request_data.get("password"):
         new_password = request_data.get("new_password")
-        if not check_password_hash(
-            current_user.password, decrypt(request_data["password"])
-        ):
+        if not check_password_hash(current_user.password, decrypt(request_data["password"])):
             return get_json_result(
                 data=False,
-                code=RetCode.AUTHENTICATION_ERROR,
+                code=settings.RetCode.AUTHENTICATION_ERROR,
                 message="Password error!",
             )
 
@@ -437,12 +538,10 @@ def setting_user():
         return get_json_result(data=True)
     except Exception as e:
         logging.exception(e)
-        return get_json_result(
-            data=False, message="Update failure!", code=RetCode.EXCEPTION_ERROR
-        )
+        return get_json_result(data=False, message="Update failure!", code=settings.RetCode.EXCEPTION_ERROR)
 
 
-@manager.route("/info", methods=["GET"])
+@manager.route("/info", methods=["GET"])  # noqa: F821
 @login_required
 def user_profile():
     """
@@ -497,12 +596,12 @@ def user_register(user_id, user):
     tenant = {
         "id": user_id,
         "name": user["nickname"] + "‘s Kingdom",
-        "llm_id": CHAT_MDL,
-        "embd_id": EMBEDDING_MDL,
-        "asr_id": ASR_MDL,
-        "parser_ids": PARSERS,
-        "img2txt_id": IMAGE2TEXT_MDL,
-        "rerank_id": RERANK_MDL,
+        "llm_id": settings.CHAT_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
+        "asr_id": settings.ASR_MDL,
+        "parser_ids": settings.PARSERS,
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "rerank_id": settings.RERANK_MDL,
     }
     usr_tenant = {
         "tenant_id": user_id,
@@ -521,18 +620,8 @@ def user_register(user_id, user):
         "size": 0,
         "location": "",
     }
-    tenant_llm = []
-    for llm in LLMService.query(fid=LLM_FACTORY):
-        tenant_llm.append(
-            {
-                "tenant_id": user_id,
-                "llm_factory": LLM_FACTORY,
-                "llm_name": llm.llm_name,
-                "model_type": llm.model_type,
-                "api_key": API_KEY,
-                "api_base": LLM_BASE_URL,
-            }
-        )
+
+    tenant_llm = get_init_tenant_llm(user_id)
 
     if not UserService.save(**user):
         return
@@ -543,7 +632,7 @@ def user_register(user_id, user):
     return UserService.query(email=user["email"])
 
 
-@manager.route("/register", methods=["POST"])
+@manager.route("/register", methods=["POST"])  # noqa: F821
 @validate_request("nickname", "email", "password")
 def user_add():
     """
@@ -574,15 +663,23 @@ def user_add():
         schema:
           type: object
     """
+
+    if not settings.REGISTER_ENABLED:
+        return get_json_result(
+            data=False,
+            message="User registration is disabled!",
+            code=settings.RetCode.OPERATING_ERROR,
+        )
+
     req = request.json
     email_address = req["email"]
 
     # Validate the email address
-    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,5}$", email_address):
+    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_address):
         return get_json_result(
             data=False,
             message=f"Invalid email address: {email_address}!",
-            code=RetCode.OPERATING_ERROR,
+            code=settings.RetCode.OPERATING_ERROR,
         )
 
     # Check if the email address is already used
@@ -590,7 +687,7 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"Email: {email_address} has already registered!",
-            code=RetCode.OPERATING_ERROR,
+            code=settings.RetCode.OPERATING_ERROR,
         )
 
     # Construct user info data
@@ -625,11 +722,11 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"User registration failure, error: {str(e)}",
-            code=RetCode.EXCEPTION_ERROR,
+            code=settings.RetCode.EXCEPTION_ERROR,
         )
 
 
-@manager.route("/tenant_info", methods=["GET"])
+@manager.route("/tenant_info", methods=["GET"])  # noqa: F821
 @login_required
 def tenant_info():
     """
@@ -667,7 +764,7 @@ def tenant_info():
         return server_error_response(e)
 
 
-@manager.route("/set_tenant_info", methods=["POST"])
+@manager.route("/set_tenant_info", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id")
 def set_tenant_info():
@@ -709,8 +806,7 @@ def set_tenant_info():
     """
     req = request.json
     try:
-        tid = req["tenant_id"]
-        del req["tenant_id"]
+        tid = req.pop("tenant_id")
         TenantService.update_by_id(tid, req)
         return get_json_result(data=True)
     except Exception as e:

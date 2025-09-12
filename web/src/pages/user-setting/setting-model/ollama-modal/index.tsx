@@ -1,25 +1,43 @@
+import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Flex, Form, Input, Modal, Select, Space, Switch } from 'antd';
+import {
+  Flex,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Switch,
+} from 'antd';
 import omit from 'lodash/omit';
+import { useEffect } from 'react';
 
 type FieldType = IAddLlmRequestBody & { vision: boolean };
 
 const { Option } = Select;
 
 const llmFactoryToUrlMap = {
-  Ollama:
-    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx',
-  Xinference: 'https://inference.readthedocs.io/en/latest/user_guide',
-  LocalAI: 'https://localai.io/docs/getting-started/models/',
-  'LM-Studio': 'https://lmstudio.ai/docs/basics',
-  'OpenAI-API-Compatible': 'https://platform.openai.com/docs/models/gpt-4',
-  TogetherAI: 'https://docs.together.ai/docs/deployment-options',
-  Replicate: 'https://replicate.com/docs/topics/deployments',
-  OpenRouter: 'https://openrouter.ai/docs',
-  HuggingFace:
+  [LLMFactory.Ollama]:
+    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx',
+  [LLMFactory.Xinference]:
+    'https://inference.readthedocs.io/en/latest/user_guide',
+  [LLMFactory.ModelScope]:
+    'https://www.modelscope.cn/docs/model-service/API-Inference/intro',
+  [LLMFactory.LocalAI]: 'https://localai.io/docs/getting-started/models/',
+  [LLMFactory.LMStudio]: 'https://lmstudio.ai/docs/basics',
+  [LLMFactory.OpenAiAPICompatible]:
+    'https://platform.openai.com/docs/models/gpt-4',
+  [LLMFactory.TogetherAI]: 'https://docs.together.ai/docs/deployment-options',
+  [LLMFactory.Replicate]: 'https://replicate.com/docs/topics/deployments',
+  [LLMFactory.OpenRouter]: 'https://openrouter.ai/docs',
+  [LLMFactory.HuggingFace]:
     'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
+  [LLMFactory.GPUStack]: 'https://docs.gpustack.ai/latest/quickstart',
+  [LLMFactory.VLLM]: 'https://docs.vllm.ai/en/latest/',
+  [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 type LlmFactory = keyof typeof llmFactoryToUrlMap;
 
@@ -29,7 +47,13 @@ const OllamaModal = ({
   onOk,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  editMode = false,
+  initialValues,
+}: IModalProps<IAddLlmRequestBody> & {
+  llmFactory: string;
+  editMode?: boolean;
+  initialValues?: Partial<IAddLlmRequestBody>;
+}) => {
   const [form] = Form.useForm<FieldType>();
 
   const { t } = useTranslate('setting');
@@ -45,24 +69,57 @@ const OllamaModal = ({
       ...omit(values, ['vision']),
       model_type: modelType,
       llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
     };
     console.info(data);
 
     onOk?.(data);
   };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
+  useEffect(() => {
+    if (visible && editMode && initialValues) {
+      const formValues = {
+        llm_name: initialValues.llm_name,
+        model_type: initialValues.model_type,
+        api_base: initialValues.api_base,
+        max_tokens: initialValues.max_tokens || 8192,
+        api_key: '',
+        ...initialValues,
+      };
+      form.setFieldsValue(formValues);
+    } else if (visible && !editMode) {
+      form.resetFields();
+    }
+  }, [visible, editMode, initialValues, form]);
+
   const url =
     llmFactoryToUrlMap[llmFactory as LlmFactory] ||
-    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx';
+    'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
   const optionsMap = {
-    HuggingFace: [
+    [LLMFactory.HuggingFace]: [
       { value: 'embedding', label: 'embedding' },
       { value: 'chat', label: 'chat' },
+      { value: 'rerank', label: 'rerank' },
     ],
-    Xinference: [
+    [LLMFactory.Xinference]: [
       { value: 'chat', label: 'chat' },
       { value: 'embedding', label: 'embedding' },
       { value: 'rerank', label: 'rerank' },
       { value: 'image2text', label: 'image2text' },
+      { value: 'speech2text', label: 'sequence2text' },
+      { value: 'tts', label: 'tts' },
+    ],
+    [LLMFactory.ModelScope]: [{ value: 'chat', label: 'chat' }],
+    [LLMFactory.GPUStack]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'rerank', label: 'rerank' },
       { value: 'speech2text', label: 'sequence2text' },
       { value: 'tts', label: 'tts' },
     ],
@@ -78,7 +135,11 @@ const OllamaModal = ({
   };
   return (
     <Modal
-      title={t('addLlmTitle', { name: llmFactory })}
+      title={
+        editMode
+          ? t('editLlmTitle', { name: llmFactory })
+          : t('addLlmTitle', { name: llmFactory })
+      }
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
@@ -120,22 +181,54 @@ const OllamaModal = ({
           name="llm_name"
           rules={[{ required: true, message: t('modelNameMessage') }]}
         >
-          <Input placeholder={t('modelNameMessage')} />
+          <Input
+            placeholder={t('modelNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addLlmBaseUrl')}
           name="api_base"
           rules={[{ required: true, message: t('baseUrlNameMessage') }]}
         >
-          <Input placeholder={t('baseUrlNameMessage')} />
+          <Input
+            placeholder={t('baseUrlNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('apiKey')}
           name="api_key"
           rules={[{ required: false, message: t('apiKeyMessage') }]}
         >
-          <Input placeholder={t('apiKeyMessage')} />
+          <Input placeholder={t('apiKeyMessage')} onKeyDown={handleKeyDown} />
         </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>
             getFieldValue('model_type') === 'chat' && (

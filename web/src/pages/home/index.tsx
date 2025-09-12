@@ -1,12 +1,16 @@
-import { CardWithForm } from './card';
-import { HomeHeader } from './header';
+import { Applications } from './applications';
+import { NextBanner } from './banner';
+import { Datasets } from './datasets';
 
 const Home = () => {
   return (
-    <div>
-      <HomeHeader></HomeHeader>
+    <div className="mx-8">
       <section>
-        <CardWithForm></CardWithForm>
+        <NextBanner></NextBanner>
+        <section className="h-[calc(100dvh-260px)] overflow-auto scrollbar-thin">
+          <Datasets></Datasets>
+          <Applications></Applications>
+        </section>
       </section>
     </div>
   );

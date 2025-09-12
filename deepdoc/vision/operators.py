@@ -23,7 +23,7 @@ import math
 from PIL import Image
 
 
-class DecodeImage(object):
+class DecodeImage:
     """ decode image """
 
     def __init__(self,
@@ -65,7 +65,7 @@ class DecodeImage(object):
         return data
 
 
-class StandardizeImage(object):
+class StandardizeImag:
     """normalize image
     Args:
         mean (list): im - mean
@@ -102,7 +102,7 @@ class StandardizeImage(object):
         return im, im_info
 
 
-class NormalizeImage(object):
+class NormalizeImage:
     """ normalize image such as subtract mean, divide std
     """
 
@@ -129,7 +129,7 @@ class NormalizeImage(object):
         return data
 
 
-class ToCHWImage(object):
+class ToCHWImage:
     """ convert hwc image to chw image
     """
 
@@ -145,19 +145,7 @@ class ToCHWImage(object):
         return data
 
 
-class Fasttext(object):
-    def __init__(self, path="None", **kwargs):
-        import fasttext
-        self.fast_model = fasttext.load_model(path)
-
-    def __call__(self, data):
-        label = data['label']
-        fast_label = self.fast_model[label]
-        data['fast_label'] = fast_label
-        return data
-
-
-class KeepKeys(object):
+class KeepKeys:
     def __init__(self, keep_keys, **kwargs):
         self.keep_keys = keep_keys
 
@@ -168,7 +156,7 @@ class KeepKeys(object):
         return data_list
 
 
-class Pad(object):
+class Pad:
     def __init__(self, size=None, size_div=32, **kwargs):
         if size is not None and not isinstance(size, (int, list, tuple)):
             raise TypeError("Type of target_size is invalid. Now is {}".format(
@@ -206,7 +194,7 @@ class Pad(object):
         return data
 
 
-class LinearResize(object):
+class LinearResize:
     """resize image by target_size and max_size
     Args:
         target_size (int): the target size of image
@@ -232,7 +220,7 @@ class LinearResize(object):
         """
         assert len(self.target_size) == 2
         assert self.target_size[0] > 0 and self.target_size[1] > 0
-        im_channel = im.shape[2]
+        _im_channel = im.shape[2]
         im_scale_y, im_scale_x = self.generate_scale(im)
         im = cv2.resize(
             im,
@@ -255,7 +243,7 @@ class LinearResize(object):
             im_scale_y: the resize ratio of Y
         """
         origin_shape = im.shape[:2]
-        im_c = im.shape[2]
+        _im_c = im.shape[2]
         if self.keep_ratio:
             im_size_min = np.min(origin_shape)
             im_size_max = np.max(origin_shape)
@@ -273,7 +261,7 @@ class LinearResize(object):
         return im_scale_y, im_scale_x
 
 
-class Resize(object):
+class Resize:
     def __init__(self, size=(640, 640), **kwargs):
         self.size = size
 
@@ -303,7 +291,7 @@ class Resize(object):
         return data
 
 
-class DetResizeForTest(object):
+class DetResizeForTest:
     def __init__(self, **kwargs):
         super(DetResizeForTest, self).__init__()
         self.resize_type = 0
@@ -433,7 +421,7 @@ class DetResizeForTest(object):
         return img, [ratio_h, ratio_w]
 
 
-class E2EResizeForTest(object):
+class E2EResizeForTest:
     def __init__(self, **kwargs):
         super(E2EResizeForTest, self).__init__()
         self.max_side_len = kwargs['max_side_len']
@@ -501,7 +489,7 @@ class E2EResizeForTest(object):
         return im, (ratio_h, ratio_w)
 
 
-class KieResize(object):
+class KieResize:
     def __init__(self, **kwargs):
         super(KieResize, self).__init__()
         self.max_side, self.min_side = kwargs['img_scale'][0], kwargs[
@@ -551,7 +539,7 @@ class KieResize(object):
         return points
 
 
-class SRResize(object):
+class SRResize:
     def __init__(self,
                  imgH=32,
                  imgW=128,
@@ -581,14 +569,14 @@ class SRResize(object):
             return data
 
         images_HR = data["image_hr"]
-        label_strs = data["label"]
+        _label_strs = data["label"]
         transform = ResizeNormalize((imgW, imgH))
         images_HR = transform(images_HR)
         data["img_hr"] = images_HR
         return data
 
 
-class ResizeNormalize(object):
+class ResizeNormalize:
     def __init__(self, size, interpolation=Image.BICUBIC):
         self.size = size
         self.interpolation = interpolation
@@ -600,7 +588,7 @@ class ResizeNormalize(object):
         return img_numpy
 
 
-class GrayImageChannelFormat(object):
+class GrayImageChannelFormat:
     """
     format gray scale image's channel: (3,h,w) -> (1,h,w)
     Args:
@@ -624,7 +612,7 @@ class GrayImageChannelFormat(object):
         return data
 
 
-class Permute(object):
+class Permute:
     """permute image
     Args:
         to_bgr (bool): whether convert RGB to BGR
@@ -647,7 +635,7 @@ class Permute(object):
         return im, im_info
 
 
-class PadStride(object):
+class PadStride:
     """ padding image for model with FPN, instead PadBatch(pad_to_stride) in original config
     Args:
         stride (bool): model with FPN need image shape % stride == 0
@@ -709,3 +697,29 @@ def preprocess(im, preprocess_ops):
     for operator in preprocess_ops:
         im, im_info = operator(im, im_info)
     return im, im_info
+
+
+def nms(bboxes, scores, iou_thresh):
+    import numpy as np
+    x1 = bboxes[:, 0]
+    y1 = bboxes[:, 1]
+    x2 = bboxes[:, 2]
+    y2 = bboxes[:, 3]
+    areas = (y2 - y1) * (x2 - x1)
+
+    indices = []
+    index = scores.argsort()[::-1]
+    while index.size > 0:
+        i = index[0]
+        indices.append(i)
+        x11 = np.maximum(x1[i], x1[index[1:]])
+        y11 = np.maximum(y1[i], y1[index[1:]])
+        x22 = np.minimum(x2[i], x2[index[1:]])
+        y22 = np.minimum(y2[i], y2[index[1:]])
+        w = np.maximum(0, x22 - x11 + 1)
+        h = np.maximum(0, y22 - y11 + 1)
+        overlaps = w * h
+        ious = overlaps / (areas[i] + areas[index[1:]] - overlaps)
+        idx = np.where(ious <= iou_thresh)[0]
+        index = index[idx + 1]
+    return indices

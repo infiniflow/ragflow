@@ -4,13 +4,23 @@ import request from '@/utils/request';
 
 const {
   getCanvas,
+  getCanvasSSE,
   setCanvas,
+  getListVersion,
+  getVersion,
   listCanvas,
   resetCanvas,
   removeCanvas,
   runCanvas,
   listTemplates,
   testDbConnect,
+  getInputElements,
+  debug,
+  listCanvasTeam,
+  settingCanvas,
+  uploadCanvasFile,
+  trace,
+  inputForm,
 } = api;
 
 const methods = {
@@ -18,9 +28,21 @@ const methods = {
     url: getCanvas,
     method: 'get',
   },
+  getCanvasSSE: {
+    url: getCanvasSSE,
+    method: 'get',
+  },
   setCanvas: {
     url: setCanvas,
     method: 'post',
+  },
+  getListVersion: {
+    url: getListVersion,
+    method: 'get',
+  },
+  getVersion: {
+    url: getVersion,
+    method: 'get',
   },
   listCanvas: {
     url: listCanvas,
@@ -46,8 +68,36 @@ const methods = {
     url: testDbConnect,
     method: 'post',
   },
+  getInputElements: {
+    url: getInputElements,
+    method: 'get',
+  },
+  debugSingle: {
+    url: debug,
+    method: 'post',
+  },
+  listCanvasTeam: {
+    url: listCanvasTeam,
+    method: 'get',
+  },
+  settingCanvas: {
+    url: settingCanvas,
+    method: 'post',
+  },
+  uploadCanvasFile: {
+    url: uploadCanvasFile,
+    method: 'post',
+  },
+  trace: {
+    url: trace,
+    method: 'get',
+  },
+  inputForm: {
+    url: inputForm,
+    method: 'get',
+  },
 } as const;
 
-const chatService = registerServer<keyof typeof methods>(methods, request);
+const flowService = registerServer<keyof typeof methods>(methods, request);
 
-export default chatService;
+export default flowService;

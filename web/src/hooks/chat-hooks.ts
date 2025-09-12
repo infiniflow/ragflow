@@ -11,6 +11,7 @@ import {
 } from '@/interfaces/request/chat';
 import i18n from '@/locales/config';
 import { IClientConversation } from '@/pages/chat/interface';
+import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import chatService from '@/services/chat-service';
 import {
   buildMessageListWithUuid,
@@ -27,6 +28,7 @@ import { history, useSearchParams } from 'umi';
 //#region logic
 
 export const useClickDialogCard = () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_, setSearchParams] = useSearchParams();
 
   const newQueryParameters: URLSearchParams = useMemo(() => {
@@ -82,7 +84,7 @@ export const useGetChatSearchParams = () => {
 
 //#region dialog
 
-export const useFetchNextDialogList = () => {
+export const useFetchNextDialogList = (pureFetch = false) => {
   const { handleClickDialog } = useClickDialogCard();
   const { dialogId } = useGetChatSearchParams();
 
@@ -101,14 +103,36 @@ export const useFetchNextDialogList = () => {
 
       if (data.code === 0) {
         const list: IDialog[] = data.data;
-        if (list.length > 0) {
-          if (list.every((x) => x.id !== dialogId)) {
-            handleClickDialog(data.data[0].id);
+        if (!pureFetch) {
+          if (list.length > 0) {
+            if (list.every((x) => x.id !== dialogId)) {
+              handleClickDialog(data.data[0].id);
+            }
+          } else {
+            history.push('/chat');
           }
-        } else {
-          history.push('/chat');
         }
       }
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useFetchChatAppList = () => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IDialog[]>({
+    queryKey: ['fetchChatAppList'],
+    initialData: [],
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.listDialog();
 
       return data?.data ?? [];
     },
@@ -231,8 +255,12 @@ export const useFetchNextConversationList = () => {
     enabled: !!dialogId,
     queryFn: async () => {
       const { data } = await chatService.listConversation({ dialogId });
-      if (data.code === 0 && data.data.length > 0) {
-        handleClickConversation(data.data[0].id, '');
+      if (data.code === 0) {
+        if (data.data.length > 0) {
+          handleClickConversation(data.data[0].id, '');
+        } else {
+          handleClickConversation('', '');
+        }
       }
       return data?.data;
     },
@@ -243,6 +271,7 @@ export const useFetchNextConversationList = () => {
 
 export const useFetchNextConversation = () => {
   const { isNew, conversationId } = useGetChatSearchParams();
+  const { sharedId } = useGetSharedChatSearchParams();
   const {
     data,
     isFetching: loading,
@@ -254,13 +283,45 @@ export const useFetchNextConversation = () => {
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      if (isNew !== 'true' && isConversationIdExist(conversationId)) {
-        const { data } = await chatService.getConversation({ conversationId });
+      if (
+        isNew !== 'true' &&
+        isConversationIdExist(sharedId || conversationId)
+      ) {
+        const { data } = await chatService.getConversation({
+          conversationId: conversationId || sharedId,
+        });
 
         const conversation = data?.data ?? {};
 
         const messageList = buildMessageListWithUuid(conversation?.message);
 
+        return { ...conversation, message: messageList };
+      }
+      return { message: [] };
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useFetchNextConversationSSE = () => {
+  const { isNew } = useGetChatSearchParams();
+  const { sharedId } = useGetSharedChatSearchParams();
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IClientConversation>({
+    queryKey: ['fetchConversationSSE', sharedId],
+    initialData: {} as IClientConversation,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      if (isNew !== 'true' && isConversationIdExist(sharedId || '')) {
+        if (!sharedId) return {};
+        const { data } = await chatService.getConversationSSE({}, sharedId);
+        const conversation = data?.data ?? {};
+        const messageList = buildMessageListWithUuid(conversation?.message);
         return { ...conversation, message: messageList };
       }
       return { message: [] };
@@ -305,6 +366,7 @@ export const useUpdateNextConversation = () => {
       });
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
+        message.success(i18n.t(`message.modified`));
       }
       return data;
     },
@@ -504,11 +566,17 @@ export const useCreateNextSharedConversation = () => {
   return { data, loading, createSharedConversation: mutateAsync };
 };
 
-export const useFetchNextSharedConversation = (conversationId: string) => {
+// deprecated
+export const useFetchNextSharedConversation = (
+  conversationId?: string | null,
+) => {
   const { data, isPending: loading } = useQuery({
     queryKey: ['fetchSharedConversation'],
     enabled: !!conversationId,
     queryFn: async () => {
+      if (!conversationId) {
+        return {};
+      }
       const { data } = await chatService.getExternalConversation(
         null,
         conversationId,
@@ -541,7 +609,7 @@ export const useFetchMindMap = () => {
       try {
         const ret = await chatService.getMindMap(params);
         return ret?.data?.data ?? {};
-      } catch (error) {
+      } catch (error: any) {
         if (has(error, 'message')) {
           message.error(error.message);
         }

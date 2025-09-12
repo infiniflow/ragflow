@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import logging
 import copy
 import re
@@ -27,7 +31,9 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is running...")
+        from timeit import default_timer as timer
+        start = timer()
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -35,21 +41,24 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished.")
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis finished")
+        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug(f"layouts cost: {timer() - start}s")
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.68, "Table analysis finished")
+        callback(0.68, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
         column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
         self._concat_downward()
         self._filter_forpages()
-        callback(0.75, "Text merging finished.")
+        callback(0.75, "Text merged ({:.2f}s)".format(timer() - start))
 
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
@@ -99,11 +108,11 @@ class Pdf(PdfParser):
             i += 1
             txt = b["text"].lower().strip()
             if re.match("(abstract|摘要)", txt):
-                if len(txt.split(" ")) > 32 or len(txt) > 64:
+                if len(txt.split()) > 32 or len(txt) > 64:
                     abstr = txt + self._line_tag(b, zoomin)
                     break
                 txt = self.boxes[i]["text"].lower().strip()
-                if len(txt.split(" ")) > 32 or len(txt) > 64:
+                if len(txt.split()) > 32 or len(txt) > 64:
                     abstr = txt + self._line_tag(self.boxes[i], zoomin)
                 i += 1
                 break
@@ -134,8 +143,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        if not kwargs.get("parser_config", {}).get("layout_recognize", True):
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
             paper = {
                 "title": filename,

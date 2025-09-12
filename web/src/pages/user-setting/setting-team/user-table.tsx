@@ -4,6 +4,7 @@ import { formatDate } from '@/utils/date';
 import { DeleteOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Table, Tag } from 'antd';
+import { upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
 import { TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
@@ -36,7 +37,9 @@ const UserTable = () => {
       key: 'role',
       render(value, { role }) {
         return (
-          <Tag color={ColorMap[role as keyof typeof ColorMap]}>{role}</Tag>
+          <Tag color={ColorMap[role as keyof typeof ColorMap]}>
+            {upperFirst(role)}
+          </Tag>
         );
       },
     },

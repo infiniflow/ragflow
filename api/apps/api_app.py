@@ -18,34 +18,37 @@ import os
 import re
 from datetime import datetime, timedelta
 from flask import request, Response
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import LLMBundle
 from flask_login import login_required, current_user
 
-from api.db import FileType, LLMType, ParserType, FileSource
+from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileType, LLMType, ParserType, FileSource
 from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
-from api.db.services.dialog_service import DialogService, chat, keyword_extraction
+from api.db.services.dialog_service import DialogService, chat
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import queue_tasks, TaskService
 from api.db.services.user_service import UserTenantService
-from api.settings import RetCode, retrievaler
+from api import settings
 from api.utils import get_uuid, current_timestamp, datetime_format
 from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request, \
     generate_confirmation_token
 
 from api.utils.file_utils import filename_type, thumbnail
+from rag.app.tag import label_question
+from rag.prompts import keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
 
 from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
 from functools import partial
+from pathlib import Path
 
 
-@manager.route('/new_token', methods=['POST'])
+@manager.route('/new_token', methods=['POST'])  # noqa: F821
 @login_required
 def new_token():
     req = request.json
@@ -75,7 +78,7 @@ def new_token():
         return server_error_response(e)
 
 
-@manager.route('/token_list', methods=['GET'])
+@manager.route('/token_list', methods=['GET'])  # noqa: F821
 @login_required
 def token_list():
     try:
@@ -90,7 +93,7 @@ def token_list():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route('/rm', methods=['POST'])  # noqa: F821
 @validate_request("tokens", "tenant_id")
 @login_required
 def rm():
@@ -104,7 +107,7 @@ def rm():
         return server_error_response(e)
 
 
-@manager.route('/stats', methods=['GET'])
+@manager.route('/stats', methods=['GET'])  # noqa: F821
 @login_required
 def stats():
     try:
@@ -135,14 +138,13 @@ def stats():
         return server_error_response(e)
 
 
-@manager.route('/new_conversation', methods=['GET'])
+@manager.route('/new_conversation', methods=['GET'])  # noqa: F821
 def set_conversation():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
-    req = request.json
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     try:
         if objs[0].source == "agent":
             e, cvs = UserCanvasService.get_by_id(objs[0].dialog_id)
@@ -176,19 +178,20 @@ def set_conversation():
         return server_error_response(e)
 
 
-@manager.route('/completion', methods=['POST'])
+@manager.route('/completion', methods=['POST'])  # noqa: F821
 @validate_request("conversation_id", "messages")
 def completion():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     req = request.json
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    if "quote" not in req: req["quote"] = False
+    if "quote" not in req:
+        req["quote"] = False
 
     msg = []
     for m in req["messages"]:
@@ -197,7 +200,8 @@ def completion():
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     def fillin_conv(ans):
@@ -290,8 +294,8 @@ def completion():
             API4ConversationService.append_message(conv.id, conv.to_dict())
             rename_field(result)
             return get_json_result(data=result)
-        
-        #******************For dialog******************
+
+        # ******************For dialog******************
         conv.message.append(msg[-1])
         e, dia = DialogService.get_by_id(conv.dialog_id)
         if not e:
@@ -326,7 +330,7 @@ def completion():
             resp.headers.add_header("X-Accel-Buffering", "no")
             resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
             return resp
-            
+
         answer = None
         for ans in chat(dia, msg, **req):
             answer = ans
@@ -340,15 +344,15 @@ def completion():
         return server_error_response(e)
 
 
-@manager.route('/conversation/<conversation_id>', methods=['GET'])
+@manager.route('/conversation/<conversation_id>', methods=['GET'])  # noqa: F821
 # @login_required
-def get(conversation_id):
+def get_conversation(conversation_id):
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
-    
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+
     try:
         e, conv = API4ConversationService.get_by_id(conversation_id)
         if not e:
@@ -356,9 +360,9 @@ def get(conversation_id):
 
         conv = conv.to_dict()
         if token != APIToken.query(dialog_id=conv['dialog_id'])[0].token:
-            return get_json_result(data=False, message='Token is not valid for this conversation_id!"',
-                                   code=RetCode.AUTHENTICATION_ERROR)
-            
+            return get_json_result(data=False, message='Authentication error: API key is invalid for this conversation_id!"',
+                                   code=settings.RetCode.AUTHENTICATION_ERROR)
+
         for referenct_i in conv['reference']:
             if referenct_i is None or len(referenct_i) == 0:
                 continue
@@ -371,14 +375,14 @@ def get(conversation_id):
         return server_error_response(e)
 
 
-@manager.route('/document/upload', methods=['POST'])
+@manager.route('/document/upload', methods=['POST'])  # noqa: F821
 @validate_request("kb_name")
 def upload():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     kb_name = request.form.get("kb_name").strip()
     tenant_id = objs[0].tenant_id
@@ -394,12 +398,12 @@ def upload():
 
     if 'file' not in request.files:
         return get_json_result(
-            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
+            data=False, message='No file part!', code=settings.RetCode.ARGUMENT_ERROR)
 
     file = request.files['file']
     if file.filename == '':
         return get_json_result(
-            data=False, message='No file selected!', code=RetCode.ARGUMENT_ERROR)
+            data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
 
     root_folder = FileService.get_root_folder(tenant_id)
     pf_id = root_folder["id"]
@@ -436,7 +440,8 @@ def upload():
             "name": filename,
             "location": location,
             "size": len(blob),
-            "thumbnail": thumbnail(filename, blob)
+            "thumbnail": thumbnail(filename, blob),
+            "suffix": Path(filename).suffix.lstrip("."),
         }
 
         form_data = request.form
@@ -476,44 +481,44 @@ def upload():
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
                 bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-                queue_tasks(doc, bucket, name)
+                queue_tasks(doc, bucket, name, 0)
             except Exception as e:
                 return server_error_response(e)
 
     return get_json_result(data=doc_result.to_json())
 
 
-@manager.route('/document/upload_and_parse', methods=['POST'])
+@manager.route('/document/upload_and_parse', methods=['POST'])  # noqa: F821
 @validate_request("conversation_id")
 def upload_parse():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     if 'file' not in request.files:
         return get_json_result(
-            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
+            data=False, message='No file part!', code=settings.RetCode.ARGUMENT_ERROR)
 
     file_objs = request.files.getlist('file')
     for file_obj in file_objs:
         if file_obj.filename == '':
             return get_json_result(
-                data=False, message='No file selected!', code=RetCode.ARGUMENT_ERROR)
+                data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
 
     doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, objs[0].tenant_id)
     return get_json_result(data=doc_ids)
 
 
-@manager.route('/list_chunks', methods=['POST'])
+@manager.route('/list_chunks', methods=['POST'])  # noqa: F821
 # @login_required
 def list_chunks():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
 
@@ -531,7 +536,7 @@ def list_chunks():
             )
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
 
-        res = retrievaler.chunk_list(doc_id, tenant_id, kb_ids)
+        res = settings.retrievaler.chunk_list(doc_id, tenant_id, kb_ids)
         res = [
             {
                 "content": res_item["content_with_weight"],
@@ -545,15 +550,40 @@ def list_chunks():
 
     return get_json_result(data=res)
 
+@manager.route('/get_chunk/<chunk_id>', methods=['GET'])  # noqa: F821
+# @login_required
+def get_chunk(chunk_id):
+    from rag.nlp import search
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+    try:
+        tenant_id = objs[0].tenant_id
+        kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
+        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        if chunk is None:
+            return server_error_response(Exception("Chunk not found"))
+        k = []
+        for n in chunk.keys():
+            if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
+                k.append(n)
+        for n in k:
+            del chunk[n]
 
-@manager.route('/list_kb_docs', methods=['POST'])
+        return get_json_result(data=chunk)
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/list_kb_docs', methods=['POST'])  # noqa: F821
 # @login_required
 def list_kb_docs():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
     tenant_id = objs[0].tenant_id
@@ -574,10 +604,23 @@ def list_kb_docs():
     orderby = req.get("orderby", "create_time")
     desc = req.get("desc", True)
     keywords = req.get("keywords", "")
-
+    status = req.get("status", [])
+    if status:
+        invalid_status = {s for s in status if s not in VALID_TASK_STATUS}
+        if invalid_status:
+            return get_data_error_result(
+                message=f"Invalid filter status conditions: {', '.join(invalid_status)}"
+            )
+    types = req.get("types", [])
+    if types:
+        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
+        if invalid_types:
+            return get_data_error_result(
+                message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
+            )
     try:
         docs, tol = DocumentService.get_by_kb_id(
-            kb_id, page_number, items_per_page, orderby, desc, keywords)
+            kb_id, page_number, items_per_page, orderby, desc, keywords, status, types)
         docs = [{"doc_id": doc['id'], "doc_name": doc['name']} for doc in docs]
 
         return get_json_result(data={"total": tol, "docs": docs})
@@ -585,33 +628,34 @@ def list_kb_docs():
     except Exception as e:
         return server_error_response(e)
 
-@manager.route('/document/infos', methods=['POST'])
+
+@manager.route('/document/infos', methods=['POST'])  # noqa: F821
 @validate_request("doc_ids")
 def docinfos():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     req = request.json
     doc_ids = req["doc_ids"]
     docs = DocumentService.get_by_ids(doc_ids)
     return get_json_result(data=list(docs.dicts()))
 
 
-@manager.route('/document', methods=['DELETE'])
+@manager.route('/document', methods=['DELETE'])  # noqa: F821
 # @login_required
 def document_rm():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     tenant_id = objs[0].tenant_id
     req = request.json
     try:
-        doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req.get("doc_names", [])]
+        doc_ids = DocumentService.get_doc_ids_by_doc_names(req.get("doc_names", []))
         for doc_id in req.get("doc_ids", []):
             if doc_id not in doc_ids:
                 doc_ids.append(doc_id)
@@ -629,11 +673,16 @@ def document_rm():
     FileService.init_knowledgebase_docs(pf_id, tenant_id)
 
     errors = ""
+    docs = DocumentService.get_by_ids(doc_ids)
+    doc_dic = {}
+    for doc in docs:
+        doc_dic[doc.id] = doc
+
     for doc_id in doc_ids:
         try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
+            if doc_id not in doc_dic:
                 return get_data_error_result(message="Document not found!")
+            doc = doc_dic[doc_id]
             tenant_id = DocumentService.get_tenant_id(doc_id)
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
@@ -653,12 +702,12 @@ def document_rm():
             errors += str(e)
 
     if errors:
-        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
+        return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
 
     return get_json_result(data=True)
 
 
-@manager.route('/completion_aibotk', methods=['POST'])
+@manager.route('/completion_aibotk', methods=['POST'])  # noqa: F821
 @validate_request("Authorization", "conversation_id", "word")
 def completion_faq():
     import base64
@@ -668,16 +717,18 @@ def completion_faq():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    if "quote" not in req: req["quote"] = True
+    if "quote" not in req:
+        req["quote"] = True
 
     msg = []
     msg.append({"role": "user", "content": req["word"]})
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     def fillin_conv(ans):
@@ -798,50 +849,50 @@ def completion_faq():
         return server_error_response(e)
 
 
-@manager.route('/retrieval', methods=['POST'])
+@manager.route('/retrieval', methods=['POST'])  # noqa: F821
 @validate_request("kb_id", "question")
 def retrieval():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
-    kb_ids = req.get("kb_id",[])
+    kb_ids = req.get("kb_id", [])
     doc_ids = req.get("doc_ids", [])
     question = req.get("question")
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size", 30))
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
+    highlight = bool(req.get("highlight", False)) 
 
     try:
         kbs = KnowledgebaseService.get_by_ids(kb_ids)
         embd_nms = list(set([kb.embd_id for kb in kbs]))
         if len(embd_nms) != 1:
             return get_json_result(
-                data=False, message='Knowledge bases use different embedding models or does not exist."', code=RetCode.AUTHENTICATION_ERROR)
+                data=False, message='Knowledge bases use different embedding models or does not exist."',
+                code=settings.RetCode.AUTHENTICATION_ERROR)
 
-        embd_mdl = TenantLLMService.model_instance(
-            kbs[0].tenant_id, LLMType.EMBEDDING.value, llm_name=kbs[0].embd_id)
+        embd_mdl = LLMBundle(kbs[0].tenant_id, LLMType.EMBEDDING, llm_name=kbs[0].embd_id)
         rerank_mdl = None
         if req.get("rerank_id"):
-            rerank_mdl = TenantLLMService.model_instance(
-            kbs[0].tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+            rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
         if req.get("keyword", False):
-            chat_mdl = TenantLLMService.model_instance(kbs[0].tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kbs[0].tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
-        ranks = retrievaler.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
-            similarity_threshold, vector_similarity_weight, top,
-            doc_ids, rerank_mdl=rerank_mdl)
+        ranks = settings.retrievaler.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
+                                               similarity_threshold, vector_similarity_weight, top,
+                                               doc_ids, rerank_mdl=rerank_mdl, highlight= highlight,
+                                               rank_feature=label_question(question, kbs))
         for c in ranks["chunks"]:
-            if "vector" in c:
-                del c["vector"]
+            c.pop("vector", None)
         return get_json_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found! Check the chunk status please!',
-                                   code=RetCode.DATA_ERROR)
+                                   code=settings.RetCode.DATA_ERROR)
         return server_error_response(e)

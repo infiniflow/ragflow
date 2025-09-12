@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -80,7 +83,7 @@ def refactor(df):
     def loadjson(line):
         try:
             return json.loads(line)
-        except Exception as e:
+        except Exception:
             pass
         return {}
 
@@ -183,4 +186,4 @@ def refactor(df):
                 "\r",
                 "\\n"))
     # print(df.values.tolist())
-    return dict(zip([n.split(" ")[0] for n in FIELDS], df.values.tolist()[0]))
+    return dict(zip([n.split()[0] for n in FIELDS], df.values.tolist()[0]))

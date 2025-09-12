@@ -9,10 +9,11 @@ import {
   SwitchOperatorOptions,
 } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
-import { useBuildComponentIdSelectOptions } from '../../hooks';
-import { IOperatorForm, ISwitchForm } from '../../interface';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+import { IOperatorForm } from '../../interface';
 import { getOtherFieldValues } from '../../utils';
 
+import { ISwitchForm } from '@/interfaces/database/flow';
 import styles from './index.less';
 
 const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
@@ -43,7 +44,10 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
     }));
   }, [t]);
 
-  const componentIdOptions = useBuildComponentIdSelectOptions(node?.id);
+  const componentIdOptions = useBuildComponentIdSelectOptions(
+    node?.id,
+    node?.parentId,
+  );
 
   return (
     <Form
@@ -85,7 +89,10 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
                       )
                     }
                   </Form.Item>
-                  <Form.Item label={t('flow.to')} name={[field.name, 'to']}>
+                  <Form.Item
+                    label={t('flow.nextStep')}
+                    name={[field.name, 'to']}
+                  >
                     <Select
                       allowClear
                       options={buildCategorizeToOptions([

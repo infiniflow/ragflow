@@ -1,0 +1,61 @@
+.messageItem {
+  padding: 24px 0;
+  .messageItemSection {
+    display: inline-block;
+  }
+  .messageItemSectionLeft {
+    width: 80%;
+  }
+  .messageItemContent {
+    display: inline-flex;
+    gap: 20px;
+    width: 100%;
+  }
+  .messageItemContentReverse {
+    flex-direction: row-reverse;
+  }
+
+  .messageTextBase() {
+    padding: 6px 10px;
+    border-radius: 8px;
+    & > p {
+      margin: 0;
+    }
+  }
+  .messageText {
+    .chunkText();
+    .messageTextBase();
+    word-break: break-word;
+  }
+  .messageTextDark {
+    .chunkText();
+    .messageTextBase();
+    word-break: break-word;
+    :global(section.think) {
+      color: rgb(166, 166, 166);
+      border-left-color: rgb(78, 78, 86);
+    }
+  }
+
+  .messageUserText {
+    .chunkText();
+    .messageTextBase();
+    word-break: break-word;
+    text-align: justify;
+  }
+  .messageEmpty {
+    width: 300px;
+  }
+
+  .thumbnailImg {
+    max-width: 20px;
+  }
+}
+
+.messageItemLeft {
+  text-align: left;
+}
+
+.messageItemRight {
+  text-align: right;
+}

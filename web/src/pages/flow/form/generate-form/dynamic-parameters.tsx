@@ -1,15 +1,15 @@
 import { EditableCell, EditableRow } from '@/components/editable-cell';
 import { useTranslate } from '@/hooks/common-hooks';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Table, TableProps } from 'antd';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 import { IGenerateParameter } from '../../interface';
-
-import { useBuildComponentIdSelectOptions } from '../../hooks';
 import { useHandleOperateParameters } from './hooks';
-import styles from './index.less';
 
+import styles from './index.less';
 interface IProps {
-  nodeId?: string;
+  node?: RAGFlowNodeType;
 }
 
 const components = {
@@ -19,10 +19,11 @@ const components = {
   },
 };
 
-const DynamicParameters = ({ nodeId }: IProps) => {
+const DynamicParameters = ({ node }: IProps) => {
+  const nodeId = node?.id;
   const { t } = useTranslate('flow');
 
-  const options = useBuildComponentIdSelectOptions(nodeId);
+  const options = useBuildComponentIdSelectOptions(nodeId, node?.parentId);
   const {
     dataSource,
     handleAdd,
@@ -36,7 +37,7 @@ const DynamicParameters = ({ nodeId }: IProps) => {
       title: t('key'),
       dataIndex: 'key',
       key: 'key',
-      width: 50,
+      width: '40%',
       onCell: (record: IGenerateParameter) => ({
         record,
         editable: true,
@@ -46,10 +47,11 @@ const DynamicParameters = ({ nodeId }: IProps) => {
       }),
     },
     {
-      title: t('componentId'),
+      title: t('value'),
       dataIndex: 'component_id',
       key: 'component_id',
       align: 'center',
+      width: '40%',
       render(text, record) {
         return (
           <Select

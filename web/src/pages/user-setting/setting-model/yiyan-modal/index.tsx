@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select } from 'antd';
+import { Form, Input, InputNumber, Modal, Select } from 'antd';
 import omit from 'lodash/omit';
 
 type FieldType = IAddLlmRequestBody & {
@@ -34,10 +34,17 @@ const YiyanModal = ({
       ...omit(values, ['vision']),
       model_type: modelType,
       llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
     };
     console.info(data);
 
     onOk?.(data);
+  };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
   };
 
   return (
@@ -73,21 +80,48 @@ const YiyanModal = ({
           name="llm_name"
           rules={[{ required: true, message: t('yiyanModelNameMessage') }]}
         >
-          <Input placeholder={t('yiyanModelNameMessage')} />
+          <Input
+            placeholder={t('yiyanModelNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addyiyanAK')}
           name="yiyan_ak"
           rules={[{ required: true, message: t('yiyanAKMessage') }]}
         >
-          <Input placeholder={t('yiyanAKMessage')} />
+          <Input placeholder={t('yiyanAKMessage')} onKeyDown={handleKeyDown} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addyiyanSK')}
           name="yiyan_sk"
           rules={[{ required: true, message: t('yiyanSKMessage') }]}
         >
-          <Input placeholder={t('yiyanSKMessage')} />
+          <Input placeholder={t('yiyanSKMessage')} onKeyDown={handleKeyDown} />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
         </Form.Item>
       </Form>
     </Modal>

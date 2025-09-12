@@ -3,7 +3,8 @@ import { IModalProps } from '@/interfaces/common';
 import { Form, Input, Modal, Select, Switch } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
 import { useEffect, useMemo } from 'react';
-import { BeginQueryType } from '../../constant';
+import { useTranslation } from 'react-i18next';
+import { BeginQueryType, BeginQueryTypeIconMap } from '../../constant';
 import { BeginQuery } from '../../interface';
 import BeginDynamicOptions from './begin-dynamic-options';
 
@@ -16,14 +17,24 @@ export const ModalForm = ({
   initialValue: BeginQuery;
   otherThanCurrentQuery: BeginQuery[];
 }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const options = useMemo(() => {
     return Object.values(BeginQueryType).reduce<DefaultOptionType[]>(
       (pre, cur) => {
+        const Icon = BeginQueryTypeIconMap[cur];
+
         return [
           ...pre,
           {
-            label: cur,
+            label: (
+              <div className="flex items-center gap-2">
+                <Icon
+                  className={`size-${cur === BeginQueryType.Options ? 4 : 5}`}
+                ></Icon>
+                {cur}
+              </div>
+            ),
             value: cur,
           },
         ];
@@ -47,7 +58,7 @@ export const ModalForm = ({
 
   return (
     <Modal
-      title="Begin query"
+      title={t('flow.variableSettings')}
       open={visible}
       onOk={onOk}
       onCancel={hideModal}

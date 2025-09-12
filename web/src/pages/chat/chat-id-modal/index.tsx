@@ -26,7 +26,7 @@ const ChatIdModal = ({
         {id}
       </Paragraph>
       <Link
-        href="https://ragflow.io/docs/dev/http_api_reference#create-session"
+        href="https://ragflow.io/docs/dev/http_api_reference#create-session-with-chat-assistant"
         target="_blank"
       >
         {t('howUseId')}

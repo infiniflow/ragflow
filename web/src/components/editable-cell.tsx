@@ -1,8 +1,9 @@
 import { Form, FormInstance, Input, InputRef, Typography } from 'antd';
+import { omit } from 'lodash';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 
 const EditableContext = React.createContext<FormInstance<any> | null>(null);
-const { Paragraph, Text } = Typography;
+const { Text } = Typography;
 
 interface EditableRowProps {
   index: number;
@@ -15,15 +16,12 @@ interface Item {
   address: string;
 }
 
-export const EditableRow: React.FC<EditableRowProps> = ({
-  index,
-  ...props
-}) => {
+export const EditableRow: React.FC<EditableRowProps> = ({ ...props }) => {
   const [form] = Form.useForm();
   return (
     <Form form={form} component={false}>
       <EditableContext.Provider value={form}>
-        <tr {...props} />
+        <tr {...omit(props, 'index')} />
       </EditableContext.Provider>
     </Form>
   );
@@ -78,7 +76,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   if (editable) {
     childNode = editing ? (
       <Form.Item
-        style={{ margin: 0, width: 70 }}
+        style={{ margin: 0, minWidth: 70 }}
         name={dataIndex}
         rules={[
           {
@@ -90,14 +88,8 @@ export const EditableCell: React.FC<EditableCellProps> = ({
         <Input ref={inputRef} onPressEnter={save} onBlur={save} />
       </Form.Item>
     ) : (
-      <div
-        className="editable-cell-value-wrap"
-        // style={{ paddingRight: 24 }}
-        onClick={toggleEdit}
-      >
-        <Text ellipsis={{ tooltip: children }} style={{ width: 70 }}>
-          {children}
-        </Text>
+      <div onClick={toggleEdit} className="editable-cell-value-wrap">
+        <Text>{children}</Text>
       </div>
     );
   }

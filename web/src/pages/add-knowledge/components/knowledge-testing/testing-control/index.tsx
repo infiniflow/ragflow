@@ -1,10 +1,13 @@
 import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
 import { Button, Card, Divider, Flex, Form, Input } from 'antd';
 import { FormInstance } from 'antd/lib';
+import { LabelWordCloud } from './label-word-cloud';
 
-import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
+import { CrossLanguageItem } from '@/components/cross-language-item';
+import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import styles from './index.less';
 
 type FieldType = {
@@ -15,16 +18,25 @@ type FieldType = {
 
 interface IProps {
   form: FormInstance;
-  handleTesting: () => Promise<any>;
+  handleTesting: (documentIds?: string[]) => Promise<any>;
+  selectedDocumentIds: string[];
 }
 
-const TestingControl = ({ form, handleTesting }: IProps) => {
+const TestingControl = ({
+  form,
+  handleTesting,
+  selectedDocumentIds,
+}: IProps) => {
   const question = Form.useWatch('question', { form, preserve: true });
   const loading = useChunkIsTesting();
   const { t } = useTranslate('knowledgeDetails');
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
+
+  const onClick = () => {
+    handleTesting(selectedDocumentIds);
+  };
 
   return (
     <section className={styles.testingControlWrapper}>
@@ -37,6 +49,8 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
         <Form name="testing" layout="vertical" form={form}>
           <SimilaritySlider isTooltipShown></SimilaritySlider>
           <Rerank></Rerank>
+          <UseKnowledgeGraphItem filedName={['use_kg']}></UseKnowledgeGraphItem>
+          <CrossLanguageItem name={'cross_languages'}></CrossLanguageItem>
           <Card size="small" title={t('testText')}>
             <Form.Item<FieldType>
               name={'question'}
@@ -48,7 +62,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
               <Button
                 type="primary"
                 size="small"
-                onClick={handleTesting}
+                onClick={onClick}
                 disabled={buttonDisabled}
                 loading={loading}
               >
@@ -58,6 +72,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
           </Card>
         </Form>
       </section>
+      <LabelWordCloud></LabelWordCloud>
       {/* <section>
         <div className={styles.historyTitle}>
           <Space size={'middle'}>

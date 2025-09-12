@@ -1,4 +1,5 @@
 let api_host = `/v1`;
+const ExternalApi = `/api`;
 
 export { api_host };
 
@@ -11,6 +12,8 @@ export default {
   user_info: `${api_host}/user/info`,
   tenant_info: `${api_host}/user/tenant_info`,
   set_tenant_info: `${api_host}/user/set_tenant_info`,
+  login_channels: `${api_host}/user/login/channels`,
+  login_channel: (channel: string) => `${api_host}/user/login/${channel}`,
 
   // team
   addTenantUser: (tenantId: string) => `${api_host}/tenant/${tenantId}/user`,
@@ -30,12 +33,25 @@ export default {
   delete_llm: `${api_host}/llm/delete_llm`,
   deleteFactory: `${api_host}/llm/delete_factory`,
 
+  // plugin
+  llm_tools: `${api_host}/plugin/llm_tools`,
+
   // knowledge base
   kb_list: `${api_host}/kb/list`,
   create_kb: `${api_host}/kb/create`,
   update_kb: `${api_host}/kb/update`,
   rm_kb: `${api_host}/kb/rm`,
   get_kb_detail: `${api_host}/kb/detail`,
+  getKnowledgeGraph: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+  getMeta: `${api_host}/kb/get_meta`,
+
+  // tags
+  listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
+  listTagByKnowledgeIds: `${api_host}/kb/tags`,
+  removeTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/rm_tags`,
+  renameTag: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/rename_tag`,
 
   // chunk
   chunk_list: `${api_host}/chunk/list`,
@@ -62,6 +78,9 @@ export default {
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,
   upload_and_parse: `${api_host}/document/upload_and_parse`,
+  parse: `${api_host}/document/parse`,
+  setMeta: `${api_host}/document/set_meta`,
+  get_dataset_filter: `${api_host}/document/filter`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,
@@ -70,6 +89,7 @@ export default {
   listDialog: `${api_host}/dialog/list`,
   setConversation: `${api_host}/conversation/set`,
   getConversation: `${api_host}/conversation/get`,
+  getConversationSSE: `${api_host}/conversation/getsse`,
   listConversation: `${api_host}/conversation/list`,
   removeConversation: `${api_host}/conversation/rm`,
   completeConversation: `${api_host}/conversation/completion`,
@@ -89,6 +109,11 @@ export default {
   completeExternalConversation: `${api_host}/api/completion`,
   uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
+  // next chat
+  listNextDialog: `${api_host}/dialog/next`,
+  fetchExternalChatInfo: (id: string) =>
+    `${ExternalApi}${api_host}/chatbots/${id}/info`,
+
   // file manager
   listFile: `${api_host}/file/list`,
   uploadFile: `${api_host}/file/upload`,
@@ -107,14 +132,62 @@ export default {
   createSystemToken: `${api_host}/system/new_token`,
   listSystemToken: `${api_host}/system/token_list`,
   removeSystemToken: `${api_host}/system/token`,
+  getSystemConfig: `${api_host}/system/config`,
+  setLangfuseConfig: `${api_host}/langfuse/api_key`,
 
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
+  listCanvasTeam: `${api_host}/canvas/listteam`,
   getCanvas: `${api_host}/canvas/get`,
+  getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,
   setCanvas: `${api_host}/canvas/set`,
+  settingCanvas: `${api_host}/canvas/setting`,
+  getListVersion: `${api_host}/canvas/getlistversion`,
+  getVersion: `${api_host}/canvas/getversion`,
   resetCanvas: `${api_host}/canvas/reset`,
   runCanvas: `${api_host}/canvas/completion`,
   testDbConnect: `${api_host}/canvas/test_db_connect`,
+  getInputElements: `${api_host}/canvas/input_elements`,
+  debug: `${api_host}/canvas/debug`,
+  uploadCanvasFile: `${api_host}/canvas/upload`,
+  trace: `${api_host}/canvas/trace`,
+  // agent
+  inputForm: `${api_host}/canvas/input_form`,
+  fetchVersionList: (id: string) => `${api_host}/canvas/getlistversion/${id}`,
+  fetchVersion: (id: string) => `${api_host}/canvas/getversion/${id}`,
+  fetchCanvas: (id: string) => `${api_host}/canvas/get/${id}`,
+  fetchAgentAvatar: (id: string) => `${api_host}/canvas/getsse/${id}`,
+  uploadAgentFile: (id?: string) => `${api_host}/canvas/upload/${id}`,
+  fetchAgentLogs: (canvasId: string) =>
+    `${api_host}/canvas/${canvasId}/sessions`,
+  fetchExternalAgentInputs: (canvasId: string) =>
+    `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
+  prompt: `${api_host}/canvas/prompts`,
+
+  // mcp server
+  listMcpServer: `${api_host}/mcp_server/list`,
+  getMcpServer: `${api_host}/mcp_server/detail`,
+  createMcpServer: `${api_host}/mcp_server/create`,
+  updateMcpServer: `${api_host}/mcp_server/update`,
+  deleteMcpServer: `${api_host}/mcp_server/rm`,
+  importMcpServer: `${api_host}/mcp_server/import`,
+  exportMcpServer: `${api_host}/mcp_server/export`,
+  listMcpServerTools: `${api_host}/mcp_server/list_tools`,
+  testMcpServerTool: `${api_host}/mcp_server/test_tool`,
+  cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
+  testMcpServer: `${api_host}/mcp_server/test_mcp`,
+
+  // next-search
+  createSearch: `${api_host}/search/create`,
+  getSearchList: `${api_host}/search/list`,
+  deleteSearch: `${api_host}/search/rm`,
+  getSearchDetail: `${api_host}/search/detail`,
+  getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
+  updateSearchSetting: `${api_host}/search/update`,
+  askShare: `${ExternalApi}${api_host}/searchbots/ask`,
+  mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
+  getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
+  retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
 };

@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -94,7 +97,7 @@ class TableStructureRecognizer(Recognizer):
             r"[图表]+[ 0-9:：]{2,}"
         ]
         if any([re.match(p, bx["text"].strip()) for p in patt]) \
-                or bx["layout_type"].find("caption") >= 0:
+                or bx.get("layout_type", "").find("caption") >= 0:
             return True
         return False
 
@@ -117,7 +120,7 @@ class TableStructureRecognizer(Recognizer):
         for p, n in patt:
             if re.search(p, b["text"].strip()):
                 return n
-        tks = [t for t in rag_tokenizer.tokenize(b["text"]).split(" ") if len(t) > 1]
+        tks = [t for t in rag_tokenizer.tokenize(b["text"]).split() if len(t) > 1]
         if len(tks) > 3:
             if len(tks) < 12:
                 return "Tx"
@@ -130,7 +133,7 @@ class TableStructureRecognizer(Recognizer):
         return "Ot"
 
     @staticmethod
-    def construct_table(boxes, is_english=False, html=False):
+    def construct_table(boxes, is_english=False, html=True, **kwargs):
         cap = ""
         i = 0
         while i < len(boxes):
@@ -174,7 +177,7 @@ class TableStructureRecognizer(Recognizer):
         colwm = np.min(colwm) if colwm else 0
         crosspage = len(set([b["page_number"] for b in boxes])) > 1
         if crosspage:
-            boxes = Recognizer.sort_X_firstly(boxes, colwm / 2, False)
+            boxes = Recognizer.sort_X_firstly(boxes, colwm / 2)
         else:
             boxes = Recognizer.sort_C_firstly(boxes, colwm / 2)
         boxes[0]["cn"] = 0

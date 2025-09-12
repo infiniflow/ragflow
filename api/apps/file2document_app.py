@@ -14,6 +14,8 @@
 #  limitations under the License
 #
 
+from pathlib import Path
+
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
@@ -24,11 +26,11 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.utils import get_uuid
 from api.db import FileType
 from api.db.services.document_service import DocumentService
-from api.settings import RetCode
+from api import settings
 from api.utils.api_utils import get_json_result
 
 
-@manager.route('/convert', methods=['POST'])
+@manager.route('/convert', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids", "kb_ids")
 def convert():
@@ -38,8 +40,12 @@ def convert():
     file2documents = []
 
     try:
+        files = FileService.get_by_ids(file_ids)
+        files_set = dict({file.id: file for file in files})
         for file_id in file_ids:
-            e, file = FileService.get_by_id(file_id)
+            file = files_set[file_id]
+            if not file:
+                return get_data_error_result(message="File not found!")
             file_ids_list = [file_id]
             if file.type == FileType.FOLDER.value:
                 file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
@@ -78,6 +84,7 @@ def convert():
                         "created_by": current_user.id,
                         "type": file.type,
                         "name": file.name,
+                        "suffix": Path(file.name).suffix.lstrip("."),
                         "location": file.location,
                         "size": file.size
                     })
@@ -86,13 +93,14 @@ def convert():
                         "file_id": id,
                         "document_id": doc.id,
                     })
+
                     file2documents.append(file2document.to_json())
         return get_json_result(data=file2documents)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids")
 def rm():
@@ -100,7 +108,7 @@ def rm():
     file_ids = req["file_ids"]
     if not file_ids:
         return get_json_result(
-            data=False, message='Lack of "Files ID"', code=RetCode.ARGUMENT_ERROR)
+            data=False, message='Lack of "Files ID"', code=settings.RetCode.ARGUMENT_ERROR)
     try:
         for file_id in file_ids:
             informs = File2DocumentService.get_by_file_id(file_id)

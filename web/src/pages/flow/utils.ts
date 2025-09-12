@@ -1,14 +1,24 @@
-import { DSLComponents } from '@/interfaces/database/flow';
+import {
+  DSLComponents,
+  ICategorizeItem,
+  ICategorizeItemResult,
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
+import { Edge, Node, Position, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
 import { curry, get, intersectionWith, isEqual, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
-import { Edge, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
-import { CategorizeAnchorPointPositions, NodeMap, Operator } from './constant';
-import { ICategorizeItemResult, IPosition, NodeData } from './interface';
+import {
+  CategorizeAnchorPointPositions,
+  NoDebugOperatorsList,
+  NodeMap,
+  Operator,
+} from './constant';
+import { IPosition } from './interface';
 
 const buildEdges = (
   operatorIds: string[],
@@ -117,18 +127,20 @@ const buildOperatorParams = (operatorName: string) =>
 
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
-  nodes: Node<NodeData>[],
+  nodes: RAGFlowNodeType[],
   edges: Edge[],
+  oldDslComponents: DSLComponents,
 ): DSLComponents => {
   const components: DSLComponents = {};
 
   nodes
-    .filter((x) => x.data.label !== Operator.Note)
+    ?.filter((x) => x.data.label !== Operator.Note)
     .forEach((x) => {
       const id = x.id;
       const operatorName = x.data.label;
       components[id] = {
         obj: {
+          ...(oldDslComponents[id]?.obj ?? {}),
           component_name: operatorName,
           params:
             buildOperatorParams(operatorName)(
@@ -137,6 +149,7 @@ export const buildDslComponentsByGraph = (
         },
         downstream: buildComponentDownstreamOrUpstream(edges, id, true),
         upstream: buildComponentDownstreamOrUpstream(edges, id, false),
+        parent_id: x?.parentId,
       };
     });
 
@@ -252,7 +265,7 @@ const splitName = (name: string) => {
 
 export const generateNodeNamesWithIncreasingIndex = (
   name: string,
-  nodes: Node[],
+  nodes: RAGFlowNodeType[],
 ) => {
   const templateNameList = nodes
     .filter((x) => {
@@ -290,7 +303,7 @@ export const generateNodeNamesWithIncreasingIndex = (
   return `${name}_${index}`;
 };
 
-export const duplicateNodeForm = (nodeData?: NodeData) => {
+export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
   const form: Record<string, any> = { ...(nodeData?.form ?? {}) };
 
   // Delete the downstream node corresponding to the to field of the Categorize operator
@@ -313,11 +326,93 @@ export const duplicateNodeForm = (nodeData?: NodeData) => {
   }
 
   return {
-    ...(nodeData ?? {}),
+    ...(nodeData ?? { label: '' }),
     form,
   };
 };
 
 export const getDrawerWidth = () => {
   return window.innerWidth > 1278 ? '40%' : 470;
+};
+
+export const needsSingleStepDebugging = (label: string) => {
+  return !NoDebugOperatorsList.some((x) => (label as Operator) === x);
+};
+
+// Get the coordinates of the node relative to the Iteration node
+export function getRelativePositionToIterationNode(
+  nodes: RAGFlowNodeType[],
+  position?: XYPosition, // relative position
+) {
+  if (!position) {
+    return;
+  }
+
+  const iterationNodes = nodes.filter(
+    (node) => node.data.label === Operator.Iteration,
+  );
+
+  for (const iterationNode of iterationNodes) {
+    const {
+      position: { x, y },
+      width,
+      height,
+    } = iterationNode;
+    const halfWidth = (width || 0) / 2;
+    if (
+      position.x >= x - halfWidth &&
+      position.x <= x + halfWidth &&
+      position.y >= y &&
+      position.y <= y + (height || 0)
+    ) {
+      return {
+        parentId: iterationNode.id,
+        position: { x: position.x - x + halfWidth, y: position.y - y },
+      };
+    }
+  }
+}
+
+export const generateDuplicateNode = (
+  position?: XYPosition,
+  label?: string,
+) => {
+  const nextPosition = {
+    x: (position?.x || 0) + 50,
+    y: (position?.y || 0) + 50,
+  };
+
+  return {
+    selected: false,
+    dragging: false,
+    id: `${label}:${humanId()}`,
+    position: nextPosition,
+    dragHandle: getNodeDragHandle(label),
+  };
+};
+
+/**
+   * convert the following object into a list
+   * 
+   * {
+      "product_related": {
+      "description": "The question is about product usage, appearance and how it works.",
+      "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?",
+      "to": "generate:0"
+      }
+      }
+*/
+export const buildCategorizeListFromObject = (
+  categorizeItem: ICategorizeItemResult,
+) => {
+  // Categorize's to field has two data sources, with edges as the data source.
+  // Changes in the edge or to field need to be synchronized to the form field.
+  return Object.keys(categorizeItem)
+    .reduce<Array<ICategorizeItem>>((pre, cur) => {
+      // synchronize edge data to the to field
+
+      pre.push({ name: cur, ...categorizeItem[cur] });
+      return pre;
+    }, [])
+    .sort((a, b) => a.index - b.index);
 };

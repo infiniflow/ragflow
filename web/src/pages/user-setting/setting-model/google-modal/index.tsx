@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select } from 'antd';
+import { Form, Input, InputNumber, Modal, Select } from 'antd';
 
 type FieldType = IAddLlmRequestBody & {
   google_project_id: string;
@@ -27,9 +27,16 @@ const GoogleModal = ({
     const data = {
       ...values,
       llm_factory: llmFactory,
+      max_tokens: values.max_tokens,
     };
 
     onOk?.(data);
+  };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
   };
 
   return (
@@ -40,13 +47,7 @@ const GoogleModal = ({
       onCancel={hideModal}
       okButtonProps={{ loading }}
     >
-      <Form
-        name="basic"
-        style={{ maxWidth: 600 }}
-        autoComplete="off"
-        layout={'vertical'}
-        form={form}
-      >
+      <Form form={form}>
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
@@ -55,6 +56,7 @@ const GoogleModal = ({
         >
           <Select placeholder={t('modelTypeMessage')}>
             <Option value="chat">chat</Option>
+            <Option value="image2text">image2text</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
@@ -62,21 +64,30 @@ const GoogleModal = ({
           name="llm_name"
           rules={[{ required: true, message: t('GoogleModelIDMessage') }]}
         >
-          <Input placeholder={t('GoogleModelIDMessage')} />
+          <Input
+            placeholder={t('GoogleModelIDMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addGoogleProjectID')}
           name="google_project_id"
           rules={[{ required: true, message: t('GoogleProjectIDMessage') }]}
         >
-          <Input placeholder={t('GoogleProjectIDMessage')} />
+          <Input
+            placeholder={t('GoogleProjectIDMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addGoogleRegion')}
           name="google_region"
           rules={[{ required: true, message: t('GoogleRegionMessage') }]}
         >
-          <Input placeholder={t('GoogleRegionMessage')} />
+          <Input
+            placeholder={t('GoogleRegionMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addGoogleServiceAccountKey')}
@@ -85,7 +96,34 @@ const GoogleModal = ({
             { required: true, message: t('GoogleServiceAccountKeyMessage') },
           ]}
         >
-          <Input placeholder={t('GoogleServiceAccountKeyMessage')} />
+          <Input
+            placeholder={t('GoogleServiceAccountKeyMessage')}
+            onKeyDown={handleKeyDown}
+          />
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('maxTokens')}
+          name="max_tokens"
+          rules={[
+            { required: true, message: t('maxTokensMessage') },
+            {
+              type: 'number',
+              message: t('maxTokensInvalidMessage'),
+            },
+            ({}) => ({
+              validator(_, value) {
+                if (value < 0) {
+                  return Promise.reject(new Error(t('maxTokensMinMessage')));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
+        >
+          <InputNumber
+            placeholder={t('maxTokensTip')}
+            style={{ width: '100%' }}
+          />
         </Form.Item>
       </Form>
     </Modal>

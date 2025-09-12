@@ -5,11 +5,13 @@
 </div>
 
 <p align="center">
-  <a href="./README.md">English</a> |
-  <a href="./README_zh.md">简体中文</a> |
-  <a href="./README_ja.md">日本語</a> |
-  <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a>
+  <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DBEDFA"></a>
+  <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DFE0E5"></a>
+  <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
+  <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
+  <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
+  <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
 </p>
 
 <p align="center">
@@ -20,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.13.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.13.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.5">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -28,18 +30,27 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
     </a>
+    <a href="https://deepwiki.com/infiniflow/ragflow">
+        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
+    </a>
 </p>
 
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
-  <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
+#
+
+<div align="center">
+<a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</div>
+
 <details open>
-<summary></b>📕 Table of Contents</b></summary>
+<summary><b>📕 Table of Contents</b></summary>
 
 - 💡 [What is RAGFlow?](#-what-is-ragflow)
 - 🎮 [Demo](#-demo)
@@ -60,31 +71,34 @@
 
 ## 💡 What is RAGFlow?
 
-[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document
-understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models)
-to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted
-data.
+[RAGFlow](https://ragflow.io/) is a leading open-source Retrieval-Augmented Generation (RAG) engine that fuses cutting-edge RAG with Agent capabilities to create a superior context layer for LLMs. It offers a streamlined RAG workflow adaptable to enterprises of any scale. Powered by a converged context engine and pre-built agent templates, RAGFlow enables developers to transform complex data into high-fidelity, production-ready AI systems with exceptional efficiency and precision.
 
 ## 🎮 Demo
 
 Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
-<img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 Latest Updates
 
-- 2024-11-01 Adds keyword extraction and related question generation to the parsed chunk to improve the accuracy of retrieval.
-- 2024-09-13 Adds search mode for knowledge base Q&A.
-- 2024-09-09 Adds a medical consultant agent template.
+- 2025-08-08 Supports OpenAI's latest GPT-5 series models.
+- 2025-08-04 Supports new models, including Kimi K2 and Grok 4.
+- 2025-08-01 Supports agentic workflow and MCP.
+- 2025-05-23 Adds a Python/JavaScript code executor component to Agent.
+- 2025-05-05 Supports cross-language query.
+- 2025-03-19 Supports using a multi-modal model to make sense of images within PDF or DOCX files.
+- 2025-02-28 Combined with Internet search (Tavily), supports reasoning like Deep Research for any LLMs.
+- 2024-12-18 Upgrades Document Layout Analysis model in DeepDoc.
 - 2024-08-22 Support text to SQL statements through RAG.
-- 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
 
 ## 🎉 Stay Tuned
 
 ⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new
 releases! 🌟
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
@@ -132,8 +146,10 @@ releases! 🌟
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
-  see [Install Docker Engine](https://docs.docker.com/engine/install/).
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor (sandbox) feature of RAGFlow.
+
+> [!TIP]
+> If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Start up the server
 
@@ -153,7 +169,7 @@ releases! 🌟
    > ```
    >
    > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the
-   `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
+   > `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
    >
    > ```bash
    > vm.max_map_count=262144
@@ -165,29 +181,29 @@ releases! 🌟
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. Build the pre-built Docker images and start up the server:
+3. Start up the server using the pre-built Docker images:
 
-   > The command below downloads the dev version Docker image for RAGFlow slim (`dev-slim`). Note that RAGFlow slim
-   Docker images do not include embedding models or Python libraries and hence are approximately 1GB in size.
+> [!CAUTION]
+> All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
+> If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
+
+   > The command below downloads the `v0.20.5-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.20.5-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.5` for the full edition `v0.20.5`.
 
    ```bash
    $ cd ragflow/docker
+   # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
+
+   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # docker compose -f docker-compose-gpu.yml up -d
    ```
 
-   > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFLOW_IMAGE` variable in *
-       *docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0-slim`. After
-       making this change, rerun the command above to initiate the download.
-   > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the
-       `RAGFLOW_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change,
-       rerun the command above to initiate the download.
-   > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update
-       the `RAGFLOW_IMAGE` variable in **docker/.env** to your desired version. For example,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.13.0`. After making this change, rerun the command above to initiate the
-       download.
-
-   > **NOTE:** A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size
-   and may take significantly longer time to load.
+   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+   |-------------------|-----------------|-----------------------|--------------------------|
+   | v0.20.5           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.20.5-slim      | &approx;2       | ❌                   | Stable release            |
+   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                   | _Unstable_ nightly build  |
 
 4. Check the server status after having the server up and running:
 
@@ -199,23 +215,21 @@ releases! 🌟
 
    ```bash
 
-         ____   ___    ______ ______ __               
+         ____   ___    ______ ______ __
         / __ \ /   |  / ____// ____// /____  _      __
        / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/ 
+      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
+
    > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
-   error because, at that moment, your RAGFlow may not be fully initialized.
+   > error because, at that moment, your RAGFlow may not be fully initialized.
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
-   HTTP serving port `80` can be omitted when using the default configurations.
+   > HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml.template](./docker/service_conf.yaml.template), select the desired LLM factory in `user_default_llm` and update
    the `API_KEY` field with the corresponding API key.
 
@@ -241,7 +255,7 @@ to `<YOUR_SERVING_PORT>:80`.
 Updates to the above configurations require a reboot of all containers to take effect:
 
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ### Switch doc engine from Elasticsearch to Infinity
@@ -254,27 +268,28 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
    $ docker compose -f docker/docker-compose.yml down -v
    ```
 
+> [!WARNING]
+> `-v` will delete the docker container volumes, and the existing data will be cleared.
+
 2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
 
 3. Start the containers:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
-> [!WARNING] 
+> [!WARNING]
 > Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
 
 ## 🔧 Build a Docker image without embedding models
 
-This image is approximately 1 GB in size and relies on external LLM and embedding services.
+This image is approximately 2 GB in size and relies on external LLM and embedding services.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-build_docker_image.sh slim
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 Build a Docker image including embedding models
@@ -284,36 +299,38 @@ This image is approximately 9 GB in size. As it includes embedding models, it re
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-build_docker_image.sh full
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Launch service from source for development
 
-1. Install Poetry, or skip this step if it is already installed:
+1. Install `uv` and `pre-commit`, or skip this step if they are already installed:
+
    ```bash
-   curl -sSL https://install.python-poetry.org | python3 -
+   pipx install uv pre-commit
    ```
 
 2. Clone the source code and install Python dependencies:
+
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
-   ~/.local/bin/poetry install --sync --no-root --with=full # install RAGFlow dependent python modules
+   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv run download_deps.py
+   pre-commit install
    ```
 
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
+
    ```
-   127.0.0.1       es01 infinity mysql minio redis
-   ```  
-   In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   ```
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
 
@@ -321,46 +338,70 @@ build_docker_image.sh full
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. If your operating system does not have jemalloc, please install it as follows:
+
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   # mac
+   sudo brew install jemalloc
+   ```
+
+6. Launch backend service:
+
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:
+7. Install frontend dependencies:
+
    ```bash
    cd web
-   npm install --force
-   ```  
-7. Configure frontend to update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
+   npm install
+   ```
+
 8. Launch frontend service:
+
    ```bash
-   npm run dev 
-   ```  
+   npm run dev
+   ```
 
    _The following output confirms a successful launch of the system:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
+9. Stop RAGFlow front-end and back-end service after development is complete:
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
+
 ## 📚 Documentation
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/guides)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/dev/category/guides)
+- [Developer guides](https://ragflow.io/docs/dev/category/developers)
 - [References](https://ragflow.io/docs/dev/category/references)
-- [FAQ](https://ragflow.io/docs/dev/faq)
+- [FAQs](https://ragflow.io/docs/dev/faq)
 
 ## 📜 Roadmap
 
-See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
+See the [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
 
 ## 🏄 Community
 
-- [Discord](https://discord.gg/4XxujFgUN7)
+- [Discord](https://discord.gg/NjYzJD3GM3)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 Contributing
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community.
-If you would like to be a part, review our [Contribution Guidelines](./CONTRIBUTING.md) first.
+If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.

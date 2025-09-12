@@ -4,6 +4,7 @@ export interface IAddLlmRequestBody {
   model_type: string;
   api_base?: string; // chat|embedding|speech2text|image2text
   api_key: string;
+  max_tokens: number;
 }
 
 export interface IDeleteLlmRequestBody {

@@ -8,6 +8,7 @@ const {
   listDialog,
   removeDialog,
   getConversation,
+  getConversationSSE,
   setConversation,
   completeConversation,
   listConversation,
@@ -51,6 +52,10 @@ const methods = {
   },
   getConversation: {
     url: getConversation,
+    method: 'get',
+  },
+  getConversationSSE: {
+    url: getConversationSSE,
     method: 'get',
   },
   setConversation: {

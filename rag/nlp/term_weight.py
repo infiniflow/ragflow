@@ -62,10 +62,10 @@ class Dealer:
             res = {}
             f = open(fnm, "r")
             while True:
-                l = f.readline()
-                if not l:
+                line = f.readline()
+                if not line:
                     break
-                arr = l.replace("\n", "").split("\t")
+                arr = line.replace("\n", "").split("\t")
                 if len(arr) < 2:
                     res[arr[0]] = 0
                 else:
@@ -100,7 +100,7 @@ class Dealer:
             txt = re.sub(p, r, txt)
 
         res = []
-        for t in rag_tokenizer.tokenize(txt).split(" "):
+        for t in rag_tokenizer.tokenize(txt).split():
             tk = t
             if (stpwd and tk in self.stop_words) or (
                     re.match(r"[0-9]$", tk) and not num):
@@ -151,7 +151,7 @@ class Dealer:
 
     def split(self, txt):
         tks = []
-        for t in re.sub(r"[ \t]+", " ", txt).split(" "):
+        for t in re.sub(r"[ \t]+", " ", txt).split():
             if tks and re.match(r".*[a-zA-Z]$", tks[-1]) and \
                re.match(r".*[a-zA-Z]$", t) and tks and \
                self.ne.get(t, "") != "func" and self.ne.get(tks[-1], "") != "func":
@@ -161,15 +161,15 @@ class Dealer:
         return tks
 
     def weights(self, tks, preprocess=True):
-        def skill(t):
-            if t not in self.sk:
-                return 1
-            return 6
+        num_pattern = re.compile(r"[0-9,.]{2,}$")
+        short_letter_pattern = re.compile(r"[a-z]{1,2}$")
+        num_space_pattern = re.compile(r"[0-9. -]{2,}$")
+        letter_pattern = re.compile(r"[a-z. -]+$")
 
         def ner(t):
-            if re.match(r"[0-9,.]{2,}$", t):
+            if num_pattern.match(t):
                 return 2
-            if re.match(r"[a-z]{1,2}$", t):
+            if short_letter_pattern.match(t):
                 return 0.01
             if not self.ne or t not in self.ne:
                 return 1
@@ -190,16 +190,16 @@ class Dealer:
             return 1
 
         def freq(t):
-            if re.match(r"[0-9. -]{2,}$", t):
+            if num_space_pattern.match(t):
                 return 3
             s = rag_tokenizer.freq(t)
-            if not s and re.match(r"[a-z. -]+$", t):
+            if not s and letter_pattern.match(t):
                 return 300
             if not s:
                 s = 0
 
             if not s and len(t) >= 4:
-                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split(" ") if len(tt) > 1]
+                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]
                 if len(s) > 1:
                     s = np.min([freq(tt) for tt in s]) / 6.
                 else:
@@ -208,14 +208,14 @@ class Dealer:
             return max(s, 10)
 
         def df(t):
-            if re.match(r"[0-9. -]{2,}$", t):
+            if num_space_pattern.match(t):
                 return 5
             if t in self.df:
                 return self.df[t] + 3
-            elif re.match(r"[a-z. -]+$", t):
+            elif letter_pattern.match(t):
                 return 300
             elif len(t) >= 4:
-                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split(" ") if len(tt) > 1]
+                s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]
                 if len(s) > 1:
                     return max(3, np.min([df(tt) for tt in s]) / 6.)
 
@@ -229,6 +229,7 @@ class Dealer:
             idf2 = np.array([idf(df(t), 1000000000) for t in tks])
             wts = (0.3 * idf1 + 0.7 * idf2) * \
                 np.array([ner(t) * postag(t) for t in tks])
+            wts = [s for s in wts]
             tw = list(zip(tks, wts))
         else:
             for tk in tks:
@@ -237,6 +238,7 @@ class Dealer:
                 idf2 = np.array([idf(df(t), 1000000000) for t in tt])
                 wts = (0.3 * idf1 + 0.7 * idf2) * \
                     np.array([ner(t) * postag(t) for t in tt])
+                wts = [s for s in wts]
                 tw.extend(zip(tt, wts))
 
         S = np.sum([s for _, s in tw])

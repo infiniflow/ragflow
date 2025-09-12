@@ -34,7 +34,7 @@ class Dealer:
         try:
             self.dictionary = json.load(open(path, 'r'))
         except Exception:
-            logging.warn("Missing synonym.json")
+            logging.warning("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
@@ -69,25 +69,17 @@ class Dealer:
         
         nltk.download('wordnet')
 
-    def lookup(self, tk):
-        # FIXME(chuqing): don't know what is this
-        # if re.match(r"[a-z]+$", tk):
-        #     res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets("love")]) - set([tk]))
-        #     return [t for t in res if t]
+    def lookup(self, tk, topn=8):
+        if re.match(r"[a-z]+$", tk):
+            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets(tk)]) - set([tk]))
+            return [t for t in res if t]
 
-        # self.lookup_num += 1
-        # self.load()
-        # res = self.dictionary.get(re.sub(r"[ \t]+", " ", tk.lower()), [])
-        # if isinstance(res, str):
-        #     res = [res]
-        # return res
-        synonyms = []
-        for syn in wordnet.synsets(tk):
-            for lemma in syn.lemmas():
-                synonyms.append(lemma.name())
-        syns = list(set(synonyms))
-        return [s for s in syns if s]
-        
+        self.lookup_num += 1
+        self.load()
+        res = self.dictionary.get(re.sub(r"[ \t]+", " ", tk.lower()), [])
+        if isinstance(res, str):
+            res = [res]
+        return res[:topn]
 
 
 if __name__ == '__main__':

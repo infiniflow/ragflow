@@ -17,26 +17,34 @@ import json
 import re
 import traceback
 from copy import deepcopy
-from api.db.services.user_service import UserTenantService
-from flask import request, Response
-from flask_login import login_required, current_user
-
+from flask import Response, request
+from flask_login import current_user, login_required
+from api import settings
 from api.db import LLMType
-from api.db.services.dialog_service import DialogService, ConversationService, chat, ask
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle, TenantService, TenantLLMService
-from api.settings import RetCode, retrievaler
-from api.utils.api_utils import get_json_result
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from graphrag.mind_map_extractor import MindMapExtractor
+from api.db.db_models import APIToken
+from api.db.services.conversation_service import ConversationService, structure_answer
+from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap
+from api.db.services.llm_service import LLMBundle
+from api.db.services.search_service import SearchService
+from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.user_service import TenantService, UserTenantService
+from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
+from rag.prompts.prompt_template import load_prompt
+from rag.prompts.prompts import chunks_format
 
 
-@manager.route('/set', methods=['POST'])
+@manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
 def set_conversation():
     req = request.json
     conv_id = req.get("conversation_id")
     is_new = req.get("is_new")
+    name = req.get("name", "New conversation")
+    req["user_id"] = current_user.id
+
+    if len(name) > 255:
+        name = name[0:255]
+
     del req["is_new"]
     if not is_new:
         del req["conversation_id"]
@@ -45,8 +53,7 @@ def set_conversation():
                 return get_data_error_result(message="Conversation not found!")
             e, conv = ConversationService.get_by_id(conv_id)
             if not e:
-                return get_data_error_result(
-                    message="Fail to update a conversation!")
+                return get_data_error_result(message="Fail to update a conversation!")
             conv = conv.to_dict()
             return get_json_result(data=conv)
         except Exception as e:
@@ -59,20 +66,18 @@ def set_conversation():
         conv = {
             "id": conv_id,
             "dialog_id": req["dialog_id"],
-            "name": req.get("name", "New conversation"),
-            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
+            "name": name,
+            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}],
+            "user_id": current_user.id,
+            "reference": [],
         }
         ConversationService.save(**conv)
-        e, conv = ConversationService.get_by_id(conv["id"])
-        if not e:
-            return get_data_error_result(message="Fail to new a conversation!")
-        conv = conv.to_dict()
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/get', methods=['GET'])
+@manager.route("/get", methods=["GET"])  # noqa: F821
 @login_required
 def get():
     conv_id = request.args["conversation_id"]
@@ -81,20 +86,49 @@ def get():
         if not e:
             return get_data_error_result(message="Conversation not found!")
         tenants = UserTenantService.query(user_id=current_user.id)
+        avatar = None
         for tenant in tenants:
-            if DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id):
+            dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
+            if dialog and len(dialog) > 0:
+                avatar = dialog[0].icon
                 break
         else:
-            return get_json_result(
-                data=False, message='Only owner of conversation authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+
+        for ref in conv.reference:
+            if isinstance(ref, list):
+                continue
+            ref["chunks"] = chunks_format(ref)
+
         conv = conv.to_dict()
+        conv["avatar"] = avatar
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route("/getsse/<dialog_id>", methods=["GET"])  # type: ignore # noqa: F821
+def getsse(dialog_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_data_error_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_data_error_result(message='Authentication error: API key is invalid!"')
+    try:
+        e, conv = DialogService.get_by_id(dialog_id)
+        if not e:
+            return get_data_error_result(message="Dialog not found!")
+        conv = conv.to_dict()
+        conv["avatar"] = conv["icon"]
+        del conv["icon"]
+        return get_json_result(data=conv)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 def rm():
     conv_ids = request.json["conversation_ids"]
@@ -108,35 +142,29 @@ def rm():
                 if DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id):
                     break
             else:
-                return get_json_result(
-                    data=False, message='Only owner of conversation authorized for this operation.',
-                    code=RetCode.OPERATING_ERROR)
+                return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
             ConversationService.delete_by_id(cid)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])
+@manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
-def list_convsersation():
+def list_conversation():
     dialog_id = request.args["dialog_id"]
     try:
         if not DialogService.query(tenant_id=current_user.id, id=dialog_id):
-            return get_json_result(
-                data=False, message='Only owner of dialog authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
-        convs = ConversationService.query(
-            dialog_id=dialog_id,
-            order_by=ConversationService.model.create_time,
-            reverse=True)
+            return get_json_result(data=False, message="Only owner of dialog authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+        convs = ConversationService.query(dialog_id=dialog_id, order_by=ConversationService.model.create_time, reverse=True)
+
         convs = [d.to_dict() for d in convs]
         return get_json_result(data=convs)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/completion', methods=['POST'])
+@manager.route("/completion", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "messages")
 def completion():
@@ -149,6 +177,21 @@ def completion():
             continue
         msg.append(m)
     message_id = msg[-1].get("id")
+    chat_model_id = req.get("llm_id", "")
+    req.pop("llm_id", None)
+
+    chat_model_config = {}
+    for model_config in [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty",
+        "max_tokens",
+    ]:
+        config = req.get(model_config)
+        if config:
+            chat_model_config[model_config] = config
+
     try:
         e, conv = ConversationService.get_by_id(req["conversation_id"])
         if not e:
@@ -162,31 +205,29 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        conv.message.append({"role": "assistant", "content": "", "id": message_id})
+        conv.reference = [r for r in conv.reference if r]
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
-        def fillin_conv(ans):
-            nonlocal conv, message_id
-            if not conv.reference:
-                conv.reference.append(ans["reference"])
-            else:
-                conv.reference[-1] = ans["reference"]
-            conv.message[-1] = {"role": "assistant", "content": ans["answer"],
-                                "id": message_id, "prompt": ans.get("prompt", "")}
-            ans["id"] = message_id
+        if chat_model_id:
+            if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
+                req.pop("chat_model_id", None)
+                req.pop("chat_model_config", None)
+                return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
+            dia.llm_id = chat_model_id
+            dia.llm_setting = chat_model_config
 
+        is_embedded = bool(chat_model_id)
         def stream():
             nonlocal dia, msg, req, conv
             try:
                 for ans in chat(dia, msg, True, **req):
-                    fillin_conv(ans)
+                    ans = structure_answer(conv, ans, message_id, conv.id)
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                ConversationService.update_by_id(conv.id, conv.to_dict())
+                if not is_embedded:
+                    ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
                 traceback.print_exc()
-                yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                            "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                           ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
         if req.get("stream", True):
@@ -200,16 +241,16 @@ def completion():
         else:
             answer = None
             for ans in chat(dia, msg, **req):
-                answer = ans
-                fillin_conv(ans)
-                ConversationService.update_by_id(conv.id, conv.to_dict())
+                answer = structure_answer(conv, ans, message_id, conv.id)
+                if not is_embedded:
+                    ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/tts', methods=['POST'])
+@manager.route("/tts", methods=["POST"])  # noqa: F821
 @login_required
 def tts():
     req = request.json
@@ -231,9 +272,7 @@ def tts():
                 for chunk in tts_mdl.tts(txt):
                     yield chunk
         except Exception as e:
-            yield ("data:" + json.dumps({"code": 500, "message": str(e),
-                                         "data": {"answer": "**ERROR**: " + str(e)}},
-                                        ensure_ascii=False)).encode('utf-8')
+            yield ("data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e)}}, ensure_ascii=False)).encode("utf-8")
 
     resp = Response(stream_audio(), mimetype="audio/mpeg")
     resp.headers.add_header("Cache-Control", "no-cache")
@@ -243,7 +282,7 @@ def tts():
     return resp
 
 
-@manager.route('/delete_msg', methods=['POST'])
+@manager.route("/delete_msg", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "message_id")
 def delete_msg():
@@ -266,7 +305,7 @@ def delete_msg():
     return get_json_result(data=conv)
 
 
-@manager.route('/thumbup', methods=['POST'])
+@manager.route("/thumbup", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "message_id")
 def thumbup():
@@ -274,38 +313,47 @@ def thumbup():
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    up_down = req.get("set")
+    up_down = req.get("thumbup")
     feedback = req.get("feedback", "")
     conv = conv.to_dict()
     for i, msg in enumerate(conv["message"]):
         if req["message_id"] == msg.get("id", "") and msg.get("role", "") == "assistant":
             if up_down:
                 msg["thumbup"] = True
-                if "feedback" in msg: del msg["feedback"]
+                if "feedback" in msg:
+                    del msg["feedback"]
             else:
                 msg["thumbup"] = False
-                if feedback: msg["feedback"] = feedback
+                if feedback:
+                    msg["feedback"] = feedback
             break
 
     ConversationService.update_by_id(conv["id"], conv)
     return get_json_result(data=conv)
 
 
-@manager.route('/ask', methods=['POST'])
+@manager.route("/ask", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "kb_ids")
 def ask_about():
     req = request.json
     uid = current_user.id
+
+    search_id = req.get("search_id", "")
+    search_app = None
+    search_config = {}
+    if search_id:
+        search_app = SearchService.get_detail(search_id)
+    if search_app:
+        search_config = search_app.get("search_config", {})
+
     def stream():
         nonlocal req, uid
         try:
-            for ans in ask(req["question"], req["kb_ids"], uid):
+            for ans in ask(req["question"], req["kb_ids"], uid, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
-            yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                        "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                       ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     resp = Response(stream(), mimetype="text/event-stream")
@@ -316,61 +364,56 @@ def ask_about():
     return resp
 
 
-@manager.route('/mindmap', methods=['POST'])
+@manager.route("/mindmap", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "kb_ids")
 def mindmap():
     req = request.json
-    kb_ids = req["kb_ids"]
-    e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
-    if not e:
-        return get_data_error_result(message="Knowledgebase not found!")
+    search_id = req.get("search_id", "")
+    search_app = SearchService.get_detail(search_id) if search_id else {}
+    search_config = search_app.get("search_config", {}) if search_app else {}
+    kb_ids = search_config.get("kb_ids", [])
+    kb_ids.extend(req["kb_ids"])
+    kb_ids = list(set(kb_ids))
 
-    embd_mdl = TenantLLMService.model_instance(
-        kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
-    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    ranks = retrievaler.retrieval(req["question"], embd_mdl, kb.tenant_id, kb_ids, 1, 12,
-                           0.3, 0.3, aggs=False)
-    mindmap = MindMapExtractor(chat_mdl)
-    mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
+    mind_map = gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
 
 
-@manager.route('/related_questions', methods=['POST'])
+@manager.route("/related_questions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question")
 def related_questions():
     req = request.json
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
     question = req["question"]
-    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    prompt = """
-Objective: To generate search terms related to the user's search keywords, helping users find more valuable information.
-Instructions:
- - Based on the keywords provided by the user, generate 5-10 related search terms.
- - Each search term should be directly or indirectly related to the keyword, guiding the user to find more valuable information.
- - Use common, general terms as much as possible, avoiding obscure words or technical jargon.
- - Keep the term length between 2-4 words, concise and clear.
- - DO NOT translate, use the language of the original keywords.
 
-### Example:
-Keywords: Chinese football
-Related search terms:
-1. Current status of Chinese football
-2. Reform of Chinese football
-3. Youth training of Chinese football
-4. Chinese football in the Asian Cup
-5. Chinese football in the World Cup
+    chat_id = search_config.get("chat_id", "")
+    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT, chat_id)
 
-Reason:
- - When searching, users often only use one or two keywords, making it difficult to fully express their information needs.
- - Generating related search terms can help users dig deeper into relevant information and improve search efficiency. 
- - At the same time, related terms can also help search engines better understand user needs and return more accurate search results.
- 
-"""
-    ans = chat_mdl.chat(prompt, [{"role": "user", "content": f"""
+    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
+    prompt = load_prompt("related_question")
+    ans = chat_mdl.chat(
+        prompt,
+        [
+            {
+                "role": "user",
+                "content": f"""
 Keywords: {question}
 Related search terms:
-    """}], {"temperature": 0.9})
+    """,
+            }
+        ],
+        gen_conf,
+    )
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])

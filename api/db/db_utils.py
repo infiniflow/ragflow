@@ -15,7 +15,6 @@
 #
 import operator
 from functools import reduce
-from typing import Dict, Type, Union
 
 from playhouse.pool import PooledMySQLDatabase
 
@@ -87,7 +86,7 @@ supported_operators = {
 
 
 def query_dict2expression(
-        model: Type[DataBaseModel], query: Dict[str, Union[bool, int, str, list, tuple]]):
+        model: type[DataBaseModel], query: dict[str, bool | int | str | list | tuple]):
     expression = []
 
     for field, value in query.items():
@@ -105,8 +104,8 @@ def query_dict2expression(
     return reduce(operator.iand, expression)
 
 
-def query_db(model: Type[DataBaseModel], limit: int = 0, offset: int = 0,
-             query: dict = None, order_by: Union[str, list, tuple] = None):
+def query_db(model: type[DataBaseModel], limit: int = 0, offset: int = 0,
+             query: dict = None, order_by: str | list | tuple | None = None):
     data = model.select()
     if query:
         data = data.where(query_dict2expression(model, query))

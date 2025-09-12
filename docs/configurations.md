@@ -3,9 +3,9 @@ sidebar_position: 1
 slug: /configurations
 ---
 
-# Configurations
+# Configuration
 
-Configurations for installing RAGFlow via Docker.
+Configurations for deploying RAGFlow via Docker.
 
 ## Guidelines
 
@@ -15,7 +15,7 @@ When it comes to system configurations, you will need to manage the following fi
 - [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template): Configures the back-end services. It specifies the system-level configuration for RAGFlow and is used by its API server and task executor. Upon container startup, the `service_conf.yaml` file will be generated based on this template file. This process replaces any environment variables within the template, allowing for dynamic configuration tailored to the container's environment.
 - [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml): The Docker Compose file for starting up the RAGFlow service.
 
-To update the default HTTP serving port (80), go to [docker-compose.yml](./docker/docker-compose.yml) and change `80:80`
+To update the default HTTP serving port (80), go to [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) and change `80:80`
 to `<YOUR_SERVING_PORT>:80`.
 
 :::tip NOTE
@@ -32,7 +32,11 @@ docker compose -f docker/docker-compose.yml up -d
 - **docker-compose.yml**  
   Sets up environment for RAGFlow and its dependencies.
 - **docker-compose-base.yml**  
-  Sets up environment for RAGFlow's base services: Elasticsearch, MySQL, MinIO, and Redis.
+  Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
+
+:::danger IMPORTANT
+We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+:::
 
 ## Docker environment variables
 
@@ -45,7 +49,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `ES_PORT`  
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
-  The password for Elasticsearch. 
+  The password for Elasticsearch.
 
 ### Kibana
 
@@ -64,20 +68,22 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 ### MySQL
 
 - `MYSQL_PASSWORD`  
-  The password for MySQL. 
+  The password for MySQL.
 - `MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
 ### MinIO
+
+RAGFlow utilizes MinIO as its object storage solution, leveraging its scalability to store and manage all uploaded files.
 
 - `MINIO_CONSOLE_PORT`  
   The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`
 - `MINIO_PORT`  
   The port used to expose the MinIO API service to the host machine, allowing **external** access to the MinIO object storage service running inside the Docker container. Defaults to `9000`.
 - `MINIO_USER`  
-  The username for MinIO. 
+  The username for MinIO.
 - `MINIO_PASSWORD`  
-  The password for MinIO. accordingly.
+  The password for MinIO.
 
 ### Redis
 
@@ -93,32 +99,22 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
-    - Embedded embedding models:
+  - `infiniflow/ragflow:v0.20.5-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.20.5`: The RAGFlow Docker image with embedding models including:
+    - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
-      - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
-      - `maidalun1020/bce-reranker-base_v1`
-    - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-      - `BAAI/bge-base-en-v1.5`
-      - `BAAI/bge-large-en-v1.5`
-      - `BAAI/bge-small-en-v1.5`
-      - `BAAI/bge-small-zh-v1.5`
-      - `jinaai/jina-embeddings-v2-base-en`
-      - `jinaai/jina-embeddings-v2-small-en`
-      - `nomic-ai/nomic-embed-text-v1.5`
-      - `sentence-transformers/all-MiniLM-L6-v2`
-  
+
+
 :::tip NOTE  
 If you cannot download the RAGFlow Docker image, try the following mirrors.  
 
-- For the `dev-slim` edition:  
-  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
-- For the `dev` edition:  
-  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
+- For the `nightly-slim` edition:  
+  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly-slim` or,
+  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly-slim`.
+- For the `nightly` edition:  
+  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
+  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 :::
 
 ### Timezone
@@ -134,7 +130,13 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### MacOS
 
 - `MACOS`  
-  Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
+  Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
+
+### User registration
+
+- `REGISTER_ENABLED`
+  - `1`: (Default) Enable user registration.
+  - `0`: Disable user registration.
 
 ## Service configuration
 
@@ -149,22 +151,65 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
   
 - `name`: The MySQL database name. Defaults to `rag_flow`.
 - `user`: The username for MySQL.
-- `password`: The password for MySQL. When updated, you must revise the `MYSQL_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+- `password`: The password for MySQL.
 - `port`: The MySQL serving port inside the Docker container. Defaults to `3306`.
 - `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
 - `stale_timeout`: Timeout in seconds.
 
 ### `minio`
   
-- `user`: The username for MinIO. When updated, you must revise the `MINIO_USER` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
-- `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+- `user`: The username for MinIO.
+- `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
 ### `oauth`  
 
-The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
+The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
 
-- `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
+- `<channel>`: Custom channel ID.
+  - `type`: Authentication type, options include `oauth2`, `oidc`, `github`. Default is `oauth2`, when `issuer` parameter is provided, defaults to `oidc`.
+  - `icon`: Icon ID, options include `github`, `sso`, default is `sso`.
+  - `display_name`: Channel name, defaults to the Title Case format of the channel ID.
+  - `client_id`: Required, unique identifier assigned to the client application.
+  - `client_secret`: Required, secret key for the client application, used for communication with the authentication server.
+  - `authorization_url`: Base URL for obtaining user authorization.
+  - `token_url`: URL for exchanging authorization code and obtaining access token.
+  - `userinfo_url`: URL for obtaining user information (username, email, etc.).
+  - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
+  - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
+  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
+
+:::tip NOTE 
+The following are best practices for configuring various third-party authentication methods. You can configure one or multiple third-party authentication methods for Ragflow:
+```yaml
+oauth:
+  oauth2:
+    display_name: "OAuth2"
+    client_id: "your_client_id"
+    client_secret: "your_client_secret"
+    authorization_url: "https://your-oauth-provider.com/oauth/authorize"
+    token_url: "https://your-oauth-provider.com/oauth/token"
+    userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
+    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+
+  oidc:
+    display_name: "OIDC"
+    client_id: "your_client_id"
+    client_secret: "your_client_secret"
+    issuer: "https://your-oauth-provider.com/oidc"
+    scope: "openid email profile"
+    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+
+  github:
+    # https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
+    type: "github"
+    icon: "github"
+    display_name: "Github"
+    client_id: "your_client_id"
+    client_secret: "your_client_secret"
+    redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+```
+:::
 
 ### `user_default_llm`  
 

@@ -1,6 +1,12 @@
+import { IRenameTag } from '@/interfaces/database/knowledge';
+import {
+  IFetchDocumentListRequestBody,
+  IFetchKnowledgeListRequestBody,
+  IFetchKnowledgeListRequestParams,
+} from '@/interfaces/request/knowledge';
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
-import request from '@/utils/request';
+import request, { post } from '@/utils/request';
 
 const {
   create_kb,
@@ -29,6 +35,10 @@ const {
   knowledge_graph,
   document_infos,
   upload_and_parse,
+  listTagByKnowledgeIds,
+  setMeta,
+  getMeta,
+  retrievalTestShare,
 } = api;
 
 const methods = {
@@ -51,9 +61,9 @@ const methods = {
   },
   getList: {
     url: kb_list,
-    method: 'get',
+    method: 'post',
   },
-  // 文件管理
+  // document manager
   get_document_list: {
     url: get_document_list,
     method: 'get',
@@ -98,6 +108,10 @@ const methods = {
     url: document_infos,
     method: 'post',
   },
+  setMeta: {
+    url: setMeta,
+    method: 'post',
+  },
   // chunk管理
   chunk_list: {
     url: chunk_list,
@@ -139,8 +153,56 @@ const methods = {
     url: upload_and_parse,
     method: 'post',
   },
+  listTagByKnowledgeIds: {
+    url: listTagByKnowledgeIds,
+    method: 'get',
+  },
+  documentFilter: {
+    url: api.get_dataset_filter,
+    method: 'post',
+  },
+  getMeta: {
+    url: getMeta,
+    method: 'get',
+  },
+  retrievalTestShare: {
+    url: retrievalTestShare,
+    method: 'post',
+  },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
+
+export const listTag = (knowledgeId: string) =>
+  request.get(api.listTag(knowledgeId));
+
+export const removeTag = (knowledgeId: string, tags: string[]) =>
+  post(api.removeTag(knowledgeId), { tags });
+
+export const renameTag = (
+  knowledgeId: string,
+  { fromTag, toTag }: IRenameTag,
+) => post(api.renameTag(knowledgeId), { fromTag, toTag });
+
+export function getKnowledgeGraph(knowledgeId: string) {
+  return request.get(api.getKnowledgeGraph(knowledgeId));
+}
+
+export function deleteKnowledgeGraph(knowledgeId: string) {
+  return request.delete(api.getKnowledgeGraph(knowledgeId));
+}
+
+export const listDataset = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchKnowledgeListRequestBody,
+) => request.post(api.kb_list, { data: body || {}, params });
+
+export const listDocument = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchDocumentListRequestBody,
+) => request.post(api.get_document_list, { data: body || {}, params });
+
+export const documentFilter = (kb_id: string) =>
+  request.post(api.get_dataset_filter, { kb_id });
 
 export default kbService;

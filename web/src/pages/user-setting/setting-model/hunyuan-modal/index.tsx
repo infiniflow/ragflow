@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select } from 'antd';
+import { Form, Input, Modal } from 'antd';
 import omit from 'lodash/omit';
 
 type FieldType = IAddLlmRequestBody & {
@@ -9,8 +9,6 @@ type FieldType = IAddLlmRequestBody & {
   hunyuan_sid: string;
   hunyuan_sk: string;
 };
-
-const { Option } = Select;
 
 const HunyuanModal = ({
   visible,
@@ -40,6 +38,12 @@ const HunyuanModal = ({
     onOk?.(data);
   };
 
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
   return (
     <Modal
       title={t('addLlmTitle', { name: llmFactory })}
@@ -61,14 +65,20 @@ const HunyuanModal = ({
           name="hunyuan_sid"
           rules={[{ required: true, message: t('HunyuanSIDMessage') }]}
         >
-          <Input placeholder={t('HunyuanSIDMessage')} />
+          <Input
+            placeholder={t('HunyuanSIDMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addHunyuanSK')}
           name="hunyuan_sk"
           rules={[{ required: true, message: t('HunyuanSKMessage') }]}
         >
-          <Input placeholder={t('HunyuanSKMessage')} />
+          <Input
+            placeholder={t('HunyuanSKMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
       </Form>
     </Modal>

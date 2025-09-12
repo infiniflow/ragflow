@@ -1,13 +1,16 @@
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
-
-import { useCallback } from 'react';
+import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useBuildComponentIdSelectOptions } from '../../hooks';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+
 import styles from './index.less';
 
 interface IProps {
-  nodeId?: string;
+  name?: string;
+  node?: RAGFlowNodeType;
+  title?: string;
 }
 
 enum VariableType {
@@ -18,28 +21,32 @@ enum VariableType {
 const getVariableName = (type: string) =>
   type === VariableType.Reference ? 'component_id' : 'value';
 
-const DynamicVariableForm = ({ nodeId }: IProps) => {
+const DynamicVariableForm = ({ name: formName, node }: IProps) => {
+  const nextFormName = formName || 'query';
   const { t } = useTranslation();
-  const valueOptions = useBuildComponentIdSelectOptions(nodeId);
+  const valueOptions = useBuildComponentIdSelectOptions(
+    node?.id,
+    node?.parentId,
+  );
   const form = Form.useFormInstance();
 
   const options = [
     { value: VariableType.Reference, label: t('flow.reference') },
-    { value: VariableType.Input, label: t('flow.input') },
+    { value: VariableType.Input, label: t('flow.text') },
   ];
 
   const handleTypeChange = useCallback(
     (name: number) => () => {
       setTimeout(() => {
-        form.setFieldValue(['query', name, 'component_id'], undefined);
-        form.setFieldValue(['query', name, 'value'], undefined);
+        form.setFieldValue([nextFormName, name, 'component_id'], undefined);
+        form.setFieldValue([nextFormName, name, 'value'], undefined);
       }, 0);
     },
-    [form],
+    [form, nextFormName],
   );
 
   return (
-    <Form.List name="query">
+    <Form.List name={nextFormName}>
       {(fields, { add, remove }) => (
         <>
           {fields.map(({ key, name, ...restField }) => (
@@ -56,7 +63,7 @@ const DynamicVariableForm = ({ nodeId }: IProps) => {
               </Form.Item>
               <Form.Item noStyle dependencies={[name, 'type']}>
                 {({ getFieldValue }) => {
-                  const type = getFieldValue(['query', name, 'type']);
+                  const type = getFieldValue([nextFormName, name, 'type']);
                   return (
                     <Form.Item
                       {...restField}
@@ -86,7 +93,7 @@ const DynamicVariableForm = ({ nodeId }: IProps) => {
               icon={<PlusOutlined />}
               className={styles.addButton}
             >
-              {t('flow.addItem')}
+              {t('flow.addVariable')}
             </Button>
           </Form.Item>
         </>
@@ -95,9 +102,10 @@ const DynamicVariableForm = ({ nodeId }: IProps) => {
   );
 };
 
-const DynamicInputVariable = ({ nodeId }: IProps) => {
-  const { t } = useTranslation();
-
+export function FormCollapse({
+  children,
+  title,
+}: PropsWithChildren<{ title: string }>) {
   return (
     <Collapse
       className={styles.dynamicInputVariable}
@@ -105,11 +113,20 @@ const DynamicInputVariable = ({ nodeId }: IProps) => {
       items={[
         {
           key: '1',
-          label: <span className={styles.title}>{t('flow.input')}</span>,
-          children: <DynamicVariableForm nodeId={nodeId}></DynamicVariableForm>,
+          label: <span className={styles.title}>{title}</span>,
+          children,
         },
       ]}
     />
+  );
+}
+
+const DynamicInputVariable = ({ name, node, title }: IProps) => {
+  const { t } = useTranslation();
+  return (
+    <FormCollapse title={title || t('flow.input')}>
+      <DynamicVariableForm name={name} node={node}></DynamicVariableForm>
+    </FormCollapse>
   );
 };
 

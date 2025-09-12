@@ -3,15 +3,15 @@ import { ResponseType } from '@/interfaces/database/base';
 import i18n from '@/locales/config';
 import authorizationUtil, {
   getAuthorization,
+  redirectToLogin,
 } from '@/utils/authorization-util';
 import { message, notification } from 'antd';
-import { history } from 'umi';
 import { RequestMethod, extend } from 'umi-request';
 import { convertTheKeysOfTheObjectToSnake } from './common-util';
 
 const FAILED_TO_FETCH = 'Failed to fetch';
 
-const RetcodeMessage = {
+export const RetcodeMessage = {
   200: i18n.t('message.200'),
   201: i18n.t('message.201'),
   202: i18n.t('message.202'),
@@ -29,7 +29,7 @@ const RetcodeMessage = {
   503: i18n.t('message.503'),
   504: i18n.t('message.504'),
 };
-type ResultCode =
+export type ResultCode =
   | 200
   | 201
   | 202
@@ -68,7 +68,7 @@ const errorHandler = (error: {
       });
     }
   }
-  return response;
+  return response ?? { data: { code: 1999 } };
 };
 
 const request: RequestMethod = extend({
@@ -98,40 +98,34 @@ request.interceptors.request.use((url: string, options: any) => {
   };
 });
 
-request.interceptors.response.use(async (response: any, options) => {
-  if (response?.status === 413) {
-    message.error(RetcodeMessage[413]);
+request.interceptors.response.use(async (response: Response, options) => {
+  if (response?.status === 413 || response?.status === 504) {
+    message.error(RetcodeMessage[response?.status as ResultCode]);
   }
 
   if (options.responseType === 'blob') {
     return response;
   }
 
-  const data: ResponseType = await response.clone().json();
-
-  if (data.code === 401 || data.code === 401) {
+  const data: ResponseType = await response?.clone()?.json();
+  if (data?.code === 100) {
+    message.error(data?.message);
+  } else if (data?.code === 401) {
     notification.error({
-      message: data.message,
-      description: data.message,
+      message: data?.message,
+      description: data?.message,
       duration: 3,
     });
     authorizationUtil.removeAll();
-    history.push('/login'); // Will not jump to the login page
-  } else if (data.code !== 0) {
-    if (data.code === 100) {
-      message.error(data.message);
-    } else {
-      notification.error({
-        message: `${i18n.t('message.hint')} : ${data.code}`,
-        description: data.message,
-        duration: 3,
-      });
-    }
-
-    return response;
-  } else {
-    return response;
+    redirectToLogin();
+  } else if (data?.code !== 0) {
+    notification.error({
+      message: `${i18n.t('message.hint')} : ${data?.code}`,
+      description: data?.message,
+      duration: 3,
+    });
   }
+  return response;
 });
 
 export default request;

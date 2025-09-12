@@ -13,17 +13,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
+
+import re
+import time
 from abc import ABC
 import builtins
 import json
 import os
-from functools import partial
-from typing import Tuple, Union
-
+import logging
+from typing import Any, List, Union
 import pandas as pd
-
+import trio
 from agent import settings
+from api.utils.api_utils import timeout
 
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
@@ -34,10 +36,16 @@ _IS_RAW_CONF = "_is_raw_conf"
 
 class ComponentParamBase(ABC):
     def __init__(self):
-        self.output_var_name = "output"
-        self.message_history_window_size = 22
-        self.query = []
-        self.inputs = []
+        self.message_history_window_size = 13
+        self.inputs = {}
+        self.outputs = {}
+        self.description = ""
+        self.max_retries = 0
+        self.delay_after_error = 2.0
+        self.exception_method = None
+        self.exception_default_value = None
+        self.exception_goto = None
+        self.debug_inputs = {}
 
     def set_name(self, name: str):
         self._name = name
@@ -83,12 +91,19 @@ class ComponentParamBase(ABC):
         return {name: True for name in self.get_feeded_deprecated_params()}
 
     def __str__(self):
-
         return json.dumps(self.as_dict(), ensure_ascii=False)
 
     def as_dict(self):
         def _recursive_convert_obj_to_dict(obj):
             ret_dict = {}
+            if isinstance(obj, dict):
+                for k,v in obj.items():
+                    if isinstance(v, dict) or (v and type(v).__name__ not in dir(builtins)):
+                        ret_dict[k] = _recursive_convert_obj_to_dict(v)
+                    else:
+                        ret_dict[k] = v
+                return ret_dict
+
             for attr_name in list(obj.__dict__):
                 if attr_name in [_FEEDED_DEPRECATED_PARAMS, _DEPRECATED_PARAMS, _USER_FEEDED_PARAMS, _IS_RAW_CONF]:
                     continue
@@ -97,7 +112,7 @@ class ComponentParamBase(ABC):
                 if isinstance(attr, pd.DataFrame):
                     ret_dict[attr_name] = attr.to_dict()
                     continue
-                if attr and type(attr).__name__ not in dir(builtins):
+                if isinstance(attr, dict) or (attr and type(attr).__name__ not in dir(builtins)):
                     ret_dict[attr_name] = _recursive_convert_obj_to_dict(attr)
                 else:
                     ret_dict[attr_name] = attr
@@ -377,6 +392,8 @@ class ComponentParamBase(ABC):
 
 class ComponentBase(ABC):
     component_name: str
+    thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
+    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*"
 
     def __str__(self):
         """
@@ -390,144 +407,158 @@ class ComponentBase(ABC):
             "params": {}
         }}""".format(self.component_name,
                      self._param
-                     )
+        )
 
     def __init__(self, canvas, id, param: ComponentParamBase):
+        from agent.canvas import Graph  # Local import to avoid cyclic dependency
+        assert isinstance(canvas, Graph), "canvas must be an instance of Canvas"
         self._canvas = canvas
         self._id = id
         self._param = param
         self._param.check()
 
-    def get_dependent_components(self):
-        cpnts = [para["component_id"] for para in self._param.query if para.get("component_id") and para["component_id"].lower().find("answer") < 0]
-        return cpnts
-
-    def run(self, history, **kwargs):
-        logging.debug("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
-                                                              json.dumps(kwargs, ensure_ascii=False)))
+    def invoke(self, **kwargs) -> dict[str, Any]:
+        self.set_output("_created_time", time.perf_counter())
         try:
-            res = self._run(history, **kwargs)
-            self.set_output(res)
+            self._invoke(**kwargs)
         except Exception as e:
-            self.set_output(pd.DataFrame([{"content": str(e)}]))
-            raise e
+            if self.get_exception_default_value():
+                self.set_exception_default_value()
+            else:
+                self.set_output("_ERROR", str(e))
+            logging.exception(e)
+        self._param.debug_inputs = {}
+        self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
+        return self.output()
 
-        return res
-
-    def _run(self, history, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         raise NotImplementedError()
 
-    def output(self, allow_partial=True) -> Tuple[str, Union[pd.DataFrame, partial]]:
-        o = getattr(self._param, self._param.output_var_name)
-        if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
-            if not isinstance(o, list): o = [o]
-            o = pd.DataFrame(o)
+    def output(self, var_nm: str=None) -> Union[dict[str, Any], Any]:
+        if var_nm:
+            return self._param.outputs.get(var_nm, {}).get("value", "")
+        return {k: o.get("value") for k,o in self._param.outputs.items()}
 
-        if allow_partial or not isinstance(o, partial):
-            if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
-                return pd.DataFrame(o if isinstance(o, list) else [o])
-            return self._param.output_var_name, o
+    def set_output(self, key: str, value: Any):
+        if key not in self._param.outputs:
+            self._param.outputs[key] = {"value": None, "type": str(type(value))}
+        self._param.outputs[key]["value"] = value
 
-        outs = None
-        for oo in o():
-            if not isinstance(oo, pd.DataFrame):
-                outs = pd.DataFrame(oo if isinstance(oo, list) else [oo])
-            else: outs = oo
-        return self._param.output_var_name, outs
+    def error(self):
+        return self._param.outputs.get("_ERROR", {}).get("value")
 
-    def reset(self):
-        setattr(self._param, self._param.output_var_name, None)
+    def reset(self, only_output=False):
+        for k in self._param.outputs.keys():
+            self._param.outputs[k]["value"] = None
+        if only_output:
+            return
+        for k in self._param.inputs.keys():
+            self._param.inputs[k]["value"] = None
+        self._param.debug_inputs = {}
 
-    def set_output(self, v: pd.DataFrame):
-        setattr(self._param, self._param.output_var_name, v)
+    def get_input(self, key: str=None) -> Union[Any, dict[str, Any]]:
+        if key:
+            return self._param.inputs.get(key, {}).get("value")
 
-    def get_input(self):
-        if self._param.query:
-            outs = []
-            for q in self._param.query:
-                if q["component_id"]:
-                    if q["component_id"].split("@")[0].lower().find("begin") > 0:
-                        cpn_id, key = q["component_id"].split("@")
-                        for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
-                            if p["key"] == key:
-                                outs.append(pd.DataFrame([{"content": p["value"]}]))
-                                self._param.inputs.append({"component_id": q["component_id"],
-                                                           "content": p["value"]})
-                                break
-                        else:
-                            assert False, f"Can't find parameter '{key}' for {cpn_id}"
-                        continue
-
-                    outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
-                    self._param.inputs.append({"component_id": q["component_id"],
-                                               "content": "\n".join(
-                                                   [str(d["content"]) for d in outs[-1].to_dict('records')])})
-                elif q["value"]:
-                    self._param.inputs.append({"component_id": None, "content": q["value"]})
-                    outs.append(pd.DataFrame([{"content": q["value"]}]))
-            if outs:
-                df = pd.concat(outs, ignore_index=True)
-                if "content" in df: df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
-                return df
-
-        upstream_outs = []
-        reversed_cpnts = []
-        if len(self._canvas.path) > 1:
-            reversed_cpnts.extend(self._canvas.path[-2])
-        reversed_cpnts.extend(self._canvas.path[-1])
-
-        logging.debug(f"{self.component_name} {reversed_cpnts[::-1]}")
-        for u in reversed_cpnts[::-1]:
-            if self.get_component_name(u) in ["switch", "concentrator"]: continue
-            if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
-                o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
-                if o is not None:
-                    o["component_id"] = u
-                    upstream_outs.append(o)
-                    continue
-            if self.component_name.lower()!="answer" and u not in self._canvas.get_component(self._id)["upstream"]: continue
-            if self.component_name.lower().find("switch") < 0 \
-                    and self.get_component_name(u) in ["relevant", "categorize"]:
+        res = {}
+        for var, o in self.get_input_elements().items():
+            v = self.get_param(var)
+            if v is None:
                 continue
-            if u.lower().find("answer") >= 0:
-                for r, c in self._canvas.history[::-1]:
-                    if r == "user":
-                        upstream_outs.append(pd.DataFrame([{"content": c, "component_id": u}]))
-                        break
-                break
-            if self.component_name.lower().find("answer") >= 0 and self.get_component_name(u) in ["relevant"]:
-                continue
-            o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
-            if o is not None:
-                o["component_id"] = u
-                upstream_outs.append(o)
-            break
+            if isinstance(v, str) and self._canvas.is_reff(v):
+                self.set_input_value(var, self._canvas.get_variable_value(v))
+            else:
+                self.set_input_value(var, v)
+            res[var] = self.get_input_value(var)
+        return res
 
-        assert upstream_outs, "Can't inference the where the component input is."
+    def get_input_values(self) -> Union[Any, dict[str, Any]]:
+        if self._param.debug_inputs:
+            return self._param.debug_inputs
 
-        df = pd.concat(upstream_outs, ignore_index=True)
-        if "content" in df:
-            df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+        return {var: self.get_input_value(var) for var, o in self.get_input_elements().items()}
 
-        self._param.inputs = []
-        for _,r in df.iterrows():
-            self._param.inputs.append({"component_id": r["component_id"], "content": r["content"]})
+    def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
+        res = {}
+        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE|re.DOTALL):
+            exp = r.group(1)
+            cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
+            res[exp] = {
+                "name": (self._canvas.get_component_name(cpn_id) +f"@{var_nm}") if cpn_id else exp,
+                "value": self._canvas.get_variable_value(exp),
+                "_retrival": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
+                "_cpn_id": cpn_id
+            }
+        return res
 
-        return df
+    def get_input_elements(self) -> dict[str, Any]:
+        return self._param.inputs
 
-    def get_stream_input(self):
-        reversed_cpnts = []
-        if len(self._canvas.path) > 1:
-            reversed_cpnts.extend(self._canvas.path[-2])
-        reversed_cpnts.extend(self._canvas.path[-1])
+    def get_input_form(self) -> dict[str, dict]:
+        return self._param.get_input_form()
 
-        for u in reversed_cpnts[::-1]:
-            if self.get_component_name(u) in ["switch", "answer"]: continue
-            return self._canvas.get_component(u)["obj"].output()[1]
+    def set_input_value(self, key: str, value: Any) -> None:
+        if key not in self._param.inputs:
+            self._param.inputs[key] = {"value": None}
+        self._param.inputs[key]["value"] = value
+
+    def get_input_value(self, key: str) -> Any:
+        if key not in self._param.inputs:
+            return None
+        return self._param.inputs[key].get("value")
+
+    def get_component_name(self, cpn_id) -> str:
+        return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
+
+    def get_param(self, name):
+        if hasattr(self._param, name):
+            return getattr(self._param, name)
+
+    def debug(self, **kwargs):
+        return self._invoke(**kwargs)
+
+    def get_parent(self) -> Union[object, None]:
+        pid = self._canvas.get_component(self._id).get("parent_id")
+        if not pid:
+            return
+        return self._canvas.get_component(pid)["obj"]
+
+    def get_upstream(self) -> List[str]:
+        cpn_nms = self._canvas.get_component(self._id)['upstream']
+        return cpn_nms
+
+    def get_downstream(self) -> List[str]:
+        cpn_nms = self._canvas.get_component(self._id)['downstream']
+        return cpn_nms
 
     @staticmethod
-    def be_output(v):
-        return pd.DataFrame([{"content": v}])
+    def string_format(content: str, kv: dict[str, str]) -> str:
+        for n, v in kv.items():
+            def repl(_match, val=v):
+                return str(val) if val is not None else ""
+            content = re.sub(
+                r"\{%s\}" % re.escape(n),
+                repl,
+                content
+            )
+        return content
 
-    def get_component_name(self, cpn_id):
-        return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
+    def exception_handler(self):
+        if not self._param.exception_method:
+            return
+        return {
+            "goto": self._param.exception_goto,
+            "default_value": self._param.exception_default_value
+        }
+
+    def get_exception_default_value(self):
+        if self._param.exception_method != "comment":
+            return ""
+        return self._param.exception_default_value
+
+    def set_exception_default_value(self):
+        self.set_output("result", self.get_exception_default_value())
+
+    def thoughts(self) -> str:
+        raise NotImplementedError()

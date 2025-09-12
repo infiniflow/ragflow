@@ -1,7 +1,9 @@
 import KnowledgeBaseItem from '@/components/knowledge-base-item';
 import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
+import { TavilyItem } from '@/components/tavily-item';
 import TopNItem from '@/components/top-n-item';
+import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import type { FormProps } from 'antd';
 import { Form, Input } from 'antd';
@@ -32,14 +34,23 @@ const RetrievalForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       form={form}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <SimilaritySlider
         isTooltipShown
         vectorSimilarityWeightName="keywords_similarity_weight"
       ></SimilaritySlider>
       <TopNItem></TopNItem>
       <Rerank></Rerank>
-      <KnowledgeBaseItem></KnowledgeBaseItem>
+      <TavilyItem name={'tavily_api_key'}></TavilyItem>
+      <UseKnowledgeGraphItem filedName={'use_kg'}></UseKnowledgeGraphItem>
+      <KnowledgeBaseItem
+        tooltipText={t('knowledgeBasesTip')}
+      ></KnowledgeBaseItem>
+      <DynamicInputVariable
+        name={'kb_vars'}
+        node={node}
+        title={t('knowledgeBaseVars')}
+      ></DynamicInputVariable>
       <Form.Item
         name={'empty_response'}
         label={t('emptyResponse', { keyPrefix: 'chat' })}

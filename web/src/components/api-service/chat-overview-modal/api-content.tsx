@@ -1,11 +1,12 @@
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
+import { LangfuseCard } from '@/pages/user-setting/setting-model/langfuse';
 import apiDoc from '@parent/docs/references/http_api_reference.md';
 import MarkdownPreview from '@uiw/react-markdown-preview';
 import { Button, Card, Flex, Space } from 'antd';
 import ChatApiKeyModal from '../chat-api-key-modal';
-import EmbedModal from '../embed-modal';
-import { usePreviewChat, useShowEmbedModal } from '../hooks';
+import { usePreviewChat } from '../hooks';
 import BackendServiceApi from './backend-service-api';
+import MarkdownToc from './markdown-toc';
 
 const ApiContent = ({
   id,
@@ -22,13 +23,13 @@ const ApiContent = ({
     hideModal: hideApiKeyModal,
     showModal: showApiKeyModal,
   } = useSetModalState();
-  const { embedVisible, hideEmbedModal, showEmbedModal, embedToken } =
-    useShowEmbedModal(idKey, id);
+  // const { embedVisible, hideEmbedModal, showEmbedModal, embedToken } =
+  //   useShowEmbedModal(idKey);
 
-  const { handlePreview } = usePreviewChat(idKey, id);
+  const { handlePreview } = usePreviewChat(idKey);
 
   return (
-    <div>
+    <div className="pb-2">
       <Flex vertical gap={'middle'}>
         <BackendServiceApi show={showApiKeyModal}></BackendServiceApi>
         {!hideChatPreviewCard && (
@@ -36,11 +37,16 @@ const ApiContent = ({
             <Flex gap={8} vertical>
               <Space size={'middle'}>
                 <Button onClick={handlePreview}>{t('preview')}</Button>
-                <Button onClick={showEmbedModal}>{t('embedded')}</Button>
+                {/* <Button onClick={() => showEmbedModal(id)}>
+                  {t('embedded')}
+                </Button> */}
               </Space>
             </Flex>
           </Card>
         )}
+        <div style={{ position: 'relative' }}>
+          <MarkdownToc content={apiDoc} />
+        </div>
         <MarkdownPreview source={apiDoc}></MarkdownPreview>
       </Flex>
       {apiKeyVisible && (
@@ -50,13 +56,14 @@ const ApiContent = ({
           idKey={idKey}
         ></ChatApiKeyModal>
       )}
-      {embedVisible && (
+      {/* {embedVisible && (
         <EmbedModal
           token={embedToken}
           visible={embedVisible}
           hideModal={hideEmbedModal}
         ></EmbedModal>
-      )}
+      )} */}
+      <LangfuseCard></LangfuseCard>
     </div>
   );
 };

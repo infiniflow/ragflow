@@ -1,16 +1,18 @@
-import { useListTenant } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo, useListTenant } from '@/hooks/user-setting-hooks';
 import { ITenant } from '@/interfaces/database/user-setting';
 import { formatDate } from '@/utils/date';
 import type { TableProps } from 'antd';
 import { Button, Space, Table } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { TenantRole } from '../constants';
-import { useHandleAgreeTenant } from './hooks';
+import { useHandleAgreeTenant, useHandleQuitUser } from './hooks';
 
 const TenantTable = () => {
   const { t } = useTranslation();
   const { data, loading } = useListTenant();
   const { handleAgree } = useHandleAgreeTenant();
+  const { data: user } = useFetchUserInfo();
+  const { handleQuitTenantUser } = useHandleQuitUser();
 
   const columns: TableProps<ITenant>['columns'] = [
     {
@@ -45,6 +47,15 @@ const TenantTable = () => {
                 {t(`setting.refuse`)}
               </Button>
             </Space>
+          );
+        } else if (role === TenantRole.Normal && user.id !== tenant_id) {
+          return (
+            <Button
+              type="link"
+              onClick={handleQuitTenantUser(user.id, tenant_id)}
+            >
+              {t('setting.quit')}
+            </Button>
           );
         }
       },
