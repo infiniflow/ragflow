@@ -106,7 +106,7 @@ RAGFlow offers HTTP and Python APIs for you to integrate RAGFlow's capabilities 
 
 You can use iframe to embed the created chat assistant into a third-party webpage:
 
-1. Before proceeding, you must [acquire an API key](../models/llm_api_key_setup.md); otherwise, an error message would appear.
+1. Before proceeding, you must [acquire an API key](../../develop/acquire_ragflow_api_key.md); otherwise, an error message would appear.
 2. Hover over an intended chat assistant **>** **Edit** to show the **iframe** window:
 
    ![chat-embed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_chat_into_webpage.jpg)
