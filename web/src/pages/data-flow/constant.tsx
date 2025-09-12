@@ -523,3 +523,15 @@ export enum AgentExceptionMethod {
   Comment = 'comment',
   Goto = 'goto',
 }
+
+export enum FileType {
+  PDF = 'pdf',
+  Spreadsheet = 'spreadsheet',
+  Image = 'image',
+  Email = 'email',
+  TextMarkdown = 'text&markdown',
+  Docx = 'docx',
+  PowerPoint = 'ppt',
+  Video = 'video',
+  Audio = 'audio',
+}
