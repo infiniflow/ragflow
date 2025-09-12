@@ -291,8 +291,8 @@
 @layer utilities {
   .scrollbar-auto {
     /* hide scrollbar */
-    scrollbar-width: none;
-    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) var(--bg-card);
   }
 
   .scrollbar-auto::-webkit-scrollbar {

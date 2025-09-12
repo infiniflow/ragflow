@@ -16,6 +16,7 @@ type RAGFlowFormItemProps = {
   children: ReactNode | ((field: ControllerRenderProps) => ReactNode);
   horizontal?: boolean;
   required?: boolean;
+  labelClassName?: string;
 };
 
 export function RAGFlowFormItem({
@@ -25,6 +26,7 @@ export function RAGFlowFormItem({
   children,
   horizontal = false,
   required = false,
+  labelClassName,
 }: RAGFlowFormItemProps) {
   const form = useFormContext();
   return (
@@ -40,7 +42,7 @@ export function RAGFlowFormItem({
           <FormLabel
             required={required}
             tooltip={tooltip}
-            className={cn({ 'w-1/4': horizontal })}
+            className={cn({ 'w-1/4': horizontal }, labelClassName)}
           >
             {label}
           </FormLabel>

@@ -317,7 +317,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     state: 'Running',
     startTime: '14/03/2025 14:53:39',
     duration: '800',
-    details: 'PRD for DealBees 1.2 (1).text',
+    details:
+      '\n17:43:21 Task has been received.\n17:43:25 Page(1~100000001): Start to parse.\n17:43:25 Page(1~100000001): Start to tag for every chunk ...\n17:43:45 Page(1~100000001): Tagging 2 chunks completed in 18.99s\n17:43:45 Page(1~100000001): Generate 2 chunks\n17:43:55 Page(1~100000001): Embedding chunks (10.60s)\n17:43:55 Page(1~100000001): Indexing done (0.07s). Task done (33.97s)\n17:43:58 created task raptor\n17:43:58 Task has been received.\n17:44:36 Cluster one layer: 2 -> 1\n17:44:36 Indexing done (0.05s). Task done (37.88s)\n17:44:40 created task graphrag\n17:44:41 Task has been received.\n17:50:57 Entities extraction of chunk 0 1/3 done, 25 nodes, 26 edges, 14893 tokens.\n17:56:01 [ERROR][Exception]: Operation timed out after 7200 seconds and 1 attempts.',
   };
   return (
     <div className="w-full h-[calc(100vh-350px)]">
