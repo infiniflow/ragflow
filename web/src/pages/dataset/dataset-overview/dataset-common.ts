@@ -3,7 +3,7 @@ export enum LogTabs {
   DATASET_LOGS = 'datasetLogs',
 }
 
-export enum processingType {
+export enum ProcessingType {
   knowledgeGraph = 'knowledgeGraph',
   raptor = 'raptor',
 }

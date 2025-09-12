@@ -15,7 +15,7 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
-import Generate from './generate';
+import Generate from './generate-button/generate';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';

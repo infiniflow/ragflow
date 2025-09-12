@@ -18,6 +18,7 @@ import ProcessLogModal from '@/pages/datasets/process-log-modal';
 import {
   ColumnDef,
   ColumnFiltersState,
+  Row,
   SortingState,
   flexRender,
   getCoreRowModel,
@@ -29,7 +30,7 @@ import {
 import { TFunction } from 'i18next';
 import { ClipboardList, Eye } from 'lucide-react';
 import { Dispatch, FC, SetStateAction, useMemo, useState } from 'react';
-import { LogTabs, processingType } from './dataset-common';
+import { LogTabs, ProcessingType } from './dataset-common';
 
 interface DocumentLog {
   id: string;
@@ -179,7 +180,7 @@ export const getFileLogsTableColumns = (
 
 export const getDatasetLogsTableColumns = (
   t: TFunction<'translation', string>,
-  setIsModalVisible: Dispatch<SetStateAction<boolean>>,
+  showLog: (row: Row<DocumentLog>, active: LogTabs) => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<DocumentLog>[] = [
@@ -221,10 +222,10 @@ export const getDatasetLogsTableColumns = (
       header: t('processingType'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
-          {processingType.knowledgeGraph === row.original.processingType && (
+          {ProcessingType.knowledgeGraph === row.original.processingType && (
             <SvgIcon name={`data-flow/knowledgegraph`} width={24}></SvgIcon>
           )}
-          {processingType.raptor === row.original.processingType && (
+          {ProcessingType.raptor === row.original.processingType && (
             <SvgIcon name={`data-flow/raptor`} width={24}></SvgIcon>
           )}
           {row.original.processingType}
@@ -246,7 +247,7 @@ export const getDatasetLogsTableColumns = (
             size="sm"
             className="p-1"
             onClick={() => {
-              setIsModalVisible(true);
+              showLog(row, LogTabs.DATASET_LOGS);
             }}
           >
             <Eye />
@@ -259,6 +260,18 @@ export const getDatasetLogsTableColumns = (
   return columns;
 };
 
+const taskInfo = {
+  taskId: '#9527',
+  fileName: 'PRD for DealBees 1.2 (1).text',
+  fileSize: '2.4G',
+  source: 'Github',
+  task: 'Parse',
+  state: 'Running',
+  startTime: '14/03/2025 14:53:39',
+  duration: '800',
+  details:
+    '\n17:43:21 Task has been received.\n17:43:25 Page(1~100000001): Start to parse.\n17:43:25 Page(1~100000001): Start to tag for every chunk ...\n17:43:45 Page(1~100000001): Tagging 2 chunks completed in 18.99s\n17:43:45 Page(1~100000001): Generate 2 chunks\n17:43:55 Page(1~100000001): Embedding chunks (10.60s)\n17:43:55 Page(1~100000001): Indexing done (0.07s). Task done (33.97s)\n17:43:58 created task raptor\n17:43:58 Task has been received.\n17:44:36 Cluster one layer: 2 -> 1\n17:44:36 Indexing done (0.05s). Task done (37.88s)\n17:44:40 created task graphrag\n17:44:41 Task has been received.\n17:50:57 Entities extraction of chunk 0 1/3 done, 25 nodes, 26 edges, 14893 tokens.\n17:56:01 [ERROR][Exception]: Operation timed out after 7200 seconds and 1 attempts.',
+};
 const FileLogsTable: FC<FileLogsTableProps> = ({
   data,
   pagination,
@@ -272,11 +285,16 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
+  const [logInfo, setLogInfo] = useState(taskInfo);
+  const showLog = (row: Row<DocumentLog>, active: LogTabs) => {
+    setLogInfo(row.original);
+    setIsModalVisible(true);
+  };
+
   const columns = useMemo(() => {
-    console.log('columns', active);
     return active === LogTabs.FILE_LOGS
       ? getFileLogsTableColumns(t, setIsModalVisible, navigateToDataflowResult)
-      : getDatasetLogsTableColumns(t, setIsModalVisible);
+      : getDatasetLogsTableColumns(t, showLog);
   }, [active, t]);
 
   const currentPagination = useMemo(
@@ -308,18 +326,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       ? Math.ceil(pagination.total / pagination.pageSize)
       : 0,
   });
-  const taskInfo = {
-    taskId: '#9527',
-    fileName: 'PRD for DealBees 1.2 (1).text',
-    fileSize: '2.4G',
-    source: 'Github',
-    task: 'Parse',
-    state: 'Running',
-    startTime: '14/03/2025 14:53:39',
-    duration: '800',
-    details:
-      '\n17:43:21 Task has been received.\n17:43:25 Page(1~100000001): Start to parse.\n17:43:25 Page(1~100000001): Start to tag for every chunk ...\n17:43:45 Page(1~100000001): Tagging 2 chunks completed in 18.99s\n17:43:45 Page(1~100000001): Generate 2 chunks\n17:43:55 Page(1~100000001): Embedding chunks (10.60s)\n17:43:55 Page(1~100000001): Indexing done (0.07s). Task done (33.97s)\n17:43:58 created task raptor\n17:43:58 Task has been received.\n17:44:36 Cluster one layer: 2 -> 1\n17:44:36 Indexing done (0.05s). Task done (37.88s)\n17:44:40 created task graphrag\n17:44:41 Task has been received.\n17:50:57 Entities extraction of chunk 0 1/3 done, 25 nodes, 26 edges, 14893 tokens.\n17:56:01 [ERROR][Exception]: Operation timed out after 7200 seconds and 1 attempts.',
-  };
+
   return (
     <div className="w-full h-[calc(100vh-350px)]">
       <Table rootClassName="max-h-[calc(100vh-380px)]">
@@ -376,7 +383,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       <ProcessLogModal
         visible={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
-        taskInfo={taskInfo}
+        logInfo={logInfo}
       />
     </div>
   );
