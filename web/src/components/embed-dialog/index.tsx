@@ -139,7 +139,7 @@ function EmbedDialog({
             </form>
           </Form>
           <div>
-            <span>Embed code</span>
+            <span>{t('embedCode', { keyPrefix: 'search' })}</span>
             <HightLightMarkdown>{text}</HightLightMarkdown>
           </div>
           <div className=" font-medium mt-4 mb-1">
