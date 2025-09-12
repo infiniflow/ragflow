@@ -388,7 +388,7 @@ export const initialStringTransformValues = {
   },
 };
 
-export const initialParserValues = { outputs: {} };
+export const initialParserValues = { outputs: {}, parser: [] };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },

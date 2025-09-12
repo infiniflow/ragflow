@@ -8,13 +8,14 @@ import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useHover } from 'ahooks';
 import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import {
   UseFieldArrayRemove,
   useFieldArray,
   useForm,
   useFormContext,
 } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { FileType, initialParserValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
@@ -48,26 +49,57 @@ type ParserItemProps = {
   remove: UseFieldArrayRemove;
 };
 
+export const FormSchema = z.object({
+  parser: z.array(
+    z.object({
+      fileFormat: z.string().nullish(),
+      output_format: z.string().optional(),
+      parse_method: z.string().optional(),
+      llm_id: z.string().optional(),
+      lang: z.string().optional(),
+      fields: z.array(z.string()).optional(),
+    }),
+  ),
+});
+
+export type FormSchemaType = z.infer<typeof FormSchema>;
+
 function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
-  const form = useFormContext();
+  const { t } = useTranslation();
+  const form = useFormContext<FormSchemaType>();
   const ref = useRef(null);
   const isHovering = useHover(ref);
 
   const prefix = `${name}.${index}`;
-  const fileFormat = form.getValues(`${name}.${index}.fileFormat`);
+  const fileFormat = form.getValues(`parser.${index}.fileFormat`);
+
+  const values = form.getValues();
+  const parserList = values.parser.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
+
+  const filteredFileFormatOptions = useMemo(() => {
+    const otherFileFormatList = parserList
+      .filter((_, idx) => idx !== index)
+      .map((x) => x.fileFormat);
+
+    return FileFormatOptions.filter((x) => {
+      return !otherFileFormatList.includes(x.value);
+    });
+  }, [index, parserList]);
 
   const Widget =
-    fileFormat && fileFormat in FileFormatWidgetMap
+    typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
       : OutputFormatFormField;
   return (
     <section
-      className={cn('space-y-5 p-5 rounded-md', {
+      className={cn('space-y-5 px-5 py-2.5 rounded-md', {
         'bg-state-error-5': isHovering,
       })}
     >
       <div className="flex justify-between items-center">
-        <span className="text-text-primary text-sm">Parser {index}</span>
+        <span className="text-text-primary text-sm font-medium">
+          Parser {index}
+        </span>
         {index > 0 && (
           <Button variant={'ghost'} onClick={() => remove(index)} ref={ref}>
             <Trash2 />
@@ -76,9 +108,11 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
       </div>
       <RAGFlowFormItem
         name={buildFieldNameWithPrefix(`fileFormat`, prefix)}
-        label="File Formats"
+        label={t('dataflow.fileFormats')}
       >
-        <SelectWithSearch options={FileFormatOptions}></SelectWithSearch>
+        <SelectWithSearch
+          options={filteredFileFormatOptions}
+        ></SelectWithSearch>
       </RAGFlowFormItem>
       <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
       {index < fieldLength - 1 && <Separator />}
@@ -86,15 +120,8 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
   );
 }
 
-export const FormSchema = z.object({
-  parser: z.array(
-    z.object({
-      fileFormat: z.string().optional(),
-    }),
-  ),
-});
-
 const ParserForm = ({ node }: INextOperatorForm) => {
+  const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -111,7 +138,12 @@ const ParserForm = ({ node }: INextOperatorForm) => {
 
   const add = useCallback(() => {
     append({
-      fileFormat: undefined,
+      fileFormat: null,
+      output_format: '',
+      parse_method: '',
+      llm_id: '',
+      lang: '',
+      fields: [],
     });
   }, [append]);
 
@@ -131,8 +163,8 @@ const ParserForm = ({ node }: INextOperatorForm) => {
             ></ParserItem>
           );
         })}
-        <BlockButton onClick={add} type="button">
-          Add Parser
+        <BlockButton onClick={add} type="button" className="mt-2.5">
+          {t('dataflow.addParser')}
         </BlockButton>
       </form>
       <div className="p-5">
