@@ -30,11 +30,13 @@ const options = Languages.map((x) => ({
 type CrossLanguageItemProps = {
   name?: string;
   vertical?: boolean;
+  label?: string;
 };
 
 export const CrossLanguageFormField = ({
   name = 'prompt_config.cross_languages',
   vertical = true,
+  label,
 }: CrossLanguageItemProps) => {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -53,7 +55,7 @@ export const CrossLanguageFormField = ({
           })}
         >
           <FormLabel tooltip={t('chat.crossLanguageTip')}>
-            {t('chat.crossLanguage')}
+            {label || t('chat.crossLanguage')}
           </FormLabel>
           <FormControl>
             <MultiSelect

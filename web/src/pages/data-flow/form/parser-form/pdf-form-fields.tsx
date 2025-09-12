@@ -1,10 +1,12 @@
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
+import { FileType } from '../../constant';
 import {
-  LanguageFormField,
   LargeModelFormField,
   OutputFormatFormField,
   ParserMethodFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
+import { buildFieldNameWithPrefix } from './utils';
 
 export function PdfFormFields({ prefix }: CommonProps) {
   return (
@@ -12,8 +14,14 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
       {/* Multimodal Model */}
       <LargeModelFormField prefix={prefix}></LargeModelFormField>
-      <LanguageFormField prefix={prefix}></LanguageFormField>
-      <OutputFormatFormField prefix={prefix}></OutputFormatFormField>
+      <CrossLanguageFormField
+        name={buildFieldNameWithPrefix(`lang`, prefix)}
+        label="lang"
+      ></CrossLanguageFormField>
+      <OutputFormatFormField
+        prefix={prefix}
+        fileType={FileType.Image}
+      ></OutputFormatFormField>
     </>
   );
 }

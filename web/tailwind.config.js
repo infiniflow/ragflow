@@ -80,7 +80,10 @@ module.exports = {
         'bg-accent': 'var(--bg-accent)',
         'state-success': 'var(--state-success)',
         'state-warning': 'var(--state-warning)',
-        'state-error': 'var(--state-error)',
+        'state-error': {
+          DEFAULT: 'rgb(var(--state-error) / <alpha-value>)',
+          5: 'rgba(var(--state-error) / 0.05)', // 5%
+        },
         'team-group': 'var(--team-group)',
         'team-member': 'var(--team-member)',
         'team-department': 'var(--team-department)',
