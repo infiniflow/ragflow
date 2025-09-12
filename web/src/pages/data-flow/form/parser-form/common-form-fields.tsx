@@ -6,6 +6,7 @@ import {
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { buildOptions } from '@/utils/form';
+import { useTranslation } from 'react-i18next';
 import { FileType } from '../../constant';
 import { OutputFormatMap } from './constant';
 import { CommonProps } from './interface';
@@ -28,10 +29,11 @@ export function OutputFormatFormField({
   prefix,
   fileType,
 }: OutputFormatFormFieldProps) {
+  const { t } = useTranslation();
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix(`output_format`, prefix)}
-      label="output_format"
+      label={t('dataflow.outputFormat')}
     >
       <SelectWithSearch
         options={buildOutputOptionsFormatMap()[fileType]}

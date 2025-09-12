@@ -1544,6 +1544,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chunkerDescription: '分块器',
       tokenizer: '分词器',
       tokenizerDescription: '分词器',
+      outputFormat: '输出格式',
+      lang: '语言',
+      fileFormats: '文件格式',
+      fields: '字段',
+      addParser: '增加解析器',
     },
   },
 };

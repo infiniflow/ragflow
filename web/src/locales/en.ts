@@ -1636,6 +1636,11 @@ This delimiter is used to split the input text into several text pieces echo of 
       chunkerDescription: 'Chunker',
       tokenizer: 'Tokenizer',
       tokenizerDescription: 'Tokenizer',
+      outputFormat: 'Output format',
+      lang: 'Language',
+      fileFormats: 'File formats',
+      fields: 'Fields',
+      addParser: 'Add Parser',
     },
   },
 };
