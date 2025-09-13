@@ -88,7 +88,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}
+          tags: |
+            infiniflow/ragflow:${{ env.RELEASE_TAG }}
+            infiniflow/ragflow:latest-full
           file: Dockerfile
           platforms: linux/amd64
 
@@ -98,7 +100,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim
+          tags: |
+            infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim
+            infiniflow/ragflow:latest-slim
           file: Dockerfile
           build-args: LIGHTEN=1
           platforms: linux/amd64
