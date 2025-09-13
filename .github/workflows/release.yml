@@ -101,7 +101,7 @@ jobs:
           context: .
           push: true
           tags: |
-            infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim 
+            infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim
             infiniflow/ragflow:latest-slim
           file: Dockerfile
           build-args: LIGHTEN=1
