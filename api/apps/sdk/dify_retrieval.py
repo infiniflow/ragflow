@@ -1,4 +1,4 @@
-    #
+#
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +27,7 @@ from rag.app.tag import label_question
 from api.db.services.dialog_service import meta_filter, convert_conditions
 
 
-@manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
+@manager.route("/dify/retrieval", methods=["POST"])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
 def retrieval(tenant_id):
@@ -35,15 +35,20 @@ def retrieval(tenant_id):
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)
+    ignore_nometa = req.get("ignore_nometa", True)
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
     metadata_condition = req.get("metadata_condition",{})
-    metas = DocumentService.get_meta_by_kbs([kb_id])
- 
-    doc_ids = []
-    try:
+    if ignore_nometa:
+        metas, docs = DocumentService.get_documents_by_kbs([kb_id])
+    else:
+        metas = DocumentService.get_meta_by_kbs([kb_id])
 
+    doc_ids = []
+    if ignore_nometa:
+        doc_ids.extend(docs)
+    try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
             return build_error_result(message="Knowledgebase not found!", code=settings.RetCode.NOT_FOUND)
@@ -80,25 +85,33 @@ def retrieval(tenant_id):
 
         records = []
         for c in ranks["chunks"]:
-            e, doc = DocumentService.get_by_id( c["doc_id"])
+            e, doc = DocumentService.get_by_id(c["doc_id"])
             c.pop("vector", None)
-            meta = getattr(doc, 'meta_fields', {})
+            meta = getattr(doc, "meta_fields", {})
             meta["doc_id"] = c["doc_id"]
-            records.append({
-                "content": c["content_with_weight"],
-                "score": c["similarity"],
-                "title": c["docnm_kwd"],
-                "metadata": meta
-            })
+            records.append({"content": c["content_with_weight"], "score": c["similarity"], "title": c["docnm_kwd"], "metadata": meta})
 
         return jsonify({"records": records})
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return build_error_result(
-                message='No chunk found! Check the chunk status please!',
-                code=settings.RetCode.NOT_FOUND
-            )
+            return build_error_result(message="No chunk found! Check the chunk status please!", code=settings.RetCode.NOT_FOUND)
         logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
 
+
+def convert_conditions(metadata_condition):
+    if metadata_condition is None:
+        metadata_condition = {}
+    op_mapping = {
+        "is": "=",
+        "not is": "≠"
+    }
+    return [
+    {
+        "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
+        "key": cond["name"],
+        "value": cond["value"]
+    }
+    for cond in metadata_condition.get("conditions", [])
+]
 
