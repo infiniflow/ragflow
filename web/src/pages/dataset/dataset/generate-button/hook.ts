@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
 export const generateStatus = {
   running: 'running',
   completed: 'completed',
@@ -22,6 +23,10 @@ const useFetchGenerateData = () => {
       return data;
     },
   });
-  return { data, loading };
+  const pauseGenerate = useCallback(() => {
+    // TODO: pause generate
+    console.log('pause generate');
+  }, []);
+  return { data, loading, pauseGenerate };
 };
 export { useFetchGenerateData };

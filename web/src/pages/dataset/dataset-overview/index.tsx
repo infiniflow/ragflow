@@ -1,6 +1,7 @@
-import { IconFontFill } from '@/components/icon-font';
+import SvgIcon from '@/components/svg-icon';
+import { useIsDarkTheme } from '@/components/theme-provider';
 import { toFixed } from '@/utils/common-util';
-import { CircleQuestionMark, Cpu, HardDriveDownload } from 'lucide-react';
+import { CircleQuestionMark } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LogTabs } from './dataset-common';
@@ -156,6 +157,7 @@ const FileLogsPage: FC = () => {
     console.log('Pagination changed:', { page, pageSize });
   };
 
+  const isDark = useIsDarkTheme();
   return (
     <div className="p-5 min-w-[880px] border-border border rounded-lg mr-5">
       {/* Stats Cards */}
@@ -164,7 +166,11 @@ const FileLogsPage: FC = () => {
           title="Total Files"
           value={topMockData.totalFiles.value}
           icon={
-            <IconFontFill name="Pipeline" className="size-6 text-red-500" />
+            isDark ? (
+              <SvgIcon name="data-flow/total-files-icon" width={40} />
+            ) : (
+              <SvgIcon name="data-flow/total-files-icon-bri" width={40} />
+            )
           }
         >
           <div>
@@ -178,7 +184,13 @@ const FileLogsPage: FC = () => {
         <StatCard
           title="Downloading"
           value={topMockData.downloads.value}
-          icon={<HardDriveDownload />}
+          icon={
+            isDark ? (
+              <SvgIcon name="data-flow/data-icon" width={40} />
+            ) : (
+              <SvgIcon name="data-flow/data-icon-bri" width={40} />
+            )
+          }
         >
           <CardFooterProcess
             total={topMockData.downloads.value}
@@ -189,7 +201,13 @@ const FileLogsPage: FC = () => {
         <StatCard
           title="Processing"
           value={topMockData.processing.value}
-          icon={<Cpu />}
+          icon={
+            isDark ? (
+              <SvgIcon name="data-flow/processing-icon" width={40} />
+            ) : (
+              <SvgIcon name="data-flow/processing-icon-bri" width={40} />
+            )
+          }
         >
           <CardFooterProcess
             total={topMockData.processing.value}

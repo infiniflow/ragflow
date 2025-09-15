@@ -9,7 +9,7 @@ import {
 import { toFixed } from '@/utils/common-util';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
-import { WandSparkles } from 'lucide-react';
+import { CirclePause, WandSparkles } from 'lucide-react';
 import { useState } from 'react';
 import { generateStatus, useFetchGenerateData } from './hook';
 
@@ -23,6 +23,7 @@ const MenuItem: React.FC<{ name: 'KnowledgeGraph' | 'Raptor' }> = ({
   };
   const {
     data: { percent, type },
+    pauseGenerate,
   } = useFetchGenerateData();
   return (
     <div className="flex items-start gap-2 flex-col w-full">
@@ -43,7 +44,15 @@ const MenuItem: React.FC<{ name: 'KnowledgeGraph' | 'Raptor' }> = ({
               style={{ width: `${toFixed(percent)}%` }}
             ></div>
           </div>
-          {toFixed(percent) as string}%
+          <span>{toFixed(percent) as string}%</span>
+          <span
+            className="text-state-error"
+            onClick={() => {
+              pauseGenerate();
+            }}
+          >
+            <CirclePause />
+          </span>
         </div>
       )}
     </div>
