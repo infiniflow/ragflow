@@ -408,7 +408,7 @@ class Recognizer:
 
     def close(self):
         logging.info("Close recognizer.")
-        if self.ort_sess:
+        if hasattr(self, "ort_sess"):
             del self.ort_sess
         gc.collect()
 

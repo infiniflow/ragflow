@@ -351,7 +351,7 @@ class TextRecognizer:
     def close(self):
         # close session and release manually
         logging.info('Close TextRecognizer.')
-        if self.predictor:
+        if hasattr(self, "predictor"):
             del self.predictor
         gc.collect()
 
@@ -491,7 +491,7 @@ class TextDetector:
 
     def close(self):
         logging.info("Close TextDetector.")
-        if self.predictor:
+        if hasattr(self, "predictor"):
             del self.predictor
         gc.collect()
 
