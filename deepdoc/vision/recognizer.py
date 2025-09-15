@@ -408,7 +408,8 @@ class Recognizer:
 
     def close(self):
         logging.info("Close recognizer.")
-        del self.ort_sess
+        if hasattr(self, "ort_sess"):
+            del self.ort_sess
         gc.collect()
 
     def __call__(self, image_list, thr=0.7, batch_size=16):
