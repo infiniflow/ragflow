@@ -18,7 +18,7 @@ export function LLMFormField({ options, name }: LLMFormFieldProps) {
   ]);
 
   return (
-    <RAGFlowFormItem name={name || 'llm_id'} label={t('model')}>
+    <RAGFlowFormItem name={name || 'llm_id'} label={t('chat.model')}>
       <SelectWithSearch options={options || modelOptions}></SelectWithSearch>
     </RAGFlowFormItem>
   );

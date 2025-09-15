@@ -1,19 +1,29 @@
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
+import { useTranslation } from 'react-i18next';
+import { FileType } from '../../constant';
 import {
-  LanguageFormField,
   LargeModelFormField,
   OutputFormatFormField,
   ParserMethodFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
+import { buildFieldNameWithPrefix } from './utils';
 
 export function PdfFormFields({ prefix }: CommonProps) {
+  const { t } = useTranslation();
   return (
     <>
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
       {/* Multimodal Model */}
       <LargeModelFormField prefix={prefix}></LargeModelFormField>
-      <LanguageFormField prefix={prefix}></LanguageFormField>
-      <OutputFormatFormField prefix={prefix}></OutputFormatFormField>
+      <CrossLanguageFormField
+        name={buildFieldNameWithPrefix(`lang`, prefix)}
+        label={t('dataflow.lang')}
+      ></CrossLanguageFormField>
+      <OutputFormatFormField
+        prefix={prefix}
+        fileType={FileType.Image}
+      ></OutputFormatFormField>
     </>
   );
 }

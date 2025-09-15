@@ -326,7 +326,6 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       ? Math.ceil(pagination.total / pagination.pageSize)
       : 0,
   });
-
   return (
     <div className="w-full h-[calc(100vh-350px)]">
       <Table rootClassName="max-h-[calc(100vh-380px)]">
