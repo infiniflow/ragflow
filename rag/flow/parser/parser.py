@@ -12,10 +12,13 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import io
 import logging
 import random
 
 import trio
+import numpy as np
+from PIL import Image
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
@@ -43,7 +46,9 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "ppt": [],
-            "image": [],
+            "image": [
+                "text"
+            ],
             "email": [],
             "text": [
                 "text",
@@ -56,7 +61,7 @@ class ParserParam(ProcessParamBase):
         self.setups = {
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
-                "vlm_name": "",
+                "llm_id": "",
                 "lang": "Chinese",
                 "suffix": [
                     "pdf",
@@ -84,7 +89,11 @@ class ParserParam(ProcessParamBase):
             },
             "ppt": {},
             "image": {
-                "parse_method": "ocr",
+                "parse_method": ["ocr", "vlm"],
+                "llm_id": "",
+                "lang": "Chinese",
+                "suffix": ["jpg", "jpeg", "png", "gif"],
+                "output_format": "json",
             },
             "email": {},
             "text": {
@@ -104,7 +113,7 @@ class ParserParam(ProcessParamBase):
             self.check_valid_value(pdf_parse_method.lower(), "Parse method abnormal.", ["deepdoc", "plain_text", "vlm"])
 
             if pdf_parse_method not in ["deepdoc", "plain_text"]:
-                self.check_empty(pdf_config.get("vlm_name"), "VLM")
+                self.check_empty(pdf_config.get("llm_id"), "VLM")
 
             pdf_language = pdf_config.get("lang", "")
             self.check_empty(pdf_language, "Language")
@@ -125,7 +134,12 @@ class ParserParam(ProcessParamBase):
         image_config = self.setups.get("image", "")
         if image_config:
             image_parse_method = image_config.get("parse_method", "")
-            self.check_valid_value(image_parse_method.lower(), "Parse method abnormal.", ["ocr"])
+            self.check_valid_value(image_parse_method.lower(), "Parse method abnormal.", ["ocr", "vlm"])
+            if image_parse_method not in ["ocr"]:
+                self.check_empty(image_config.get("llm_id"), "VLM")
+
+            image_language = image_config.get("lang", "")
+            self.check_empty(image_language, "Language")
 
         text_config = self.setups.get("text", "")
         if text_config:
@@ -152,8 +166,8 @@ class Parser(ProcessBase):
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         else:
-            assert conf.get("vlm_name")
-            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
+            assert conf.get("llm_id")
+            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("llm_id"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
@@ -271,6 +285,34 @@ class Parser(ProcessBase):
             result = text_content
             self.set_output("text", result)
 
+    def _image(self, from_upstream: ParserFromUpstream):
+        from deepdoc.vision import OCR
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an image.")
+
+        blob = from_upstream.blob
+        conf = self._param.setups["image"]
+        self.set_output("output_format", conf["output_format"])
+
+        img = Image.open(io.BytesIO(blob)).convert("RGB")
+        lang = conf["lang"]
+
+        if conf["parse_method"] == "ocr":
+            # use ocr, recognize chars only
+            ocr = OCR()
+            bxs = ocr(np.array(img))  # return boxes and recognize result
+            txt = "\n".join([t[0] for _, t in bxs if t[0]])
+
+        else:
+            # use VLM to describe the picture
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"],lang=lang)
+            img_binary = io.BytesIO()
+            img.save(img_binary, format="JPEG")
+            img_binary.seek(0)
+            txt = cv_model.describe(img_binary.read())
+
+        self.set_output("text", txt)
+
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
@@ -278,6 +320,7 @@ class Parser(ProcessBase):
             "spreadsheet": self._spreadsheet,
             "word": self._word,
             "text": self._text,
+            "image": self._image,
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
