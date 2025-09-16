@@ -528,7 +528,6 @@ def table_of_contents_index(toc_arr: list[dict], sections: list[str], chat_mdl):
         if sec.replace(" ", "") in toc_map:
             for j in toc_map[sec.replace(" ", "")]:
                 toc_arr[j]["indices"].append(i)
-    print("LLLLLLLLLLLLLLLLLLLLLLLL\n", json.dumps(toc_arr, indent=2, ensure_ascii=False))
 
     all_pathes = []
     def dfs(start, path):
