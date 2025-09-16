@@ -141,6 +141,8 @@ function AccordionOperators({
               Operator.Parser,
               Operator.Chunker,
               Operator.Tokenizer,
+              Operator.Splitter,
+              Operator.HierarchicalMerger,
             ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}
