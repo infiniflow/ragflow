@@ -378,7 +378,7 @@ export const initialStringTransformValues = {
 
 export const initialParserValues = { outputs: {}, parser: [] };
 
-export const initialSplitterValues = {};
+export const initialSplitterValues = { outputs: {}, chunk_token_size: 512 };
 
 export const initialHierarchicalMergerValues = {};
 
@@ -466,7 +466,7 @@ export const NodeMap = {
   [Operator.Chunker]: 'chunkerNode',
   [Operator.Tokenizer]: 'tokenizerNode',
   [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'hierarchicalMergerrNode',
+  [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
 };
 
 export enum BeginQueryType {
