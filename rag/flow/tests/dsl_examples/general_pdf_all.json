@@ -48,6 +48,18 @@
                 "text": {
                   "suffix": ["txt"],
                   "output_format": "json"
+                },
+                "image": {
+                  "parse_method": "vlm",
+                  "llm_id":"glm-4.5v",
+                  "lang": "Chinese",
+                  "suffix": [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif"
+                  ],
+                  "output_format": "text"
                 }
               }
           }
