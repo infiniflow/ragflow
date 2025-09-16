@@ -47,7 +47,17 @@ class TableStructureRecognizer(Recognizer):
                                               local_dir_use_symlinks=False))
 
     def __call__(self, images, thr=0.2):
-        tbls = super().__call__(images, thr)
+        table_structure_recognizer_type = os.getenv("TABLE_STRUCTURE_RECOGNIZER_TYPE", "onnx").lower()
+        if table_structure_recognizer_type not in ["onnx", "ascend"]:
+            raise RuntimeError("Unsupported table structure recognizer type.")
+
+        if table_structure_recognizer_type == "onnx":
+            logging.debug("Using Onnx table structure recognizer", flush=True)
+            tbls = super().__call__(images, thr)
+        else: # ascend 
+            logging.debug("Using Ascend table structure recognizer", flush=True)
+            tbls = self._run_ascend_tsr(images, thr)
+
         res = []
         # align left&right for rows, align top&bottom for columns
         for tbl in tbls:
@@ -585,3 +595,41 @@ class TableStructureRecognizer(Recognizer):
                 tbl[rowspan[0]][colspan[0]] = arr
 
         return tbl
+        
+
+    def _run_ascend_tsr(self, image_list, thr=0.2, batch_size=16):
+        from ais_bench.infer.interface import InferSession
+
+        import math
+
+        model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
+        model_file_path = os.path.join(model_dir, "tsr.om")
+
+        if not os.path.exists(model_file_path):
+            raise ValueError(f"Model file not found: {model_file_path}")
+
+        device_id = int(os.getenv("ASCEND_LAYOUT_RECOGNIZER_DEVICE_ID", 0))
+        session = InferSession(device_id=device_id, model_path=model_file_path)
+
+        images = [np.array(im) if not isinstance(im, np.ndarray) else im for im in image_list]
+        results = []
+
+        conf_thr = max(thr, 0.08)
+
+        batch_loop_cnt = math.ceil(float(len(images)) / batch_size)
+        for bi in range(batch_loop_cnt):
+            s = bi * batch_size
+            e = min((bi + 1) * batch_size, len(images))
+            batch_images = images[s:e]
+
+            inputs_list = self.preprocess(batch_images)
+            for ins in inputs_list:
+                feeds = []
+                if "image" in ins:
+                    feeds.append(ins["image"])
+                else:
+                    feeds.append(ins[self.input_names[0]])
+                output_list = session.infer(feeds=feeds, mode="static")
+                bb = self.postprocess(output_list, ins, conf_thr)
+                results.append(bb)
+        return results
