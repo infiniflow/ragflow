@@ -90,7 +90,8 @@ export function EmbeddingModelItem({ line = 1 }: { line?: 1 | 2 }) {
             >
               <FormControl>
                 <RAGFlowSelect
-                  {...field}
+                  onChange={field.onChange}
+                  value={field.value}
                   options={embeddingModelOptions}
                   disabled={disabled}
                   placeholder={t('embeddingModelPlaceholder')}

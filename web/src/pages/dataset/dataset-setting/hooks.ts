@@ -52,7 +52,7 @@ export const useFetchKnowledgeConfigurationOnMount = (
         'pagerank',
         'avatar',
       ]),
-    };
+    } as z.infer<typeof formSchema>;
     form.reset(formValues);
   }, [form, knowledgeDetails]);
 
