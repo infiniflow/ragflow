@@ -25,8 +25,10 @@ export function useSelectEmbeddingModelOptions() {
   return allOptions[LlmModelType.Embedding];
 }
 
-export function useHasParsedDocument() {
-  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
+export function useHasParsedDocument(isEdit?: boolean) {
+  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration({
+    isEdit,
+  });
   return knowledgeDetails.chunk_num > 0;
 }
 

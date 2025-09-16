@@ -16,8 +16,12 @@ import {
   useSelectChunkMethodList,
   useSelectEmbeddingModelOptions,
 } from '../hooks';
-
-export function ChunkMethodItem() {
+interface IProps {
+  line?: 1 | 2;
+  isEdit?: boolean;
+}
+export function ChunkMethodItem(props: IProps) {
+  const { line } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   // const handleChunkMethodSelectChange = useHandleChunkMethodSelectChange(form);
@@ -28,28 +32,29 @@ export function ChunkMethodItem() {
       control={form.control}
       name={'parser_id'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
-          <div className="flex items-center">
+        <FormItem className=" items-center space-y-1">
+          <div className={line === 1 ? 'flex items-center' : ''}>
             <FormLabel
               required
               tooltip={t('chunkMethodTip')}
-              className="text-sm text-muted-foreground whitespace-wrap w-1/4"
+              className={cn('text-sm', {
+                'w-1/4 whitespace-pre-wrap': line === 1,
+              })}
             >
               {t('chunkMethod')}
             </FormLabel>
-            <div className="w-3/4 ">
+            <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
               <FormControl>
                 <RAGFlowSelect
                   {...field}
                   options={parserList}
                   placeholder={t('chunkMethodPlaceholder')}
-                  // onChange={handleChunkMethodSelectChange}
                 />
               </FormControl>
             </div>
           </div>
           <div className="flex pt-1">
-            <div className="w-1/4"></div>
+            <div className={line === 1 ? 'w-1/4' : ''}></div>
             <FormMessage />
           </div>
         </FormItem>
@@ -58,11 +63,11 @@ export function ChunkMethodItem() {
   );
 }
 
-export function EmbeddingModelItem({ line = 1 }: { line?: 1 | 2 }) {
+export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
-  const disabled = useHasParsedDocument();
+  const disabled = useHasParsedDocument(isEdit);
 
   return (
     <FormField
@@ -93,14 +98,14 @@ export function EmbeddingModelItem({ line = 1 }: { line?: 1 | 2 }) {
                   onChange={field.onChange}
                   value={field.value}
                   options={embeddingModelOptions}
-                  disabled={disabled}
+                  disabled={isEdit ? disabled : false}
                   placeholder={t('embeddingModelPlaceholder')}
                 />
               </FormControl>
             </div>
           </div>
           <div className="flex pt-1">
-            <div className="w-1/4"></div>
+            <div className={line === 1 ? 'w-1/4' : ''}></div>
             <FormMessage />
           </div>
         </FormItem>

@@ -23,6 +23,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
+  ChunkMethodItem,
   EmbeddingModelItem,
   ParseTypeItem,
 } from '../dataset/dataset-setting/configuration/common-item';
@@ -32,26 +33,63 @@ const FormId = 'dataset-creating-form';
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
 
-  const FormSchema = z.object({
-    name: z
-      .string()
-      .min(1, {
-        message: t('knowledgeList.namePlaceholder'),
-      })
-      .trim(),
-    parseType: z.number().optional(),
-  });
+  const FormSchema = z
+    .object({
+      name: z
+        .string()
+        .min(1, {
+          message: t('knowledgeList.namePlaceholder'),
+        })
+        .trim(),
+      parseType: z.number().optional(),
+      embd_id: z
+        .string()
+        .min(1, {
+          message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
+        })
+        .trim(),
+      parser_id: z.string().optional(),
+      data_flow: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+      // 当 parseType === 1 时，parser_id 必填
+      if (
+        data.parseType === 1 &&
+        (!data.parser_id || data.parser_id.trim() === '')
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: t('knowledgeList.parserRequired'),
+          path: ['parser_id'],
+        });
+      }
+
+      // 当 parseType === 2 时，data_flow 必填
+      if (
+        data.parseType === 2 &&
+        (!data.data_flow || data.data_flow.trim() === '')
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: t('knowledgeList.dataFlowRequired'),
+          path: ['data_flow'],
+        });
+      }
+    });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: '',
       parseType: 1,
+      parser_id: '',
+      embd_id: '',
     },
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    onOk?.(data.name);
+    console.log('submit', data);
+    onOk?.(data);
   }
   const parseType = useWatch({
     control: form.control,
@@ -84,8 +122,13 @@ export function InputForm({ onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
-        <EmbeddingModelItem line={2} />
+        <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
+        {parseType === 1 && (
+          <>
+            <ChunkMethodItem></ChunkMethodItem>
+          </>
+        )}
         {parseType === 2 && (
           <>
             <DataFlowItem
@@ -108,7 +151,7 @@ export function DatasetCreatingDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] focus-visible:!outline-none">
         <DialogHeader>
           <DialogTitle>{t('knowledgeList.createKnowledgeBase')}</DialogTitle>
         </DialogHeader>

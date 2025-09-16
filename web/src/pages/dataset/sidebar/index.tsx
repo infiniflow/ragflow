@@ -28,7 +28,7 @@ export function SideBar({ refreshCount }: PropType) {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
   // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchKnowledgeBaseConfiguration(refreshCount);
+  const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
