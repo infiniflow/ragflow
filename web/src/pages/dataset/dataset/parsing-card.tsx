@@ -11,6 +11,7 @@ import { RunningStatus, RunningStatusMap } from './constant';
 
 interface IProps {
   record: IDocumentInfo;
+  handleShowLog?: (record: IDocumentInfo) => void;
 }
 
 function Dot({ run }: { run: RunningStatus }) {
@@ -85,11 +86,16 @@ export const PopoverContent = ({ record }: IProps) => {
   );
 };
 
-export function ParsingCard({ record }: IProps) {
+export function ParsingCard({ record, handleShowLog }: IProps) {
   return (
     <HoverCard>
       <HoverCardTrigger asChild>
-        <Button variant={'transparent'} className="border-none" size={'sm'}>
+        <Button
+          variant={'transparent'}
+          className="border-none"
+          size={'sm'}
+          onClick={() => handleShowLog?.(record)}
+        >
           <Dot run={record.run}></Dot>
         </Button>
       </HoverCardTrigger>

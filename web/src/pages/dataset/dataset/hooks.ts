@@ -1,8 +1,10 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNextWebCrawl } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { useCallback, useState } from 'react';
+import { IDocumentInfo } from '@/interfaces/database/document';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'umi';
+import { ILogInfo } from '../process-log-modal';
 
 export const useNavigateToOtherPage = () => {
   const navigate = useNavigate();
@@ -57,4 +59,42 @@ export const useHandleWebCrawl = () => {
     hideWebCrawlUploadModal,
     showWebCrawlUploadModal,
   };
+};
+
+export const useShowLog = (documents: IDocumentInfo[]) => {
+  const { showModal, hideModal, visible } = useSetModalState();
+  const [record, setRecord] = useState<IDocumentInfo>();
+  const logInfo = useMemo(() => {
+    const findRecord = documents.find(
+      (item: IDocumentInfo) => item.id === record?.id,
+    );
+    let log: ILogInfo = {
+      taskId: record?.id,
+      fileName: record?.name || '-',
+      details: record?.progress_msg || '-',
+    };
+    if (findRecord) {
+      log = {
+        taskId: findRecord.id,
+        fileName: findRecord.name,
+        fileSize: findRecord.size + '',
+        source: findRecord.source_type,
+        task: findRecord.status,
+        state: findRecord.run,
+        startTime: findRecord.process_begin_at,
+        endTime: findRecord.process_begin_at,
+        duration: findRecord.process_duration + 's',
+        details: findRecord.progress_msg,
+      };
+    }
+    return log;
+  }, [record, documents]);
+  const showLog = useCallback(
+    (data: IDocumentInfo) => {
+      setRecord(data);
+      showModal();
+    },
+    [showModal],
+  );
+  return { showLog, hideLog: hideModal, logVisible: visible, logInfo };
 };
