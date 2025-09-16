@@ -24,7 +24,6 @@ import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
-  Download,
   History,
   LaptopMinimalCheck,
   Logs,
@@ -37,7 +36,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
-import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
+import { useHandleExportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import {
@@ -46,7 +45,6 @@ import {
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { SettingDialog } from './setting-dialog';
-import { UploadAgentDialog } from './upload-agent-dialog';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 
@@ -71,13 +69,8 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
-  const {
-    handleExportJson,
-    handleImportJson,
-    fileUploadVisible,
-    onFileUploadOk,
-    hideFileUploadModal,
-  } = useHandleExportOrImportJsonFile();
+
+  const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const inputs = useGetBeginNodeDataInputs();
@@ -158,11 +151,6 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentDropdownMenuItem onClick={handleImportJson}>
-                <Download />
-                {t('flow.import')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
@@ -193,12 +181,6 @@ export default function Agent() {
           ></AgentCanvas>
         </DropdownProvider>
       </ReactFlowProvider>
-      {fileUploadVisible && (
-        <UploadAgentDialog
-          hideModal={hideFileUploadModal}
-          onOk={onFileUploadOk}
-        ></UploadAgentDialog>
-      )}
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}

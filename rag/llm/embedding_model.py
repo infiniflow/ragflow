@@ -751,7 +751,11 @@ class SILICONFLOWEmbed(Base):
         token_count = 0
         for i in range(0, len(texts), batch_size):
             texts_batch = texts[i : i + batch_size]
-            texts_batch = [" " if not text.strip() else text for text in texts_batch]
+            if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
+                # limit 512, 340 is almost safe
+                texts_batch = [" " if not text.strip() else truncate(text, 340) for text in texts_batch]
+            else:
+                texts_batch = [" " if not text.strip() else text for text in texts_batch]
 
             payload = {
                 "model": self.model_name,

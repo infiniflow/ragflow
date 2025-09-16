@@ -28,6 +28,11 @@ export function SideBar({ refreshCount }: PropType) {
 
   const items = useMemo(() => {
     const list = [
+      // {
+      //   icon: DatabaseZap,
+      //   label: t(`knowledgeDetails.overview`),
+      //   key: Routes.DataSetOverview,
+      // },
       {
         icon: Database,
         label: t(`knowledgeDetails.dataset`),

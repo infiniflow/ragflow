@@ -141,3 +141,65 @@ export function formatFileSize(bytes: number, si = true, dp = 1) {
 
   return nextBytes.toFixed(dp) + ' ' + units[u];
 }
+
+// Get the actual color value of a CSS variable
+function getCSSVariableValue(variableName: string): string {
+  const computedStyle = getComputedStyle(document.documentElement);
+  const value = computedStyle.getPropertyValue(variableName).trim();
+  if (!value) {
+    throw new Error(`CSS variable ${variableName} is not defined`);
+  }
+  return value;
+}
+
+// Parse the color and convert to RGBA
+export function parseColorToRGBA(color: string): [number, number, number] {
+  // Handling CSS variables (e.g. var(--accent-primary))
+  let colorStr = color;
+  if (colorStr.startsWith('var(')) {
+    const varMatch = color.match(/var\(([^)]+)\)/);
+    if (!varMatch) {
+      console.error(`Invalid CSS variable: ${color}`);
+      return [0, 0, 0];
+    }
+    const varName = varMatch[1];
+    if (!varName) {
+      console.error(`Invalid CSS variable: ${colorStr}`);
+      return [0, 0, 0];
+    }
+    colorStr = getCSSVariableValue(varName);
+  }
+
+  // Handles hexadecimal colors (e.g. #FF5733)
+  if (colorStr.startsWith('#')) {
+    const cleanedHex = colorStr.replace(/^#/, '');
+    if (cleanedHex.length === 3) {
+      return [
+        parseInt(cleanedHex[0] + cleanedHex[0], 16),
+        parseInt(cleanedHex[1] + cleanedHex[1], 16),
+        parseInt(cleanedHex[2] + cleanedHex[2], 16),
+      ];
+    }
+    return [
+      parseInt(cleanedHex.slice(0, 2), 16),
+      parseInt(cleanedHex.slice(2, 4), 16),
+      parseInt(cleanedHex.slice(4, 6), 16),
+    ];
+  }
+
+  // Handling RGB colors (e.g., rgb(255, 87, 51))
+  if (colorStr.startsWith('rgb')) {
+    const rgbMatch = colorStr.match(/rgb$$(\d+),\s*(\d+),\s*(\d+)$$/);
+    if (rgbMatch) {
+      return [
+        parseInt(rgbMatch[1]),
+        parseInt(rgbMatch[2]),
+        parseInt(rgbMatch[3]),
+      ];
+    }
+    console.error(`Unsupported RGB format: ${colorStr}`);
+    return [0, 0, 0];
+  }
+  console.error(`Unsupported colorStr format: ${colorStr}`);
+  return [0, 0, 0];
+}

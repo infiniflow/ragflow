@@ -57,13 +57,6 @@ const FormSchema = z.object({
   //   )
   //   .optional(),
   message_history_window_size: z.coerce.number(),
-  tools: z
-    .array(
-      z.object({
-        component_name: z.string(),
-      }),
-    )
-    .optional(),
   ...LlmSettingSchema,
   max_retries: z.coerce.number(),
   delay_after_error: z.coerce.number().optional(),
@@ -152,7 +145,7 @@ function AgentForm({ node }: INextOperatorForm) {
                   <PromptEditor
                     {...field}
                     placeholder={t('flow.messagePlaceholder')}
-                    showToolbar={false}
+                    showToolbar={true}
                     extraOptions={extraOptions}
                   ></PromptEditor>
                 </FormControl>
@@ -173,7 +166,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     <section>
                       <PromptEditor
                         {...field}
-                        showToolbar={false}
+                        showToolbar={true}
                       ></PromptEditor>
                     </section>
                   </FormControl>

@@ -26,6 +26,84 @@ An **Agent** component is essential when you need the LLM to assist with summari
 
 2. If your Agent involves dataset retrieval, ensure you [have properly configured your target knowledge base(s)](../../dataset/configure_knowledge_base.md).
 
+## Quickstart
+
+### 1. Click on an **Agent** component to show its configuration panel  
+
+The corresponding configuration panel appears to the right of the canvas. Use this panel to define and fine-tune the **Agent** component's behavior.
+
+### 2. Select your model
+
+Click **Model**, and select a chat model from the dropdown menu. 
+
+:::tip NOTE
+If no model appears, check if your have added a chat model on the **Model providers** page.
+:::
+
+### 3. Update system prompt (Optional)
+
+The system prompt typically defines your model's role. You can either keep the system prompt as is or customize it to override the default.
+
+
+### 4. Update user prompt
+
+The user prompt typically defines your model's task. You will find the `sys.query` variable auto-populated. Type `/` or click **(x)** to view or add variables.
+
+In this quickstart, we assume your **Agent** component is used standalone (without tools or sub-Agents below), then you may also need to specify retrieved chunks using the `formalized_content` variable:
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/standalone_user_prompt_variable.jpg)
+
+### 5. Skip Tools and Agent
+
+The **+ Add tools** and **+ Add agent** sections are used *only* when you need to configure your **Agent** component as a planner (with tools or sub-Agents beneath). In this quickstart, we assume your **Agent** component is used standalone (without tools or sub-Agents beneath). 
+
+### 6. Choose the next component
+
+When necessary, click the **+** button on the **Agent** component to choose the next component in the worflow from the dropdown list.
+
+## Connect to an MCP server as a client
+
+:::danger IMPORTANT
+In this section, we assume your **Agent** will be configured as a planner, with a Tavily tool beneath it.
+:::
+
+### 1. Navigate to the MCP configuration page
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/mcp_page.jpg)
+
+### 2. Configure your Tavily MCP server 
+
+Update your MCP server's name, URL (including the API key), server type, and other necessary settings. When configured correctly, the available tools will be displayed.
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/edit_mcp_server.jpg)
+
+### 3. Navigate to your Agent's editing page
+
+### 4. Connect to your MCP server
+
+1. Click **+ Add tools**:
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_tools.jpg)
+
+2. Click **MCP** to show the available MCP servers.
+
+3. Select your MCP server:
+
+   *The target MCP server appears below your Agent component, and your Agent will autonomously decide when to invoke the available tools it offers.*
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/choose_tavily_mcp_server.jpg)
+
+### 5. Update system prompt to specify trigger conditions (Optional)
+
+To ensure reliable tool calls, you may specify within the system prompt which tasks should trigger each tool call.
+
+### 6. View the availabe tools of your MCP server
+
+On the canvas, click the newly-populated Tavily server to view and select its available tools:
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_mcp_server.jpg)
+
+
 ## Configurations
 
 ### Model
@@ -69,7 +147,7 @@ An **Agent** component relies on keys (variables) to specify its data inputs. It
 
 #### Advanced usage
 
-From v0.20.5 onwards, four framework-level prompt blocks are available in the **System prompt** field. Type `/` or click **(x)** to view them; they appear under the **Framework** entry in the dropdown menu.
+From v0.20.5 onwards, four framework-level prompt blocks are available in the **System prompt** field, enabling you to customize and *override* prompts at the framework level. Type `/` or click **(x)** to view them; they appear under the **Framework** entry in the dropdown menu.
 
 - `task_analysis` prompt block
   - This block is responsible for analyzing tasks — either a user task or a task assigned by the lead Agent when the **Agent** component is acting as a Sub-Agent.
@@ -100,6 +178,12 @@ From v0.20.5 onwards, four framework-level prompt blocks are available in the **
 - `citation_guidelines` prompt block
   - Reference design: [citation_prompt.md](https://github.com/infiniflow/ragflow/blob/main/rag/prompts/citation_prompt.md)
 
+*The screenshots below show the framework prompt blocks available to an **Agent** component, both as a standalone and as a planner (with a Tavily tool below):*
+
+![standalone](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/standalone_agent_framework_block.jpg)
+
+![planner](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/planner_agent_framework_blocks.jpg)
+
 ### User prompt
 
 The user-defined prompt. Defaults to `sys.query`, the user query. As a general rule, when using the **Agent** component as a standalone module (not as a planner), you usually need to specify the corresponding **Retrieval** component’s output variable (`formalized_content`) here as part of the input to the LLM.
@@ -129,7 +213,7 @@ Defines the maximum number of attempts the agent will make to retry a failed tas
 
 The waiting period in seconds that the agent observes before retrying a failed task, helping to prevent immediate repeated attempts and allowing system conditions to improve. Defaults to 1 second.
 
-### Max rounds
+### Max reflection rounds
 
 Defines the maximum number reflection rounds of the selected chat model. Defaults to 1 round.
 
