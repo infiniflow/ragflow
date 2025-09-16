@@ -87,7 +87,7 @@ export const useNavigatePage = () => {
     (id: string, knowledgeId?: string) => () => {
       navigate(
         // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.ParsedResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
+        `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=chunk`,
       );
     },
     [navigate],
@@ -129,7 +129,7 @@ export const useNavigatePage = () => {
     (id: string, knowledgeId?: string) => () => {
       navigate(
         // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.DataflowResult}/${id}`,
+        `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=dataflow`,
       );
     },
     [navigate],

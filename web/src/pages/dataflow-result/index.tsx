@@ -19,6 +19,7 @@ import {
   QueryStringMap,
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { ChunkerContainer } from './chunker';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
@@ -60,6 +61,7 @@ const Chunk = () => {
   const handleStepChange = (id: number | string) => {
     setActiveStepId(id);
   };
+  const { type } = useGetKnowledgeSearchParams();
   return (
     <>
       <PageHeader>
@@ -87,12 +89,14 @@ const Chunk = () => {
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
-      <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
-        <TimelineDataFlow
-          activeFunc={handleStepChange}
-          activeId={activeStepId}
-        />
-      </div>
+      {type === 'dataflow' && (
+        <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
+          <TimelineDataFlow
+            activeFunc={handleStepChange}
+            activeId={activeStepId}
+          />
+        </div>
+      )}
       <div className={styles.chunkPage}>
         <div className="flex flex-none gap-8 border border-border mt-[26px] p-3 rounded-lg h-[calc(100vh-100px)]">
           <div className="w-2/5">
@@ -110,7 +114,8 @@ const Chunk = () => {
             </section>
           </div>
           <div className="h-dvh border-r -mt-3"></div>
-          {activeStepId === TimelineNodeObj.chunker.id && <ChunkerContainer />}
+          {(activeStepId === TimelineNodeObj.chunker.id ||
+            type === 'chunk') && <ChunkerContainer />}
           {activeStepId === TimelineNodeObj.parser.id && <ParserContainer />}
         </div>
       </div>

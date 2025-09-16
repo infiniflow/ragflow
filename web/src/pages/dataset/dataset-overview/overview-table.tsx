@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/table';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import ProcessLogModal from '@/pages/datasets/process-log-modal';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -30,6 +29,7 @@ import {
 import { TFunction } from 'i18next';
 import { ClipboardList, Eye } from 'lucide-react';
 import { Dispatch, FC, SetStateAction, useMemo, useState } from 'react';
+import ProcessLogModal from '../process-log-modal';
 import { LogTabs, ProcessingType } from './dataset-common';
 
 interface DocumentLog {
@@ -145,7 +145,12 @@ export const getFileLogsTableColumns = (
     {
       accessorKey: 'status',
       header: t('status'),
-      cell: ({ row }) => <FileStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <FileStatusBadge
+          status={row.original.status}
+          name={row.original.statusName}
+        />
+      ),
     },
     {
       id: 'operations',
@@ -235,7 +240,12 @@ export const getDatasetLogsTableColumns = (
     {
       accessorKey: 'status',
       header: t('status'),
-      cell: ({ row }) => <FileStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <FileStatusBadge
+          status={row.original.status}
+          name={row.original.statusName}
+        />
+      ),
     },
     {
       id: 'operations',
@@ -370,7 +380,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end py-4 absolute bottom-3 right-12">
+      <div className="flex items-center justify-end absolute bottom-3 right-12">
         <div className="space-x-2">
           <RAGFlowPagination
             {...{ current: pagination.current, pageSize: pagination.pageSize }}

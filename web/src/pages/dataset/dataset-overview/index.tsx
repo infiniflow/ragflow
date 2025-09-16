@@ -111,7 +111,8 @@ const FileLogsPage: FC = () => {
             i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
           startDate: '14/03/2025 14:53:39',
           task: i === 0 ? 'chunck' : 'Parser',
-          status:
+          status: i === 0 ? 3 : i === 1 ? 4 : i === 2 ? 1 : 0,
+          statusName:
             i === 0
               ? 'Success'
               : i === 1

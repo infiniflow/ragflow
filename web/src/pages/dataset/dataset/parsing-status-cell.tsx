@@ -44,7 +44,11 @@ export function ParsingStatusCell({
   record,
   showChangeParserModal,
   showSetMetaModal,
-}: { record: IDocumentInfo } & UseChangeDocumentParserShowType &
+  showLog,
+}: {
+  record: IDocumentInfo;
+  showLog: (record: IDocumentInfo) => void;
+} & UseChangeDocumentParserShowType &
   UseSaveMetaShowType) {
   const { t } = useTranslation();
   const { run, parser_id, progress, chunk_num, id } = record;
@@ -72,6 +76,9 @@ export function ParsingStatusCell({
     return record.type !== DocumentType.Virtual;
   }, [record]);
 
+  const handleShowLog = (record: IDocumentInfo) => {
+    showLog(record);
+  };
   return (
     <section className="flex gap-8 items-center">
       <div className="w-[100px] text-ellipsis overflow-hidden flex items-center justify-between">
@@ -117,19 +124,37 @@ export function ParsingStatusCell({
             <>
               <HoverCard>
                 <HoverCardTrigger asChild>
-                  <div className="flex items-center gap-1">
+                  <div
+                    className="flex items-center gap-1"
+                    onClick={() => handleShowLog(record)}
+                  >
                     <Progress value={p} className="h-1 flex-1 min-w-10" />
                     {p}%
                   </div>
                 </HoverCardTrigger>
                 <HoverCardContent className="w-[40vw]">
-                  <PopoverContent record={record}></PopoverContent>
+                  <PopoverContent
+                    record={record}
+                    handleShowLog={handleShowLog}
+                  ></PopoverContent>
                 </HoverCardContent>
               </HoverCard>
-              {operationIcon}
+              <div
+                className="cursor-pointer flex items-center gap-3"
+                onClick={
+                  isZeroChunk || isRunning
+                    ? handleOperationIconClick(false)
+                    : () => {}
+                }
+              >
+                {operationIcon}
+              </div>
             </>
           ) : (
-            <ParsingCard record={record}></ParsingCard>
+            <ParsingCard
+              record={record}
+              handleShowLog={handleShowLog}
+            ></ParsingCard>
           )}
         </div>
       )}

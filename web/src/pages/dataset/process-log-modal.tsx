@@ -4,22 +4,23 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useTranslate } from '@/hooks/common-hooks';
 import React from 'react';
 import reactStringReplace from 'react-string-replace';
+export interface ILogInfo {
+  taskId?: string;
+  fileName: string;
+  fileSize?: string;
+  source?: string;
+  task?: string;
+  state?: 'Running' | 'Success' | 'Failed' | 'Pending';
+  startTime?: string;
+  endTime?: string;
+  duration?: string;
+  details: string;
+}
 
 interface ProcessLogModalProps {
   visible: boolean;
   onCancel: () => void;
-  logInfo: {
-    taskId: string;
-    fileName: string;
-    fileSize: string;
-    source: string;
-    task: string;
-    state: 'Running' | 'Success' | 'Failed' | 'Pending';
-    startTime: string;
-    endTime?: string;
-    duration?: string;
-    details: string;
-  };
+  logInfo: ILogInfo;
 }
 
 const InfoItem: React.FC<{
