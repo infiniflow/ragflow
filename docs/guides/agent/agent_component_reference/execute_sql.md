@@ -29,7 +29,13 @@ You can pair an **Agent** component with the **Execute SQL** tool, with the **Ag
 
 ### SQL statement
 
+This text input field allows you to write static SQL queries, such as `SELECT * FROM Table1`, and dynamic SQL queries using variables.
 
+:::tip NOTE
+Click **(x)** or type `/` to insert variables.
+:::
+
+For dynamic SQL queries, you can include variables in your SQL queries, such as `SELECT * FROM /sys.query`; if an **Agent** component is paired with the **Execute SQL** tool to generate SQL tasks (see the [Examples](#examples) section), you can directly insert that **Agent**'s output, `content`, into this field.
 
 ### Database type
 
@@ -42,8 +48,6 @@ The supported database type. Currently the following database types are availabl
 ### Database
 
 Appears only when you select **Split** as method.
-
-The variable to be split. Type `/` to quickly insert variables.
 
 ### Username
 
