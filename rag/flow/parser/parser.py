@@ -15,7 +15,6 @@
 import io
 import logging
 import random
-import re
 
 import trio
 import numpy as np
@@ -28,8 +27,6 @@ from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParse
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
-from rag.nlp import tokenize
-from rag.nlp import rag_tokenizer
 
 
 class ParserParam(ProcessParamBase):
