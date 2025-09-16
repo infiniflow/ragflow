@@ -1194,17 +1194,20 @@ class RAGFlowPdfParser:
                     dy = top1 - bottom2
                 else:
                     dy = 0
-                return math.sqrt(dx*dx + dy*dy) + (pn1-pn2)*10000
+                return math.sqrt(dx*dx + dy*dy)# + (pn2-pn1)*10000
 
             for (img, txt), poss in tbls_or_figs:
                 bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
-                dists = [(min_rectangle_distance((pn, left, right, top, bott), rect),i) for i, rect in bboxes for pn, left, right, top, bott in poss]
+                dists = [(min_rectangle_distance((pn, left, right, top+self.page_cum_height[pn], bott+self.page_cum_height[pn]), rect),i) for i, rect in bboxes for pn, left, right, top, bott in poss]
                 min_i = np.argmin(dists, axis=0)[0]
                 min_i, rect = bboxes[dists[min_i][-1]]
                 if isinstance(txt, list):
                     txt = "\n".join(txt)
+                pn, left, right, top, bott = poss[0]
+                if self.boxes[min_i]["bottom"] < top+self.page_cum_height[pn]:
+                    min_i += 1
                 self.boxes.insert(min_i, {
-                    "page_number": rect[0], "x0": rect[1], "x1": rect[2], "top": rect[3], "bottom": rect[4], "layout_type": layout_type, "text": txt, "image": img
+                    "page_number": pn+1, "x0": left, "x1": right, "top": top+self.page_cum_height[pn], "bottom": bott+self.page_cum_height[pn], "layout_type": layout_type, "text": txt, "image": img
                 })
 
         for b in self.boxes:

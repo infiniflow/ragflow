@@ -45,7 +45,6 @@
                   ],
                   "output_format": "json"
                 }
-              }
             }
           }
         },
@@ -56,8 +55,9 @@
         "obj": {
             "component_name": "Chunker",
             "params": {
-              "method": "general",
-              "auto_keywords": 5
+              "method": "toc",
+              "llm_setting": {"llm_id": "glm-4-flash@ZHIPU-AI", "lang": "Chinese"},
+              "auto_keywords": 0
             }
         },
         "downstream": ["Tokenizer:0"],

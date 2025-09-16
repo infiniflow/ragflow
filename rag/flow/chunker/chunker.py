@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import json
 import random
 
 import trio
@@ -22,8 +23,10 @@ from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from graphrag.utils import chat_limiter, get_llm_cache, set_llm_cache
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.chunker.schema import ChunkerFromUpstream
-from rag.nlp import naive_merge, naive_merge_with_images
-from rag.prompts.prompts import keyword_extraction, question_proposal
+from rag.nlp import naive_merge, naive_merge_with_images, concat_img
+from rag.prompts.prompts import keyword_extraction, question_proposal, detect_table_of_contents, \
+    extract_table_of_contents, table_of_contents_index, toc_transformer
+from rag.utils import num_tokens_from_string
 
 
 class ChunkerParam(ProcessParamBase):
@@ -43,6 +46,7 @@ class ChunkerParam(ProcessParamBase):
             "paper",
             "laws",
             "presentation",
+            "toc" # table of contents
             # Other
             # "Tag" # TODO: Other method
         ]
@@ -54,7 +58,7 @@ class ChunkerParam(ProcessParamBase):
         self.auto_keywords = 0
         self.auto_questions = 0
         self.tag_sets = []
-        self.llm_setting = {"llm_name": "", "lang": "Chinese"}
+        self.llm_setting = {"llm_id": "", "lang": "Chinese"}
 
     def check(self):
         self.check_valid_value(self.method.lower(), "Chunk method abnormal.", self.method_options)
@@ -142,6 +146,91 @@ class Chunker(ProcessBase):
     def _one(self, from_upstream: ChunkerFromUpstream):
         pass
 
+    def _toc(self, from_upstream: ChunkerFromUpstream):
+        self.callback(random.randint(1, 5) / 100.0, "Start to chunk via `ToC`.")
+        if from_upstream.output_format in ["markdown", "text", "html"]:
+            return
+
+        # json
+        sections, section_images, page_1024, tc_arr = [], [], [""], [0]
+        for o in from_upstream.json_result or []:
+            txt = o.get("text", "")
+            tc = num_tokens_from_string(txt)
+            page_1024[-1] += "\n" + txt
+            tc_arr[-1] += tc
+            if tc_arr[-1] > 1024:
+                page_1024.append("")
+                tc_arr.append(0)
+            sections.append((o.get("text", ""), o.get("position_tag", "")))
+            section_images.append(o.get("image"))
+            print(len(sections), o)
+
+        llm_setting = self._param.llm_setting
+        chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT, llm_name=llm_setting["llm_id"], lang=llm_setting["lang"])
+        self.callback(random.randint(5, 15) / 100.0, "Start to detect table of contents...")
+        toc_secs = detect_table_of_contents(page_1024, chat_mdl)
+        if toc_secs:
+            self.callback(random.randint(25, 35) / 100.0, "Start to extract table of contents...")
+            toc_arr = toc_transformer(toc_secs, chat_mdl)
+            toc_arr = [it for it in toc_arr if it.get("structure")]
+            print(json.dumps(toc_arr, ensure_ascii=False, indent=2), flush=True)
+            self.callback(random.randint(35, 75) / 100.0, "Start to link table of contents...")
+            toc_arr = table_of_contents_index(toc_arr, [t for t,_ in sections], chat_mdl)
+            for i in range(len(toc_arr)-1):
+                if not toc_arr[i].get("indices"):
+                    continue
+
+                for j in range(i+1, len(toc_arr)):
+                    if toc_arr[j].get("indices"):
+                        if toc_arr[j]["indices"][0] - toc_arr[i]["indices"][-1] > 1:
+                            toc_arr[i]["indices"].extend([x for x in range(toc_arr[i]["indices"][-1]+1, toc_arr[j]["indices"][0])])
+                        break
+            # put all sections ahead of toc_arr[0] into it
+            # for i in range(len(toc_arr)):
+            #     if toc_arr[i].get("indices") and toc_arr[i]["indices"][0]:
+            #         toc_arr[i]["indices"] = [x for x in range(toc_arr[i]["indices"][-1]+1)]
+            #         break
+            # put all sections after toc_arr[-1] into it
+            for i in range(len(toc_arr)-1, -1, -1):
+                if toc_arr[i].get("indices") and toc_arr[i]["indices"][-1]:
+                    toc_arr[i]["indices"] = [x for x in range(toc_arr[i]["indices"][0], len(sections))]
+                    break
+            print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", json.dumps(toc_arr, ensure_ascii=False, indent=2), flush=True)
+
+            chunks, images = [], []
+            for it in toc_arr:
+                if not it.get("indices"):
+                    continue
+                txt = ""
+                img = None
+                for i in it["indices"]:
+                    idx = i
+                    txt += "\n" + sections[idx][0] + "\t" + sections[idx][1]
+                    if img and section_images[idx]:
+                        img = concat_img(img, section_images[idx])
+                    elif section_images[idx]:
+                        img = section_images[idx]
+
+                it["indices"] = []
+                if not txt:
+                    continue
+                it["indices"] = [len(chunks)]
+                print(it, "KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK\n", txt)
+                chunks.append(txt)
+                images.append(img)
+            self.callback(1, "Done")
+            return [
+                {
+                    "text": RAGFlowPdfParser.remove_tag(c),
+                    "image": img,
+                    "positions": RAGFlowPdfParser.extract_positions(c),
+                }
+                for c, img in zip(chunks, images)
+            ]
+
+        self.callback(message="No table of contents detected.")
+
+
     async def _invoke(self, **kwargs):
         function_map = {
             "general": self._general,
@@ -154,6 +243,7 @@ class Chunker(ProcessBase):
             "laws": self._laws,
             "presentation": self._presentation,
             "one": self._one,
+            "toc": self._toc,
         }
 
         try:
@@ -167,7 +257,7 @@ class Chunker(ProcessBase):
 
         async def auto_keywords():
             nonlocal chunks, llm_setting
-            chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT, llm_name=llm_setting["llm_name"], lang=llm_setting["lang"])
+            chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT, llm_name=llm_setting["llm_id"], lang=llm_setting["lang"])
 
             async def doc_keyword_extraction(chat_mdl, ck, topn):
                 cached = get_llm_cache(chat_mdl.llm_name, ck["text"], "keywords", {"topn": topn})
@@ -184,7 +274,7 @@ class Chunker(ProcessBase):
 
         async def auto_questions():
             nonlocal chunks, llm_setting
-            chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT, llm_name=llm_setting["llm_name"], lang=llm_setting["lang"])
+            chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT, llm_name=llm_setting["llm_id"], lang=llm_setting["lang"])
 
             async def doc_question_proposal(chat_mdl, d, topn):
                 cached = get_llm_cache(chat_mdl.llm_name, ck["text"], "question", {"topn": topn})

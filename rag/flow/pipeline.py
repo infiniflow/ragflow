@@ -48,7 +48,7 @@ class Pipeline(Graph):
                     obj.append({"component_name": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]})
             else:
                 obj = [{"component_name": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]}]
-            REDIS_CONN.set_obj(log_key, obj, 60 * 10)
+            REDIS_CONN.set_obj(log_key, obj, 60 * 30)
         except Exception as e:
             logging.exception(e)
 

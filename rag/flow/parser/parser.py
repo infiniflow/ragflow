@@ -53,7 +53,7 @@ class ParserParam(ProcessParamBase):
         self.setups = {
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
-                "vlm_name": "",
+                "llm_id": "",
                 "lang": "Chinese",
                 "suffix": [
                     "pdf",
@@ -82,8 +82,11 @@ class ParserParam(ProcessParamBase):
             "ppt": {},
             "image": {
                 "parse_method": "ocr",
+                "llm_id": "",
             },
-            "email": {},
+            "email": {
+                "fields": []
+            },
             "text": {},
             "audio": {},
             "video": {},
@@ -139,7 +142,7 @@ class Parser(ProcessBase):
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         else:
-            assert conf.get("vlm_name")
+            assert conf.get("llm_id")
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
