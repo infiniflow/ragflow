@@ -30,7 +30,7 @@ You can pair an **Agent** component with the **Execute SQL** tool, with the **Ag
 
 ### SQL statement
 
-This text input field allows you to write static SQL queries, such as `SELECT * FROM Table1`, and dynamic SQL queries using variables.
+This text input field allows you to write static SQL queries, such as `SELECT * FROM my_table`, and dynamic SQL queries using variables.
 
 :::tip NOTE
 Click **(x)** or type `/` to insert variables.
