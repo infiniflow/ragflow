@@ -4798,6 +4798,13 @@
                     "max_tokens": 26214400,
                     "model_type": "speech2text",
                     "is_tools": false
+                },
+                {
+                    "llm_name": "tts-1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts",
+                    "is_tools": false
                 }
             ]
         },
