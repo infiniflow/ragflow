@@ -61,7 +61,7 @@ class ParserParam(ProcessParamBase):
         self.setups = {
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
-                "vlm_name": "",
+                "llm_id": "",
                 "lang": "Chinese",
                 "suffix": [
                     "pdf",
@@ -90,7 +90,7 @@ class ParserParam(ProcessParamBase):
             "ppt": {},
             "image": {
                 "parse_method": ["ocr", "vlm"],
-                "vlm_name": "",
+                "llm_id": "",
                 "lang": "Chinese",
                 "suffix": ["jpg", "jpeg", "png", "gif"],
                 "output_format": "json",
@@ -113,7 +113,7 @@ class ParserParam(ProcessParamBase):
             self.check_valid_value(pdf_parse_method.lower(), "Parse method abnormal.", ["deepdoc", "plain_text", "vlm"])
 
             if pdf_parse_method not in ["deepdoc", "plain_text"]:
-                self.check_empty(pdf_config.get("vlm_name"), "VLM")
+                self.check_empty(pdf_config.get("llm_id"), "VLM")
 
             pdf_language = pdf_config.get("lang", "")
             self.check_empty(pdf_language, "Language")
@@ -136,7 +136,7 @@ class ParserParam(ProcessParamBase):
             image_parse_method = image_config.get("parse_method", "")
             self.check_valid_value(image_parse_method.lower(), "Parse method abnormal.", ["ocr", "vlm"])
             if image_parse_method not in ["ocr"]:
-                self.check_empty(image_config.get("vlm_name"), "VLM")
+                self.check_empty(image_config.get("llm_id"), "VLM")
 
             image_language = image_config.get("lang", "")
             self.check_empty(image_language, "Language")
@@ -166,8 +166,8 @@ class Parser(ProcessBase):
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         else:
-            assert conf.get("vlm_name")
-            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
+            assert conf.get("llm_id")
+            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("llm_id"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
@@ -305,7 +305,7 @@ class Parser(ProcessBase):
 
         else:
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["vlm_name"],lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"],lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
