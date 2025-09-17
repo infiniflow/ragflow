@@ -62,11 +62,11 @@ export const FormSchema = z.object({
   ),
 });
 
-export type FormSchemaType = z.infer<typeof FormSchema>;
+export type ParserFormSchemaType = z.infer<typeof FormSchema>;
 
 function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
   const { t } = useTranslation();
-  const form = useFormContext<FormSchemaType>();
+  const form = useFormContext<ParserFormSchemaType>();
   const ref = useRef(null);
   const isHovering = useHover(ref);
 

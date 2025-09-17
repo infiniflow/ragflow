@@ -22,6 +22,7 @@ export const useSaveGraph = (showMessage: boolean = true) => {
       return setAgent({
         id,
         title: data.title,
+        canvas_category: data.canvas_category,
         dsl: buildDslData(currentNodes),
       });
     },

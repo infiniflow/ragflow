@@ -61,6 +61,13 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataflow = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.DataFlow}/${id}`);
+    },
+    [navigate],
+  );
+
   const navigateToAgentLogs = useCallback(
     (id: string) => () => {
       navigate(`${Routes.AgentLogPage}/${id}`);
@@ -155,5 +162,6 @@ export const useNavigatePage = () => {
     navigateToAgentList,
     navigateToOldProfile,
     navigateToDataflowResult,
+    navigateToDataflow,
   };
 };
