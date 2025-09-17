@@ -363,7 +363,6 @@ class Parser(ProcessBase):
             txt = seq2txt_mdl.transcription(tmp_path)
 
             self.set_output("text", txt)
-            print(self._param.outputs["text"], flush=True)
 
     async def _invoke(self, **kwargs):
         function_map = {
