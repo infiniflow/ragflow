@@ -266,3 +266,12 @@ export interface IAgentLogMessage {
   role: 'user' | 'assistant';
   id: string;
 }
+
+export interface IPipeLineListRequest {
+  page?: number;
+  page_size?: number;
+  keywords?: string;
+  orderby?: string;
+  desc?: boolean;
+  canvas_category?: 'agent_canvas' | 'dataflow_canvas';
+}

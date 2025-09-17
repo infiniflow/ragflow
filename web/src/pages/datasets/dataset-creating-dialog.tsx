@@ -49,10 +49,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
         })
         .trim(),
       parser_id: z.string().optional(),
-      data_flow: z.string().optional(),
+      pipline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
-      // 当 parseType === 1 时，parser_id 必填
+      // When parseType === 1, parser_id is required
       if (
         data.parseType === 1 &&
         (!data.parser_id || data.parser_id.trim() === '')
@@ -64,15 +64,13 @@ export function InputForm({ onOk }: IModalProps<any>) {
         });
       }
 
-      // 当 parseType === 2 时，data_flow 必填
-      if (
-        data.parseType === 2 &&
-        (!data.data_flow || data.data_flow.trim() === '')
-      ) {
+      console.log('form-data', data);
+      // When parseType === 1, pipline_id required
+      if (data.parseType === 2 && !data.pipline_id) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.dataFlowRequired'),
-          path: ['data_flow'],
+          path: ['pipline_id'],
         });
       }
     });
@@ -96,6 +94,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
     name: 'parseType',
   });
   const { navigateToAgents } = useNavigatePage();
+
   return (
     <Form {...form}>
       <form
@@ -132,8 +131,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
         {parseType === 2 && (
           <>
             <DataFlowSelect
+              isMult={false}
               toDataPipeline={navigateToAgents}
-              formFieldName="data_flow"
+              formFieldName="pipline_id"
             />
           </>
         )}

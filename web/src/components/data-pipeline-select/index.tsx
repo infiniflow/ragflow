@@ -1,7 +1,10 @@
 import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchAgentList } from '@/hooks/use-agent-request';
 import { buildSelectOptions } from '@/utils/component-util';
 import { ArrowUpRight } from 'lucide-react';
+import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { SelectWithSearch } from '../originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -14,6 +17,7 @@ import { MultiSelect } from '../ui/multi-select';
 interface IProps {
   toDataPipeline?: () => void;
   formFieldName: string;
+  isMult?: boolean;
 }
 
 const data = [
@@ -23,14 +27,24 @@ const data = [
   { id: '4', name: 'data-pipeline-4' },
 ];
 export function DataFlowSelect(props: IProps) {
-  const { toDataPipeline, formFieldName } = props;
+  const { toDataPipeline, formFieldName, isMult = true } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   console.log('data-pipline form', form);
   const toDataPipLine = () => {
     toDataPipeline?.();
   };
-  const options = buildSelectOptions(data, 'id', 'name');
+  const { data: dataPipelineOptions, loading } = useFetchAgentList({
+    canvas_category: 'dataflow_canvas',
+  });
+  const options = useMemo(() => {
+    const option = buildSelectOptions(
+      dataPipelineOptions?.canvas,
+      'id',
+      'title',
+    );
+    return option || [];
+  }, [dataPipelineOptions]);
   return (
     <FormField
       control={form.control}
@@ -56,17 +70,27 @@ export function DataFlowSelect(props: IProps) {
 
             <div className="text-muted-foreground">
               <FormControl>
-                <MultiSelect
-                  {...field}
-                  onValueChange={field.onChange}
-                  placeholder={t('dataFlowPlaceholder')}
-                  options={options}
-                />
+                <>
+                  {!isMult && (
+                    <SelectWithSearch
+                      {...field}
+                      placeholder={t('dataFlowPlaceholder')}
+                      options={options}
+                    />
+                  )}
+                  {isMult && (
+                    <MultiSelect
+                      {...field}
+                      onValueChange={field.onChange}
+                      placeholder={t('dataFlowPlaceholder')}
+                      options={options}
+                    />
+                  )}
+                </>
               </FormControl>
             </div>
           </div>
           <div className="flex pt-1">
-            <div className="w-full"></div>
             <FormMessage />
           </div>
         </FormItem>

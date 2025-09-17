@@ -52,7 +52,7 @@ export function SideBar({ refreshCount }: PropType) {
       {
         icon: Banknote,
         label: t(`knowledgeDetails.configuration`),
-        key: Routes.DatasetSetting,
+        key: Routes.DataSetSetting,
       },
     ];
     if (!isEmpty(routerData?.graph)) {

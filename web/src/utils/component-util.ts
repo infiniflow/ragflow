@@ -3,6 +3,9 @@ export function buildSelectOptions(
   keyName?: string,
   valueName?: string,
 ) {
+  if (!Array.isArray(list) || !list.length) {
+    return [];
+  }
   if (keyName && valueName) {
     return list.map((x) => ({ label: x[valueName], value: x[keyName] }));
   }
