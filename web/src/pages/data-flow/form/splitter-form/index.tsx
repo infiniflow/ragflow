@@ -29,10 +29,12 @@ export const FormSchema = z.object({
   overlapped_percent: z.number(), // 0.0 - 0.3
 });
 
+export type SplitterFormSchemaType = z.infer<typeof FormSchema>;
+
 const SplitterForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialChunkerValues, node);
 
-  const form = useForm<z.infer<typeof FormSchema>>({
+  const form = useForm<SplitterFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
   });

@@ -138,7 +138,7 @@ export default {
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
-  listCanvasTeam: `${api_host}/canvas/listteam`,
+  listCanvasTeam: `${api_host}/canvas/list`,
   getCanvas: `${api_host}/canvas/get`,
   getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,

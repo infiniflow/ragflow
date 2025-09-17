@@ -307,7 +307,11 @@ export const initialWaitingDialogueValues = {};
 
 export const initialChunkerValues = { outputs: {} };
 
-export const initialTokenizerValues = {};
+export const initialTokenizerValues = {
+  search_method: [],
+  filename_embd_weight: 0.1,
+  outputs: {},
+};
 
 export const initialAgentValues = {
   ...initialLlmBaseValues,
@@ -401,42 +405,10 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Relevant],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
-  [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Message]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Retrieval,
-    Operator.RewriteQuestion,
-    Operator.Categorize,
-  ],
-  [Operator.Relevant]: [Operator.Begin],
-  [Operator.RewriteQuestion]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-    Operator.Relevant,
-  ],
-  [Operator.KeywordExtract]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Relevant,
-  ],
-  [Operator.ExeSQL]: [Operator.Begin],
-  [Operator.Switch]: [Operator.Begin],
-  [Operator.Concentrator]: [Operator.Begin],
-  [Operator.Crawler]: [Operator.Begin],
-  [Operator.Note]: [],
-  [Operator.Invoke]: [Operator.Begin],
-  [Operator.Email]: [Operator.Begin],
-  [Operator.Iteration]: [Operator.Begin],
-  [Operator.IterationStart]: [Operator.Begin],
-  [Operator.Code]: [Operator.Begin],
-  [Operator.WaitingDialogue]: [Operator.Begin],
-  [Operator.Agent]: [Operator.Begin],
-  [Operator.StringTransform]: [Operator.Begin],
-  [Operator.UserFillUp]: [Operator.Begin],
-  [Operator.Tool]: [Operator.Begin],
+  [Operator.Parser]: [Operator.Begin],
+  [Operator.Splitter]: [Operator.Begin],
+  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.Tokenizer]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -528,4 +500,9 @@ export enum FileType {
   PowerPoint = 'ppt',
   Video = 'video',
   Audio = 'audio',
+}
+
+export enum TokenizerSearchMethod {
+  Embedding = 'embedding',
+  FullText = 'full_text',
 }
