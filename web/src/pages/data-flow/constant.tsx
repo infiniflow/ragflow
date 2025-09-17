@@ -380,7 +380,7 @@ export const initialParserValues = { outputs: {}, parser: [] };
 
 export const initialSplitterValues = { outputs: {}, chunk_token_size: 512 };
 
-export const initialHierarchicalMergerValues = {};
+export const initialHierarchicalMergerValues = { outputs: {} };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
