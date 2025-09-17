@@ -509,17 +509,35 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         # Process images for each section
         section_images = []
-        for section_text, _ in sections:
+        for idx, (section_text, _) in enumerate(sections):
             images = markdown_parser.get_pictures(section_text) if section_text else None
             if images:
+                callback(0.3, f"Found {len(images)} image(s) in markdown section.")
                 # If multiple images found, combine them using concat_img
                 combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
                 section_images.append(combined_image)
+
+                try:
+                    vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+                    callback(0.5, "Visual model detected. Attempting to enhance figure extraction...")
+                
+                except Exception:
+                    vision_model = None
+                
+                if vision_model:
+                    try:
+                        markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data= [((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                        boosted_figures = markdown_vision_parser(callback=callback)
+                        callback(0.6, f"Figure parsing enhancement complete.")
+                        sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
+                    except Exception as e:
+                        callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+                        tables.extend(section_images)
             else:
                 section_images.append(None)
 
         res = tokenize_table(tables, doc, is_english)
-        callback(0.8, "Finish parsing.")
+        callback(1.0, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
