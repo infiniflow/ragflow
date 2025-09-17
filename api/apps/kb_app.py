@@ -393,6 +393,5 @@ def get_basic_info():
         )
 
     basic_info = DocumentService.knowledgebase_basic_info(kb_id)
-    basic_info["completed_percent"] = basic_info["finished"] / sum([basic_info["finished"], basic_info["failed"], basic_info["cancelled"], basic_info["processing"]])
 
     return get_json_result(data=basic_info)
