@@ -1,3 +1,4 @@
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -62,55 +63,55 @@ export function ChunkMethodItem(props: IProps) {
     />
   );
 }
-
 export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
   const disabled = useHasParsedDocument(isEdit);
-
   return (
-    <FormField
-      control={form.control}
-      name={'embd_id'}
-      render={({ field }) => (
-        <FormItem className={cn(' items-center space-y-0 ')}>
-          <div
-            className={cn('flex', {
-              ' items-center': line === 1,
-              'flex-col gap-1': line === 2,
-            })}
-          >
-            <FormLabel
-              required
-              tooltip={t('embeddingModelTip')}
-              className={cn('text-sm  whitespace-wrap ', {
-                'w-1/4': line === 1,
+    <>
+      <FormField
+        control={form.control}
+        name={'embd_id'}
+        render={({ field }) => (
+          <FormItem className={cn(' items-center space-y-0 ')}>
+            <div
+              className={cn('flex', {
+                ' items-center': line === 1,
+                'flex-col gap-1': line === 2,
               })}
             >
-              {t('embeddingModel')}
-            </FormLabel>
-            <div
-              className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
-            >
-              <FormControl>
-                <RAGFlowSelect
-                  onChange={field.onChange}
-                  value={field.value}
-                  options={embeddingModelOptions}
-                  disabled={isEdit ? disabled : false}
-                  placeholder={t('embeddingModelPlaceholder')}
-                />
-              </FormControl>
+              <FormLabel
+                required
+                tooltip={t('embeddingModelTip')}
+                className={cn('text-sm  whitespace-wrap ', {
+                  'w-1/4': line === 1,
+                })}
+              >
+                {t('embeddingModel')}
+              </FormLabel>
+              <div
+                className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
+              >
+                <FormControl>
+                  <SelectWithSearch
+                    onChange={field.onChange}
+                    value={field.value}
+                    options={embeddingModelOptions}
+                    disabled={isEdit ? disabled : false}
+                    placeholder={t('embeddingModelPlaceholder')}
+                  />
+                </FormControl>
+              </div>
             </div>
-          </div>
-          <div className="flex pt-1">
-            <div className={line === 1 ? 'w-1/4' : ''}></div>
-            <FormMessage />
-          </div>
-        </FormItem>
-      )}
-    />
+            <div className="flex pt-1">
+              <div className={line === 1 ? 'w-1/4' : ''}></div>
+              <FormMessage />
+            </div>
+          </FormItem>
+        )}
+      />
+    </>
   );
 }
 

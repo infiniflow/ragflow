@@ -1,4 +1,4 @@
-import { DataFlowItem } from '@/components/data-pipeline-select';
+import { DataFlowSelect } from '@/components/data-pipeline-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -131,7 +131,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
         )}
         {parseType === 2 && (
           <>
-            <DataFlowItem
+            <DataFlowSelect
               toDataPipeline={navigateToAgents}
               formFieldName="data_flow"
             />

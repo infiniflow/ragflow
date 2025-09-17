@@ -9,7 +9,7 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
-import { RAGFlowSelect } from '../ui/select';
+import { MultiSelect } from '../ui/multi-select';
 
 interface IProps {
   toDataPipeline?: () => void;
@@ -22,13 +22,12 @@ const data = [
   { id: '3', name: 'data-pipeline-3' },
   { id: '4', name: 'data-pipeline-4' },
 ];
-export function DataFlowItem(props: IProps) {
+export function DataFlowSelect(props: IProps) {
   const { toDataPipeline, formFieldName } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
+  console.log('data-pipline form', form);
   const toDataPipLine = () => {
-    // window.open('/data-pipeline');
-
     toDataPipeline?.();
   };
   const options = buildSelectOptions(data, 'id', 'name');
@@ -57,8 +56,9 @@ export function DataFlowItem(props: IProps) {
 
             <div className="text-muted-foreground">
               <FormControl>
-                <RAGFlowSelect
+                <MultiSelect
                   {...field}
+                  onValueChange={field.onChange}
                   placeholder={t('dataFlowPlaceholder')}
                   options={options}
                 />
@@ -66,7 +66,7 @@ export function DataFlowItem(props: IProps) {
             </div>
           </div>
           <div className="flex pt-1">
-            <div className="w-1/4"></div>
+            <div className="w-full"></div>
             <FormMessage />
           </div>
         </FormItem>

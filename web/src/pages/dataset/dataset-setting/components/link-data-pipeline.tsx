@@ -1,17 +1,21 @@
+import { IconFont } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
-import { Link, Route, Settings2, Unlink } from 'lucide-react';
+import { Link, Settings2, Unlink } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import LinkDataPipelineModal from './link-data-pipline-modal';
 
 interface DataPipelineItemProps {
   name: string;
   avatar?: string;
   isDefault?: boolean;
   linked?: boolean;
+  openLinkModalFunc?: (open: boolean) => void;
 }
 const DataPipelineItem = (props: DataPipelineItemProps) => {
   const { t } = useTranslation();
-  const { name, avatar, isDefault, linked } = props;
+  const { name, avatar, isDefault, linked, openLinkModalFunc } = props;
   return (
     <div className="flex items-center justify-between gap-1 px-2 rounded-lg border">
       <div className="flex items-center gap-1">
@@ -27,15 +31,24 @@ const DataPipelineItem = (props: DataPipelineItemProps) => {
         <Button variant={'transparent'} className="border-none">
           <Settings2 />
         </Button>
-        <Button variant={'transparent'} className="border-none">
-          {linked ? <Link /> : <Unlink />}
-        </Button>
+        {!isDefault && (
+          <Button
+            variant={'transparent'}
+            className="border-none"
+            onClick={() => {
+              openLinkModalFunc?.(true);
+            }}
+          >
+            {linked ? <Link /> : <Unlink />}
+          </Button>
+        )}
       </div>
     </div>
   );
 };
 const LinkDataPipeline = () => {
   const { t } = useTranslation();
+  const [openLinkModal, setOpenLinkModal] = useState(false);
   const testNode = [
     {
       name: 'Data Pipeline 1',
@@ -49,11 +62,14 @@ const LinkDataPipeline = () => {
       linked: false,
     },
   ];
+  const openLinkModalFunc = (open: boolean) => {
+    setOpenLinkModal(open);
+  };
   return (
     <div className="flex flex-col gap-2">
       <section className="flex flex-col">
         <div className="flex items-center gap-1 text-text-primary text-sm">
-          <Route className="size-4" />
+          <IconFont name="Pipeline" />
           {t('knowledgeConfiguration.dataPipeline')}
         </div>
         <div className="flex justify-between items-center">
@@ -70,9 +86,19 @@ const LinkDataPipeline = () => {
       </section>
       <section className="flex flex-col gap-2">
         {testNode.map((item) => (
-          <DataPipelineItem key={item.name} {...item} />
+          <DataPipelineItem
+            key={item.name}
+            openLinkModalFunc={openLinkModalFunc}
+            {...item}
+          />
         ))}
       </section>
+      <LinkDataPipelineModal
+        open={openLinkModal}
+        setOpen={(open: boolean) => {
+          openLinkModalFunc(open);
+        }}
+      />
     </div>
   );
 };
