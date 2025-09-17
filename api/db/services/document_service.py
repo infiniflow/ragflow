@@ -24,7 +24,7 @@ from io import BytesIO
 
 import trio
 import xxhash
-from peewee import fn
+from peewee import fn, Case
 
 from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
@@ -674,6 +674,53 @@ class DocumentService(CommonService):
         return False
 
 
+    @classmethod
+    @DB.connection_context()
+    def knowledgebase_basic_info(cls, kb_id: str) -> dict[str, int]:
+        # cancelled: run == "2" but progress can vary
+        cancelled = (
+            cls.model.select(fn.COUNT(1))
+            .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))
+            .scalar()
+        )
+
+        row = (
+            cls.model.select(
+                # finished: progress == 1
+                fn.COALESCE(fn.SUM(Case(None, [(cls.model.progress == 1, 1)], 0)), 0).alias("finished"),
+
+                # failed: progress == -1
+                fn.COALESCE(fn.SUM(Case(None, [(cls.model.progress == -1, 1)], 0)), 0).alias("failed"),
+
+                # processing: 0 <= progress < 1
+                fn.COALESCE(
+                    fn.SUM(
+                        Case(
+                            None,
+                            [
+                                (((cls.model.progress == 0) | ((cls.model.progress > 0) & (cls.model.progress < 1))), 1),
+                            ],
+                            0,
+                        )
+                    ),
+                    0,
+                ).alias("processing"),
+            )
+            .where(
+                (cls.model.kb_id == kb_id)
+                & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL))
+            )
+            .dicts()
+            .get()
+        )
+
+        return {
+            "processing": int(row["processing"]),
+            "finished": int(row["finished"]),
+            "failed": int(row["failed"]),
+            "cancelled": int(cancelled),
+        }
+
 def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     hasher = xxhash.xxh64()
@@ -849,3 +896,4 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)
 
     return [d["id"] for d, _ in files]
+
