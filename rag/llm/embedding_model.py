@@ -960,10 +960,10 @@ class Ai302Embed(Base):
         super().__init__(key, model_name, base_url)
 
 
-class CometEmbed(Base):
+class CometEmbed(OpenAIEmbed):
     _FACTORY_NAME = "CometAPI"
 
-    def __init__(self, key, model_name, base_url="https://api.cometapi.com/v1/embeddings"):
+    def __init__(self, key, model_name, base_url="https://api.cometapi.com/v1"):
         if not base_url:
-            base_url = "https://api.cometapi.com/v1/embeddings"
+            base_url = "https://api.cometapi.com/v1"
         super().__init__(key, model_name, base_url)
