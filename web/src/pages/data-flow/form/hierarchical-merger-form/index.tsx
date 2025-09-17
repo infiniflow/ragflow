@@ -1,94 +1,128 @@
-import { FormContainer } from '@/components/form-container';
-import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { useTranslate } from '@/hooks/common-hooks';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { BlockButton, Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Form } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { X } from 'lucide-react';
 import { memo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
-import { initialChunkerValues } from '../../constant';
+import { initialHierarchicalMergerValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
-import { GoogleCountryOptions, GoogleLanguageOptions } from '../../options';
 import { buildOutputList } from '../../utils/build-output-list';
-import { ApiKeyField } from '../components/api-key-field';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { QueryVariable } from '../components/query-variable';
 
-const outputList = buildOutputList(initialChunkerValues.outputs);
+const outputList = buildOutputList(initialHierarchicalMergerValues.outputs);
 
-export const GoogleFormPartialSchema = {
-  api_key: z.string(),
-  country: z.string(),
-  language: z.string(),
-};
+enum Hierarchy {
+  H1 = '1',
+  H2 = '2',
+  H3 = '3',
+  H4 = '4',
+  H5 = '5',
+}
+
+const HierarchyOptions = [
+  { label: 'H1', value: Hierarchy.H1 },
+  { label: 'H2', value: Hierarchy.H2 },
+  { label: 'H3', value: Hierarchy.H3 },
+  { label: 'H4', value: Hierarchy.H4 },
+  { label: 'H5', value: Hierarchy.H5 },
+];
 
 export const FormSchema = z.object({
-  ...GoogleFormPartialSchema,
-  q: z.string(),
-  start: z.number(),
-  num: z.number(),
+  hierarchy: z.number(),
+  levels: z.array(
+    z.object({
+      expressions: z.array(z.object({ expression: z.string() })),
+    }),
+  ),
 });
 
-export function GoogleFormWidgets() {
+type RegularExpressionsProps = {
+  index: number;
+  parentName: string;
+  removeParent: (index: number) => void;
+};
+
+export function RegularExpressions({
+  index,
+  parentName,
+  removeParent,
+}: RegularExpressionsProps) {
   const form = useFormContext();
-  const { t } = useTranslate('flow');
+
+  const name = `${parentName}.${index}.expressions`;
+
+  const { fields, append, remove } = useFieldArray({
+    name: name,
+    control: form.control,
+  });
 
   return (
-    <>
-      <FormField
-        control={form.control}
-        name={`country`}
-        render={({ field }) => (
-          <FormItem className="flex-1">
-            <FormLabel>{t('country')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                {...field}
-                options={GoogleCountryOptions}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name={`language`}
-        render={({ field }) => (
-          <FormItem className="flex-1">
-            <FormLabel>{t('language')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                {...field}
-                options={GoogleLanguageOptions}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </>
+    <Card>
+      <CardHeader className="flex-row justify-between items-center">
+        <CardTitle>H{index}</CardTitle>
+        <Button
+          type="button"
+          variant={'ghost'}
+          onClick={() => removeParent(index)}
+        >
+          <X />
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <section className="space-y-4">
+          {fields.map((field, index) => (
+            <div key={field.id} className="flex items-center gap-2">
+              <div className="space-y-2 flex-1">
+                <RAGFlowFormItem
+                  name={`${name}.${index}.expression`}
+                  label={'expression'}
+                  labelClassName="!hidden"
+                >
+                  <Input className="!m-0"></Input>
+                </RAGFlowFormItem>
+              </div>
+              <Button
+                type="button"
+                variant={'ghost'}
+                onClick={() => remove(index)}
+              >
+                <X />
+              </Button>
+            </div>
+          ))}
+        </section>
+        <BlockButton
+          onClick={() => append({ expression: '' })}
+          className="mt-6"
+        >
+          Add
+        </BlockButton>
+      </CardContent>
+    </Card>
   );
 }
 
 const HierarchicalMergerForm = ({ node }: INextOperatorForm) => {
-  const { t } = useTranslate('flow');
-  const defaultValues = useFormValues(initialChunkerValues, node);
+  const defaultValues = useFormValues(initialHierarchicalMergerValues, node);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+  });
+
+  const name = 'levels';
+
+  const { fields, append, remove } = useFieldArray({
+    name: name,
+    control: form.control,
   });
 
   useWatchFormChange(node?.id, form);
@@ -96,39 +130,23 @@ const HierarchicalMergerForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <QueryVariable name="q"></QueryVariable>
-        </FormContainer>
-        <FormContainer>
-          <ApiKeyField placeholder={t('apiKeyPlaceholder')}></ApiKeyField>
-          <FormField
-            control={form.control}
-            name={`start`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flowStart')}</FormLabel>
-                <FormControl>
-                  <NumberInput {...field} className="w-full"></NumberInput>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name={`num`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flowNum')}</FormLabel>
-                <FormControl>
-                  <NumberInput {...field} className="w-full"></NumberInput>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <GoogleFormWidgets></GoogleFormWidgets>
-        </FormContainer>
+        <RAGFlowFormItem name={'hierarchy'} label={'hierarchy'}>
+          <SelectWithSearch options={HierarchyOptions}></SelectWithSearch>
+        </RAGFlowFormItem>
+        {fields.map((field, index) => (
+          <div key={field.id} className="flex items-center gap-2">
+            <div className="space-y-2 flex-1">
+              <RegularExpressions
+                parentName={name}
+                index={index}
+                removeParent={remove}
+              ></RegularExpressions>
+            </div>
+          </div>
+        ))}
+        <BlockButton onClick={() => append({ expressions: [] })}>
+          Add
+        </BlockButton>
       </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>
