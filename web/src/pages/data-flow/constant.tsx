@@ -66,6 +66,8 @@ export enum Operator {
   Parser = 'Parser',
   Chunker = 'Chunker',
   Tokenizer = 'Tokenizer',
+  Splitter = 'Splitter',
+  HierarchicalMerger = 'HierarchicalMerger',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -73,20 +75,6 @@ export const SwitchLogicOperatorOptions = ['and', 'or'];
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
 );
-
-export const AgentOperatorList = [
-  Operator.Retrieval,
-  Operator.Categorize,
-  Operator.Message,
-  Operator.RewriteQuestion,
-  Operator.KeywordExtract,
-  Operator.Switch,
-  Operator.Concentrator,
-  Operator.Iteration,
-  Operator.WaitingDialogue,
-  Operator.Note,
-  Operator.Agent,
-];
 
 export const SwitchOperatorOptions = [
   { value: '=', label: 'equal', icon: 'equal' },
@@ -390,6 +378,10 @@ export const initialStringTransformValues = {
 
 export const initialParserValues = { outputs: {}, parser: [] };
 
+export const initialSplitterValues = { outputs: {}, chunk_token_size: 512 };
+
+export const initialHierarchicalMergerValues = { outputs: {} };
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -473,6 +465,8 @@ export const NodeMap = {
   [Operator.Parser]: 'parserNode',
   [Operator.Chunker]: 'chunkerNode',
   [Operator.Tokenizer]: 'tokenizerNode',
+  [Operator.Splitter]: 'splitterNode',
+  [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
 };
 
 export enum BeginQueryType {

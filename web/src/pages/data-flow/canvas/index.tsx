@@ -44,6 +44,7 @@ import { CategorizeNode } from './node/categorize-node';
 import ChunkerNode from './node/chunker-node';
 import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { GenerateNode } from './node/generate-node';
+import { HierarchicalMergerNode } from './node/hierarchical-merger-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
@@ -54,6 +55,7 @@ import ParserNode from './node/parser-node';
 import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
+import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 import TokenizerNode from './node/tokenizer-node';
@@ -82,6 +84,8 @@ export const nodeTypes: NodeTypes = {
   parserNode: ParserNode,
   chunkerNode: ChunkerNode,
   tokenizerNode: TokenizerNode,
+  splitterNode: SplitterNode,
+  hierarchicalMergerNode: HierarchicalMergerNode,
 };
 
 const edgeTypes = {
