@@ -44,6 +44,7 @@ import { CategorizeNode } from './node/categorize-node';
 import ChunkerNode from './node/chunker-node';
 import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { GenerateNode } from './node/generate-node';
+import { HierarchicalMergerNode } from './node/hierarchical-merger-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
@@ -84,6 +85,7 @@ export const nodeTypes: NodeTypes = {
   chunkerNode: ChunkerNode,
   tokenizerNode: TokenizerNode,
   splitterNode: SplitterNode,
+  hierarchicalMergerNode: HierarchicalMergerNode,
 };
 
 const edgeTypes = {
