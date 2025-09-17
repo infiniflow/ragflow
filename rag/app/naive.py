@@ -528,7 +528,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                     try:
                         markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data= [((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
                         boosted_figures = markdown_vision_parser(callback=callback)
-                        callback(0.6, f"Figure parsing enhancement complete.")
+                        callback(0.6, "Figure parsing enhancement complete.")
                         sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
                     except Exception as e:
                         callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
