@@ -91,13 +91,7 @@ export function useShowDrawer({
 
   useEffect(() => {
     if (drawerVisible) {
-      if (inputs.length > 0) {
-        showRunModal();
-        hideChatModal();
-      } else {
-        showChatModal();
-        hideRunModal();
-      }
+      showRunModal();
     }
   }, [
     hideChatModal,

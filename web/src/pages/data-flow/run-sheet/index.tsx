@@ -9,12 +9,11 @@ import { cn } from '@/lib/utils';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BeginId } from '../constant';
-import DebugContent from '../debug-content';
-import { useGetBeginNodeDataInputs } from '../hooks/use-get-begin-query';
 import { useSaveGraphBeforeOpeningDebugDrawer } from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { buildBeginQueryWithObject } from '../utils';
+import { Uploader } from './uploader';
 
 const RunSheet = ({
   hideModal,
@@ -22,8 +21,6 @@ const RunSheet = ({
 }: IModalProps<any>) => {
   const { t } = useTranslation();
   const { updateNodeForm, getNode } = useGraphStore((state) => state);
-
-  const inputs = useGetBeginNodeDataInputs();
 
   const { handleRun, loading } = useSaveGraphBeforeOpeningDebugDrawer(
     showChatModal!,
@@ -51,15 +48,11 @@ const RunSheet = ({
   );
 
   return (
-    <Sheet onOpenChange={hideModal} open>
+    <Sheet onOpenChange={hideModal} open modal={false}>
       <SheetContent className={cn('top-20 p-2')}>
         <SheetHeader>
           <SheetTitle>{t('flow.testRun')}</SheetTitle>
-          <DebugContent
-            ok={onOk}
-            parameters={inputs}
-            loading={loading}
-          ></DebugContent>
+          <Uploader></Uploader>
         </SheetHeader>
       </SheetContent>
     </Sheet>
