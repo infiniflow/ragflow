@@ -3295,6 +3295,21 @@
             "tags": "LLM,TEXT EMBEDDING,TTS,SPEECH2TEXT,TEXT RE-RANK",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "WhisperX",
+            "logo": "",
+            "tags": "SPEECH2TEXT",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "whisperx",
+                    "tags": "SPEECH2TEXT",
+                    "max_tokens": 26214400,
+                    "model_type": "speech2text",
+                    "is_tools": false
+                }
+            ]
         }
     ]
 }

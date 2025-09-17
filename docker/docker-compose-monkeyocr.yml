@@ -1,0 +1,84 @@
+# -----------------------------------------------------------------------------
+# Docker Compose for RAGFlow with MonkeyOCR (GPU-enabled)
+# Uses Dockerfile.monkeyocr-complete (production-ready with full RAGFlow features)
+# Based on official docker-compose.yml and docker-compose-gpu.yml patterns
+# -----------------------------------------------------------------------------
+
+include:
+  - ./docker-compose-base.yml
+
+services:
+  ragflow:
+    depends_on:
+      mysql:
+        condition: service_healthy
+      # minio:
+      #   condition: service_healthy
+    build:
+      context: ../
+      dockerfile: Dockerfile.monkeyocr
+    platform: linux/amd64
+    # Example configuration to set up an MCP server:
+    command:
+      - --enable-mcpserver
+      - --mcp-host=0.0.0.0
+      - --mcp-port=9382
+      - --mcp-base-url=http://localhost:9380
+      - --mcp-script-path=/ragflow/mcp/server/server.py
+      - --mcp-mode=self-host
+      - --mcp-host-api-key=ragflow-ljMjA5MDUwM2QzMzExZjA4MmNmMDI0Mm
+    container_name: ragflow-server
+    ports:
+      - ${SVR_HTTP_PORT}:9380
+      - 81:81
+      # Expose HTTPS only if you configure TLS in nginx (443)
+      - 9382:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
+    volumes:
+      - ../whisperx_backend:/ragflow/whisperx_backend
+      - ./ragflow-logs:/ragflow/logs
+      - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ../history_data_agent:/ragflow/history_data_agent
+      - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+      - ./entrypoint.sh:/ragflow/entrypoint.sh
+      # MonkeyOCR specific volumes
+      - monkeyocr_models:/ragflow/monkeyocr/model_weight
+      - monkeyocr_cache:/ragflow/monkeyocr/cache
+
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+      - HF_ENDPOINT=${HF_ENDPOINT}
+      - MACOS=${MACOS}
+      # MonkeyOCR specific environment variables
+      - MONKEYOCR_API_URL=${MONKEYOCR_API_URL}
+      - MONKEYOCR_MODEL_NAME=${MONKEYOCR_MODEL_NAME}
+      - MONKEYOCR_API_KEY=${MONKEYOCR_API_KEY}
+      - MONKEYOCR_ENABLED=true
+      - MONKEYOCR_CONFIG_PATH=/ragflow/conf/monkey_ocr_config.json
+      - MONKEYOCR_MODEL_PATH=/ragflow/monkeyocr/model_weight/Recognition
+      - MONKEYOCR_CACHE_DIR=/ragflow/monkeyocr/cache
+      - HF_HUB_CACHE=/ragflow/monkeyocr/model_weight
+    networks:
+      - ragflow
+    restart: on-failure
+    # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
+    # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # GPU configuration (from docker-compose-gpu.yml pattern)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+# MonkeyOCR specific volumes
+volumes:
+  monkeyocr_models:
+    driver: local
+  monkeyocr_cache:
+    driver: local

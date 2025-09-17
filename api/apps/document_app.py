@@ -131,8 +131,6 @@ def web_crawl():
             doc["parser_id"] = ParserType.PRESENTATION.value
         if re.search(r"\.(eml)$", filename):
             doc["parser_id"] = ParserType.EMAIL.value
-        DocumentService.insert(doc)
-        FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
     except Exception as e:
         return server_error_response(e)
     return get_json_result(data=True)
@@ -459,8 +457,14 @@ def change_parser():
             else:
                 return get_json_result(data=True)
 
+        # Check if file type is compatible with selected parser
         if (doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation"):
             return get_data_error_result(message="Not supported yet!")
+        
+        # Check if MonkeyOCR parser is compatible with file type
+        from api.utils.file_utils import is_monkeyocr_supported
+        if req["parser_id"] == ParserType.MONKEYOCR.value and not is_monkeyocr_supported(doc.name):
+            return get_data_error_result(message="MonkeyOCR parser only supports PDF and image files!")
 
         e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": TaskStatus.UNSTART.value})
         if not e:

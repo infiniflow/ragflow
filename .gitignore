@@ -21,7 +21,9 @@ Cargo.lock
 
 .idea/
 .vscode/
-
+.env
+# Ignore Docker env file
+docker/.env
 # Exclude Mac generated files
 .DS_Store
 
@@ -44,3 +46,6 @@ nltk_data/
 .lh/
 .venv
 docker/data
+ragflow.egg*
+.cursor/
+zDocs/

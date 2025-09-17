@@ -15,6 +15,7 @@ import { EmailConfiguration } from './email';
 import { KnowledgeGraphConfiguration } from './knowledge-graph';
 import { LawsConfiguration } from './laws';
 import { ManualConfiguration } from './manual';
+import { MonkeyOCRConfiguration } from './monkeyocr';
 import { NaiveConfiguration } from './naive';
 import { OneConfiguration } from './one';
 import { PaperConfiguration } from './paper';
@@ -43,6 +44,7 @@ const ConfigurationComponentMap = {
   [DocumentParserType.Email]: EmailConfiguration,
   [DocumentParserType.Tag]: TagConfiguration,
   [DocumentParserType.KnowledgeGraph]: KnowledgeGraphConfiguration,
+  [DocumentParserType.MonkeyOCR]: MonkeyOCRConfiguration,
 };
 
 function EmptyComponent() {

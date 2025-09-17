@@ -56,53 +56,58 @@ def factories():
 def set_api_key():
     req = request.json
     # test if api key works
-    chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
-    msg = ""
-    for llm in LLMService.query(fid=factory):
-        if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
-            assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
-            mdl = EmbeddingModel[factory](
-                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
-            try:
-                arr, tc = mdl.encode(["Test if the api key is available"])
-                if len(arr[0]) == 0:
-                    raise Exception("Fail")
-                embd_passed = True
-            except Exception as e:
-                msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
-        elif not chat_passed and llm.model_type == LLMType.CHAT.value:
-            assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
-            mdl = ChatModel[factory](
-                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
-            try:
-                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}],
-                                 {"temperature": 0.9, 'max_tokens': 50})
-                if m.find("**ERROR**") >= 0:
-                    raise Exception(m)
-                chat_passed = True
-            except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
-                    e)
-        elif not rerank_passed and llm.model_type == LLMType.RERANK:
-            assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
-            mdl = RerankModel[factory](
-                req["api_key"], llm.llm_name, base_url=req.get("base_url"))
-            try:
-                arr, tc = mdl.similarity("What's the weather?", ["Is it sunny today?"])
-                if len(arr) == 0 or tc == 0:
-                    raise Exception("Fail")
-                rerank_passed = True
-                logging.debug(f'passed model rerank {llm.llm_name}')
-            except Exception as e:
-                msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
-                    e)
-        if any([embd_passed, chat_passed, rerank_passed]):
-            msg = ''
-            break
+    
+    # Skip validation for WhisperX as it's a local model
+    if factory == "WhisperX":
+        msg = ""  # No validation needed for local model
+    else:
+        chat_passed, embd_passed, rerank_passed = False, False, False
+        msg = ""
+        for llm in LLMService.query(fid=factory):
+            if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
+                assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
+                mdl = EmbeddingModel[factory](
+                    req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+                try:
+                    arr, tc = mdl.encode(["Test if the api key is available"])
+                    if len(arr[0]) == 0:
+                        raise Exception("Fail")
+                    embd_passed = True
+                except Exception as e:
+                    msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
+            elif not chat_passed and llm.model_type == LLMType.CHAT.value:
+                assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
+                mdl = ChatModel[factory](
+                    req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+                try:
+                    m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}],
+                                     {"temperature": 0.9, 'max_tokens': 50})
+                    if m.find("**ERROR**") >= 0:
+                        raise Exception(m)
+                    chat_passed = True
+                except Exception as e:
+                    msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                        e)
+            elif not rerank_passed and llm.model_type == LLMType.RERANK:
+                assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
+                mdl = RerankModel[factory](
+                    req["api_key"], llm.llm_name, base_url=req.get("base_url"))
+                try:
+                    arr, tc = mdl.similarity("What's the weather?", ["Is it sunny today?"])
+                    if len(arr) == 0 or tc == 0:
+                        raise Exception("Fail")
+                    rerank_passed = True
+                    logging.debug(f'passed model rerank {llm.llm_name}')
+                except Exception as e:
+                    msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
+                        e)
+            if any([embd_passed, chat_passed, rerank_passed]):
+                msg = ''
+                break
 
-    if msg:
-        return get_data_error_result(message=msg)
+        if msg:
+            return get_data_error_result(message=msg)
 
     llm_config = {
         "api_key": req["api_key"],
@@ -189,6 +194,18 @@ def add_llm():
 
     elif factory == "Google Cloud":
         api_key = apikey_json(["google_project_id", "google_region", "google_service_account_key"])
+
+    elif factory == "WhisperX":
+        # For WhisperX, store configuration as JSON in api_key field
+        whisperx_config = {
+            "enable_diarization": req.get("enable_diarization", True),
+            "min_speakers": req.get("min_speakers", 1),
+            "max_speakers": req.get("max_speakers", 5),
+            "initial_prompt": req.get("initial_prompt", ""),
+            "condition_on_previous_text": req.get("condition_on_previous_text", True),
+            "diarization_batch_size": req.get("diarization_batch_size", 16)
+        }
+        api_key = json.dumps(whisperx_config)
 
     elif factory == "Azure-OpenAI":
         api_key = apikey_json(["api_key", "api_version"])
@@ -332,7 +349,7 @@ def my_llms():
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_app():
-    self_deployed = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
+    self_deployed = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack", "WhisperX"]
     weighted = ["Youdao", "FastEmbed", "BAAI"] if settings.LIGHTEN != 0 else []
     model_type = request.args.get("model_type")
     try:

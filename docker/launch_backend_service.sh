@@ -31,7 +31,7 @@ export PYTHONPATH=$(pwd)
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
 JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
 
-PY=python3
+PY=/ragflow/.venv/bin/python
 
 # Set default number of workers if WS is not set or less than 1
 if [[ -z "$WS" || $WS -lt 1 ]]; then

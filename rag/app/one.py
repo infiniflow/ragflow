@@ -74,7 +74,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
 
     eng = lang.lower() == "english"  # is_english(cks)
-
+    parser_config = kwargs.get("parser_config", {})
+    layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = naive.Docx()(filename, binary)
@@ -84,12 +85,23 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
-            pdf_parser = PlainParser()
-        sections, _ = pdf_parser(
-            filename if not binary else binary, to_page=to_page, callback=callback)
-        sections = [s for s, _ in sections if s]
+        if layout_recognizer == "MonkeyOCR":
+            from monkeydoc.parser import MonkeyDocPdfParser
+            pdf_parser = MonkeyDocPdfParser()
+            callback(0.8, "Finish parsing.")  
+            sections, _ = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page)
+            sections = [s for s, _ in sections if s]
+
+        elif layout_recognizer == "DeepDOC":
+            pdf_parser = Pdf()
+            if layout_recognizer == "Plain Text":
+                pdf_parser = PlainParser()
+            sections, _ = pdf_parser(
+                filename if not binary else binary, to_page=to_page, callback=callback)
+            sections = [s for s, _ in sections if s]
+        else:
+            raise NotImplementedError(
+                "layout_recognize not supported yet(MonkeyOCR, DeepDOC supported)")
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -126,9 +138,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
-    tokenize(doc, "\n".join(sections), eng)
+    tokenize(doc, "\n".join((remove_tag(s) for s in sections)), eng)
     return [doc]
 
+def remove_tag(txt: str) -> str:
+    """Strip inline position tags from a text line."""
+    return re.sub(r"@@[\t0-9.-]+?##", "", txt)
 
 if __name__ == "__main__":
     import sys

@@ -44,7 +44,17 @@ const HiddenFields = ['email', 'picture', 'audio'];
 export function useSelectChunkMethodList() {
   const parserList = useSelectParserList();
 
-  return parserList.filter((x) => !HiddenFields.some((y) => y === x.value));
+  // Ensure MonkeyOCR appears as a chunk method option
+  return parserList
+    .filter((x) => !HiddenFields.some((y) => y === x.value))
+    .map((x) =>
+      x.value === 'monkeyocr'
+        ? {
+            ...x,
+            label: 'MonkeyOCR',
+          }
+        : x,
+    );
 }
 
 export function useSelectEmbeddingModelOptions() {

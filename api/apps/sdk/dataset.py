@@ -94,7 +94,7 @@ def create(tenant_id):
             chunk_method:
               type: string
               enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
-                     "picture", "presentation", "qa", "table", "tag"
+                     "picture", "presentation", "qa", "table", "tag", "monkeyocr"
                      ]
               description: Chunking method.
             pagerank:
@@ -317,7 +317,7 @@ def update(tenant_id, dataset_id):
             chunk_method:
               type: string
               enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
-                     "picture", "presentation", "qa", "table", "tag"
+                     "picture", "presentation", "qa", "table", "tag", "monkeyocr"
                      ]
               description: Updated chunking method.
             pagerank:

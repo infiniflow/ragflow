@@ -325,6 +325,7 @@ class ChunkMethodnEnum(StrEnum):
     qa = auto()
     table = auto()
     tag = auto()
+    monkeyocr = auto()
 
 
 class GraphragMethodEnum(StrEnum):

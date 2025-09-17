@@ -103,7 +103,11 @@ export const useSelectParserList = (): Array<{
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     return parserArray.map((x) => {
       const arr = x.split(':');
-      return { value: arr[0], label: arr[1] };
+      // Normalize legacy "monkeydoc" key to canonical "monkeyocr"
+      const rawKey = (arr[0] || '').trim().toLowerCase();
+      const value = rawKey === 'monkeydoc' ? 'monkeyocr' : arr[0];
+      const label = value === 'monkeyocr' ? 'MonkeyOCR' : arr[1];
+      return { value, label };
     });
   }, [tenantInfo]);
 

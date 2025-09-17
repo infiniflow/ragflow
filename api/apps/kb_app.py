@@ -97,12 +97,15 @@ def update():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
-        if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
-            return get_json_result(
-                data=False,
-                message='The chunking method Tag has not been supported by Infinity yet.',
-                code=settings.RetCode.OPERATING_ERROR
-            )
+        if req.get("parser_id", "") == "tag" and os.environ.get("DOC_ENGINE", "elasticsearch") == "infinity":
+            return get_json_result(data=False, message="The chunking method Tag has not been supported by Infinity yet.", code=settings.RetCode.OPERATING_ERROR)
+        
+        # Validate MonkeyOCR parser compatibility
+        if req.get("parser_id", "") == "monkeyocr":
+            from api.utils.file_utils import is_monkeyocr_supported
+            # Note: This is a general validation - specific file validation happens during upload
+            # MonkeyOCR supports PDF and image files
+            pass
 
         if req["name"].lower() != kb.name.lower() \
                 and len(

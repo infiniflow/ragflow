@@ -137,6 +137,7 @@ from .sequence2txt_model import (
     XinferenceSeq2txt,
     TencentCloudSeq2txt,
     GPUStackSeq2txt,
+    WhisperXSeq2txt,
 )
 
 from .tts_model import (
@@ -276,6 +277,7 @@ Seq2txtModel = {
     "Xinference": XinferenceSeq2txt,
     "Tencent Cloud": TencentCloudSeq2txt,
     "GPUStack": GPUStackSeq2txt,
+    "WhisperX": WhisperXSeq2txt,
 }
 
 TTSModel = {

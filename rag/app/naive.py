@@ -439,6 +439,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
+        
+        elif layout_recognizer == "MonkeyOCR":
+            from monkeydoc.parser import MonkeyDocPdfParser
+            pdf_parser = MonkeyDocPdfParser()
+            sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page)
+            res = tokenize_table(tables, doc, is_english)
+            callback(0.8, "Finish parsing.")    
 
         else:
             if layout_recognizer == "Plain Text":

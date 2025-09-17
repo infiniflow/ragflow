@@ -18,6 +18,7 @@ const ParserListMap = new Map([
       DocumentParserType.One,
       DocumentParserType.Qa,
       DocumentParserType.KnowledgeGraph,
+      DocumentParserType.MonkeyOCR,
     ],
   ],
   [

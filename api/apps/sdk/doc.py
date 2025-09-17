@@ -300,7 +300,8 @@ def update_doc(tenant_id, dataset_id, document_id):
             "one",
             "knowledge_graph",
             "email",
-            "tag"
+            "tag",
+            "monkeyocr",
         }
         if req.get("chunk_method") not in valid_chunk_method:
             return get_error_data_result(
@@ -309,7 +310,11 @@ def update_doc(tenant_id, dataset_id, document_id):
         if doc.parser_id.lower() == req["chunk_method"].lower():
             return get_result()
 
-        if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
+        # Validate file type for monkeyocr (supports pdf and images only)
+        if req["chunk_method"].lower() == "monkeyocr":
+            if not re.search(r"\.(pdf|png|jpe?g)$", doc.name, re.IGNORECASE):
+                return get_error_data_result(message="MonkeyOCR parser only supports PDF and image files!")
+        elif doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
             return get_error_data_result(message="Not supported yet!")
 
         e = DocumentService.update_by_id(

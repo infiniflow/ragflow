@@ -49,6 +49,7 @@ export enum LLMFactory {
   SentenceTransformers = 'sentence-transformers',
   GPUStack = 'GPUStack',
   VLLM = 'VLLM',
+  WhisperX = 'WhisperX',
 }
 
 // Please lowercase the file name

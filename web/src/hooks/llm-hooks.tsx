@@ -143,7 +143,12 @@ export const useComposeLlmOptionsByModelTypes = (
 
   return modelTypes.reduce<
     (DefaultOptionType & {
-      options: { label: JSX.Element; value: string; disabled: boolean; is_tools: boolean }[];
+      options: {
+        label: JSX.Element;
+        value: string;
+        disabled: boolean;
+        is_tools: boolean;
+      }[];
     })[]
   >((pre, cur) => {
     const options = allOptions[cur];
@@ -228,6 +233,13 @@ export interface IApiKeySavingParams {
   llm_name?: string;
   model_type?: string;
   base_url?: string;
+  // WhisperX specific configuration
+  enable_diarization?: boolean;
+  min_speakers?: number;
+  max_speakers?: number;
+  initial_prompt?: string;
+  condition_on_previous_text?: boolean;
+  diarization_batch_size?: number;
 }
 
 export const useSaveApiKey = () => {
