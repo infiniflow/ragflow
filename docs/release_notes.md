@@ -9,8 +9,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.5-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.5`
 :::
 
 :::danger IMPORTANT
@@ -21,6 +21,45 @@ The embedding models included in a full edition are:
 
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
+
+## v0.20.5
+
+Released on September 10, 2025.
+
+### Improvements
+
+- Agent: 
+  - Agent Performance Optimized: Improves planning and reflection speed for simple tasks; optimizes concurrent tool calls for parallelizable scenarios, significantly reducing overall response time.
+  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control. See [here](./guides/agent/agent_component_reference/agent.mdx#system-prompt).
+  - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables.
+- Chat: Re-enables **Reasoning** and **Cross-language search**.
+
+### Added models
+
+- Meituan LongCat
+- Kimi: kimi-k2-turbo-preview and kimi-k2-0905-preview
+- Qwen: qwen3-max-preview
+- SiliconFlow: DeepSeek V3.1
+
+### Fixed issues
+
+- Dataset: Deleted files remained searchable.
+- Chat: Unable to chat with an Ollama model.
+- Agent:
+  - A **Cite** toggle failure.
+  - An Agent in task mode still required a dialogue to trigger.
+  - Repeated answers in multi-turn dialogues.
+  - Duplicate summarization of parallel execution results.
+
+### API changes
+
+#### HTTP APIs
+
+- Adds a body parameter `"metadata_condition"` to the [Retrieve chunks](./references/http_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
+
+#### Python APIs
+
+- Adds a parameter `metadata_condition` to the [Retrieve chunks](./references/python_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
 
 ## v0.20.4
 

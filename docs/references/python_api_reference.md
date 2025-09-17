@@ -977,7 +977,7 @@ The languages that should be translated into, in order to achieve keywords retri
 
 ##### metadata_condition: `dict`
 
-filter condition for meta_fields
+filter condition for `meta_fields`.
 
 #### Returns
 

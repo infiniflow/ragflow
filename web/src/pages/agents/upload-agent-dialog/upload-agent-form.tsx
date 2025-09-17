@@ -13,32 +13,24 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { FileMimeType, Platform } from '@/constants/common';
+import { FileMimeType } from '@/constants/common';
 import { IModalProps } from '@/interfaces/common';
 import { TagRenameId } from '@/pages/add-knowledge/constant';
-import { useTranslation } from 'react-i18next';
+import { NameFormField, NameFormSchema } from '../name-form-field';
 
-// const options = Object.values(Platform).map((x) => ({ label: x, value: x }));
+export const FormSchema = z.object({
+  fileList: z.array(z.instanceof(File)),
+  ...NameFormSchema,
+});
 
+export type FormSchemaType = z.infer<typeof FormSchema>;
 export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
-  const { t } = useTranslation();
-  const FormSchema = z.object({
-    platform: z
-      .string()
-      .min(1, {
-        message: t('common.namePlaceholder'),
-      })
-      .trim(),
-    fileList: z.array(z.instanceof(File)),
-  });
-
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
-    defaultValues: { platform: Platform.RAGFlow },
+    defaultValues: { name: '' },
   });
 
-  async function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
+  async function onSubmit(data: FormSchemaType) {
     const ret = await onOk?.(data);
     if (ret) {
       hideModal?.();
@@ -52,12 +44,13 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
         className="space-y-6"
         id={TagRenameId}
       >
+        <NameFormField></NameFormField>
         <FormField
           control={form.control}
           name="fileList"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('common.name')}</FormLabel>
+              <FormLabel required>DSL</FormLabel>
               <FormControl>
                 <FileUploader
                   value={field.value}
@@ -70,19 +63,6 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
-        {/* <FormField
-          control={form.control}
-          name="platform"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('common.name')}</FormLabel>
-              <FormControl>
-                <RAGFlowSelect {...field} options={options} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        /> */}
       </form>
     </Form>
   );

@@ -155,7 +155,10 @@ class Base(ABC):
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        if kwargs.get("stop") or "stop" in gen_conf:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        else:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
         for resp in response:
             if not resp.choices:
                 continue
@@ -1350,6 +1353,23 @@ class Ai302Chat(Base):
     def __init__(self, key, model_name, base_url="https://api.302.ai/v1", **kwargs):
         if not base_url:
             base_url = "https://api.302.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class TokenPonyChat(Base):
+    _FACTORY_NAME = "TokenPony"
+
+    def __init__(self, key, model_name, base_url="https://ragflow.vip-api.tokenpony.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
+
+            
+class MeituanChat(Base):
+    _FACTORY_NAME = "Meituan"
+
+    def __init__(self, key, model_name, base_url="https://api.longcat.chat/openai", **kwargs):
+        if not base_url:
+            base_url = "https://api.longcat.chat/openai"
         super().__init__(key, model_name, base_url, **kwargs)
 
 

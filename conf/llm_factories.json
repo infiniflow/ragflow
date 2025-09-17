@@ -220,6 +220,70 @@
             ]
         },
         {
+            "name": "TokenPony",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "qwen3-8b",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3-0324",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-32b",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2-instruct",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-r1-0528",
+                    "tags": "LLM,CHAT,164k",
+                    "max_tokens": 164000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-coder-480b",
+                    "tags": "LLM,CHAT,1024k",
+                    "max_tokens": 1024000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.5",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3.1",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
+        },
+        {
             "name": "Tongyi-Qianwen",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,TTS,SPEECH2TEXT,MODERATION",
@@ -752,6 +816,20 @@
                     "llm_name": "kimi-k2-0711-preview",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2-0905-preview",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2-turbo-preview",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -2795,6 +2873,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.1",
+                    "tags": "LLM,CHAT,160k",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3.1",
+                    "tags": "LLM,CHAT,160",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
@@ -4446,6 +4538,21 @@
                     "max_tokens": 10240,
                     "model_type": "rerank",
                     "is_tools": false
+                }
+            ]
+        },
+        {
+            "name": "Meituan",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "LongCat-Flash-Chat",
+                    "tags": "LLM,CHAT,8000",
+                    "max_tokens": 8000,
+                    "model_type": "chat",
+                    "is_tools": true
                 }
             ]
         }

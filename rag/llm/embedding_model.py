@@ -751,6 +751,12 @@ class SILICONFLOWEmbed(Base):
         token_count = 0
         for i in range(0, len(texts), batch_size):
             texts_batch = texts[i : i + batch_size]
+            if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
+                # limit 512, 340 is almost safe
+                texts_batch = [" " if not text.strip() else truncate(text, 340) for text in texts_batch]
+            else:
+                texts_batch = [" " if not text.strip() else text for text in texts_batch]
+
             payload = {
                 "model": self.model_name,
                 "input": texts_batch,
@@ -935,7 +941,7 @@ class GiteeEmbed(SILICONFLOWEmbed):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
-        
+
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 

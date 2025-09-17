@@ -14,7 +14,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
-import { initialGoogleValues } from '../../constant';
+import { initialParserValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -25,7 +25,7 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 
-const outputList = buildOutputList(initialGoogleValues.outputs);
+const outputList = buildOutputList(initialParserValues.outputs);
 
 export const GoogleFormPartialSchema = {
   api_key: z.string(),
@@ -84,7 +84,7 @@ export function GoogleFormWidgets() {
 
 const ParserForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslate('flow');
-  const defaultValues = useFormValues(initialGoogleValues, node);
+  const defaultValues = useFormValues(initialParserValues, node);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,

@@ -40,6 +40,7 @@ import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useMoveNote } from '../hooks/use-move-note';
 import { useDropdownManager } from './context';
 
+import Spotlight from '@/components/spotlight';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
@@ -309,6 +310,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onBeforeDelete={handleBeforeDelete}
         >
           <AgentBackground></AgentBackground>
+          <Spotlight className="z-0" opcity={0.7} coverage={70} />
           <Controls position={'bottom-center'} orientation="horizontal">
             <ControlButton>
               <Tooltip>

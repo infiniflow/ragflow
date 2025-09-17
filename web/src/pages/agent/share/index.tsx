@@ -5,10 +5,7 @@ import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
-import {
-  useFetchExternalAgentInputs,
-  useUploadCanvasFileWithProgress,
-} from '@/hooks/use-agent-request';
+import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import i18n from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
@@ -18,7 +15,6 @@ import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
 import React, { forwardRef, useCallback } from 'react';
-import { AgentDialogueMode } from '../constant';
 import {
   useGetSharedChatSearchParams,
   useSendNextSharedMessage,
@@ -43,9 +39,6 @@ const ChatContainer = () => {
     clearEventList,
   } = useCacheChatLog();
 
-  const { data: inputsData } = useFetchExternalAgentInputs();
-  const isTaskMode = inputsData.mode === AgentDialogueMode.Task;
-
   const {
     handlePressEnter,
     handleInputChange,
@@ -55,6 +48,8 @@ const ChatContainer = () => {
     messageContainerRef,
     derivedMessages,
     hasError,
+    inputsData,
+    isTaskMode,
     stopOutputMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
@@ -64,13 +59,20 @@ const ChatContainer = () => {
     addNewestOneAnswer,
     ok,
     resetSession,
-  } = useSendNextSharedMessage(addEventList, isTaskMode);
+  } = useSendNextSharedMessage(addEventList);
+
   const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
     derivedMessages,
     sendFormMessage,
     canvasId: conversationId as string,
   });
   const sendDisabled = useSendButtonDisabled(value);
+
+  const showBeginParameterDialog = useCallback(() => {
+    if (inputsData && inputsData.inputs && !isEmpty(inputsData.inputs)) {
+      showParameterDialog();
+    }
+  }, [inputsData, showParameterDialog]);
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
@@ -96,10 +98,8 @@ const ChatContainer = () => {
   }, [inputsData.prologue, addNewestOneAnswer, isTaskMode]);
 
   React.useEffect(() => {
-    if (inputsData && inputsData.inputs && !isEmpty(inputsData.inputs)) {
-      showParameterDialog();
-    }
-  }, [inputsData, showParameterDialog]);
+    showBeginParameterDialog();
+  }, [showBeginParameterDialog]);
 
   const handleInputsModalOk = (params: any[]) => {
     ok(params);
@@ -107,10 +107,12 @@ const ChatContainer = () => {
   const handleReset = () => {
     resetSession();
     clearEventList();
+    showBeginParameterDialog();
   };
   if (!conversationId) {
     return <div>empty</div>;
   }
+
   return (
     <>
       <EmbedContainer
