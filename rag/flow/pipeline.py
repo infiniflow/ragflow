@@ -49,6 +49,23 @@ class Pipeline(Graph):
             else:
                 obj = [{"component_name": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]}]
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
+            if self._doc_id:
+                percentage = 1./len(self.components.items())
+                msg = ""
+                finished = 0.
+                for o in obj:
+                    if o['component_name'] == "END":
+                        continue
+                    msg += f"\n[{o['component_name']}]:\n"
+                    for t in o["trace"]:
+                        msg += "%s: %s\n"%(t["datetime"], t["message"])
+                        if t["progress"] < 0:
+                            finished = -1
+                            break
+                    if finished < 0:
+                        break
+                    finished += o["trace"][-1]["progress"] * percentage
+                DocumentService.update_by_id(self._doc_id, {"progress": finished, "progress_msg": msg})
         except Exception as e:
             logging.exception(e)
 
@@ -108,5 +125,11 @@ class Pipeline(Graph):
             idx += 1
             self.path.extend(cpn_obj.get_downstream())
 
+        self.callback("END", 1, json.dumps(self.get_component_obj(self.path[-1]).output(), ensure_ascii=False))
+
         if self._doc_id:
-            DocumentService.update_by_id(self._doc_id, {"progress": 1 if not self.error else -1, "progress_msg": "Pipeline finished...\n" + self.error, "process_duration": time.perf_counter() - st})
+            DocumentService.update_by_id(self._doc_id,{
+                "progress": 1 if not self.error else -1,
+                "progress_msg": "Pipeline finished...\n" + self.error,
+                "process_duration": time.perf_counter() - st
+            })

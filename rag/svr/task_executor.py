@@ -23,6 +23,7 @@ import time
 
 from api.utils import get_uuid
 from api.utils.api_utils import timeout
+from api.utils.base64_image import image2id
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
@@ -301,30 +302,8 @@ async def build_chunks(task, progress_callback):
                 d["img_id"] = ""
                 docs.append(d)
                 return
-
-            with BytesIO() as output_buffer:
-                if isinstance(d["image"], bytes):
-                    output_buffer.write(d["image"])
-                    output_buffer.seek(0)
-                else:
-                    # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
-                    if d["image"].mode in ("RGBA", "P"):
-                        converted_image = d["image"].convert("RGB")
-                        #d["image"].close()  # Close original image
-                        d["image"] = converted_image
-                    try:
-                        d["image"].save(output_buffer, format='JPEG')
-                    except OSError as e:
-                        logging.warning(
-                            "Saving image of chunk {}/{}/{} got exception, ignore: {}".format(task["location"], task["name"], d["id"], str(e)))
-
-                async with minio_limiter:
-                    await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-                if not isinstance(d["image"], bytes):
-                    d["image"].close()
-                del d["image"]  # Remove image reference
-                docs.append(d)
+            await image2id(d, partial(STORAGE_IMPL.put), task["kb_id"], d["id"])
+            docs.append(d)
         except Exception:
             logging.exception(
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))

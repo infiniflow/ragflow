@@ -12,18 +12,25 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import json
 import logging
 import random
+from functools import partial
 
 import trio
 
 from api.db import LLMType
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
+from api.utils import get_uuid
+from api.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class ParserParam(ProcessParamBase):
@@ -79,7 +86,7 @@ class ParserParam(ProcessParamBase):
                 "output_format": "json",
             },
             "markdown": {
-                "suffix": ["md", "markdown"],
+                "suffix": ["md", "markdown", "mdx"],
                 "output_format": "json",
             },
             "ppt": {},
@@ -142,10 +149,8 @@ class ParserParam(ProcessParamBase):
 class Parser(ProcessBase):
     component_name = "Parser"
 
-    def _pdf(self, from_upstream: ParserFromUpstream):
+    def _pdf(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
-
-        blob = from_upstream.blob
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
 
@@ -156,7 +161,7 @@ class Parser(ProcessBase):
             bboxes = [{"text": t} for t, _ in lines]
         else:
             assert conf.get("llm_id")
-            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
+            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf["llm_id"], lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
@@ -164,6 +169,9 @@ class Parser(ProcessBase):
                 bboxes.append({"page_number": int(pn), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
 
         if conf.get("output_format") == "json":
+            for b in bboxes:
+                if not b.get("image"):
+                    continue
             self.set_output("json", bboxes)
         if conf.get("output_format") == "markdown":
             mkdn = ""
@@ -176,10 +184,8 @@ class Parser(ProcessBase):
                 mkdn += b.get("text", "") + "\n"
             self.set_output("markdown", mkdn)
 
-    def _spreadsheet(self, from_upstream: ParserFromUpstream):
+    def _spreadsheet(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
-
-        blob = from_upstream.blob
         conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
 
@@ -193,13 +199,10 @@ class Parser(ProcessBase):
         elif conf.get("output_format") == "markdown":
             self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
-    def _word(self, from_upstream: ParserFromUpstream):
+    def _word(self, name, blob):
         from tika import parser as  word_parser
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
-
-        blob = from_upstream.blob
-        name = from_upstream.name
         conf = self._param.setups["word"]
         self.set_output("output_format", conf["output_format"])
 
@@ -218,16 +221,12 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             self.set_output("json", sections)
 
-    def _markdown(self, from_upstream: ParserFromUpstream):
+    def _markdown(self, name, blob):
         from functools import reduce
-
         from rag.app.naive import Markdown as naive_markdown_parser
         from rag.nlp import concat_img
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
-
-        blob = from_upstream.blob
-        name = from_upstream.name
         conf = self._param.setups["markdown"]
         self.set_output("output_format", conf["output_format"])
 
@@ -252,15 +251,13 @@ class Parser(ProcessBase):
 
                 json_results.append(json_result)
 
+            print("MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM\n", json.dumps(json_results, ensure_ascii=False, indent=2))
             self.set_output("json", json_results)
 
-    def _text(self, from_upstream: ParserFromUpstream):
+    def _text(self, name, blob):
         from deepdoc.parser.utils import get_text
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a text.")
-
-        blob = from_upstream.blob
-        name = from_upstream.name
         conf = self._param.setups["text"]
         self.set_output("output_format", conf["output_format"])
 
@@ -288,8 +285,20 @@ class Parser(ProcessBase):
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return
 
+        name = from_upstream.name
+        if self._canvas._doc_id:
+            b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
+            blob = STORAGE_IMPL.get(b, n)
+        else:
+            blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
+
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await trio.to_thread.run_sync(function_map[p_type], from_upstream)
+            await trio.to_thread.run_sync(function_map[p_type], name, blob)
             break
+
+        outs = self.output()
+        async with trio.open_nursery() as nursery:
+            for d in outs.get("json", []):
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), "_image_temps", get_uuid())

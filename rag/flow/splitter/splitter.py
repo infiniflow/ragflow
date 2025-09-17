@@ -14,35 +14,29 @@
 #  limitations under the License.
 import json
 import random
+from functools import partial
 
 import trio
 
-from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
+from api.utils import get_uuid
+from api.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
-from graphrag.utils import chat_limiter, get_llm_cache, set_llm_cache
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.flow.chunker.schema import ChunkerFromUpstream
 from rag.flow.splitter.schema import SplitterFromUpstream
-from rag.nlp import naive_merge, naive_merge_with_images, concat_img
-from rag.prompts.prompts import keyword_extraction, question_proposal, detect_table_of_contents, \
-    extract_table_of_contents, table_of_contents_index, toc_transformer
-from rag.utils import num_tokens_from_string
+from rag.nlp import naive_merge, naive_merge_with_images
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class SplitterParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
         self.chunk_token_size = 512
-        self.delimiter = "\n"
+        self.delimiters = ["\n"]
         self.overlapped_percent = 0
 
     def check(self):
-        self.check_valid_value(self.method.lower(), "Chunk method abnormal.", self.method_options)
+        self.check_empty(self.delimiters, "Delimiters.")
         self.check_positive_integer(self.chunk_token_size, "Chunk token size.")
-        self.check_nonnegative_number(self.page_rank, "Page rank value: (0, 10]")
-        self.check_nonnegative_number(self.auto_keywords, "Auto-keyword value: (0, 10]")
-        self.check_nonnegative_number(self.auto_questions, "Auto-question value: (0, 10]")
         self.check_decimal_float(self.overlapped_percent, "Overlapped percentage: [0, 1)")
 
     def get_input_form(self) -> dict[str, dict]:
@@ -59,6 +53,13 @@ class Splitter(ProcessBase):
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return
 
+        deli = ""
+        for d in self._param.delimiters:
+            if len(d) > 1:
+                deli += f"`{d}`"
+            else:
+                deli += d
+
         self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")
         if from_upstream.output_format in ["markdown", "text", "html"]:
             if from_upstream.output_format == "markdown":
@@ -74,7 +75,7 @@ class Splitter(ProcessBase):
             cks = naive_merge(
                 payload,
                 self._param.chunk_token_size,
-                self._param.delimiter,
+                deli,
                 self._param.overlapped_percent,
             )
             self.set_output("chunks", [{"text": c} for c in cks])
@@ -86,22 +87,26 @@ class Splitter(ProcessBase):
         sections, section_images = [], []
         for o in from_upstream.json_result or []:
             sections.append((o.get("text", ""), o.get("position_tag", "")))
-            section_images.append(o.get("image"))
+            section_images.append(id2image(o.get("img_id"), partial(STORAGE_IMPL.get)))
 
         chunks, images = naive_merge_with_images(
             sections,
             section_images,
             self._param.chunk_token_size,
-            self._param.delimiter,
+            deli,
             self._param.overlapped_percent,
         )
-
-        self.set_output("chunks",  [
+        cks = [
             {
                 "text": RAGFlowPdfParser.remove_tag(c),
                 "image": img,
                 "positions": RAGFlowPdfParser.extract_positions(c),
             }
             for c, img in zip(chunks, images)
-        ])
+        ]
+        async with trio.open_nursery() as nursery:
+            for d in cks:
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), "_image_temps", get_uuid())
+        print("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\n", json.dumps(cks, ensure_ascii=False, indent=2))
+        self.set_output("chunks",  cks)
         self.callback(1, "Done.")

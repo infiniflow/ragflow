@@ -53,7 +53,7 @@
           }
         },
         "downstream": ["Splitter:0"],
-        "upstream": ["Begin"]
+        "upstream": ["File"]
     },
     "Splitter:0": {
         "obj": {
@@ -64,17 +64,19 @@
               "overlapped_percent": 0
             }
         },
-        "downstream": ["Tokenizer:0"],
+        "downstream": ["HierarchicalMerger:0"],
         "upstream": ["Parser:0"]
     },
-    "Tokenizer:0": {
+    "HierarchicalMerger:0": {
         "obj": {
-            "component_name": "Tokenizer",
+            "component_name": "HierarchicalMerger",
             "params": {
+              "levels": [["#"], ["##"], ["###"], ["####"]],
+              "hierarchy": 2
             }
         },
         "downstream": [],
-        "upstream": ["Chunker:0"]
+        "upstream": ["Splitter:0"]
     }
   },
   "path": []
