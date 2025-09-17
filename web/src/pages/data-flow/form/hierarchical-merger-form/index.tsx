@@ -44,6 +44,8 @@ export const FormSchema = z.object({
   ),
 });
 
+export type HierarchicalMergerFormSchemaType = z.infer<typeof FormSchema>;
+
 type RegularExpressionsProps = {
   index: number;
   parentName: string;
@@ -113,7 +115,7 @@ export function RegularExpressions({
 const HierarchicalMergerForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialHierarchicalMergerValues, node);
 
-  const form = useForm<z.infer<typeof FormSchema>>({
+  const form = useForm<HierarchicalMergerFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
   });

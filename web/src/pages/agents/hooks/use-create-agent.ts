@@ -1,45 +1,39 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetAgent } from '@/hooks/use-agent-request';
-import { EmptyDsl, useSetDataflow } from '@/hooks/use-dataflow-request';
+import { EmptyDsl, useSetAgent } from '@/hooks/use-agent-request';
+import { DSL } from '@/interfaces/database/agent';
+import { AgentCategory } from '@/pages/agent/constant';
 import { useCallback } from 'react';
 import { FlowType } from '../constant';
 import { FormSchemaType } from '../create-agent-form';
 
 export function useCreateAgentOrPipeline() {
   const { loading, setAgent } = useSetAgent();
-  const { loading: dataflowLoading, setDataflow } = useSetDataflow();
   const {
     visible: creatingVisible,
     hideModal: hideCreatingModal,
     showModal: showCreatingModal,
   } = useSetModalState();
 
-  const createAgent = useCallback(
-    async (name: string) => {
-      return setAgent({ title: name, dsl: EmptyDsl });
-    },
-    [setAgent],
-  );
-
   const handleCreateAgentOrPipeline = useCallback(
     async (data: FormSchemaType) => {
-      if (data.type === FlowType.Agent) {
-        const ret = await createAgent(data.name);
-        if (ret.code === 0) {
-          hideCreatingModal();
-        }
-      } else {
-        setDataflow({
-          title: data.name,
-          dsl: EmptyDsl,
-        });
+      const ret = await setAgent({
+        title: data.name,
+        dsl: EmptyDsl as DSL,
+        canvas_category:
+          data.type === FlowType.Agent
+            ? AgentCategory.AgentCanvas
+            : AgentCategory.DataflowCanvas,
+      });
+
+      if (ret.code === 0) {
+        hideCreatingModal();
       }
     },
-    [createAgent, hideCreatingModal, setDataflow],
+    [hideCreatingModal, setAgent],
   );
 
   return {
-    loading: loading || dataflowLoading,
+    loading: loading,
     creatingVisible,
     hideCreatingModal,
     showCreatingModal,
