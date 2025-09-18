@@ -287,7 +287,7 @@ const routes = [
     ],
   },
   {
-    path: `${Routes.DataflowResult}/:id`,
+    path: `${Routes.DataflowResult}`,
     layout: false,
     component: `@/pages${Routes.DataflowResult}`,
   },

@@ -7,6 +7,7 @@ import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
+import HierarchicalMergerForm from '../form/hierarchical-merger-form';
 import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
@@ -16,6 +17,7 @@ import ParserForm from '../form/parser-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
+import SplitterForm from '../form/splitter-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TokenizerForm from '../form/tokenizer-form';
@@ -93,5 +95,11 @@ export const FormConfigMap = {
   },
   [Operator.Tokenizer]: {
     component: TokenizerForm,
+  },
+  [Operator.Splitter]: {
+    component: SplitterForm,
+  },
+  [Operator.HierarchicalMerger]: {
+    component: HierarchicalMergerForm,
   },
 };

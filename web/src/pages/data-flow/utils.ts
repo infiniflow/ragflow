@@ -9,7 +9,15 @@ import { removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
-import { curry, get, intersectionWith, isEqual, omit, sample } from 'lodash';
+import {
+  curry,
+  get,
+  intersectionWith,
+  isEmpty,
+  isEqual,
+  omit,
+  sample,
+} from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
@@ -18,6 +26,9 @@ import {
   NodeHandleId,
   Operator,
 } from './constant';
+import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
+import { ParserFormSchemaType } from './form/parser-form';
+import { SplitterFormSchemaType } from './form/splitter-form';
 import { BeginQuery, IPosition } from './interface';
 
 function buildAgentExceptionGoto(edges: Edge[], nodeId: string) {
@@ -63,10 +74,7 @@ const buildComponentDownstreamOrUpstream = (
 
 const removeUselessDataInTheOperator = curry(
   (operatorName: string, params: Record<string, unknown>) => {
-    if (
-      operatorName === Operator.Generate ||
-      operatorName === Operator.Categorize
-    ) {
+    if (operatorName === Operator.Categorize) {
       return removeUselessFieldsFromValues(params, '');
     }
     return params;
@@ -151,6 +159,44 @@ export function isBottomSubAgent(edges: Edge[], nodeId?: string) {
   );
   return !!edge;
 }
+// Because the array of react-hook-form must be object data,
+// it needs to be converted into a simple data type array required by the backend
+function transformObjectArrayToPureArray(
+  list: Array<Record<string, any>>,
+  field: string,
+) {
+  return Array.isArray(list)
+    ? list.filter((x) => !isEmpty(x[field])).map((y) => y[field])
+    : [];
+}
+
+function transformParserParams(params: ParserFormSchemaType) {
+  return params.parser.reduce<
+    Record<string, ParserFormSchemaType['parser'][0]>
+  >((pre, cur) => {
+    if (cur.fileFormat) {
+      pre[cur.fileFormat] = omit(cur, 'fileFormat');
+    }
+    return pre;
+  }, {});
+}
+
+function transformSplitterParams(params: SplitterFormSchemaType) {
+  return {
+    ...params,
+    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+  };
+}
+
+function transformHierarchicalMergerParams(
+  params: HierarchicalMergerFormSchemaType,
+) {
+  const levels = params.levels.map((x) =>
+    transformObjectArrayToPureArray(x.expressions, 'expression'),
+  );
+
+  return { ...params, hierarchy: Number(params.hierarchy), levels };
+}
 
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
@@ -182,6 +228,18 @@ export const buildDslComponentsByGraph = (
         }
         case Operator.Categorize:
           params = buildCategorize(edges, nodes, id);
+          break;
+
+        case Operator.Parser:
+          params = transformParserParams(params);
+          break;
+
+        case Operator.Splitter:
+          params = transformSplitterParams(params);
+          break;
+
+        case Operator.HierarchicalMerger:
+          params = transformHierarchicalMergerParams(params);
           break;
 
         default:

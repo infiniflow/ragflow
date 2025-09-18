@@ -22,7 +22,7 @@ export function SideBar({ refreshCount }: PropType) {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
   // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchKnowledgeBaseConfiguration(refreshCount);
+  const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
@@ -46,7 +46,7 @@ export function SideBar({ refreshCount }: PropType) {
       {
         icon: Banknote,
         label: t(`knowledgeDetails.configuration`),
-        key: Routes.DatasetSetting,
+        key: Routes.DataSetSetting,
       },
     ];
     if (!isEmpty(routerData?.graph)) {

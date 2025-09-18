@@ -2,11 +2,10 @@ import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import random from 'lodash/random';
-import { Plus } from 'lucide-react';
+import { Shuffle } from 'lucide-react';
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { SliderInputFormField } from '../slider-input-form-field';
-import { Button } from '../ui/button';
 import {
   FormControl,
   FormField,
@@ -14,7 +13,7 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
-import { Input } from '../ui/input';
+import { ExpandedInput } from '../ui/input';
 import { Switch } from '../ui/switch';
 import { Textarea } from '../ui/textarea';
 
@@ -93,7 +92,7 @@ const RaptorFormFields = () => {
               <div className="flex items-center gap-1">
                 <FormLabel
                   tooltip={t('useRaptorTip')}
-                  className="text-sm text-muted-foreground w-1/4 whitespace-break-spaces"
+                  className="text-sm  w-1/4 whitespace-break-spaces"
                 >
                   <div className="w-auto xl:w-20 2xl:w-24 3xl:w-28 4xl:w-auto ">
                     {t('useRaptor')}
@@ -130,7 +129,7 @@ const RaptorFormFields = () => {
                   <div className="flex items-start">
                     <FormLabel
                       tooltip={t('promptTip')}
-                      className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                      className="text-sm  whitespace-nowrap w-1/4"
                     >
                       {t('prompt')}
                     </FormLabel>
@@ -185,21 +184,23 @@ const RaptorFormFields = () => {
             render={({ field }) => (
               <FormItem className=" items-center space-y-0 ">
                 <div className="flex items-center">
-                  <FormLabel className="text-sm text-muted-foreground whitespace-wrap w-1/4">
+                  <FormLabel className="text-sm  whitespace-wrap w-1/4">
                     {t('randomSeed')}
                   </FormLabel>
                   <div className="w-3/4">
                     <FormControl defaultValue={0}>
-                      <div className="flex gap-4 items-center">
-                        <Input {...field} defaultValue={0} type="number" />
-                        <Button
-                          size={'sm'}
-                          onClick={handleGenerate}
-                          type={'button'}
-                        >
-                          <Plus />
-                        </Button>
-                      </div>
+                      <ExpandedInput
+                        {...field}
+                        className="w-full"
+                        defaultValue={0}
+                        type="number"
+                        suffix={
+                          <Shuffle
+                            className="size-3.5 cursor-pointer"
+                            onClick={handleGenerate}
+                          />
+                        }
+                      />
                     </FormControl>
                   </div>
                 </div>

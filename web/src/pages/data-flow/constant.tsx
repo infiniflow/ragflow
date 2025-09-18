@@ -66,6 +66,8 @@ export enum Operator {
   Parser = 'Parser',
   Chunker = 'Chunker',
   Tokenizer = 'Tokenizer',
+  Splitter = 'Splitter',
+  HierarchicalMerger = 'HierarchicalMerger',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -73,20 +75,6 @@ export const SwitchLogicOperatorOptions = ['and', 'or'];
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
 );
-
-export const AgentOperatorList = [
-  Operator.Retrieval,
-  Operator.Categorize,
-  Operator.Message,
-  Operator.RewriteQuestion,
-  Operator.KeywordExtract,
-  Operator.Switch,
-  Operator.Concentrator,
-  Operator.Iteration,
-  Operator.WaitingDialogue,
-  Operator.Note,
-  Operator.Agent,
-];
 
 export const SwitchOperatorOptions = [
   { value: '=', label: 'equal', icon: 'equal' },
@@ -319,7 +307,11 @@ export const initialWaitingDialogueValues = {};
 
 export const initialChunkerValues = { outputs: {} };
 
-export const initialTokenizerValues = {};
+export const initialTokenizerValues = {
+  search_method: [],
+  filename_embd_weight: 0.1,
+  outputs: {},
+};
 
 export const initialAgentValues = {
   ...initialLlmBaseValues,
@@ -388,7 +380,11 @@ export const initialStringTransformValues = {
   },
 };
 
-export const initialParserValues = { outputs: {} };
+export const initialParserValues = { outputs: {}, parser: [] };
+
+export const initialSplitterValues = { outputs: {}, chunk_token_size: 512 };
+
+export const initialHierarchicalMergerValues = { outputs: {} };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -409,42 +405,10 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Relevant],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
-  [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Message]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Retrieval,
-    Operator.RewriteQuestion,
-    Operator.Categorize,
-  ],
-  [Operator.Relevant]: [Operator.Begin],
-  [Operator.RewriteQuestion]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-    Operator.Relevant,
-  ],
-  [Operator.KeywordExtract]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Relevant,
-  ],
-  [Operator.ExeSQL]: [Operator.Begin],
-  [Operator.Switch]: [Operator.Begin],
-  [Operator.Concentrator]: [Operator.Begin],
-  [Operator.Crawler]: [Operator.Begin],
-  [Operator.Note]: [],
-  [Operator.Invoke]: [Operator.Begin],
-  [Operator.Email]: [Operator.Begin],
-  [Operator.Iteration]: [Operator.Begin],
-  [Operator.IterationStart]: [Operator.Begin],
-  [Operator.Code]: [Operator.Begin],
-  [Operator.WaitingDialogue]: [Operator.Begin],
-  [Operator.Agent]: [Operator.Begin],
-  [Operator.StringTransform]: [Operator.Begin],
-  [Operator.UserFillUp]: [Operator.Begin],
-  [Operator.Tool]: [Operator.Begin],
+  [Operator.Parser]: [Operator.Begin],
+  [Operator.Splitter]: [Operator.Begin],
+  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.Tokenizer]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -473,6 +437,8 @@ export const NodeMap = {
   [Operator.Parser]: 'parserNode',
   [Operator.Chunker]: 'chunkerNode',
   [Operator.Tokenizer]: 'tokenizerNode',
+  [Operator.Splitter]: 'splitterNode',
+  [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
 };
 
 export enum BeginQueryType {
@@ -522,4 +488,21 @@ export enum VariableType {
 export enum AgentExceptionMethod {
   Comment = 'comment',
   Goto = 'goto',
+}
+
+export enum FileType {
+  PDF = 'pdf',
+  Spreadsheet = 'spreadsheet',
+  Image = 'image',
+  Email = 'email',
+  TextMarkdown = 'text&markdown',
+  Docx = 'docx',
+  PowerPoint = 'ppt',
+  Video = 'video',
+  Audio = 'audio',
+}
+
+export enum TokenizerSearchMethod {
+  Embedding = 'embedding',
+  FullText = 'full_text',
 }

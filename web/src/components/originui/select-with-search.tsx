@@ -45,6 +45,8 @@ export type SelectWithSearchFlagProps = {
   onChange?(value: string): void;
   triggerClassName?: string;
   allowClear?: boolean;
+  disabled?: boolean;
+  placeholder?: string;
 };
 
 export const SelectWithSearch = forwardRef<
@@ -58,6 +60,8 @@ export const SelectWithSearch = forwardRef<
       options = [],
       triggerClassName,
       allowClear = false,
+      disabled = false,
+      placeholder = t('common.selectPlaceholder'),
     },
     ref,
   ) => {
@@ -105,6 +109,7 @@ export const SelectWithSearch = forwardRef<
             role="combobox"
             aria-expanded={open}
             ref={ref}
+            disabled={disabled}
             className={cn(
               'bg-background hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
               triggerClassName,
@@ -115,9 +120,7 @@ export const SelectWithSearch = forwardRef<
                 <span className="leading-none truncate">{selectLabel}</span>
               </span>
             ) : (
-              <span className="text-muted-foreground">
-                {t('common.selectPlaceholder')}
-              </span>
+              <span className="text-muted-foreground">{placeholder}</span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (

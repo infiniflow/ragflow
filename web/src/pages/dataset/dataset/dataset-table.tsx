@@ -29,6 +29,8 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { getExtension } from '@/utils/document-util';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
+import ProcessLogModal from '../process-log-modal';
+import { useShowLog } from './hooks';
 import { SetMetaDialog } from './set-meta-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
@@ -81,11 +83,13 @@ export function DatasetTable({
     onSetMetaModalOk,
     metaRecord,
   } = useSaveMeta();
+  const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     showRenameModal,
     showSetMetaModal,
+    showLog,
   });
 
   const currentPagination = useMemo(() => {
@@ -206,6 +210,13 @@ export function DatasetTable({
           onOk={onSetMetaModalOk}
           initialMetaData={metaRecord.meta_fields}
         ></SetMetaDialog>
+      )}
+      {logVisible && (
+        <ProcessLogModal
+          visible={logVisible}
+          onCancel={() => hideLog()}
+          logInfo={logInfo}
+        />
       )}
     </div>
   );

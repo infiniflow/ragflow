@@ -7,6 +7,7 @@ import {
   IAgentLogsResponse,
   IFlow,
   IFlowTemplate,
+  IPipeLineListRequest,
   ITraceData,
 } from '@/interfaces/database/agent';
 import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
@@ -16,6 +17,7 @@ import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import agentService, {
   fetchAgentLogsByCanvasId,
+  fetchPipeLineList,
   fetchTrace,
 } from '@/services/agent-service';
 import api from '@/utils/api';
@@ -123,7 +125,12 @@ export const useFetchAgentListByPage = () => {
         ...pagination,
       },
     ],
-    initialData: { canvas: [], total: 0 },
+    placeholderData: (previousData) => {
+      if (previousData === undefined) {
+        return { canvas: [], total: 0 };
+      }
+      return previousData;
+    },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await agentService.listCanvasTeam(
@@ -150,7 +157,7 @@ export const useFetchAgentListByPage = () => {
   );
 
   return {
-    data: data.canvas,
+    data: data?.canvas ?? [],
     loading,
     searchString,
     handleInputChange: onInputChange,
@@ -271,6 +278,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
       title?: string;
       dsl?: DSL;
       avatar?: string;
+      canvas_category?: string;
     }) => {
       const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
@@ -646,4 +654,27 @@ export const useFetchPrompt = () => {
   });
 
   return { data, loading, refetch };
+};
+
+export const useFetchAgentList = ({
+  canvas_category = 'agent_canvas',
+}: IPipeLineListRequest): {
+  data: {
+    canvas: IFlow[];
+    total: number;
+  };
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchPipeLineList'],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await fetchPipeLineList({ canvas_category });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
 };

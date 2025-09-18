@@ -138,7 +138,7 @@ export default {
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
-  listCanvasTeam: `${api_host}/canvas/listteam`,
+  listCanvasTeam: `${api_host}/canvas/list`,
   getCanvas: `${api_host}/canvas/get`,
   getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,
@@ -190,4 +190,12 @@ export default {
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
+
+  // data pipeline
+
+  fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,
+  setDataflow: `${api_host}/dataflow/set`,
+  removeDataflow: `${api_host}/dataflow/rm`,
+  listDataflow: `${api_host}/dataflow/list`,
+  runDataflow: `${api_host}/dataflow/run`,
 };

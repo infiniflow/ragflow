@@ -35,7 +35,9 @@ export function buildOptions(
 ) {
   if (t) {
     return Object.values(data).map((val) => ({
-      label: t(`${prefix ? prefix + '.' : ''}${val.toLowerCase()}`),
+      label: t(
+        `${prefix ? prefix + '.' : ''}${typeof val === 'string' ? val.toLowerCase() : val}`,
+      ),
       value: val,
     }));
   }
