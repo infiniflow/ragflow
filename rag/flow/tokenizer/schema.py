@@ -22,7 +22,7 @@ class TokenizerFromUpstream(BaseModel):
     elapsed_time: float | None = Field(default=None, alias="_elapsed_time")
 
     name: str = ""
-    blob: bytes
+    file: dict | None = Field(default=None)
 
     output_format: Literal["json", "markdown", "text", "html"] | None = Field(default=None)
 

@@ -43,7 +43,7 @@
                     "md",
                     "markdown"
                   ],
-                  "output_format": "json"
+                  "output_format": "text"
                 },
                 "text": {
                   "suffix": ["txt"],
@@ -60,7 +60,7 @@
             "component_name": "Splitter",
             "params": {
               "chunk_token_size": 512,
-              "delimiters": ["\n"],
+              "delimiters": ["\r\n"],
               "overlapped_percent": 0
             }
         },

@@ -233,8 +233,6 @@ class Parser(ProcessBase):
         markdown_parser = naive_markdown_parser()
         sections, tables = markdown_parser(name, blob, separate_tables=False)
 
-        # json
-        assert conf.get("output_format") == "json", "have to be json for doc"
         if conf.get("output_format") == "json":
             json_results = []
 
@@ -251,8 +249,9 @@ class Parser(ProcessBase):
 
                 json_results.append(json_result)
 
-            print("MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM\n", json.dumps(json_results, ensure_ascii=False, indent=2))
             self.set_output("json", json_results)
+        else:
+            self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
     def _text(self, name, blob):
         from deepdoc.parser.utils import get_text

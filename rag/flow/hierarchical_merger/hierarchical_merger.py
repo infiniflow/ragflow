@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import json
 import random
 import re
 from copy import deepcopy
@@ -24,7 +25,7 @@ from api.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.hierarchical_merger.schema import HierarchicalMergerFromUpstream
-from rag.nlp import naive_merge, naive_merge_with_images, concat_img
+from rag.nlp import concat_img
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -52,7 +53,7 @@ class HierarchicalMerger(ProcessBase):
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return
 
-        self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")
+        self.callback(random.randint(1, 5) / 100.0, "Start to merge hierarchically.")
         if from_upstream.output_format in ["markdown", "text", "html"]:
             if from_upstream.output_format == "markdown":
                 payload = from_upstream.markdown_result
@@ -135,6 +136,7 @@ class HierarchicalMerger(ProcessBase):
                 all_pathes.append(path)
 
         dfs(root)
+        print("sSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS", json.dumps(root, ensure_ascii=False, indent=2))
 
         if from_upstream.output_format in ["markdown", "text", "html"]:
             cks = []
