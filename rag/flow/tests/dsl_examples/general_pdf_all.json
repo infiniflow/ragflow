@@ -60,6 +60,28 @@
                     "gif"
                   ],
                   "output_format": "text"
+                },
+                "audio": {
+                  "suffix": [
+                    "da",
+                    "wave",
+                    "wav",
+                    "mp3",
+                    "aac",
+                    "flac",
+                    "ogg",
+                    "aiff",
+                    "au",
+                    "midi",
+                    "wma",
+                    "realaudio",
+                    "vqf",
+                    "oggvorbis",
+                    "ape"
+                  ],
+                  "lang": "Chinese",
+                  "llm_id": "SenseVoiceSmall",
+                  "output_format": "json"
                 }
               }
           }
