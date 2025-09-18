@@ -917,15 +917,6 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class PPIOChat(Base):
-    _FACTORY_NAME = "PPIO"
-
-    def __init__(self, key, model_name, base_url="https://api.ppinfra.com/v3/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.ppinfra.com/v3/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
@@ -1356,6 +1347,7 @@ class LiteLLMBase(ABC):
         "SILICONFLOW",
         "OpenRouter",
         "StepFun",
+        "PPIO",
     ]
 
     import litellm

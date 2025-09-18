@@ -42,6 +42,7 @@ class SupportedLiteLLMProvider(StrEnum):
     SILICONFLOW = "SILICONFLOW"
     OpenRouter = "OpenRouter"
     StepFun = "StepFun"
+    PPIO = "PPIO"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -54,6 +55,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.SILICONFLOW: "https://api.siliconflow.cn/v1",
     SupportedLiteLLMProvider.OpenRouter: "https://openrouter.ai/api/v1",
     SupportedLiteLLMProvider.StepFun: "https://api.stepfun.com/v1",
+    SupportedLiteLLMProvider.PPIO: "https://api.ppinfra.com/v3/openai",
 }
 
 
@@ -77,6 +79,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.SILICONFLOW: "openai/",
     SupportedLiteLLMProvider.OpenRouter: "openai/",
     SupportedLiteLLMProvider.StepFun: "openai/",
+    SupportedLiteLLMProvider.PPIO: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
