@@ -43,6 +43,7 @@ class SupportedLiteLLMProvider(StrEnum):
     OpenRouter = "OpenRouter"
     StepFun = "StepFun"
     PPIO = "PPIO"
+    PerfXCloud = "PerfXCloud"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -56,6 +57,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.OpenRouter: "https://openrouter.ai/api/v1",
     SupportedLiteLLMProvider.StepFun: "https://api.stepfun.com/v1",
     SupportedLiteLLMProvider.PPIO: "https://api.ppinfra.com/v3/openai",
+    SupportedLiteLLMProvider.PerfXCloud: "https://cloud.perfxlab.cn/v1",
 }
 
 
@@ -80,6 +82,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.OpenRouter: "openai/",
     SupportedLiteLLMProvider.StepFun: "openai/",
     SupportedLiteLLMProvider.PPIO: "openai/",
+    SupportedLiteLLMProvider.PerfXCloud: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})

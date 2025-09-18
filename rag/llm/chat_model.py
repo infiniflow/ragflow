@@ -926,15 +926,6 @@ class LeptonAIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class PerfXCloudChat(Base):
-    _FACTORY_NAME = "PerfXCloud"
-
-    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://cloud.perfxlab.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class UpstageChat(Base):
     _FACTORY_NAME = "Upstage"
 
@@ -1348,6 +1339,7 @@ class LiteLLMBase(ABC):
         "OpenRouter",
         "StepFun",
         "PPIO",
+        "PerfXCloud",
     ]
 
     import litellm
