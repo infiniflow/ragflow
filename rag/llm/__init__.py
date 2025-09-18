@@ -47,6 +47,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Upstage = "Upstage"
     NovitaAI = "NovitaAI"
     Lingyi_AI = "01.AI"
+    GiteeAI = "GiteeAI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -64,6 +65,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Upstage: "https://api.upstage.ai/v1/solar",
     SupportedLiteLLMProvider.NovitaAI: "https://api.novita.ai/v3/openai",
     SupportedLiteLLMProvider.Lingyi_AI: "https://api.lingyiwanwu.com/v1",
+    SupportedLiteLLMProvider.GiteeAI: "https://ai.gitee.com/v1/",
 }
 
 
@@ -92,6 +94,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Upstage: "openai/",
     SupportedLiteLLMProvider.NovitaAI: "openai/",
     SupportedLiteLLMProvider.Lingyi_AI: "openai/",
+    SupportedLiteLLMProvider.GiteeAI: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
