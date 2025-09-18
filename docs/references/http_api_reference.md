@@ -4102,3 +4102,82 @@ Failure:
 ```
 
 ---
+
+### API Health Check
+
+**GET** `/v1/system/healthz`
+
+Check the health status of RAGFlow's dependencies.
+
+#### Request
+
+- Method: GET
+- URL: `/v1/system/healthz`
+- Headers: none required (no login needed)
+
+##### Request example
+
+```bash
+curl -i http://localhost:7897/v1/system/healthz
+```
+
+##### Request parameters
+
+- `port`: (*Path parameter*), `integer`  
+  The port number where the backend service is running (e.g., 7897, 9222).
+
+---
+
+#### Responses
+
+##### 200 OK – All services healthy
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 120
+
+{
+  "db": "ok",
+  "redis": "ok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "ok"
+}
+```
+
+Explanation:
+- Database (MySQL/Postgres), Redis, document engine (Elasticsearch/Infinity), and object storage (MinIO) are all healthy.
+- The `status` field returns `"ok"`.
+
+##### 500 Internal Server Error – At least one service unhealthy
+
+For example, if Redis is down:
+
+```http
+HTTP/1.1 500 INTERNAL SERVER ERROR
+Content-Type: application/json
+Content-Length: 300
+
+{
+  "db": "ok",
+  "redis": "nok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "nok",
+  "_meta": {
+    "redis": {
+      "elapsed": "5.2",
+      "error": "Lost connection!"
+    }
+  }
+}
+```
+
+Explanation:
+- `redis` is marked as `"nok"`, with detailed error info under `_meta.redis.error`.
+- The overall `status` is `"nok"`, so the endpoint returns 500.
+
+---
+
+This endpoint allows you to monitor RAGFlow’s core dependencies programmatically in scripts or external monitoring systems, without relying on the frontend UI.
