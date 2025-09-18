@@ -926,15 +926,6 @@ class LeptonAIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class YiChat(Base):
-    _FACTORY_NAME = "01.AI"
-
-    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.lingyiwanwu.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class GiteeChat(Base):
     _FACTORY_NAME = "GiteeAI"
 
@@ -1324,6 +1315,7 @@ class LiteLLMBase(ABC):
         "PerfXCloud",
         "Upstage",
         "NovitaAI",
+        "01.AI",
     ]
 
     import litellm
