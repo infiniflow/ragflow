@@ -414,7 +414,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=True,
                 **req,
             ),
@@ -432,7 +432,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=False,
                 **req,
             )
