@@ -402,9 +402,12 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _naive_vertical_merge(self, zoomin=3):
+        import math
         bxs = Recognizer.sort_Y_firstly(self.boxes, np.median(self.mean_height) / 3)
 
         column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
+        if not column_width or math.isnan(column_width):
+            column_width = self.mean_width[0]
         self.column_num = int(self.page_images[0].size[0] / zoomin / column_width)
         if column_width < self.page_images[0].size[0] / zoomin / self.column_num:
             logging.info("Multi-column................... {} {}".format(column_width, self.page_images[0].size[0] / zoomin / self.column_num))
