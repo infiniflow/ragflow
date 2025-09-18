@@ -11,7 +11,6 @@ import {
   PropsWithChildren,
   useCallback,
 } from 'react';
-import { Operator } from '../../constant';
 import { useDuplicateNode } from '../../hooks';
 import useGraphStore from '../../store';
 
@@ -38,20 +37,13 @@ export function ToolBar({
   showRun = true,
 }: ToolBarProps) {
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
-  const deleteIterationNodeById = useGraphStore(
-    (store) => store.deleteIterationNodeById,
-  );
 
   const deleteNode: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       e.stopPropagation();
-      if (label === Operator.Iteration) {
-        deleteIterationNodeById(id);
-      } else {
-        deleteNodeById(id);
-      }
+      deleteNodeById(id);
     },
-    [deleteIterationNodeById, deleteNodeById, id, label],
+    [deleteNodeById, id],
   );
 
   const duplicateNode = useDuplicateNode();
