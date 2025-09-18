@@ -41,6 +41,7 @@ class SupportedLiteLLMProvider(StrEnum):
     CometAPI = "CometAPI"
     SILICONFLOW = "SILICONFLOW"
     OpenRouter = "OpenRouter"
+    StepFun = "StepFun"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -52,6 +53,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.CometAPI: "https://api.cometapi.com/v1",
     SupportedLiteLLMProvider.SILICONFLOW: "https://api.siliconflow.cn/v1",
     SupportedLiteLLMProvider.OpenRouter: "https://openrouter.ai/api/v1",
+    SupportedLiteLLMProvider.StepFun: "https://api.stepfun.com/v1",
 }
 
 
@@ -74,6 +76,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.CometAPI: "openai/",
     SupportedLiteLLMProvider.SILICONFLOW: "openai/",
     SupportedLiteLLMProvider.OpenRouter: "openai/",
+    SupportedLiteLLMProvider.StepFun: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})

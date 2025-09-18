@@ -895,15 +895,6 @@ class MistralChat(Base):
         yield total_tokens
 
 
-class StepFunChat(Base):
-    _FACTORY_NAME = "StepFun"
-
-    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.stepfun.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LmStudioChat(Base):
     _FACTORY_NAME = "LM-Studio"
 
@@ -1364,6 +1355,7 @@ class LiteLLMBase(ABC):
         "CometAPI",
         "SILICONFLOW",
         "OpenRouter",
+        "StepFun",
     ]
 
     import litellm
