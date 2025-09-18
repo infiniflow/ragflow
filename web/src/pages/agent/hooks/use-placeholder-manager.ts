@@ -57,12 +57,28 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
     (newNodeId: string) => {
       // First establish connection between new node and source, then delete placeholder
       if (createdPlaceholderRef.current && reactFlowInstance) {
-        const { nodes, edges, addEdge } = useGraphStore.getState();
+        const { nodes, edges, addEdge, updateNode } = useGraphStore.getState();
+
+        // Find placeholder node to get its position
+        const placeholderNode = nodes.find(
+          (node) => node.id === createdPlaceholderRef.current,
+        );
 
         // Find placeholder-related connection and get source node info
         const placeholderEdge = edges.find(
           (edge) => edge.target === createdPlaceholderRef.current,
         );
+
+        // Update new node position to match placeholder position
+        if (placeholderNode) {
+          const newNode = nodes.find((node) => node.id === newNodeId);
+          if (newNode) {
+            updateNode({
+              ...newNode,
+              position: placeholderNode.position,
+            });
+          }
+        }
 
         if (placeholderEdge) {
           // Establish connection between new node and source node
@@ -96,6 +112,7 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
       // Mark that user has selected a node
       userSelectedNodeRef.current = true;
       createdPlaceholderRef.current = null;
+      console.log('### onNodeCreated完成');
     },
     [reactFlowInstance],
   );
