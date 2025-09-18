@@ -507,16 +507,29 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
         sections, tables = markdown_parser(filename, binary, separate_tables=False)
 
-        # Process images for each section
-        section_images = []
-        for section_text, _ in sections:
-            images = markdown_parser.get_pictures(section_text) if section_text else None
-            if images:
-                # If multiple images found, combine them using concat_img
-                combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                section_images.append(combined_image)
-            else:
-                section_images.append(None)
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
+        
+        if vision_model:
+            # Process images for each section
+            section_images = []
+            for idx, (section_text, _) in enumerate(sections):
+                images = markdown_parser.get_pictures(section_text) if section_text else None
+
+                if images:
+                    # If multiple images found, combine them using concat_img
+                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
+                    section_images.append(combined_image)
+                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data= [((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                    boosted_figures = markdown_vision_parser(callback=callback)
+                    sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
+                else:
+                    section_images.append(None)
+        else:
+            logging.warning("No visual model detected. Skipping figure parsing enhancement.")
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
