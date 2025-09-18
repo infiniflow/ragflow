@@ -218,7 +218,7 @@ class GPUStackSeq2txt(Base):
 class GiteeSeq2txt(Base):
     _FACTORY_NAME = "GiteeAI"
 
-    def __init__(self, key, model_name="whisper-1", base_url="https://ai.gitee.com/v1/"):
+    def __init__(self, key, model_name="whisper-1", base_url="https://ai.gitee.com/v1/", **kwargs):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/"
         self.client = OpenAI(api_key=key, base_url=base_url)
