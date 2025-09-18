@@ -43,6 +43,7 @@ from rag.prompts import chunks_format, citation_prompt, cross_languages, full_qu
 from rag.prompts.prompts import gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
 from rag.utils import num_tokens_from_string, rmSpace
 from rag.utils.tavily_conn import Tavily
+import ast
 
 
 class DialogService(CommonService):
@@ -276,27 +277,34 @@ def meta_filter(metas: dict, filters: list[dict]):
     def filter_out(v2docs, operator, value):
         ids = []
         for input, docids in v2docs.items():
-            try:
-                input = float(input)
-                value = float(value)
-            except Exception:
-                input = str(input)
-                value = str(value)
+            conditons = []
 
-            for conds in [
-                    (operator == "contains", str(value).lower() in str(input).lower()),
-                    (operator == "not contains", str(value).lower() not in str(input).lower()),
-                    (operator == "start with", str(input).lower().startswith(str(value).lower())),
-                    (operator == "end with", str(input).lower().endswith(str(value).lower())),
-                    (operator == "empty", not input),
-                    (operator == "not empty", input),
-                    (operator == "=", input == value),
-                    (operator == "≠", input != value),
-                    (operator == ">", input > value),
-                    (operator == "<", input < value),
-                    (operator == "≥", input >= value),
-                    (operator == "≤", input <= value),
-                ]:
+            if input.startswith("[") and isinstance(value, list) and operator in ["not in", "in"]:
+                input = ast.literal_eval(input)
+                conditons.extend([(operator == "not in", set(input).isdisjoint(set(value)))] + [(operator == "in", bool(set(input) & set(value)))])
+                print("conditons", conditons)
+            else:
+                try:
+                    input = float(input)
+                    value = float(value)
+                except Exception:
+                    input = str(input)
+                    value = str(value)
+            all_conditions = conditons + [
+                (operator == "contains", str(value).lower() in str(input).lower()),
+                (operator == "not contains", str(value).lower() not in str(input).lower()),
+                (operator == "start with", str(input).lower().startswith(str(value).lower())),
+                (operator == "end with", str(input).lower().endswith(str(value).lower())),
+                (operator == "empty", not input),
+                (operator == "not empty", input),
+                (operator == "=", input == value),
+                (operator == "≠", input != value),
+                (operator == ">", input > value),
+                (operator == "<", input < value),
+                (operator == "≥", input >= value),
+                (operator == "≤", input <= value),
+            ]
+            for conds in all_conditions:
                 try:
                     if all(conds):
                         ids.extend(docids)
@@ -753,7 +761,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
                 doc_ids = None
 
     kbinfos = retriever.retrieval(
-        question = question,
+        question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,
         kb_ids=kb_ids,
@@ -765,7 +773,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
         doc_ids=doc_ids,
         aggs=False,
         rerank_mdl=rerank_mdl,
-        rank_feature=label_question(question, kbs)
+        rank_feature=label_question(question, kbs),
     )
 
     knowledges = kb_prompt(kbinfos, max_tokens)
