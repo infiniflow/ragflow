@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { ChevronDown } from 'lucide-react';
+import { Funnel } from 'lucide-react';
 import React, {
   ChangeEventHandler,
   PropsWithChildren,
@@ -25,20 +25,20 @@ export const FilterButton = React.forwardRef<
 >(({ count = 0, ...props }, ref) => {
   return (
     <Button variant="secondary" {...props} ref={ref}>
-      <span
+      {/* <span
         className={cn({
           'text-text-primary': count > 0,
           'text-text-sub-title-invert': count === 0,
         })}
       >
         Filter
-      </span>
+      </span> */}
       {count > 0 && (
         <span className="rounded-full bg-text-badge px-1 text-xs ">
           {count}
         </span>
       )}
-      <ChevronDown />
+      <Funnel />
     </Button>
   );
 });

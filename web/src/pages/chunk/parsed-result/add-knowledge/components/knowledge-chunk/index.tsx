@@ -40,6 +40,7 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import { useGetDocumentUrl } from '../../../knowledge-chunk/components/document-preview/hooks';
 import styles from './index.less';
 
 const Chunk = () => {
@@ -73,6 +74,7 @@ const Chunk = () => {
   } = useUpdateChunk();
   const { navigateToDataset, getQueryString, navigateToDatasetList } =
     useNavigatePage();
+  const fileUrl = useGetDocumentUrl();
   useEffect(() => {
     setChunkList(data);
   }, [data]);
@@ -195,7 +197,7 @@ const Chunk = () => {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{documentInfo.name}</BreadcrumbPage>
+              <BreadcrumbPage>{documentInfo?.name}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -212,6 +214,7 @@ const Chunk = () => {
                 fileType={fileType}
                 highlights={highlights}
                 setWidthAndHeight={setWidthAndHeight}
+                url={fileUrl}
               ></DocumentPreview>
             </section>
           </div>
@@ -246,6 +249,7 @@ const Chunk = () => {
                     switchChunk={handleSwitchChunk}
                     removeChunk={handleRemoveChunk}
                     checked={selectedChunkIds.length === data.length}
+                    selectedChunkIds={selectedChunkIds}
                   />
                 </div>
                 <div className={styles.pageContent}>

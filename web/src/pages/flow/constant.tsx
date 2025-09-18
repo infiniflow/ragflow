@@ -411,7 +411,7 @@ export const initialRetrievalValues = {
 };
 
 export const initialBeginValues = {
-  prologue: `Hi! I'm your assistant, what can I do for you?`,
+  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const variableCheckBoxFieldMap = Object.keys(
@@ -2911,7 +2911,7 @@ export const QWeatherTimePeriodOptions = [
   '30d',
 ];
 
-export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb', 'mssql'].map(
+export const ExeSQLOptions = ['mysql', 'postgres', 'mariadb', 'mssql'].map(
   (x) => ({
     label: upperFirst(x),
     value: x,

@@ -21,7 +21,7 @@ import {
 } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
-import { camelCase } from 'lodash';
+import { camelCase, isEqual } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
@@ -30,18 +30,21 @@ interface LlmSettingFieldItemsProps {
   prefix?: string;
   options?: any[];
 }
-
-export const LlmSettingSchema = {
-  llm_id: z.string(),
-  temperature: z.coerce.number(),
-  top_p: z.string(),
-  presence_penalty: z.coerce.number(),
-  frequency_penalty: z.coerce.number(),
+const LlmSettingEnableSchema = {
   temperatureEnabled: z.boolean(),
   topPEnabled: z.boolean(),
   presencePenaltyEnabled: z.boolean(),
   frequencyPenaltyEnabled: z.boolean(),
-  maxTokensEnabled: z.boolean(),
+};
+export const LlmSettingSchema = {
+  llm_id: z.string(),
+  parameter: z.string().optional(),
+  temperature: z.coerce.number().optional(),
+  top_p: z.coerce.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
+  ...LlmSettingEnableSchema,
+  // maxTokensEnabled: z.boolean(),
 };
 
 export function LlmSettingFieldItems({
@@ -58,19 +61,21 @@ export function LlmSettingFieldItems({
 
   const handleChange = useCallback(
     (parameter: string) => {
-      // const currentValues = { ...form.getValues() };
       const values =
         settledModelVariableMap[
           parameter as keyof typeof settledModelVariableMap
         ];
-
-      // const nextValues = { ...currentValues, ...values };
+      const enabledKeys = Object.keys(LlmSettingEnableSchema);
 
       for (const key in values) {
         if (Object.prototype.hasOwnProperty.call(values, key)) {
-          const element = values[key];
-
+          const element = values[key as keyof typeof values];
           form.setValue(`${prefix}.${key}`, element);
+        }
+      }
+      if (enabledKeys && enabledKeys.length) {
+        for (const key of enabledKeys) {
+          form.setValue(`${prefix}.${key}`, true);
         }
       }
     },
@@ -80,7 +85,11 @@ export function LlmSettingFieldItems({
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),
     value: x,
-  }));
+  })) as unknown as { label: string; value: ModelVariableType | 'Custom' }[];
+  parameterOptions.push({
+    label: t(camelCase('Custom')),
+    value: 'Custom',
+  });
 
   const getFieldWithPrefix = useCallback(
     (name: string) => {
@@ -88,6 +97,35 @@ export function LlmSettingFieldItems({
     },
     [prefix],
   );
+
+  const checkParameterIsEquel = () => {
+    const [
+      parameter,
+      topPValue,
+      frequencyPenaltyValue,
+      temperatureValue,
+      presencePenaltyValue,
+    ] = form.getValues([
+      getFieldWithPrefix('parameter'),
+      getFieldWithPrefix('temperature'),
+      getFieldWithPrefix('top_p'),
+      getFieldWithPrefix('frequency_penalty'),
+      getFieldWithPrefix('presence_penalty'),
+    ]);
+    if (parameter && parameter !== 'Custom') {
+      const parameterValue =
+        settledModelVariableMap[parameter as keyof typeof ModelVariableType];
+      const parameterRealValue = {
+        top_p: topPValue,
+        temperature: temperatureValue,
+        frequency_penalty: frequencyPenaltyValue,
+        presence_penalty: presencePenaltyValue,
+      };
+      if (!isEqual(parameterValue, parameterRealValue)) {
+        form.setValue(getFieldWithPrefix('parameter'), 'Custom');
+      }
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -103,7 +141,7 @@ export function LlmSettingFieldItems({
             <FormControl>
               <SelectWithSearch
                 options={options || modelOptions}
-                triggerClassName="bg-bg-card"
+                triggerClassName="!bg-bg-input"
                 {...field}
               ></SelectWithSearch>
             </FormControl>
@@ -145,31 +183,47 @@ export function LlmSettingFieldItems({
       />
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('temperature')}
-        checkName="temperatureEnabled"
+        checkName={getFieldWithPrefix('temperatureEnabled')}
         label="temperature"
         max={1}
+        min={0}
         step={0.01}
+        onChange={() => {
+          checkParameterIsEquel();
+        }}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('top_p')}
-        checkName="topPEnabled"
+        checkName={getFieldWithPrefix('topPEnabled')}
         label="topP"
         max={1}
         step={0.01}
+        min={0}
+        onChange={() => {
+          checkParameterIsEquel();
+        }}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('presence_penalty')}
-        checkName="presencePenaltyEnabled"
+        checkName={getFieldWithPrefix('presencePenaltyEnabled')}
         label="presencePenalty"
         max={1}
         step={0.01}
+        min={0}
+        onChange={() => {
+          checkParameterIsEquel();
+        }}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('frequency_penalty')}
-        checkName="frequencyPenaltyEnabled"
+        checkName={getFieldWithPrefix('frequencyPenaltyEnabled')}
         label="frequencyPenalty"
         max={1}
         step={0.01}
+        min={0}
+        onChange={() => {
+          checkParameterIsEquel();
+        }}
       ></SliderInputSwitchFormField>
       {/* <SliderInputSwitchFormField
         name={getFieldWithPrefix('max_tokens')}

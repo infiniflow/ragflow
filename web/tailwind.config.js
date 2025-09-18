@@ -17,6 +17,15 @@ module.exports = {
         '2xl': '1400px',
       },
     },
+    screens: {
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1400px',
+      '3xl': '1780px',
+      '4xl': '1980px',
+    },
     extend: {
       colors: {
         border: 'var(--colors-outline-neutral-strong)',
@@ -55,9 +64,11 @@ module.exports = {
         'input-border': 'var(--input-border)',
 
         /* design colors */
-
+        'bg-title': 'var(--bg-title)',
         'bg-base': 'var(--bg-base)',
         'bg-card': 'var(--bg-card)',
+        'bg-component': 'var(--bg-component)',
+        'bg-input': 'var(--bg-input)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
         'text-disabled': 'var(--text-disabled)',
@@ -205,6 +216,10 @@ module.exports = {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+      },
+      backgroundImage: {
+        'metallic-gradient':
+          'linear-gradient(104deg, var(--text-primary) 30%, var(--metallic) 50%, var(--text-primary) 70%)',
       },
       borderRadius: {
         lg: `var(--radius)`,

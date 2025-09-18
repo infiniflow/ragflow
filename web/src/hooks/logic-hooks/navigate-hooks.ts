@@ -24,11 +24,15 @@ export const useNavigatePage = () => {
   );
 
   const navigateToHome = useCallback(() => {
-    navigate(Routes.Home);
+    navigate(Routes.Root);
   }, [navigate]);
 
   const navigateToProfile = useCallback(() => {
     navigate(Routes.ProfileSetting);
+  }, [navigate]);
+
+  const navigateToOldProfile = useCallback(() => {
+    navigate(Routes.UserSetting);
   }, [navigate]);
 
   const navigateToChatList = useCallback(() => {
@@ -73,7 +77,7 @@ export const useNavigatePage = () => {
   }, [navigate]);
 
   const navigateToSearch = useCallback(
-    (id: string) => {
+    (id: string) => () => {
       navigate(`${Routes.Search}/${id}`);
     },
     [navigate],
@@ -121,6 +125,16 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataflowResult = useCallback(
+    (id: string, knowledgeId?: string) => () => {
+      navigate(
+        // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
+        `${Routes.DataflowResult}/${id}`,
+      );
+    },
+    [navigate],
+  );
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -139,5 +153,7 @@ export const useNavigatePage = () => {
     navigateToSearch,
     navigateToFiles,
     navigateToAgentList,
+    navigateToOldProfile,
+    navigateToDataflowResult,
   };
 };

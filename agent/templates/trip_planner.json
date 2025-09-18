@@ -1,9 +1,13 @@
 
 {
     "id": 14,
-    "title": "Trip Planner",
-    "description": "This smart trip planner utilizes LLM technology to automatically generate customized travel itineraries, with optional tool integration for enhanced reliability.",
-    "canvas_type": "Consumer App",
+    "title": {
+		"en": "Trip Planner",
+		"zh": "旅行规划"},
+    "description": {
+		"en": "This smart trip planner utilizes LLM technology to automatically generate customized travel itineraries, with optional tool integration for enhanced reliability.",
+		"zh": "智能旅行规划将利用大模型自动生成定制化的旅行行程，附带可选工具集成，以增强可靠性。"},
+	"canvas_type": "Consumer App",
     "dsl": {
 		"components": {
 			"Agent:OddGuestsPump": {

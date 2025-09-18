@@ -68,7 +68,7 @@ class Base(ABC):
             pmpt.append({
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/jpeg;base64,{img}" if img[:4] != "data" else img
+                    "url": img if isinstance(img, str) and img.startswith("data:") else f"data:image/png;base64,{img}"
                 }
             })
         return pmpt
@@ -109,16 +109,35 @@ class Base(ABC):
 
     @staticmethod
     def image2base64(image):
+        # Return a data URL with the correct MIME to avoid provider mismatches
         if isinstance(image, bytes):
-            return base64.b64encode(image).decode("utf-8")
+            # Best-effort magic number sniffing
+            mime = "image/png"
+            if len(image) >= 2 and image[0] == 0xFF and image[1] == 0xD8:
+                mime = "image/jpeg"
+            b64 = base64.b64encode(image).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
         if isinstance(image, BytesIO):
-            return base64.b64encode(image.getvalue()).decode("utf-8")
-        buffered = BytesIO()
-        try:
-            image.save(buffered, format="JPEG")
-        except Exception:
-            image.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
+            data = image.getvalue()
+            mime = "image/png"
+            if len(data) >= 2 and data[0] == 0xFF and data[1] == 0xD8:
+                mime = "image/jpeg"
+            b64 = base64.b64encode(data).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
+        with BytesIO() as buffered:
+            fmt = "JPEG"
+            try:
+                image.save(buffered, format="JPEG")
+            except Exception:
+                 # reset buffer before saving PNG
+                buffered.seek(0)
+                buffered.truncate()
+                image.save(buffered, format="PNG")
+                fmt = "PNG"
+            data = buffered.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+            mime = f"image/{fmt.lower()}"
+        return f"data:{mime};base64,{b64}"
 
     def prompt(self, b64):
         return [
@@ -372,6 +391,16 @@ class OllamaCV(Base):
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
         Base.__init__(self, **kwargs)
 
+
+    def _clean_img(self, img):
+        if not isinstance(img, str):
+            return img
+
+        #remove the header like "data/*;base64,"
+        if img.startswith("data:") and ";base64," in img:
+            img = img.split(";base64,")[1]
+        return img
+
     def _clean_conf(self, gen_conf):
         options = {}
         if "temperature" in gen_conf:
@@ -390,9 +419,12 @@ class OllamaCV(Base):
             hist.insert(0, {"role": "system", "content": system})
         if not images:
             return hist
+        temp_images = []
+        for img in images:
+            temp_images.append(self._clean_img(img))
         for his in hist:
             if his["role"] == "user":
-                his["images"] = images
+                his["images"] = temp_images
                 break
         return hist
 
@@ -489,44 +521,44 @@ class GeminiCV(Base):
             else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
         )
         b64 = self.image2base64(image)
-        img = open(BytesIO(base64.b64decode(b64)))
-        input = [prompt, img]
-        res = self.model.generate_content(input)
-        img.close()
-        return res.text, res.usage_metadata.total_token_count
+        with BytesIO(base64.b64decode(b64)) as bio:
+            img = open(bio)
+            input = [prompt, img]
+            res = self.model.generate_content(input)
+            img.close()
+            return res.text, res.usage_metadata.total_token_count
 
     def describe_with_prompt(self, image, prompt=None):
         from PIL.Image import open
 
         b64 = self.image2base64(image)
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
-        img = open(BytesIO(base64.b64decode(b64)))
-        input = [vision_prompt, img]
-        res = self.model.generate_content(
-            input,
-        )
-        img.close()
-        return res.text, res.usage_metadata.total_token_count
+        with BytesIO(base64.b64decode(b64)) as bio:
+            img = open(bio)
+            input = [vision_prompt, img]
+            res = self.model.generate_content(input)
+            img.close()
+            return res.text, res.usage_metadata.total_token_count
 
     def chat(self, system, history, gen_conf, images=[]):
-        from transformers import GenerationConfig
+        generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
         try:
             response = self.model.generate_content(
                 self._form_history(system, history, images),
-                generation_config=GenerationConfig(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7)))
+                generation_config=generation_config)
             ans = response.text
             return ans, response.usage_metadata.total_token_count
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf, images=[]):
-        from transformers import GenerationConfig
         ans = ""
         response = None
         try:
+            generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
             response = self.model.generate_content(
                 self._form_history(system, history, images),
-                generation_config=GenerationConfig(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7)),
+                generation_config=generation_config,
                 stream=True,
             )
 
@@ -542,7 +574,7 @@ class GeminiCV(Base):
             yield response.usage_metadata.total_token_count
         else:
             yield 0
-            
+
 
 class NvidiaCV(Base):
     _FACTORY_NAME = "NVIDIA"
@@ -661,8 +693,8 @@ class AnthropicCV(Base):
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/jpeg" if img[:4] != "data" else img.split(":")[1].split(";")[0],
-                            "data": img if img[:4] != "data" else img.split(",")[1]
+                            "media_type": (img.split(":")[1].split(";")[0] if isinstance(img, str) and img[:4] == "data" else "image/png"),
+                            "data": (img.split(",")[1] if isinstance(img, str) and img[:4] == "data" else img)
                         },
                     }
             )

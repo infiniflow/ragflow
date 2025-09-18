@@ -5,6 +5,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { cn } from '@/lib/utils';
 import { ReactNode, cloneElement, isValidElement } from 'react';
 import { ControllerRenderProps, useFormContext } from 'react-hook-form';
 
@@ -13,6 +14,8 @@ type RAGFlowFormItemProps = {
   label: ReactNode;
   tooltip?: ReactNode;
   children: ReactNode | ((field: ControllerRenderProps) => ReactNode);
+  horizontal?: boolean;
+  required?: boolean;
 };
 
 export function RAGFlowFormItem({
@@ -20,6 +23,8 @@ export function RAGFlowFormItem({
   label,
   tooltip,
   children,
+  horizontal = false,
+  required = false,
 }: RAGFlowFormItemProps) {
   const form = useFormContext();
   return (
@@ -27,8 +32,18 @@ export function RAGFlowFormItem({
       control={form.control}
       name={name}
       render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={tooltip}>{label}</FormLabel>
+        <FormItem
+          className={cn({
+            'flex items-center': horizontal,
+          })}
+        >
+          <FormLabel
+            required={required}
+            tooltip={tooltip}
+            className={cn({ 'w-1/4': horizontal })}
+          >
+            {label}
+          </FormLabel>
           <FormControl>
             {typeof children === 'function'
               ? children(field)

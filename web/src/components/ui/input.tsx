@@ -9,7 +9,24 @@ export interface InputProps
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, value, ...props }, ref) => {
+  ({ className, type, value, onChange, ...props }, ref) => {
+    const isControlled = value !== undefined;
+    const { defaultValue, ...restProps } = props;
+    const inputValue = isControlled ? value : defaultValue;
+    const handleChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+      if (type === 'number') {
+        const numValue = e.target.value === '' ? '' : Number(e.target.value);
+        onChange?.({
+          ...e,
+          target: {
+            ...e.target,
+            value: numValue,
+          },
+        } as React.ChangeEvent<HTMLInputElement>);
+      } else {
+        onChange?.(e);
+      }
+    };
     return (
       <input
         type={type}
@@ -18,8 +35,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className,
         )}
         ref={ref}
-        value={value ?? ''}
-        {...props}
+        value={inputValue ?? ''}
+        onChange={handleChange}
+        {...restProps}
       />
     );
   },
@@ -116,7 +134,10 @@ export { ExpandedInput, Input, SearchInput };
 
 type NumberInputProps = { onChange?(value: number): void } & InputProps;
 
-export const NumberInput = ({ onChange, ...props }: NumberInputProps) => {
+export const NumberInput = React.forwardRef<
+  HTMLInputElement,
+  NumberInputProps & { value: Value; onChange(value: Value): void }
+>(function NumberInput({ onChange, ...props }, ref) {
   return (
     <Input
       type="number"
@@ -125,6 +146,7 @@ export const NumberInput = ({ onChange, ...props }: NumberInputProps) => {
         onChange?.(value === '' ? 0 : Number(value)); // convert to number
       }}
       {...props}
+      ref={ref}
     ></Input>
   );
-};
+});

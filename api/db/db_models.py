@@ -245,22 +245,21 @@ class JsonSerializedField(SerializedField):
 
 class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
     def __init__(self, *args, **kwargs):
-        self.max_retries = kwargs.pop('max_retries', 5)
-        self.retry_delay = kwargs.pop('retry_delay', 1)
+        self.max_retries = kwargs.pop("max_retries", 5)
+        self.retry_delay = kwargs.pop("retry_delay", 1)
         super().__init__(*args, **kwargs)
 
     def execute_sql(self, sql, params=None, commit=True):
         from peewee import OperationalError
+
         for attempt in range(self.max_retries + 1):
             try:
                 return super().execute_sql(sql, params, commit)
             except OperationalError as e:
                 if e.args[0] in (2013, 2006) and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"Lost connection (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"DB execution failure: {e}")
                     raise
@@ -272,16 +271,15 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
 
     def begin(self):
         from peewee import OperationalError
+
         for attempt in range(self.max_retries + 1):
             try:
                 return super().begin()
             except OperationalError as e:
                 if e.args[0] in (2013, 2006) and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
 
@@ -742,7 +740,7 @@ class Dialog(DataBaseModel):
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
     prompt_config = JSONField(
         null=False,
-        default={"system": "", "prologue": "Hi! I'm your assistant, what can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
+        default={"system": "", "prologue": "Hi! I'm your assistant. What can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
     )
     meta_data_filter = JSONField(null=True, default={})
 
@@ -815,6 +813,7 @@ class UserCanvas(DataBaseModel):
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -824,10 +823,10 @@ class UserCanvas(DataBaseModel):
 class CanvasTemplate(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-
-    description = TextField(null=True, help_text="Canvas description")
+    title = JSONField(null=True, default=dict, help_text="Canvas title")
+    description = JSONField(null=True, default=dict, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -872,7 +871,7 @@ class Search(DataBaseModel):
         default={
             "kb_ids": [],
             "doc_ids": [],
-            "similarity_threshold": 0.0,
+            "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             "use_kg": False,
             # rerank settings
@@ -881,11 +880,12 @@ class Search(DataBaseModel):
             # chat settings
             "summary": False,
             "chat_id": "",
+            # Leave it here for reference, don't need to set default values
             "llm_setting": {
-                "temperature": 0.1,
-                "top_p": 0.3,
-                "frequency_penalty": 0.7,
-                "presence_penalty": 0.4,
+                # "temperature": 0.1,
+                # "top_p": 0.3,
+                # "frequency_penalty": 0.7,
+                # "presence_penalty": 0.4,
             },
             "chat_settingcross_languages": [],
             "highlight": False,
@@ -1018,6 +1018,23 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("dialog", "meta_data_filter", JSONField(null=True, default={})))
+    except Exception:
+        pass
+
+    try:
+        migrate(migrator.alter_column_type("canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

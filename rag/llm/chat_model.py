@@ -29,7 +29,6 @@ import json_repair
 import litellm
 import openai
 import requests
-from ollama import Client
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from strenum import StrEnum
@@ -112,6 +111,32 @@ class Base(ABC):
     def _clean_conf(self, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
+
+        allowed_conf = {
+            "temperature",
+            "max_completion_tokens",
+            "top_p",
+            "stream",
+            "stream_options",
+            "stop",
+            "n",
+            "presence_penalty",
+            "frequency_penalty",
+            "functions",
+            "function_call",
+            "logit_bias",
+            "user",
+            "response_format",
+            "seed",
+            "tools",
+            "tool_choice",
+            "logprobs",
+            "top_logprobs",
+            "extra_headers",
+        }
+
+        gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
+
         return gen_conf
 
     def _chat(self, history, gen_conf, **kwargs):
@@ -130,7 +155,10 @@ class Base(ABC):
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        if kwargs.get("stop") or "stop" in gen_conf:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        else:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
         for resp in response:
             if not resp.choices:
                 continue
@@ -214,7 +242,7 @@ class Base(ABC):
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
@@ -268,7 +296,7 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     def chat(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
 
@@ -299,7 +327,7 @@ class Base(ABC):
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
@@ -349,7 +377,7 @@ class Base(ABC):
                         if not tol:
                             total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                         else:
-                            total_tokens += tol
+                            total_tokens = tol
 
                         finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
                         if finish_reason == "length":
@@ -385,7 +413,7 @@ class Base(ABC):
                     if not tol:
                         total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                     else:
-                        total_tokens += tol
+                        total_tokens = tol
                     answer += resp.choices[0].delta.content
                     yield resp.choices[0].delta.content
 
@@ -402,7 +430,7 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
@@ -551,7 +579,7 @@ class BaiChuanChat(Base):
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -616,7 +644,7 @@ class ZhipuChat(Base):
         return super().chat_with_tools(system, history, gen_conf)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -657,73 +685,6 @@ class ZhipuChat(Base):
         return super().chat_streamly_with_tools(system, history, gen_conf)
 
 
-class OllamaChat(Base):
-    _FACTORY_NAME = "Ollama"
-
-    def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        self.client = Client(host=base_url) if not key or key == "x" else Client(host=base_url, headers={"Authorization": f"Bearer {key}"})
-        self.model_name = model_name
-        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
-
-    def _clean_conf(self, gen_conf):
-        options = {}
-        if "max_tokens" in gen_conf:
-            options["num_predict"] = gen_conf["max_tokens"]
-        for k in ["temperature", "top_p", "presence_penalty", "frequency_penalty"]:
-            if k not in gen_conf:
-                continue
-            options[k] = gen_conf[k]
-        return options
-
-    def _chat(self, history, gen_conf={}, **kwargs):
-        # Calculate context size
-        ctx_size = self._calculate_dynamic_ctx(history)
-
-        gen_conf["num_ctx"] = ctx_size
-        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf, keep_alive=self.keep_alive)
-        ans = response["message"]["content"].strip()
-        token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
-        return ans, token_count
-
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
-            history.insert(0, {"role": "system", "content": system})
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        try:
-            # Calculate context size
-            ctx_size = self._calculate_dynamic_ctx(history)
-            options = {"num_ctx": ctx_size}
-            if "temperature" in gen_conf:
-                options["temperature"] = gen_conf["temperature"]
-            if "max_tokens" in gen_conf:
-                options["num_predict"] = gen_conf["max_tokens"]
-            if "top_p" in gen_conf:
-                options["top_p"] = gen_conf["top_p"]
-            if "presence_penalty" in gen_conf:
-                options["presence_penalty"] = gen_conf["presence_penalty"]
-            if "frequency_penalty" in gen_conf:
-                options["frequency_penalty"] = gen_conf["frequency_penalty"]
-
-            ans = ""
-            try:
-                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=self.keep_alive)
-                for resp in response:
-                    if resp["done"]:
-                        token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
-                        yield token_count
-                    ans = resp["message"]["content"]
-                    yield ans
-            except Exception as e:
-                yield ans + "\n**ERROR**: " + str(e)
-            yield 0
-        except Exception as e:
-            yield "**ERROR**: " + str(e)
-            yield 0
-
-
 class LocalAIChat(Base):
     _FACTORY_NAME = "LocalAI"
 
@@ -747,7 +708,7 @@ class LocalLLM(Base):
     def _prepare_prompt(self, system, history, gen_conf):
         from rag.svr.jina_server import Prompt
 
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         return Prompt(message=history, gen_conf=gen_conf)
 
@@ -834,7 +795,7 @@ class MiniMaxChat(Base):
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
@@ -907,7 +868,7 @@ class MistralChat(Base):
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
@@ -1131,7 +1092,7 @@ class HunyuanChat(Base):
 
         _gen_conf = {}
         _history = [{k.capitalize(): v for k, v in item.items()} for item in history]
-        if system:
+        if system and history and history[0].get("role") != "system":
             _history.insert(0, {"Role": "system", "Content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -1395,8 +1356,34 @@ class Ai302Chat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class CometChat(Base):
+    _FACTORY_NAME = "CometAPI"
+
+    def __init__(self, key, model_name, base_url="https://api.cometapi.com/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.cometapi.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class TokenPonyChat(Base):
+    _FACTORY_NAME = "TokenPony"
+
+    def __init__(self, key, model_name, base_url="https://ragflow.vip-api.tokenpony.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
+
+            
+class MeituanChat(Base):
+    _FACTORY_NAME = "Meituan"
+
+    def __init__(self, key, model_name, base_url="https://api.longcat.chat/openai", **kwargs):
+        if not base_url:
+            base_url = "https://api.longcat.chat/openai"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic", "Ollama"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
@@ -1404,7 +1391,7 @@ class LiteLLMBase(ABC):
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip('/')
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -1576,6 +1563,7 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
+            "num_retries": self.max_retries,
             **kwargs,
         }
         if stream:
@@ -1607,7 +1595,7 @@ class LiteLLMBase(ABC):
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
@@ -1672,7 +1660,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def chat(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
 
@@ -1704,7 +1692,7 @@ class LiteLLMBase(ABC):
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
@@ -1829,7 +1817,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""

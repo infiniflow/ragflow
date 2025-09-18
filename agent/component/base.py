@@ -16,7 +16,7 @@
 
 import re
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 import builtins
 import json
 import os
@@ -36,7 +36,7 @@ _IS_RAW_CONF = "_is_raw_conf"
 
 class ComponentParamBase(ABC):
     def __init__(self):
-        self.message_history_window_size = 22
+        self.message_history_window_size = 13
         self.inputs = {}
         self.outputs = {}
         self.description = ""
@@ -410,8 +410,8 @@ class ComponentBase(ABC):
         )
 
     def __init__(self, canvas, id, param: ComponentParamBase):
-        from agent.canvas import Canvas  # Local import to avoid cyclic dependency
-        assert isinstance(canvas, Canvas), "canvas must be an instance of Canvas"
+        from agent.canvas import Graph  # Local import to avoid cyclic dependency
+        assert isinstance(canvas, Graph), "canvas must be an instance of Canvas"
         self._canvas = canvas
         self._id = id
         self._param = param
@@ -448,9 +448,11 @@ class ComponentBase(ABC):
     def error(self):
         return self._param.outputs.get("_ERROR", {}).get("value")
 
-    def reset(self):
+    def reset(self, only_output=False):
         for k in self._param.outputs.keys():
             self._param.outputs[k]["value"] = None
+        if only_output:
+            return
         for k in self._param.inputs.keys():
             self._param.inputs[k]["value"] = None
         self._param.debug_inputs = {}
@@ -479,7 +481,7 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE):
+        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE|re.DOTALL):
             exp = r.group(1)
             cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
             res[exp] = {
@@ -526,11 +528,19 @@ class ComponentBase(ABC):
         cpn_nms = self._canvas.get_component(self._id)['upstream']
         return cpn_nms
 
+    def get_downstream(self) -> List[str]:
+        cpn_nms = self._canvas.get_component(self._id)['downstream']
+        return cpn_nms
+
     @staticmethod
     def string_format(content: str, kv: dict[str, str]) -> str:
         for n, v in kv.items():
+            def repl(_match, val=v):
+                return str(val) if val is not None else ""
             content = re.sub(
-                r"\{%s\}" % re.escape(n), v, content
+                r"\{%s\}" % re.escape(n),
+                repl,
+                content
             )
         return content
 
@@ -550,6 +560,5 @@ class ComponentBase(ABC):
     def set_exception_default_value(self):
         self.set_output("result", self.get_exception_default_value())
 
-    @abstractmethod
     def thoughts(self) -> str:
-        ...
+        raise NotImplementedError()

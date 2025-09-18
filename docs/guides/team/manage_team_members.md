@@ -29,14 +29,14 @@ By default, each RAGFlow user is assigned a single team named after their name. 
 
 Click on your avatar in the top right corner of the page, then select **Team** in the left-hand panel to access the **Team** page.
 
-![team](https://github.com/user-attachments/assets/0eac2503-26bc-4568-b3f2-bcd84069a07a)
+![team_view](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/team_view.jpg)
 
 _On the **Team** page, you can view the information about members of your team and the teams you have joined._
 
 You are, by default, the owner of your own team and the only person permitted to invite users to join your team or remove team members.
 
-![invite_team_member](https://github.com/user-attachments/assets/d85b55c3-7e86-4f04-a414-ca18a9ee8963)
+![invite_user](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/invite_user.jpg)
 
 ## Remove team members
 
-![remove_members](https://github.com/user-attachments/assets/5c1a6ab5-8862-47a0-ad09-77fe88866508)
+![delete_invite](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_invite.jpg)

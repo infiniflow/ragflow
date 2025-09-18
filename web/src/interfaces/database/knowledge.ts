@@ -150,6 +150,7 @@ export interface INextTestingResult {
   doc_aggs: ITestingDocument[];
   total: number;
   labels?: Record<string, number>;
+  isRuned?: boolean;
 }
 
 export type IRenameTag = { fromTag: string; toTag: string };

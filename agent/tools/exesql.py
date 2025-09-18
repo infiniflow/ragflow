@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import os
 import re
 from abc import ABC
@@ -52,7 +53,7 @@ class ExeSQLParam(ToolParamBase):
         self.max_records = 1024
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgresql', 'mariadb', 'mssql'])
+        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
         self.check_empty(self.host, "IP Address")
@@ -79,15 +80,38 @@ class ExeSQL(ToolBase, ABC):
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
     def _invoke(self, **kwargs):
+
+        def convert_decimals(obj):
+            from decimal import Decimal
+            if isinstance(obj, Decimal):
+                return float(obj)  # 或 str(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_decimals(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimals(item) for item in obj]
+            return obj
+
         sql = kwargs.get("sql")
         if not sql:
             raise Exception("SQL for `ExeSQL` MUST not be empty.")
-        sqls = sql.split(";")
 
+        vars = self.get_input_elements_from_text(sql)
+        args = {}
+        for k, o in vars.items():
+            args[k] = o["value"]
+            if not isinstance(args[k], str):
+                try:
+                    args[k] = json.dumps(args[k], ensure_ascii=False)
+                except Exception:
+                    args[k] = str(args[k])
+            self.set_input_value(k, args[k])
+        sql = self.string_format(sql, args)
+
+        sqls = sql.split(";")
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
-        elif self._param.db_type == 'postgresql':
+        elif self._param.db_type == 'postgres':
             db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
                                   port=self._param.port, password=self._param.password)
         elif self._param.db_type == 'mssql':
@@ -122,7 +146,11 @@ class ExeSQL(ToolBase, ABC):
                 single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
                 single_res.columns = [i[0] for i in cursor.description]
 
-            sql_res.append(single_res.to_dict(orient='records'))
+            for col in single_res.columns:
+                if pd.api.types.is_datetime64_any_dtype(single_res[col]):
+                    single_res[col] = single_res[col].dt.strftime('%Y-%m-%d')
+
+            sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
             formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
 
         self.set_output("json", sql_res)

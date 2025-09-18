@@ -49,12 +49,12 @@ export function SliderInputFormField({
       defaultValue={defaultValue || 0}
       render={({ field }) => (
         <FormItem
-          className={cn({ 'flex items-center space-y-0': isHorizontal })}
+          className={cn({ 'flex items-center gap-1 space-y-0': isHorizontal })}
         >
           <FormLabel
             tooltip={tooltip}
             className={cn({
-              'text-sm text-muted-foreground whitespace-nowrap w-1/4':
+              'text-sm text-muted-foreground whitespace-break-spaces w-1/4':
                 isHorizontal,
             })}
           >

@@ -18,7 +18,7 @@ import logging
 import time
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db import TenantPermission
+from api.db import CanvasCategory, TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
@@ -31,6 +31,12 @@ from peewee import fn
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
 
+class DataFlowTemplateService(CommonService):
+    """
+    Alias of CanvasTemplateService
+    """
+    model = CanvasTemplate
+
 
 class UserCanvasService(CommonService):
     model = UserCanvas
@@ -38,13 +44,14 @@ class UserCanvasService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, tenant_id,
-                 page_number, items_per_page, orderby, desc, id, title):
+                 page_number, items_per_page, orderby, desc, id, title, canvas_category=CanvasCategory.Agent):
         agents = cls.model.select()
         if id:
             agents = agents.where(cls.model.id == id)
         if title:
             agents = agents.where(cls.model.title == title)
         agents = agents.where(cls.model.user_id == tenant_id)
+        agents = agents.where(cls.model.canvas_category == canvas_category)
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -71,6 +78,7 @@ class UserCanvasService(CommonService):
                 cls.model.create_time,
                 cls.model.create_date,
                 cls.model.update_date,
+                cls.model.canvas_category,
                 User.nickname,
                 User.avatar.alias('tenant_avatar'),
             ]
@@ -87,7 +95,7 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
                           page_number, items_per_page,
-                          orderby, desc, keywords,
+                          orderby, desc, keywords, canvas_category=CanvasCategory.Agent,
                           ):
         fields = [
             cls.model.id,
@@ -98,7 +106,8 @@ class UserCanvasService(CommonService):
             cls.model.permission,
             User.nickname,
             User.avatar.alias('tenant_avatar'),
-            cls.model.update_time
+            cls.model.update_time,
+            cls.model.canvas_category,
         ]
         if keywords:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
@@ -113,6 +122,7 @@ class UserCanvasService(CommonService):
                                                                 TenantPermission.TEAM.value)) | (
                     cls.model.user_id == user_id))
             )
+        agents = agents.where(cls.model.canvas_category == canvas_category)
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -133,6 +143,7 @@ class UserCanvasService(CommonService):
         if c["user_id"] != canvas_id and c["user_id"]  not in tids:
             return False
         return True
+
 
 def completion(tenant_id, agent_id, session_id=None, **kwargs):
     query = kwargs.get("query", "") or kwargs.get("question", "")
@@ -163,7 +174,8 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
             "user_id": user_id,
             "message": [],
             "source": "agent",
-            "dsl": cvs.dsl
+            "dsl": cvs.dsl,
+            "reference": []
         }
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
@@ -211,28 +223,33 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     except Exception as e:
                         logging.exception(f"Agent OpenAI-Compatible completionOpenAI parse answer failed: {e}")
                         continue
-
-                if ans.get("event") != "message":
+                if ans.get("event") not in ["message", "message_end"]:
                     continue
 
-                content_piece = ans["data"]["content"]
+                content_piece = ""
+                if ans["event"] == "message":
+                    content_piece = ans["data"]["content"]
+
                 completion_tokens += len(tiktokenenc.encode(content_piece))
 
-                yield "data: " + json.dumps(
-                    get_data_openai(
+                openai_data = get_data_openai(
                         id=session_id or str(uuid4()),
                         model=agent_id,
                         content=content_piece,
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
                         stream=True
-                    ),
-                    ensure_ascii=False
-                ) + "\n\n"
+                    )
+
+                if ans.get("data", {}).get("reference", None):
+                    openai_data["choices"][0]["delta"]["reference"] = ans["data"]["reference"]
+
+                yield "data: " + json.dumps(openai_data, ensure_ascii=False) + "\n\n"
 
             yield "data: [DONE]\n\n"
 
         except Exception as e:
+            logging.exception(e)
             yield "data: " + json.dumps(
                 get_data_openai(
                     id=session_id or str(uuid4()),
@@ -250,6 +267,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     else:
         try:
             all_content = ""
+            reference = {}
             for ans in completion(
                 tenant_id=tenant_id,
                 agent_id=agent_id,
@@ -260,13 +278,18 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             ):
                 if isinstance(ans, str):
                     ans = json.loads(ans[5:])
-                if ans.get("event") != "message":
+                if ans.get("event") not in ["message", "message_end"]:
                     continue
-                all_content += ans["data"]["content"]
+
+                if ans["event"] == "message":
+                    all_content += ans["data"]["content"]
+
+                if ans.get("data", {}).get("reference", None):
+                    reference.update(ans["data"]["reference"])
 
             completion_tokens = len(tiktokenenc.encode(all_content))
 
-            yield get_data_openai(
+            openai_data = get_data_openai(
                 id=session_id or str(uuid4()),
                 model=agent_id,
                 prompt_tokens=prompt_tokens,
@@ -276,7 +299,12 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 param=None
             )
 
+            if reference:
+                openai_data["choices"][0]["message"]["reference"] = reference
+
+            yield openai_data
         except Exception as e:
+            logging.exception(e)
             yield get_data_openai(
                 id=session_id or str(uuid4()),
                 model=agent_id,

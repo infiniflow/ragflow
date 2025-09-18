@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useControllableState } from '@/hooks/use-controllable-state';
 import { cn, formatBytes } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 function isFileWithPreview(file: File): file is File & { preview: string } {
   return 'preview' in file && typeof file.preview === 'string';
@@ -157,6 +158,8 @@ interface FileUploaderProps extends React.HTMLAttributes<HTMLDivElement> {
    * @example disabled
    */
   disabled?: boolean;
+
+  description?: string;
 }
 
 export function FileUploader(props: FileUploaderProps) {
@@ -168,14 +171,15 @@ export function FileUploader(props: FileUploaderProps) {
     accept = {
       'image/*': [],
     },
-    maxSize = 1024 * 1024 * 2,
-    maxFileCount = 1,
+    maxSize = 1024 * 1024 * 10000000,
+    maxFileCount = 100000000000,
     multiple = false,
     disabled = false,
     className,
+    description,
     ...dropzoneProps
   } = props;
-
+  const { t } = useTranslation();
   const [files, setFiles] = useControllableState({
     prop: valueProp,
     onChange: onValueChange,
@@ -267,7 +271,7 @@ export function FileUploader(props: FileUploaderProps) {
           <div
             {...getRootProps()}
             className={cn(
-              'group relative grid h-52 w-full cursor-pointer place-items-center rounded-lg border-2 border-dashed border-muted-foreground/25 px-5 py-2.5 text-center transition hover:bg-muted/25',
+              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border-2 border-dashed border-muted-foreground/25 px-5 py-2.5 text-center transition hover:bg-muted/25',
               'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               isDragActive && 'border-muted-foreground/50',
               isDisabled && 'pointer-events-none opacity-60',
@@ -298,14 +302,15 @@ export function FileUploader(props: FileUploaderProps) {
                 </div>
                 <div className="flex flex-col gap-px">
                   <p className="font-medium text-muted-foreground">
-                    Drag {`'n'`} drop files here, or click to select files
+                    {t('knowledgeDetails.uploadTitle')}
                   </p>
                   <p className="text-sm text-muted-foreground/70">
-                    You can upload
+                    {description || t('knowledgeDetails.uploadDescription')}
+                    {/* You can upload
                     {maxFileCount > 1
                       ? ` ${maxFileCount === Infinity ? 'multiple' : maxFileCount}
                       files (up to ${formatBytes(maxSize)} each)`
-                      : ` a file with ${formatBytes(maxSize)}`}
+                      : ` a file with ${formatBytes(maxSize)}`} */}
                   </p>
                 </div>
               </div>

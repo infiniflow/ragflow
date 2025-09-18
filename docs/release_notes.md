@@ -9,8 +9,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.1`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.5-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.5`
 :::
 
 :::danger IMPORTANT
@@ -21,6 +21,109 @@ The embedding models included in a full edition are:
 
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
+
+## v0.20.5
+
+Released on September 10, 2025.
+
+### Improvements
+
+- Agent: 
+  - Agent Performance Optimized: Improves planning and reflection speed for simple tasks; optimizes concurrent tool calls for parallelizable scenarios, significantly reducing overall response time.
+  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control. See [here](./guides/agent/agent_component_reference/agent.mdx#system-prompt).
+  - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables.
+- Chat: Re-enables **Reasoning** and **Cross-language search**.
+
+### Added models
+
+- Meituan LongCat
+- Kimi: kimi-k2-turbo-preview and kimi-k2-0905-preview
+- Qwen: qwen3-max-preview
+- SiliconFlow: DeepSeek V3.1
+
+### Fixed issues
+
+- Dataset: Deleted files remained searchable.
+- Chat: Unable to chat with an Ollama model.
+- Agent:
+  - A **Cite** toggle failure.
+  - An Agent in task mode still required a dialogue to trigger.
+  - Repeated answers in multi-turn dialogues.
+  - Duplicate summarization of parallel execution results.
+
+### API changes
+
+#### HTTP APIs
+
+- Adds a body parameter `"metadata_condition"` to the [Retrieve chunks](./references/http_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
+
+#### Python APIs
+
+- Adds a parameter `metadata_condition` to the [Retrieve chunks](./references/python_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
+
+## v0.20.4
+
+Released on August 27, 2025.
+
+### Improvements
+
+- Agent component: Completes Chinese localization for the Agent component.
+- Introduces the `ENABLE_TIMEOUT_ASSERTION` environment variable to enable or disable timeout assertions for file parsing tasks.
+- Dataset:
+  - Improves Markdown file parsing, with AST support to avoid unintended chunking.
+  - Enhances HTML parsing, supporting bs4-based HTML tag traversal.
+
+### Added models
+
+ZHIPU GLM-4.5
+
+### New Agent templates
+
+Ecommerce Customer Service Workflow: A template designed to handle enquiries about product features and multi-product comparisons using the internal knowledge base, as well as to manage installation appointment bookings.
+
+### Fixed issues
+
+- Dataset:  
+  - Unable to share resources with the team.
+  - Inappropriate restrictions on the number and size of uploaded files.
+- Chat:
+  - Unable to preview referenced files in responses.
+  - Unable to send out messages after file uploads.
+- An OAuth2 authentication failure.
+- A logical error in multi-conditioned metadata searches within a dataset.
+- Citations infinitely increased in multi-turn conversations.
+
+## v0.20.3
+
+Released on August 20, 2025.
+
+### Improvements
+
+- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
+- Search and Chat: Introduces document-level metadata filtering, allowing automatic or manual filtering during chats or searches.
+- Search: Supports creating search apps tailored to various business scenarios
+- Chat: Supports comparing answer performance of up to three chat model settings on a single **Chat** page.
+- Agent:  
+  - Implements a toggle in the **Agent** component to enable or disable citation.  
+  - Introduces a drag-and-drop method for creating components.  
+- Documentation: Corrects inaccuracies in the API reference.
+
+### New Agent templates
+
+- Report Agent: A template for generating summary reports in internal question-answering scenarios, supporting the display of tables and formulae.  [#9427](https://github.com/infiniflow/ragflow/pull/9427)
+
+### Fixed issues
+
+- The timeout mechanism introduced in v0.20.0 caused tasks like GraphRAG to halt.
+- Predefined opening greeting in the **Agent** component was missing during conversations.  
+- An automatic line break issue in the prompt editor.  
+- A memory leak issue caused by PyPDF. [#9469](https://github.com/infiniflow/ragflow/pull/9469)
+
+### API changes
+
+#### Deprecated
+
+[Create session with agent](./references/http_api_reference.md#create-session-with-agent)
 
 ## v0.20.1
 
@@ -182,7 +285,7 @@ From this release onwards, if you still see RAGFlow's responses being cut short 
 
 - Unable to add models via Ollama/Xinference, an issue introduced in v0.17.1.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -243,7 +346,7 @@ The following is a screenshot of a conversation that integrates Deep Research:
 
 ![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -318,7 +421,7 @@ This release fixes the following issues:
 - Using the **Table** parsing method results in information loss.
 - Miscellaneous API issues.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -354,7 +457,7 @@ Released on December 18, 2024.
 - Upgrades the Document Layout Analysis model in DeepDoc.
 - Significantly enhances the retrieval performance when using [Infinity](https://github.com/infiniflow/infinity) as document engine.
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -411,7 +514,7 @@ This approach eliminates the need to manually update **service_config.yaml** aft
 Ensure that you [upgrade **both** your code **and** Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
-### Related APIs
+### API changes
 
 #### HTTP APIs
 
@@ -570,7 +673,7 @@ While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker
 If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a RAGFlow Docker image.
 :::
 
-### Related APIs
+### API changes
 
 #### HTTP API
 
@@ -591,7 +694,7 @@ Released on May 21, 2024.
 - Supports monitoring of system components, including Elasticsearch, MySQL, Redis, and MinIO.
 - Supports disabling **Layout Recognition** in the GENERAL chunking method to reduce file chunking time.
 
-### Related APIs
+### API changes
 
 #### HTTP API
 

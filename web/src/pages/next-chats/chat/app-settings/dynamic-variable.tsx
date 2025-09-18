@@ -41,6 +41,11 @@ export function DynamicVariableForm() {
           <Plus />
         </Button>
       </div>
+      <div className="flex gap-2 pr-12 text-text-secondary text-xs">
+        <span className="flex-1">{t('chat.key')}</span>
+        <span className="w-3"></span>
+        <span className="flex-1">{t('chat.optional')}</span>
+      </div>
       <div className="space-y-5">
         {fields.map((field, index) => {
           const typeField = `${name}.${index}.key`;
