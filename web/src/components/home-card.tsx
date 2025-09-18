@@ -39,8 +39,8 @@ export function HomeCard({
           />
         </div>
         <div className="flex flex-col justify-between gap-1 flex-1 h-full w-[calc(100%-50px)]">
-          <section className="flex justify-between">
-            <section className="flex gap-1 items-center">
+          <section className="flex justify-between w-full">
+            <section className="flex gap-1 items-center w-full">
               <div className="text-[20px] font-bold w-80% leading-5 text-ellipsis overflow-hidden">
                 {data.name}
               </div>

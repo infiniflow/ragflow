@@ -7,6 +7,7 @@ import {
   IAgentLogsResponse,
   IFlow,
   IFlowTemplate,
+  IPipeLineListRequest,
   ITraceData,
 } from '@/interfaces/database/agent';
 import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
@@ -16,6 +17,7 @@ import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import agentService, {
   fetchAgentLogsByCanvasId,
+  fetchPipeLineList,
   fetchTrace,
 } from '@/services/agent-service';
 import api from '@/utils/api';
@@ -647,4 +649,27 @@ export const useFetchPrompt = () => {
   });
 
   return { data, loading, refetch };
+};
+
+export const useFetchAgentList = ({
+  canvas_category = 'agent_canvas',
+}: IPipeLineListRequest): {
+  data: {
+    canvas: IFlow[];
+    total: number;
+  };
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchPipeLineList'],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await fetchPipeLineList({ canvas_category });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
 };

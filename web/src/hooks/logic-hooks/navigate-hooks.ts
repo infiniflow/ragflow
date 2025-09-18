@@ -18,7 +18,7 @@ export const useNavigatePage = () => {
 
   const navigateToDataset = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.Dataset}/${id}`);
+      navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
     },
     [navigate],
   );

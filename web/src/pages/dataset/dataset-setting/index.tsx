@@ -82,7 +82,7 @@ export default function DatasetSettings() {
             className="space-y-6 flex-1"
           >
             <div className="w-[768px] h-[calc(100vh-240px)] pr-1 overflow-y-auto scrollbar-auto">
-              <MainContainer>
+              <MainContainer className="text-text-secondary">
                 <GeneralForm></GeneralForm>
                 <Divider />
 
