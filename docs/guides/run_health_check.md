@@ -36,8 +36,8 @@ You can click on a specific 30-second time interval to view the details of compl
 
 In addition to checking the system dependencies from the **avatar > System** page in the UI, you can directly query the backend health check endpoint:
 
-```
-http://localhost:<port>/v1/system/healthz
+```bash
+http://IP_OF_YOUR_MACHINE/v1/system/healthz
 ```
 
 Here `<port>` refers to the actual port of your backend service (e.g., `7897`, `9222`, etc.).
@@ -51,7 +51,7 @@ Key points:
 ### Example 1: All services healthy (HTTP 200)
 
 ```bash
-curl -i http://localhost:7897/v1/system/healthz
+http://127.0.0.1/v1/system/healthz
 ```
 
 Response:
