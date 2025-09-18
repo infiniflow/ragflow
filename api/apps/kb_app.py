@@ -379,3 +379,19 @@ def get_meta():
                 code=settings.RetCode.AUTHENTICATION_ERROR
             )
     return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
+
+
+@manager.route("/basic_info", methods=["GET"])  # noqa: F821
+@login_required
+def get_basic_info():
+    kb_id = request.args.get("kb_id", "")
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+
+    basic_info = DocumentService.knowledgebase_basic_info(kb_id)
+
+    return get_json_result(data=basic_info)
