@@ -926,15 +926,6 @@ class LeptonAIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class UpstageChat(Base):
-    _FACTORY_NAME = "Upstage"
-
-    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar", **kwargs):
-        if not base_url:
-            base_url = "https://api.upstage.ai/v1/solar"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class NovitaAIChat(Base):
     _FACTORY_NAME = "NovitaAI"
 
@@ -1340,6 +1331,7 @@ class LiteLLMBase(ABC):
         "StepFun",
         "PPIO",
         "PerfXCloud",
+        "Upstage",
     ]
 
     import litellm

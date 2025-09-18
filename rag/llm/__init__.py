@@ -44,6 +44,7 @@ class SupportedLiteLLMProvider(StrEnum):
     StepFun = "StepFun"
     PPIO = "PPIO"
     PerfXCloud = "PerfXCloud"
+    Upstage = "Upstage"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -58,6 +59,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.StepFun: "https://api.stepfun.com/v1",
     SupportedLiteLLMProvider.PPIO: "https://api.ppinfra.com/v3/openai",
     SupportedLiteLLMProvider.PerfXCloud: "https://cloud.perfxlab.cn/v1",
+    SupportedLiteLLMProvider.Upstage: "https://api.upstage.ai/v1/solar",
 }
 
 
@@ -83,6 +85,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.StepFun: "openai/",
     SupportedLiteLLMProvider.PPIO: "openai/",
     SupportedLiteLLMProvider.PerfXCloud: "openai/",
+    SupportedLiteLLMProvider.Upstage: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
