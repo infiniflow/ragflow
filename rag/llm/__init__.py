@@ -45,6 +45,7 @@ class SupportedLiteLLMProvider(StrEnum):
     PPIO = "PPIO"
     PerfXCloud = "PerfXCloud"
     Upstage = "Upstage"
+    NovitaAI = "NovitaAI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -60,6 +61,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.PPIO: "https://api.ppinfra.com/v3/openai",
     SupportedLiteLLMProvider.PerfXCloud: "https://cloud.perfxlab.cn/v1",
     SupportedLiteLLMProvider.Upstage: "https://api.upstage.ai/v1/solar",
+    SupportedLiteLLMProvider.NovitaAI: "https://api.novita.ai/v3/openai",
 }
 
 
@@ -86,6 +88,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.PPIO: "openai/",
     SupportedLiteLLMProvider.PerfXCloud: "openai/",
     SupportedLiteLLMProvider.Upstage: "openai/",
+    SupportedLiteLLMProvider.NovitaAI: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})

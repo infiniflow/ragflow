@@ -926,15 +926,6 @@ class LeptonAIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class NovitaAIChat(Base):
-    _FACTORY_NAME = "NovitaAI"
-
-    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.novita.ai/v3/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class YiChat(Base):
     _FACTORY_NAME = "01.AI"
 
@@ -1332,6 +1323,7 @@ class LiteLLMBase(ABC):
         "PPIO",
         "PerfXCloud",
         "Upstage",
+        "NovitaAI",
     ]
 
     import litellm
