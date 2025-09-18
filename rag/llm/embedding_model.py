@@ -958,3 +958,12 @@ class Ai302Embed(Base):
         if not base_url:
             base_url = "https://api.302.ai/v1/embeddings"
         super().__init__(key, model_name, base_url)
+
+
+class CometEmbed(Base):
+    _FACTORY_NAME = "CometAPI"
+
+    def __init__(self, key, model_name, base_url="https://api.cometapi.com/v1/embeddings"):
+        if not base_url:
+            base_url = "https://api.cometapi.com/v1/embeddings"
+        super().__init__(key, model_name, base_url)
