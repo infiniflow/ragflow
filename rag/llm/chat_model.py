@@ -1265,15 +1265,6 @@ class GPUStackChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class Ai302Chat(Base):
-    _FACTORY_NAME = "302.AI"
-
-    def __init__(self, key, model_name, base_url="https://api.302.ai/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.302.ai/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class TokenPonyChat(Base):
     _FACTORY_NAME = "TokenPony"
 
@@ -1308,6 +1299,7 @@ class LiteLLMBase(ABC):
         "NovitaAI",
         "01.AI",
         "GiteeAI",
+        "302.AI",
     ]
 
     import litellm
