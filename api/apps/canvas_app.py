@@ -28,6 +28,7 @@ from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.task_service import queue_dataflow
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
@@ -140,6 +141,14 @@ def run():
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+
+    if cvs.canvas_category == CanvasCategory.DataFlow:
+        task_id = get_uuid()
+        flow_id = get_uuid()
+        ok, error_message = queue_dataflow(dsl=cvs.dsl, tenant_id=user_id, file=files[0], task_id=task_id, flow_id=flow_id, priority=0)
+        if not ok:
+            return server_error_response(error_message)
+        return get_json_result(data={"task_id": task_id, "message_id": flow_id})
 
     try:
         canvas = Canvas(cvs.dsl, current_user.id, req["id"])
