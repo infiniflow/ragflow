@@ -38,6 +38,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Anthropic = "Anthropic"
     Ollama = "Ollama"
     Meituan = "Meituan"
+    CometAPI = "CometAPI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -46,6 +47,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
     SupportedLiteLLMProvider.Ollama: "",
     SupportedLiteLLMProvider.Meituan: "https://api.longcat.chat/openai",
+    SupportedLiteLLMProvider.CometAPI: "https://api.cometapi.com/v1",
 }
 
 
@@ -65,6 +67,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Anthropic: "",  # don't need a prefix
     SupportedLiteLLMProvider.Ollama: "ollama_chat/",
     SupportedLiteLLMProvider.Meituan: "openai/",
+    SupportedLiteLLMProvider.CometAPI: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
