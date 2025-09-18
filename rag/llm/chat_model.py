@@ -981,15 +981,6 @@ class NovitaAIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class SILICONFLOWChat(Base):
-    _FACTORY_NAME = "SILICONFLOW"
-
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class YiChat(Base):
     _FACTORY_NAME = "01.AI"
 
@@ -1365,7 +1356,24 @@ class TokenPonyChat(Base):
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic", "Ollama", "Meituan", "CometAPI"]
+    _FACTORY_NAME = [
+        "Tongyi-Qianwen",
+        "Bedrock",
+        "Moonshot",
+        "xAI",
+        "DeepInfra",
+        "Groq",
+        "Cohere",
+        "Gemini",
+        "DeepSeek",
+        "NVIDIA",
+        "TogetherAI",
+        "Anthropic",
+        "Ollama",
+        "Meituan",
+        "CometAPI",
+        "SILICONFLOW",
+    ]
 
     import litellm
 

@@ -39,6 +39,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Ollama = "Ollama"
     Meituan = "Meituan"
     CometAPI = "CometAPI"
+    SILICONFLOW = "SILICONFLOW"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -48,6 +49,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Ollama: "",
     SupportedLiteLLMProvider.Meituan: "https://api.longcat.chat/openai",
     SupportedLiteLLMProvider.CometAPI: "https://api.cometapi.com/v1",
+    SupportedLiteLLMProvider.SILICONFLOW: "https://api.siliconflow.cn/v1",
 }
 
 
@@ -68,6 +70,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Ollama: "ollama_chat/",
     SupportedLiteLLMProvider.Meituan: "openai/",
     SupportedLiteLLMProvider.CometAPI: "openai/",
+    SupportedLiteLLMProvider.SILICONFLOW: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
