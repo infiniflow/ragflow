@@ -125,7 +125,12 @@ export const useFetchAgentListByPage = () => {
         ...pagination,
       },
     ],
-    initialData: { canvas: [], total: 0 },
+    placeholderData: (previousData) => {
+      if (previousData === undefined) {
+        return { canvas: [], total: 0 };
+      }
+      return previousData;
+    },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await agentService.listCanvasTeam(
@@ -152,7 +157,7 @@ export const useFetchAgentListByPage = () => {
   );
 
   return {
-    data: data.canvas,
+    data: data?.canvas ?? [],
     loading,
     searchString,
     handleInputChange: onInputChange,
