@@ -1,11 +1,12 @@
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
-import { toFixed } from '@/utils/common-util';
+import { parseColorToRGBA } from '@/utils/common-util';
 import { CircleQuestionMark } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
+import { useFetchOverviewTital } from './hook';
 import FileLogsTable from './overview-table';
 
 interface StatCardProps {
@@ -34,46 +35,36 @@ const StatCard: FC<StatCardProps> = ({ title, value, children, icon }) => {
 };
 
 interface CardFooterProcessProps {
-  total: number;
   success: number;
   failed: number;
 }
 const CardFooterProcess: FC<CardFooterProcessProps> = ({
-  total,
   success = 0,
   failed = 0,
 }) => {
   const { t } = useTranslation();
-  const successPrecentage = total ? (success / total) * 100 : 0;
-  const failedPrecentage = total ? (failed / total) * 100 : 0;
-  const completedPercentage = total ? ((success + failed) / total) * 100 : 0;
   return (
     <div className="flex items-center flex-col gap-2">
-      <div className="flex justify-between w-full text-sm text-text-secondary">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            {success || 0}
-            <span>{t('knowledgeDetails.success')}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            {failed || 0}
-            <span>{t('knowledgeDetails.failed')}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          {toFixed(completedPercentage) as string}%
-          <span>{t('knowledgeDetails.completed')}</span>
-        </div>
-      </div>
-      <div className="w-full flex rounded-full h-1.5 bg-bg-card text-sm font-bold text-text-primary">
+      <div className="w-full flex justify-between gap-4 rounded-lg text-sm font-bold text-text-primary">
         <div
-          className=" rounded-full h-1.5 bg-accent-primary"
-          style={{ width: successPrecentage + '%' }}
-        ></div>
-        <div
-          className=" rounded-full h-1.5 bg-state-error"
-          style={{ width: failedPrecentage + '%' }}
-        ></div>
+          className="flex items-center justify-between  rounded-md w-1/2 p-2"
+          style={{
+            backgroundColor: `${parseColorToRGBA('var(--state-success)', 0.05)}`,
+          }}
+        >
+          <div className="flex items-center rounded-lg gap-1">
+            <div className="w-2 h-2 rounded-full bg-state-success"></div>
+            <div>{t('knowledgeDetails.success')}</div>
+          </div>
+          <div>{success || 0}</div>
+        </div>
+        <div className="flex items-center justify-between rounded-md w-1/2 bg-state-error-5 p-2">
+          <div className="flex items-center rounded-lg gap-1">
+            <div className="w-2 h-2 rounded-full bg-state-error"></div>
+            <div>{t('knowledgeDetails.failed')}</div>
+          </div>
+          <div>{failed || 0}</div>
+        </div>
       </div>
     </div>
   );
@@ -99,6 +90,10 @@ const FileLogsPage: FC = () => {
       failed: 2,
     },
   };
+
+  const { data: topData } = useFetchOverviewTital();
+  console.log('topData --> ', topData);
+
   const mockData = useMemo(() => {
     if (active === LogTabs.FILE_LOGS) {
       return Array(30)
@@ -133,7 +128,8 @@ const FileLogsPage: FC = () => {
           task: i === 0 ? 'chunck' : 'Parser',
           pipeline:
             i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
-          status:
+          status: i === 0 ? 3 : i === 1 ? 4 : i === 2 ? 1 : 0,
+          statusName:
             i === 0
               ? 'Success'
               : i === 1
@@ -147,7 +143,7 @@ const FileLogsPage: FC = () => {
 
   const pagination = {
     current: 1,
-    pageSize: 30,
+    pageSize: 10,
     total: 100,
   };
 
@@ -194,7 +190,6 @@ const FileLogsPage: FC = () => {
           }
         >
           <CardFooterProcess
-            total={topMockData.downloads.value}
             success={topMockData.downloads.success}
             failed={topMockData.downloads.failed}
           />
@@ -211,7 +206,6 @@ const FileLogsPage: FC = () => {
           }
         >
           <CardFooterProcess
-            total={topMockData.processing.value}
             success={topMockData.processing.success}
             failed={topMockData.processing.failed}
           />
