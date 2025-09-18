@@ -51,7 +51,7 @@ const RunSheet = ({
   );
 
   return (
-    <Sheet onOpenChange={hideModal} open>
+    <Sheet onOpenChange={hideModal} open modal={false}>
       <SheetContent className={cn('top-20 p-2')}>
         <SheetHeader>
           <SheetTitle>{t('flow.testRun')}</SheetTitle>

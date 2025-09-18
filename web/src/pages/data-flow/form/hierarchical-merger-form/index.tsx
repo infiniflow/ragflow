@@ -69,7 +69,7 @@ export function RegularExpressions({
   return (
     <Card>
       <CardHeader className="flex-row justify-between items-center">
-        <CardTitle>H{index}</CardTitle>
+        <CardTitle>H{index + 1}</CardTitle>
         <Button
           type="button"
           variant={'ghost'}
