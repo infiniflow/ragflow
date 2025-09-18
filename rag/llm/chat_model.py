@@ -1373,17 +1373,8 @@ class TokenPonyChat(Base):
             base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
 
 
-class MeituanChat(Base):
-    _FACTORY_NAME = "Meituan"
-
-    def __init__(self, key, model_name, base_url="https://api.longcat.chat/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.longcat.chat/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic", "Ollama"]
+    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic", "Ollama", "Meituan"]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))

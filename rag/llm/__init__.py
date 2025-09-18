@@ -37,6 +37,7 @@ class SupportedLiteLLMProvider(StrEnum):
     TogetherAI = "TogetherAI"
     Anthropic = "Anthropic"
     Ollama = "Ollama"
+    Meituan = "Meituan"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -44,6 +45,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
     SupportedLiteLLMProvider.Ollama: "",
+    SupportedLiteLLMProvider.Meituan: "https://api.longcat.chat/openai",
 }
 
 
@@ -62,6 +64,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.TogetherAI: "together_ai/",
     SupportedLiteLLMProvider.Anthropic: "",  # don't need a prefix
     SupportedLiteLLMProvider.Ollama: "ollama_chat/",
+    SupportedLiteLLMProvider.Meituan: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
