@@ -4,12 +4,10 @@ Main connector class for integrating Firecrawl with RAGFlow.
 
 import asyncio
 import aiohttp
-import time
-from typing import List, Dict, Any, Optional, Union, AsyncGenerator
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import logging
-from urllib.parse import urlparse, urljoin
-import json
+from urllib.parse import urlparse
 
 from firecrawl_config import FirecrawlConfig
 

@@ -4,7 +4,6 @@ Example usage of the Firecrawl integration with RAGFlow.
 
 import asyncio
 import logging
-from typing import List
 
 from .ragflow_integration import RAGFlowFirecrawlIntegration, create_firecrawl_integration
 from .firecrawl_config import FirecrawlConfig

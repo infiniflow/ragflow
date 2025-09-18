@@ -4,11 +4,10 @@ Content processor for converting Firecrawl output to RAGFlow document format.
 
 import re
 import hashlib
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any
 from dataclasses import dataclass
 import logging
 from datetime import datetime
-import json
 
 from firecrawl_connector import ScrapedContent
 
@@ -165,7 +164,6 @@ class FirecrawlProcessor:
         
         # Extract metadata
         title = self.extract_title(content)
-        description = self.extract_description(content)
         language = self.extract_language(content)
         metadata = self.create_metadata(content)
         

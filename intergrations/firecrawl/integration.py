@@ -5,11 +5,10 @@ This file provides the main entry point for the Firecrawl integration with RAGFl
 It follows RAGFlow's integration patterns and provides the necessary interfaces.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 import logging
 
 from ragflow_integration import RAGFlowFirecrawlIntegration, create_firecrawl_integration
-from firecrawl_config import FirecrawlConfig
 from firecrawl_ui import FirecrawlUIBuilder
 
 # Set up logging
