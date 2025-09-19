@@ -37,7 +37,7 @@ from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
 from flask import jsonify
-from api.utils.health import run_health_checks
+from api.utils.health_utils import run_health_checks
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
