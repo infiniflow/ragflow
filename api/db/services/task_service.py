@@ -472,14 +472,10 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(dsl:str, tenant_id:str, task_id:str, flow_id:str=None, doc_id:str=None, file:dict=None, priority: int=0, callback=None) -> tuple[bool, str]:
-    """
-    Returns a tuple (success: bool, error_message: str).
-    """
-    _ = callback
+def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str="x", file:dict=None, priority: int=0) -> tuple[bool, str]:
 
     task = dict(
-        id=get_uuid() if not task_id else task_id,
+        id=task_id,
         doc_id=doc_id,
         from_page=0,
         to_page=100000000,
@@ -490,15 +486,10 @@ def queue_dataflow(dsl:str, tenant_id:str, task_id:str, flow_id:str=None, doc_id
     TaskService.model.delete().where(TaskService.model.id == task["id"]).execute()
     bulk_insert_into_db(model=Task, data_source=[task], replace_on_conflict=True)
 
-    kb_id = DocumentService.get_knowledgebase_id(doc_id)
-    if not kb_id:
-        return False, f"Can't find KB of this document: {doc_id}"
-
-    task["kb_id"] = kb_id
+    task["kb_id"] = DocumentService.get_knowledgebase_id(doc_id)
     task["tenant_id"] = tenant_id
     task["task_type"] = "dataflow"
-    task["dsl"] = dsl
-    task["dataflow_id"] = get_uuid() if not flow_id else flow_id
+    task["dataflow_id"] = flow_id
     task["file"] = file
 
     if not REDIS_CONN.queue_product(
