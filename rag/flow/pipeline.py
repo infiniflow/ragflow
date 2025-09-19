@@ -23,6 +23,7 @@ import trio
 
 from agent.canvas import Graph
 from api.db.services.document_service import DocumentService
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -50,15 +51,15 @@ class Pipeline(Graph):
                 obj = [{"component_name": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]}]
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
             if self._doc_id:
-                percentage = 1./len(self.components.items())
+                percentage = 1.0 / len(self.components.items())
                 msg = ""
-                finished = 0.
+                finished = 0.0
                 for o in obj:
-                    if o['component_name'] == "END":
+                    if o["component_name"] == "END":
                         continue
                     msg += f"\n[{o['component_name']}]:\n"
                     for t in o["trace"]:
-                        msg += "%s: %s\n"%(t["datetime"], t["message"])
+                        msg += "%s: %s\n" % (t["datetime"], t["message"])
                         if t["progress"] < 0:
                             finished = -1
                             break
@@ -128,8 +129,28 @@ class Pipeline(Graph):
         self.callback("END", 1, json.dumps(self.get_component_obj(self.path[-1]).output(), ensure_ascii=False))
 
         if self._doc_id:
-            DocumentService.update_by_id(self._doc_id,{
-                "progress": 1 if not self.error else -1,
-                "progress_msg": "Pipeline finished...\n" + self.error,
-                "process_duration": time.perf_counter() - st
-            })
+            print("@@@@@@@@@@@@@@@@@", flush=True)
+            print("before update document", flush=True)
+            DocumentService.update_by_id(
+                self._doc_id,
+                {
+                    "progress": 1 if not self.error else -1,
+                    "progress_msg": "Pipeline finished...\n" + self.error,
+                    "process_duration": time.perf_counter() - st,
+                },
+            )
+            print("after update document", flush=True)
+
+            print("before pipeline creation", flush=True)
+
+            dsl = json.loads(str(self))
+            req = {}
+            req["dsl"] = dsl
+            req["canvas_category"] = "dataflow_canvas"
+            req["id"] = "xxx"
+            req["user_id"] = "c3fb861af27a11efa69751e139332ced"
+            req["title"] = "test_test_pipeline"
+            # UserCanvasService.save(**req)
+            PipelineOperationLogService.create(self._doc_id, self._flow_id)
+
+            print("after pipeline creation", flush=True)

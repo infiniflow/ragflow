@@ -1,6 +1,7 @@
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+  secret_key: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 mysql:
   name: 'rag_flow'
   user: 'root'

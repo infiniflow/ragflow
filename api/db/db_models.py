@@ -906,6 +906,32 @@ class Search(DataBaseModel):
         db_table = "search"
 
 
+class PipelineOperationLog(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    document_id = CharField(max_length=32, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    pipeline_id = CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)
+    pipeline_title = CharField(max_length=32, null=True, help_text="Pipeline title", index=True)
+    parser_id = CharField(max_length=32, null=False, help_text="Parser ID", index=True)
+    document_name = CharField(max_length=255, null=False, help_text="File name")
+    document_suffix = CharField(max_length=255, null=False, help_text="File suffix")
+    document_type = CharField(max_length=255, null=False, help_text="File suffix")
+    source_from = CharField(max_length=255, null=False, help_text="Source")
+    progress = FloatField(default=0, index=True)
+    progress_msg = TextField(null=True, help_text="process message", default="")
+    process_begin_at = DateTimeField(null=True, index=True)
+    process_duration = FloatField(default=0)
+    dsl = JSONField(null=True, default={})
+    task_type = CharField(max_length=32, null=False, default="")
+    operation_status = CharField(max_length=32, null=False, help_text="Operation status")
+    avatar = TextField(null=True, help_text="avatar base64 string")
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "pipeline_operation_log"
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)

@@ -25,7 +25,7 @@ from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
-from api.db import StatusEnum, FileSource
+from api.db import StatusEnum, FileSource, VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
@@ -34,7 +34,6 @@ from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
 from rag.utils.storage_factory import STORAGE_IMPL
-
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
@@ -395,3 +394,56 @@ def get_basic_info():
     basic_info = DocumentService.knowledgebase_basic_info(kb_id)
 
     return get_json_result(data=basic_info)
+
+
+@manager.route("/list_pipeline_logs", methods=["POST"])  # noqa: F821
+@login_required
+def list_pipeline_logs():
+    kb_id = request.args.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+
+    keywords = request.args.get("keywords", "")
+
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
+    orderby = request.args.get("orderby", "create_time")
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
+    create_time_from = int(request.args.get("create_time_from", 0))
+    create_time_to = int(request.args.get("create_time_to", 0))
+
+    req = request.get_json()
+
+    operation_status = req.get("operation_status", [])
+    if operation_status:
+        invalid_status = {s for s in operation_status if s not in ["success", "failed", "running", "pending"]}
+        if invalid_status:
+            return get_data_error_result(message=f"Invalid filter operation_status status conditions: {', '.join(invalid_status)}")
+
+    types = req.get("types", [])
+    if types:
+        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
+        if invalid_types:
+            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
+
+    suffix = req.get("suffix", [])
+
+    try:
+        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix)
+
+        if create_time_from or create_time_to:
+            filtered_docs = []
+            for doc in docs:
+                doc_create_time = doc.get("create_time", 0)
+                if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
+                    filtered_docs.append(doc)
+            docs = filtered_docs
+
+
+        return get_json_result(data={"total": tol, "docs": docs})
+    except Exception as e:
+        return server_error_response(e)
+
