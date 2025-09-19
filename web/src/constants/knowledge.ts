@@ -57,6 +57,7 @@ export enum LlmModelType {
 export enum KnowledgeSearchParams {
   DocumentId = 'doc_id',
   KnowledgeId = 'id',
+  Type = 'type',
 }
 
 export enum DocumentType {

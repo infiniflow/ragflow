@@ -1,3 +1,7 @@
+import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
+import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
+import { Button } from '@/components/ui/button';
+import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
@@ -6,11 +10,12 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
-import { ChunkMethodForm } from './chunk-method-form';
+import LinkDataPipeline from './components/link-data-pipeline';
+import { MainContainer } from './configuration-form-container';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
-
+import { SavingButton } from './saving-button';
 const enum DocumentType {
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
@@ -76,9 +81,29 @@ export default function DatasetSettings() {
             onSubmit={form.handleSubmit(onSubmit)}
             className="space-y-6 flex-1"
           >
-            <div className="w-[768px]">
-              <GeneralForm></GeneralForm>
-              <ChunkMethodForm></ChunkMethodForm>
+            <div className="w-[768px] h-[calc(100vh-240px)] pr-1 overflow-y-auto scrollbar-auto">
+              <MainContainer className="text-text-secondary">
+                <GeneralForm></GeneralForm>
+                <Divider />
+
+                <GraphRagItems className="border-none p-0"></GraphRagItems>
+                <Divider />
+                <RaptorFormFields></RaptorFormFields>
+                <Divider />
+                <LinkDataPipeline />
+              </MainContainer>
+            </div>
+            <div className="text-right items-center flex justify-end gap-3 w-[768px]">
+              <Button
+                type="reset"
+                className="bg-transparent text-color-white hover:bg-transparent border-gray-500 border-[1px]"
+                onClick={() => {
+                  form.reset();
+                }}
+              >
+                {t('knowledgeConfiguration.cancel')}
+              </Button>
+              <SavingButton></SavingButton>
             </div>
           </form>
         </Form>

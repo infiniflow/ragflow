@@ -71,3 +71,8 @@ export const formSchema = z.object({
   pagerank: z.number(),
   // icon: z.array(z.instanceof(File)),
 });
+
+export const linkPiplineFormSchema = z.object({
+  data_flow: z.array(z.string()),
+  file_filter: z.string().optional(),
+});

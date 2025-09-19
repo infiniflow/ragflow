@@ -1,10 +1,8 @@
-import {
-  CircleQuestionMark,
-  Cpu,
-  FileChartLine,
-  HardDriveDownload,
-} from 'lucide-react';
-import { FC, useState } from 'react';
+import SvgIcon from '@/components/svg-icon';
+import { useIsDarkTheme } from '@/components/theme-provider';
+import { toFixed } from '@/utils/common-util';
+import { CircleQuestionMark } from 'lucide-react';
+import { FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
@@ -37,44 +35,43 @@ const StatCard: FC<StatCardProps> = ({ title, value, children, icon }) => {
 
 interface CardFooterProcessProps {
   total: number;
-  completed: number;
   success: number;
   failed: number;
 }
 const CardFooterProcess: FC<CardFooterProcessProps> = ({
   total,
-  completed,
-  success,
-  failed,
+  success = 0,
+  failed = 0,
 }) => {
   const { t } = useTranslation();
-  const successPrecentage = (success / total) * 100;
-  const failedPrecentage = (failed / total) * 100;
+  const successPrecentage = total ? (success / total) * 100 : 0;
+  const failedPrecentage = total ? (failed / total) * 100 : 0;
+  const completedPercentage = total ? ((success + failed) / total) * 100 : 0;
   return (
     <div className="flex items-center flex-col gap-2">
       <div className="flex justify-between w-full text-sm text-text-secondary">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
-            {success}
+            {success || 0}
             <span>{t('knowledgeDetails.success')}</span>
           </div>
           <div className="flex items-center gap-1">
-            {failed}
+            {failed || 0}
             <span>{t('knowledgeDetails.failed')}</span>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {completed}
+          {toFixed(completedPercentage) as string}%
           <span>{t('knowledgeDetails.completed')}</span>
         </div>
       </div>
-      <div className="w-full flex rounded-full h-3 bg-bg-card text-sm font-bold text-text-primary">
+      <div className="w-full flex rounded-full h-1.5 bg-bg-card text-sm font-bold text-text-primary">
         <div
-          className=" rounded-full h-3 bg-accent-primary"
+          className=" rounded-full h-1.5 bg-accent-primary"
           style={{ width: successPrecentage + '%' }}
         ></div>
         <div
-          className=" rounded-full h-3 bg-state-error"
+          className=" rounded-full h-1.5 bg-state-error"
           style={{ width: failedPrecentage + '%' }}
         ></div>
       </div>
@@ -86,24 +83,67 @@ const FileLogsPage: FC = () => {
   const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
     LogTabs.FILE_LOGS,
   );
-  const mockData = Array(30)
-    .fill(0)
-    .map((_, i) => ({
-      id: i === 0 ? '#952734' : `14`,
-      fileName: 'PRD for DealBees 1.2 (1).txt',
-      source: 'GitHub',
-      pipeline: i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
-      startDate: '14/03/2025 14:53:39',
-      task: i === 0 ? 'Parse' : 'Parser',
-      status:
-        i === 0
-          ? 'Success'
-          : i === 1
-            ? 'Failed'
-            : i === 2
-              ? 'Running'
-              : 'Pending',
-    }));
+  const topMockData = {
+    totalFiles: {
+      value: 2827,
+      precent: 12.5,
+    },
+    downloads: {
+      value: 28,
+      success: 8,
+      failed: 2,
+    },
+    processing: {
+      value: 156,
+      success: 8,
+      failed: 2,
+    },
+  };
+  const mockData = useMemo(() => {
+    if (active === LogTabs.FILE_LOGS) {
+      return Array(30)
+        .fill(0)
+        .map((_, i) => ({
+          id: i === 0 ? '952734' : `14`,
+          fileName: 'PRD for DealBees 1.2 (1).txt',
+          source: 'GitHub',
+          pipeline:
+            i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
+          startDate: '14/03/2025 14:53:39',
+          task: i === 0 ? 'chunck' : 'Parser',
+          status: i === 0 ? 3 : i === 1 ? 4 : i === 2 ? 1 : 0,
+          statusName:
+            i === 0
+              ? 'Success'
+              : i === 1
+                ? 'Failed'
+                : i === 2
+                  ? 'Running'
+                  : 'Pending',
+        }));
+    }
+    if (active === LogTabs.DATASET_LOGS) {
+      return Array(8)
+        .fill(0)
+        .map((_, i) => ({
+          id: i === 0 ? '952734' : `14`,
+          fileName: 'PRD for DealBees 1.2 (1).txt',
+          source: 'GitHub',
+          startDate: '14/03/2025 14:53:39',
+          task: i === 0 ? 'chunck' : 'Parser',
+          pipeline:
+            i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
+          status:
+            i === 0
+              ? 'Success'
+              : i === 1
+                ? 'Failed'
+                : i === 2
+                  ? 'Running'
+                  : 'Pending',
+        }));
+    }
+  }, [active]);
 
   const pagination = {
     current: 1,
@@ -118,23 +158,63 @@ const FileLogsPage: FC = () => {
     console.log('Pagination changed:', { page, pageSize });
   };
 
+  const isDark = useIsDarkTheme();
   return (
     <div className="p-5 min-w-[880px] border-border border rounded-lg mr-5">
       {/* Stats Cards */}
       <div className="grid grid-cols-3 md:grid-cols-3 gap-4 mb-6">
-        <StatCard title="Total Files" value={2827} icon={<FileChartLine />}>
-          <div>+7% from last week</div>
+        <StatCard
+          title="Total Files"
+          value={topMockData.totalFiles.value}
+          icon={
+            isDark ? (
+              <SvgIcon name="data-flow/total-files-icon" width={40} />
+            ) : (
+              <SvgIcon name="data-flow/total-files-icon-bri" width={40} />
+            )
+          }
+        >
+          <div>
+            <span className="text-accent-primary">
+              {topMockData.totalFiles.precent > 0 ? '+' : ''}
+              {topMockData.totalFiles.precent}%{' '}
+            </span>
+            from last week
+          </div>
         </StatCard>
-        <StatCard title="Downloading" value={28} icon={<HardDriveDownload />}>
+        <StatCard
+          title="Downloading"
+          value={topMockData.downloads.value}
+          icon={
+            isDark ? (
+              <SvgIcon name="data-flow/data-icon" width={40} />
+            ) : (
+              <SvgIcon name="data-flow/data-icon-bri" width={40} />
+            )
+          }
+        >
           <CardFooterProcess
-            total={100}
-            success={8}
-            failed={2}
-            completed={15}
+            total={topMockData.downloads.value}
+            success={topMockData.downloads.success}
+            failed={topMockData.downloads.failed}
           />
         </StatCard>
-        <StatCard title="Processing" value={156} icon={<Cpu />}>
-          <CardFooterProcess total={20} success={8} failed={2} completed={15} />
+        <StatCard
+          title="Processing"
+          value={topMockData.processing.value}
+          icon={
+            isDark ? (
+              <SvgIcon name="data-flow/processing-icon" width={40} />
+            ) : (
+              <SvgIcon name="data-flow/processing-icon-bri" width={40} />
+            )
+          }
+        >
+          <CardFooterProcess
+            total={topMockData.processing.value}
+            success={topMockData.processing.success}
+            failed={topMockData.processing.failed}
+          />
         </StatCard>
       </div>
 

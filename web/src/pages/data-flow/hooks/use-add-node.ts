@@ -18,6 +18,7 @@ import {
   initialCrawlerValues,
   initialEmailValues,
   initialExeSqlValues,
+  initialHierarchicalMergerValues,
   initialInvokeValues,
   initialIterationStartValues,
   initialIterationValues,
@@ -28,6 +29,7 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialSplitterValues,
   initialStringTransformValues,
   initialSwitchValues,
   initialTokenizerValues,
@@ -82,6 +84,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Parser]: initialParserValues,
       [Operator.Chunker]: initialChunkerValues,
       [Operator.Tokenizer]: initialTokenizerValues,
+      [Operator.Splitter]: initialSplitterValues,
+      [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
     };
   }, [llmId]);
 
