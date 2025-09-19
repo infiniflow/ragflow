@@ -429,6 +429,7 @@ def not_title(txt):
 
 
 def hierarchical_merge(bull, sections, depth):
+
     if not sections or bull < 0:
         return []
     if isinstance(sections[0], type("")):
