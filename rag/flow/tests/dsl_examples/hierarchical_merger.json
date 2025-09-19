@@ -71,7 +71,7 @@
         "obj": {
             "component_name": "HierarchicalMerger",
             "params": {
-              "levels": [["#"], ["##"], ["###"], ["####"]],
+              "levels": [["^#[^#]"], ["^##[^#]"], ["^###[^#]"], ["^####[^#]"]],
               "hierarchy": 2
             }
         },

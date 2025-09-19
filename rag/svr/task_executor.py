@@ -38,7 +38,6 @@ import xxhash
 import copy
 import re
 from functools import partial
-from io import BytesIO
 from multiprocessing.context import TimeoutError
 from timeit import default_timer as timer
 import tracemalloc

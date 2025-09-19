@@ -65,7 +65,7 @@ class HierarchicalMerger(ProcessBase):
             if not payload:
                 payload = ""
 
-            lines = [l for l in payload.split("\n") if l]
+            lines = [ln for ln in payload.split("\n") if ln]
         else:
             lines = [o.get("text", "") for o in from_upstream.json_result]
             sections, section_images = [], []
@@ -86,6 +86,7 @@ class HierarchicalMerger(ProcessBase):
                     break
             if not good:
                 matches.append(len(self._param.levels))
+        assert len(matches) == len(lines), f"{len(matches)} vs. {len(lines)}"
 
         root = {
             "level": -1,
@@ -111,13 +112,14 @@ class HierarchicalMerger(ProcessBase):
             else:
                 def dfs(b):
                     nonlocal m, i
-                    if m - b["level"] <= 1:
+                    if not b["children"] or  m == b["level"] + 1:
                         b["children"].append({
                             "level": m,
                             "index": i,
                             "texts": [],
                             "children": []
                         })
+                        return
                     dfs(b["children"][-1])
 
                 dfs(root)
@@ -135,7 +137,9 @@ class HierarchicalMerger(ProcessBase):
             if depth == self._param.hierarchy:
                 all_pathes.append(path)
 
-        dfs(root)
+        for i in range(len(lines)):
+            print(i, lines[i])
+        dfs(root, [], 0)
         print("sSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS", json.dumps(root, ensure_ascii=False, indent=2))
 
         if from_upstream.output_format in ["markdown", "text", "html"]:

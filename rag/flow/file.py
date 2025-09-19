@@ -14,10 +14,7 @@
 #  limitations under the License.
 #
 from api.db.services.document_service import DocumentService
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class FileParam(ProcessParamBase):

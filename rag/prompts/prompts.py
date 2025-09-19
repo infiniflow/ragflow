@@ -21,8 +21,6 @@ from copy import deepcopy
 from typing import Tuple
 import jinja2
 import json_repair
-import numpy as np
-
 from api.utils import hash_str2int
 from rag.prompts.prompt_template import load_prompt
 from rag.settings import TAG_FLD
@@ -457,7 +455,6 @@ def detect_table_of_contents(page_1024:list[str], chat_mdl):
     for i, sec in enumerate(page_1024[:22]):
         ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_DETECTION).render(page_txt=sec), "Only JSON please.", chat_mdl)
         if toc_secs and not ans["exists"]:
-            idx = i
             break
         toc_secs.append(sec)
     return toc_secs
@@ -470,13 +467,6 @@ def extract_table_of_contents(toc_pages, chat_mdl):
         return []
 
     return gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION).render(toc_page="\n".join(toc_pages)), "Only JSON please.", chat_mdl)
-    if not toc_arr:
-        toc_arr = []
-    for p in toc_pages[1:]:
-        _toc_arr = gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION_CONTINUE).render(toc_page=p), "Only JSON please.", chat_mdl)
-        toc_arr.extend(_toc_arr)
-
-    return toc_arr
 
 
 def toc_index_extractor(toc:list[dict], content:str, chat_mdl):
@@ -592,7 +582,7 @@ def table_of_contents_index(toc_arr: list[dict], sections: list[str], chat_mdl):
 
 
 def check_if_toc_transformation_is_complete(content, toc, chat_mdl):
-    prompt = f"""
+    prompt = """
     You are given a raw table of contents and a  table of contents.
     Your job is to check if the  table of contents is complete.
 

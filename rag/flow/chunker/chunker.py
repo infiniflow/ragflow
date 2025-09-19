@@ -14,9 +14,7 @@
 #  limitations under the License.
 import json
 import random
-
 import trio
-
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
@@ -25,7 +23,7 @@ from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.chunker.schema import ChunkerFromUpstream
 from rag.nlp import naive_merge, naive_merge_with_images, concat_img
 from rag.prompts.prompts import keyword_extraction, question_proposal, detect_table_of_contents, \
-    extract_table_of_contents, table_of_contents_index, toc_transformer
+    table_of_contents_index, toc_transformer
 from rag.utils import num_tokens_from_string
 
 
