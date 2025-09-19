@@ -70,16 +70,15 @@ export function EmbeddingModelItem() {
       name={'embd_id'}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
-          <div className="">
+          <div className="flex items-center">
             <FormLabel
               required
               tooltip={t('embeddingModelTip')}
-              className="text-sm  whitespace-wrap "
+              className="text-sm  whitespace-wrap w-1/4"
             >
-              <span className="text-destructive mr-1"> *</span>
               {t('embeddingModel')}
             </FormLabel>
-            <div className="text-muted-foreground">
+            <div className="text-muted-foreground w-3/4">
               <FormControl>
                 <RAGFlowSelect
                   {...field}
