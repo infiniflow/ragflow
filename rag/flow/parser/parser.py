@@ -42,7 +42,9 @@ class ParserParam(ProcessParamBase):
             "word": [
                 "json",
             ],
-            "ppt": [],
+            "slides": [
+                "json",
+            ],
             "image": [],
             "email": [],
             "text": [],
@@ -75,7 +77,14 @@ class ParserParam(ProcessParamBase):
                 ],
                 "output_format": "json",
             },
-            "ppt": {},
+            "slides": {
+                "parse_method": "presentation",
+                "suffix": [
+                    "ppt",
+                    "pptx",
+                ],
+                "output_format": "json",
+            },
             "image": {
                 "parse_method": "ocr",
             },
@@ -110,6 +119,11 @@ class ParserParam(ProcessParamBase):
             doc_output_format = doc_config.get("output_format", "")
             self.check_valid_value(doc_output_format, "Word processer document output format abnormal.", self.allowed_output_format["doc"])
 
+        slides_config = self.setups.get("slides", "")
+        if slides_config:
+            slides_output_format = slides_config.get("output_format", "")
+            self.check_valid_value(slides_output_format, "Slides output format abnormal.", self.allowed_output_format["slides"])
+
         image_config = self.setups.get("image", "")
         if image_config:
             image_parse_method = image_config.get("parse_method", "")
@@ -136,7 +150,6 @@ class Parser(ProcessBase):
             bboxes = [{"text": t} for t, _ in lines]
         else:  # vlm
             assert conf.get("vlm_name")
-            print("@@@@@@@@@@@@@@@@@@@@@@2")
             print(f"{conf=}", flush=True)
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
@@ -168,7 +181,6 @@ class Parser(ProcessBase):
         print("spreadsheet {conf=}", flush=True)
         spreadsheet_parser = ExcelParser()
         if conf.get("output_format") == "html":
-            print("???????????????????????????????????????", flush=True)
             html = spreadsheet_parser.html(blob, 1000000000)
             self.set_output("html", html)
         elif conf.get("output_format") == "json":
@@ -177,7 +189,7 @@ class Parser(ProcessBase):
             self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
     def _word(self, from_upstream: ParserFromUpstream):
-        from tika import parser as  word_parser
+        from tika import parser as word_parser
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
 
@@ -201,11 +213,36 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             self.set_output("json", sections)
 
+    def _slides(self, from_upstream: ParserFromUpstream):
+        from deepdoc.parser.ppt_parser import RAGFlowPptParser as ppt_parser
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
+
+        blob = from_upstream.blob
+        name = from_upstream.name
+        conf = self._param.setups["slides"]
+        self.set_output("output_format", conf["output_format"])
+
+        print("ppt {conf=}", flush=True)
+
+        ppt_parser = ppt_parser()
+        txts = ppt_parser(blob, 0, 100000, None)
+
+        sections = [{"text": section} for section in txts if section.strip()]
+
+        print(f"_ppt {sections=}", flush=True)
+
+        # json
+        assert conf.get("output_format") == "json", "have to be json for ppt"
+        if conf.get("output_format") == "json":
+            self.set_output("json", sections)
+
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
             "spreadsheet": self._spreadsheet,
             "word": self._word,
+            "slides": self._slides,
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
