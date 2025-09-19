@@ -365,7 +365,7 @@ class OpenAI_APIRerank(Base):
         max_rank = np.max(rank)
 
         # Avoid division by zero if all ranks are identical
-        if np.isclose(min_rank, max_rank, atol=1e-3):
+        if not np.isclose(min_rank, max_rank, atol=1e-3):
             rank = (rank - min_rank) / (max_rank - min_rank)
         else:
             rank = np.zeros_like(rank)
