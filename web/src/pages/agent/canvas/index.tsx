@@ -7,7 +7,6 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import {
-  Connection,
   ConnectionMode,
   ControlButton,
   Controls,
@@ -17,7 +16,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
 import { AgentBackground } from '../components/background';
@@ -37,7 +36,10 @@ import {
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
+import { useConnectionDrag } from '../hooks/use-connection-drag';
+import { useDropdownPosition } from '../hooks/use-dropdown-position';
 import { useMoveNote } from '../hooks/use-move-note';
+import { usePlaceholderManager } from '../hooks/use-placeholder-manager';
 import { useDropdownManager } from './context';
 
 import Spotlight from '@/components/spotlight';
@@ -62,6 +64,7 @@ import { KeywordNode } from './node/keyword-node';
 import { LogicNode } from './node/logic-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
+import { PlaceholderNode } from './node/placeholder-node';
 import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
@@ -73,6 +76,7 @@ export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
+  placeholderNode: PlaceholderNode,
   relevantNode: RelevantNode,
   logicNode: LogicNode,
   noteNode: NoteNode,
@@ -176,19 +180,36 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { visible, hideModal, showModal } = useSetModalState();
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
 
-  const isConnectedRef = useRef(false);
-  const connectionStartRef = useRef<{
-    nodeId: string;
-    handleId: string;
-  } | null>(null);
+  const { clearActiveDropdown } = useDropdownManager();
 
-  const preventCloseRef = useRef(false);
+  const { removePlaceholderNode, onNodeCreated, setCreatedPlaceholderRef } =
+    usePlaceholderManager(reactFlowInstance);
 
-  const { setActiveDropdown, clearActiveDropdown } = useDropdownManager();
+  const { calculateDropdownPosition } = useDropdownPosition(reactFlowInstance);
+
+  const {
+    onConnectStart,
+    onConnectEnd,
+    handleConnect,
+    getConnectionStartContext,
+    shouldPreventClose,
+    onMove,
+  } = useConnectionDrag(
+    reactFlowInstance,
+    originalOnConnect,
+    showModal,
+    hideModal,
+    setDropdownPosition,
+    setCreatedPlaceholderRef,
+    calculateDropdownPosition,
+    removePlaceholderNode,
+    clearActiveDropdown,
+  );
 
   const onPaneClick = useCallback(() => {
     hideFormDrawer();
-    if (visible && !preventCloseRef.current) {
+    if (visible && !shouldPreventClose()) {
+      removePlaceholderNode();
       hideModal();
       clearActiveDropdown();
     }
@@ -199,54 +220,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   }, [
     hideFormDrawer,
     visible,
+    shouldPreventClose,
     hideModal,
     imgVisible,
     addNoteNode,
     mouse,
     hideImage,
     clearActiveDropdown,
+    removePlaceholderNode,
   ]);
-
-  const onConnect = (connection: Connection) => {
-    originalOnConnect(connection);
-    isConnectedRef.current = true;
-  };
-
-  const OnConnectStart = (event: any, params: any) => {
-    isConnectedRef.current = false;
-
-    if (params && params.nodeId && params.handleId) {
-      connectionStartRef.current = {
-        nodeId: params.nodeId,
-        handleId: params.handleId,
-      };
-    } else {
-      connectionStartRef.current = null;
-    }
-  };
-
-  const OnConnectEnd = (event: MouseEvent | TouchEvent) => {
-    const target = event.target as HTMLElement;
-    // Clicking Handle will also trigger OnConnectEnd.
-    // To solve the problem that the operator on the right side added by clicking Handle will overlap with the original operator, this event is blocked here.
-    // TODO: However, a better way is to add both operators in the same way as OnConnectEnd.
-    if (target?.classList.contains('react-flow__handle')) {
-      return;
-    }
-
-    if ('clientX' in event && 'clientY' in event) {
-      const { clientX, clientY } = event;
-      setDropdownPosition({ x: clientX, y: clientY });
-      if (!isConnectedRef.current) {
-        setActiveDropdown('drag');
-        showModal();
-        preventCloseRef.current = true;
-        setTimeout(() => {
-          preventCloseRef.current = false;
-        }, 300);
-      }
-    }
-  };
 
   return (
     <div className={styles.canvasWrapper}>
@@ -278,12 +260,13 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           edges={edges}
           onEdgesChange={onEdgesChange}
           fitView
-          onConnect={onConnect}
+          onConnect={handleConnect}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onDrop={onDrop}
-          onConnectStart={OnConnectStart}
-          onConnectEnd={OnConnectEnd}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onMove={onMove}
           onDragOver={onDragOver}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
@@ -324,20 +307,24 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         </ReactFlow>
         {visible && (
           <HandleContext.Provider
-            value={{
-              nodeId: connectionStartRef.current?.nodeId || '',
-              id: connectionStartRef.current?.handleId || '',
-              type: 'source',
-              position: Position.Right,
-              isFromConnectionDrag: true,
-            }}
+            value={
+              getConnectionStartContext() || {
+                nodeId: '',
+                id: '',
+                type: 'source',
+                position: Position.Right,
+                isFromConnectionDrag: true,
+              }
+            }
           >
             <InnerNextStepDropdown
               hideModal={() => {
+                removePlaceholderNode();
                 hideModal();
                 clearActiveDropdown();
               }}
               position={dropdownPosition}
+              onNodeCreated={onNodeCreated}
             >
               <span></span>
             </InnerNextStepDropdown>
