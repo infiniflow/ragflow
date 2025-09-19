@@ -27,6 +27,72 @@ from rag.nlp import bullets_category, remove_contents_table, hierarchical_merge,
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
 
+class Node:
+    def __init__(self, level, depth=-1, texts=None):
+        self.level = level
+        self.depth = depth
+        self.texts = texts if texts is not None else []  # 存放内容
+        self.children = []  # 子节点
+
+    def add_child(self, child_node):
+        self.children.append(child_node)
+
+    def get_children(self):
+        return self.children
+
+    def get_level(self):
+        return self.level
+
+    def get_texts(self):
+        return self.texts
+
+    def set_texts(self, texts):
+        self.texts = texts
+
+    def add_text(self, text):
+        self.texts.append(text)
+
+    def clear_text(self):
+        self.texts = []
+
+    def __repr__(self):
+        return f"Node(level={self.level}, texts={self.texts}, children={len(self.children)})"
+
+    def build_tree(self, lines):
+        stack = [self]  
+        for line in lines:
+            level, text = line
+            node = Node(level=level, texts=[text])
+
+            if level <= self.depth or self.depth == -1:
+                while stack and level <= stack[-1].get_level():
+                    stack.pop()
+
+                stack[-1].add_child(node)
+                stack.append(node)
+            else:
+                stack[-1].add_text(text)
+        return self  
+
+    def get_tree(self):
+        tree_list = []  
+        self._dfs(self, tree_list, 0, [])
+        return tree_list
+
+    def _dfs(self, node, tree_list, current_depth, titles):
+
+        if node.get_texts():
+            if 0 < node.get_level() < self.depth:
+                titles.extend(node.get_texts())
+            else:
+                combined_text = ["\n".join(titles + node.get_texts())]
+                tree_list.append(combined_text)
+
+
+        for child in node.get_children():
+            self._dfs(child, tree_list, current_depth + 1, titles.copy())
+
+
 
 class Docx(DocxParser):
     def __init__(self):
@@ -59,6 +125,7 @@ class Docx(DocxParser):
             filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
+        level_set = set()
         bull = bullets_category([p.text for p in self.doc.paragraphs])
         for p in self.doc.paragraphs:
             if pn > to_page:
@@ -67,7 +134,7 @@ class Docx(DocxParser):
             if not p_text.strip("\n"):
                 continue
             lines.append((question_level, p_text))
-
+            level_set.add(question_level)
             for run in p.runs:
                 if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
@@ -75,29 +142,14 @@ class Docx(DocxParser):
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
 
-        visit = [False for _ in range(len(lines))]
-        sections = []
-        for s in range(len(lines)):
-            e = s + 1
-            while e < len(lines):
-                if lines[e][0] <= lines[s][0]:
-                    break
-                e += 1
-            if e - s == 1 and visit[s]:
-                continue
-            sec = []
-            next_level = lines[s][0] + 1
-            while not sec and next_level < 22:
-                for i in range(s+1, e):
-                    if lines[i][0] != next_level:
-                        continue
-                    sec.append(lines[i][1])
-                    visit[i] = True
-                next_level += 1
-            sec.insert(0, lines[s][1])
+        sorted_levels = sorted(level_set)
 
-            sections.append("\n".join(sec))
-        return [s for s in sections if s]
+        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1    
+
+        root = Node(level=0, depth=h2_level, texts=[])
+        root.build_tree(lines)
+
+        return [("\n").join(element) for element in root.get_tree() if element]
 
     def __str__(self) -> str:
         return f'''
