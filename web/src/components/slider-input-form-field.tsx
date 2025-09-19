@@ -1,6 +1,6 @@
 import { FormLayout } from '@/constants/form';
 import { cn } from '@/lib/utils';
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { SingleFormSlider } from './ui/dual-range-slider';
 import {
@@ -40,7 +40,7 @@ export function SliderInputFormField({
 }: SliderInputFormFieldProps) {
   const form = useFormContext();
 
-  const isHorizontal = layout === FormLayout.Horizontal;
+  const isHorizontal = useMemo(() => layout === FormLayout.Vertical, [layout]);
 
   return (
     <FormField
