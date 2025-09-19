@@ -71,7 +71,6 @@ class ParserParam(ProcessParamBase):
         self.setups = {
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
-                "llm_id": "",
                 "lang": "Chinese",
                 "suffix": [
                     "pdf",
@@ -93,8 +92,8 @@ class ParserParam(ProcessParamBase):
                 ],
                 "output_format": "json",
             },
-            "markdown": {
-                "suffix": ["md", "markdown", "mdx"],
+            "text&markdown": {
+                "suffix": ["md", "markdown", "mdx", "txt"],
                 "output_format": "json",
             },
             "slides": {
@@ -147,13 +146,10 @@ class ParserParam(ProcessParamBase):
         pdf_config = self.setups.get("pdf", {})
         if pdf_config:
             pdf_parse_method = pdf_config.get("parse_method", "")
-            self.check_valid_value(pdf_parse_method.lower(), "Parse method abnormal.", ["deepdoc", "plain_text", "vlm"])
+            self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method not in ["deepdoc", "plain_text"]:
-                self.check_empty(pdf_config.get("llm_id"), "VLM")
-
-            pdf_language = pdf_config.get("lang", "")
-            self.check_empty(pdf_language, "Language")
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text"]:
+                self.check_empty(pdf_config.get("lang", ""), "Language")
 
             pdf_output_format = pdf_config.get("output_format", "")
             self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
@@ -212,8 +208,7 @@ class Parser(ProcessBase):
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         else:
-            assert conf.get("llm_id")
-            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("llm_id"), lang=self._param.setups["pdf"].get("lang"))
+            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
@@ -222,6 +217,7 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
+
         if conf.get("output_format") == "markdown":
             mkdn = ""
             for b in bboxes:
@@ -285,7 +281,6 @@ class Parser(ProcessBase):
 
     def _markdown(self, name, blob):
         from functools import reduce
-
         from rag.app.naive import Markdown as naive_markdown_parser
         from rag.nlp import concat_img
 
@@ -316,22 +311,6 @@ class Parser(ProcessBase):
         else:
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
-    def _text(self, name, blob):
-        from deepdoc.parser.utils import get_text
-
-        self.callback(random.randint(1, 5) / 100.0, "Start to work on a text.")
-        conf = self._param.setups["text"]
-        self.set_output("output_format", conf["output_format"])
-
-        # parse binary to text
-        text_content = get_text(name, binary=blob)
-
-        if conf.get("output_format") == "json":
-            result = [{"text": text_content}]
-            self.set_output("json", result)
-        else:
-            result = text_content
-            self.set_output("text", result)
 
     def _image(self, from_upstream: ParserFromUpstream):
         from deepdoc.vision import OCR
@@ -353,7 +332,7 @@ class Parser(ProcessBase):
 
         else:
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"], lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"],lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
@@ -387,11 +366,10 @@ class Parser(ProcessBase):
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
-            "markdown": self._markdown,
+            "text&markdown": self._markdown,
             "spreadsheet": self._spreadsheet,
             "slides": self._slides,
             "word": self._word,
-            "text": self._text,
             "image": self._image,
             "audio": self._audio,
         }

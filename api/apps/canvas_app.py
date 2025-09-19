@@ -144,11 +144,10 @@ def run():
 
     if cvs.canvas_category == CanvasCategory.DataFlow:
         task_id = get_uuid()
-        flow_id = get_uuid()
-        ok, error_message = queue_dataflow(dsl=cvs.dsl, tenant_id=user_id, file=files[0], task_id=task_id, flow_id=flow_id, priority=0)
+        ok, error_message = queue_dataflow(tenant_id=user_id, flow_id=req["id"], task_id=task_id, file=files[0], priority=0)
         if not ok:
-            return server_error_response(error_message)
-        return get_json_result(data={"task_id": task_id, "message_id": flow_id})
+            return get_data_error_result(message=error_message)
+        return get_json_result(data={"message_id": task_id})
 
     try:
         canvas = Canvas(cvs.dsl, current_user.id, req["id"])
