@@ -1,6 +1,5 @@
 import {
   IAgentForm,
-  ICategorizeForm,
   ICategorizeItem,
   ICategorizeItemResult,
 } from '@/interfaces/database/agent';
@@ -31,15 +30,6 @@ import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-for
 import { ParserFormSchemaType } from './form/parser-form';
 import { SplitterFormSchemaType } from './form/splitter-form';
 import { BeginQuery, IPosition } from './interface';
-
-function buildAgentExceptionGoto(edges: Edge[], nodeId: string) {
-  const exceptionEdges = edges.filter(
-    (x) =>
-      x.source === nodeId && x.sourceHandle === NodeHandleId.AgentException,
-  );
-
-  return exceptionEdges.map((x) => x.target);
-}
 
 const buildComponentDownstreamOrUpstream = (
   edges: Edge[],
@@ -81,70 +71,6 @@ const removeUselessDataInTheOperator = curry(
     return params;
   },
 );
-// initialize data for operators without parameters
-// const initializeOperatorParams = curry((operatorName: string, values: any) => {
-//   if (isEmpty(values)) {
-//     return initialFormValuesMap[operatorName as Operator];
-//   }
-//   return values;
-// });
-
-function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
-  const node = nodes.find((x) => x.id === nodeId);
-  const params = { ...(node?.data.form ?? {}) };
-  if (node && node.data.label === Operator.Agent) {
-    const bottomSubAgentEdges = edges.filter(
-      (x) => x.source === nodeId && x.sourceHandle === NodeHandleId.AgentBottom,
-    );
-
-    (params as IAgentForm).tools = (params as IAgentForm).tools.concat(
-      bottomSubAgentEdges.map((x) => {
-        const {
-          params: formData,
-          id,
-          name,
-        } = buildAgentTools(edges, nodes, x.target);
-
-        return {
-          component_name: Operator.Agent,
-          id,
-          name: name as string, // Cast name to string and provide fallback
-          params: { ...formData },
-        };
-      }),
-    );
-  }
-  return { params, name: node?.data.name, id: node?.id };
-}
-
-function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
-  return edges.filter((x) => x.sourceHandle === handleId).map((x) => x.target);
-}
-
-function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
-  const node = nodes.find((x) => x.id === nodeId);
-  const params = { ...(node?.data.form ?? {}) } as ICategorizeForm;
-  if (node && node.data.label === Operator.Categorize) {
-    const subEdges = edges.filter((x) => x.source === nodeId);
-
-    const items = params.items || [];
-
-    const nextCategoryDescription = items.reduce<
-      ICategorizeForm['category_description']
-    >((pre, val) => {
-      const key = val.name;
-      pre[key] = {
-        ...omit(val, 'name', 'uuid'),
-        examples: val.examples?.map((x) => x.value) || [],
-        to: filterTargetsBySourceHandleId(subEdges, val.uuid),
-      };
-      return pre;
-    }, {});
-
-    params.category_description = nextCategoryDescription;
-  }
-  return omit(params, 'items');
-}
 
 const buildOperatorParams = (operatorName: string) =>
   pipe(
@@ -152,7 +78,7 @@ const buildOperatorParams = (operatorName: string) =>
     // initializeOperatorParams(operatorName), // Final processing, for guarantee
   );
 
-const ExcludeOperators = [Operator.Note, Operator.Tool];
+const ExcludeOperators = [Operator.Note];
 
 export function isBottomSubAgent(edges: Edge[], nodeId?: string) {
   const edge = edges.find(
@@ -176,7 +102,6 @@ function transformParserParams(params: ParserFormSchemaType) {
     Record<string, ParserFormSchemaType['setups'][0]>
   >((pre, cur) => {
     if (cur.fileFormat) {
-      // 根据文件类型过滤需要的字段，只保留每个文件类型需要的字段
       let filteredSetup: Partial<ParserFormSchemaType['setups'][0]> = {
         output_format: cur.output_format,
       };
