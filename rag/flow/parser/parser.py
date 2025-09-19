@@ -207,9 +207,6 @@ class ParserParam(ProcessParamBase):
         if email_config:
             email_output_format = email_config.get("output_format", "")
             self.check_valid_value(email_output_format, "Email output format abnormal.", self.allowed_output_format["email"])
-            # TODO check attachments and parse method
-
-
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
