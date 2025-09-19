@@ -945,7 +945,6 @@ class GiteeEmbed(SILICONFLOWEmbed):
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
 
-
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 

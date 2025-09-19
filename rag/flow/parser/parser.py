@@ -51,7 +51,9 @@ class ParserParam(ProcessParamBase):
             "word": [
                 "json",
             ],
-            "ppt": [],
+            "slides": [
+                "json",
+            ],
             "image": [
                 "text"
             ],
@@ -95,7 +97,13 @@ class ParserParam(ProcessParamBase):
                 "suffix": ["md", "markdown", "mdx"],
                 "output_format": "json",
             },
-            "ppt": {},
+            "slides": {
+                "parse_method": "presentation",
+                "suffix": [
+                    "pptx",
+                ],
+                "output_format": "json",
+            },
             "image": {
                 "parse_method": "ocr",
                 "llm_id": "",
@@ -160,6 +168,11 @@ class ParserParam(ProcessParamBase):
             doc_output_format = doc_config.get("output_format", "")
             self.check_valid_value(doc_output_format, "Word processer document output format abnormal.", self.allowed_output_format["doc"])
 
+        slides_config = self.setups.get("slides", "")
+        if slides_config:
+            slides_output_format = slides_config.get("output_format", "")
+            self.check_valid_value(slides_output_format, "Slides output format abnormal.", self.allowed_output_format["slides"])
+
         image_config = self.setups.get("image", "")
         if image_config:
             image_parse_method = image_config.get("parse_method", "")
@@ -209,7 +222,6 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
-
         if conf.get("output_format") == "markdown":
             mkdn = ""
             for b in bboxes:
@@ -235,7 +247,7 @@ class Parser(ProcessBase):
             self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
     def _word(self, name, blob):
-        from tika import parser as  word_parser
+        from tika import parser as word_parser
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
         conf = self._param.setups["word"]
@@ -253,8 +265,27 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             self.set_output("json", sections)
 
+    def _slides(self, name, blob):
+        from deepdoc.parser.ppt_parser import RAGFlowPptParser as ppt_parser
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
+
+        conf = self._param.setups["slides"]
+        self.set_output("output_format", conf["output_format"])
+
+        ppt_parser = ppt_parser()
+        txts = ppt_parser(blob, 0, 100000, None)
+
+        sections = [{"text": section} for section in txts if section.strip()]
+
+        # json
+        assert conf.get("output_format") == "json", "have to be json for ppt"
+        if conf.get("output_format") == "json":
+            self.set_output("json", sections)
+
     def _markdown(self, name, blob):
         from functools import reduce
+
         from rag.app.naive import Markdown as naive_markdown_parser
         from rag.nlp import concat_img
 
@@ -322,7 +353,7 @@ class Parser(ProcessBase):
 
         else:
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"],lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"], lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
@@ -358,6 +389,7 @@ class Parser(ProcessBase):
             "pdf": self._pdf,
             "markdown": self._markdown,
             "spreadsheet": self._spreadsheet,
+            "slides": self._slides,
             "word": self._word,
             "text": self._text,
             "image": self._image,

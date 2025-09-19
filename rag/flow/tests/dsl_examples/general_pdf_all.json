@@ -38,6 +38,13 @@
                   ],
                   "output_format": "json"
                 },
+                "slides": {
+                    "parse_method": "presentation",
+                    "suffix": [
+                        "pptx"
+                    ],
+                    "output_format": "json"
+                },
                 "markdown": {
                   "suffix": [
                     "md",
