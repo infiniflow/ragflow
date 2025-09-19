@@ -22,6 +22,7 @@ import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
   CategorizeAnchorPointPositions,
+  FileType,
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
@@ -171,14 +172,52 @@ function transformObjectArrayToPureArray(
 }
 
 function transformParserParams(params: ParserFormSchemaType) {
-  return params.parser.reduce<
-    Record<string, ParserFormSchemaType['parser'][0]>
+  const setups = params.setups.reduce<
+    Record<string, ParserFormSchemaType['setups'][0]>
   >((pre, cur) => {
     if (cur.fileFormat) {
-      pre[cur.fileFormat] = omit(cur, 'fileFormat');
+      // 根据文件类型过滤需要的字段，只保留每个文件类型需要的字段
+      let filteredSetup: Partial<ParserFormSchemaType['setups'][0]> = {
+        output_format: cur.output_format,
+      };
+
+      switch (cur.fileFormat) {
+        case FileType.PDF:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+            lang: cur.lang,
+          };
+          break;
+        case FileType.Image:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          break;
+        case FileType.Email:
+          filteredSetup = {
+            ...filteredSetup,
+            fields: cur.fields,
+          };
+          break;
+        case FileType.Video:
+        case FileType.Audio:
+          filteredSetup = {
+            ...filteredSetup,
+            llm_id: cur.llm_id,
+          };
+          break;
+        default:
+          break;
+      }
+
+      pre[cur.fileFormat] = filteredSetup;
     }
     return pre;
   }, {});
+
+  return { ...params, setups };
 }
 
 function transformSplitterParams(params: SplitterFormSchemaType) {
@@ -218,18 +257,6 @@ export const buildDslComponentsByGraph = (
       let params = x?.data.form ?? {};
 
       switch (operatorName) {
-        case Operator.Agent: {
-          const { params: formData } = buildAgentTools(edges, nodes, id);
-          params = {
-            ...formData,
-            exception_goto: buildAgentExceptionGoto(edges, id),
-          };
-          break;
-        }
-        case Operator.Categorize:
-          params = buildCategorize(edges, nodes, id);
-          break;
-
         case Operator.Parser:
           params = transformParserParams(params);
           break;

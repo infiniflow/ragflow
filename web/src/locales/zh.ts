@@ -1578,6 +1578,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       overlappedPercent: '重叠百分比',
       searchMethod: '搜索方法',
       filenameEmbdWeight: '文件名嵌入权重',
+      begin: '文件',
     },
   },
 };

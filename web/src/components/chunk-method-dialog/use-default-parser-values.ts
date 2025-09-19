@@ -1,7 +1,7 @@
 import { IParserConfig } from '@/interfaces/database/document';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DocumentType } from '../layout-recognize-form-field';
+import { ParseDocumentType } from '../layout-recognize-form-field';
 
 export function useDefaultParserValues() {
   const { t } = useTranslation();
@@ -9,7 +9,7 @@ export function useDefaultParserValues() {
   const defaultParserValues = useMemo(() => {
     const defaultParserValues = {
       task_page_size: 12,
-      layout_recognize: DocumentType.DeepDOC,
+      layout_recognize: ParseDocumentType.DeepDOC,
       chunk_token_num: 512,
       delimiter: '\n',
       auto_keywords: 0,

@@ -16,7 +16,7 @@ interface IProps {
 }
 
 export const DelimiterInput = forwardRef<HTMLInputElement, InputProps & IProps>(
-  ({ value, onChange, maxLength, defaultValue }, ref) => {
+  ({ value, onChange, maxLength, defaultValue, ...props }, ref) => {
     const nextValue = value?.replaceAll('\n', '\\n');
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const val = e.target.value;
@@ -30,6 +30,7 @@ export const DelimiterInput = forwardRef<HTMLInputElement, InputProps & IProps>(
         maxLength={maxLength}
         defaultValue={defaultValue}
         ref={ref}
+        {...props}
       ></Input>
     );
   },
