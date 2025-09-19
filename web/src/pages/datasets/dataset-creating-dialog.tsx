@@ -19,9 +19,10 @@ import { Input } from '@/components/ui/input';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+
 import {
   ChunkMethodItem,
   EmbeddingModelItem,
@@ -89,6 +90,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
     console.log('submit', data);
     onOk?.(data);
   }
+
   const parseType = useWatch({
     control: form.control,
     name: 'parseType',
@@ -121,6 +123,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
+
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
         {parseType === 1 && (

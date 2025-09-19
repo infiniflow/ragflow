@@ -28,6 +28,7 @@ from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.task_service import queue_dataflow
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
@@ -46,14 +47,6 @@ from rag.utils.redis_conn import REDIS_CONN
 @login_required
 def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.query(canvas_category=CanvasCategory.Agent)])
-
-
-@manager.route('/list', methods=['GET'])  # noqa: F821
-@login_required
-def canvas_list():
-    return get_json_result(data=sorted([c.to_dict() for c in \
-                                 UserCanvasService.query(user_id=current_user.id, canvas_category=CanvasCategory.Agent)], key=lambda x: x["update_time"]*-1)
-                           )
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
@@ -77,9 +70,10 @@ def save():
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
+    cate = req.get("canvas_category", CanvasCategory.Agent)
     if "id" not in req:
         req["user_id"] = current_user.id
-        if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip(), canvas_category=CanvasCategory.Agent):
+        if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip(), canvas_category=cate):
             return get_data_error_result(message=f"{req['title'].strip()} already exists.")
         req["id"] = get_uuid()
         if not UserCanvasService.save(**req):
@@ -147,6 +141,14 @@ def run():
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+
+    if cvs.canvas_category == CanvasCategory.DataFlow:
+        task_id = get_uuid()
+        flow_id = get_uuid()
+        ok, error_message = queue_dataflow(dsl=cvs.dsl, tenant_id=user_id, file=files[0], task_id=task_id, flow_id=flow_id, priority=0)
+        if not ok:
+            return server_error_response(error_message)
+        return get_json_result(data={"task_id": task_id, "message_id": flow_id})
 
     try:
         canvas = Canvas(cvs.dsl, current_user.id, req["id"])
@@ -332,7 +334,7 @@ def test_db_connect():
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                password=req["password"])
-        elif req["db_type"] == 'postgresql':
+        elif req["db_type"] == 'postgres':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
         elif req["db_type"] == 'mssql':
@@ -383,22 +385,31 @@ def getversion( version_id):
         return get_json_result(data=f"Error getting history file: {e}")
 
 
-@manager.route('/listteam', methods=['GET'])  # noqa: F821
+@manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_canvas():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 150))
     orderby = request.args.get("orderby", "create_time")
-    desc = request.args.get("desc", True)
-    try:
+    canvas_category = request.args.get("canvas_category")
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
+    owner_ids = request.args.get("owner_ids", [])
+    if not owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        tenants = [m["tenant_id"] for m in tenants]
         canvas, total = UserCanvasService.get_by_tenant_ids(
-            [m["tenant_id"] for m in tenants], current_user.id, page_number,
-            items_per_page, orderby, desc, keywords, canvas_category=CanvasCategory.Agent)
-        return get_json_result(data={"canvas": canvas, "total": total})
-    except Exception as e:
-        return server_error_response(e)
+            tenants, current_user.id, page_number,
+            items_per_page, orderby, desc, keywords, canvas_category)
+    else:
+        tenants = owner_ids
+        canvas, total = UserCanvasService.get_by_tenant_ids(
+            tenants, current_user.id, 0,
+            0, orderby, desc, keywords, canvas_category)
+    return get_json_result(data={"canvas": canvas, "total": total})
 
 
 @manager.route('/setting', methods=['POST'])  # noqa: F821

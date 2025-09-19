@@ -37,6 +37,7 @@ class TokenizerParam(ProcessParamBase):
         super().__init__()
         self.search_method = ["full_text", "embedding"]
         self.filename_embd_weight = 0.1
+        self.fields = ["text"]
 
     def check(self):
         for v in self.search_method:
@@ -61,10 +62,14 @@ class Tokenizer(ProcessBase):
         embedding_model = LLMBundle(self._canvas._tenant_id, LLMType.EMBEDDING, llm_name=embedding_id)
         texts = []
         for c in chunks:
-            if c.get("questions"):
-                texts.append("\n".join(c["questions"]))
-            else:
-                texts.append(re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c["text"]))
+            txt = ""
+            for f in self._param.fields:
+                f = c.get(f)
+                if isinstance(f, str):
+                    txt += f
+                elif isinstance(f, list):
+                    txt += "\n".join(f)
+            texts.append(re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt))
         vts, c = embedding_model.encode([name])
         token_count += c
         tts = np.concatenate([vts[0] for _ in range(len(texts))], axis=0)
@@ -109,6 +114,9 @@ class Tokenizer(ProcessBase):
             if from_upstream.chunks:
                 chunks = from_upstream.chunks
                 for i, ck in enumerate(chunks):
+                    if ck.get("docnm_kwd"):  # from presentation method
+                        ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", ck["docnm_kwd"]))
+                        ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
                     if ck.get("questions"):
                         ck["question_tks"] = rag_tokenizer.tokenize("\n".join(ck["questions"]))
                     if ck.get("keywords"):
@@ -130,12 +138,18 @@ class Tokenizer(ProcessBase):
 
                 ck = {"text": payload}
                 if "full_text" in self._param.search_method:
+                    if ck.get("docnm_kwd"):  # from presentation method
+                        ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", ck["docnm_kwd"]))
+                        ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
                     ck["content_ltks"] = rag_tokenizer.tokenize(kwargs.get(kwargs["output_format"], ""))
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                 chunks = [ck]
             else:
                 chunks = from_upstream.json_result
                 for i, ck in enumerate(chunks):
+                    if ck.get("docnm_kwd"):  # from presentation method
+                        ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", ck["docnm_kwd"]))
+                        ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
                     ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:

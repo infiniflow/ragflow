@@ -95,7 +95,7 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
                           page_number, items_per_page,
-                          orderby, desc, keywords, canvas_category=CanvasCategory.Agent,
+                          orderby, desc, keywords, canvas_category=None
                           ):
         fields = [
             cls.model.id,
@@ -122,7 +122,8 @@ class UserCanvasService(CommonService):
                                                                 TenantPermission.TEAM.value)) | (
                     cls.model.user_id == user_id))
             )
-        agents = agents.where(cls.model.canvas_category == canvas_category)
+        if canvas_category:
+            agents = agents.where(cls.model.canvas_category == canvas_category)
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:

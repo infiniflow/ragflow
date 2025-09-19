@@ -157,7 +157,7 @@ export default {
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
-      vectorSimilarityWeight: '相似度相似度权重',
+      vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
@@ -651,6 +651,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       cancel: '取消',
       chatSetting: '聊天设置',
+      avatarHidden: '隐藏头像',
+      locale: '地区',
     },
     setting: {
       profile: '概要',
@@ -1596,6 +1598,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       fileFormats: '文件格式',
       fields: '字段',
       addParser: '增加解析器',
+      hierarchy: '层次结构',
+      regularExpressions: '正则表达式',
+      overlappedPercent: '重叠百分比',
+      searchMethod: '搜索方法',
+      filenameEmbdWeight: '文件名嵌入权重',
     },
   },
 };

@@ -9,13 +9,7 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import {
-  Banknote,
-  DatabaseZap,
-  FileSearch2,
-  FolderOpen,
-  GitGraph,
-} from 'lucide-react';
+import { Banknote, FileSearch2, FolderOpen, GitGraph } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -34,11 +28,11 @@ export function SideBar({ refreshCount }: PropType) {
 
   const items = useMemo(() => {
     const list = [
-      {
-        icon: DatabaseZap,
-        label: t(`knowledgeDetails.overview`),
-        key: Routes.DataSetOverview,
-      },
+      // {
+      //   icon: DatabaseZap,
+      //   label: t(`knowledgeDetails.overview`),
+      //   key: Routes.DataSetOverview,
+      // },
       {
         icon: FolderOpen,
         label: t(`knowledgeDetails.subbarFiles`),
