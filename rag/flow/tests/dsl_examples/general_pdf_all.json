@@ -89,6 +89,22 @@
                   "lang": "Chinese",
                   "llm_id": "SenseVoiceSmall",
                   "output_format": "json"
+                },
+                "email": {
+                  "suffix": [
+                    "msg"
+                  ],
+                  "fields": [
+                    "from",
+                    "to",
+                    "cc",
+                    "bcc",
+                    "date",
+                    "subject",
+                    "body",
+                    "attachments"
+                  ],
+                  "output_format": "json"
                 }
               }
           }
