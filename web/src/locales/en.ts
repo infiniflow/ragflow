@@ -1628,6 +1628,24 @@ This delimiter is used to split the input text into several text pieces echo of 
       parseSummaryTip: 'Parser：deepdoc',
       rerunFromCurrentStep: 'Rerun From Current Step',
       rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
+      confirmRerun: 'Confirm Rerun Process',
+      confirmRerunModalContent: `
+      <p class="text-sm text-text-disabled font-medium mb-2">
+        You are about to rerun the process starting from the <strong class="text-text-primary">{{step}}</strong> step.
+      </p>
+      <p class="text-sm mb-3 text-text-secondary">This will:</p>
+      <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
+        <li>Overwrite existing results from the current step onwards</li>
+        <li>Create a new log entry for tracking</li>
+        <li>Previous steps will remain unchanged</li>
+      </ul>`,
+      changeStepModalTitle: 'Step Switch Warning',
+      changeStepModalContent: `
+      <p>You are currently editing the results of this stage.</p> 
+      <p>If you switch to a later stage, your changes will be lost. </p> 
+      <p>To keep them, please click Rerun to re-run the current stage.</p> `,
+      changeStepModalConfirmText: 'Switch Anyway',
+      changeStepModalCancelText: 'Cancel',
     },
     dataflow: {
       parser: 'Parser',

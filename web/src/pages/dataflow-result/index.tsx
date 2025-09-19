@@ -2,11 +2,17 @@ import { useFetchNextChunkList } from '@/hooks/use-chunk-request';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DocumentPreview from './components/document-preview';
-import { useGetChunkHighlights, useHandleChunkCardClick } from './hooks';
+import {
+  useGetChunkHighlights,
+  useHandleChunkCardClick,
+  useRerunDataflow,
+} from './hooks';
 
 import DocumentHeader from './components/document-preview/document-header';
 
+import { TimelineNode } from '@/components/originui/timeline';
 import { PageHeader } from '@/components/page-header';
+import Spotlight from '@/components/spotlight';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,6 +21,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal/modal';
 import {
   QueryStringMap,
   useNavigatePage,
@@ -23,7 +31,10 @@ import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { ChunkerContainer } from './chunker';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
-import TimelineDataFlow, { TimelineNodeObj } from './components/time-line';
+import TimelineDataFlow, {
+  TimelineNodeArr,
+  TimelineNodeType,
+} from './components/time-line';
 import styles from './index.less';
 import ParserContainer from './parser';
 
@@ -34,7 +45,7 @@ const Chunk = () => {
   const { selectedChunkId } = useHandleChunkCardClick();
   const [activeStepId, setActiveStepId] = useState<number | string>(0);
   const { data: dataset } = useFetchKnowledgeBaseConfiguration();
-
+  const { isChange, setIsChange } = useRerunDataflow();
   const { t } = useTranslation();
 
   const { navigateToDataset, getQueryString, navigateToDatasetList } =
@@ -58,10 +69,57 @@ const Chunk = () => {
     return 'unknown';
   }, [documentInfo]);
 
-  const handleStepChange = (id: number | string) => {
-    setActiveStepId(id);
+  const handleStepChange = (id: number | string, step: TimelineNode) => {
+    console.log(id, step);
+    if (isChange) {
+      Modal.show({
+        visible: true,
+        className: '!w-[560px]',
+        title: t('dataflowParser.changeStepModalTitle'),
+        children: (
+          <div
+            className="text-sm text-text-secondary"
+            dangerouslySetInnerHTML={{
+              __html: t('dataflowParser.changeStepModalContent', {
+                step: step?.title,
+              }),
+            }}
+          ></div>
+        ),
+        onVisibleChange: () => {
+          Modal.hide();
+        },
+        footer: (
+          <div className="flex justify-end gap-2">
+            <Button variant={'outline'} onClick={() => Modal.hide()}>
+              {t('dataflowParser.changeStepModalCancelText')}
+            </Button>
+            <Button
+              variant={'secondary'}
+              className="!bg-state-error text-text-primary"
+              onClick={() => {
+                Modal.hide();
+                setActiveStepId(id);
+                setIsChange(false);
+              }}
+            >
+              {t('dataflowParser.changeStepModalConfirmText')}
+            </Button>
+          </div>
+        ),
+      });
+    } else {
+      setActiveStepId(id);
+    }
   };
+
   const { type } = useGetKnowledgeSearchParams();
+  const currentTimeNode: TimelineNode = useMemo(() => {
+    return (
+      TimelineNodeArr.find((node) => node.id === activeStepId) ||
+      ({} as TimelineNode)
+    );
+  }, [activeStepId]);
   return (
     <>
       <PageHeader>
@@ -114,9 +172,23 @@ const Chunk = () => {
             </section>
           </div>
           <div className="h-dvh border-r -mt-3"></div>
-          {(activeStepId === TimelineNodeObj.chunker.id ||
-            type === 'chunk') && <ChunkerContainer />}
-          {activeStepId === TimelineNodeObj.parser.id && <ParserContainer />}
+          <div className="w-3/5 h-full">
+            {currentTimeNode?.type === TimelineNodeType.chunk && (
+              <ChunkerContainer
+                isChange={isChange}
+                setIsChange={setIsChange}
+                step={currentTimeNode as TimelineNode}
+              />
+            )}
+            {currentTimeNode?.type === TimelineNodeType.parser && (
+              <ParserContainer
+                isChange={isChange}
+                setIsChange={setIsChange}
+                step={currentTimeNode as TimelineNode}
+              />
+            )}
+            <Spotlight opcity={0.6} coverage={60} />
+          </div>
         </div>
       </div>
     </>

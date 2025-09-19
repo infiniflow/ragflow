@@ -177,7 +177,7 @@ const Modal: ModalType = ({
                   <DialogPrimitive.Close asChild>
                     <button
                       type="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted"
+                      className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted focus-visible:outline-none"
                     >
                       {closeIcon}
                     </button>

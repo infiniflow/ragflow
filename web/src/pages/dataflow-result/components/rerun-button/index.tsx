@@ -1,16 +1,45 @@
+import { TimelineNode } from '@/components/originui/timeline';
 import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal/modal';
 import { CircleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useRerunDataflow } from '../../hooks';
 interface RerunButtonProps {
   className?: string;
+  step?: TimelineNode;
+  onRerun?: () => void;
 }
 const RerunButton = (props: RerunButtonProps) => {
+  const { className, step, onRerun } = props;
   const { t } = useTranslation();
   const { loading } = useRerunDataflow();
   const clickFunc = () => {
     console.log('click rerun button');
+    Modal.show({
+      visible: true,
+      className: '!w-[560px]',
+      title: t('dataflowParser.confirmRerun'),
+      children: (
+        <div
+          dangerouslySetInnerHTML={{
+            __html: t('dataflowParser.confirmRerunModalContent', {
+              step: step?.title,
+            }),
+          }}
+        ></div>
+      ),
+      onVisibleChange: () => {
+        Modal.hide();
+      },
+      onOk: () => {
+        onRerun?.();
+        Modal.hide();
+      },
+      onCancel: () => {
+        Modal.hide();
+      },
+    });
   };
   return (
     <div className="flex flex-col gap-2">

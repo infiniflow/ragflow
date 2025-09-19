@@ -7,40 +7,61 @@ import {
   PlayIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
-export const TimelineNodeObj = {
-  begin: {
+export enum TimelineNodeType {
+  begin = 'begin',
+  parser = 'parser',
+  chunk = 'chunk',
+  indexer = 'indexer',
+  complete = 'complete',
+  end = 'end',
+}
+export const TimelineNodeArr = [
+  {
     id: 1,
     title: 'Begin',
     icon: <PlayIcon size={13} />,
     clickable: false,
+    type: TimelineNodeType.begin,
   },
-  parser: { id: 2, title: 'Parser', icon: <FilePlayIcon size={13} /> },
-  chunker: { id: 3, title: 'Chunker', icon: <Grid3x2 size={13} /> },
-  indexer: {
+  {
+    id: 2,
+    title: 'Parser',
+    icon: <FilePlayIcon size={13} />,
+    type: TimelineNodeType.parser,
+  },
+  {
+    id: 3,
+    title: 'Chunker',
+    icon: <Grid3x2 size={13} />,
+    type: TimelineNodeType.chunk,
+  },
+  {
     id: 4,
     title: 'Indexer',
     icon: <ListPlus size={13} />,
     clickable: false,
+    type: TimelineNodeType.indexer,
   },
-  complete: {
+  {
     id: 5,
     title: 'Complete',
     icon: <CheckLine size={13} />,
     clickable: false,
+    type: TimelineNodeType.complete,
   },
-};
+];
 
 export interface TimelineDataFlowProps {
   activeId: number | string;
-  activeFunc: (id: number | string) => void;
+  activeFunc: (id: number | string, step: TimelineNode) => void;
 }
 const TimelineDataFlow = ({ activeFunc, activeId }: TimelineDataFlowProps) => {
   // const [activeStep, setActiveStep] = useState(2);
   const timelineNodes: TimelineNode[] = useMemo(() => {
     const nodes: TimelineNode[] = [];
-    Object.keys(TimelineNodeObj).forEach((key) => {
+    TimelineNodeArr.forEach((node) => {
       nodes.push({
-        ...TimelineNodeObj[key as keyof typeof TimelineNodeObj],
+        ...node,
         className: 'w-32',
         completed: false,
       });
@@ -54,7 +75,10 @@ const TimelineDataFlow = ({ activeFunc, activeId }: TimelineDataFlowProps) => {
   }, [activeId, timelineNodes]);
   const handleStepChange = (step: number, id: string | number) => {
     // setActiveStep(step);
-    activeFunc?.(id);
+    activeFunc?.(
+      id,
+      timelineNodes.find((node) => node.id === activeStep) as TimelineNode,
+    );
     console.log(step, id);
   };
 
