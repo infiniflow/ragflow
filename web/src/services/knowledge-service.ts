@@ -39,6 +39,7 @@ const {
   setMeta,
   getMeta,
   retrievalTestShare,
+  getKnowledgeBasicInfo,
 } = api;
 
 const methods = {
@@ -168,6 +169,10 @@ const methods = {
   retrievalTestShare: {
     url: retrievalTestShare,
     method: 'post',
+  },
+  getKnowledgeBasicInfo: {
+    url: getKnowledgeBasicInfo,
+    method: 'get',
   },
 };
 

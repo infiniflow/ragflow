@@ -1536,6 +1536,24 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       parseSummaryTip: '解析器: deepdoc',
       rerunFromCurrentStep: '从当前步骤重新运行',
       rerunFromCurrentStepTip: '已修改，点击重新运行。',
+      confirmRerun: '确认重新运行流程',
+      confirmRerunModalContent: `
+      <p class="text-sm text-text-disabled font-medium mb-2">
+        您即将从 <strong class="text-text-primary">{{step}}</strong> 步骤开始重新运行该过程
+      </p>
+      <p class="text-sm mb-3 text-text-secondary">这将:</p>
+      <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
+        <li>从当前步骤开始覆盖现有结果</li>
+        <li>创建新的日志条目进行跟踪</li>
+        <li>之前的步骤将保持不变</li>
+      </ul>`,
+      changeStepModalTitle: '切换步骤警告',
+      changeStepModalContent: `
+      <p>您目前正在编辑此阶段的结果。</p>
+      <p>如果您切换到后续阶段，您的更改将会丢失。</p>
+      <p>要保留这些更改，请点击“重新运行”以重新运行当前阶段。</p> `,
+      changeStepModalConfirmText: '继续切换',
+      changeStepModalCancelText: '取消',
     },
     dataflow: {
       parser: '解析器',

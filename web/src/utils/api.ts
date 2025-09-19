@@ -45,6 +45,7 @@ export default {
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
+  getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -192,7 +193,6 @@ export default {
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
 
   // data pipeline
-
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,
   setDataflow: `${api_host}/dataflow/set`,
   removeDataflow: `${api_host}/dataflow/rm`,

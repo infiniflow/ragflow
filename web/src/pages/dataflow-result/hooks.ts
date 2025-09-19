@@ -140,8 +140,12 @@ export const useFetchParserList = () => {
 
 export const useRerunDataflow = () => {
   const [loading, setLoading] = useState(false);
+  const [isChange, setIsChange] = useState(false);
   return {
     loading,
+    setLoading,
+    isChange,
+    setIsChange,
   };
 };
 

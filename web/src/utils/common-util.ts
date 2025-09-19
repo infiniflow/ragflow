@@ -152,8 +152,11 @@ function getCSSVariableValue(variableName: string): string {
   return value;
 }
 
-// Parse the color and convert to RGBA
-export function parseColorToRGBA(color: string): [number, number, number] {
+/**Parse the color and convert to RGB,
+ * #fff -> [255, 255, 255]
+ * var(--text-primary) -> [var(--text-primary-r), var(--text-primary-g), var(--text-primary-b)]
+ * */
+export function parseColorToRGB(color: string): [number, number, number] {
   // Handling CSS variables (e.g. var(--accent-primary))
   let colorStr = color;
   if (colorStr.startsWith('var(')) {
@@ -202,4 +205,15 @@ export function parseColorToRGBA(color: string): [number, number, number] {
   }
   console.error(`Unsupported colorStr format: ${colorStr}`);
   return [0, 0, 0];
+}
+
+/**
+ *
+ * @param color eg: #fff, or var(--color-text-primary)
+ * @param opcity 0~1
+ * @return rgba(r,g,b,opcity)
+ */
+export function parseColorToRGBA(color: string, opcity = 1): string {
+  const [r, g, b] = parseColorToRGB(color);
+  return `rgba(${r},${g},${b},${opcity})`;
 }

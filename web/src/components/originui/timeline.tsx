@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { parseColorToRGBA } from '@/utils/common-util';
+import { parseColorToRGB } from '@/utils/common-util';
 import { Slot } from '@radix-ui/react-slot';
 import * as React from 'react';
 
@@ -251,7 +251,7 @@ const CustomTimeline = ({
 }: CustomTimelineProps) => {
   const [internalActiveStep, setInternalActiveStep] =
     React.useState(defaultValue);
-  const _lineColor = `rgb(${parseColorToRGBA(lineColor)})`;
+  const _lineColor = `rgb(${parseColorToRGB(lineColor)})`;
   console.log(lineColor, _lineColor);
   const currentActiveStep = activeStep ?? internalActiveStep;
 
@@ -261,7 +261,7 @@ const CustomTimeline = ({
     }
     onStepChange?.(step, id);
   };
-  const [r, g, b] = parseColorToRGBA(indicatorColor);
+  const [r, g, b] = parseColorToRGB(indicatorColor);
   return (
     <Timeline
       value={currentActiveStep}

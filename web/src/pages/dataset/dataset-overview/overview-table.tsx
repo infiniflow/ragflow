@@ -337,7 +337,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       : 0,
   });
   return (
-    <div className="w-full h-[calc(100vh-350px)]">
+    <div className="w-full h-[calc(100vh-360px)]">
       <Table rootClassName="max-h-[calc(100vh-380px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
