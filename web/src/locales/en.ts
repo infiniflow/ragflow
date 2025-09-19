@@ -1668,6 +1668,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       overlappedPercent: 'Overlapped percent',
       searchMethod: 'Search method',
       filenameEmbdWeight: 'Filename embd weight',
+      begin: 'File',
     },
   },
 };

@@ -38,10 +38,10 @@ export enum AgentDialogueMode {
   Task = 'task',
 }
 
-export const BeginId = 'begin';
+export const BeginId = 'File';
 
 export enum Operator {
-  Begin = 'Begin',
+  Begin = 'File',
   Note = 'Note',
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
@@ -79,6 +79,15 @@ export const SwitchOperatorOptions = [
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
+
+export enum TokenizerSearchMethod {
+  Embedding = 'embedding',
+  FullText = 'full_text',
+}
+
+export enum ImageParseMethod {
+  OCR = 'ocr',
+}
 
 const initialQueryBaseValues = {
   query: [],
@@ -287,8 +296,12 @@ export const initialWaitingDialogueValues = {};
 export const initialChunkerValues = { outputs: {} };
 
 export const initialTokenizerValues = {
-  search_method: [],
+  search_method: [
+    TokenizerSearchMethod.Embedding,
+    TokenizerSearchMethod.FullText,
+  ],
   filename_embd_weight: 0.1,
+  fields: ['text'],
   outputs: {},
 };
 
@@ -359,9 +372,14 @@ export const initialStringTransformValues = {
   },
 };
 
-export const initialParserValues = { outputs: {}, parser: [] };
+export const initialParserValues = { outputs: {}, setups: [] };
 
-export const initialSplitterValues = { outputs: {}, chunk_token_size: 512 };
+export const initialSplitterValues = {
+  outputs: {},
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [{ value: '\n' }],
+};
 
 export const initialHierarchicalMergerValues = { outputs: {} };
 
@@ -449,9 +467,4 @@ export enum FileType {
   PowerPoint = 'ppt',
   Video = 'video',
   Audio = 'audio',
-}
-
-export enum TokenizerSearchMethod {
-  Embedding = 'embedding',
-  FullText = 'full_text',
 }

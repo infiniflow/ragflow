@@ -19,7 +19,7 @@ export function useRunDataflow(showLogSheet: () => void) {
         id,
         query: '',
         session_id: null,
-        inputs: fileResponseData,
+        files: [fileResponseData.file],
       });
       console.log('🚀 ~ useRunDataflow ~ res:', res);
 

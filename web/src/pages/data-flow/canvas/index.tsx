@@ -34,6 +34,7 @@ import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
 } from '../hooks/use-show-drawer';
+import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
@@ -93,7 +94,6 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     chatVisible,
     runVisible,
     hideRunOrChatDrawer,
-    showChatModal,
     showFormDrawer,
   } = useShowDrawer({
     drawerVisible,
@@ -145,6 +145,12 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideImage,
     clearActiveDropdown,
   ]);
+
+  const {
+    visible: logSheetVisible,
+    showModal: showLogSheet,
+    hideModal: hideLogSheet,
+  } = useSetModalState();
 
   const onConnect = (connection: Connection) => {
     originalOnConnect(connection);
@@ -294,9 +300,10 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
       {runVisible && (
         <RunSheet
           hideModal={hideRunOrChatDrawer}
-          showModal={showChatModal}
+          showModal={showLogSheet}
         ></RunSheet>
       )}
+      {logSheetVisible && <LogSheet hideModal={hideLogSheet}></LogSheet>}
     </div>
   );
 }
