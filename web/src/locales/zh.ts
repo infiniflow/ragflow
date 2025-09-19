@@ -601,7 +601,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       answerTitle: '智能回答',
       multiTurn: '多轮对话优化',
       multiTurnTip:
-        '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
+        '在多轮对话时，对查询问题根据上下文进行优化。会调用大模型额外消耗 token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
       descriptionPlaceholder:
