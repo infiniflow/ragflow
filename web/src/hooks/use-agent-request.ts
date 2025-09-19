@@ -7,6 +7,7 @@ import {
   IAgentLogsResponse,
   IFlow,
   IFlowTemplate,
+  IPipeLineListRequest,
   ITraceData,
 } from '@/interfaces/database/agent';
 import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
@@ -16,6 +17,7 @@ import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import agentService, {
   fetchAgentLogsByCanvasId,
+  fetchPipeLineList,
   fetchTrace,
 } from '@/services/agent-service';
 import api from '@/utils/api';
@@ -24,9 +26,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, set } from 'lodash';
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'umi';
-import { v4 as uuid } from 'uuid';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -51,6 +51,7 @@ export const enum AgentApiAction {
   FetchAgentAvatar = 'fetchAgentAvatar',
   FetchExternalAgentInputs = 'fetchExternalAgentInputs',
   SetAgentSetting = 'setAgentSetting',
+  FetchPrompt = 'fetchPrompt',
 }
 
 export const EmptyDsl = {
@@ -79,7 +80,7 @@ export const EmptyDsl = {
         component_name: 'Begin',
         params: {},
       },
-      downstream: ['Answer:China'], // other edge target is downstream, edge source is current node id
+      downstream: [], // other edge target is downstream, edge source is current node id
       upstream: [], // edge source is upstream, edge target is current node id
     },
   },
@@ -95,21 +96,11 @@ export const EmptyDsl = {
 };
 
 export const useFetchAgentTemplates = () => {
-  const { t } = useTranslation();
-
   const { data } = useQuery<IFlowTemplate[]>({
     queryKey: [AgentApiAction.FetchAgentTemplates],
     initialData: [],
     queryFn: async () => {
       const { data } = await agentService.listTemplates();
-      if (Array.isArray(data?.data)) {
-        data.data.unshift({
-          id: uuid(),
-          title: t('flow.blank'),
-          description: t('flow.createFromNothing'),
-          dsl: EmptyDsl,
-        });
-      }
 
       return data.data;
     },
@@ -134,7 +125,12 @@ export const useFetchAgentListByPage = () => {
         ...pagination,
       },
     ],
-    initialData: { canvas: [], total: 0 },
+    placeholderData: (previousData) => {
+      if (previousData === undefined) {
+        return { canvas: [], total: 0 };
+      }
+      return previousData;
+    },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await agentService.listCanvasTeam(
@@ -161,7 +157,7 @@ export const useFetchAgentListByPage = () => {
   );
 
   return {
-    data: data.canvas,
+    data: data?.canvas ?? [],
     loading,
     searchString,
     handleInputChange: onInputChange,
@@ -282,6 +278,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
       title?: string;
       dsl?: DSL;
       avatar?: string;
+      canvas_category?: string;
     }) => {
       const { data = {} } = await agentService.setCanvas(params);
       if (data.code === 0) {
@@ -636,4 +633,48 @@ export const useSetAgentSetting = () => {
   });
 
   return { data, loading, setAgentSetting: mutateAsync };
+};
+
+export const useFetchPrompt = () => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<Record<string, string>>({
+    queryKey: [AgentApiAction.FetchPrompt],
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await agentService.fetchPrompt();
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useFetchAgentList = ({
+  canvas_category = 'agent_canvas',
+}: IPipeLineListRequest): {
+  data: {
+    canvas: IFlow[];
+    total: number;
+  };
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchPipeLineList'],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await fetchPipeLineList({ canvas_category });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
 };

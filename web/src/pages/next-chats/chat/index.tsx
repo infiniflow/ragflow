@@ -63,10 +63,10 @@ export default function Chat() {
       <section className="pt-14 h-[100vh] pb-24">
         <div className="flex items-center justify-between px-10 pb-5">
           <span className="text-2xl">
-            Multiple Models ({chatBoxIds.length}/3)
+            {t('chat.multipleModels')} ({chatBoxIds.length}/3)
           </span>
           <Button variant={'ghost'} onClick={switchDebugMode}>
-            Exit <LogOut />
+            {t('chat.exit')} <LogOut />
           </Button>
         </div>
         <MultipleChatBox
@@ -124,7 +124,7 @@ export default function Chat() {
                       isNew === 'true'
                     }
                   >
-                    <ArrowUpRight /> Multiple Models
+                    <ArrowUpRight /> {t('chat.multipleModels')}
                   </Button>
                 </CardTitle>
               </CardHeader>

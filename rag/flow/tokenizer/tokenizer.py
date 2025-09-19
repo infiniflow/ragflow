@@ -37,6 +37,7 @@ class TokenizerParam(ProcessParamBase):
         super().__init__()
         self.search_method = ["full_text", "embedding"]
         self.filename_embd_weight = 0.1
+        self.fields = ["text"]
 
     def check(self):
         for v in self.search_method:
@@ -61,10 +62,14 @@ class Tokenizer(ProcessBase):
         embedding_model = LLMBundle(self._canvas._tenant_id, LLMType.EMBEDDING, llm_name=embedding_id)
         texts = []
         for c in chunks:
-            if c.get("questions"):
-                texts.append("\n".join(c["questions"]))
-            else:
-                texts.append(re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c["text"]))
+            txt = ""
+            for f in self._param.fields:
+                f = c.get(f)
+                if isinstance(f, str):
+                    txt += f
+                elif isinstance(f, list):
+                    txt += "\n".join(f)
+            texts.append(re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt))
         vts, c = embedding_model.encode([name])
         token_count += c
         tts = np.concatenate([vts[0] for _ in range(len(texts))], axis=0)

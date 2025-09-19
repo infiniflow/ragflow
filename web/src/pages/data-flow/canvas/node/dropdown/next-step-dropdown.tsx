@@ -1,10 +1,4 @@
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -17,12 +11,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IModalProps } from '@/interfaces/common';
-import { Operator } from '@/pages/agent/constant';
-import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
-import OperatorIcon from '@/pages/agent/operator-icon';
+import { useGetNodeDescription, useGetNodeName } from '@/pages/data-flow/hooks';
 import { Position } from '@xyflow/react';
 import { t } from 'i18next';
-import { lowerFirst } from 'lodash';
 import {
   PropsWithChildren,
   createContext,
@@ -31,7 +22,9 @@ import {
   useEffect,
   useRef,
 } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Operator } from '../../../constant';
+import { AgentInstanceContext, HandleContext } from '../../../context';
+import OperatorIcon from '../../../operator-icon';
 
 type OperatorItemProps = {
   operators: Operator[];
@@ -53,7 +46,9 @@ function OperatorItemList({
   const handleContext = useContext(HandleContext);
   const hideModal = useContext(HideModalContext);
   const onNodeCreated = useContext(OnNodeCreatedContext);
-  const { t } = useTranslation();
+
+  const getNodeName = useGetNodeName();
+  const getNodeDescription = useGetNodeDescription();
 
   const handleClick = (operator: Operator) => {
     const contextData = handleContext || {
@@ -84,7 +79,7 @@ function OperatorItemList({
     const commonContent = (
       <div className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start">
         <OperatorIcon name={operator} />
-        {t(`flow.${lowerFirst(operator)}`)}
+        {getNodeName(operator)}
       </div>
     );
 
@@ -101,12 +96,12 @@ function OperatorItemList({
               onSelect={() => hideModal?.()}
             >
               <OperatorIcon name={operator} />
-              {t(`flow.${lowerFirst(operator)}`)}
+              {getNodeName(operator)}
             </DropdownMenuItem>
           )}
         </TooltipTrigger>
         <TooltipContent side="right">
-          <p>{t(`flow.${lowerFirst(operator)}Description`)}</p>
+          <p>{getNodeDescription(operator)}</p>
         </TooltipContent>
       </Tooltip>
     );
@@ -123,92 +118,16 @@ function AccordionOperators({
   mousePosition?: { x: number; y: number };
 }) {
   return (
-    <Accordion
-      type="multiple"
-      className="px-2 text-text-title max-h-[45vh] overflow-auto"
-      defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
-    >
-      <AccordionItem value="item-1">
-        <AccordionTrigger className="text-xl">
-          {t('flow.foundation')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[Operator.Agent, Operator.Retrieval]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-2">
-        <AccordionTrigger className="text-xl">
-          {t('flow.dialog')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[Operator.Message, Operator.UserFillUp]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-3">
-        <AccordionTrigger className="text-xl">
-          {t('flow.flow')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[
-              Operator.Switch,
-              Operator.Iteration,
-              Operator.Categorize,
-            ]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-4">
-        <AccordionTrigger className="text-xl">
-          {t('flow.dataManipulation')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[Operator.Code, Operator.StringTransform]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-5">
-        <AccordionTrigger className="text-xl">
-          {t('flow.tools')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[
-              Operator.TavilySearch,
-              Operator.TavilyExtract,
-              Operator.ExeSQL,
-              Operator.Google,
-              Operator.YahooFinance,
-              Operator.Email,
-              Operator.DuckDuckGo,
-              Operator.Wikipedia,
-              Operator.GoogleScholar,
-              Operator.ArXiv,
-              Operator.PubMed,
-              Operator.GitHub,
-              Operator.Invoke,
-              Operator.WenCai,
-              Operator.SearXNG,
-            ]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
+    <OperatorItemList
+      operators={[
+        Operator.Parser,
+        Operator.Tokenizer,
+        Operator.Splitter,
+        Operator.HierarchicalMerger,
+      ]}
+      isCustomDropdown={isCustomDropdown}
+      mousePosition={mousePosition}
+    ></OperatorItemList>
   );
 }
 

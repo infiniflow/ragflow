@@ -157,8 +157,8 @@ ASK_SUMMARY = load_prompt("ask_summary")
 PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
 
 
-def citation_prompt() -> str:
-    template = PROMPT_JINJA_ENV.from_string(CITATION_PROMPT_TEMPLATE)
+def citation_prompt(user_defined_prompts: dict={}) -> str:
+    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("citation_guidelines", CITATION_PROMPT_TEMPLATE))
     return template.render()
 
 
@@ -339,13 +339,16 @@ def form_history(history, limit=-6):
     return context
 
 
-def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict]):
+def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict], user_defined_prompts: dict={}):
     tools_desc = tool_schema(tools_description)
     context = ""
 
-    template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_USER)
+    if user_defined_prompts.get("task_analysis"):
+        template = PROMPT_JINJA_ENV.from_string(user_defined_prompts["task_analysis"])
+    else:
+        template = PROMPT_JINJA_ENV.from_string(ANALYZE_TASK_SYSTEM + "\n\n" + ANALYZE_TASK_USER)
     context = template.render(task=task_name, context=context, agent_prompt=prompt, tools_desc=tools_desc)
-    kwd = chat_mdl.chat(ANALYZE_TASK_SYSTEM,[{"role": "user", "content": context}], {})
+    kwd = chat_mdl.chat(context, [{"role": "user", "content": "Please analyze it."}])
     if isinstance(kwd, tuple):
         kwd = kwd[0]
     kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
@@ -354,28 +357,28 @@ def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict]):
     return kwd
 
 
-def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc):
+def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc, user_defined_prompts: dict={}):
     if not tools_description:
         return ""
     desc = tool_schema(tools_description)
-    template = PROMPT_JINJA_ENV.from_string(NEXT_STEP)
+    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("plan_generation", NEXT_STEP))
     user_prompt = "\nWhat's the next tool to call? If ready OR IMPOSSIBLE TO BE READY, then call `complete_task`."
     hist = deepcopy(history)
     if hist[-1]["role"] == "user":
         hist[-1]["content"] += user_prompt
     else:
         hist.append({"role": "user", "content": user_prompt})
-    json_str = chat_mdl.chat(template.render(task_analisys=task_desc, desc=desc, today=datetime.datetime.now().strftime("%Y-%m-%d")),
+    json_str = chat_mdl.chat(template.render(task_analysis=task_desc, desc=desc, today=datetime.datetime.now().strftime("%Y-%m-%d")),
                              hist[1:], stop=["<|stop|>"])
     tk_cnt = num_tokens_from_string(json_str)
     json_str = re.sub(r"^.*</think>", "", json_str, flags=re.DOTALL)
     return json_str, tk_cnt
 
 
-def reflect(chat_mdl, history: list[dict], tool_call_res: list[Tuple]):
+def reflect(chat_mdl, history: list[dict], tool_call_res: list[Tuple], user_defined_prompts: dict={}):
     tool_calls = [{"name": p[0], "result": p[1]} for p in tool_call_res]
     goal = history[1]["content"]
-    template = PROMPT_JINJA_ENV.from_string(REFLECT)
+    template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("reflection", REFLECT))
     user_prompt = template.render(goal=goal, tool_calls=tool_calls)
     hist = deepcopy(history)
     if hist[-1]["role"] == "user":
@@ -398,7 +401,7 @@ def form_message(system_prompt, user_prompt):
     return [{"role": "system", "content": system_prompt},{"role": "user", "content": user_prompt}]
 
 
-def tool_call_summary(chat_mdl, name: str, params: dict, result: str) -> str:
+def tool_call_summary(chat_mdl, name: str, params: dict, result: str, user_defined_prompts: dict={}) -> str:
     template = PROMPT_JINJA_ENV.from_string(SUMMARY4MEMORY)
     system_prompt = template.render(name=name,
                            params=json.dumps(params, ensure_ascii=False, indent=2),
@@ -409,7 +412,7 @@ def tool_call_summary(chat_mdl, name: str, params: dict, result: str) -> str:
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
-def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[str]):
+def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[str], user_defined_prompts: dict={}):
     template = PROMPT_JINJA_ENV.from_string(RANK_MEMORY)
     system_prompt = template.render(goal=goal, sub_goal=sub_goal, results=[{"i": i, "content": s} for i,s in enumerate(tool_call_summaries)])
     user_prompt = " → rank: "
@@ -434,3 +437,216 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
     except Exception:
         logging.exception(f"Loading json failure: {ans}")
     return []
+
+
+def gen_json(system_prompt:str, user_prompt:str, chat_mdl):
+    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+    ans = chat_mdl.chat(msg[0]["content"], msg[1:])
+    ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+    try:
+        return json_repair.loads(ans)
+    except Exception:
+        logging.exception(f"Loading json failure: {ans}")
+
+
+TOC_DETECTION = load_prompt("toc_detection")
+def detect_table_of_contents(page_1024:list[str], chat_mdl):
+    toc_secs = []
+    for i, sec in enumerate(page_1024[:22]):
+        ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_DETECTION).render(page_txt=sec), "Only JSON please.", chat_mdl)
+        if toc_secs and not ans["exists"]:
+            break
+        toc_secs.append(sec)
+    return toc_secs
+
+
+TOC_EXTRACTION = load_prompt("toc_extraction")
+TOC_EXTRACTION_CONTINUE = load_prompt("toc_extraction_continue")
+def extract_table_of_contents(toc_pages, chat_mdl):
+    if not toc_pages:
+        return []
+
+    return gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION).render(toc_page="\n".join(toc_pages)), "Only JSON please.", chat_mdl)
+
+
+def toc_index_extractor(toc:list[dict], content:str, chat_mdl):
+    tob_extractor_prompt = """
+    You are given a table of contents in a json format and several pages of a document, your job is to add the physical_index to the table of contents in the json format.
+
+    The provided pages contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X.
+
+    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+
+    The response should be in the following JSON format: 
+    [
+        {
+            "structure": <structure index, "x.x.x" or None> (string),
+            "title": <title of the section>,
+            "physical_index": "<physical_index_X>" (keep the format)
+        },
+        ...
+    ]
+
+    Only add the physical_index to the sections that are in the provided pages.
+    If the title of the section are not in the provided pages, do not add the physical_index to it.
+    Directly return the final JSON structure. Do not output anything else."""
+
+    prompt = tob_extractor_prompt + '\nTable of contents:\n' + json.dumps(toc, ensure_ascii=False, indent=2) + '\nDocument pages:\n' + content
+    return gen_json(prompt, "Only JSON please.", chat_mdl)
+
+
+TOC_INDEX = load_prompt("toc_index")
+def table_of_contents_index(toc_arr: list[dict], sections: list[str], chat_mdl):
+    if not toc_arr or not sections:
+        return []
+
+    toc_map = {}
+    for i, it in enumerate(toc_arr):
+        k1 = (it["structure"]+it["title"]).replace(" ", "")
+        k2 = it["title"].strip()
+        if k1 not in toc_map:
+            toc_map[k1] = []
+        if k2 not in toc_map:
+            toc_map[k2] = []
+        toc_map[k1].append(i)
+        toc_map[k2].append(i)
+
+    for it in toc_arr:
+        it["indices"] = []
+    for i, sec in enumerate(sections):
+        sec = sec.strip()
+        if sec.replace(" ", "") in toc_map:
+            for j in toc_map[sec.replace(" ", "")]:
+                toc_arr[j]["indices"].append(i)
+
+    all_pathes = []
+    def dfs(start, path):
+        nonlocal all_pathes
+        if start >= len(toc_arr):
+            if path:
+                all_pathes.append(path)
+            return
+        if not toc_arr[start]["indices"]:
+            dfs(start+1, path)
+            return
+        added = False
+        for j in toc_arr[start]["indices"]:
+            if path and j < path[-1][0]:
+                continue
+            _path = deepcopy(path)
+            _path.append((j, start))
+            added = True
+            dfs(start+1, _path)
+        if not added and path:
+            all_pathes.append(path)
+
+    dfs(0, [])
+    path = max(all_pathes, key=lambda x:len(x))
+    for it in toc_arr:
+        it["indices"] = []
+    for j, i in path:
+        toc_arr[i]["indices"] = [j]
+    print(json.dumps(toc_arr, ensure_ascii=False, indent=2))
+
+    i = 0
+    while i < len(toc_arr):
+        it  = toc_arr[i]
+        if it["indices"]:
+            i += 1
+            continue
+
+        if i>0 and toc_arr[i-1]["indices"]:
+            st_i = toc_arr[i-1]["indices"][-1]
+        else:
+            st_i = 0
+        e = i + 1
+        while e <len(toc_arr) and not toc_arr[e]["indices"]:
+            e += 1
+        if e >= len(toc_arr):
+            e = len(sections)
+        else:
+            e = toc_arr[e]["indices"][0]
+
+        for j in range(st_i, min(e+1, len(sections))):
+            ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_INDEX).render(
+                structure=it["structure"],
+                title=it["title"],
+                text=sections[j]), "Only JSON please.", chat_mdl)
+            if ans["exist"] == "yes":
+                it["indices"].append(j)
+                break
+
+        i += 1
+
+    return toc_arr
+
+
+def check_if_toc_transformation_is_complete(content, toc, chat_mdl):
+    prompt = """
+    You are given a raw table of contents and a  table of contents.
+    Your job is to check if the  table of contents is complete.
+
+    Reply format:
+    {{
+        "thinking": <why do you think the cleaned table of contents is complete or not>
+        "completed": "yes" or "no"
+    }}
+    Directly return the final JSON structure. Do not output anything else."""
+
+    prompt = prompt + '\n Raw Table of contents:\n' + content + '\n Cleaned Table of contents:\n' + toc
+    response = gen_json(prompt, "Only JSON please.", chat_mdl)
+    return response['completed']
+
+
+def toc_transformer(toc_pages, chat_mdl):
+    init_prompt = """
+    You are given a table of contents, You job is to transform the whole table of content into a JSON format included table_of_contents.
+
+    The `structure` is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    The `title` is a short phrase or a several-words term.
+    
+    The response should be in the following JSON format: 
+    [
+        {
+            "structure": <structure index, "x.x.x" or None> (string),
+            "title": <title of the section>
+        },
+        ...
+    ],
+    You should transform the full table of contents in one go.
+    Directly return the final JSON structure, do not output anything else. """
+
+    toc_content = "\n".join(toc_pages)
+    prompt = init_prompt + '\n Given table of contents\n:' + toc_content
+    def clean_toc(arr):
+        for a in arr:
+            a["title"] = re.sub(r"[.·….]{2,}", "", a["title"])
+    last_complete = gen_json(prompt, "Only JSON please.", chat_mdl)
+    if_complete = check_if_toc_transformation_is_complete(toc_content, json.dumps(last_complete, ensure_ascii=False, indent=2), chat_mdl)
+    clean_toc(last_complete)
+    if if_complete == "yes":
+        return last_complete
+
+    while not (if_complete == "yes"):
+        prompt = f"""
+        Your task is to continue the table of contents json structure, directly output the remaining part of the json structure.
+        The response should be in the following JSON format: 
+
+        The raw table of contents json structure is:
+        {toc_content}
+
+        The incomplete transformed table of contents json structure is:
+        {json.dumps(last_complete[-24:], ensure_ascii=False, indent=2)}
+
+        Please continue the json structure, directly output the remaining part of the json structure."""
+        new_complete = gen_json(prompt, "Only JSON please.", chat_mdl)
+        if not new_complete or str(last_complete).find(str(new_complete)) >= 0:
+            break
+        clean_toc(new_complete)
+        last_complete.extend(new_complete)
+        if_complete = check_if_toc_transformation_is_complete(toc_content, json.dumps(last_complete, ensure_ascii=False, indent=2), chat_mdl)
+
+    return last_complete
+
+
+

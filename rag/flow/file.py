@@ -14,10 +14,7 @@
 #  limitations under the License.
 #
 from api.db.services.document_service import DocumentService
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class FileParam(ProcessParamBase):
@@ -41,10 +38,13 @@ class File(ProcessBase):
                 self.set_output("_ERROR", f"Document({self._canvas._doc_id}) not found!")
                 return
 
-            b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
-            self.set_output("blob", STORAGE_IMPL.get(b, n))
+            #b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
+            #self.set_output("blob", STORAGE_IMPL.get(b, n))
             self.set_output("name", doc.name)
         else:
             file = kwargs.get("file")
             self.set_output("name", file["name"])
-            self.set_output("blob", FileService.get_blob(file["created_by"], file["id"]))
+            self.set_output("file", file)
+            #self.set_output("blob", FileService.get_blob(file["created_by"], file["id"]))
+
+        self.callback(1, "File fetched.")

@@ -3,6 +3,7 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
+      selectAll: 'Select All',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
@@ -37,6 +38,7 @@ export default {
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
       submit: 'Submit',
+      clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
@@ -44,6 +46,7 @@ export default {
       remove: 'Remove',
       search: 'Search',
       noDataFound: 'No data found.',
+      noData: 'No data',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
         namePlaceholder: 'My MCP Server',
@@ -99,6 +102,28 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      generateKnowledgeGraph:
+        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+      generateRaptor:
+        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+      generate: 'Generate',
+      raptor: 'Raptor',
+      knowledgeGraph: 'Knowledge Graph',
+      processingType: 'Processing Type',
+      dataPipeline: 'Data Pipeline',
+      operations: 'Operations',
+      status: 'Status',
+      task: 'Task',
+      startDate: 'Start Date',
+      source: 'Source',
+      fileName: 'File Name',
+      datasetLogs: 'Dataset Logs',
+      fileLogs: 'File Logs',
+      overview: 'Overview',
+      success: 'Success',
+      failed: 'Failed',
+      completed: 'Completed',
+      processLog: 'Process Log',
       created: 'Created',
       learnMore: 'Learn More',
       general: 'General',
@@ -136,6 +161,10 @@ export default {
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
+      noTestResultsForRuned:
+        'No relevant results found. Try adjusting your query or parameters.',
+      noTestResultsForNotRuned:
+        'No test has been run yet. Results will appear here.',
       testingDescription:
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
@@ -145,7 +174,8 @@ export default {
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
-      keywordSimilarityWeightTip: '',
+      keywordSimilarityWeightTip:
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',
@@ -187,6 +217,7 @@ export default {
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
+      close: 'Close',
       rerankModel: 'Rerank model',
       rerankPlaceholder: 'Please select',
       rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
@@ -230,6 +261,17 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      default: 'Default',
+      dataPipeline: 'Data Pipeline',
+      linkDataPipeline: 'Link Data Pipeline',
+      enableAutoGenerate: 'Enable Auto Generate',
+      teamPlaceholder: 'Please select a team.',
+      dataFlowPlaceholder: 'Please select a data flow.',
+      buildItFromScratch: 'Build it from scratch',
+      dataFlow: 'Data Flow',
+      parseType: 'Parse Type',
+      manualSetup: 'Manual Setup',
+      builtIn: 'Built-in',
       titleDescription:
         'Update your knowledge base configuration here, particularly the chunking method.',
       name: 'Knowledge base name',
@@ -441,6 +483,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      messagePlaceholder: 'Type your message here...',
+      exit: 'Exit',
+      multipleModels: 'Multiple Models',
+      applyModelConfigs: 'Apply model configs',
+      conversations: 'Conversations',
+      chatApps: 'Chat Apps',
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant settings',
@@ -839,6 +887,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       hint: 'hint',
     },
     fileManager: {
+      files: 'Files',
       name: 'Name',
       uploadDate: 'Upload Date',
       knowledgeBase: 'Dataset',
@@ -864,6 +913,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      recommended: 'Recommended',
+      customerSupport: 'Customer Support',
+      marketing: 'Marketing',
+      consumerApp: 'Consumer App',
+      other: 'Other',
+      agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
       ref: 'Variable',
@@ -911,9 +966,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       builtIn: 'Built-in',
       ExceptionDefaultValue: 'Exception default value',
       exceptionMethod: 'Exception method',
-      maxRounds: 'Max rounds',
+      maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
-      maxRetries: 'Max retries',
+      maxRetries: 'Max reflection rounds',
       advancedSettings: 'Advanced Settings',
       addTools: 'Add Tools',
       sysPromptDefultValue: `
@@ -1502,6 +1557,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       sqlStatement: 'SQL Statement',
       sqlStatementTip:
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
+      frameworkPrompts: 'Framework',
     },
     llmTools: {
       bad_calculator: {
@@ -1527,6 +1583,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       editMCP: 'Edit MCP',
     },
     search: {
+      searchApps: 'Search Apps',
       createSearch: 'Create Search',
       searchGreeting: 'How can I help you today ？',
       profile: 'Hide Profile',
@@ -1550,6 +1607,62 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+      chooseDataset: 'Please select a dataset first',
+    },
+    language: {
+      english: 'English',
+      chinese: 'Chinese',
+      spanish: 'Spanish',
+      french: 'French',
+      german: 'German',
+      japanese: 'Japanese',
+      korean: 'Korean',
+      vietnamese: 'Vietnamese',
+    },
+    pagination: {
+      total: 'Total {{total}}',
+      page: '{{page}} /Page',
+    },
+    dataflowParser: {
+      parseSummary: 'Parse Summary',
+      parseSummaryTip: 'Parser：deepdoc',
+      rerunFromCurrentStep: 'Rerun From Current Step',
+      rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
+      confirmRerun: 'Confirm Rerun Process',
+      confirmRerunModalContent: `
+      <p class="text-sm text-text-disabled font-medium mb-2">
+        You are about to rerun the process starting from the <strong class="text-text-primary">{{step}}</strong> step.
+      </p>
+      <p class="text-sm mb-3 text-text-secondary">This will:</p>
+      <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
+        <li>Overwrite existing results from the current step onwards</li>
+        <li>Create a new log entry for tracking</li>
+        <li>Previous steps will remain unchanged</li>
+      </ul>`,
+      changeStepModalTitle: 'Step Switch Warning',
+      changeStepModalContent: `
+      <p>You are currently editing the results of this stage.</p> 
+      <p>If you switch to a later stage, your changes will be lost. </p> 
+      <p>To keep them, please click Rerun to re-run the current stage.</p> `,
+      changeStepModalConfirmText: 'Switch Anyway',
+      changeStepModalCancelText: 'Cancel',
+    },
+    dataflow: {
+      parser: 'Parser',
+      parserDescription: 'Parser',
+      chunker: 'Chunker',
+      chunkerDescription: 'Chunker',
+      tokenizer: 'Tokenizer',
+      tokenizerDescription: 'Tokenizer',
+      splitter: 'Splitter',
+      splitterDescription: 'Splitter',
+      hierarchicalMergerDescription: 'Hierarchical merger',
+      hierarchicalMerger: 'Hierarchical merger',
+      outputFormat: 'Output format',
+      lang: 'Language',
+      fileFormats: 'File formats',
+      fields: 'Fields',
+      addParser: 'Add Parser',
     },
   },
 };

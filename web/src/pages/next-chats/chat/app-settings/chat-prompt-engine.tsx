@@ -37,11 +37,12 @@ export function ChatPromptEngine() {
           </FormItem>
         )}
       />
-      <SimilaritySliderFormField></SimilaritySliderFormField>
+      <SimilaritySliderFormField isTooltipShown></SimilaritySliderFormField>
       <TopNFormField></TopNFormField>
       <SwitchFormField
         name={'prompt_config.refine_multiturn'}
         label={t('multiTurn')}
+        tooltip={t('multiTurnTip')}
       ></SwitchFormField>
       <UseKnowledgeGraphFormField name="prompt_config.use_kg"></UseKnowledgeGraphFormField>
       <SwitchFormField

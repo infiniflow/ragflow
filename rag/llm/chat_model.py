@@ -155,7 +155,10 @@ class Base(ABC):
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        if kwargs.get("stop") or "stop" in gen_conf:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        else:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
         for resp in response:
             if not resp.choices:
                 continue
@@ -374,7 +377,7 @@ class Base(ABC):
                         if not tol:
                             total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                         else:
-                            total_tokens += tol
+                            total_tokens = tol
 
                         finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
                         if finish_reason == "length":
@@ -410,7 +413,7 @@ class Base(ABC):
                     if not tol:
                         total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                     else:
-                        total_tokens += tol
+                        total_tokens = tol
                     answer += resp.choices[0].delta.content
                     yield resp.choices[0].delta.content
 
@@ -892,25 +895,6 @@ class MistralChat(Base):
         yield total_tokens
 
 
-## openrouter
-class OpenRouterChat(Base):
-    _FACTORY_NAME = "OpenRouter"
-
-    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1", **kwargs):
-        if not base_url:
-            base_url = "https://openrouter.ai/api/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class StepFunChat(Base):
-    _FACTORY_NAME = "StepFun"
-
-    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.stepfun.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LmStudioChat(Base):
     _FACTORY_NAME = "LM-Studio"
 
@@ -933,75 +917,12 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class PPIOChat(Base):
-    _FACTORY_NAME = "PPIO"
-
-    def __init__(self, key, model_name, base_url="https://api.ppinfra.com/v3/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.ppinfra.com/v3/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = urljoin("https://" + model_name + ".lepton.run", "api/v1")
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class PerfXCloudChat(Base):
-    _FACTORY_NAME = "PerfXCloud"
-
-    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://cloud.perfxlab.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class UpstageChat(Base):
-    _FACTORY_NAME = "Upstage"
-
-    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar", **kwargs):
-        if not base_url:
-            base_url = "https://api.upstage.ai/v1/solar"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class NovitaAIChat(Base):
-    _FACTORY_NAME = "NovitaAI"
-
-    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.novita.ai/v3/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class SILICONFLOWChat(Base):
-    _FACTORY_NAME = "SILICONFLOW"
-
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class YiChat(Base):
-    _FACTORY_NAME = "01.AI"
-
-    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.lingyiwanwu.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class GiteeChat(Base):
-    _FACTORY_NAME = "GiteeAI"
-
-    def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/", **kwargs):
-        if not base_url:
-            base_url = "https://ai.gitee.com/v1/"
         super().__init__(key, model_name, base_url, **kwargs)
 
 
@@ -1344,17 +1265,46 @@ class GPUStackChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class Ai302Chat(Base):
-    _FACTORY_NAME = "302.AI"
+class TokenPonyChat(Base):
+    _FACTORY_NAME = "TokenPony"
 
-    def __init__(self, key, model_name, base_url="https://api.302.ai/v1", **kwargs):
+    def __init__(self, key, model_name, base_url="https://ragflow.vip-api.tokenpony.cn/v1", **kwargs):
         if not base_url:
-            base_url = "https://api.302.ai/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
+            base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic", "Ollama"]
+    _FACTORY_NAME = [
+        "Tongyi-Qianwen",
+        "Bedrock",
+        "Moonshot",
+        "xAI",
+        "DeepInfra",
+        "Groq",
+        "Cohere",
+        "Gemini",
+        "DeepSeek",
+        "NVIDIA",
+        "TogetherAI",
+        "Anthropic",
+        "Ollama",
+        "Meituan",
+        "CometAPI",
+        "SILICONFLOW",
+        "OpenRouter",
+        "StepFun",
+        "PPIO",
+        "PerfXCloud",
+        "Upstage",
+        "NovitaAI",
+        "01.AI",
+        "GiteeAI",
+        "302.AI",
+    ]
+
+    import litellm
+
+    litellm._turn_on_debug()
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
@@ -1362,7 +1312,7 @@ class LiteLLMBase(ABC):
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip('/')
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))

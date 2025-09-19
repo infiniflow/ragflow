@@ -21,11 +21,9 @@ from copy import deepcopy
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-
 import trio
 from langfuse import Langfuse
 from peewee import fn
-
 from agentic_reasoning import DeepResearcher
 from api import settings
 from api.db import LLMType, ParserType, StatusEnum
@@ -253,6 +251,23 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
         find_and_replace(pattern)
 
     return answer, idx
+
+
+def convert_conditions(metadata_condition):
+    if metadata_condition is None:
+        metadata_condition = {}
+    op_mapping = {
+        "is": "=",
+        "not is": "≠"
+    }
+    return [
+    {
+        "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
+        "key": cond["name"],
+        "value": cond["value"]
+    }
+    for cond in metadata_condition.get("conditions", [])
+]
 
 
 def meta_filter(metas: dict, filters: list[dict]):

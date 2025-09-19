@@ -17,6 +17,15 @@ module.exports = {
         '2xl': '1400px',
       },
     },
+    screens: {
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1400px',
+      '3xl': '1780px',
+      '4xl': '1980px',
+    },
     extend: {
       colors: {
         border: 'var(--colors-outline-neutral-strong)',
@@ -71,7 +80,10 @@ module.exports = {
         'bg-accent': 'var(--bg-accent)',
         'state-success': 'var(--state-success)',
         'state-warning': 'var(--state-warning)',
-        'state-error': 'var(--state-error)',
+        'state-error': {
+          DEFAULT: 'rgb(var(--state-error) / <alpha-value>)',
+          5: 'rgba(var(--state-error) / 0.05)', // 5%
+        },
         'team-group': 'var(--team-group)',
         'team-member': 'var(--team-member)',
         'team-department': 'var(--team-department)',

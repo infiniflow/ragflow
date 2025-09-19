@@ -440,6 +440,7 @@ class FileService(CommonService):
                     "id": doc_id,
                     "kb_id": kb.id,
                     "parser_id": self.get_parser(filetype, filename, kb.parser_id),
+                    "pipeline_id": kb.pipeline_id,
                     "parser_config": kb.parser_config,
                     "created_by": user_id,
                     "type": filetype,

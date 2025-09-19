@@ -646,6 +646,7 @@ class Knowledgebase(DataBaseModel):
     vector_similarity_weight = FloatField(default=0.3, index=True)
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.NAIVE.value, index=True)
+    pipeline_id = CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     pagerank = IntegerField(default=0, index=False)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -662,6 +663,7 @@ class Document(DataBaseModel):
     thumbnail = TextField(null=True, help_text="thumbnail base64 string")
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
+    pipeline_id = CharField(max_length=32, null=True, help_text="pipleline ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document come from", index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
@@ -1020,7 +1022,6 @@ def migrate_db():
         migrate(migrator.add_column("dialog", "meta_data_filter", JSONField(null=True, default={})))
     except Exception:
         pass
-
     try:
         migrate(migrator.alter_column_type("canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title")))
     except Exception:
@@ -1035,6 +1036,14 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="default parser ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("document", "pipeline_id", CharField(max_length=32, null=True, help_text="default parser ID", index=True)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

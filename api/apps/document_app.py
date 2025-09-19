@@ -182,6 +182,7 @@ def create():
                 "id": get_uuid(),
                 "kb_id": kb.id,
                 "parser_id": kb.parser_id,
+                "pipeline_id": kb.pipeline_id,
                 "parser_config": kb.parser_config,
                 "created_by": current_user.id,
                 "type": FileType.VIRTUAL,
@@ -456,8 +457,7 @@ def run():
                     cancel_all_task_of(id)
                 else:
                     return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
-
-            if str(req["run"]) == TaskStatus.RUNNING.value and str(doc.run) == TaskStatus.DONE.value:
+            if all([("delete" not in req or req["delete"]), str(req["run"]) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
                 DocumentService.clear_chunk_num_when_rerun(doc.id)
 
             DocumentService.update_by_id(id, info)
@@ -547,31 +547,22 @@ def get(doc_id):
 
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("doc_id", "parser_id")
+@validate_request("doc_id")
 def change_parser():
     req = request.json
 
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
-    try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
-        if doc.parser_id.lower() == req["parser_id"].lower():
-            if "parser_config" in req:
-                if req["parser_config"] == doc.parser_config:
-                    return get_json_result(data=True)
-            else:
-                return get_json_result(data=True)
 
-        if (doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation"):
-            return get_data_error_result(message="Not supported yet!")
+    e, doc = DocumentService.get_by_id(req["doc_id"])
+    if not e:
+        return get_data_error_result(message="Document not found!")
 
+    def reset_doc():
+        nonlocal doc
         e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": TaskStatus.UNSTART.value})
         if not e:
             return get_data_error_result(message="Document not found!")
-        if "parser_config" in req:
-            DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, doc.process_duration * -1)
             if not e:
@@ -582,6 +573,26 @@ def change_parser():
             if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
+    try:
+        if req.get("pipeline_id"):
+            if doc.pipeline_id == req["pipeline_id"]:
+                return get_json_result(data=True)
+            DocumentService.update_by_id(doc.id, {"pipeline_id": req["pipeline_id"]})
+            reset_doc()
+            return get_json_result(data=True)
+
+        if doc.parser_id.lower() == req["parser_id"].lower():
+            if "parser_config" in req:
+                if req["parser_config"] == doc.parser_config:
+                    return get_json_result(data=True)
+            else:
+                return get_json_result(data=True)
+
+        if (doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation"):
+            return get_data_error_result(message="Not supported yet!")
+        if "parser_config" in req:
+            DocumentService.update_parser_config(doc.id, req["parser_config"])
+        reset_doc()
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -683,7 +694,7 @@ def set_meta():
         meta = json.loads(req["meta"])
         if not isinstance(meta, dict):
             return get_json_result(data=False, message="Only dictionary type supported.", code=settings.RetCode.ARGUMENT_ERROR)
-        for k,v in meta.items():
+        for k, v in meta.items():
             if not isinstance(v, str) and not isinstance(v, int) and not isinstance(v, float):
                 return get_json_result(data=False, message=f"The type is not supported: {v}", code=settings.RetCode.ARGUMENT_ERROR)
     except Exception as e:

@@ -23,7 +23,7 @@ import trio
 
 from api.utils import get_uuid
 from graphrag.query_analyze_prompt import PROMPTS
-from graphrag.utils import get_entity_type2sampels, get_llm_cache, set_llm_cache, get_relation
+from graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
 from rag.utils import num_tokens_from_string, get_float
 from rag.utils.doc_store_conn import OrderByExpr
 
@@ -42,7 +42,7 @@ class KGSearch(Dealer):
         return response
 
     def query_rewrite(self, llm, question, idxnms, kb_ids):
-        ty2ents = trio.run(lambda: get_entity_type2sampels(idxnms, kb_ids))
+        ty2ents = trio.run(lambda: get_entity_type2samples(idxnms, kb_ids))
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
         result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})

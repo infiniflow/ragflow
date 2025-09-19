@@ -414,7 +414,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=True,
                 **req,
             ),
@@ -432,7 +432,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=False,
                 **req,
             )
@@ -941,6 +941,9 @@ def retrieval_test_embedded():
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
+    if not kb_ids:
+        return get_json_result(data=False, message='Please specify dataset firstly.',
+                               code=settings.RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))

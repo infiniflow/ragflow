@@ -45,6 +45,7 @@ export default {
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
+  getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -138,7 +139,7 @@ export default {
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
-  listCanvasTeam: `${api_host}/canvas/listteam`,
+  listCanvasTeam: `${api_host}/canvas/list`,
   getCanvas: `${api_host}/canvas/get`,
   getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,
@@ -164,6 +165,7 @@ export default {
     `${api_host}/canvas/${canvasId}/sessions`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
+  prompt: `${api_host}/canvas/prompts`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
@@ -189,4 +191,11 @@ export default {
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
+
+  // data pipeline
+  fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,
+  setDataflow: `${api_host}/dataflow/set`,
+  removeDataflow: `${api_host}/dataflow/rm`,
+  listDataflow: `${api_host}/dataflow/list`,
+  runDataflow: `${api_host}/dataflow/run`,
 };

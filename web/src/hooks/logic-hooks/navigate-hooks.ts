@@ -18,7 +18,7 @@ export const useNavigatePage = () => {
 
   const navigateToDataset = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.Dataset}/${id}`);
+      navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
     },
     [navigate],
   );
@@ -61,6 +61,13 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataflow = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.DataFlow}/${id}`);
+    },
+    [navigate],
+  );
+
   const navigateToAgentLogs = useCallback(
     (id: string) => () => {
       navigate(`${Routes.AgentLogPage}/${id}`);
@@ -87,7 +94,7 @@ export const useNavigatePage = () => {
     (id: string, knowledgeId?: string) => () => {
       navigate(
         // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.ParsedResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
+        `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=chunk`,
       );
     },
     [navigate],
@@ -125,6 +132,16 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataflowResult = useCallback(
+    (id: string, knowledgeId?: string) => () => {
+      navigate(
+        // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
+        `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=dataflow`,
+      );
+    },
+    [navigate],
+  );
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -144,5 +161,7 @@ export const useNavigatePage = () => {
     navigateToFiles,
     navigateToAgentList,
     navigateToOldProfile,
+    navigateToDataflowResult,
+    navigateToDataflow,
   };
 };

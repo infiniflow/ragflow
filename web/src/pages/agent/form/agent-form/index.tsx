@@ -31,7 +31,7 @@ import {
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
-import { isBottomSubAgent } from '../../utils';
+import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
 import { buildOutputList } from '../../utils/build-output-list';
 import { DescriptionField } from '../components/description-field';
 import { FormWrapper } from '../components/form-wrapper';
@@ -39,6 +39,7 @@ import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
 import { AgentTools, Agents } from './agent-tools';
+import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -56,13 +57,6 @@ const FormSchema = z.object({
   //   )
   //   .optional(),
   message_history_window_size: z.coerce.number(),
-  tools: z
-    .array(
-      z.object({
-        component_name: z.string(),
-      }),
-    )
-    .optional(),
   ...LlmSettingSchema,
   max_retries: z.coerce.number(),
   delay_after_error: z.coerce.number().optional(),
@@ -84,6 +78,8 @@ function AgentForm({ node }: INextOperatorForm) {
   );
 
   const defaultValues = useValues(node);
+
+  const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
     (x) => ({
@@ -149,7 +145,8 @@ function AgentForm({ node }: INextOperatorForm) {
                   <PromptEditor
                     {...field}
                     placeholder={t('flow.messagePlaceholder')}
-                    showToolbar={false}
+                    showToolbar={true}
+                    extraOptions={extraOptions}
                   ></PromptEditor>
                 </FormControl>
               </FormItem>
@@ -169,7 +166,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     <section>
                       <PromptEditor
                         {...field}
-                        showToolbar={false}
+                        showToolbar={true}
                       ></PromptEditor>
                     </section>
                   </FormControl>
@@ -227,18 +224,20 @@ function AgentForm({ node }: INextOperatorForm) {
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name={`max_rounds`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>{t('flow.maxRounds')}</FormLabel>
-                  <FormControl>
-                    <NumberInput {...field}></NumberInput>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+            {hasSubAgentOrTool(edges, node?.id) && (
+              <FormField
+                control={form.control}
+                name={`max_rounds`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>{t('flow.maxRounds')}</FormLabel>
+                    <FormControl>
+                      <NumberInput {...field}></NumberInput>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            )}
             <FormField
               control={form.control}
               name={`exception_method`}

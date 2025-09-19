@@ -177,7 +177,7 @@ const Modal: ModalType = ({
                   <DialogPrimitive.Close asChild>
                     <button
                       type="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted"
+                      className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted focus-visible:outline-none"
                     >
                       {closeIcon}
                     </button>
@@ -187,7 +187,7 @@ const Modal: ModalType = ({
             )}
 
             {/* content */}
-            <div className="py-2 px-6 overflow-y-auto max-h-[80vh] focus-visible:!outline-none">
+            <div className="py-2 px-6 overflow-y-auto scrollbar-auto max-h-[80vh] focus-visible:!outline-none">
               {destroyOnClose && !open ? null : children}
             </div>
 

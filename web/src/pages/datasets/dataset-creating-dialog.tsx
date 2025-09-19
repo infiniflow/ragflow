@@ -1,3 +1,4 @@
+import { DataFlowSelect } from '@/components/data-pipeline-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,36 +16,86 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
+import {
+  ChunkMethodItem,
+  EmbeddingModelItem,
+  ParseTypeItem,
+} from '../dataset/dataset-setting/configuration/common-item';
+
 const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
 
-  const FormSchema = z.object({
-    name: z
-      .string()
-      .min(1, {
-        message: t('knowledgeList.namePlaceholder'),
-      })
-      .trim(),
-  });
+  const FormSchema = z
+    .object({
+      name: z
+        .string()
+        .min(1, {
+          message: t('knowledgeList.namePlaceholder'),
+        })
+        .trim(),
+      parseType: z.number().optional(),
+      embd_id: z
+        .string()
+        .min(1, {
+          message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
+        })
+        .trim(),
+      parser_id: z.string().optional(),
+      pipline_id: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+      // When parseType === 1, parser_id is required
+      if (
+        data.parseType === 1 &&
+        (!data.parser_id || data.parser_id.trim() === '')
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: t('knowledgeList.parserRequired'),
+          path: ['parser_id'],
+        });
+      }
+
+      console.log('form-data', data);
+      // When parseType === 1, pipline_id required
+      if (data.parseType === 2 && !data.pipline_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: t('knowledgeList.dataFlowRequired'),
+          path: ['pipline_id'],
+        });
+      }
+    });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: '',
+      parseType: 1,
+      parser_id: '',
+      embd_id: '',
     },
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    onOk?.(data.name);
+    console.log('submit', data);
+    onOk?.(data);
   }
+
+  const parseType = useWatch({
+    control: form.control,
+    name: 'parseType',
+  });
+  const { navigateToAgents } = useNavigatePage();
 
   return (
     <Form {...form}>
@@ -58,7 +109,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('knowledgeList.name')}</FormLabel>
+              <FormLabel>
+                <span className="text-destructive mr-1"> *</span>
+                {t('knowledgeList.name')}
+              </FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('knowledgeList.namePlaceholder')}
@@ -69,6 +123,23 @@ export function InputForm({ onOk }: IModalProps<any>) {
             </FormItem>
           )}
         />
+
+        <EmbeddingModelItem line={2} isEdit={false} />
+        <ParseTypeItem />
+        {parseType === 1 && (
+          <>
+            <ChunkMethodItem></ChunkMethodItem>
+          </>
+        )}
+        {parseType === 2 && (
+          <>
+            <DataFlowSelect
+              isMult={false}
+              toDataPipeline={navigateToAgents}
+              formFieldName="pipline_id"
+            />
+          </>
+        )}
       </form>
     </Form>
   );
@@ -83,7 +154,7 @@ export function DatasetCreatingDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] focus-visible:!outline-none">
         <DialogHeader>
           <DialogTitle>{t('knowledgeList.createKnowledgeBase')}</DialogTitle>
         </DialogHeader>
