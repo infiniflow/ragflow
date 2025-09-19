@@ -49,6 +49,10 @@ You can specify multiple input sources for the **Code** component. Click **+ Add
 
 This field allows you to enter and edit your source code.
 
+:::danger IMPORTANT
+If your code implementation includes defined variables, whether input or output variables, ensure they are also specified in the corresponding **Input** or **Output** sections.
+:::
+
 #### A Python code example
 
 ```Python 
@@ -76,6 +80,15 @@ This field allows you to enter and edit your source code.
 ### Return values
 
 You define the output variable(s) of the **Code** component here.
+
+:::danger IMPORTANT
+If you define output variables here, ensure they are also defined in your code implementation; otherwise, their values will be `null`. The following are two examples:
+
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_object_output.jpg)
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_nested_object_output.png)
+:::
 
 ### Output
 
