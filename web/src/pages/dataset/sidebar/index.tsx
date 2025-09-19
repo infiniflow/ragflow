@@ -11,9 +11,9 @@ import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
 import {
   Banknote,
-  Database,
   DatabaseZap,
   FileSearch2,
+  FolderOpen,
   GitGraph,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -40,8 +40,8 @@ export function SideBar({ refreshCount }: PropType) {
         key: Routes.DataSetOverview,
       },
       {
-        icon: Database,
-        label: t(`knowledgeDetails.dataset`),
+        icon: FolderOpen,
+        label: t(`knowledgeDetails.subbarFiles`),
         key: Routes.DatasetBase,
       },
       {

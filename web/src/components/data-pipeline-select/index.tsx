@@ -20,17 +20,10 @@ interface IProps {
   isMult?: boolean;
 }
 
-const data = [
-  { id: '1', name: 'data-pipeline-1' },
-  { id: '2', name: 'data-pipeline-2' },
-  { id: '3', name: 'data-pipeline-3' },
-  { id: '4', name: 'data-pipeline-4' },
-];
 export function DataFlowSelect(props: IProps) {
   const { toDataPipeline, formFieldName, isMult = true } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
-  console.log('data-pipline form', form);
   const toDataPipLine = () => {
     toDataPipeline?.();
   };
