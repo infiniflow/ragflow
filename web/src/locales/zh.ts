@@ -155,7 +155,7 @@ export default {
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
-      vectorSimilarityWeight: '相似度相似度权重',
+      vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
@@ -601,7 +601,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       answerTitle: '智能回答',
       multiTurn: '多轮对话优化',
       multiTurnTip:
-        '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
+        '在多轮对话时，对查询问题根据上下文进行优化。会调用大模型额外消耗 token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
       descriptionPlaceholder:

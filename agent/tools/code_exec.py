@@ -157,7 +157,7 @@ class CodeExec(ToolBase, ABC):
 
         try:
             resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
-            logging.info(f"http://{settings.SANDBOX_HOST}:9385/run", code_req, resp.status_code)
+            logging.info(f"http://{settings.SANDBOX_HOST}:9385/run,  code_req: {code_req}, resp.status_code {resp.status_code}:")
             if resp.status_code != 200:
                 resp.raise_for_status()
             body = resp.json()

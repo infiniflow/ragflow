@@ -136,6 +136,7 @@ export const useSelectLlmOptionsByModelType = () => {
   };
 };
 
+// Merge different types of models from the same manufacturer under one manufacturer
 export const useComposeLlmOptionsByModelTypes = (
   modelTypes: LlmModelType[],
 ) => {
