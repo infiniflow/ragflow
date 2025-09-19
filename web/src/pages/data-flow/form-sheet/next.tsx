@@ -8,14 +8,12 @@ import {
 import { IModalProps } from '@/interfaces/common';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
-import { Play, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BeginId, Operator } from '../constant';
 import { AgentFormContext } from '../context';
-import { RunTooltip } from '../flow-tooltip';
 import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import OperatorIcon from '../operator-icon';
-import { needsSingleStepDebugging } from '../utils';
 import { FormConfigMap } from './form-config-map';
 import SingleDebugSheet from './single-debug-sheet';
 
@@ -36,7 +34,6 @@ const FormSheet = ({
   singleDebugDrawerVisible,
   chatVisible,
   hideSingleDebugDrawer,
-  showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
   // const clickedToolId = useGraphStore((state) => state.clickedToolId);
@@ -64,7 +61,7 @@ const FormSheet = ({
           <SheetTitle className="hidden"></SheetTitle>
           <section className="flex-col border-b py-2 px-5">
             <div className="flex items-center gap-2 pb-3">
-              <OperatorIcon name={operatorName}></OperatorIcon>(
+              <OperatorIcon name={operatorName}></OperatorIcon>
               <div className="flex items-center gap-1 flex-1">
                 <label htmlFor="">{t('flow.title')}</label>
                 {node?.id === BeginId ? (
@@ -77,15 +74,14 @@ const FormSheet = ({
                   ></Input>
                 )}
               </div>
-              )
-              {needsSingleStepDebugging(operatorName) && (
+              {/* {needsSingleStepDebugging(operatorName) && (
                 <RunTooltip>
                   <Play
                     className="size-5 cursor-pointer"
                     onClick={showSingleDebugDrawer}
                   />
                 </RunTooltip>
-              )}
+              )} */}
               <X onClick={hideModal} />
             </div>
           </section>

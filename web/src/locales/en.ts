@@ -1645,6 +1645,11 @@ This delimiter is used to split the input text into several text pieces echo of 
       fileFormats: 'File formats',
       fields: 'Fields',
       addParser: 'Add Parser',
+      hierarchy: 'Hierarchy',
+      regularExpressions: 'Regular Expressions',
+      overlappedPercent: 'Overlapped percent',
+      searchMethod: 'Search method',
+      filenameEmbdWeight: 'Filename embd weight',
     },
   },
 };
