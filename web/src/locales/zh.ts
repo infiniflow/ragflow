@@ -1573,6 +1573,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       fileFormats: '文件格式',
       fields: '字段',
       addParser: '增加解析器',
+      hierarchy: '层次结构',
+      regularExpressions: '正则表达式',
+      overlappedPercent: '重叠百分比',
+      searchMethod: '搜索方法',
+      filenameEmbdWeight: '文件名嵌入权重',
     },
   },
 };

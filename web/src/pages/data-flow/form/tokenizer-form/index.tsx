@@ -40,7 +40,10 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <RAGFlowFormItem name="search_method" label={t('search_method')}>
+        <RAGFlowFormItem
+          name="search_method"
+          label={t('dataflow.searchMethod')}
+        >
           {(field) => (
             <MultiSelect
               options={SearchMethodOptions}
@@ -52,7 +55,7 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
         </RAGFlowFormItem>
         <SliderInputFormField
           name="filename_embd_weight"
-          label="filename_embd_weight"
+          label={t('dataflow.filenameEmbdWeight')}
           max={0.5}
           step={0.01}
         ></SliderInputFormField>
