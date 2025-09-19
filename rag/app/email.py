@@ -78,7 +78,7 @@ def chunk(
     _add_content(msg, msg.get_content_type())
 
     sections = TxtParser.parser_txt("\n".join(text_txt)) + [
-        (line, "") for line in HtmlParser.parser_txt("\n".join(html_txt)) if line
+        (line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line
     ]
 
     st = timer()
