@@ -472,19 +472,19 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str, priority: int, callback=None) -> tuple[bool, str]:
+def queue_dataflow(dsl:str, tenant_id:str, task_id:str, flow_id:str=None, doc_id:str=None, file:dict=None, priority: int=0, callback=None) -> tuple[bool, str]:
     """
     Returns a tuple (success: bool, error_message: str).
     """
     _ = callback
 
     task = dict(
-    id=get_uuid() if not task_id else task_id,
-    doc_id=doc_id,
-    from_page=0,
-    to_page=100000000,
-    task_type="dataflow",
-    priority=priority,
+        id=get_uuid() if not task_id else task_id,
+        doc_id=doc_id,
+        from_page=0,
+        to_page=100000000,
+        task_type="dataflow",
+        priority=priority,
     )
 
     TaskService.model.delete().where(TaskService.model.id == task["id"]).execute()
@@ -499,6 +499,7 @@ def queue_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str,
     task["task_type"] = "dataflow"
     task["dsl"] = dsl
     task["dataflow_id"] = get_uuid() if not flow_id else flow_id
+    task["file"] = file
 
     if not REDIS_CONN.queue_product(
         get_svr_queue_name(priority), message=task

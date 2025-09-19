@@ -12,18 +12,27 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import io
 import logging
 import random
+from functools import partial
 
 import trio
+import numpy as np
+from PIL import Image
 
 from api.db import LLMType
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
+from api.utils import get_uuid
+from api.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class ParserParam(ProcessParamBase):
@@ -43,17 +52,24 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "ppt": [],
-            "image": [],
+            "image": [
+                "text"
+            ],
             "email": [],
-            "text": [],
-            "audio": [],
+            "text": [
+                "text",
+                "json"
+            ],
+            "audio": [
+                "json"
+            ],
             "video": [],
         }
 
         self.setups = {
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
-                "vlm_name": "",
+                "llm_id": "",
                 "lang": "Chinese",
                 "suffix": [
                     "pdf",
@@ -76,16 +92,46 @@ class ParserParam(ProcessParamBase):
                 "output_format": "json",
             },
             "markdown": {
-                "suffix": ["md", "markdown"],
+                "suffix": ["md", "markdown", "mdx"],
                 "output_format": "json",
             },
             "ppt": {},
             "image": {
                 "parse_method": "ocr",
+                "llm_id": "",
+                "lang": "Chinese",
+                "suffix": ["jpg", "jpeg", "png", "gif"],
+                "output_format": "json",
             },
-            "email": {},
-            "text": {},
-            "audio": {},
+            "email": {
+                "fields": []
+            },
+            "text": {
+                "suffix": [
+                    "txt"
+                ],
+                "output_format": "json",
+            },
+            "audio": {
+                "suffix":[
+                    "da",
+                    "wave",
+                    "wav",
+                    "mp3",
+                    "aac",
+                    "flac",
+                    "ogg",
+                    "aiff",
+                    "au",
+                    "midi",
+                    "wma",
+                    "realaudio",
+                    "vqf",
+                    "oggvorbis",
+                    "ape"
+                ],
+                "output_format": "json",
+            },
             "video": {},
         }
 
@@ -96,7 +142,7 @@ class ParserParam(ProcessParamBase):
             self.check_valid_value(pdf_parse_method.lower(), "Parse method abnormal.", ["deepdoc", "plain_text", "vlm"])
 
             if pdf_parse_method not in ["deepdoc", "plain_text"]:
-                self.check_empty(pdf_config.get("vlm_name"), "VLM")
+                self.check_empty(pdf_config.get("llm_id"), "VLM")
 
             pdf_language = pdf_config.get("lang", "")
             self.check_empty(pdf_language, "Language")
@@ -117,7 +163,23 @@ class ParserParam(ProcessParamBase):
         image_config = self.setups.get("image", "")
         if image_config:
             image_parse_method = image_config.get("parse_method", "")
-            self.check_valid_value(image_parse_method.lower(), "Parse method abnormal.", ["ocr"])
+            self.check_valid_value(image_parse_method.lower(), "Parse method abnormal.", ["ocr", "vlm"])
+            if image_parse_method not in ["ocr"]:
+                self.check_empty(image_config.get("llm_id"), "VLM")
+
+            image_language = image_config.get("lang", "")
+            self.check_empty(image_language, "Language")
+
+        text_config = self.setups.get("text", "")
+        if text_config:
+            text_output_format = text_config.get("output_format", "")
+            self.check_valid_value(text_output_format, "Text output format abnormal.", self.allowed_output_format["text"])
+
+        audio_config = self.setups.get("audio", "")
+        if audio_config:
+            self.check_empty(audio_config.get("llm_id"), "VLM")
+            audio_language = audio_config.get("lang", "")
+            self.check_empty(audio_language, "Language")
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
@@ -126,10 +188,8 @@ class ParserParam(ProcessParamBase):
 class Parser(ProcessBase):
     component_name = "Parser"
 
-    def _pdf(self, from_upstream: ParserFromUpstream):
+    def _pdf(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
-
-        blob = from_upstream.blob
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
 
@@ -139,8 +199,8 @@ class Parser(ProcessBase):
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         else:
-            assert conf.get("vlm_name")
-            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("vlm_name"), lang=self._param.setups["pdf"].get("lang"))
+            assert conf.get("llm_id")
+            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("llm_id"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
@@ -149,6 +209,7 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
+
         if conf.get("output_format") == "markdown":
             mkdn = ""
             for b in bboxes:
@@ -160,14 +221,10 @@ class Parser(ProcessBase):
                 mkdn += b.get("text", "") + "\n"
             self.set_output("markdown", mkdn)
 
-    def _spreadsheet(self, from_upstream: ParserFromUpstream):
+    def _spreadsheet(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
-
-        blob = from_upstream.blob
         conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
-
-        print("spreadsheet {conf=}", flush=True)
         spreadsheet_parser = ExcelParser()
         if conf.get("output_format") == "html":
             html = spreadsheet_parser.html(blob, 1000000000)
@@ -177,19 +234,13 @@ class Parser(ProcessBase):
         elif conf.get("output_format") == "markdown":
             self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
-    def _word(self, from_upstream: ParserFromUpstream):
+    def _word(self, name, blob):
         from tika import parser as  word_parser
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
-
-        blob = from_upstream.blob
-        name = from_upstream.name
         conf = self._param.setups["word"]
         self.set_output("output_format", conf["output_format"])
-
-        print("word {conf=}", flush=True)
         doc_parsed = word_parser.from_buffer(blob)
-
         sections = []
         if doc_parsed.get("content"):
             sections = doc_parsed["content"].split("\n")
@@ -202,26 +253,18 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             self.set_output("json", sections)
 
-    def _markdown(self, from_upstream: ParserFromUpstream):
+    def _markdown(self, name, blob):
         from functools import reduce
-
         from rag.app.naive import Markdown as naive_markdown_parser
         from rag.nlp import concat_img
 
-        self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
-
-        blob = from_upstream.blob
-        name = from_upstream.name
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
         conf = self._param.setups["markdown"]
         self.set_output("output_format", conf["output_format"])
-
-        print("markdown {conf=}", flush=True)
 
         markdown_parser = naive_markdown_parser()
         sections, tables = markdown_parser(name, blob, separate_tables=False)
 
-        # json
-        assert conf.get("output_format") == "json", "have to be json for doc"
         if conf.get("output_format") == "json":
             json_results = []
 
@@ -239,14 +282,86 @@ class Parser(ProcessBase):
                 json_results.append(json_result)
 
             self.set_output("json", json_results)
+        else:
+            self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
+    def _text(self, name, blob):
+        from deepdoc.parser.utils import get_text
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a text.")
+        conf = self._param.setups["text"]
+        self.set_output("output_format", conf["output_format"])
+
+        # parse binary to text
+        text_content = get_text(name, binary=blob)
+
+        if conf.get("output_format") == "json":
+            result = [{"text": text_content}]
+            self.set_output("json", result)
+        else:
+            result = text_content
+            self.set_output("text", result)
+
+    def _image(self, from_upstream: ParserFromUpstream):
+        from deepdoc.vision import OCR
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an image.")
+
+        blob = from_upstream.blob
+        conf = self._param.setups["image"]
+        self.set_output("output_format", conf["output_format"])
+
+        img = Image.open(io.BytesIO(blob)).convert("RGB")
+        lang = conf["lang"]
+
+        if conf["parse_method"] == "ocr":
+            # use ocr, recognize chars only
+            ocr = OCR()
+            bxs = ocr(np.array(img))  # return boxes and recognize result
+            txt = "\n".join([t[0] for _, t in bxs if t[0]])
+
+        else:
+            # use VLM to describe the picture
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"],lang=lang)
+            img_binary = io.BytesIO()
+            img.save(img_binary, format="JPEG")
+            img_binary.seek(0)
+            txt = cv_model.describe(img_binary.read())
+
+        self.set_output("text", txt)
+
+    def _audio(self, from_upstream: ParserFromUpstream):
+        import os
+        import tempfile
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an audio.")
+
+        blob = from_upstream.blob
+        name = from_upstream.name
+        conf = self._param.setups["audio"]
+        self.set_output("output_format", conf["output_format"])
+
+        lang = conf["lang"]
+        _, ext = os.path.splitext(name)
+        with tempfile.NamedTemporaryFile(suffix=ext) as tmpf:
+            tmpf.write(blob)
+            tmpf.flush()
+            tmp_path = os.path.abspath(tmpf.name)
+
+            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, lang=lang)
+            txt = seq2txt_mdl.transcription(tmp_path)
+
+            self.set_output("text", txt)
 
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
             "markdown": self._markdown,
             "spreadsheet": self._spreadsheet,
-            "word": self._word
+            "word": self._word,
+            "text": self._text,
+            "image": self._image,
+            "audio": self._audio,
         }
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
@@ -254,8 +369,20 @@ class Parser(ProcessBase):
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return
 
+        name = from_upstream.name
+        if self._canvas._doc_id:
+            b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
+            blob = STORAGE_IMPL.get(b, n)
+        else:
+            blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
+
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await trio.to_thread.run_sync(function_map[p_type], from_upstream)
+            await trio.to_thread.run_sync(function_map[p_type], name, blob)
             break
+
+        outs = self.output()
+        async with trio.open_nursery() as nursery:
+            for d in outs.get("json", []):
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), "_image_temps", get_uuid())

@@ -145,7 +145,7 @@ function AgentForm({ node }: INextOperatorForm) {
                   <PromptEditor
                     {...field}
                     placeholder={t('flow.messagePlaceholder')}
-                    showToolbar={false}
+                    showToolbar={true}
                     extraOptions={extraOptions}
                   ></PromptEditor>
                 </FormControl>
@@ -166,7 +166,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     <section>
                       <PromptEditor
                         {...field}
-                        showToolbar={false}
+                        showToolbar={true}
                       ></PromptEditor>
                     </section>
                   </FormControl>
