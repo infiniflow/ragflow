@@ -25,11 +25,13 @@ const ExeSQLForm = () => {
     defaultValues: defaultValues as FormType,
   });
 
+  const onError = (error: any) => console.log(error);
+
   useWatchFormChange(form);
 
   return (
     <Form {...form}>
-      <FormWrapper onSubmit={form.handleSubmit(onSubmit)}>
+      <FormWrapper onSubmit={form.handleSubmit(onSubmit, onError)}>
         <ExeSQLFormWidgets loading={loading}></ExeSQLFormWidgets>
       </FormWrapper>
     </Form>

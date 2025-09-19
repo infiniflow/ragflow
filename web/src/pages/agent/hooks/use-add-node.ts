@@ -1,6 +1,7 @@
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
+import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +24,6 @@ import {
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
-  initialGenerateValues,
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
@@ -39,11 +39,11 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialSearXNGValues,
   initialStringTransformValues,
   initialSwitchValues,
   initialTavilyExtractValues,
   initialTavilyValues,
-  initialTemplateValues,
   initialTuShareValues,
   initialUserFillUpValues,
   initialWaitingDialogueValues,
@@ -70,8 +70,6 @@ export const useInitializeOperatorParams = () => {
     return {
       [Operator.Begin]: initialBeginValues,
       [Operator.Retrieval]: initialRetrievalValues,
-      [Operator.Generate]: { ...initialGenerateValues, llm_id: llmId },
-      [Operator.Answer]: {},
       [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
       [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
       [Operator.RewriteQuestion]: {
@@ -92,6 +90,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Bing]: initialBingValues,
       [Operator.GoogleScholar]: initialGoogleScholarValues,
       [Operator.DeepL]: initialDeepLValues,
+      [Operator.SearXNG]: initialSearXNGValues,
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
@@ -106,7 +105,6 @@ export const useInitializeOperatorParams = () => {
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
       [Operator.Invoke]: initialInvokeValues,
-      [Operator.Template]: initialTemplateValues,
       [Operator.Email]: initialEmailValues,
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationStartValues,
@@ -127,8 +125,8 @@ export const useInitializeOperatorParams = () => {
       if (isBottomSubAgent(operatorName, position)) {
         return {
           ...initialValues,
-          description: 'This is an agent for a specific task.',
-          user_prompt: 'This is the order you need to send to the agent.',
+          description: t('flow.descriptionMessage'),
+          user_prompt: t('flow.userPromptDefaultValue'),
         };
       }
 
@@ -213,7 +211,7 @@ function useAddToolNode() {
   );
 
   const addToolNode = useCallback(
-    (newNode: Node<any>, nodeId?: string) => {
+    (newNode: Node<any>, nodeId?: string): boolean => {
       const agentNode = getNode(nodeId);
 
       if (agentNode) {
@@ -227,7 +225,7 @@ function useAddToolNode() {
           childToolNodeIds.length > 0 &&
           nodes.some((x) => x.id === childToolNodeIds[0])
         ) {
-          return;
+          return false;
         }
 
         newNode.position = {
@@ -244,7 +242,9 @@ function useAddToolNode() {
             targetHandle: NodeHandleId.End,
           });
         }
+        return true;
       }
+      return false;
     },
     [addEdge, addNode, edges, getNode, nodes],
   );
@@ -300,13 +300,17 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const addCanvasNode = useCallback(
     (
       type: string,
-      params: { nodeId?: string; position: Position; id?: string } = {
+      params: {
+        nodeId?: string;
+        position: Position;
+        id?: string;
+        isFromConnectionDrag?: boolean;
+      } = {
         position: Position.Right,
       },
     ) =>
-      (event?: CanvasMouseEvent) => {
+      (event?: CanvasMouseEvent): string | undefined => {
         const nodeId = params.nodeId;
-
         const node = getNode(nodeId);
 
         // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
@@ -317,7 +321,11 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           y: event?.clientY || 0,
         });
 
-        if (params.position === Position.Right && type !== Operator.Note) {
+        if (
+          params.position === Position.Right &&
+          type !== Operator.Note &&
+          !params.isFromConnectionDrag
+        ) {
           position = calculateNewlyBackChildPosition(nodeId, params.id);
         }
 
@@ -376,6 +384,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               targetHandle: NodeHandleId.End,
             });
           }
+          return newNode.id;
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom
@@ -411,8 +420,10 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               targetHandle: NodeHandleId.AgentTop,
             });
           }
+          return newNode.id;
         } else if (type === Operator.Tool) {
-          addToolNode(newNode, params.nodeId);
+          const toolNodeAdded = addToolNode(newNode, params.nodeId);
+          return toolNodeAdded ? newNode.id : undefined;
         } else {
           addNode(newNode);
           addChildEdge(params.position, {
@@ -421,6 +432,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             sourceHandle: params.id,
           });
         }
+
+        return newNode.id;
       },
     [
       addChildEdge,

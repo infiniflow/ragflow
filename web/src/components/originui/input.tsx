@@ -50,3 +50,4 @@ const Input = function ({
 };
 
 export { Input };
+export default React.forwardRef(Input);

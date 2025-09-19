@@ -21,6 +21,7 @@ import tiktoken
 from flask import Response, jsonify, request
 
 from agent.canvas import Canvas
+from api import settings
 from api.db import LLMType, StatusEnum
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
@@ -28,13 +29,18 @@ from api.db.services.canvas_service import UserCanvasService, completionOpenAI
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
-from api.db.services.dialog_service import DialogService, ask, chat
-from api.db.services.file_service import FileService
+from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap, meta_filter
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.search_service import SearchService
+from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
-from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_result, token_required, validate_request
+from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, get_result, server_error_response, token_required, validate_request
+from rag.app.tag import label_question
 from rag.prompts import chunks_format
+from rag.prompts.prompt_template import load_prompt
+from rag.prompts.prompts import cross_languages, gen_meta_filter, keyword_extraction
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
@@ -51,6 +57,7 @@ def create(tenant_id, chat_id):
         "name": req.get("name", "New session"),
         "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
         "user_id": req.get("user_id", ""),
+        "reference": [{}],
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -68,11 +75,7 @@ def create(tenant_id, chat_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
 def create_agent_session(tenant_id, agent_id):
-    req = request.json
-    if not request.is_json:
-        req = request.form
-    files = request.files
-    user_id = request.args.get("user_id", "")
+    user_id = request.args.get("user_id", tenant_id)
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -81,45 +84,12 @@ def create_agent_session(tenant_id, agent_id):
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    canvas = Canvas(cvs.dsl, tenant_id)
+    session_id = get_uuid()
+    canvas = Canvas(cvs.dsl, tenant_id, agent_id)
     canvas.reset()
-    query = canvas.get_preset_param()
-    if query:
-        for ele in query:
-            if not ele["optional"]:
-                if ele["type"] == "file":
-                    if files is None or not files.get(ele["key"]):
-                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
-                    upload_file = files.get(ele["key"])
-                    file_content = FileService.parse_docs([upload_file], user_id)
-                    file_name = upload_file.filename
-                    ele["value"] = file_name + "\n" + file_content
-                else:
-                    if req is None or not req.get(ele["key"]):
-                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
-                    ele["value"] = req[ele["key"]]
-            else:
-                if ele["type"] == "file":
-                    if files is not None and files.get(ele["key"]):
-                        upload_file = files.get(ele["key"])
-                        file_content = FileService.parse_docs([upload_file], user_id)
-                        file_name = upload_file.filename
-                        ele["value"] = file_name + "\n" + file_content
-                    else:
-                        if "value" in ele:
-                            ele.pop("value")
-                else:
-                    if req is not None and req.get(ele["key"]):
-                        ele["value"] = req[ele["key"]]
-                    else:
-                        if "value" in ele:
-                            ele.pop("value")
-
-    for ans in canvas.run(stream=False):
-        pass
 
     cvs.dsl = json.loads(str(canvas))
-    conv = {"id": get_uuid(), "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
+    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
@@ -435,14 +405,38 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
             )
         )
 
-    # Get the last user message as the question
     question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
-    if req.get("stream", True):
-        return Response(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", req.get("metadata", {}).get("id", "")), stream=True), mimetype="text/event-stream")
+    stream = req.pop("stream", False)
+    if stream:
+        resp = Response(
+            completionOpenAI(
+                tenant_id,
+                agent_id,
+                question,
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
+                stream=True,
+                **req,
+            ),
+            mimetype="text/event-stream",
+        )
+        resp.headers.add_header("Cache-control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+        return resp
     else:
         # For non-streaming, just return the response directly
-        response = next(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", req.get("metadata", {}).get("id", "")), stream=False))
+        response = next(
+            completionOpenAI(
+                tenant_id,
+                agent_id,
+                question,
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
+                stream=False,
+                **req,
+            )
+        )
         return jsonify(response)
 
 
@@ -450,41 +444,50 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
 @token_required
 def agent_completions(tenant_id, agent_id):
     req = request.json
-    cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
-    if not cvs:
-        return get_error_data_result(f"You don't own the agent {agent_id}")
-    if req.get("session_id"):
-        dsl = cvs[0].dsl
-        if not isinstance(dsl, str):
-            dsl = json.dumps(dsl)
 
-        conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
-        if not conv:
-            return get_error_data_result(f"You don't own the session {req['session_id']}")
-        # If an update to UserCanvas is detected, update the API4Conversation.dsl
-        sync_dsl = req.get("sync_dsl", False)
-        if sync_dsl is True and cvs[0].update_time > conv[0].update_time:
-            current_dsl = conv[0].dsl
-            new_dsl = json.loads(dsl)
-            state_fields = ["history", "messages", "path", "reference"]
-            states = {field: current_dsl.get(field, []) for field in state_fields}
-            current_dsl.update(new_dsl)
-            current_dsl.update(states)
-            API4ConversationService.update_by_id(req["session_id"], {"dsl": current_dsl})
-    else:
-        req["question"] = ""
     if req.get("stream", True):
-        resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
+
+        def generate():
+            for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+                if isinstance(answer, str):
+                    try:
+                        ans = json.loads(answer[5:])  # remove "data:"
+                    except Exception:
+                        continue
+
+                if ans.get("event") not in ["message", "message_end"]:
+                    continue
+
+                yield answer
+
+            yield "data:[DONE]\n\n"
+
+        resp = Response(generate(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
-    try:
-        for answer in agent_completion(tenant_id, agent_id, **req):
-            return get_result(data=answer)
-    except Exception as e:
-        return get_error_data_result(str(e))
+
+    full_content = ""
+    reference = {}
+    final_ans = ""
+    for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+        try:
+            ans = json.loads(answer[5:])
+
+            if ans["event"] == "message":
+                full_content += ans["data"]["content"]
+
+            if ans.get("data", {}).get("reference", None):
+                reference.update(ans["data"]["reference"])
+
+            final_ans = ans
+        except Exception as e:
+            return get_result(data=f"**ERROR**: {str(e)}")
+    final_ans["data"]["content"] = full_content
+    final_ans["data"]["reference"] = reference
+    return get_result(data=final_ans)
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
@@ -512,16 +515,16 @@ def list_session(tenant_id, chat_id):
             if "prompt" in info:
                 info.pop("prompt")
         conv["chat_id"] = conv.pop("dialog_id")
-        if conv["reference"]:
+        ref_messages = conv["reference"]
+        if ref_messages:
             messages = conv["messages"]
             message_num = 0
-            while message_num < len(messages) and message_num < len(conv["reference"]):
-                if message_num != 0 and messages[message_num]["role"] != "user":
-                    if message_num >= len(conv["reference"]):
-                        break
+            ref_num = 0
+            while message_num < len(messages) and ref_num < len(ref_messages):
+                if messages[message_num]["role"] != "user":
                     chunk_list = []
-                    if "chunks" in conv["reference"][message_num]:
-                        chunks = conv["reference"][message_num]["chunks"]
+                    if "chunks" in ref_messages[ref_num]:
+                        chunks = ref_messages[ref_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
                                 "id": chunk.get("chunk_id", chunk.get("id")),
@@ -535,6 +538,7 @@ def list_session(tenant_id, chat_id):
 
                             chunk_list.append(new_chunk)
                     messages[message_num]["reference"] = chunk_list
+                    ref_num += 1
                 message_num += 1
         del conv["reference"]
     return get_result(data=convs)
@@ -566,16 +570,24 @@ def list_agent_session(tenant_id, agent_id):
             if "prompt" in info:
                 info.pop("prompt")
         conv["agent_id"] = conv.pop("dialog_id")
+        # Fix for session listing endpoint
         if conv["reference"]:
             messages = conv["messages"]
             message_num = 0
             chunk_num = 0
+            # Ensure reference is a list type to prevent KeyError
+            if not isinstance(conv["reference"], list):
+                conv["reference"] = []
             while message_num < len(messages):
                 if message_num != 0 and messages[message_num]["role"] != "user":
                     chunk_list = []
-                    if "chunks" in conv["reference"][chunk_num]:
+                    # Add boundary and type checks to prevent KeyError
+                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
+                            # Ensure chunk is a dictionary before calling get method
+                            if not isinstance(chunk, dict):
+                                continue
                             new_chunk = {
                                 "id": chunk.get("chunk_id", chunk.get("id")),
                                 "content": chunk.get("content_with_weight", chunk.get("content")),
@@ -809,6 +821,29 @@ def chatbot_completions(dialog_id):
         return get_result(data=answer)
 
 
+@manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
+def chatbots_inputs(dialog_id):
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    e, dialog = DialogService.get_by_id(dialog_id)
+    if not e:
+        return get_error_data_result(f"Can't find dialog by ID: {dialog_id}")
+
+    return get_result(
+        data={
+            "title": dialog.name,
+            "avatar": dialog.icon,
+            "prologue": dialog.prompt_config.get("prologue", ""),
+        }
+    )
+
+
 @manager.route("/agentbots/<agent_id>/completions", methods=["POST"])  # noqa: F821
 def agent_bot_completions(agent_id):
     req = request.json
@@ -848,10 +883,234 @@ def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
-    return get_result(data={
-        "title": cvs.title,
-        "avatar": cvs.avatar,
-        "inputs": canvas.get_component_input_form("begin")
-    })
+    return get_result(data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"), "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
 
+@manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
+@validate_request("question", "kb_ids")
+def ask_about_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    req = request.json
+    uid = objs[0].tenant_id
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
+    def stream():
+        nonlocal req, uid
+        try:
+            for ans in ask(req["question"], req["kb_ids"], uid, search_config=search_config):
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+        except Exception as e:
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
+
+
+@manager.route("/searchbots/retrieval_test", methods=["POST"])  # noqa: F821
+@validate_request("kb_id", "question")
+def retrieval_test_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    req = request.json
+    page = int(req.get("page", 1))
+    size = int(req.get("size", 30))
+    question = req["question"]
+    kb_ids = req["kb_id"]
+    if isinstance(kb_ids, str):
+        kb_ids = [kb_ids]
+    if not kb_ids:
+        return get_json_result(data=False, message='Please specify dataset firstly.',
+                               code=settings.RetCode.DATA_ERROR)
+    doc_ids = req.get("doc_ids", [])
+    similarity_threshold = float(req.get("similarity_threshold", 0.0))
+    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    use_kg = req.get("use_kg", False)
+    top = int(req.get("top_k", 1024))
+    langs = req.get("cross_languages", [])
+    tenant_ids = []
+
+    tenant_id = objs[0].tenant_id
+    if not tenant_id:
+        return get_error_data_result(message="permission denined.")
+
+    if req.get("search_id", ""):
+        search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
+        meta_data_filter = search_config.get("meta_data_filter", {})
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        if meta_data_filter.get("method") == "auto":
+            chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+            filters = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters))
+            if not doc_ids:
+                doc_ids = None
+        elif meta_data_filter.get("method") == "manual":
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
+            if not doc_ids:
+                doc_ids = None
+
+    try:
+        tenants = UserTenantService.query(user_id=tenant_id)
+        for kb_id in kb_ids:
+            for tenant in tenants:
+                if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
+                    tenant_ids.append(tenant.tenant_id)
+                    break
+            else:
+                return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+
+        e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
+        if not e:
+            return get_error_data_result(message="Knowledgebase not found!")
+
+        if langs:
+            question = cross_languages(kb.tenant_id, None, question, langs)
+
+        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+
+        rerank_mdl = None
+        if req.get("rerank_id"):
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+
+        if req.get("keyword", False):
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            question += keyword_extraction(chat_mdl, question)
+
+        labels = label_question(question, [kb])
+        ranks = settings.retrievaler.retrieval(
+            question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top, doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
+        )
+        if use_kg:
+            ck = settings.kg_retrievaler.retrieval(question, tenant_ids, kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+
+        for c in ranks["chunks"]:
+            c.pop("vector", None)
+        ranks["labels"] = labels
+
+        return get_json_result(data=ranks)
+    except Exception as e:
+        if str(e).find("not_found") > 0:
+            return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=settings.RetCode.DATA_ERROR)
+        return server_error_response(e)
+
+
+@manager.route("/searchbots/related_questions", methods=["POST"])  # noqa: F821
+@validate_request("question")
+def related_questions_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    req = request.json
+    tenant_id = objs[0].tenant_id
+    if not tenant_id:
+        return get_error_data_result(message="permission denined.")
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
+    question = req["question"]
+
+    chat_id = search_config.get("chat_id", "")
+    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_id)
+
+    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    prompt = load_prompt("related_question")
+    ans = chat_mdl.chat(
+        prompt,
+        [
+            {
+                "role": "user",
+                "content": f"""
+Keywords: {question}
+Related search terms:
+    """,
+            }
+        ],
+        gen_conf,
+    )
+    return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+
+
+@manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
+def detail_share_embedded():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    search_id = request.args["search_id"]
+    tenant_id = objs[0].tenant_id
+    if not tenant_id:
+        return get_error_data_result(message="permission denined.")
+    try:
+        tenants = UserTenantService.query(user_id=tenant_id)
+        for tenant in tenants:
+            if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
+                break
+        else:
+            return get_json_result(data=False, message="Has no permission for this operation.", code=settings.RetCode.OPERATING_ERROR)
+
+        search = SearchService.get_detail(search_id)
+        if not search:
+            return get_error_data_result(message="Can't find this Search App!")
+        return get_json_result(data=search)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/searchbots/mindmap", methods=["POST"])  # noqa: F821
+@validate_request("question", "kb_ids")
+def mindmap():
+    token = request.headers.get("Authorization").split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    tenant_id = objs[0].tenant_id
+    req = request.json
+
+    search_id = req.get("search_id", "")
+    search_app = SearchService.get_detail(search_id) if search_id else {}
+
+    mind_map = gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
+    if "error" in mind_map:
+        return server_error_response(Exception(mind_map["error"]))
+    return get_json_result(data=mind_map)

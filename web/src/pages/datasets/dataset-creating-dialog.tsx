@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -33,19 +33,20 @@ export function InputForm({ onOk }: IModalProps<any>) {
         message: t('knowledgeList.namePlaceholder'),
       })
       .trim(),
+    parseType: z.number().optional(),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: '',
+      parseType: 1,
     },
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     onOk?.(data.name);
   }
-
   return (
     <Form {...form}>
       <form
@@ -58,7 +59,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('knowledgeList.name')}</FormLabel>
+              <FormLabel>
+                <span className="text-destructive mr-1"> *</span>
+                {t('knowledgeList.name')}
+              </FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('knowledgeList.namePlaceholder')}
@@ -74,7 +78,11 @@ export function InputForm({ onOk }: IModalProps<any>) {
   );
 }
 
-export function DatasetCreatingDialog({ hideModal, onOk }: IModalProps<any>) {
+export function DatasetCreatingDialog({
+  hideModal,
+  onOk,
+  loading,
+}: IModalProps<any>) {
   const { t } = useTranslation();
 
   return (
@@ -85,9 +93,9 @@ export function DatasetCreatingDialog({ hideModal, onOk }: IModalProps<any>) {
         </DialogHeader>
         <InputForm onOk={onOk}></InputForm>
         <DialogFooter>
-          <Button type="submit" form={FormId}>
+          <ButtonLoading type="submit" form={FormId} loading={loading}>
             {t('common.save')}
-          </Button>
+          </ButtonLoading>
         </DialogFooter>
       </DialogContent>
     </Dialog>

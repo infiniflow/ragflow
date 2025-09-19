@@ -26,7 +26,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-8 w-full items-center justify-between rounded-md border border-input bg-colors-background-inverse-weak px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
+      'flex h-8 w-full items-center bg-bg-card justify-between rounded-md border border-input  px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
       className,
     )}
     {...props}
@@ -224,6 +224,7 @@ export const RAGFlowSelect = forwardRef<
     allowClear,
     placeholder,
     contentProps = {},
+    disabled = false,
     // defaultValue,
     triggerClassName,
     onlyShowSelectedIcon = false,
@@ -278,7 +279,12 @@ export const RAGFlowSelect = forwardRef<
   }, [onlyShowSelectedIcon, options, value]);
 
   return (
-    <Select onValueChange={handleChange} value={value} key={key}>
+    <Select
+      onValueChange={handleChange}
+      value={value}
+      key={key}
+      disabled={disabled}
+    >
       <FormControlWidget>
         <SelectTrigger
           value={value}

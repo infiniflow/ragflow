@@ -1,4 +1,4 @@
-import PasswordInput from '@/components/password-input';
+import PasswordInput from '@/components/originui/password-input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -188,11 +188,7 @@ export default function Profile() {
                       {t('username')}
                     </FormLabel>
                     <FormControl className="w-3/4">
-                      <Input
-                        placeholder=""
-                        {...field}
-                        className="bg-colors-background-inverse-weak"
-                      />
+                      <Input placeholder="" {...field} />
                     </FormControl>
                   </div>
                   <div className="flex w-[640px] pt-1">

@@ -1,6 +1,5 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { useSetModalState } from '@/hooks/common-hooks';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import {
@@ -17,11 +16,10 @@ import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
-import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workFlowTimeline';
+import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
 import { IMessage } from '@/pages/chat/interface';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
-import IndentedTreeModal from '../indented-tree/modal';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
@@ -79,8 +77,6 @@ function MessageItem({
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { visible, hideModal } = useSetModalState();
-  const [clickedDocumentId] = useState('');
   const [showThinking, setShowThinking] = useState(false);
   const { setLastSendLoadingFunc } = useContext(AgentChatContext);
 
@@ -200,8 +196,6 @@ function MessageItem({
                     sendLoading={sendLoading}
                   ></UserGroupButton>
                 )}
-
-                {/* <b>{isAssistant ? '' : nickname}</b> */}
               </div>
             </div>
 
@@ -226,7 +220,7 @@ function MessageItem({
                   ? styles.messageTextDark
                   : styles.messageText]: isAssistant,
                 [styles.messageUserText]: !isAssistant,
-                'bg-background-card': !isAssistant,
+                'bg-bg-card': !isAssistant,
               })}
             >
               {item.data ? (
@@ -254,13 +248,6 @@ function MessageItem({
           </section>
         </div>
       </section>
-      {visible && (
-        <IndentedTreeModal
-          visible={visible}
-          hideModal={hideModal}
-          documentId={clickedDocumentId}
-        ></IndentedTreeModal>
-      )}
     </div>
   );
 }

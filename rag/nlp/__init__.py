@@ -518,7 +518,7 @@ def hierarchical_merge(bull, sections, depth):
     return res
 
 
-def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
+def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     if not sections:
         return []
@@ -534,7 +534,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overl
             pos = ""
         if tnum < 8:
             pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num  
+        # Ensure that the length of the merged chunk does not exceed chunk_token_num
         if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
@@ -554,8 +554,8 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overl
         if num_tokens_from_string(sec) < chunk_token_num:
             add_chunk(sec, pos)
             continue
-        splited_sec = re.split(r"(%s)" % dels, sec, flags=re.DOTALL)
-        for sub_sec in splited_sec:
+        split_sec = re.split(r"(%s)" % dels, sec, flags=re.DOTALL)
+        for sub_sec in split_sec:
             if re.match(f"^{dels}$", sub_sec):
                 continue
             add_chunk(sub_sec, pos)
@@ -563,7 +563,8 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？", overl
     return cks
 
 
-def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
+def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
+    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     if not texts or len(texts) != len(images):
         return [], []
     cks = [""]
@@ -578,7 +579,10 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
+            if cks:
+                overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
+                t = overlapped[int(len(overlapped)*(100-overlapped_percent)/100.):] + t
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -600,14 +604,14 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if isinstance(text, tuple):
             text_str = text[0]
             text_pos = text[1] if len(text) > 1 else ""
-            splited_sec = re.split(r"(%s)" % dels, text_str)
-            for sub_sec in splited_sec:
+            split_sec = re.split(r"(%s)" % dels, text_str)
+            for sub_sec in split_sec:
                 if re.match(f"^{dels}$", sub_sec):
                     continue
                 add_chunk(sub_sec, image, text_pos)
         else:
-            splited_sec = re.split(r"(%s)" % dels, text)
-            for sub_sec in splited_sec:
+            split_sec = re.split(r"(%s)" % dels, text)
+            for sub_sec in split_sec:
                 if re.match(f"^{dels}$", sub_sec):
                     continue
                 add_chunk(sub_sec, image)
@@ -634,15 +638,14 @@ def concat_img(img1, img2):
         return img2
     if not img1 and not img2:
         return None
-    
+
     if img1 is img2:
         return img1
-    
+
     if isinstance(img1, Image.Image) and isinstance(img2, Image.Image):
         pixel_data1 = img1.tobytes()
         pixel_data2 = img2.tobytes()
         if pixel_data1 == pixel_data2:
-            img2.close()
             return img1
 
     width1, height1 = img1.size
@@ -654,8 +657,6 @@ def concat_img(img1, img2):
 
     new_image.paste(img1, (0, 0))
     new_image.paste(img2, (0, height1))
-    img1.close()
-    img2.close()
     return new_image
 
 
@@ -686,9 +687,21 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
             tk_nums[-1] += tnum
 
     dels = get_delimiters(delimiter)
+    line = ""
     for sec, image in sections:
-        splited_sec = re.split(r"(%s)" % dels, sec)
-        for sub_sec in splited_sec:
+        if not image:
+            line += sec + "\n"
+            continue
+        split_sec = re.split(r"(%s)" % dels, line + sec)
+        for sub_sec in split_sec:
+            if re.match(f"^{dels}$", sub_sec):
+                continue
+            add_chunk(sub_sec, image,"")
+        line = ""
+
+    if line:
+        split_sec = re.split(r"(%s)" % dels, line)
+        for sub_sec in split_sec:
             if re.match(f"^{dels}$", sub_sec):
                 continue
             add_chunk(sub_sec, image,"")

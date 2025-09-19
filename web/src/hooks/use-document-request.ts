@@ -1,4 +1,6 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
+import message from '@/components/ui/message';
+import { ResponseType } from '@/interfaces/database/base';
 import {
   IDocumentInfo,
   IDocumentInfoFilter,
@@ -11,7 +13,6 @@ import i18n from '@/locales/config';
 import kbService, { listDocument } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { message } from 'antd';
 import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'umi';
@@ -45,9 +46,9 @@ export const useUploadNextDocument = () => {
     data,
     isPending: loading,
     mutateAsync,
-  } = useMutation({
+  } = useMutation<ResponseType<IDocumentInfo[]>, Error, File[]>({
     mutationKey: [DocumentApiAction.UploadDocument],
-    mutationFn: async (fileList: File[]) => {
+    mutationFn: async (fileList) => {
       const formData = new FormData();
       formData.append('kb_id', id!);
       fileList.forEach((file: any) => {

@@ -25,14 +25,14 @@ export const Spin: React.FC<SpinProps> = ({
       className={cn(
         'relative',
         {
-          'after:content-[""] after:absolute after:inset-0 after:z-10 after:bg-black/40 after:transition-all after:duration-300':
+          'after:content-[""] after:absolute after:inset-0 after:z-10 after:bg-text-primary/40 after:transition-all after:duration-300 h-full w-full':
             spinning,
         },
         className,
       )}
     >
       {spinning && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 ">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-text-primary/30 ">
           <div
             className={cn(
               'rounded-full border-muted-foreground border-2 border-t-transparent animate-spin',

@@ -11,7 +11,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { downloadDocument } from '@/utils/file-util';
-import { ArrowDownToLine, FolderPen, ScrollText, Trash2 } from 'lucide-react';
+import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { isParserRunning } from './utils';
@@ -50,19 +50,25 @@ export function DatasetActionCell({
   }, [record, showRenameModal]);
 
   return (
-    <section className="flex gap-4 items-center text-text-sub-title-invert">
+    <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
       <Button
-        variant={'ghost'}
+        variant="transparent"
+        className="border-none hover:bg-bg-card text-text-primary"
         size={'sm'}
         disabled={isRunning}
         onClick={handleRename}
       >
-        <FolderPen />
+        <PenLine />
       </Button>
       <HoverCard>
         <HoverCardTrigger>
-          <Button variant="ghost" disabled={isRunning} size={'sm'}>
-            <ScrollText />
+          <Button
+            variant="transparent"
+            className="border-none hover:bg-bg-card text-text-primary"
+            disabled={isRunning}
+            size={'sm'}
+          >
+            <Eye />
           </Button>
         </HoverCardTrigger>
         <HoverCardContent className="w-[40vw] max-h-[40vh] overflow-auto">
@@ -88,16 +94,22 @@ export function DatasetActionCell({
 
       {isVirtualDocument || (
         <Button
-          variant={'ghost'}
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
           onClick={onDownloadDocument}
           disabled={isRunning}
           size={'sm'}
         >
-          <ArrowDownToLine />
+          <Download />
         </Button>
       )}
       <ConfirmDeleteDialog onOk={handleRemove}>
-        <Button variant={'ghost'} size={'sm'} disabled={isRunning}>
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          disabled={isRunning}
+        >
           <Trash2 />
         </Button>
       </ConfirmDeleteDialog>

@@ -12,7 +12,7 @@ import { PaginationProps, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
-import { omit } from 'lodash';
+import { has, isEmpty, omit } from 'lodash';
 import {
   ChangeEventHandler,
   useCallback,
@@ -27,7 +27,7 @@ import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
 
-function usePrevious<T>(value: T) {
+export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
   useEffect(() => {
     ref.current = value;
@@ -166,11 +166,43 @@ export const useFetchAppConf = () => {
   return appConf;
 };
 
+function useSetDoneRecord() {
+  const [doneRecord, setDoneRecord] = useState<Record<string, boolean>>({});
+
+  const clearDoneRecord = useCallback(() => {
+    setDoneRecord({});
+  }, []);
+
+  const setDoneRecordById = useCallback((id: string, val: boolean) => {
+    setDoneRecord((prev) => ({ ...prev, [id]: val }));
+  }, []);
+
+  const allDone = useMemo(() => {
+    return Object.values(doneRecord).every((val) => val);
+  }, [doneRecord]);
+
+  useEffect(() => {
+    if (!isEmpty(doneRecord) && allDone) {
+      clearDoneRecord();
+    }
+  }, [allDone, clearDoneRecord, doneRecord]);
+
+  return {
+    doneRecord,
+    setDoneRecord,
+    setDoneRecordById,
+    clearDoneRecord,
+    allDone,
+  };
+}
+
 export const useSendMessageWithSse = (
   url: string = api.completeConversation,
 ) => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
+  const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
+    useSetDoneRecord();
   const timer = useRef<any>();
   const sseRef = useRef<AbortController>();
 
@@ -188,6 +220,17 @@ export const useSendMessageWithSse = (
     }, 1000);
   }, []);
 
+  const setDoneValue = useCallback(
+    (body: any, value: boolean) => {
+      if (has(body, 'chatBoxId')) {
+        setDoneRecordById(body.chatBoxId, value);
+      } else {
+        setDone(value);
+      }
+    },
+    [setDoneRecordById],
+  );
+
   const send = useCallback(
     async (
       body: any,
@@ -195,14 +238,14 @@ export const useSendMessageWithSse = (
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       initializeSseRef();
       try {
-        setDone(false);
+        setDoneValue(body, false);
         const response = await fetch(url, {
           method: 'POST',
           headers: {
             [Authorization]: getAuthorization(),
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(omit(body, 'chatBoxId')),
           signal: controller?.signal || sseRef.current?.signal,
         });
 
@@ -228,6 +271,7 @@ export const useSendMessageWithSse = (
                 setAnswer({
                   ...d,
                   conversationId: body?.conversation_id,
+                  chatBoxId: body.chatBoxId,
                 });
               }
             } catch (e) {
@@ -235,23 +279,34 @@ export const useSendMessageWithSse = (
             }
           }
         }
-        setDone(true);
+        setDoneValue(body, true);
         resetAnswer();
         return { data: await res, response };
       } catch (e) {
-        setDone(true);
+        setDoneValue(body, true);
+
         resetAnswer();
         // Swallow fetch errors silently
       }
     },
-    [initializeSseRef, url, resetAnswer],
+    [initializeSseRef, setDoneValue, url, resetAnswer],
   );
 
   const stopOutputMessage = useCallback(() => {
     sseRef.current?.abort();
   }, []);
 
-  return { send, answer, done, setDone, resetAnswer, stopOutputMessage };
+  return {
+    send,
+    answer,
+    done,
+    doneRecord,
+    allDone,
+    setDone,
+    resetAnswer,
+    stopOutputMessage,
+    clearDoneRecord,
+  };
 };
 
 export const useSpeechWithSse = (url: string = api.tts) => {
@@ -314,22 +369,28 @@ export const useScrollToBottom = (
     return () => container.removeEventListener('scroll', handleScroll);
   }, [containerRef, checkIfUserAtBottom]);
 
+  // Imperative scroll function
+  const scrollToBottom = useCallback(() => {
+    if (containerRef?.current) {
+      const container = containerRef.current;
+      container.scrollTo({
+        top: container.scrollHeight - container.clientHeight,
+        behavior: 'smooth',
+      });
+    }
+  }, [containerRef]);
+
   useEffect(() => {
     if (!messages) return;
     if (!containerRef?.current) return;
     requestAnimationFrame(() => {
       setTimeout(() => {
         if (isAtBottomRef.current) {
-          ref.current?.scrollIntoView({ behavior: 'smooth' });
+          scrollToBottom();
         }
-      }, 30);
+      }, 100);
     });
-  }, [messages, containerRef]);
-
-  // Imperative scroll function
-  const scrollToBottom = useCallback(() => {
-    ref.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+  }, [messages, containerRef, scrollToBottom]);
 
   return { scrollRef: ref, isAtBottom, scrollToBottom };
 };
@@ -496,6 +557,15 @@ export const useSelectDerivedMessages = () => {
     setDerivedMessages([]);
   }, [setDerivedMessages]);
 
+  const removeAllMessagesExceptFirst = useCallback(() => {
+    setDerivedMessages((list) => {
+      if (list.length <= 1) {
+        return list;
+      }
+      return list.slice(0, 1);
+    });
+  }, [setDerivedMessages]);
+
   return {
     scrollRef,
     messageContainerRef,
@@ -510,6 +580,7 @@ export const useSelectDerivedMessages = () => {
     removeMessagesAfterCurrentMessage,
     removeAllMessages,
     scrollToBottom,
+    removeAllMessagesExceptFirst,
   };
 };
 

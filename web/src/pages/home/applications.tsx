@@ -7,6 +7,7 @@ import { useNavigate } from 'umi';
 import { Agents } from './agent-list';
 import { SeeAllAppCard } from './application-card';
 import { ChatList } from './chat-list';
+import { SearchList } from './search-list';
 
 const IconMap = {
   [Routes.Chats]: 'chat',
@@ -25,8 +26,8 @@ export function Applications() {
 
   const options = useMemo(
     () => [
-      { value: Routes.Chats, label: t('header.chat') },
-      { value: Routes.Searches, label: t('header.search') },
+      { value: Routes.Chats, label: t('chat.chatApps') },
+      { value: Routes.Searches, label: t('search.searchApps') },
       { value: Routes.Agents, label: t('header.flow') },
     ],
     [t],
@@ -50,12 +51,14 @@ export function Applications() {
           options={options}
           value={val}
           onChange={handleChange}
-          className="bg-transparent"
+          className="bg-bg-card border border-border-button rounded-full"
+          activeClassName="bg-text-primary border-none"
         ></Segmented>
       </div>
       <div className="flex flex-wrap gap-4">
         {val === Routes.Agents && <Agents></Agents>}
         {val === Routes.Chats && <ChatList></ChatList>}
+        {val === Routes.Searches && <SearchList></SearchList>}
         {<SeeAllAppCard click={handleNavigate}></SeeAllAppCard>}
       </div>
     </section>

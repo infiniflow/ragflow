@@ -1,25 +1,39 @@
-import i18n from '@/locales/config';
-import { BeginId } from '@/pages/flow/constant';
 import { DecoratorNode, LexicalNode, NodeKey } from 'lexical';
 import { ReactNode } from 'react';
-const prefix = BeginId + '@';
 
 export class VariableNode extends DecoratorNode<ReactNode> {
   __value: string;
   __label: string;
+  key?: NodeKey;
+  __parentLabel?: string | ReactNode;
+  __icon?: ReactNode;
 
   static getType(): string {
     return 'variable';
   }
 
   static clone(node: VariableNode): VariableNode {
-    return new VariableNode(node.__value, node.__label, node.__key);
+    return new VariableNode(
+      node.__value,
+      node.__label,
+      node.__key,
+      node.__parentLabel,
+      node.__icon,
+    );
   }
 
-  constructor(value: string, label: string, key?: NodeKey) {
+  constructor(
+    value: string,
+    label: string,
+    key?: NodeKey,
+    parent?: string | ReactNode,
+    icon?: ReactNode,
+  ) {
     super(key);
     this.__value = value;
     this.__label = label;
+    this.__parentLabel = parent;
+    this.__icon = icon;
   }
 
   createDOM(): HTMLElement {
@@ -35,17 +49,20 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   decorate(): ReactNode {
     let content: ReactNode = (
-      <span className="text-blue-600">{this.__label}</span>
+      <div className="text-blue-600">{this.__label}</div>
     );
-    if (this.__value?.startsWith(prefix)) {
+    if (this.__parentLabel) {
       content = (
-        <div>
-          <span>{i18n.t(`flow.begin`)}</span> / {content}
+        <div className="flex items-center gap-1 text-text-primary ">
+          <div>{this.__icon}</div>
+          <div>{this.__parentLabel}</div>
+          <div className="text-text-disabled mr-1">/</div>
+          {content}
         </div>
       );
     }
     return (
-      <div className="bg-gray-200 dark:bg-gray-400 text-primary inline-flex items-center rounded-md px-2 py-0">
+      <div className="bg-gray-200 dark:bg-gray-400 text-sm inline-flex items-center rounded-md px-2 py-1">
         {content}
       </div>
     );
@@ -59,8 +76,10 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 export function $createVariableNode(
   value: string,
   label: string,
+  parentLabel: string | ReactNode,
+  icon?: ReactNode,
 ): VariableNode {
-  return new VariableNode(value, label);
+  return new VariableNode(value, label, undefined, parentLabel, icon);
 }
 
 export function $isVariableNode(

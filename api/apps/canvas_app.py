@@ -24,7 +24,7 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from agent.component import LLM
-from api.db import FileType
+from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
@@ -32,8 +32,7 @@ from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
 from api.utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
-    get_error_data_result
+from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
@@ -46,14 +45,14 @@ from rag.utils.redis_conn import REDIS_CONN
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
 def templates():
-    return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
+    return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.query(canvas_category=CanvasCategory.Agent)])
 
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def canvas_list():
     return get_json_result(data=sorted([c.to_dict() for c in \
-                                 UserCanvasService.query(user_id=current_user.id)], key=lambda x: x["update_time"]*-1)
+                                 UserCanvasService.query(user_id=current_user.id, canvas_category=CanvasCategory.Agent)], key=lambda x: x["update_time"]*-1)
                            )
 
 
@@ -62,7 +61,7 @@ def canvas_list():
 @login_required
 def rm():
     for i in request.json["canvas_ids"]:
-        if not UserCanvasService.query(user_id=current_user.id,id=i):
+        if not UserCanvasService.accessible(i, current_user.id):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
@@ -75,24 +74,24 @@ def rm():
 @login_required
 def save():
     req = request.json
-    req["user_id"] = current_user.id
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
-        if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip()):
+        req["user_id"] = current_user.id
+        if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip(), canvas_category=CanvasCategory.Agent):
             return get_data_error_result(message=f"{req['title'].strip()} already exists.")
         req["id"] = get_uuid()
         if not UserCanvasService.save(**req):
             return get_data_error_result(message="Fail to save canvas.")
     else:
-        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+        if not UserCanvasService.accessible(req["id"], current_user.id):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
-    # save version    
-    UserCanvasVersionService.insert( user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
+    # save version
+    UserCanvasVersionService.insert(user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
     UserCanvasVersionService.delete_all_versions(req["id"])
     return get_json_result(data=req)
 
@@ -100,9 +99,9 @@ def save():
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
 def get(canvas_id):
-    e, c = UserCanvasService.get_by_tenant_id(canvas_id)
-    if not e or c["user_id"] != current_user.id:
+    if not UserCanvasService.accessible(canvas_id, current_user.id):
         return get_data_error_result(message="canvas not found.")
+    e, c = UserCanvasService.get_by_tenant_id(canvas_id)
     return get_json_result(data=c)
 
 
@@ -116,6 +115,12 @@ def getsse(canvas_id):
     if not objs:
         return get_data_error_result(message='Authentication error: API key is invalid!"')
     tenant_id = objs[0].tenant_id
+    if not UserCanvasService.query(user_id=tenant_id, id=canvas_id):
+        return get_json_result(
+            data=False,
+            message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR
+        )
     e, c = UserCanvasService.get_by_id(canvas_id)
     if not e or c.user_id != tenant_id:
         return get_data_error_result(message="canvas not found.")
@@ -131,13 +136,14 @@ def run():
     files = req.get("files", [])
     inputs = req.get("inputs", {})
     user_id = req.get("user_id", current_user.id)
-    e, cvs = UserCanvasService.get_by_id(req["id"])
-    if not e:
-        return get_data_error_result(message="canvas not found.")
-    if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+    if not UserCanvasService.accessible(req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
+
+    e, cvs = UserCanvasService.get_by_id(req["id"])
+    if not e:
+        return get_data_error_result(message="canvas not found.")
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -172,14 +178,14 @@ def run():
 @login_required
 def reset():
     req = request.json
+    if not UserCanvasService.accessible(req["id"], current_user.id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
             return get_data_error_result(message="canvas not found.")
-        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
-            return get_json_result(
-                data=False, message='Only owner of canvas authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
         canvas.reset()
@@ -290,15 +296,12 @@ def input_form():
 @login_required
 def debug():
     req = request.json
+    if not UserCanvasService.accessible(req["id"], current_user.id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
-        if not e:
-            return get_data_error_result(message="canvas not found.")
-        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
-            return get_json_result(
-                data=False, message='Only owner of canvas authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
-
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
         canvas.reset()
         canvas.message_id = get_uuid()
@@ -329,7 +332,7 @@ def test_db_connect():
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                password=req["password"])
-        elif req["db_type"] == 'postgresql':
+        elif req["db_type"] == 'postgres':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
         elif req["db_type"] == 'mssql':
@@ -350,7 +353,7 @@ def test_db_connect():
         if req["db_type"] != 'mssql':
             db.connect()
         db.close()
-        
+
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
@@ -372,7 +375,7 @@ def getlistversion(canvas_id):
 @login_required
 def getversion( version_id):
     try:
-      
+
         e, version = UserCanvasVersionService.get_by_id(version_id)
         if version:
             return get_json_result(data=version.to_dict())
@@ -382,7 +385,7 @@ def getversion( version_id):
 
 @manager.route('/listteam', methods=['GET'])  # noqa: F821
 @login_required
-def list_kbs():
+def list_canvas():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 150))
@@ -390,10 +393,10 @@ def list_kbs():
     desc = request.args.get("desc", True)
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        kbs, total = UserCanvasService.get_by_tenant_ids(
+        canvas, total = UserCanvasService.get_by_tenant_ids(
             [m["tenant_id"] for m in tenants], current_user.id, page_number,
-            items_per_page, orderby, desc, keywords)
-        return get_json_result(data={"kbs": kbs, "total": total})
+            items_per_page, orderby, desc, keywords, canvas_category=CanvasCategory.Agent)
+        return get_json_result(data={"canvas": canvas, "total": total})
     except Exception as e:
         return server_error_response(e)
 
@@ -404,21 +407,22 @@ def list_kbs():
 def setting():
     req = request.json
     req["user_id"] = current_user.id
+
+    if not UserCanvasService.accessible(req["id"], current_user.id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+
     e,flow = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
     flow = flow.to_dict()
     flow["title"] = req["title"]
-    if req["description"]:
-        flow["description"] = req["description"]
-    if req["permission"]:
-        flow["permission"] = req["permission"]
-    if req["avatar"]:
-        flow["avatar"] = req["avatar"]
-    if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
-        return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
+
+    for key in ["description", "permission", "avatar"]:
+        if value := req.get(key):
+            flow[key] = value
+
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
 
@@ -441,8 +445,10 @@ def trace():
 @login_required
 def sessions(canvas_id):
     tenant_id = current_user.id
-    if not UserCanvasService.query(user_id=tenant_id, id=canvas_id):
-        return get_error_data_result(message=f"You don't own the agent {canvas_id}.")
+    if not UserCanvasService.accessible(canvas_id, tenant_id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
 
     user_id = request.args.get("user_id")
     page_number = int(request.args.get("page", 1))
@@ -464,3 +470,16 @@ def sessions(canvas_id):
     except Exception as e:
         return server_error_response(e)
 
+
+@manager.route('/prompts', methods=['GET'])  # noqa: F821
+@login_required
+def prompts():
+    from rag.prompts.prompts import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+    return get_json_result(data={
+        "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
+        "plan_generation": NEXT_STEP,
+        "reflection": REFLECT,
+        #"context_summary": SUMMARY4MEMORY,
+        #"context_ranking": RANK_MEMORY,
+        "citation_guidelines": CITATION_PROMPT_TEMPLATE
+    })

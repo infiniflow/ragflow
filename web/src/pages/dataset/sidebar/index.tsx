@@ -28,6 +28,11 @@ export function SideBar({ refreshCount }: PropType) {
 
   const items = useMemo(() => {
     const list = [
+      // {
+      //   icon: DatabaseZap,
+      //   label: t(`knowledgeDetails.overview`),
+      //   key: Routes.DataSetOverview,
+      // },
       {
         icon: Database,
         label: t(`knowledgeDetails.dataset`),
@@ -62,15 +67,19 @@ export function SideBar({ refreshCount }: PropType) {
           name={data.name}
           className="size-16"
         ></RAGFlowAvatar>
-        <div className=" text-text-sub-title text-xs space-y-1">
-          <h3 className="text-lg font-semibold line-clamp-1 text-text-title">
+        <div className=" text-text-secondary text-xs space-y-1 overflow-hidden">
+          <h3 className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden">
             {data.name}
           </h3>
           <div className="flex justify-between">
-            <span>{data.doc_num} files</span>
+            <span>
+              {data.doc_num} {t('knowledgeDetails.files')}
+            </span>
             <span>{formatBytes(data.size)}</span>
           </div>
-          <div>Created {formatPureDate(data.create_time)}</div>
+          <div>
+            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+          </div>
         </div>
       </div>
 
@@ -84,8 +93,8 @@ export function SideBar({ refreshCount }: PropType) {
               className={cn(
                 'w-full justify-start gap-2.5 px-3 relative h-10 text-text-sub-title-invert',
                 {
-                  'bg-background-card': active,
-                  'text-text-title': active,
+                  'bg-bg-card': active,
+                  'text-text-primary': active,
                 },
               )}
               onClick={handleMenuClick(item.key)}

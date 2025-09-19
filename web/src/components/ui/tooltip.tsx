@@ -33,12 +33,101 @@ export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
 export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
   return (
     <Tooltip>
-      <TooltipTrigger>
+      <TooltipTrigger tabIndex={-1}>
         <Info className="size-3 ml-2" />
       </TooltipTrigger>
       <TooltipContent>
         <p>{tooltip}</p>
       </TooltipContent>
     </Tooltip>
+  );
+};
+
+export interface AntToolTipProps {
+  title: React.ReactNode;
+  children: React.ReactNode;
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  trigger?: 'hover' | 'click' | 'focus';
+  className?: string;
+}
+
+export const AntToolTip: React.FC<AntToolTipProps> = ({
+  title,
+  children,
+  placement = 'top',
+  trigger = 'hover',
+  className,
+}) => {
+  const [visible, setVisible] = React.useState(false);
+
+  const showTooltip = () => {
+    if (trigger === 'hover' || trigger === 'focus') {
+      setVisible(true);
+    }
+  };
+
+  const hideTooltip = () => {
+    if (trigger === 'hover' || trigger === 'focus') {
+      setVisible(false);
+    }
+  };
+
+  const toggleTooltip = () => {
+    if (trigger === 'click') {
+      setVisible(!visible);
+    }
+  };
+
+  const getPlacementClasses = () => {
+    switch (placement) {
+      case 'top':
+        return 'bottom-full left-1/2 transform -translate-x-1/2 mb-2';
+      case 'bottom':
+        return 'top-full left-1/2 transform -translate-x-1/2 mt-2';
+      case 'left':
+        return 'right-full top-1/2 transform -translate-y-1/2 mr-2';
+      case 'right':
+        return 'left-full top-1/2 transform -translate-y-1/2 ml-2';
+      default:
+        return 'bottom-full left-1/2 transform -translate-x-1/2 mb-2';
+    }
+  };
+
+  return (
+    <div className="inline-block relative">
+      <div
+        onMouseEnter={showTooltip}
+        onMouseLeave={hideTooltip}
+        onClick={toggleTooltip}
+        onFocus={showTooltip}
+        onBlur={hideTooltip}
+      >
+        {children}
+      </div>
+      {visible && title && (
+        <div
+          className={cn(
+            'absolute z-50 px-2.5 py-2 text-xs text-text-primary bg-muted rounded-sm shadow-sm whitespace-wrap',
+            getPlacementClasses(),
+            className,
+          )}
+        >
+          {title}
+          <div
+            className={cn(
+              'absolute w-2 h-2  bg-muted ',
+              placement === 'top' &&
+                'bottom-[-4px] left-1/2 transform -translate-x-1/2 rotate-45',
+              placement === 'bottom' &&
+                'top-[-4px] left-1/2 transform -translate-x-1/2 rotate-45',
+              placement === 'left' &&
+                'right-[-4px] top-1/2 transform -translate-y-1/2 rotate-45',
+              placement === 'right' &&
+                'left-[-4px] top-1/2 transform -translate-y-1/2 rotate-45',
+            )}
+          />
+        </div>
+      )}
+    </div>
   );
 };

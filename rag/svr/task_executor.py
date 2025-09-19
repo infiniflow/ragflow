@@ -21,10 +21,12 @@ import sys
 import threading
 import time
 
-from api.utils.api_utils import timeout, is_strong_enough
+from api.utils import get_uuid
+from api.utils.api_utils import timeout
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
+from rag.flow.pipeline import Pipeline
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
 
 import logging
@@ -223,7 +225,14 @@ async def collect():
         logging.warning(f"collect task {msg['id']} {state}")
         redis_msg.ack()
         return None, None
-    task["task_type"] = msg.get("task_type", "")
+
+    task_type = msg.get("task_type", "")
+    task["task_type"] = task_type
+    if task_type == "dataflow":
+        task["tenant_id"]=msg.get("tenant_id", "")
+        task["dsl"] = msg.get("dsl", "")
+        task["dataflow_id"] = msg.get("dataflow_id", get_uuid())
+        task["kb_id"] = msg.get("kb_id", "")
     return redis_msg, task
 
 
@@ -231,7 +240,7 @@ async def get_storage_binary(bucket, name):
     return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
 
 
-@timeout(60*40, 1)
+@timeout(60*80, 1)
 async def build_chunks(task, progress_callback):
     if task["size"] > DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
@@ -284,7 +293,7 @@ async def build_chunks(task, progress_callback):
         try:
             d = copy.deepcopy(document)
             d.update(chunk)
-            d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+            d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             if not d.get("image"):
@@ -293,8 +302,7 @@ async def build_chunks(task, progress_callback):
                 docs.append(d)
                 return
 
-            output_buffer = BytesIO()
-            try:
+            with BytesIO() as output_buffer:
                 if isinstance(d["image"], bytes):
                     output_buffer.write(d["image"])
                     output_buffer.seek(0)
@@ -302,9 +310,13 @@ async def build_chunks(task, progress_callback):
                     # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
                     if d["image"].mode in ("RGBA", "P"):
                         converted_image = d["image"].convert("RGB")
-                        d["image"].close()  # Close original image
+                        #d["image"].close()  # Close original image
                         d["image"] = converted_image
-                    d["image"].save(output_buffer, format='JPEG')
+                    try:
+                        d["image"].save(output_buffer, format='JPEG')
+                    except OSError as e:
+                        logging.warning(
+                            "Saving image of chunk {}/{}/{} got exception, ignore: {}".format(task["location"], task["name"], d["id"], str(e)))
 
                 async with minio_limiter:
                     await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
@@ -313,8 +325,6 @@ async def build_chunks(task, progress_callback):
                     d["image"].close()
                 del d["image"]  # Remove image reference
                 docs.append(d)
-            finally:
-                output_buffer.close()  # Ensure BytesIO is always closed
         except Exception:
             logging.exception(
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
@@ -420,7 +430,6 @@ def init_kb(row, vector_size: int):
     return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
 
 
-@timeout(60*20)
 async def embedding(docs, mdl, parser_config=None, callback=None):
     if parser_config is None:
         parser_config = {}
@@ -441,10 +450,15 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
         tk_count += c
 
+    @timeout(60)
+    def batch_encode(txts):
+        nonlocal mdl
+        return mdl.encode([truncate(c, mdl.max_length-10) for c in txts])
+
     cnts_ = np.array([])
     for i in range(0, len(cnts), EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
-            vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + EMBEDDING_BATCH_SIZE]]))
+            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + EMBEDDING_BATCH_SIZE]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -468,10 +482,17 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     return tk_count, vector_size
 
 
+async def run_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:str, callback=None):
+    _ = callback
+
+    pipeline = Pipeline(dsl=dsl, tenant_id=tenant_id, doc_id=doc_id, task_id=task_id, flow_id=flow_id)
+    pipeline.reset()
+
+    await pipeline.run()
+
+
 @timeout(3600)
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
-    # Pressure test for GraphRAG task
-    await is_strong_enough(chat_mdl, embd_mdl)
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
     for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
@@ -512,7 +533,7 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     return res, tk_count
 
 
-@timeout(60*60, 1)
+@timeout(60*60*2, 1)
 async def do_handle_task(task):
     task_id = task["id"]
     task_from_page = task["from_page"]
@@ -545,7 +566,6 @@ async def do_handle_task(task):
     try:
         # bind embedding model
         embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
-        await is_strong_enough(None, embedding_model)
         vts, _ = embedding_model.encode(["ok"])
         vector_size = len(vts[0])
     except Exception as e:
@@ -556,23 +576,26 @@ async def do_handle_task(task):
 
     init_kb(task, vector_size)
 
-    # Either using RAPTOR or Standard chunking methods
-    if task.get("task_type", "") == "raptor":
+    task_type = task.get("task_type", "")
+    if task_type == "dataflow":
+        task_dataflow_dsl = task["dsl"]
+        task_dataflow_id = task["dataflow_id"]
+        await run_dataflow(dsl=task_dataflow_dsl, tenant_id=task_tenant_id, doc_id=task_doc_id, task_id=task_id, flow_id=task_dataflow_id, callback=None)
+        return
+    elif task_type == "raptor":
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        await is_strong_enough(chat_model, None)
         # run RAPTOR
         async with kg_limiter:
             chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
-    elif task.get("task_type", "") == "graphrag":
+    elif task_type == "graphrag":
         if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
             progress_callback(prog=-1.0, msg="Internal configuration error.")
             return
         graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        await is_strong_enough(chat_model, None)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:

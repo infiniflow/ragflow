@@ -18,13 +18,23 @@ import i18n from '@/locales/config';
 import api from '@/utils/api';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
 import { transferInputsArrayToObject } from '../form/begin-form/use-watch-change';
-import { useSelectBeginNodeDataInputs } from '../hooks/use-get-begin-query';
+import {
+  useIsTaskMode,
+  useSelectBeginNodeDataInputs,
+} from '../hooks/use-get-begin-query';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
@@ -173,11 +183,30 @@ export function useSetUploadResponseData() {
   };
 }
 
-export const useSendAgentMessage = (
-  url?: string,
-  addEventList?: (data: IEventList, messageId: string) => void,
-  beginParams?: any[],
-) => {
+export const buildRequestBody = (value: string = '') => {
+  const id = uuid();
+  const msgBody = {
+    id,
+    content: value.trim(),
+    role: MessageType.User,
+  };
+
+  return msgBody;
+};
+
+export const useSendAgentMessage = ({
+  url,
+  addEventList,
+  beginParams,
+  isShared,
+  refetch,
+}: {
+  url?: string;
+  addEventList?: (data: IEventList, messageId: string) => void;
+  beginParams?: any[];
+  isShared?: boolean;
+  refetch?: () => void;
+}) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
@@ -188,11 +217,7 @@ export const useSendAgentMessage = (
     return answerList[0]?.message_id;
   }, [answerList]);
 
-  useEffect(() => {
-    if (answerList[0]?.session_id) {
-      setSessionId(answerList[0]?.session_id);
-    }
-  }, [answerList]);
+  const isTaskMode = useIsTaskMode();
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -216,7 +241,14 @@ export const useSendAgentMessage = (
   } = useSetUploadResponseData();
 
   const sendMessage = useCallback(
-    async ({ message }: { message: Message; messages?: Message[] }) => {
+    async ({
+      message,
+      beginInputs,
+    }: {
+      message: Message;
+      messages?: Message[];
+      beginInputs?: BeginQuery[];
+    }) => {
       const params: Record<string, unknown> = {
         id: agentId,
       };
@@ -224,13 +256,13 @@ export const useSendAgentMessage = (
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
-      if (message.content) {
+      if (typeof message.content === 'string') {
         const query = inputs;
 
         params.query = message.content;
         // params.message_id = message.id;
         params.inputs = transferInputsArrayToObject(
-          beginParams ? beginParams : query,
+          beginInputs || beginParams || query,
         ); // begin operator inputs
 
         params.files = uploadResponseList;
@@ -250,7 +282,7 @@ export const useSendAgentMessage = (
           setValue(message.content);
           removeLatestMessage();
         } else {
-          // refetch(); // pull the message list after sending the message successfully
+          refetch?.(); // pull the message list after sending the message successfully
         }
       } catch (error) {
         console.log('🚀 ~ useSendAgentMessage ~ error:', error);
@@ -258,28 +290,30 @@ export const useSendAgentMessage = (
     },
     [
       agentId,
-      sessionId,
-      send,
-      clearUploadResponseList,
       inputs,
       beginParams,
       uploadResponseList,
+      sessionId,
+      send,
+      clearUploadResponseList,
       setValue,
       removeLatestMessage,
+      refetch,
     ],
   );
 
   const sendFormMessage = useCallback(
-    (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
-      send({ ...body, session_id: sessionId });
+    async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([key, val]) => `${key}: ${val.value}`)
           .join('<br/>'),
         role: MessageType.User,
       });
+      await send({ ...body, session_id: sessionId });
+      refetch?.();
     },
-    [addNewestOneQuestion, send, sessionId],
+    [addNewestOneQuestion, refetch, send, sessionId],
   );
 
   // reset session
@@ -292,12 +326,7 @@ export const useSendAgentMessage = (
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
-    const id = uuid();
-    const msgBody = {
-      id,
-      content: value.trim(),
-      role: MessageType.User,
-    };
+    const msgBody = buildRequestBody(value);
     if (done) {
       setValue('');
       sendMessage({
@@ -318,6 +347,24 @@ export const useSendAgentMessage = (
     scrollToBottom,
   ]);
 
+  const sendedTaskMessage = useRef<boolean>(false);
+
+  const sendMessageInTaskMode = useCallback(() => {
+    if (isShared || !isTaskMode || sendedTaskMessage.current) {
+      return;
+    }
+    const msgBody = buildRequestBody('');
+
+    sendMessage({
+      message: msgBody,
+    });
+    sendedTaskMessage.current = true;
+  }, [isShared, isTaskMode, sendMessage]);
+
+  useEffect(() => {
+    sendMessageInTaskMode();
+  }, [sendMessageInTaskMode]);
+
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
@@ -331,12 +378,22 @@ export const useSendAgentMessage = (
   }, [answerList, addNewestOneAnswer]);
 
   useEffect(() => {
+    if (isTaskMode) {
+      return;
+    }
     if (prologue) {
       addNewestOneAnswer({
         answer: prologue,
       });
     }
-  }, [addNewestOneAnswer, agentId, prologue, send, sendFormMessage]);
+  }, [
+    addNewestOneAnswer,
+    agentId,
+    isTaskMode,
+    prologue,
+    send,
+    sendFormMessage,
+  ]);
 
   useEffect(() => {
     if (typeof addEventList === 'function') {
@@ -345,6 +402,12 @@ export const useSendAgentMessage = (
       addEventListFun(answerList, messageId);
     }
   }, [addEventList, answerList, addEventListFun, messageId]);
+
+  useEffect(() => {
+    if (answerList[0]?.session_id) {
+      setSessionId(answerList[0]?.session_id);
+    }
+  }, [answerList]);
 
   return {
     value,
@@ -361,5 +424,7 @@ export const useSendAgentMessage = (
     resetSession,
     findReferenceByMessageId,
     appendUploadResponseList,
+    addNewestOneAnswer,
+    sendMessage,
   };
 };

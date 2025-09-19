@@ -6,6 +6,12 @@ export interface PromptConfig {
   prologue: string;
   system: string;
   tts?: boolean;
+  quote: boolean;
+  keyword: boolean;
+  refine_multiturn: boolean;
+  use_kg: boolean;
+  reasoning?: boolean;
+  cross_languages?: Array<string>;
 }
 
 export interface Parameter {
@@ -26,6 +32,7 @@ export interface Variable {
   presence_penalty?: number;
   temperature?: number;
   top_p?: number;
+  llm_id?: string;
 }
 
 export interface IDialog {
@@ -50,6 +57,20 @@ export interface IDialog {
   update_time: number;
   vector_similarity_weight: number;
   similarity_threshold: number;
+  top_k: number;
+  top_n: number;
+  meta_data_filter: MetaDataFilter;
+}
+
+interface MetaDataFilter {
+  manual: Manual[];
+  method: string;
+}
+
+interface Manual {
+  key: string;
+  op: string;
+  value: string;
 }
 
 export interface IConversation {
@@ -75,6 +96,7 @@ export interface Message {
   audio_binary?: string;
   data?: any;
   files?: File[];
+  chatBoxId?: string;
 }
 
 export interface IReferenceChunk {
@@ -110,6 +132,7 @@ export interface IAnswer {
   id?: string;
   audio_binary?: string;
   data?: any;
+  chatBoxId?: string;
 }
 
 export interface Docagg {
@@ -150,4 +173,10 @@ export interface IStats {
   tokens: [string, number][];
   round: [string, number][];
   thumb_up: [string, number][];
+}
+
+export interface IExternalChatInfo {
+  avatar?: string;
+  title: string;
+  prologue?: string;
 }

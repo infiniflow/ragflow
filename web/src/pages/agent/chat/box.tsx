@@ -18,8 +18,10 @@ import { memo, useCallback } from 'react';
 import { useParams } from 'umi';
 import DebugContent from '../debug-content';
 import { useAwaitCompentData } from '../hooks/use-chat-logic';
+import { useIsTaskMode } from '../hooks/use-get-begin-query';
 
 function AgentChatBox() {
+  const { data: canvasInfo, refetch } = useFetchAgent();
   const {
     value,
     scrollRef,
@@ -32,13 +34,12 @@ function AgentChatBox() {
     sendFormMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
-  } = useSendAgentMessage();
+  } = useSendAgentMessage({ refetch });
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
-  const { data: canvasInfo } = useFetchAgent();
   const { id: canvasId } = useParams();
   const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
 
@@ -47,6 +48,8 @@ function AgentChatBox() {
     sendFormMessage,
     canvasId: canvasId as string,
   });
+
+  const isTaskMode = useIsTaskMode();
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
@@ -59,7 +62,7 @@ function AgentChatBox() {
 
   return (
     <>
-      <section className="flex flex-1 flex-col px-5 h-[90vh]">
+      <section className="flex flex-1 flex-col px-5 min-h-0 pb-4">
         <div className="flex-1 overflow-auto" ref={messageContainerRef}>
           <div>
             {/* <Spin spinning={sendLoading}> */}
@@ -109,18 +112,20 @@ function AgentChatBox() {
           </div>
           <div ref={scrollRef} />
         </div>
-        <NextMessageInput
-          value={value}
-          sendLoading={sendLoading}
-          disabled={isWaitting}
-          sendDisabled={sendLoading || isWaitting}
-          isUploading={loading || isWaitting}
-          onPressEnter={handlePressEnter}
-          onInputChange={handleInputChange}
-          stopOutputMessage={stopOutputMessage}
-          onUpload={handleUploadFile}
-          conversationId=""
-        />
+        {isTaskMode || (
+          <NextMessageInput
+            value={value}
+            sendLoading={sendLoading}
+            disabled={isWaitting}
+            sendDisabled={sendLoading || isWaitting}
+            isUploading={loading || isWaitting}
+            onPressEnter={handlePressEnter}
+            onInputChange={handleInputChange}
+            stopOutputMessage={stopOutputMessage}
+            onUpload={handleUploadFile}
+            conversationId=""
+          />
+        )}
       </section>
       <PdfDrawer
         visible={visible}

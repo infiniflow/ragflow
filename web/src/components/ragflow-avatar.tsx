@@ -3,6 +3,13 @@ import * as AvatarPrimitive from '@radix-ui/react-avatar';
 import { forwardRef, memo, useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
+const PREDEFINED_COLORS = [
+  { from: '#4F6DEE', to: '#67BDF9' },
+  { from: '#38A04D', to: '#93DCA2' },
+  { from: '#C35F2B', to: '#EDB395' },
+  { from: '#633897', to: '#CBA1FF' },
+];
+
 const getStringHash = (str: string): number => {
   const normalized = str.trim().toLowerCase();
   let hash = 104729;
@@ -17,16 +24,12 @@ const getStringHash = (str: string): number => {
   return Math.abs(hash);
 };
 
-// Generate a hash function with a fixed color
 const getColorForName = (name: string): { from: string; to: string } => {
   const hash = getStringHash(name);
-  const hue = hash % 360;
-
-  return {
-    from: `hsl(${hue}, 70%, 80%)`,
-    to: `hsl(${hue}, 60%, 30%)`,
-  };
+  const index = hash % PREDEFINED_COLORS.length;
+  return PREDEFINED_COLORS[index];
 };
+
 export const RAGFlowAvatar = memo(
   forwardRef<
     React.ElementRef<typeof AvatarPrimitive.Root>,
@@ -43,13 +46,13 @@ export const RAGFlowAvatar = memo(
       if (parts.length === 1) {
         return parts[0][0].toUpperCase();
       }
-      return parts[0][0].toUpperCase() + parts[1][0].toUpperCase();
+      return parts[0][0].toUpperCase();
     };
 
     const initials = getInitials(name);
     const { from, to } = name
       ? getColorForName(name)
-      : { from: 'hsl(0, 0%, 80%)', to: 'hsl(0, 0%, 30%)' };
+      : { from: 'hsl(0, 0%, 30%)', to: 'hsl(0, 0%, 80%)' };
 
     const fallbackRef = useRef<HTMLElement>(null);
     const [fontSize, setFontSize] = useState('0.875rem');
@@ -98,7 +101,7 @@ export const RAGFlowAvatar = memo(
             'bg-gradient-to-b',
             `from-[${from}] to-[${to}]`,
             'flex items-center justify-center',
-            'text-white font-bold',
+            'text-white ',
             { 'rounded-md': !isPerson },
           )}
           style={{

@@ -38,11 +38,11 @@ export type DSLComponents = Record<string, IOperator>;
 export interface DSL {
   components: DSLComponents;
   history: any[];
-  path?: string[][];
+  path?: string[];
   answer?: any[];
   graph?: IGraph;
-  messages: Message[];
-  reference: IReference[];
+  messages?: Message[];
+  reference?: IReference[];
   globals: Record<string, any>;
   retrieval: IReference[];
 }
@@ -73,6 +73,7 @@ export declare interface IFlow {
   user_id: string;
   permission: string;
   nickname: string;
+  operator_permission: number;
 }
 
 export interface IFlowTemplate {

@@ -1,8 +1,6 @@
-import { z } from 'zod';
 import { Operator } from '../constant';
 import AgentForm from '../form/agent-form';
 import AkShareForm from '../form/akshare-form';
-import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
 import BaiduFanyiForm from '../form/baidu-fanyi-form';
 import BaiduForm from '../form/baidu-form';
@@ -15,7 +13,6 @@ import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
-import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
@@ -30,11 +27,11 @@ import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
+import SearXNGForm from '../form/searxng-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TavilyExtractForm from '../form/tavily-extract-form';
 import TavilyForm from '../form/tavily-form';
-import TemplateForm from '../form/template-form';
 import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
 import UserFillUpForm from '../form/user-fill-up-form';
@@ -48,12 +45,6 @@ export const FormConfigMap = {
   },
   [Operator.Retrieval]: {
     component: RetrievalForm,
-  },
-  [Operator.Generate]: {
-    component: GenerateForm,
-  },
-  [Operator.Answer]: {
-    component: AnswerForm,
   },
   [Operator.Categorize]: {
     component: CategorizeForm,
@@ -75,8 +66,6 @@ export const FormConfigMap = {
   },
   [Operator.Agent]: {
     component: AgentForm,
-    defaultValues: {},
-    schema: z.object({}),
   },
   [Operator.Baidu]: {
     component: BaiduForm,
@@ -107,8 +96,6 @@ export const FormConfigMap = {
   },
   [Operator.DeepL]: {
     component: DeepLForm,
-    defaultValues: {},
-    schema: z.object({}),
   },
   [Operator.GitHub]: {
     component: GithubForm,
@@ -146,14 +133,14 @@ export const FormConfigMap = {
   [Operator.Invoke]: {
     component: InvokeForm,
   },
+  [Operator.SearXNG]: {
+    component: SearXNGForm,
+  },
   [Operator.Concentrator]: {
     component: () => <></>,
   },
   [Operator.Note]: {
     component: () => <></>,
-  },
-  [Operator.Template]: {
-    component: TemplateForm,
   },
   [Operator.Email]: {
     component: EmailForm,

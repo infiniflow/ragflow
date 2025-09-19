@@ -10,7 +10,6 @@ import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import {
   $getRoot,
   $getSelection,
-  $nodesOfType,
   EditorState,
   Klass,
   LexicalNode,
@@ -26,10 +25,13 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { Variable } from 'lucide-react';
 import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PasteHandlerPlugin } from './paste-handler-plugin';
 import theme from './theme';
 import { VariableNode } from './variable-node';
 import { VariableOnChangePlugin } from './variable-on-change-plugin';
-import VariablePickerMenuPlugin from './variable-picker-plugin';
+import VariablePickerMenuPlugin, {
+  VariablePickerMenuPluginProps,
+} from './variable-picker-plugin';
 
 // Catch any errors that occur during Lexical updates and log them
 // or throw them as needed. If you don't throw them, Lexical will
@@ -52,7 +54,8 @@ type IProps = {
   value?: string;
   onChange?: (value?: string) => void;
   placeholder?: ReactNode;
-} & PromptContentProps;
+} & PromptContentProps &
+  Pick<VariablePickerMenuPluginProps, 'extraOptions'>;
 
 function PromptContent({
   showToolbar = true,
@@ -122,6 +125,7 @@ export function PromptEditor({
   placeholder,
   showToolbar,
   multiLine = true,
+  extraOptions,
 }: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
@@ -134,9 +138,8 @@ export function PromptEditor({
   const onValueChange = useCallback(
     (editorState: EditorState) => {
       editorState?.read(() => {
-        const listNodes = $nodesOfType(VariableNode); // to be removed
+        // const listNodes = $nodesOfType(VariableNode); // to be removed
         // const allNodes = $dfs();
-        console.log('🚀 ~ onChange ~ allNodes:', listNodes);
 
         const text = $getRoot().getTextContent();
 
@@ -159,19 +162,23 @@ export function PromptEditor({
           placeholder={
             <div
               className={cn(
-                'absolute top-1 left-2 text-text-sub-title pointer-events-none',
+                'absolute top-1 left-2 text-text-secondary pointer-events-none',
                 {
                   'truncate w-[90%]': !multiLine,
+                  'translate-y-10': multiLine,
                 },
               )}
-              data-xxx
             >
               {placeholder || t('common.promptPlaceholder')}
             </div>
           }
           ErrorBoundary={LexicalErrorBoundary}
         />
-        <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
+        <VariablePickerMenuPlugin
+          value={value}
+          extraOptions={extraOptions}
+        ></VariablePickerMenuPlugin>
+        <PasteHandlerPlugin />
         <VariableOnChangePlugin
           onChange={onValueChange}
         ></VariableOnChangePlugin>

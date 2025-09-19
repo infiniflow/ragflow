@@ -152,6 +152,16 @@ export function isBottomSubAgent(edges: Edge[], nodeId?: string) {
   return !!edge;
 }
 
+export function hasSubAgentOrTool(edges: Edge[], nodeId?: string) {
+  const edge = edges.find(
+    (x) =>
+      x.source === nodeId &&
+      (x.sourceHandle === NodeHandleId.Tool ||
+        x.sourceHandle === NodeHandleId.AgentBottom),
+  );
+  return !!edge;
+}
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: RAGFlowNodeType[],

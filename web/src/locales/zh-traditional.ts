@@ -69,7 +69,7 @@ export default {
       setting: '用戶設置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: 'Agent',
+      flow: '智能體',
       search: '搜尋',
       welcome: '歡迎來到',
     },
@@ -454,6 +454,7 @@ export default {
       improvise: '即興創作',
       precise: '精確',
       balance: '平衡',
+      custom: '自定義',
       freedomTip: `“精確”意味著法學碩士會保守並謹慎地回答你的問題。“即興發揮”意味著你希望法學碩士能夠自由地暢所欲言。“平衡”是謹慎與自由之間的平衡。`,
       temperature: '溫度',
       temperatureMessage: '溫度是必填項',
@@ -763,6 +764,23 @@ export default {
       destinationFolder: '目標資料夾',
     },
     flow: {
+      line: '單行文本',
+      paragraph: '段落文字',
+      options: '選項',
+      file: '文件',
+      integer: '數字',
+      boolean: '布爾值',
+      multimodalModels: '多模態模型',
+      textOnlyModels: '進文本模型',
+      allModels: '所有模型',
+      codeExecDescription: '用 Python 或者 Javascript 編寫自定義邏輯',
+      stringTransformDescription:
+        '修改文本内容，目前支持文本分割、文本拼接操作',
+      foundation: '基礎',
+      tools: '工具',
+      dataManipulation: '數據操控',
+      flow: '流程',
+      dialog: '對話',
       cite: '引用',
       citeTip: 'citeTip',
       name: '名稱',
@@ -804,7 +822,7 @@ export default {
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
 以上就是你需要總結的內容。`,
-      createGraph: '建立 Agent',
+      createGraph: '創建智能體',
       createFromTemplates: '從模板創建',
       retrieval: '知識檢索',
       generate: '生成回答',
@@ -827,6 +845,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要採用的搜尋結果數。',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        '該組件通過您提供的 SearXNG 實例地址進行搜索。請設置 Top N 和實例 URL。',
       channel: '頻道',
       channelTip: '針對該組件的輸入進行文字搜尋或新聞搜索',
       text: '文字',
@@ -1185,9 +1206,19 @@ export default {
       knowledge: '知識',
       chat: '聊天',
     },
-  },
-  modal: {
-    okText: '確認',
-    cancelText: '取消',
+    modal: {
+      okText: '確認',
+      cancelText: '取消',
+    },
+    search: {
+      createSearch: '新建查詢',
+      searchGreeting: '今天我能為你做些什麽？',
+      profile: '隱藏個人資料',
+      locale: '語言',
+      embedCode: '嵌入代碼',
+      id: 'ID',
+      copySuccess: '複製成功',
+      welcomeBack: '歡迎回來',
+    },
   },
 };

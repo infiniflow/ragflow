@@ -8,9 +8,11 @@ import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DescriptionField } from '../../components/description-field';
+import { FormWrapper } from '../../components/form-wrapper';
 import {
   EmptyResponseField,
   RetrievalPartialSchema,
@@ -35,17 +37,12 @@ const RetrievalForm = () => {
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-6 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
           <DescriptionField></DescriptionField>
           <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
         </FormContainer>
-        <Collapse title={<div>Advanced Settings</div>}>
+        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
               vectorSimilarityWeightName="keywords_similarity_weight"
@@ -58,7 +55,7 @@ const RetrievalForm = () => {
             <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
           </FormContainer>
         </Collapse>
-      </form>
+      </FormWrapper>
     </Form>
   );
 };

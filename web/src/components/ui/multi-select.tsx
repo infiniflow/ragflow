@@ -29,11 +29,14 @@ import {
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
+import { isEmpty } from 'lodash';
 
 export type MultiSelectOptionType = {
   label: React.ReactNode;
   value: string;
   disabled?: boolean;
+  suffix?: React.ReactNode;
   icon?: React.ComponentType<{ className?: string }>;
 };
 
@@ -54,23 +57,41 @@ function MultiCommandItem({
   return (
     <CommandItem
       key={option.value}
-      onSelect={() => toggleOption(option.value)}
-      className="cursor-pointer"
+      onSelect={() => {
+        if (option.disabled) return false;
+        toggleOption(option.value);
+      }}
+      className={cn('cursor-pointer', {
+        'cursor-not-allowed text-text-disabled': option.disabled,
+      })}
     >
       <div
         className={cn(
           'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-          isSelected
-            ? 'bg-primary text-primary-foreground'
-            : 'opacity-50 [&_svg]:invisible',
+          isSelected ? 'bg-primary ' : 'opacity-50 [&_svg]:invisible',
+
+          { 'text-primary-foreground': !option.disabled },
+          { 'text-text-disabled': option.disabled },
         )}
       >
         <CheckIcon className="h-4 w-4" />
       </div>
       {option.icon && (
-        <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
+        <option.icon
+          className={cn('mr-2 h-4 w-4 ', {
+            'text-text-disabled': option.disabled,
+            'text-muted-foreground': !option.disabled,
+          })}
+        />
       )}
-      <span>{option.label}</span>
+      <span className={cn({ 'text-text-disabled': option.disabled })}>
+        {option.label}
+      </span>
+      {option.suffix && (
+        <span className={cn({ 'text-text-disabled': option.disabled })}>
+          {option.suffix}
+        </span>
+      )}
     </CommandItem>
   );
 }
@@ -156,6 +177,11 @@ interface MultiSelectProps
    * Optional, can be used to add custom styles.
    */
   className?: string;
+
+  /**
+   * If true, renders the multi-select component with a select all option.
+   */
+  showSelectAll?: boolean;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -168,12 +194,13 @@ export const MultiSelect = React.forwardRef<
       onValueChange,
       variant,
       defaultValue = [],
-      placeholder = 'Select options',
+      placeholder = t('common.selectPlaceholder'),
       animation = 0,
       maxCount = 3,
       modalPopover = false,
-      asChild = false,
+      // asChild = false,
       className,
+      showSelectAll = true,
       ...props
     },
     ref,
@@ -182,6 +209,22 @@ export const MultiSelect = React.forwardRef<
       React.useState<string[]>(defaultValue);
     const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
     const [isAnimating, setIsAnimating] = React.useState(false);
+
+    React.useEffect(() => {
+      if (isEmpty(selectedValues) && !isEmpty(props.value)) {
+        setSelectedValues(props.value as string[]);
+      }
+    }, [props.value, selectedValues]);
+
+    React.useEffect(() => {
+      if (
+        isEmpty(selectedValues) &&
+        isEmpty(props.value) &&
+        !isEmpty(defaultValue)
+      ) {
+        setSelectedValues(defaultValue);
+      }
+    }, [defaultValue, props.value, selectedValues]);
 
     const flatOptions = React.useMemo(() => {
       return options.flatMap((option) =>
@@ -262,15 +305,18 @@ export const MultiSelect = React.forwardRef<
                         variant="secondary"
                         className={cn(
                           isAnimating ? 'animate-bounce' : '',
+                          'px-1',
                           multiSelectVariants({ variant }),
                         )}
                         style={{ animationDuration: `${animation}s` }}
                       >
-                        <div className="flex items-center gap-1">
+                        <div className="flex justify-between items-center gap-1">
                           {IconComponent && (
                             <IconComponent className="h-4 w-4" />
                           )}
-                          <div>{option?.label}</div>
+                          <div className="max-w-28 text-ellipsis overflow-hidden">
+                            {option?.label}
+                          </div>
                           <XCircle
                             className="h-4 w-4 cursor-pointer"
                             onClick={(event) => {
@@ -334,29 +380,31 @@ export const MultiSelect = React.forwardRef<
         >
           <Command>
             <CommandInput
-              placeholder="Search..."
+              placeholder={t('common.search') + '...'}
               onKeyDown={handleInputKeyDown}
             />
             <CommandList>
               <CommandEmpty>No results found.</CommandEmpty>
               <CommandGroup>
-                <CommandItem
-                  key="all"
-                  onSelect={toggleAll}
-                  className="cursor-pointer"
-                >
-                  <div
-                    className={cn(
-                      'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-                      selectedValues.length === flatOptions.length
-                        ? 'bg-primary text-primary-foreground'
-                        : 'opacity-50 [&_svg]:invisible',
-                    )}
+                {showSelectAll && (
+                  <CommandItem
+                    key="all"
+                    onSelect={toggleAll}
+                    className="cursor-pointer"
                   >
-                    <CheckIcon className="h-4 w-4" />
-                  </div>
-                  <span>(Select All)</span>
-                </CommandItem>
+                    <div
+                      className={cn(
+                        'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
+                        selectedValues.length === flatOptions.length
+                          ? 'bg-primary text-primary-foreground'
+                          : 'opacity-50 [&_svg]:invisible',
+                      )}
+                    >
+                      <CheckIcon className="h-4 w-4" />
+                    </div>
+                    <span>({t('common.selectAll')})</span>
+                  </CommandItem>
+                )}
                 {!options.some((x) => 'options' in x) &&
                   (options as unknown as MultiSelectOptionType[]).map(
                     (option) => {
@@ -410,7 +458,7 @@ export const MultiSelect = React.forwardRef<
                     onSelect={() => setIsPopoverOpen(false)}
                     className="flex-1 justify-center cursor-pointer max-w-full"
                   >
-                    Close
+                    {t('common.close')}
                   </CommandItem>
                 </div>
               </CommandGroup>

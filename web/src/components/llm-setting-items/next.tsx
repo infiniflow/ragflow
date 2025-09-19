@@ -28,17 +28,30 @@ interface LlmSettingFieldItemsProps {
   options?: any[];
 }
 
-export const LlmSettingSchema = {
+export const LLMIdFormField = {
   llm_id: z.string(),
-  temperature: z.coerce.number(),
-  top_p: z.string(),
-  presence_penalty: z.coerce.number(),
-  frequency_penalty: z.coerce.number(),
-  temperatureEnabled: z.boolean(),
-  topPEnabled: z.boolean(),
-  presencePenaltyEnabled: z.boolean(),
-  frequencyPenaltyEnabled: z.boolean(),
-  maxTokensEnabled: z.boolean(),
+};
+
+export const LlmSettingEnabledSchema = {
+  temperatureEnabled: z.boolean().optional(),
+  topPEnabled: z.boolean().optional(),
+  presencePenaltyEnabled: z.boolean().optional(),
+  frequencyPenaltyEnabled: z.boolean().optional(),
+  maxTokensEnabled: z.boolean().optional(),
+};
+
+export const LlmSettingFieldSchema = {
+  temperature: z.coerce.number().optional(),
+  top_p: z.number().optional(),
+  presence_penalty: z.coerce.number().optional(),
+  frequency_penalty: z.coerce.number().optional(),
+  max_tokens: z.number().optional(),
+};
+
+export const LlmSettingSchema = {
+  ...LLMIdFormField,
+  ...LlmSettingFieldSchema,
+  ...LlmSettingEnabledSchema,
 };
 
 export function LlmSettingFieldItems({
@@ -53,19 +66,19 @@ export function LlmSettingFieldItems({
     LlmModelType.Image2text,
   ]);
 
-  const handleChange = useHandleFreedomChange();
-
-  const parameterOptions = Object.values(ModelVariableType).map((x) => ({
-    label: t(camelCase(x)),
-    value: x,
-  }));
-
   const getFieldWithPrefix = useCallback(
     (name: string) => {
       return prefix ? `${prefix}.${name}` : name;
     },
     [prefix],
   );
+
+  const handleChange = useHandleFreedomChange(getFieldWithPrefix);
+
+  const parameterOptions = Object.values(ModelVariableType).map((x) => ({
+    label: t(camelCase(x)),
+    value: x,
+  }));
 
   return (
     <div className="space-y-5">
@@ -89,8 +102,8 @@ export function LlmSettingFieldItems({
         control={form.control}
         name={'parameter'}
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('freedom')}</FormLabel>
+          <FormItem className="flex justify-between items-center">
+            <FormLabel className="flex-1">{t('freedom')}</FormLabel>
             <FormControl>
               <Select
                 {...field}
@@ -99,7 +112,7 @@ export function LlmSettingFieldItems({
                   field.onChange(val);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="flex-1 !m-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -121,6 +134,7 @@ export function LlmSettingFieldItems({
         label="temperature"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('top_p')}
@@ -128,6 +142,7 @@ export function LlmSettingFieldItems({
         label="topP"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('presence_penalty')}
@@ -135,6 +150,7 @@ export function LlmSettingFieldItems({
         label="presencePenalty"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('frequency_penalty')}
@@ -142,12 +158,14 @@ export function LlmSettingFieldItems({
         label="frequencyPenalty"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('max_tokens')}
         checkName="maxTokensEnabled"
         label="maxTokens"
         max={128000}
+        min={0}
       ></SliderInputSwitchFormField>
     </div>
   );

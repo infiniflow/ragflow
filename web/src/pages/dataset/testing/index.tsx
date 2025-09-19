@@ -1,12 +1,9 @@
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
-import { useCallback, useState } from 'react';
+import { t } from 'i18next';
+import { useState } from 'react';
 import { TopTitle } from '../dataset-title';
 import TestingForm from './testing-form';
 import { TestingResult } from './testing-result';
-
-function Vertical() {
-  return <div>xxx</div>;
-}
 
 export default function RetrievalTesting() {
   const {
@@ -21,22 +18,14 @@ export default function RetrievalTesting() {
     filterValue,
   } = useTestRetrieval();
 
-  const [count, setCount] = useState(1);
-
-  const addCount = useCallback(() => {
-    setCount(2);
-  }, []);
-
-  const removeCount = useCallback(() => {
-    setCount(1);
-  }, []);
+  const [count] = useState(1);
 
   return (
     <div className="p-5">
       <section className="flex justify-between items-center">
         <TopTitle
-          title={'Retrieval testing'}
-          description={`Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.`}
+          title={t('knowledgeDetails.retrievalTesting')}
+          description={t('knowledgeDetails.testingDescription')}
         ></TopTitle>
         {/* <Button>Save as Preset</Button> */}
       </section>
@@ -44,22 +33,25 @@ export default function RetrievalTesting() {
         <section className="flex divide-x h-full">
           <div className="p-4 flex-1">
             <div className="flex justify-between pb-2.5">
-              <span className="text-text-title font-semibold text-2xl">
-                Test setting
+              <span className="text-text-primary font-semibold text-2xl">
+                {t('knowledgeDetails.testSetting')}
               </span>
               {/* <Button variant={'outline'} onClick={addCount}>
                 <Plus /> Add New Test
               </Button> */}
             </div>
-            <TestingForm
-              loading={loading}
-              setValues={setValues}
-              refetch={refetch}
-            ></TestingForm>
+            <div className="h-[calc(100vh-241px)] overflow-auto scrollbar-thin">
+              <TestingForm
+                loading={loading}
+                setValues={setValues}
+                refetch={refetch}
+              ></TestingForm>
+            </div>
           </div>
           <TestingResult
             data={data}
             page={page}
+            loading={loading}
             pageSize={pageSize}
             filterValue={filterValue}
             handleFilterSubmit={handleFilterSubmit}
@@ -77,6 +69,7 @@ export default function RetrievalTesting() {
             <TestingResult
               data={data}
               page={page}
+              loading={loading}
               pageSize={pageSize}
               filterValue={filterValue}
               handleFilterSubmit={handleFilterSubmit}
@@ -92,6 +85,7 @@ export default function RetrievalTesting() {
             <TestingResult
               data={data}
               page={page}
+              loading={loading}
               pageSize={pageSize}
               filterValue={filterValue}
               handleFilterSubmit={handleFilterSubmit}

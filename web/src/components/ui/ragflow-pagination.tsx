@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/pagination';
 import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export type RAGFlowPaginationType = {
@@ -32,7 +33,7 @@ export function RAGFlowPagination({
 
   const sizeChangerOptions: RAGFlowSelectOptionType[] = useMemo(() => {
     return [10, 20, 50, 100].map((x) => ({
-      label: <span>{x} / page</span>,
+      label: <span>{t('pagination.page', { page: x })}</span>,
       value: x.toString(),
     }));
   }, []);
@@ -134,7 +135,7 @@ export function RAGFlowPagination({
 
   return (
     <section className="flex items-center justify-end text-text-sub-title-invert">
-      <span className="mr-4">Total {total}</span>
+      <span className="mr-4">{t('pagination.total', { total: total })}</span>
       <Pagination className="w-auto mx-0 mr-4">
         <PaginationContent>
           <PaginationItem>
@@ -150,7 +151,7 @@ export function RAGFlowPagination({
               <PaginationItem
                 key={page}
                 className={cn({
-                  ['bg-background-header-bar rounded-md text-text-title']:
+                  ['bg-bg-card rounded-md text-text-primary']:
                     currentPage === page,
                 })}
               >
@@ -174,7 +175,7 @@ export function RAGFlowPagination({
           options={sizeChangerOptions}
           value={currentPageSize}
           onChange={handlePageSizeChange}
-          triggerClassName="bg-background-header-bar"
+          triggerClassName="bg-bg-card"
         ></RAGFlowSelect>
       )}
     </section>
