@@ -9,7 +9,7 @@ interface IProps {
 }
 
 const LLMToolsSelect = ({ value, onChange, disabled }: IProps) => {
-  const { t } = useTranslate("llmTools");
+  const { t } = useTranslate('llmTools');
   const tools = useLlmToolsList();
 
   function wrapTranslation(text: string): string {
@@ -17,14 +17,14 @@ const LLMToolsSelect = ({ value, onChange, disabled }: IProps) => {
       return text;
     }
 
-    if (text.startsWith("$t:")) {
+    if (text.startsWith('$t:')) {
       return t(text.substring(3));
     }
 
     return text;
   }
 
-  const toolOptions = tools.map(t => ({
+  const toolOptions = tools.map((t) => ({
     label: wrapTranslation(t.displayName),
     description: wrapTranslation(t.displayDescription),
     value: t.name,
@@ -35,7 +35,7 @@ const LLMToolsSelect = ({ value, onChange, disabled }: IProps) => {
     <Select
       mode="multiple"
       options={toolOptions}
-      optionRender={option => (
+      optionRender={(option) => (
         <Space size="large">
           {option.label}
           {option.data.description}
