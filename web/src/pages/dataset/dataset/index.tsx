@@ -75,7 +75,7 @@ export default function Dataset() {
           filters={filters}
           leftPanel={
             <div className="items-start">
-              <div className="pb-1">{t('knowledgeDetails.dataset')}</div>
+              <div className="pb-1">{t('knowledgeDetails.subbarFiles')}</div>
               <div className="text-text-sub-title-invert text-sm">
                 {t('knowledgeDetails.datasetDescription')}
               </div>

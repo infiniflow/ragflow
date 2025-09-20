@@ -1,6 +1,10 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
+import {
+  GenerateLogButton,
+  GenerateType,
+} from '@/pages/dataset/dataset/generate-button/generate';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -47,6 +51,7 @@ export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
 type GraphRagItemsProps = {
   marginBottom?: boolean;
   className?: string;
+  showGenerateItem?: boolean;
 };
 
 export function UseGraphRagFormField() {
@@ -88,6 +93,7 @@ export function UseGraphRagFormField() {
 // The three types "table", "resume" and "one" do not display this configuration.
 const GraphRagItems = ({
   marginBottom = false,
+  showGenerateItem = false,
   className = 'p-10',
 }: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
@@ -210,6 +216,18 @@ const GraphRagItems = ({
               </FormItem>
             )}
           />
+          {showGenerateItem && (
+            <div className="w-full flex items-center">
+              <div className="text-sm whitespace-nowrap w-1/4">
+                {t('extractKnowledgeGraph')}
+              </div>
+              <GenerateLogButton
+                className="w-3/4 text-text-secondary"
+                status={1}
+                type={GenerateType.KnowledgeGraph}
+              />
+            </div>
+          )}
         </>
       )}
     </FormContainer>

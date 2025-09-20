@@ -72,7 +72,17 @@ export const formSchema = z.object({
   // icon: z.array(z.instanceof(File)),
 });
 
-export const linkPiplineFormSchema = z.object({
-  data_flow: z.array(z.string()),
+export const pipelineFormSchema = z.object({
+  data_flow: z.array(z.string()).optional(),
+  set_default: z.boolean().optional(),
   file_filter: z.string().optional(),
+});
+
+export const linkPiplineFormSchema = pipelineFormSchema.pick({
+  data_flow: true,
+  file_filter: true,
+});
+export const editPiplineFormSchema = pipelineFormSchema.pick({
+  set_default: true,
+  file_filter: true,
 });

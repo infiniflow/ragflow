@@ -102,13 +102,15 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      notGenerated: 'Not generated',
+      generatedOn: 'Generated on',
+      subbarFiles: 'Files',
       generateKnowledgeGraph:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generate: 'Generate',
       raptor: 'Raptor',
-      knowledgeGraph: 'Knowledge Graph',
       processingType: 'Processing Type',
       dataPipeline: 'Data Pipeline',
       operations: 'Operations',
@@ -138,12 +140,12 @@ export default {
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
-      knowledgeGraph: 'Knowledge graph',
+      knowledgeGraph: 'Knowledge Graph',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
       datasetDescription:
-        '😉 Please wait for your files to finish parsing before starting an AI-powered chat.',
+        'Please wait for your files to finish parsing before starting an AI-powered chat.',
       addFile: 'Add file',
       searchFiles: 'Search your files',
       localFiles: 'Local files',
@@ -261,6 +263,22 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      deleteGenerateModalContent: `
+        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results 
+        will remove all derived entities and relationships from this dataset. 
+        Your original files will remain intact.<p>
+        <br/>
+        Do you want to continue?
+      `,
+      extractRaptor: 'Extract Raptor',
+      extractKnowledgeGraph: 'Extract Knowledge Graph',
+      filterPlaceholder: 'please input filter',
+      fileFilterTip: '',
+      fileFilter: 'File Filter',
+      setDefaultTip: '',
+      setDefault: 'Set as Default',
+      eidtLinkDataPipeline: 'Edit Data Pipeline',
+      linkPipelineSetTip: 'Manage data pipeline linkage with this dataset',
       default: 'Default',
       dataPipeline: 'Data Pipeline',
       linkDataPipeline: 'Link Data Pipeline',
@@ -1646,6 +1664,13 @@ This delimiter is used to split the input text into several text pieces echo of 
       <p>To keep them, please click Rerun to re-run the current stage.</p> `,
       changeStepModalConfirmText: 'Switch Anyway',
       changeStepModalCancelText: 'Cancel',
+      unlinkPipelineModalTitle: 'Unlink data pipeline',
+      unlinkPipelineModalContent: `
+      <p>Once unlinked, this Dataset will no longer be connected to the current Data Pipeline.</p> 
+      <p>Files that are already being parsed  will continue until completion</p> 
+      <p>Files that are not yet parsed will no longer be processed</p> <br/>
+      <p>Are you sure you want to proceed?</p> `,
+      unlinkPipelineModalConfirmText: 'Unlink',
     },
     dataflow: {
       parser: 'Parser',

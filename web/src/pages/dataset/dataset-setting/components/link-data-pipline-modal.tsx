@@ -10,32 +10,53 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Modal } from '@/components/ui/modal/modal';
+import { Switch } from '@/components/ui/switch';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { linkPiplineFormSchema } from '../form-schema';
+import { pipelineFormSchema } from '../form-schema';
+import { IDataPipelineNodeProps } from './link-data-pipeline';
 
 const LinkDataPipelineModal = ({
+  data,
   open,
   setOpen,
+  onSubmit,
 }: {
+  data: IDataPipelineNodeProps | undefined;
   open: boolean;
   setOpen: (open: boolean) => void;
+  onSubmit?: (data: any) => void;
 }) => {
-  const form = useForm<z.infer<typeof linkPiplineFormSchema>>({
-    resolver: zodResolver(linkPiplineFormSchema),
-    defaultValues: { data_flow: ['888'], file_filter: '' },
+  const isEdit = !!data;
+  const form = useForm<z.infer<typeof pipelineFormSchema>>({
+    resolver: zodResolver(pipelineFormSchema),
+    defaultValues: {
+      data_flow: [],
+      set_default: false,
+      file_filter: '',
+    },
   });
   //   const [open, setOpen] = useState(false);
   const { navigateToAgents } = useNavigatePage();
   const handleFormSubmit = (values: any) => {
-    console.log(values);
+    console.log(values, data);
+    const param = {
+      ...data,
+      ...values,
+    };
+    onSubmit?.(param);
   };
   return (
     <Modal
-      title={t('knowledgeConfiguration.linkDataPipeline')}
+      className="!w-[560px]"
+      title={
+        !isEdit
+          ? t('knowledgeConfiguration.linkDataPipeline')
+          : t('knowledgeConfiguration.eidtLinkDataPipeline')
+      }
       open={open}
       onOpenChange={setOpen}
       showfooter={false}
@@ -43,10 +64,12 @@ const LinkDataPipelineModal = ({
       <Form {...form}>
         <form onSubmit={form.handleSubmit(handleFormSubmit)}>
           <div className="flex flex-col gap-4 ">
-            <DataFlowSelect
-              toDataPipeline={navigateToAgents}
-              formFieldName="data_flow"
-            />
+            {!isEdit && (
+              <DataFlowSelect
+                toDataPipeline={navigateToAgents}
+                formFieldName="data_flow"
+              />
+            )}
             <FormField
               control={form.control}
               name={'file_filter'}
@@ -65,7 +88,9 @@ const LinkDataPipelineModal = ({
                     <div className="text-muted-foreground">
                       <FormControl>
                         <Input
-                          placeholder={t('dataFlowPlaceholder')}
+                          placeholder={t(
+                            'knowledgeConfiguration.filterPlaceholder',
+                          )}
                           {...field}
                         />
                       </FormControl>
@@ -78,11 +103,56 @@ const LinkDataPipelineModal = ({
                 </FormItem>
               )}
             />
+            {isEdit && (
+              <FormField
+                control={form.control}
+                name={'set_default'}
+                render={({ field }) => (
+                  <FormItem className=" items-center space-y-0 ">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex gap-2 justify-between ">
+                        <FormLabel
+                          tooltip={t('knowledgeConfiguration.setDefaultTip')}
+                          className="text-sm text-text-primary whitespace-wrap "
+                        >
+                          {t('knowledgeConfiguration.setDefault')}
+                        </FormLabel>
+                      </div>
+
+                      <div className="text-muted-foreground">
+                        <FormControl>
+                          <Switch
+                            value={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </div>
+                    </div>
+                    <div className="flex pt-1">
+                      <div className="w-full"></div>
+                      <FormMessage />
+                    </div>
+                  </FormItem>
+                )}
+              />
+            )}
             <div className="flex justify-end gap-1">
-              <Button type="reset" variant={'outline'} className="btn-primary">
+              <Button
+                type="button"
+                variant={'outline'}
+                className="btn-primary"
+                onClick={() => {
+                  setOpen(false);
+                }}
+              >
                 {t('modal.cancelText')}
               </Button>
-              <Button type="submit" variant={'default'} className="btn-primary">
+              <Button
+                type="button"
+                variant={'default'}
+                className="btn-primary"
+                onClick={form.handleSubmit(handleFormSubmit)}
+              >
                 {t('modal.okText')}
               </Button>
             </div>

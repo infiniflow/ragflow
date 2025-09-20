@@ -75,21 +75,21 @@ const Modal: ModalType = ({
 
   const handleCancel = useCallback(() => {
     onOpenChange?.(false);
-    onCancel?.();
-  }, [onOpenChange, onCancel]);
+    // onCancel?.();
+  }, [onOpenChange]);
 
   const handleOk = useCallback(() => {
     onOpenChange?.(true);
-    onOk?.();
-  }, [onOpenChange, onOk]);
+    // onOk?.();
+  }, [onOpenChange]);
   const handleChange = (open: boolean) => {
     onOpenChange?.(open);
     console.log('open', open, onOpenChange);
     if (open) {
-      handleOk();
+      onOk?.();
     }
     if (!open) {
-      handleCancel();
+      onCancel?.();
     }
   };
   const footEl = useMemo(() => {

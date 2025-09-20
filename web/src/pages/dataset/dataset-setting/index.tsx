@@ -86,9 +86,12 @@ export default function DatasetSettings() {
                 <GeneralForm></GeneralForm>
                 <Divider />
 
-                <GraphRagItems className="border-none p-0"></GraphRagItems>
+                <GraphRagItems
+                  className="border-none p-0"
+                  showGenerateItem={true}
+                ></GraphRagItems>
                 <Divider />
-                <RaptorFormFields></RaptorFormFields>
+                <RaptorFormFields showGenerateItem={true}></RaptorFormFields>
                 <Divider />
                 <LinkDataPipeline />
               </MainContainer>

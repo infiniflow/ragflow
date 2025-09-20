@@ -65,25 +65,25 @@ export const getFileLogsTableColumns = (
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<DocumentLog>[] = [
-    {
-      id: 'select',
-      header: ({ table }) => (
-        <input
-          type="checkbox"
-          checked={table.getIsAllRowsSelected()}
-          onChange={table.getToggleAllRowsSelectedHandler()}
-          className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={row.getIsSelected()}
-          onChange={row.getToggleSelectedHandler()}
-          className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-    },
+    // {
+    //   id: 'select',
+    //   header: ({ table }) => (
+    //     <input
+    //       type="checkbox"
+    //       checked={table.getIsAllRowsSelected()}
+    //       onChange={table.getToggleAllRowsSelectedHandler()}
+    //       className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //     />
+    //   ),
+    //   cell: ({ row }) => (
+    //     <input
+    //       type="checkbox"
+    //       checked={row.getIsSelected()}
+    //       onChange={row.getToggleSelectedHandler()}
+    //       className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //     />
+    //   ),
+    // },
     {
       accessorKey: 'id',
       header: 'ID',
@@ -156,7 +156,7 @@ export const getFileLogsTableColumns = (
       id: 'operations',
       header: t('operations'),
       cell: ({ row }) => (
-        <div className="flex justify-start space-x-2">
+        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="sm"
@@ -189,25 +189,25 @@ export const getDatasetLogsTableColumns = (
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<DocumentLog>[] = [
-    {
-      id: 'select',
-      header: ({ table }) => (
-        <input
-          type="checkbox"
-          checked={table.getIsAllRowsSelected()}
-          onChange={table.getToggleAllRowsSelectedHandler()}
-          className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={row.getIsSelected()}
-          onChange={row.getToggleSelectedHandler()}
-          className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-    },
+    // {
+    // id: 'select',
+    // header: ({ table }) => (
+    //   <input
+    //     type="checkbox"
+    //     checked={table.getIsAllRowsSelected()}
+    //     onChange={table.getToggleAllRowsSelectedHandler()}
+    //     className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //   />
+    // ),
+    // cell: ({ row }) => (
+    //   <input
+    //     type="checkbox"
+    //     checked={row.getIsSelected()}
+    //     onChange={row.getToggleSelectedHandler()}
+    //     className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //   />
+    // ),
+    // },
     {
       accessorKey: 'id',
       header: 'ID',
@@ -251,7 +251,7 @@ export const getDatasetLogsTableColumns = (
       id: 'operations',
       header: t('operations'),
       cell: ({ row }) => (
-        <div className="flex justify-start space-x-2">
+        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="sm"

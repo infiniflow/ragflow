@@ -94,9 +94,11 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      notGenerated: '未生成',
+      generatedOn: '生成于',
+      subbarFiles: '文件列表',
       generate: '生成',
       raptor: 'Raptor',
-      knowledgeGraph: '知识图谱',
       processingType: '处理类型',
       dataPipeline: '数据管道',
       operations: '操作',
@@ -130,7 +132,7 @@ export default {
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
-      datasetDescription: '😉 解析成功后才能问答哦。',
+      datasetDescription: '解析成功后才能问答哦。',
       addFile: '新增文件',
       searchFiles: '搜索文件',
       localFiles: '本地文件',
@@ -246,6 +248,22 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      deleteGenerateModalContent: `
+        <p>删除生成的 <strong class='text-text-primary'>{{type}}</strong> 结果
+          将从此数据集中移除所有派生实体和关系。
+          您的原始文件将保持不变。<p>
+          <br/>
+          是否要继续？
+      `,
+      extractRaptor: '从文档中提取Raptor',
+      extractKnowledgeGraph: '从文档中提取知识图谱',
+      filterPlaceholder: '请输入',
+      fileFilterTip: '',
+      fileFilter: '正则匹配表达式',
+      setDefaultTip: '',
+      setDefault: '设置默认',
+      eidtLinkDataPipeline: '编辑数据流',
+      linkPipelineSetTip: '管理与此数据集的数据管道链接',
       default: '默认',
       dataPipeline: '数据流',
       linkDataPipeline: '关联数据流',
@@ -1556,6 +1574,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       <p>要保留这些更改，请点击“重新运行”以重新运行当前阶段。</p> `,
       changeStepModalConfirmText: '继续切换',
       changeStepModalCancelText: '取消',
+      unlinkPipelineModalTitle: '解绑数据流',
+      unlinkPipelineModalContent: `
+      <p>一旦取消链接，该数据集将不再连接到当前数据管道。</p> 
+      <p>正在解析的文件将继续解析，直到完成。</p> 
+      <p>尚未解析的文件将不再被处理。</p> <br/>
+      <p>你确定要继续吗?</p> `,
+      unlinkPipelineModalConfirmText: '解绑',
     },
     dataflow: {
       parser: '解析器',
