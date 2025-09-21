@@ -331,9 +331,6 @@ class BaseDataBase:
         db_name = database_config.pop("name")
         
         pool_config = {
-            'max_connections': 1000,
-            'stale_timeout': 300,
-            'timeout': 10,
             'max_retries': 5,
             'retry_delay': 1,
         }
