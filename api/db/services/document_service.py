@@ -51,6 +51,7 @@ class DocumentService(CommonService):
             cls.model.thumbnail,
             cls.model.kb_id,
             cls.model.parser_id,
+            cls.model.pipeline_id,
             cls.model.parser_config,
             cls.model.source_type,
             cls.model.type,
