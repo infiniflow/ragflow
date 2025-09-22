@@ -1599,6 +1599,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       serverType: 'Server Type',
       addMCP: 'Add MCP',
       editMCP: 'Edit MCP',
+      toolsAvailable: 'tools available',
+      mcpServers: 'MCP Servers',
+      customizeTheListOfMcpServers: 'Customize the list of MCP servers',
     },
     search: {
       searchApps: 'Search Apps',
