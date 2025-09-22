@@ -85,11 +85,11 @@ completion = client.chat.completions.create(
 )
 
 if stream:
-for chunk in completion:
-    print(chunk)
-    if reference and chunk.choices[0].finish_reason == "stop":
-        print(f"Reference:\n{chunk.choices[0].delta.reference}")
-        print(f"Final content:\n{chunk.choices[0].delta.final_content}")
+    for chunk in completion:
+        print(chunk)
+        if reference and chunk.choices[0].finish_reason == "stop":
+            print(f"Reference:\n{chunk.choices[0].delta.reference}")
+            print(f"Final content:\n{chunk.choices[0].delta.final_content}")
 else:
     print(completion.choices[0].message.content)
     if reference:
