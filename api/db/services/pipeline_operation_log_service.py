@@ -18,10 +18,12 @@ from datetime import datetime
 
 from peewee import fn
 
+from api.db import VALID_PIPELINE_TASK_TYPES
 from api.db.db_models import DB, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import current_timestamp, datetime_format, get_uuid
 
 
@@ -67,26 +69,48 @@ class PipelineOperationLogService(CommonService):
         ]
 
     @classmethod
-    def create(cls, document_id, pipeline_id):
+    def create(cls, document_id, pipeline_id, task_type):
         from rag.flow.pipeline import Pipeline
+
+        tenant_id = ""
+        title = ""
+        avatar = ""
+        dsl = ""
 
         ok, document = DocumentService.get_by_id(document_id)
         if not ok:
             raise RuntimeError(f"Document {document_id} not found")
 
-        ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
-        if not ok:
-            raise RuntimeError(f"Pipeline {pipeline_id} not found")
+        if pipeline_id:
+            ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
+            if not ok:
+                raise RuntimeError(f"Pipeline {pipeline_id} not found")
 
-        pipeline = Pipeline(dsl=json.dumps(user_pipeline.dsl), tenant_id=user_pipeline.user_id, doc_id=document_id, task_id="", flow_id=pipeline_id)
+            pipeline = Pipeline(dsl=json.dumps(user_pipeline.dsl), tenant_id=user_pipeline.user_id, doc_id=document_id, task_id="", flow_id=pipeline_id)
+
+            tenant_id = user_pipeline.user_id
+            title = user_pipeline.title
+            avatar = user_pipeline.avatar
+            dsl = json.loads(str(pipeline))
+        else:
+            ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
+            if not ok:
+                raise RuntimeError(f"Cannot find knowledge base {document.kb_id} for document {document_id}")
+
+            tenant_id = kb_info.tenant_id
+            title = document.name
+            avatar = document.thumbnail
+
+        if task_type not in VALID_PIPELINE_TASK_TYPES:
+            raise ValueError(f"Invalid task type: {task_type}")
 
         log = dict(
             id=get_uuid(),
             document_id=document_id,
-            tenant_id=user_pipeline.user_id,  # assuming tenant_id == user_id
+            tenant_id=tenant_id,
             kb_id=document.kb_id,
             pipeline_id=pipeline_id,
-            pipeline_title=user_pipeline.title,
+            pipeline_title=title,
             parser_id=document.parser_id,
             document_name=document.name,
             document_suffix=document.suffix,
@@ -94,12 +118,12 @@ class PipelineOperationLogService(CommonService):
             source_from="",  # TODO: add in the future
             progress=document.progress,
             progress_msg=document.progress_msg,
-            probegin_at=document.process_begin_at,
+            process_begin_at=document.process_begin_at,
             process_duration=document.process_duration,
-            dsl=json.loads(str(pipeline)),
-            task_type="",  # TODO: TBD
-            operation_status="",  # TODO: TBD
-            avatar=user_pipeline.avatar,
+            dsl=dsl,
+            task_type=task_type,
+            operation_status=document.run,
+            avatar=avatar,
         )
         log["create_time"] = current_timestamp()
         log["create_date"] = datetime_format(datetime.now())

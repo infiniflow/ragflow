@@ -22,6 +22,7 @@ from timeit import default_timer as timer
 import trio
 
 from agent.canvas import Graph
+from api.db import PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from rag.utils.redis_conn import REDIS_CONN
@@ -152,6 +153,6 @@ class Pipeline(Graph):
             req["user_id"] = "c3fb861af27a11efa69751e139332ced"
             req["title"] = "test_test_pipeline"
             # UserCanvasService.save(**req)
-            PipelineOperationLogService.create(self._doc_id, self._flow_id)
+            PipelineOperationLogService.create(document_id=self._doc_id, pipeline_id=self._flow_id, task_type=PipelineTaskType.PARSE)
 
             print("after pipeline creation", flush=True)

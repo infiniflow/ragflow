@@ -22,6 +22,7 @@ from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
@@ -432,7 +433,7 @@ def list_pipeline_logs():
     suffix = req.get("suffix", [])
 
     try:
-        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix)
+        docs, tol = PipelineOperationLogService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix)
 
         if create_time_from or create_time_to:
             filtered_docs = []
