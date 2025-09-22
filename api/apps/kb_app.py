@@ -448,3 +448,17 @@ def list_pipeline_logs():
     except Exception as e:
         return server_error_response(e)
 
+
+@manager.route("/delete_pipeline_logs", methods=["POST"])  # noqa: F821
+@login_required
+def delete_pipeline_logs():
+    kb_id = request.args.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+
+    req = request.get_json()
+    log_ids = req.get("log_ids", [])
+
+    PipelineOperationLogService.delete_by_ids(log_ids)
+
+    return get_json_result(data=True)
