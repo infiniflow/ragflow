@@ -83,16 +83,16 @@ def upload(tenant_id):
             return get_json_result(data=False, message="Can't find this folder!", code=404)
 
         for file_obj in file_objs:
-            # 文件路径处理
+            # Handle file path
             full_path = '/' + file_obj.filename
             file_obj_names = full_path.split('/')
             file_len = len(file_obj_names)
 
-            # 获取文件夹路径ID
+            # Get folder path ID
             file_id_list = FileService.get_id_list_by_id(pf_id, file_obj_names, 1, [pf_id])
             len_id_list = len(file_id_list)
 
-            # 创建文件夹结构
+            # Crete file folder
             if file_len != len_id_list:
                 e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
                 if not e:
