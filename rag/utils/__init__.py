@@ -88,6 +88,20 @@ def num_tokens_from_string(string: str) -> int:
     except Exception:
         return 0
 
+def total_token_count_from_response(resp):
+    if hasattr(resp, "usage") and hasattr(resp.usage, "total_tokens"):
+        try:
+            return resp.usage.total_tokens
+        except Exception:
+            pass
+
+    if 'usage' in resp and 'total_tokens' in resp['usage']:
+        try:
+            return resp["usage"]["total_tokens"]
+        except Exception:
+            pass
+    return 0
+
 
 def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
