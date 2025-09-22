@@ -597,65 +597,8 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def update_progress(cls):
         docs = cls.get_unfinished_docs()
-        for d in docs:
-            try:
-                tsks = Task.query(doc_id=d["id"], order_by=Task.create_time)
-                if not tsks:
-                    continue
-                msg = []
-                prg = 0
-                finished = True
-                bad = 0
-                has_raptor = False
-                has_graphrag = False
-                e, doc = DocumentService.get_by_id(d["id"])
-                status = doc.run  # TaskStatus.RUNNING.value
-                priority = 0
-                for t in tsks:
-                    if 0 <= t.progress < 1:
-                        finished = False
-                    if t.progress == -1:
-                        bad += 1
-                    prg += t.progress if t.progress >= 0 else 0
-                    if t.progress_msg.strip():
-                        msg.append(t.progress_msg)
-                    if t.task_type == "raptor":
-                        has_raptor = True
-                    elif t.task_type == "graphrag":
-                        has_graphrag = True
-                    priority = max(priority, t.priority)
-                prg /= len(tsks)
-                if finished and bad:
-                    prg = -1
-                    status = TaskStatus.FAIL.value
-                elif finished:
-                    if (d["parser_config"].get("raptor") or {}).get("use_raptor") and not has_raptor:
-                        queue_raptor_o_graphrag_tasks(d, "raptor", priority)
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif (d["parser_config"].get("graphrag") or {}).get("use_graphrag") and not has_graphrag:
-                        queue_raptor_o_graphrag_tasks(d, "graphrag", priority)
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    else:
-                        status = TaskStatus.DONE.value
 
-                msg = "\n".join(sorted(msg))
-                info = {
-                    "process_duration": datetime.timestamp(
-                        datetime.now()) -
-                                       d["process_begin_at"].timestamp(),
-                    "run": status}
-                if prg != 0:
-                    info["progress"] = prg
-                if msg:
-                    info["progress_msg"] = msg
-                    if msg.endswith("created task graphrag") or msg.endswith("created task raptor"):
-                        info["progress_msg"] += "\n%d tasks are ahead in the queue..."%get_queue_length(priority)
-                else:
-                    info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
-                cls.update_by_id(d["id"], info)
-            except Exception as e:
-                if str(e).find("'0'") < 0:
-                    logging.exception("fetch task exception")
+        cls._sync_progress(docs)
 
 
     @classmethod
@@ -664,6 +607,12 @@ class DocumentService(CommonService):
         if not docs:
             return
 
+        cls._sync_progress(docs)
+
+
+    @classmethod
+    @DB.connection_context()
+    def _sync_progress(cls, docs:list[dict]):
         for d in docs:
             try:
                 tsks = Task.query(doc_id=d["id"], order_by=Task.create_time)
@@ -723,7 +672,6 @@ class DocumentService(CommonService):
             except Exception as e:
                 if str(e).find("'0'") < 0:
                     logging.exception("fetch task exception")
-
 
     @classmethod
     @DB.connection_context()
