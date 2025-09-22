@@ -40,7 +40,6 @@ class Pipeline(Graph):
                 self._doc_id = None
 
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
-        print(component_name, progress, message, "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE")
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         timestamp = timer()
         try:

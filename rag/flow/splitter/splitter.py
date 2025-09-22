@@ -107,6 +107,5 @@ class Splitter(ProcessBase):
         async with trio.open_nursery() as nursery:
             for d in cks:
                 nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
-        print("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\n", json.dumps(cks, ensure_ascii=False, indent=2))
         self.set_output("chunks",  cks)
         self.callback(1, "Done.")

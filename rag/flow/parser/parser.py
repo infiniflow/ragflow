@@ -504,10 +504,8 @@ class Parser(ProcessBase):
 
         done = False
         for p_type, conf in self._param.setups.items():
-            print(p_type, conf)
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
             await trio.to_thread.run_sync(function_map[p_type], name, blob)
             done = True
             break
