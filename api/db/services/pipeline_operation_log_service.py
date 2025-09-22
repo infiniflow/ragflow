@@ -18,13 +18,12 @@ from datetime import datetime
 
 from peewee import fn
 
-from api.db import VALID_PIPELINE_TASK_TYPES, TaskStatus
+from api.db import VALID_PIPELINE_TASK_TYPES
 from api.db.db_models import DB, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService
 from api.utils import current_timestamp, datetime_format, get_uuid
 
 
@@ -137,7 +136,6 @@ class PipelineOperationLogService(CommonService):
         log["create_date"] = datetime_format(datetime.now())
         log["update_time"] = current_timestamp()
         log["update_date"] = datetime_format(datetime.now())
-        print(f"ready to save {log}", flush=True)
         obj = cls.save(**log)
         return obj
 

@@ -19,6 +19,7 @@ import logging
 import random
 import time
 from timeit import default_timer as timer
+
 import trio
 
 from agent.canvas import Graph
@@ -46,18 +47,36 @@ class Pipeline(Graph):
             obj = json.loads(bin.encode("utf-8"))
             if obj:
                 if obj[-1]["component_id"] == component_name:
-                    obj[-1]["trace"].append({"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": timestamp-obj[-1]["trace"][-1]["timestamp"]})
+                    obj[-1]["trace"].append(
+                        {
+                            "progress": progress,
+                            "message": message,
+                            "datetime": datetime.datetime.now().strftime("%H:%M:%S"),
+                            "timestamp": timestamp,
+                            "elapsed_time": timestamp - obj[-1]["trace"][-1]["timestamp"],
+                        }
+                    )
                 else:
-                    obj.append({"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]})
+                    obj.append(
+                        {
+                            "component_id": component_name,
+                            "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}],
+                        }
+                    )
             else:
-                obj = [{"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]}]
+                obj = [
+                    {
+                        "component_id": component_name,
+                        "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}],
+                    }
+                ]
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
             if self._doc_id:
                 percentage = 1.0 / len(self.components.items())
                 msg = ""
                 finished = 0.0
                 for o in obj:
-                    if o['component_id'] == "END":
+                    if o["component_id"] == "END":
                         continue
                     msg += f"\n[{o['component_id']}]:\n"
                     for t in o["trace"]:
@@ -131,8 +150,6 @@ class Pipeline(Graph):
         self.callback("END", 1, json.dumps(self.get_component_obj(self.path[-1]).output(), ensure_ascii=False))
 
         if self._doc_id:
-            print("@@@@@@@@@@@@@@@@@", flush=True)
-            print("before update document", flush=True)
             DocumentService.update_by_id(
                 self._doc_id,
                 {
@@ -141,18 +158,5 @@ class Pipeline(Graph):
                     "process_duration": time.perf_counter() - st,
                 },
             )
-            print("after update document", flush=True)
 
-            print("before pipeline creation", flush=True)
-
-            dsl = json.loads(str(self))
-            req = {}
-            req["dsl"] = dsl
-            req["canvas_category"] = "dataflow_canvas"
-            req["id"] = "xxx"
-            req["user_id"] = "c3fb861af27a11efa69751e139332ced"
-            req["title"] = "test_test_pipeline"
-            # UserCanvasService.save(**req)
             PipelineOperationLogService.create(document_id=self._doc_id, pipeline_id=self._flow_id, task_type=PipelineTaskType.PARSE)
-
-            print("after pipeline creation", flush=True)
