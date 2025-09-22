@@ -4,6 +4,7 @@ from typing import Dict, List, Any
 from lark import Lark, Transformer, Tree
 import requests
 from requests.auth import HTTPBasicAuth
+from api.common.base64 import encode_to_base64
 
 GRAMMAR = r"""
 start: command
@@ -145,11 +146,6 @@ class AdminTransformer(Transformer):
 
     def meta_args(self, items):
         return items
-
-
-def encode_to_base64(input_string):
-    base64_encoded = base64.b64encode(input_string.encode('utf-8'))
-    return base64_encoded.decode('utf-8')
 
 
 class AdminCommandParser:
