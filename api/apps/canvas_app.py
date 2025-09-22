@@ -23,7 +23,7 @@ import trio
 from flask import request, Response
 from flask_login import login_required, current_user
 
-from agent.component import LLM
+from agent.component.llm import LLM
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
