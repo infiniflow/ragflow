@@ -462,3 +462,17 @@ def delete_pipeline_logs():
     PipelineOperationLogService.delete_by_ids(log_ids)
 
     return get_json_result(data=True)
+
+
+@manager.route("/pipeline_log_detail", methods=["GET"])  # noqa: F821
+@login_required
+def pipeline_log_detail():
+    log_id = request.args.get("log_id")
+    if not log_id:
+        return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=settings.RetCode.ARGUMENT_ERROR)
+
+    ok, log = PipelineOperationLogService.get_by_id(log_id)
+    if not ok:
+        return get_data_error_result(message="Invalid pipeline log ID")
+
+    return get_json_result(data=log.to_dict())
