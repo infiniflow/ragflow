@@ -27,16 +27,20 @@ from rag.utils.redis_conn import REDIS_CONN
 
 
 class Pipeline(Graph):
-    def __init__(self, dsl: str, tenant_id=None, doc_id=None, task_id=None, flow_id=None):
+    def __init__(self, dsl: str|dict, tenant_id=None, doc_id=None, task_id=None, flow_id=None):
+        if isinstance(dsl, dict):
+            dsl = json.dumps(dsl, ensure_ascii=False)
         super().__init__(dsl, tenant_id, task_id)
         self._doc_id = doc_id
         self._flow_id = flow_id
         self._kb_id = None
-        if doc_id:
+        if self._doc_id:
             self._kb_id = DocumentService.get_knowledgebase_id(doc_id)
-            assert self._kb_id, f"Can't find KB of this document: {doc_id}"
+            if not self._kb_id:
+                self._doc_id = None
 
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
+        print(component_name, progress, message, "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE")
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         timestamp = timer()
         try:

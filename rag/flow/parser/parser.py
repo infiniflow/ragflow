@@ -59,11 +59,16 @@ class ParserParam(ProcessParamBase):
             "image": [
                 "text"
             ],
+<<<<<<< Updated upstream
             "email": [
                 "text",
                 "json"
             ],
             "text": [
+=======
+            "email": [],
+            "text&markdown": [
+>>>>>>> Stashed changes
                 "text",
                 "json"
             ],
@@ -102,7 +107,6 @@ class ParserParam(ProcessParamBase):
                 "output_format": "json",
             },
             "slides": {
-                "parse_method": "presentation",
                 "suffix": [
                     "pptx",
                 ],
@@ -116,6 +120,7 @@ class ParserParam(ProcessParamBase):
                 "output_format": "json",
             },
             "email": {
+<<<<<<< Updated upstream
                 "suffix": [
                   "eml", "msg"
                 ],
@@ -127,6 +132,10 @@ class ParserParam(ProcessParamBase):
                     "txt"
                 ],
                 "output_format": "json",
+=======
+                "fields": [],
+                "suffix": ["eml", "msg"],
+>>>>>>> Stashed changes
             },
             "audio": {
                 "suffix":[
@@ -168,10 +177,10 @@ class ParserParam(ProcessParamBase):
             spreadsheet_output_format = spreadsheet_config.get("output_format", "")
             self.check_valid_value(spreadsheet_output_format, "Spreadsheet output format abnormal.", self.allowed_output_format["spreadsheet"])
 
-        doc_config = self.setups.get("doc", "")
+        doc_config = self.setups.get("word", "")
         if doc_config:
             doc_output_format = doc_config.get("output_format", "")
-            self.check_valid_value(doc_output_format, "Word processer document output format abnormal.", self.allowed_output_format["doc"])
+            self.check_valid_value(doc_output_format, "Word processer document output format abnormal.", self.allowed_output_format["word"])
 
         slides_config = self.setups.get("slides", "")
         if slides_config:
@@ -181,17 +190,13 @@ class ParserParam(ProcessParamBase):
         image_config = self.setups.get("image", "")
         if image_config:
             image_parse_method = image_config.get("parse_method", "")
-            self.check_valid_value(image_parse_method.lower(), "Parse method abnormal.", ["ocr", "vlm"])
             if image_parse_method not in ["ocr"]:
-                self.check_empty(image_config.get("llm_id"), "VLM")
+                self.check_empty(image_config.get("lang", ""), "Language")
 
-            image_language = image_config.get("lang", "")
-            self.check_empty(image_language, "Language")
-
-        text_config = self.setups.get("text", "")
+        text_config = self.setups.get("text&markdown", "")
         if text_config:
             text_output_format = text_config.get("output_format", "")
-            self.check_valid_value(text_output_format, "Text output format abnormal.", self.allowed_output_format["text"])
+            self.check_valid_value(text_output_format, "Text output format abnormal.", self.allowed_output_format["text&markdown"])
 
         audio_config = self.setups.get("audio", "")
         if audio_config:
@@ -216,9 +221,9 @@ class Parser(ProcessBase):
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
 
-        if conf.get("parse_method") == "deepdoc":
+        if conf.get("parse_method").lower() == "deepdoc":
             bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
-        elif conf.get("parse_method") == "plain_text":
+        elif conf.get("parse_method").lower() == "plain_text":
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         else:
@@ -299,7 +304,7 @@ class Parser(ProcessBase):
         from rag.nlp import concat_img
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
-        conf = self._param.setups["markdown"]
+        conf = self._param.setups["text&markdown"]
         self.set_output("output_format", conf["output_format"])
 
         markdown_parser = naive_markdown_parser()
@@ -326,27 +331,24 @@ class Parser(ProcessBase):
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
 
-    def _image(self, from_upstream: ParserFromUpstream):
+    def _image(self, name, blob):
         from deepdoc.vision import OCR
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an image.")
-
-        blob = from_upstream.blob
         conf = self._param.setups["image"]
         self.set_output("output_format", conf["output_format"])
 
         img = Image.open(io.BytesIO(blob)).convert("RGB")
-        lang = conf["lang"]
 
         if conf["parse_method"] == "ocr":
             # use ocr, recognize chars only
             ocr = OCR()
             bxs = ocr(np.array(img))  # return boxes and recognize result
             txt = "\n".join([t[0] for _, t in bxs if t[0]])
-
         else:
+            lang = conf["lang"]
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"],lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["parse_method"],lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
@@ -519,13 +521,20 @@ class Parser(ProcessBase):
         else:
             blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
 
+        done = False
         for p_type, conf in self._param.setups.items():
+            print(p_type, conf)
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
+            print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
             await trio.to_thread.run_sync(function_map[p_type], name, blob)
+            done = True
             break
+
+        if not done:
+            raise Exception("No suitable for file extension: `.%s`" % from_upstream.name.split(".")[-1].lower())
 
         outs = self.output()
         async with trio.open_nursery() as nursery:
             for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), "_image_temps", get_uuid())
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())

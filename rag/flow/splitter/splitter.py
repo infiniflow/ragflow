@@ -78,7 +78,7 @@ class Splitter(ProcessBase):
                 deli,
                 self._param.overlapped_percent,
             )
-            self.set_output("chunks", [{"text": c} for c in cks])
+            self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])
 
             self.callback(1, "Done.")
             return
@@ -106,7 +106,7 @@ class Splitter(ProcessBase):
         ]
         async with trio.open_nursery() as nursery:
             for d in cks:
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), "_image_temps", get_uuid())
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
         print("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\n", json.dumps(cks, ensure_ascii=False, indent=2))
         self.set_output("chunks",  cks)
         self.callback(1, "Done.")

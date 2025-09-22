@@ -300,7 +300,7 @@ async def build_chunks(task, progress_callback):
                 d["img_id"] = ""
                 docs.append(d)
                 return
-            await image2id(d, partial(STORAGE_IMPL.put), task["kb_id"], d["id"])
+            await image2id(d, partial(STORAGE_IMPL.put), d["id"], task["kb_id"])
             docs.append(d)
         except Exception:
             logging.exception(
@@ -529,7 +529,6 @@ async def do_handle_task(task):
     task_document_name = task["name"]
     task_parser_config = task["parser_config"]
     task_start_ts = timer()
-
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
