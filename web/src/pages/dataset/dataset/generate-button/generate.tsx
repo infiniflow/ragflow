@@ -6,16 +6,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Modal } from '@/components/ui/modal/modal';
+import { cn } from '@/lib/utils';
 import { toFixed } from '@/utils/common-util';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
-import { CirclePause, WandSparkles } from 'lucide-react';
+import { CirclePause, Trash2, WandSparkles } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { generateStatus, useFetchGenerateData } from './hook';
-
-const MenuItem: React.FC<{ name: 'KnowledgeGraph' | 'Raptor' }> = ({
-  name,
-}) => {
+export enum GenerateType {
+  KnowledgeGraph = 'KnowledgeGraph',
+  Raptor = 'Raptor',
+}
+const MenuItem: React.FC<{ name: GenerateType }> = ({ name }) => {
   console.log(name, 'pppp');
   const iconKeyMap = {
     KnowledgeGraph: 'knowledgegraph',
@@ -111,3 +115,102 @@ const Generate: React.FC = () => {
 };
 
 export default Generate;
+
+export type IGenerateLogProps = {
+  id?: string;
+  status: 0 | 1;
+  message?: string;
+  created_at?: string;
+  updated_at?: string;
+  type?: GenerateType;
+  className?: string;
+  onDelete?: () => void;
+};
+export const GenerateLogButton = (props: IGenerateLogProps) => {
+  const { t } = useTranslation();
+  const {
+    id,
+    status,
+    message,
+    created_at,
+    updated_at,
+    type,
+    className,
+    onDelete,
+  } = props;
+  const handleDelete = () => {
+    Modal.show({
+      visible: true,
+      className: '!w-[560px]',
+      title:
+        t('common.delete') +
+        ' ' +
+        (type === GenerateType.KnowledgeGraph
+          ? t('knowledgeDetails.knowledgeGraph')
+          : t('knowledgeDetails.raptor')),
+      children: (
+        <div
+          className="text-sm text-text-secondary"
+          dangerouslySetInnerHTML={{
+            __html: t('knowledgeConfiguration.deleteGenerateModalContent', {
+              type:
+                type === GenerateType.KnowledgeGraph
+                  ? t('knowledgeDetails.knowledgeGraph')
+                  : t('knowledgeDetails.raptor'),
+            }),
+          }}
+        ></div>
+      ),
+      onVisibleChange: () => {
+        Modal.hide();
+      },
+      footer: (
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant={'outline'}
+            onClick={() => Modal.hide()}
+          >
+            {t('dataflowParser.changeStepModalCancelText')}
+          </Button>
+          <Button
+            type="button"
+            variant={'secondary'}
+            className="!bg-state-error text-text-primary"
+            onClick={() => {
+              Modal.hide();
+            }}
+          >
+            {t('common.delete')}
+          </Button>
+        </div>
+      ),
+    });
+  };
+  return (
+    <div
+      className={cn('flex bg-bg-card rounded-md py-1 px-3', props.className)}
+    >
+      <div className="flex items-center justify-between w-full">
+        {status === 1 && (
+          <>
+            <div>
+              {message || t('knowledgeDetails.generatedOn')}
+              {created_at}
+            </div>
+            <Trash2
+              size={14}
+              className="cursor-pointer"
+              onClick={(e) => {
+                console.log('delete');
+                handleDelete();
+                e.stopPropagation();
+              }}
+            />
+          </>
+        )}
+        {status === 0 && <div>{t('knowledgeDetails.notGenerated')}</div>}
+      </div>
+    </div>
+  );
+};
