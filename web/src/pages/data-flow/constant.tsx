@@ -1,21 +1,8 @@
 import {
-  initialKeywordsSimilarityWeightValue,
-  initialSimilarityThresholdValue,
-} from '@/components/similarity-slider';
-import {
-  AgentGlobals,
-  CodeTemplateStrMap,
-  ProgrammingLanguage,
-} from '@/constants/agent';
-
-import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
 } from '@/constants/chat';
-import { ModelVariableType } from '@/constants/knowledge';
-import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { t } from 'i18next';
 
 import {
   Circle,
@@ -89,29 +76,6 @@ export enum ImageParseMethod {
   OCR = 'ocr',
 }
 
-const initialQueryBaseValues = {
-  query: [],
-};
-
-export const initialRetrievalValues = {
-  query: AgentGlobals.SysQuery,
-  top_n: 8,
-  top_k: 1024,
-  kb_ids: [],
-  rerank_id: '',
-  empty_response: '',
-  ...initialSimilarityThresholdValue,
-  ...initialKeywordsSimilarityWeightValue,
-  use_kg: false,
-  cross_languages: [],
-  outputs: {
-    formalized_content: {
-      type: 'string',
-      value: '',
-    },
-  },
-};
-
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant. What can I do for you?`,
@@ -126,174 +90,9 @@ export const variableCheckBoxFieldMap = Object.keys(
   return pre;
 }, {});
 
-const initialLlmBaseValues = {
-  ...variableCheckBoxFieldMap,
-  temperature: 0.1,
-  top_p: 0.3,
-  frequency_penalty: 0.7,
-  presence_penalty: 0.4,
-  max_tokens: 256,
-};
-
-export const initialGenerateValues = {
-  ...initialLlmBaseValues,
-  prompt: i18n.t('flow.promptText'),
-  cite: true,
-  message_history_window_size: 12,
-  parameters: [],
-};
-
-export const initialRewriteQuestionValues = {
-  ...initialLlmBaseValues,
-  language: '',
-  message_history_window_size: 6,
-};
-
-export const initialRelevantValues = {
-  ...initialLlmBaseValues,
-};
-
-export const initialCategorizeValues = {
-  ...initialLlmBaseValues,
-  query: AgentGlobals.SysQuery,
-  parameter: ModelVariableType.Precise,
-  message_history_window_size: 1,
-  items: [],
-  outputs: {
-    category_name: {
-      type: 'string',
-    },
-  },
-};
-
-export const initialMessageValues = {
-  content: [''],
-};
-
-export const initialKeywordExtractValues = {
-  ...initialLlmBaseValues,
-  top_n: 3,
-  ...initialQueryBaseValues,
-};
-
-export const initialExeSqlValues = {
-  sql: '',
-  db_type: 'mysql',
-  database: '',
-  username: '',
-  host: '',
-  port: 3306,
-  password: '',
-  max_records: 1024,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialSwitchValues = {
-  conditions: [
-    {
-      logical_operator: SwitchLogicOperatorOptions[0],
-      items: [
-        {
-          operator: SwitchOperatorOptions[0].value,
-        },
-      ],
-      to: [],
-    },
-  ],
-  [SwitchElseTo]: [],
-};
-
-export const initialConcentratorValues = {};
-
 export const initialNoteValues = {
   text: '',
 };
-
-export const initialCrawlerValues = {
-  extract_type: 'markdown',
-  query: '',
-};
-
-export const initialInvokeValues = {
-  url: '',
-  method: 'GET',
-  timeout: 60,
-  headers: `{
-  "Accept": "*/*",
-  "Cache-Control": "no-cache",
-  "Connection": "keep-alive"
-}`,
-  proxy: '',
-  clean_html: false,
-  variables: [],
-  outputs: {
-    result: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialTemplateValues = {
-  content: '',
-  parameters: [],
-};
-
-export const initialEmailValues = {
-  smtp_server: '',
-  smtp_port: 465,
-  email: '',
-  password: '',
-  sender_name: '',
-  to_email: '',
-  cc_email: '',
-  subject: '',
-  content: '',
-  outputs: {
-    success: {
-      value: true,
-      type: 'boolean',
-    },
-  },
-};
-
-export const initialIterationValues = {
-  items_ref: '',
-  outputs: {},
-};
-export const initialIterationStartValues = {
-  outputs: {
-    item: {
-      type: 'unkown',
-    },
-    index: {
-      type: 'integer',
-    },
-  },
-};
-
-export const initialCodeValues = {
-  lang: ProgrammingLanguage.Python,
-  script: CodeTemplateStrMap[ProgrammingLanguage.Python],
-  arguments: {
-    arg1: '',
-    arg2: '',
-  },
-  outputs: {},
-};
-
-export const initialWaitingDialogueValues = {};
-
-export const initialChunkerValues = { outputs: {} };
 
 export const initialTokenizerValues = {
   search_method: [
@@ -302,47 +101,6 @@ export const initialTokenizerValues = {
   ],
   filename_embd_weight: 0.1,
   fields: ['text'],
-  outputs: {},
-};
-
-export const initialAgentValues = {
-  ...initialLlmBaseValues,
-  description: '',
-  user_prompt: '',
-  sys_prompt: t('flow.sysPromptDefultValue'),
-  prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
-  message_history_window_size: 12,
-  max_retries: 3,
-  delay_after_error: 1,
-  visual_files_var: '',
-  max_rounds: 1,
-  exception_method: '',
-  exception_goto: [],
-  exception_default_value: '',
-  tools: [],
-  mcp: [],
-  cite: true,
-  outputs: {
-    // structured_output: {
-    //   topic: {
-    //     type: 'string',
-    //     description:
-    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-    //     enum: ['general', 'news'],
-    //     default: 'general',
-    //   },
-    // },
-    content: {
-      type: 'string',
-      value: '',
-    },
-  },
-};
-
-export const initialUserFillUpValues = {
-  enable_tips: true,
-  tips: '',
-  inputs: [],
   outputs: {},
 };
 
@@ -359,18 +117,6 @@ export enum StringTransformDelimiter {
   Tab = '\t',
   Space = ' ',
 }
-
-export const initialStringTransformValues = {
-  method: StringTransformMethod.Merge,
-  split_ref: '',
-  script: '',
-  delimiters: [StringTransformDelimiter.Comma],
-  outputs: {
-    result: {
-      type: 'string',
-    },
-  },
-};
 
 export const initialParserValues = { outputs: {}, setups: [] };
 

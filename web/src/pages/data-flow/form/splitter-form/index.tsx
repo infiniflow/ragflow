@@ -65,26 +65,28 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
         ></SliderInputFormField>
         <section>
           <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
-          {fields.map((field, index) => (
-            <div key={field.id} className="flex items-center gap-2">
-              <div className="space-y-2 flex-1">
-                <RAGFlowFormItem
-                  name={`${name}.${index}.value`}
-                  label="delimiter"
-                  labelClassName="!hidden"
+          <div className="space-y-4">
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex items-center gap-2">
+                <div className="space-y-2 flex-1">
+                  <RAGFlowFormItem
+                    name={`${name}.${index}.value`}
+                    label="delimiter"
+                    labelClassName="!hidden"
+                  >
+                    <DelimiterInput className="!m-0"></DelimiterInput>
+                  </RAGFlowFormItem>
+                </div>
+                <Button
+                  type="button"
+                  variant={'ghost'}
+                  onClick={() => remove(index)}
                 >
-                  <DelimiterInput className="!m-0"></DelimiterInput>
-                </RAGFlowFormItem>
+                  <Trash2 />
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant={'ghost'}
-                onClick={() => remove(index)}
-              >
-                <Trash2 />
-              </Button>
-            </div>
-          ))}
+            ))}
+          </div>
         </section>
         <BlockButton onClick={() => append({ value: '\n' })}>
           {t('common.add')}

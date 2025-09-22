@@ -21,7 +21,6 @@ export function useRunDataflow(showLogSheet: () => void) {
         session_id: null,
         files: [fileResponseData.file],
       });
-      console.log('🚀 ~ useRunDataflow ~ res:', res);
 
       if (res && res?.response.status === 200 && res?.data?.code === 0) {
         // fetch canvas
