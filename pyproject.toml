@@ -131,6 +131,7 @@ dependencies = [
     "python-calamine>=0.4.0",
     "litellm>=1.74.15.post1",
     "flask-mail>=0.10.0",
+    "lark>=1.2.2",
 ]
 
 [project.optional-dependencies]
