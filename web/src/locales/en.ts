@@ -1694,6 +1694,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       searchMethod: 'Search method',
       filenameEmbdWeight: 'Filename embd weight',
       begin: 'File',
+      parserMethod: 'Parser method',
     },
   },
 };
