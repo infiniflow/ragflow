@@ -21,7 +21,6 @@ import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
-  Download,
   History,
   LaptopMinimalCheck,
   Settings,
@@ -33,14 +32,12 @@ import DataFlowCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
-import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { SettingDialog } from './setting-dialog';
-import { UploadAgentDialog } from './upload-agent-dialog';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 
@@ -64,24 +61,13 @@ export default function DataFlow() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
-  const {
-    handleExportJson,
-    handleImportJson,
-    fileUploadVisible,
-    onFileUploadOk,
-    hideFileUploadModal,
-  } = useHandleExportOrImportJsonFile();
+  const { handleExportJson } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  const inputs = useGetBeginNodeDataInputs();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const handleRunAgent = useCallback(() => {
-    if (inputs.length > 0) {
-      showChatDrawer();
-    } else {
-      handleRun();
-    }
-  }, [handleRun, inputs, showChatDrawer]);
+    handleRun();
+  }, [handleRun]);
   const {
     visible: versionDialogVisible,
     hideModal: hideVersionDialog,
@@ -141,11 +127,6 @@ export default function DataFlow() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentDropdownMenuItem onClick={handleImportJson}>
-                <Download />
-                {t('flow.import')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
@@ -167,12 +148,6 @@ export default function DataFlow() {
           ></DataFlowCanvas>
         </DropdownProvider>
       </ReactFlowProvider>
-      {fileUploadVisible && (
-        <UploadAgentDialog
-          hideModal={hideFileUploadModal}
-          onOk={onFileUploadOk}
-        ></UploadAgentDialog>
-      )}
 
       {versionDialogVisible && (
         <DropdownProvider>

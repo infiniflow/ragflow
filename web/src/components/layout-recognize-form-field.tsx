@@ -3,7 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
 import { cn } from '@/lib/utils';
 import { camelCase } from 'lodash';
-import { useMemo } from 'react';
+import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { SelectWithSearch } from './originui/select-with-search';
 import {
@@ -23,10 +23,12 @@ export function LayoutRecognizeFormField({
   name = 'parser_config.layout_recognize',
   horizontal = true,
   optionsWithoutLLM,
+  label,
 }: {
   name?: string;
   horizontal?: boolean;
   optionsWithoutLLM?: { value: string; label: string }[];
+  label?: ReactNode;
 }) {
   const form = useFormContext();
 
@@ -81,7 +83,7 @@ export function LayoutRecognizeFormField({
                   ['w-1/4']: horizontal,
                 })}
               >
-                {t('layoutRecognize')}
+                {label || t('layoutRecognize')}
               </FormLabel>
               <div className={horizontal ? 'w-3/4' : 'w-full'}>
                 <FormControl>
