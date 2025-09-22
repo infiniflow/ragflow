@@ -10,6 +10,7 @@ import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { NotebookText, SquareArrowOutUpRight } from 'lucide-react';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import 'react18-json-view/src/style.css';
 import {
   isEndOutputEmpty,
@@ -20,6 +21,7 @@ import { DataflowTimeline } from './dataflow-timeline';
 type LogSheetProps = IModalProps<any> & { messageId?: string };
 
 export function LogSheet({ hideModal, messageId }: LogSheetProps) {
+  const { t } = useTranslation();
   const { setMessageId, data } = useFetchMessageTrace(false);
 
   const { handleDownloadJson } = useDownloadOutput(data);
@@ -32,7 +34,7 @@ export function LogSheet({ hideModal, messageId }: LogSheetProps) {
 
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
-      <SheetContent className={cn('top-20 right-[620px]')}>
+      <SheetContent className={cn('top-20')}>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
             <NotebookText className="size-4" />
@@ -46,7 +48,7 @@ export function LogSheet({ hideModal, messageId }: LogSheetProps) {
             className="w-full mt-8"
           >
             <SquareArrowOutUpRight />
-            Export JSON
+            {t('dataflow.exportJson')}
           </Button>
         </section>
       </SheetContent>

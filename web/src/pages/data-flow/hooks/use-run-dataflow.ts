@@ -5,7 +5,10 @@ import { useCallback, useState } from 'react';
 import { useParams } from 'umi';
 import { useSaveGraphBeforeOpeningDebugDrawer } from './use-save-graph';
 
-export function useRunDataflow(showLogSheet: () => void) {
+export function useRunDataflow(
+  showLogSheet: () => void,
+  hideRunOrChatDrawer: () => void,
+) {
   const { send } = useSendMessageBySSE(api.runCanvas);
   const { id } = useParams();
   const [messageId, setMessageId] = useState();
@@ -26,6 +29,7 @@ export function useRunDataflow(showLogSheet: () => void) {
 
       if (res && res?.response.status === 200 && get(res, 'data.code') === 0) {
         // fetch canvas
+        hideRunOrChatDrawer();
 
         const msgId = get(res, 'data.data.message_id');
         if (msgId) {
@@ -35,7 +39,7 @@ export function useRunDataflow(showLogSheet: () => void) {
         return msgId;
       }
     },
-    [id, saveGraph, send],
+    [hideRunOrChatDrawer, id, saveGraph, send],
   );
 
   return { run, loading: loading, messageId };
