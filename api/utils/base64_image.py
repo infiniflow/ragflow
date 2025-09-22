@@ -9,7 +9,6 @@ test_image = base64.b64decode(test_image_base64)
 
 
 async def image2id(d: dict, storage_put_func: partial, objname:str, bucket:str="IMAGETEMPS"):
-    global IMAGE_TEMPLE_BUCKET
     import logging
     from io import BytesIO
     import trio
