@@ -922,7 +922,7 @@ class PipelineOperationLog(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
-    dsl = JSONField(null=True, default={})
+    dsl = JSONField(null=True, default=dict)
     task_type = CharField(max_length=32, null=False, default="")
     operation_status = CharField(max_length=32, null=False, help_text="Operation status")
     avatar = TextField(null=True, help_text="avatar base64 string")
