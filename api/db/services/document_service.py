@@ -660,8 +660,16 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_kb_doc_count(cls, kb_id):
-        return len(cls.model.select(cls.model.id).where(
-            cls.model.kb_id == kb_id).dicts())
+        return cls.model.select().where(cls.model.kb_id == kb_id).count()
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_kb_doc_count(cls):
+        result = {}
+        rows = cls.model.select(cls.model.kb_id, fn.COUNT(cls.model.id).alias('count')).group_by(cls.model.kb_id)
+        for row in rows:
+            result[row.kb_id] = row.count
+        return result
 
     @classmethod
     @DB.connection_context()
