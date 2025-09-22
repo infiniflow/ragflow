@@ -28,8 +28,8 @@ from peewee import fn, Case
 
 from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
-from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File
+from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole, CanvasCategory
+from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -80,7 +80,10 @@ class DocumentService(CommonService):
     def get_list(cls, kb_id, page_number, items_per_page,
                  orderby, desc, keywords, id, name):
         fields = cls.get_cls_model_fields()
-        docs = cls.model.select(*fields).join(File2Document, on = (File2Document.document_id == cls.model.id)).join(File, on = (File.id == File2Document.file_id)).where(cls.model.kb_id == kb_id)
+        docs = cls.model.select(*[*fields, UserCanvas.title]).join(File2Document, on = (File2Document.document_id == cls.model.id))\
+            .join(File, on = (File.id == File2Document.file_id))\
+            .join(UserCanvas, on = ((cls.model.pipeline_id == UserCanvas.id) & (UserCanvas.canvas_category == CanvasCategory.DataFlow.value)))\
+            .where(cls.model.kb_id == kb_id)
         if id:
             docs = docs.where(
                 cls.model.id == id)
