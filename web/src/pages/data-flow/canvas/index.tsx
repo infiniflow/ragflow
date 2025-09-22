@@ -34,55 +34,24 @@ import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
 } from '../hooks/use-show-drawer';
+import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
-import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
-import { CategorizeNode } from './node/categorize-node';
-import ChunkerNode from './node/chunker-node';
 import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
-import { GenerateNode } from './node/generate-node';
 import { HierarchicalMergerNode } from './node/hierarchical-merger-node';
-import { InvokeNode } from './node/invoke-node';
-import { IterationNode, IterationStartNode } from './node/iteration-node';
-import { KeywordNode } from './node/keyword-node';
-import { LogicNode } from './node/logic-node';
-import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
-import { RelevantNode } from './node/relevant-node';
-import { RetrievalNode } from './node/retrieval-node';
-import { RewriteNode } from './node/rewrite-node';
 import { SplitterNode } from './node/splitter-node';
-import { SwitchNode } from './node/switch-node';
-import { TemplateNode } from './node/template-node';
 import TokenizerNode from './node/tokenizer-node';
-import { ToolNode } from './node/tool-node';
 
 export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
-  categorizeNode: CategorizeNode,
   beginNode: BeginNode,
-  relevantNode: RelevantNode,
-  logicNode: LogicNode,
   noteNode: NoteNode,
-  switchNode: SwitchNode,
-  generateNode: GenerateNode,
-  retrievalNode: RetrievalNode,
-  messageNode: MessageNode,
-  rewriteNode: RewriteNode,
-  keywordNode: KeywordNode,
-  invokeNode: InvokeNode,
-  templateNode: TemplateNode,
-  // emailNode: EmailNode,
-  group: IterationNode,
-  iterationStartNode: IterationStartNode,
-  agentNode: AgentNode,
-  toolNode: ToolNode,
   parserNode: ParserNode,
-  chunkerNode: ChunkerNode,
   tokenizerNode: TokenizerNode,
   splitterNode: SplitterNode,
   hierarchicalMergerNode: HierarchicalMergerNode,
@@ -125,7 +94,6 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     chatVisible,
     runVisible,
     hideRunOrChatDrawer,
-    showChatModal,
     showFormDrawer,
   } = useShowDrawer({
     drawerVisible,
@@ -177,6 +145,12 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideImage,
     clearActiveDropdown,
   ]);
+
+  const {
+    visible: logSheetVisible,
+    showModal: showLogSheet,
+    hideModal: hideLogSheet,
+  } = useSetModalState();
 
   const onConnect = (connection: Connection) => {
     originalOnConnect(connection);
@@ -326,9 +300,10 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
       {runVisible && (
         <RunSheet
           hideModal={hideRunOrChatDrawer}
-          showModal={showChatModal}
+          showModal={showLogSheet}
         ></RunSheet>
       )}
+      {logSheetVisible && <LogSheet hideModal={hideLogSheet}></LogSheet>}
     </div>
   );
 }

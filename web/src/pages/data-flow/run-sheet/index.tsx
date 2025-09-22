@@ -13,7 +13,7 @@ import { UploaderForm } from './uploader';
 const RunSheet = ({ hideModal, showModal: showLogSheet }: IModalProps<any>) => {
   const { t } = useTranslation();
 
-  const { run, loading } = useRunDataflow(() => {});
+  const { run, loading } = useRunDataflow(showLogSheet!);
 
   return (
     <Sheet onOpenChange={hideModal} open modal={false}>

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { camelCase } from 'lodash';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { SelectWithSearch } from './originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -12,9 +13,8 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { RAGFlowSelect } from './ui/select';
 
-export const enum DocumentType {
+export const enum ParseDocumentType {
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
 }
@@ -22,9 +22,11 @@ export const enum DocumentType {
 export function LayoutRecognizeFormField({
   name = 'parser_config.layout_recognize',
   horizontal = true,
+  optionsWithoutLLM,
 }: {
   name?: string;
   horizontal?: boolean;
+  optionsWithoutLLM?: { value: string; label: string }[];
 }) {
   const form = useFormContext();
 
@@ -32,10 +34,13 @@ export function LayoutRecognizeFormField({
   const allOptions = useSelectLlmOptionsByModelType();
 
   const options = useMemo(() => {
-    const list = [DocumentType.DeepDOC, DocumentType.PlainText].map((x) => ({
-      label: x === DocumentType.PlainText ? t(camelCase(x)) : 'DeepDoc',
-      value: x,
-    }));
+    const list = optionsWithoutLLM
+      ? optionsWithoutLLM
+      : [ParseDocumentType.DeepDOC, ParseDocumentType.PlainText].map((x) => ({
+          label:
+            x === ParseDocumentType.PlainText ? t(camelCase(x)) : 'DeepDoc',
+          value: x,
+        }));
 
     const image2TextList = allOptions[LlmModelType.Image2text].map((x) => {
       return {
@@ -55,7 +60,7 @@ export function LayoutRecognizeFormField({
     });
 
     return [...list, ...image2TextList];
-  }, [allOptions, t]);
+  }, [allOptions, optionsWithoutLLM, t]);
 
   return (
     <FormField
@@ -80,7 +85,10 @@ export function LayoutRecognizeFormField({
               </FormLabel>
               <div className={horizontal ? 'w-3/4' : 'w-full'}>
                 <FormControl>
-                  <RAGFlowSelect {...field} options={options}></RAGFlowSelect>
+                  <SelectWithSearch
+                    {...field}
+                    options={options}
+                  ></SelectWithSearch>
                 </FormControl>
               </div>
             </div>

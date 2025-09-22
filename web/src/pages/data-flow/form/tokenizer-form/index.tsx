@@ -25,6 +25,8 @@ export const FormSchema = z.object({
 
 const SearchMethodOptions = buildOptions(TokenizerSearchMethod);
 
+const FieldsOptions = [{ label: 'text', value: 'text' }];
+
 const TokenizerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialTokenizerValues, node);
@@ -40,7 +42,10 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <RAGFlowFormItem name="search_method" label={t('search_method')}>
+        <RAGFlowFormItem
+          name="search_method"
+          label={t('dataflow.searchMethod')}
+        >
           {(field) => (
             <MultiSelect
               options={SearchMethodOptions}
@@ -52,10 +57,20 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
         </RAGFlowFormItem>
         <SliderInputFormField
           name="filename_embd_weight"
-          label="filename_embd_weight"
+          label={t('dataflow.filenameEmbdWeight')}
           max={0.5}
           step={0.01}
         ></SliderInputFormField>
+        <RAGFlowFormItem name="fields" label={t('dataflow.fields')}>
+          {(field) => (
+            <MultiSelect
+              options={FieldsOptions}
+              onValueChange={field.onChange}
+              defaultValue={field.value}
+              variant="inverted"
+            />
+          )}
+        </RAGFlowFormItem>
       </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>

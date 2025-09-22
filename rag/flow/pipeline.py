@@ -18,7 +18,7 @@ import json
 import logging
 import random
 import time
-
+from timeit import default_timer as timer
 import trio
 
 from agent.canvas import Graph
@@ -39,25 +39,26 @@ class Pipeline(Graph):
 
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
         log_key = f"{self._flow_id}-{self.task_id}-logs"
+        timestamp = timer()
         try:
             bin = REDIS_CONN.get(log_key)
             obj = json.loads(bin.encode("utf-8"))
             if obj:
-                if obj[-1]["component_name"] == component_name:
-                    obj[-1]["trace"].append({"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")})
+                if obj[-1]["component_id"] == component_name:
+                    obj[-1]["trace"].append({"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": timestamp-obj[-1]["trace"][-1]["timestamp"]})
                 else:
-                    obj.append({"component_name": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]})
+                    obj.append({"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]})
             else:
-                obj = [{"component_name": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S")}]}]
+                obj = [{"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]}]
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
             if self._doc_id:
                 percentage = 1.0 / len(self.components.items())
                 msg = ""
                 finished = 0.0
                 for o in obj:
-                    if o["component_name"] == "END":
+                    if o['component_id'] == "END":
                         continue
-                    msg += f"\n[{o['component_name']}]:\n"
+                    msg += f"\n[{o['component_id']}]:\n"
                     for t in o["trace"]:
                         msg += "%s: %s\n" % (t["datetime"], t["message"])
                         if t["progress"] < 0:

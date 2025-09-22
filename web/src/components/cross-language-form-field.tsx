@@ -22,7 +22,7 @@ const Languages = [
   'Vietnamese',
 ];
 
-const options = Languages.map((x) => ({
+export const crossLanguageOptions = Languages.map((x) => ({
   label: t('language.' + toLower(x)),
   value: x,
 }));
@@ -59,7 +59,7 @@ export const CrossLanguageFormField = ({
           </FormLabel>
           <FormControl>
             <MultiSelect
-              options={options}
+              options={crossLanguageOptions}
               placeholder={t('fileManager.pleaseSelect')}
               maxCount={100}
               {...field}

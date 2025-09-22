@@ -1,6 +1,10 @@
 import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
+import {
+  GenerateLogButton,
+  GenerateType,
+} from '@/pages/dataset/dataset/generate-button/generate';
 import random from 'lodash/random';
 import { Shuffle } from 'lucide-react';
 import { useCallback } from 'react';
@@ -52,7 +56,11 @@ const Prompt = 'parser_config.raptor.prompt';
 
 // The three types "table", "resume" and "one" do not display this configuration.
 
-const RaptorFormFields = () => {
+const RaptorFormFields = ({
+  showGenerateItem = false,
+}: {
+  showGenerateItem?: boolean;
+}) => {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
@@ -211,6 +219,18 @@ const RaptorFormFields = () => {
               </FormItem>
             )}
           />
+          {showGenerateItem && (
+            <div className="w-full flex items-center">
+              <div className="text-sm whitespace-nowrap w-1/4">
+                {t('extractRaptor')}
+              </div>
+              <GenerateLogButton
+                className="w-3/4 text-text-secondary"
+                status={1}
+                type={GenerateType.Raptor}
+              />
+            </div>
+          )}
         </div>
       )}
     </>

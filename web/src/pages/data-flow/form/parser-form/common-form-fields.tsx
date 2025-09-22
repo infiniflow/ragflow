@@ -42,21 +42,16 @@ export function OutputFormatFormField({
   );
 }
 
-export function ParserMethodFormField({ prefix }: CommonProps) {
+export function ParserMethodFormField({
+  prefix,
+  optionsWithoutLLM,
+}: CommonProps & { optionsWithoutLLM?: { value: string; label: string }[] }) {
   return (
     <LayoutRecognizeFormField
       name={buildFieldNameWithPrefix(`parse_method`, prefix)}
       horizontal={false}
+      optionsWithoutLLM={optionsWithoutLLM}
     ></LayoutRecognizeFormField>
-  );
-
-  return (
-    <RAGFlowFormItem
-      name={buildFieldNameWithPrefix(`parse_method`, prefix)}
-      label="parse_method"
-    >
-      <SelectWithSearch options={[]}></SelectWithSearch>
-    </RAGFlowFormItem>
   );
 }
 

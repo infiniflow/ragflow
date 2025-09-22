@@ -2,7 +2,7 @@ import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { parseColorToRGBA } from '@/utils/common-util';
 import { CircleQuestionMark } from 'lucide-react';
-import { FC, useMemo, useState } from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
@@ -74,25 +74,35 @@ const FileLogsPage: FC = () => {
   const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
     LogTabs.FILE_LOGS,
   );
-  const topMockData = {
+  const [topAllData, setTopAllData] = useState({
     totalFiles: {
-      value: 2827,
-      precent: 12.5,
+      value: 0,
+      precent: 0,
     },
     downloads: {
-      value: 28,
-      success: 8,
-      failed: 2,
+      value: 0,
+      success: 0,
+      failed: 0,
     },
     processing: {
-      value: 156,
-      success: 8,
-      failed: 2,
+      value: 0,
+      success: 0,
+      failed: 0,
     },
-  };
+  });
 
   const { data: topData } = useFetchOverviewTital();
   console.log('topData --> ', topData);
+  useEffect(() => {
+    setTopAllData({
+      ...topAllData,
+      processing: {
+        value: topData?.processing || 0,
+        success: topData?.finished || 0,
+        failed: topData?.failed || 0,
+      },
+    });
+  }, [topData, topAllData]);
 
   const mockData = useMemo(() => {
     if (active === LogTabs.FILE_LOGS) {
@@ -161,7 +171,7 @@ const FileLogsPage: FC = () => {
       <div className="grid grid-cols-3 md:grid-cols-3 gap-4 mb-6">
         <StatCard
           title="Total Files"
-          value={topMockData.totalFiles.value}
+          value={topAllData.totalFiles.value}
           icon={
             isDark ? (
               <SvgIcon name="data-flow/total-files-icon" width={40} />
@@ -172,15 +182,15 @@ const FileLogsPage: FC = () => {
         >
           <div>
             <span className="text-accent-primary">
-              {topMockData.totalFiles.precent > 0 ? '+' : ''}
-              {topMockData.totalFiles.precent}%{' '}
+              {topAllData.totalFiles.precent > 0 ? '+' : ''}
+              {topAllData.totalFiles.precent}%{' '}
             </span>
             from last week
           </div>
         </StatCard>
         <StatCard
           title="Downloading"
-          value={topMockData.downloads.value}
+          value={topAllData.downloads.value}
           icon={
             isDark ? (
               <SvgIcon name="data-flow/data-icon" width={40} />
@@ -190,13 +200,13 @@ const FileLogsPage: FC = () => {
           }
         >
           <CardFooterProcess
-            success={topMockData.downloads.success}
-            failed={topMockData.downloads.failed}
+            success={topAllData.downloads.success}
+            failed={topAllData.downloads.failed}
           />
         </StatCard>
         <StatCard
           title="Processing"
-          value={topMockData.processing.value}
+          value={topAllData.processing.value}
           icon={
             isDark ? (
               <SvgIcon name="data-flow/processing-icon" width={40} />
@@ -206,8 +216,8 @@ const FileLogsPage: FC = () => {
           }
         >
           <CardFooterProcess
-            success={topMockData.processing.success}
-            failed={topMockData.processing.failed}
+            success={topAllData.processing.success}
+            failed={topAllData.processing.failed}
           />
         </StatCard>
       </div>

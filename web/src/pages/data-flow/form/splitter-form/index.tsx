@@ -1,15 +1,15 @@
-import { FormContainer } from '@/components/form-container';
+import { DelimiterInput } from '@/components/delimiter-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { X } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialChunkerValues, initialSplitterValues } from '../../constant';
+import { initialSplitterValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -32,7 +32,8 @@ export const FormSchema = z.object({
 export type SplitterFormSchemaType = z.infer<typeof FormSchema>;
 
 const SplitterForm = ({ node }: INextOperatorForm) => {
-  const defaultValues = useFormValues(initialChunkerValues, node);
+  const defaultValues = useFormValues(initialSplitterValues, node);
+  const { t } = useTranslation();
 
   const form = useForm<SplitterFormSchemaType>({
     defaultValues,
@@ -50,20 +51,20 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <SliderInputFormField
-            name="chunk_token_size"
-            max={2048}
-            label="chunk_token_size"
-          ></SliderInputFormField>
-          <SliderInputFormField
-            name="overlapped_percent"
-            max={0.3}
-            min={0.1}
-            step={0.01}
-            label="overlapped_percent"
-          ></SliderInputFormField>
-          <span>delimiters</span>
+        <SliderInputFormField
+          name="chunk_token_size"
+          max={2048}
+          label={t('knowledgeConfiguration.chunkTokenNumber')}
+        ></SliderInputFormField>
+        <SliderInputFormField
+          name="overlapped_percent"
+          max={0.3}
+          min={0}
+          step={0.01}
+          label={t('dataflow.overlappedPercent')}
+        ></SliderInputFormField>
+        <section>
+          <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
           {fields.map((field, index) => (
             <div key={field.id} className="flex items-center gap-2">
               <div className="space-y-2 flex-1">
@@ -72,7 +73,7 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
                   label="delimiter"
                   labelClassName="!hidden"
                 >
-                  <Input className="!m-0"></Input>
+                  <DelimiterInput className="!m-0"></DelimiterInput>
                 </RAGFlowFormItem>
               </div>
               <Button
@@ -80,12 +81,14 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
                 variant={'ghost'}
                 onClick={() => remove(index)}
               >
-                <X />
+                <Trash2 />
               </Button>
             </div>
           ))}
-          <BlockButton onClick={() => append({ value: '' })}>Add</BlockButton>
-        </FormContainer>
+        </section>
+        <BlockButton onClick={() => append({ value: '\n' })}>
+          {t('common.add')}
+        </BlockButton>
       </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>

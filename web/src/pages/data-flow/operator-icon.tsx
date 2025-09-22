@@ -1,8 +1,9 @@
 import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
 import {
+  Blocks,
   FileChartColumnIncreasing,
-  Grid3x3,
+  Heading,
   HousePlus,
   ListMinus,
 } from 'lucide-react';
@@ -14,26 +15,15 @@ interface IProps {
 }
 
 export const OperatorIconMap = {
-  [Operator.Retrieval]: 'KR',
   [Operator.Begin]: 'house-plus',
-  [Operator.Categorize]: 'a-QuestionClassification',
-  [Operator.Message]: 'reply',
-  [Operator.Iteration]: 'loop',
-  [Operator.Switch]: 'condition',
-  [Operator.Code]: 'code-set',
-  [Operator.Agent]: 'agent-ai',
-  [Operator.UserFillUp]: 'await',
-  [Operator.StringTransform]: 'a-textprocessing',
   [Operator.Note]: 'notebook-pen',
-  [Operator.ExeSQL]: 'executesql-0',
-  [Operator.Invoke]: 'httprequest-0',
-  [Operator.Email]: 'sendemail-0',
 };
 
 export const SVGIconMap = {
   [Operator.Parser]: FileChartColumnIncreasing,
-  [Operator.Chunker]: Grid3x3,
   [Operator.Tokenizer]: ListMinus,
+  [Operator.Splitter]: Blocks,
+  [Operator.HierarchicalMerger]: Heading,
 };
 
 const Empty = () => {

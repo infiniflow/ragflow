@@ -38,33 +38,12 @@ export enum AgentDialogueMode {
   Task = 'task',
 }
 
-export const BeginId = 'begin';
+export const BeginId = 'File';
 
 export enum Operator {
-  Begin = 'Begin',
-  Retrieval = 'Retrieval',
-  Categorize = 'Categorize',
-  Message = 'Message',
-  Relevant = 'Relevant',
-  RewriteQuestion = 'RewriteQuestion',
-  KeywordExtract = 'KeywordExtract',
-  ExeSQL = 'ExeSQL',
-  Switch = 'Switch',
-  Concentrator = 'Concentrator',
+  Begin = 'File',
   Note = 'Note',
-  Crawler = 'Crawler',
-  Invoke = 'Invoke',
-  Email = 'Email',
-  Iteration = 'Iteration',
-  IterationStart = 'IterationItem',
-  Code = 'CodeExec',
-  WaitingDialogue = 'WaitingDialogue',
-  Agent = 'Agent',
-  Tool = 'Tool',
-  UserFillUp = 'UserFillUp',
-  StringTransform = 'StringTransform',
   Parser = 'Parser',
-  Chunker = 'Chunker',
   Tokenizer = 'Tokenizer',
   Splitter = 'Splitter',
   HierarchicalMerger = 'HierarchicalMerger',
@@ -100,6 +79,15 @@ export const SwitchOperatorOptions = [
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
+
+export enum TokenizerSearchMethod {
+  Embedding = 'embedding',
+  FullText = 'full_text',
+}
+
+export enum ImageParseMethod {
+  OCR = 'ocr',
+}
 
 const initialQueryBaseValues = {
   query: [],
@@ -308,8 +296,12 @@ export const initialWaitingDialogueValues = {};
 export const initialChunkerValues = { outputs: {} };
 
 export const initialTokenizerValues = {
-  search_method: [],
+  search_method: [
+    TokenizerSearchMethod.Embedding,
+    TokenizerSearchMethod.FullText,
+  ],
   filename_embd_weight: 0.1,
+  fields: ['text'],
   outputs: {},
 };
 
@@ -380,9 +372,14 @@ export const initialStringTransformValues = {
   },
 };
 
-export const initialParserValues = { outputs: {}, parser: [] };
+export const initialParserValues = { outputs: {}, setups: [] };
 
-export const initialSplitterValues = { outputs: {}, chunk_token_size: 512 };
+export const initialSplitterValues = {
+  outputs: {},
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [{ value: '\n' }],
+};
 
 export const initialHierarchicalMergerValues = { outputs: {} };
 
@@ -404,7 +401,7 @@ export const CategorizeAnchorPointPositions = [
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [Operator.Relevant],
+  [Operator.Begin]: [],
   [Operator.Parser]: [Operator.Begin],
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
@@ -413,29 +410,8 @@ export const RestrictedUpstreamMap = {
 
 export const NodeMap = {
   [Operator.Begin]: 'beginNode',
-  [Operator.Categorize]: 'categorizeNode',
-  [Operator.Retrieval]: 'retrievalNode',
-  [Operator.Message]: 'messageNode',
-  [Operator.Relevant]: 'relevantNode',
-  [Operator.RewriteQuestion]: 'rewriteNode',
-  [Operator.KeywordExtract]: 'keywordNode',
-  [Operator.ExeSQL]: 'ragNode',
-  [Operator.Switch]: 'switchNode',
-  [Operator.Concentrator]: 'logicNode',
   [Operator.Note]: 'noteNode',
-  [Operator.Crawler]: 'ragNode',
-  [Operator.Invoke]: 'ragNode',
-  [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
-  [Operator.IterationStart]: 'iterationStartNode',
-  [Operator.Code]: 'ragNode',
-  [Operator.WaitingDialogue]: 'ragNode',
-  [Operator.Agent]: 'agentNode',
-  [Operator.Tool]: 'toolNode',
-  [Operator.UserFillUp]: 'ragNode',
-  [Operator.StringTransform]: 'ragNode',
   [Operator.Parser]: 'parserNode',
-  [Operator.Chunker]: 'chunkerNode',
   [Operator.Tokenizer]: 'tokenizerNode',
   [Operator.Splitter]: 'splitterNode',
   [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
@@ -459,16 +435,7 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.Boolean]: ToggleLeft,
 };
 
-export const NoDebugOperatorsList = [
-  Operator.Begin,
-  Operator.Concentrator,
-  Operator.Message,
-  Operator.RewriteQuestion,
-  Operator.Switch,
-  Operator.Iteration,
-  Operator.UserFillUp,
-  Operator.IterationStart,
-];
+export const NoDebugOperatorsList = [Operator.Begin];
 
 export enum NodeHandleId {
   Start = 'start',
@@ -500,9 +467,4 @@ export enum FileType {
   PowerPoint = 'ppt',
   Video = 'video',
   Audio = 'audio',
-}
-
-export enum TokenizerSearchMethod {
-  Embedding = 'embedding',
-  FullText = 'full_text',
 }
