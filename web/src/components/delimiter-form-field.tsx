@@ -17,10 +17,16 @@ interface IProps {
 
 export const DelimiterInput = forwardRef<HTMLInputElement, InputProps & IProps>(
   ({ value, onChange, maxLength, defaultValue, ...props }, ref) => {
-    const nextValue = value?.replaceAll('\n', '\\n');
+    const nextValue = value
+      ?.replaceAll('\n', '\\n')
+      .replaceAll('\t', '\\t')
+      .replaceAll('\r', '\\r');
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const val = e.target.value;
-      const nextValue = val.replaceAll('\\n', '\n');
+      const nextValue = val
+        .replaceAll('\\n', '\n')
+        .replaceAll('\\t', '\t')
+        .replaceAll('\\r', '\r');
       onChange?.(nextValue);
     };
     return (

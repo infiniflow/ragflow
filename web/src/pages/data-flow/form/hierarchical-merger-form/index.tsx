@@ -10,7 +10,7 @@ import { memo } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialHierarchicalMergerValues } from '../../constant';
+import { Hierarchy, initialHierarchicalMergerValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -19,14 +19,6 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
 const outputList = buildOutputList(initialHierarchicalMergerValues.outputs);
-
-enum Hierarchy {
-  H1 = '1',
-  H2 = '2',
-  H3 = '3',
-  H4 = '4',
-  H5 = '5',
-}
 
 const HierarchyOptions = [
   { label: 'H1', value: Hierarchy.H1 },
@@ -37,7 +29,7 @@ const HierarchyOptions = [
 ];
 
 export const FormSchema = z.object({
-  hierarchy: z.number(),
+  hierarchy: z.string(),
   levels: z.array(
     z.object({
       expressions: z.array(

@@ -8,6 +8,7 @@ import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { NotebookText } from 'lucide-react';
 import 'react18-json-view/src/style.css';
+import { DataflowTimeline } from './dataflow-timeline';
 
 type LogSheetProps = IModalProps<any>;
 
@@ -18,7 +19,7 @@ export function LogSheet({ hideModal }: LogSheetProps) {
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
             <NotebookText className="size-4" />
-            Log
+            <DataflowTimeline></DataflowTimeline>
           </SheetTitle>
         </SheetHeader>
         <section className="max-h-[82vh] overflow-auto mt-6"></section>

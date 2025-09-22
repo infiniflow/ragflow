@@ -381,7 +381,24 @@ export const initialSplitterValues = {
   delimiters: [{ value: '\n' }],
 };
 
-export const initialHierarchicalMergerValues = { outputs: {} };
+export enum Hierarchy {
+  H1 = '1',
+  H2 = '2',
+  H3 = '3',
+  H4 = '4',
+  H5 = '5',
+}
+
+export const initialHierarchicalMergerValues = {
+  outputs: {},
+  hierarchy: Hierarchy.H3,
+  levels: [
+    { expressions: [{ expression: '^#[^#]' }] },
+    { expressions: [{ expression: '^##[^#]' }] },
+    { expressions: [{ expression: '^###[^#]' }] },
+    { expressions: [{ expression: '^####[^#]' }] },
+  ],
+};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -463,8 +480,36 @@ export enum FileType {
   Image = 'image',
   Email = 'email',
   TextMarkdown = 'text&markdown',
-  Docx = 'docx',
+  Docx = 'word',
   PowerPoint = 'ppt',
   Video = 'video',
   Audio = 'audio',
 }
+
+export const FileTypeSuffixMap = {
+  [FileType.PDF]: ['pdf'],
+  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
+  [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
+  [FileType.Email]: ['eml', 'msg'],
+  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
+  [FileType.Docx]: ['doc', 'docx'],
+  [FileType.PowerPoint]: ['pptx'],
+  [FileType.Video]: [],
+  [FileType.Audio]: [
+    'da',
+    'wave',
+    'wav',
+    'mp3',
+    'aac',
+    'flac',
+    'ogg',
+    'aiff',
+    'au',
+    'midi',
+    'wma',
+    'realaudio',
+    'vqf',
+    'oggvorbis',
+    'ape',
+  ],
+};
