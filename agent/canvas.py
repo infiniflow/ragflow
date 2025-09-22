@@ -490,12 +490,13 @@ class Canvas(Graph):
             self.retrieval = [{"chunks": {}, "doc_aggs": {}}]
 
         r = self.retrieval[-1]
-        for i, ck in enumerate(chunks_format({"chunks": chunks})):
+        for ck in chunks_format({"chunks": chunks}):
             cid = uuid.uuid5(uuid.NAMESPACE_DNS, ck["id"])
-            r["chunks"][cid] = ck
+            if cid not in r['chunks']:
+                r["chunks"][cid] = ck
 
         for doc in doc_infos:
-            if doc["doc_name"] not in r["doc_aggs"]:
+            if doc["doc_name"] not in r['doc_aggs']:
                 r["doc_aggs"][doc["doc_name"]] = doc
 
     def get_reference(self):
