@@ -227,7 +227,7 @@ export enum FileType {
   Email = 'email',
   TextMarkdown = 'text&markdown',
   Docx = 'word',
-  PowerPoint = 'ppt',
+  PowerPoint = 'slides',
   Video = 'video',
   Audio = 'audio',
 }

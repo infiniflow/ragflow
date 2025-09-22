@@ -1,22 +1,10 @@
-import {
-  IAgentForm,
-  ICategorizeItem,
-  ICategorizeItemResult,
-} from '@/interfaces/database/agent';
+import { IAgentForm } from '@/interfaces/database/agent';
 import { DSLComponents, RAGFlowNodeType } from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
-import {
-  curry,
-  get,
-  intersectionWith,
-  isEmpty,
-  isEqual,
-  omit,
-  sample,
-} from 'lodash';
+import { curry, get, intersectionWith, isEmpty, isEqual, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
@@ -30,7 +18,7 @@ import {
 import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
 import { ParserFormSchemaType } from './form/parser-form';
 import { SplitterFormSchemaType } from './form/splitter-form';
-import { BeginQuery, IPosition } from './interface';
+import { IPosition } from './interface';
 
 const buildComponentDownstreamOrUpstream = (
   edges: Edge[],
@@ -122,6 +110,7 @@ function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
+            lang: cur.lang,
           };
           break;
         case FileType.Email:
@@ -308,10 +297,6 @@ export const getOtherFieldValues = (
         x !== form.getFieldValue([formListName, field.name, latestField]),
     );
 
-export const generateSwitchHandleText = (idx: number) => {
-  return `Case ${idx + 1}`;
-};
-
 export const getNodeDragHandle = (nodeType?: string) => {
   return nodeType === Operator.Note ? '.note-drag-handle' : undefined;
 };
@@ -400,40 +385,6 @@ export const needsSingleStepDebugging = (label: string) => {
   return !NoDebugOperatorsList.some((x) => (label as Operator) === x);
 };
 
-// Get the coordinates of the node relative to the Iteration node
-export function getRelativePositionToIterationNode(
-  nodes: RAGFlowNodeType[],
-  position?: XYPosition, // relative position
-) {
-  if (!position) {
-    return;
-  }
-
-  const iterationNodes = nodes.filter(
-    (node) => node.data.label === Operator.Iteration,
-  );
-
-  for (const iterationNode of iterationNodes) {
-    const {
-      position: { x, y },
-      width,
-      height,
-    } = iterationNode;
-    const halfWidth = (width || 0) / 2;
-    if (
-      position.x >= x - halfWidth &&
-      position.x <= x + halfWidth &&
-      position.y >= y &&
-      position.y <= y + (height || 0)
-    ) {
-      return {
-        parentId: iterationNode.id,
-        position: { x: position.x - x + halfWidth, y: position.y - y },
-      };
-    }
-  }
-}
-
 export const generateDuplicateNode = (
   position?: XYPosition,
   label?: string,
@@ -468,68 +419,8 @@ export function convertToObjectArray(list: Array<string | number | boolean>) {
   return list.map((x) => ({ value: x }));
 }
 
-/**
-   * convert the following object into a list
-   * 
-   * {
-      "product_related": {
-      "description": "The question is about product usage, appearance and how it works.",
-      "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?",
-      "to": "generate:0"
-      }
-      }
-*/
-export const buildCategorizeListFromObject = (
-  categorizeItem: ICategorizeItemResult,
-) => {
-  // Categorize's to field has two data sources, with edges as the data source.
-  // Changes in the edge or to field need to be synchronized to the form field.
-  return Object.keys(categorizeItem)
-    .reduce<Array<ICategorizeItem>>((pre, cur) => {
-      // synchronize edge data to the to field
-
-      pre.push({
-        name: cur,
-        ...categorizeItem[cur],
-        examples: convertToObjectArray(categorizeItem[cur].examples),
-      });
-      return pre;
-    }, [])
-    .sort((a, b) => a.index - b.index);
-};
-
-/**
-   * Convert the list in the following form into an object
-   * {
-    "items": [
-      {
-        "name": "Categorize 1",
-        "description": "111",
-        "examples": ["ddd"],
-        "to": "Retrieval:LazyEelsStick"
-      }
-     ]
-    }
-*/
-export const buildCategorizeObjectFromList = (list: Array<ICategorizeItem>) => {
-  return list.reduce<ICategorizeItemResult>((pre, cur) => {
-    if (cur?.name) {
-      pre[cur.name] = {
-        ...omit(cur, 'name', 'examples'),
-        examples: convertToStringArray(cur.examples) as string[],
-      };
-    }
-    return pre;
-  }, {});
-};
-
 export function getAgentNodeTools(agentNode?: RAGFlowNodeType) {
   const tools: IAgentForm['tools'] = get(agentNode, 'data.form.tools', []);
-  return tools;
-}
-
-export function getAgentNodeMCP(agentNode?: RAGFlowNodeType) {
-  const tools: IAgentForm['mcp'] = get(agentNode, 'data.form.mcp', []);
   return tools;
 }
 
@@ -551,22 +442,4 @@ export function mapEdgeMouseEvent(
   );
 
   return nextEdges;
-}
-
-export function buildBeginQueryWithObject(
-  inputs: Record<string, BeginQuery>,
-  values: BeginQuery[],
-) {
-  const nextInputs = Object.keys(inputs).reduce<Record<string, BeginQuery>>(
-    (pre, key) => {
-      const item = values.find((x) => x.key === key);
-      if (item) {
-        pre[key] = { ...item };
-      }
-      return pre;
-    },
-    {},
-  );
-
-  return nextInputs;
 }
