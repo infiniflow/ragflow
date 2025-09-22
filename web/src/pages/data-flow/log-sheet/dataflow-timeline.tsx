@@ -8,9 +8,8 @@ import {
   TimelineSeparator,
   TimelineTitle,
 } from '@/components/originui/timeline';
-import { useFetchMessageTrace } from '@/hooks/use-agent-request';
+import { ITraceData } from '@/interfaces/database/agent';
 import { Aperture } from 'lucide-react';
-import { useEffect } from 'react';
 
 const items = [
   {
@@ -50,7 +49,9 @@ const items = [
   },
 ];
 
-export type DataflowTimelineProps = { messageId: string };
+export type DataflowTimelineProps = {
+  traceList?: ITraceData[];
+};
 
 interface DataflowTrace {
   datetime: string;
@@ -59,15 +60,7 @@ interface DataflowTrace {
   progress: number;
   timestamp: number;
 }
-export function DataflowTimeline({ messageId }: DataflowTimelineProps) {
-  const { setMessageId, data } = useFetchMessageTrace(false);
-
-  useEffect(() => {
-    if (messageId) {
-      setMessageId(messageId);
-    }
-  }, [messageId, setMessageId]);
-
+export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
   return (
     <Timeline>
       {items.map((item) => (
