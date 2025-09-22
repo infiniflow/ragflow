@@ -15,7 +15,6 @@ import { AgentFormContext } from '../context';
 import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import OperatorIcon from '../operator-icon';
 import { FormConfigMap } from './form-config-map';
-import SingleDebugSheet from './single-debug-sheet';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -31,9 +30,7 @@ const FormSheet = ({
   visible,
   hideModal,
   node,
-  singleDebugDrawerVisible,
   chatVisible,
-  hideSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
   // const clickedToolId = useGraphStore((state) => state.clickedToolId);
@@ -94,13 +91,6 @@ const FormSheet = ({
           )}
         </section>
       </SheetContent>
-      {singleDebugDrawerVisible && (
-        <SingleDebugSheet
-          visible={singleDebugDrawerVisible}
-          hideModal={hideSingleDebugDrawer}
-          componentId={node?.id}
-        ></SingleDebugSheet>
-      )}
     </Sheet>
   );
 };
