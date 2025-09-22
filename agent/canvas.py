@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
@@ -239,7 +240,7 @@ class Canvas(Graph):
 
         if not self.path or self.path[-1].lower().find("userfillup") < 0:
             self.path.append("begin")
-            self.retrieval.append({"chunks": [], "doc_aggs": []})
+            self.retrieval.append({"chunks": {}, "doc_aggs": {}})
 
         yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
         self.retrieval.append({"chunks": {}, "doc_aggs": {}})
@@ -489,13 +490,12 @@ class Canvas(Graph):
             self.retrieval = [{"chunks": {}, "doc_aggs": {}}]
 
         r = self.retrieval[-1]
-        for ck in chunks_format({"chunks": chunks}):
-            cid = hash_str2int(ck["id"], 100)
-            if cid not in r:
-                r["chunks"][cid] = ck
+        for i, ck in enumerate(chunks_format({"chunks": chunks})):
+            cid = uuid.uuid5(uuid.NAMESPACE_DNS, ck["id"])
+            r["chunks"][cid] = ck
 
         for doc in doc_infos:
-            if doc["doc_name"] not in r:
+            if doc["doc_name"] not in r["doc_aggs"]:
                 r["doc_aggs"][doc["doc_name"]] = doc
 
     def get_reference(self):
