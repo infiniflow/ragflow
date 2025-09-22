@@ -244,7 +244,7 @@ class ComponentParamBase(ABC):
 
                 if not value_legal:
                     raise ValueError(
-                        "Plase check runtime conf, {} = {} does not match user-parameter restriction".format(
+                        "Please check runtime conf, {} = {} does not match user-parameter restriction".format(
                             variable, value
                         )
                     )
