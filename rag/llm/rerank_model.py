@@ -30,7 +30,7 @@ from yarl import URL
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate
+from rag.utils import num_tokens_from_string, truncate, total_token_count_from_response
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
@@ -44,18 +44,7 @@ class Base(ABC):
         raise NotImplementedError("Please implement encode method!")
 
     def total_token_count(self, resp):
-        if hasattr(resp, "usage") and hasattr(resp.usage, "total_tokens"):
-            try:
-                return resp.usage.total_tokens
-            except Exception:
-                pass
-
-        if 'usage' in resp and 'total_tokens' in resp['usage']:
-            try:
-                return resp["usage"]["total_tokens"]
-            except Exception:
-                pass
-        return 0
+        return total_token_count_from_response(resp)
 
 
 class DefaultRerank(Base):
