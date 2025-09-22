@@ -916,7 +916,7 @@ class PipelineOperationLog(DataBaseModel):
     parser_id = CharField(max_length=32, null=False, help_text="Parser ID", index=True)
     document_name = CharField(max_length=255, null=False, help_text="File name")
     document_suffix = CharField(max_length=255, null=False, help_text="File suffix")
-    document_type = CharField(max_length=255, null=False, help_text="File suffix")
+    document_type = CharField(max_length=255, null=False, help_text="Document type")
     source_from = CharField(max_length=255, null=False, help_text="Source")
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(null=True, help_text="process message", default="")
