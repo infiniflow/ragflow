@@ -14,15 +14,30 @@ load_env_file() {
         echo "Loading environment variables from: $env_file"
         # Source the .env file
         set -a
-        source "$env_file" 
+        source "$env_file"
         set +a
     else
         echo "Warning: .env file not found at: $env_file"
     fi
 }
 
+# Detect GPU count
+detect_gpu_count() {
+    if command -v nvidia-smi &> /dev/null; then
+        GPU_COUNT=$(nvidia-smi --list-gpus | wc -l)
+        echo "Detected $GPU_COUNT GPUs"
+    else
+        GPU_COUNT=0
+        echo "No NVIDIA GPUs detected, using CPU mode"
+    fi
+    export GPU_COUNT
+}
+
 # Load environment variables
 load_env_file
+
+# Detect GPU count
+detect_gpu_count
 
 # Unset HTTP proxies that might be set by Docker daemon
 export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
@@ -33,9 +48,10 @@ JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
 
 PY=python3
 
-# Set default number of workers if WS is not set or less than 1
+# Set default number of workers based on GPU count
 if [[ -z "$WS" || $WS -lt 1 ]]; then
-  WS=1
+    WS=1  # Force single worker for single GPU mode
+    echo "Setting WS=$WS for single GPU mode"
 fi
 
 # Maximum number of retries for each task executor and server
@@ -71,8 +87,16 @@ trap cleanup SIGINT SIGTERM
 task_exe(){
     local task_id=$1
     local retry_count=0
+
+    # Calculate GPU device for this worker - single GPU mode
+    local gpu_device=0  # Always use GPU 0 for single GPU mode
+
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting task_executor.py for task $task_id (Attempt $((retry_count+1)))"
+        echo "Starting task_executor.py for task $task_id on GPU $gpu_device (Attempt $((retry_count+1)))"
+
+        # Set CUDA_VISIBLE_DEVICES for this worker
+        export CUDA_VISIBLE_DEVICES=$gpu_device
+
         LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py "$task_id"
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
@@ -115,8 +139,11 @@ run_server(){
 }
 
 # Start task executors
+echo "Starting $WS task executor(s) with single GPU mode..."
 for ((i=0;i<WS;i++))
 do
+  gpu_device=0  # Always use GPU 0 for single GPU mode
+  echo "Starting worker $i on GPU $gpu_device"
   task_exe "$i" &
   PIDS+=($!)
 done

@@ -17,14 +17,10 @@ import json
 import os
 import secrets
 from datetime import date
-<<<<<<< HEAD
 from enum import IntEnum, Enum
 from api.utils.file_utils import get_project_base_directory
 import rag.utils.es_conn
 # import rag.utils.infinity_conn
-=======
-from enum import Enum, IntEnum
->>>>>>> upstream/main
 
 import rag.utils
 import rag.utils.es_conn
@@ -32,7 +28,6 @@ import rag.utils.infinity_conn
 import rag.utils.opensearch_conn
 from api.constants import RAG_FLOW_SERVICE_NAME
 from api.utils import decrypt_database_config, get_base_config
-from api.utils.file_utils import get_project_base_directory
 from rag.nlp import search
 
 LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
@@ -84,22 +79,19 @@ SANDBOX_ENABLED = 0
 SANDBOX_HOST = None
 STRONG_TEST_COUNT = int(os.environ.get("STRONG_TEST_COUNT", "8"))
 
-<<<<<<< HEAD
-DOC_ENGINE = os.environ.get('DOC_ENGINE', "elasticsearch")
+DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
 if DOC_ENGINE == "elasticsearch":
     docStoreConn = rag.utils.es_conn.ESConnection()
-# elif DOC_ENGINE == "infinity":
-#     docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+elif DOC_ENGINE == "infinity":
+    docStoreConn = rag.utils.infinity_conn.InfinityConnection()
 else:
     raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
-=======
 BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
->>>>>>> upstream/main
 
 SMTP_CONF = None
 MAIL_SERVER = ""
 MAIL_PORT = 000
-MAIL_USE_SSL= True
+MAIL_USE_SSL = True
 MAIL_USE_TLS = False
 MAIL_USERNAME = ""
 MAIL_PASSWORD = ""

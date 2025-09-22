@@ -22,7 +22,7 @@ import os
 import re
 import string
 import sys
-# from hanziconv import HanziConv
+from hanziconv import HanziConv
 from nltk import word_tokenize
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from api.utils.file_utils import get_project_base_directory
@@ -38,7 +38,7 @@ class RagTokenizer:
     def loadDict_(self, fnm):
         logging.info(f"[HUQIE]:Build trie from {fnm}")
         try:
-            of = open(fnm, "r", encoding='utf-8')
+            of = open(fnm, "r", encoding="utf-8")
             while True:
                 line = of.readline()
                 if not line:
@@ -46,7 +46,7 @@ class RagTokenizer:
                 line = re.sub(r"[\r\n]+", "", line)
                 line = re.split(r"[ \t]", line)
                 k = self.key_(line[0])
-                F = int(math.log(float(line[1]) / self.DENOMINATOR) + .5)
+                F = int(math.log(float(line[1]) / self.DENOMINATOR) + 0.5)
                 if k not in self.trie_ or self.trie_[k][0] < F:
                     self.trie_[self.key_(line[0])] = (F, line[2])
                 self.trie_[self.rkey_(line[0])] = 1
@@ -68,21 +68,21 @@ class RagTokenizer:
 
         self.SPLIT_CHAR = r"([ ,\.<>/?;:'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-zA-Z0-9,\.-]+)"
 
-        # trie_file_name = self.DIR_ + ".txt.trie"
-        # # check if trie file existence
-        # if os.path.exists(trie_file_name):
-        #     try:
-        #         # load trie from file
-        #         self.trie_ = datrie.Trie.load(trie_file_name)
-        #         return
-        #     except Exception:
-        #         # fail to load trie from file, build default trie
-        #         logging.exception(f"[HUQIE]:Fail to load trie file {trie_file_name}, build the default trie file")
-        #         self.trie_ = datrie.Trie(string.printable)
-        # else:
-        #     # file not exist, build default trie
-        #     logging.info(f"[HUQIE]:Trie file {trie_file_name} not found, build the default trie file")
-        #     self.trie_ = datrie.Trie(string.printable)
+        trie_file_name = self.DIR_ + ".txt.trie"
+        # check if trie file existence
+        if os.path.exists(trie_file_name):
+            try:
+                # load trie from file
+                self.trie_ = datrie.Trie.load(trie_file_name)
+                return
+            except Exception:
+                # fail to load trie from file, build default trie
+                logging.exception(f"[HUQIE]:Fail to load trie file {trie_file_name}, build the default trie file")
+                self.trie_ = datrie.Trie(string.printable)
+        else:
+            # file not exist, build default trie
+            logging.info(f"[HUQIE]:Trie file {trie_file_name} not found, build the default trie file")
+            self.trie_ = datrie.Trie(string.printable)
 
         # load data from dict file and save to trie file
         self.loadDict_(self.DIR_ + ".txt")
@@ -106,15 +106,15 @@ class RagTokenizer:
             if inside_code == 0x3000:
                 inside_code = 0x0020
             else:
-                inside_code -= 0xfee0
-            if inside_code < 0x0020 or inside_code > 0x7e:  # After the conversion, if it's not a half-width character, return the original character.
+                inside_code -= 0xFEE0
+            if inside_code < 0x0020 or inside_code > 0x7E:  # After the conversion, if it's not a half-width character, return the original character.
                 rstring += uchar
             else:
                 rstring += chr(inside_code)
         return rstring
 
-    # def _tradi2simp(self, line):
-    #     return HanziConv.toSimplified(line)
+    def _tradi2simp(self, line):
+        return HanziConv.toSimplified(line)
 
     def dfs_(self, chars, s, preTks, tkslist, _depth=0, _memo=None):
         if _memo is None:
@@ -124,14 +124,14 @@ class RagTokenizer:
             if s < len(chars):
                 copy_pretks = copy.deepcopy(preTks)
                 remaining = "".join(chars[s:])
-                copy_pretks.append((remaining, (-12, '')))
+                copy_pretks.append((remaining, (-12, "")))
                 tkslist.append(copy_pretks)
             return s
-    
+
         state_key = (s, tuple(tk[0] for tk in preTks)) if preTks else (s, None)
         if state_key in _memo:
             return _memo[state_key]
-        
+
         res = s
         if s >= len(chars):
             tkslist.append(preTks)
@@ -155,23 +155,23 @@ class RagTokenizer:
                 if k in self.trie_:
                     copy_pretks.append((t, self.trie_[k]))
                 else:
-                    copy_pretks.append((t, (-12, '')))
+                    copy_pretks.append((t, (-12, "")))
                 next_res = self.dfs_(chars, mid, copy_pretks, tkslist, _depth + 1, _memo)
                 res = max(res, next_res)
                 _memo[state_key] = res
                 return res
-    
+
         S = s + 1
         if s + 2 <= len(chars):
-            t1 = "".join(chars[s:s + 1])
-            t2 = "".join(chars[s:s + 2])
+            t1 = "".join(chars[s : s + 1])
+            t2 = "".join(chars[s : s + 2])
             if self.trie_.has_keys_with_prefix(self.key_(t1)) and not self.trie_.has_keys_with_prefix(self.key_(t2)):
                 S = s + 2
         if len(preTks) > 2 and len(preTks[-1][0]) == 1 and len(preTks[-2][0]) == 1 and len(preTks[-3][0]) == 1:
-            t1 = preTks[-1][0] + "".join(chars[s:s + 1])
+            t1 = preTks[-1][0] + "".join(chars[s : s + 1])
             if self.trie_.has_keys_with_prefix(self.key_(t1)):
                 S = s + 2
-    
+
         for e in range(S, len(chars) + 1):
             t = "".join(chars[s:e])
             k = self.key_(t)
@@ -181,18 +181,18 @@ class RagTokenizer:
                 pretks = copy.deepcopy(preTks)
                 pretks.append((t, self.trie_[k]))
                 res = max(res, self.dfs_(chars, e, pretks, tkslist, _depth + 1, _memo))
-        
+
         if res > s:
             _memo[state_key] = res
             return res
-    
-        t = "".join(chars[s:s + 1])
+
+        t = "".join(chars[s : s + 1])
         k = self.key_(t)
         copy_pretks = copy.deepcopy(preTks)
         if k in self.trie_:
             copy_pretks.append((t, self.trie_[k]))
         else:
-            copy_pretks.append((t, (-12, '')))
+            copy_pretks.append((t, (-12, "")))
         result = self.dfs_(chars, s + 1, copy_pretks, tkslist, _depth + 1, _memo)
         _memo[state_key] = result
         return result
@@ -216,7 +216,7 @@ class RagTokenizer:
             F += freq
             L += 0 if len(tk) < 2 else 1
             tks.append(tk)
-        #F /= len(tks)
+        # F /= len(tks)
         L /= len(tks)
         logging.debug("[SC] {} {} {} {} {}".format(tks, len(tks), L, F, B / len(tks) + L + F))
         return tks, B / len(tks) + L + F
@@ -252,8 +252,7 @@ class RagTokenizer:
         while s < len(line):
             e = s + 1
             t = line[s:e]
-            while e < len(line) and self.trie_.has_keys_with_prefix(
-                    self.key_(t)):
+            while e < len(line) and self.trie_.has_keys_with_prefix(self.key_(t)):
                 e += 1
                 t = line[s:e]
 
@@ -264,7 +263,7 @@ class RagTokenizer:
             if self.key_(t) in self.trie_:
                 res.append((t, self.trie_[self.key_(t)]))
             else:
-                res.append((t, (0, '')))
+                res.append((t, (0, "")))
 
             s = e
 
@@ -287,7 +286,7 @@ class RagTokenizer:
             if self.key_(t) in self.trie_:
                 res.append((t, self.trie_[self.key_(t)]))
             else:
-                res.append((t, (0, '')))
+                res.append((t, (0, "")))
 
             s -= 1
 
@@ -310,13 +309,13 @@ class RagTokenizer:
                 if _zh == zh:
                     e += 1
                     continue
-                txt_lang_pairs.append((a[s: e], zh))
+                txt_lang_pairs.append((a[s:e], zh))
                 s = e
                 e = s + 1
                 zh = _zh
             if s >= len(a):
                 continue
-            txt_lang_pairs.append((a[s: e], zh))
+            txt_lang_pairs.append((a[s:e], zh))
         return txt_lang_pairs
 
     def tokenize(self, line):
@@ -331,12 +330,11 @@ class RagTokenizer:
 
         arr = self._split_by_lang(line)
         res = []
-        for L,lang in arr:
+        for L, lang in arr:
             if not lang:
                 res.extend([self.stemmer.stem(self.lemmatizer.lemmatize(t)) for t in word_tokenize(L)])
                 continue
-            if len(L) < 2 or re.match(
-                    r"[a-z\.-]+$", L) or re.match(r"[0-9\.-]+$", L):
+            if len(L) < 2 or re.match(r"[a-z\.-]+$", L) or re.match(r"[0-9\.-]+$", L):
                 res.append(L)
                 continue
 
@@ -352,7 +350,7 @@ class RagTokenizer:
             while i + same < len(tks1) and j + same < len(tks) and tks1[i + same] == tks[j + same]:
                 same += 1
             if same > 0:
-                res.append(" ".join(tks[j: j + same]))
+                res.append(" ".join(tks[j : j + same]))
             _i = i + same
             _j = j + same
             j = _j + 1
@@ -379,7 +377,7 @@ class RagTokenizer:
                 same = 1
                 while i + same < len(tks1) and j + same < len(tks) and tks1[i + same] == tks[j + same]:
                     same += 1
-                res.append(" ".join(tks[j: j + same]))
+                res.append(" ".join(tks[j : j + same]))
                 _i = i + same
                 _j = j + same
                 j = _j + 1
@@ -439,22 +437,21 @@ class RagTokenizer:
 
 
 def is_chinese(s):
-    if s >= u'\u4e00' and s <= u'\u9fa5':
+    if s >= "\u4e00" and s <= "\u9fa5":
         return True
     else:
         return False
 
 
 def is_number(s):
-    if s >= u'\u0030' and s <= u'\u0039':
+    if s >= "\u0030" and s <= "\u0039":
         return True
     else:
         return False
 
 
 def is_alphabet(s):
-    if (s >= u'\u0041' and s <= u'\u005a') or (
-            s >= u'\u0061' and s <= u'\u007a'):
+    if (s >= "\u0041" and s <= "\u005a") or (s >= "\u0061" and s <= "\u007a"):
         return True
     else:
         return False
@@ -463,8 +460,7 @@ def is_alphabet(s):
 def naiveQie(txt):
     tks = []
     for t in txt.split():
-        if tks and re.match(r".*[a-zA-Z]$", tks[-1]
-                            ) and re.match(r".*[a-zA-Z]$", t):
+        if tks and re.match(r".*[a-zA-Z]$", tks[-1]) and re.match(r".*[a-zA-Z]$", t):
             tks.append(" ")
         tks.append(t)
     return tks
@@ -477,17 +473,15 @@ tag = tokenizer.tag
 freq = tokenizer.freq
 loadUserDict = tokenizer.loadUserDict
 addUserDict = tokenizer.addUserDict
-# tradi2simp = tokenizer._tradi2simp
+tradi2simp = tokenizer._tradi2simp
 strQ2B = tokenizer._strQ2B
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     tknzr = RagTokenizer(debug=True)
     # huqie.addUserDict("/tmp/tmp.new.tks.dict")
-    tks = tknzr.tokenize(
-        "哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
+    tks = tknzr.tokenize("哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
     logging.info(tknzr.fine_grained_tokenize(tks))
-    tks = tknzr.tokenize(
-        "数据分析项目经理|数据分析挖掘|数据分析方向|商品数据分析|搜索数据分析 sql python hive tableau Cocos2d-")
+    tks = tknzr.tokenize("数据分析项目经理|数据分析挖掘|数据分析方向|商品数据分析|搜索数据分析 sql python hive tableau Cocos2d-")
     logging.info(tknzr.fine_grained_tokenize(tks))
     if len(sys.argv) < 2:
         sys.exit()

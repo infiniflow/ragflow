@@ -28,14 +28,9 @@ import logging
 import copy
 from enum import Enum, IntEnum
 import importlib
-<<<<<<< HEAD
-# from Cryptodome.PublicKey import RSA
-# from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-
-=======
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
->>>>>>> upstream/main
+
 from filelock import FileLock
 from api.constants import SERVICE_CONF
 
@@ -49,7 +44,7 @@ def conf_realpath(conf_name):
 
 def read_config(conf_name=SERVICE_CONF):
     local_config = {}
-    local_path = conf_realpath(f'local.{conf_name}')
+    local_path = conf_realpath(f"local.{conf_name}")
 
     # load local config file
     if os.path.exists(local_path):
@@ -90,15 +85,15 @@ def show_configs():
                 v = copy.deepcopy(v)
                 v["sas_token"] = "*" * 8
             if "oauth" in k:
-                v =  copy.deepcopy(v)
+                v = copy.deepcopy(v)
                 for key, val in v.items():
-                  if "client_secret" in val:
-                      val["client_secret"] = "*" * 8
+                    if "client_secret" in val:
+                        val["client_secret"] = "*" * 8
             if "authentication" in k:
-                v =  copy.deepcopy(v)
+                v = copy.deepcopy(v)
                 for key, val in v.items():
-                  if "http_secret_key" in val:
-                      val["http_secret_key"] = "*" * 8
+                    if "http_secret_key" in val:
+                        val["http_secret_key"] = "*" * 8
         msg += f"\n\t{k}: {v}"
     logging.info(msg)
 
@@ -111,8 +106,7 @@ def get_base_config(key, default=None):
     return CONFIGS.get(key, default)
 
 
-use_deserialize_safe_module = get_base_config(
-    'use_deserialize_safe_module', False)
+use_deserialize_safe_module = get_base_config("use_deserialize_safe_module", False)
 
 
 class BaseType:
@@ -138,8 +132,7 @@ class BaseType:
                     data[_k] = _dict(vv)
             else:
                 data = obj
-            return {"type": obj.__class__.__name__,
-                    "data": data, "module": module}
+            return {"type": obj.__class__.__name__, "data": data, "module": module}
 
         return _dict(self)
 
@@ -151,9 +144,9 @@ class CustomJSONEncoder(json.JSONEncoder):
 
     def default(self, obj):
         if isinstance(obj, datetime.datetime):
-            return obj.strftime('%Y-%m-%d %H:%M:%S')
+            return obj.strftime("%Y-%m-%d %H:%M:%S")
         elif isinstance(obj, datetime.date):
-            return obj.strftime('%Y-%m-%d')
+            return obj.strftime("%Y-%m-%d")
         elif isinstance(obj, datetime.timedelta):
             return str(obj)
         elif issubclass(type(obj), Enum) or issubclass(type(obj), IntEnum):
@@ -176,8 +169,7 @@ def rag_uuid():
 
 
 def string_to_bytes(string):
-    return string if isinstance(
-        string, bytes) else string.encode(encoding="utf-8")
+    return string if isinstance(string, bytes) else string.encode(encoding="utf-8")
 
 
 def bytes_to_string(byte):
@@ -185,11 +177,7 @@ def bytes_to_string(byte):
 
 
 def json_dumps(src, byte=False, indent=None, with_type=False):
-    dest = json.dumps(
-        src,
-        indent=indent,
-        cls=CustomJSONEncoder,
-        with_type=with_type)
+    dest = json.dumps(src, indent=indent, cls=CustomJSONEncoder, with_type=with_type)
     if byte:
         dest = string_to_bytes(dest)
     return dest
@@ -198,8 +186,7 @@ def json_dumps(src, byte=False, indent=None, with_type=False):
 def json_loads(src, object_hook=None, object_pairs_hook=None):
     if isinstance(src, bytes):
         src = bytes_to_string(src)
-    return json.loads(src, object_hook=object_hook,
-                      object_pairs_hook=object_pairs_hook)
+    return json.loads(src, object_hook=object_hook, object_pairs_hook=object_pairs_hook)
 
 
 def current_timestamp():
@@ -230,29 +217,24 @@ def serialize_b64(src, to_str=False):
 
 
 def deserialize_b64(src):
-    src = base64.b64decode(
-        string_to_bytes(src) if isinstance(
-            src, str) else src)
+    src = base64.b64decode(string_to_bytes(src) if isinstance(src, str) else src)
     if use_deserialize_safe_module:
         return restricted_loads(src)
     return pickle.loads(src)
 
 
-safe_module = {
-    'numpy',
-    'rag_flow'
-}
+safe_module = {"numpy", "rag_flow"}
 
 
 class RestrictedUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         import importlib
-        if module.split('.')[0] in safe_module:
+
+        if module.split(".")[0] in safe_module:
             _module = importlib.import_module(module)
             return getattr(_module, name)
         # Forbid everything else.
-        raise pickle.UnpicklingError("global '%s.%s' is forbidden" %
-                                     (module, name))
+        raise pickle.UnpicklingError("global '%s.%s' is forbidden" % (module, name))
 
 
 def restricted_loads(src):
@@ -267,8 +249,7 @@ def get_lan_ip():
 
         def get_interface_ip(ifname):
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            return socket.inet_ntoa(
-                fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', string_to_bytes(ifname[:15])))[20:24])
+            return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack("256s", string_to_bytes(ifname[:15])))[20:24])
 
     ip = socket.gethostbyname(socket.getfqdn())
     if ip.startswith("127.") and os.name != "nt":
@@ -290,7 +271,7 @@ def get_lan_ip():
                 break
             except IOError:
                 pass
-    return ip or ''
+    return ip or ""
 
 
 def from_dict_hook(in_dict: dict):
@@ -298,8 +279,7 @@ def from_dict_hook(in_dict: dict):
         if in_dict["module"] is None:
             return in_dict["data"]
         else:
-            return getattr(importlib.import_module(
-                in_dict["module"]), in_dict["type"])(**in_dict["data"])
+            return getattr(importlib.import_module(in_dict["module"]), in_dict["type"])(**in_dict["data"])
     else:
         return in_dict
 
@@ -316,16 +296,12 @@ def decrypt_database_password(password):
         raise ValueError("No private key")
 
     module_fun = encrypt_module.split("#")
-    pwdecrypt_fun = getattr(
-        importlib.import_module(
-            module_fun[0]),
-        module_fun[1])
+    pwdecrypt_fun = getattr(importlib.import_module(module_fun[0]), module_fun[1])
 
     return pwdecrypt_fun(private_key, password)
 
 
-def decrypt_database_config(
-        database=None, passwd_key="password", name="database"):
+def decrypt_database_config(database=None, passwd_key="password", name="database"):
     if not database:
         database = get_base_config(name, {})
 
@@ -336,8 +312,7 @@ def decrypt_database_config(
 def update_config(key, value, conf_name=SERVICE_CONF):
     conf_path = conf_realpath(conf_name=conf_name)
     if not os.path.isabs(conf_path):
-        conf_path = os.path.join(
-            file_utils.get_project_base_directory(), conf_path)
+        conf_path = os.path.join(file_utils.get_project_base_directory(), conf_path)
 
     with FileLock(os.path.join(os.path.dirname(conf_path), ".lock")):
         config = file_utils.load_yaml_conf(conf_path=conf_path) or {}
@@ -350,8 +325,7 @@ def get_uuid():
 
 
 def datetime_format(date_time: datetime.datetime) -> datetime.datetime:
-    return datetime.datetime(date_time.year, date_time.month, date_time.day,
-                             date_time.hour, date_time.minute, date_time.second)
+    return datetime.datetime(date_time.year, date_time.month, date_time.day, date_time.hour, date_time.minute, date_time.second)
 
 
 def get_format_time() -> datetime.datetime:
@@ -359,40 +333,34 @@ def get_format_time() -> datetime.datetime:
 
 
 def str2date(date_time: str):
-    return datetime.datetime.strptime(date_time, '%Y-%m-%d')
+    return datetime.datetime.strptime(date_time, "%Y-%m-%d")
 
 
 def elapsed2time(elapsed):
     seconds = elapsed / 1000
     minuter, second = divmod(seconds, 60)
     hour, minuter = divmod(minuter, 60)
-    return '%02d:%02d:%02d' % (hour, minuter, second)
+    return "%02d:%02d:%02d" % (hour, minuter, second)
 
 
-# def decrypt(line):
-#     file_path = os.path.join(
-#         file_utils.get_project_base_directory(),
-#         "conf",
-#         "private.pem")
-#     rsa_key = RSA.importKey(open(file_path).read(), "Welcome")
-#     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-#     return cipher.decrypt(base64.b64decode(
-#         line), "Fail to decrypt password!").decode('utf-8')
+def decrypt(line):
+    file_path = os.path.join(file_utils.get_project_base_directory(), "conf", "private.pem")
+    rsa_key = RSA.importKey(open(file_path).read(), "Welcome")
+    cipher = Cipher_pkcs1_v1_5.new(rsa_key)
+    return cipher.decrypt(base64.b64decode(line), "Fail to decrypt password!").decode("utf-8")
 
 
 def decrypt2(crypt_text):
     from base64 import b64decode, b16decode
     from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
     from Crypto.PublicKey import RSA
+
     decode_data = b64decode(crypt_text)
     if len(decode_data) == 127:
-        hex_fixed = '00' + decode_data.hex()
+        hex_fixed = "00" + decode_data.hex()
         decode_data = b16decode(hex_fixed.upper())
 
-    file_path = os.path.join(
-        file_utils.get_project_base_directory(),
-        "conf",
-        "private.pem")
+    file_path = os.path.join(file_utils.get_project_base_directory(), "conf", "private.pem")
     pem = open(file_path).read()
     rsa_key = RSA.importKey(pem, "Welcome")
     cipher = Cipher_PKCS1_v1_5.new(rsa_key)
@@ -404,9 +372,7 @@ def download_img(url):
     if not url:
         return ""
     response = requests.get(url)
-    return "data:" + \
-        response.headers.get('Content-Type', 'image/jpg') + ";" + \
-        "base64," + base64.b64encode(response.content).decode("utf-8")
+    return "data:" + response.headers.get("Content-Type", "image/jpg") + ";" + "base64," + base64.b64encode(response.content).decode("utf-8")
 
 
 def delta_seconds(date_string: str):
@@ -414,5 +380,5 @@ def delta_seconds(date_string: str):
     return (datetime.datetime.now() - dt).total_seconds()
 
 
-def hash_str2int(line:str, mod: int=10 ** 8) -> int:
+def hash_str2int(line: str, mod: int = 10**8) -> int:
     return int(hashlib.sha1(line.encode("utf-8")).hexdigest(), 16) % mod

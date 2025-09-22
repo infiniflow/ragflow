@@ -63,13 +63,9 @@ def chunk(
     #  get the email main info
     def _add_content(msg, content_type):
         if content_type == "text/plain":
-            text_txt.append(
-                msg.get_payload(decode=True).decode(msg.get_content_charset())
-            )
+            text_txt.append(msg.get_payload(decode=True).decode(msg.get_content_charset()))
         elif content_type == "text/html":
-            html_txt.append(
-                msg.get_payload(decode=True).decode(msg.get_content_charset())
-            )
+            html_txt.append(msg.get_payload(decode=True).decode(msg.get_content_charset()))
         elif "multipart" in content_type:
             if msg.is_multipart():
                 for part in msg.iter_parts():
@@ -77,9 +73,7 @@ def chunk(
 
     _add_content(msg, msg.get_content_type())
 
-    sections = TxtParser.parser_txt("\n".join(text_txt)) + [
-        (line, "") for line in HtmlParser.parser_txt("\n".join(html_txt)) if line
-    ]
+    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in HtmlParser.parser_txt("\n".join(html_txt)) if line]
 
     st = timer()
     chunks = naive_merge(
@@ -99,9 +93,7 @@ def chunk(
                 filename = part.get_filename()
                 payload = part.get_payload(decode=True)
                 try:
-                    attachment_res.extend(
-                        naive_chunk(filename, payload, callback=callback, **kwargs)
-                    )
+                    attachment_res.extend(naive_chunk(filename, payload, callback=callback, **kwargs))
                 except Exception:
                     pass
 
