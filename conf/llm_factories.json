@@ -624,11 +624,11 @@
                     "model_type": "speech2text"
                 },
                 {
-                "llm_name": "qianwen-deepresearch-30b-a3b-131k",
-                "tags": "LLM,CHAT,1M,AGENT,DEEPRESEARCH",
-                "max_tokens": 1000000,
-                "model_type": "chat",
-                "is_tools": true
+                    "llm_name": "qianwen-deepresearch-30b-a3b-131k",
+                    "tags": "LLM,CHAT,1M,AGENT,DEEPRESEARCH",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
                 }
             ]
         },
@@ -1449,13 +1449,6 @@
                     "max_tokens": 8192,
                     "model_type": "chat",
                     "is_tools": true
-                },
-                {
-                "llm_name": "qianwen-deepresearch-30b-a3b-131k",
-                "tags": "LLM,CHAT,1M,AGENT,DEEPRESEARCH",
-                "max_tokens": 1000000,
-                "model_type": "chat",
-                "is_tools": true
                 },
                 {
                     "llm_name": "step-1-32k",
