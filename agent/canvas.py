@@ -18,7 +18,6 @@ import json
 import logging
 import re
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
@@ -27,7 +26,7 @@ from typing import Any, Union, Tuple
 from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
-from api.utils import get_uuid
+from api.utils import get_uuid, hash_str2int
 from rag.prompts.prompts import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 
@@ -491,12 +490,12 @@ class Canvas(Graph):
 
         r = self.retrieval[-1]
         for ck in chunks_format({"chunks": chunks}):
-            cid = uuid.uuid5(uuid.NAMESPACE_DNS, ck["id"])
-            if cid not in r['chunks']:
+            cid = hash_str2int(ck["id"], 500)
+            if cid not in r:
                 r["chunks"][cid] = ck
 
         for doc in doc_infos:
-            if doc["doc_name"] not in r['doc_aggs']:
+            if doc["doc_name"] not in r:
                 r["doc_aggs"][doc["doc_name"]] = doc
 
     def get_reference(self):
