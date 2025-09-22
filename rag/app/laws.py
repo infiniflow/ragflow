@@ -22,7 +22,7 @@ from docx import Document
 
 from api.db import ParserType
 from deepdoc.parser.utils import get_text
-from rag.nlp import bullets_category, remove_contents_table, hierarchical_merge, \
+from rag.nlp import bullets_category, remove_contents_table, \
     make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
@@ -83,7 +83,7 @@ class Docx(DocxParser):
 
             h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
             h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
-            
+
             root = Node(level=0, depth=h2_level, texts=[])
             root.build_tree(lines)
 
