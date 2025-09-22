@@ -33,7 +33,7 @@ from zhipuai import ZhipuAI
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate
+from rag.utils import num_tokens_from_string, truncate, total_token_count_from_response
 
 
 class Base(ABC):
@@ -52,15 +52,7 @@ class Base(ABC):
         raise NotImplementedError("Please implement encode method!")
 
     def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
+        return total_token_count_from_response(resp)
 
 
 class DefaultEmbedding(Base):
