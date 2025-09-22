@@ -14,17 +14,17 @@
 #  limitations under the License.
 #
 import json
-import time
 from datetime import datetime
 
 from peewee import fn
 
-from api.db import VALID_PIPELINE_TASK_TYPES
+from api.db import VALID_PIPELINE_TASK_TYPES, TaskStatus
 from api.db.db_models import DB, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import TaskService
 from api.utils import current_timestamp, datetime_format, get_uuid
 
 
@@ -78,12 +78,16 @@ class PipelineOperationLogService(CommonService):
         title = ""
         avatar = ""
         dsl = ""
-
-        time.sleep(5)  # race condition
+        operation_status = ""
 
         ok, document = DocumentService.get_by_id(document_id)
         if not ok:
             raise RuntimeError(f"Document {document_id} not found")
+        DocumentService.update_progress_immediately([document.to_dict()])
+        ok, document = DocumentService.get_by_id(document_id)
+        if not ok:
+            raise RuntimeError(f"Document {document_id} not found")
+        operation_status = document.run
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
@@ -126,7 +130,7 @@ class PipelineOperationLogService(CommonService):
             process_duration=document.process_duration,
             dsl=dsl,
             task_type=task_type,
-            operation_status=document.run,
+            operation_status=operation_status,
             avatar=avatar,
         )
         log["create_time"] = current_timestamp()
