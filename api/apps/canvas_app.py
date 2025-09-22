@@ -474,7 +474,7 @@ def sessions(canvas_id):
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
 def prompts():
-    from rag.prompts.prompts import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+    from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
     return get_json_result(data={
         "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,
