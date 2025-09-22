@@ -153,7 +153,11 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideModal: hideLogSheet,
   } = useSetModalState();
 
-  const { run, loading: running, messageId } = useRunDataflow(showLogSheet!);
+  const {
+    run,
+    loading: running,
+    messageId,
+  } = useRunDataflow(showLogSheet!, hideRunOrChatDrawer);
 
   const onConnect = (connection: Connection) => {
     originalOnConnect(connection);

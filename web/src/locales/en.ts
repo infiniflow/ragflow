@@ -1695,6 +1695,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       filenameEmbdWeight: 'Filename embd weight',
       begin: 'File',
       parserMethod: 'Parser method',
+      exportJson: 'Export JSON',
     },
   },
 };

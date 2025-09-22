@@ -1605,6 +1605,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       filenameEmbdWeight: '文件名嵌入权重',
       begin: '文件',
       parserMethod: '解析方法',
+      exportJson: '导出 JSON',
     },
   },
 };
