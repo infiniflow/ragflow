@@ -22,6 +22,7 @@ import isObject from 'lodash/isObject';
 import {
   CategorizeAnchorPointPositions,
   FileType,
+  FileTypeSuffixMap,
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
@@ -102,8 +103,11 @@ function transformParserParams(params: ParserFormSchemaType) {
     Record<string, ParserFormSchemaType['setups'][0]>
   >((pre, cur) => {
     if (cur.fileFormat) {
-      let filteredSetup: Partial<ParserFormSchemaType['setups'][0]> = {
+      let filteredSetup: Partial<
+        ParserFormSchemaType['setups'][0] & { suffix: string[] }
+      > = {
         output_format: cur.output_format,
+        suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
       };
 
       switch (cur.fileFormat) {
