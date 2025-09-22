@@ -59,16 +59,8 @@ class ParserParam(ProcessParamBase):
             "image": [
                 "text"
             ],
-<<<<<<< Updated upstream
-            "email": [
-                "text",
-                "json"
-            ],
-            "text": [
-=======
-            "email": [],
+            "email": ["text", "json"],
             "text&markdown": [
->>>>>>> Stashed changes
                 "text",
                 "json"
             ],
@@ -120,22 +112,11 @@ class ParserParam(ProcessParamBase):
                 "output_format": "json",
             },
             "email": {
-<<<<<<< Updated upstream
                 "suffix": [
                   "eml", "msg"
                 ],
                 "fields": ["from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"],
                 "output_format": "json",
-            },
-            "text": {
-                "suffix": [
-                    "txt"
-                ],
-                "output_format": "json",
-=======
-                "fields": [],
-                "suffix": ["eml", "msg"],
->>>>>>> Stashed changes
             },
             "audio": {
                 "suffix":[
