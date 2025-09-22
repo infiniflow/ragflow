@@ -28,15 +28,6 @@ from api.utils import current_timestamp, datetime_format, get_uuid
 
 
 class PipelineOperationLogService(CommonService):
-    """Service class for managing MCP server related database operations.
-
-    This class extends CommonService to provide specialized functionality for MCP server management,
-    including MCP server creation, updates, and deletions.
-
-    Attributes:
-        model: The MCPServer model class for database operations.
-    """
-
     model = PipelineOperationLog
 
     @classmethod
