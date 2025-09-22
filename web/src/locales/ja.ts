@@ -332,6 +332,7 @@ export default {
       questionTip: `質問が指定されている場合、チャンクの埋め込みはそれらに基づきます。`,
     },
     chat: {
+      messagePlaceholder: 'メッセージを入力してください...',
       newConversation: '新しい会話',
       createAssistant: 'アシスタントを作成',
       assistantSetting: 'アシスタント設定',
