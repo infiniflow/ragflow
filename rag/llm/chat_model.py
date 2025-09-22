@@ -34,7 +34,11 @@ from openai.lib.azure import AzureOpenAI
 from strenum import StrEnum
 from zhipuai import ZhipuAI
 
-from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm import (
+    FACTORY_DEFAULT_BASE_URL,
+    LITELLM_PROVIDER_PREFIX,
+    SupportedLiteLLMProvider,
+)
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string, total_token_count_from_response
 
@@ -61,7 +65,9 @@ class ReActMode(StrEnum):
 
 
 ERROR_PREFIX = "**ERROR**"
-LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+LENGTH_NOTIFICATION_CN = (
+    "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+)
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 
@@ -75,8 +81,12 @@ class Base(ABC):
         self.client = OpenAI(api_key=key, base_url=base_url, timeout=timeout)
         self.model_name = model_name
         # Configure retry parameters
-        self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
-        self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+        self.max_retries = kwargs.get(
+            "max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5))
+        )
+        self.base_delay = kwargs.get(
+            "retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0))
+        )
         self.max_rounds = kwargs.get("max_rounds", 5)
         self.is_tools = False
         self.tools = []
@@ -91,15 +101,45 @@ class Base(ABC):
         error_str = str(error).lower()
 
         keywords_mapping = [
-            (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
-            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
-            (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
-            (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
-            (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
+            (
+                ["quota", "capacity", "credit", "billing", "balance", "欠费"],
+                LLMErrorCode.ERROR_QUOTA,
+            ),
+            (
+                [
+                    "rate limit",
+                    "429",
+                    "tpm limit",
+                    "too many requests",
+                    "requests per minute",
+                ],
+                LLMErrorCode.ERROR_RATE_LIMIT,
+            ),
+            (
+                ["auth", "key", "apikey", "401", "forbidden", "permission"],
+                LLMErrorCode.ERROR_AUTHENTICATION,
+            ),
+            (
+                ["invalid", "bad request", "400", "format", "malformed", "parameter"],
+                LLMErrorCode.ERROR_INVALID_REQUEST,
+            ),
+            (
+                ["server", "503", "502", "504", "500", "unavailable"],
+                LLMErrorCode.ERROR_SERVER,
+            ),
             (["timeout", "timed out"], LLMErrorCode.ERROR_TIMEOUT),
-            (["connect", "network", "unreachable", "dns"], LLMErrorCode.ERROR_CONNECTION),
-            (["filter", "content", "policy", "blocked", "safety", "inappropriate"], LLMErrorCode.ERROR_CONTENT_FILTER),
-            (["model", "not found", "does not exist", "not available"], LLMErrorCode.ERROR_MODEL),
+            (
+                ["connect", "network", "unreachable", "dns"],
+                LLMErrorCode.ERROR_CONNECTION,
+            ),
+            (
+                ["filter", "content", "policy", "blocked", "safety", "inappropriate"],
+                LLMErrorCode.ERROR_CONTENT_FILTER,
+            ),
+            (
+                ["model", "not found", "does not exist", "not available"],
+                LLMErrorCode.ERROR_MODEL,
+            ),
             (["max rounds"], LLMErrorCode.ERROR_MODEL),
         ]
         for words, code in keywords_mapping:
@@ -143,9 +183,44 @@ class Base(ABC):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
-        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+        if str(self.model_name).lower().startswith("gpt-5"):
+            # Flatten the message history into a single prompt string
+            prompt = "\n".join(
+                f"{m.get('role','user')}: {m.get('content')}" for m in history
+            )
+
+            resp = self.client.responses.create(
+                model=self.model_name, input=prompt, **gen_conf, **kwargs
+            )
+
+            # Responses API: read text from output_text
+            ans = (getattr(resp, "output_text", "") or "").strip()
+
+            usage = getattr(resp, "usage", None)
+            if usage is not None:
+                try:
+                    tk_total = usage.total_tokens
+                except Exception:
+                    tk_total = getattr(usage, "input_tokens", 0) + getattr(
+                        usage, "output_tokens", 0
+                    )
+            else:
+                tk_total = num_tokens_from_string(ans)
+
+            return ans, tk_total
+
+        response = self.client.chat.completions.create(
+            model=self.model_name, messages=history, **gen_conf, **kwargs
+        )
+
+        if any(
+            [
+                not response.choices,
+                not response.choices[0].message,
+                not response.choices[0].message.content,
+            ]
+        ):
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
@@ -153,18 +228,69 @@ class Base(ABC):
         return ans, self.total_token_count(response)
 
     def _chat_streamly(self, history, gen_conf, **kwargs):
-        logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
+        logging.info(
+            "[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4)
+        )
         reasoning_start = False
+
+        if str(self.model_name).lower().startswith("gpt-5"):
+            prompt = "\n".join(
+                f"{m.get('role','user')}: {m.get('content')}" for m in history
+            )
+
+            stream = self.client.responses.create(
+                model=self.model_name, input=prompt, stream=True, **gen_conf, **kwargs
+            )
+            try:
+                for event in stream:
+                    etype = getattr(event, "type", "")
+
+                    if etype == "response.output_text.delta":
+                        # Text delta chunk
+                        delta = getattr(event, "delta", "") or ""
+                        ans = delta
+                        tol = num_tokens_from_string(delta)
+                        yield ans, tol
+
+                    elif etype == "response.completed":
+                        # End of stream
+                        break
+
+                    elif etype == "error":
+                        msg = getattr(event, "error", None)
+                        msg = getattr(msg, "message", None) if msg else None
+                        err_txt = msg or "streaming error"
+                        yield f"{ERROR_PREFIX}: {err_txt}", 0
+                        break
+                    else:
+                        continue
+            except Exception as e:
+                yield f"\n{ERROR_PREFIX}: " + str(e), 0
+
+            return
+
         if kwargs.get("stop") or "stop" in gen_conf:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                stream=True,
+                **gen_conf,
+                stop=kwargs.get("stop"),
+            )
         else:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+            response = self.client.chat.completions.create(
+                model=self.model_name, messages=history, stream=True, **gen_conf
+            )
         for resp in response:
             if not resp.choices:
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
-            if kwargs.get("with_reasoning", True) and hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+            if (
+                kwargs.get("with_reasoning", True)
+                and hasattr(resp.choices[0].delta, "reasoning_content")
+                and resp.choices[0].delta.reasoning_content
+            ):
                 ans = ""
                 if not reasoning_start:
                     reasoning_start = True
@@ -198,16 +324,29 @@ class Base(ABC):
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
         # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
+        should_retry = (
+            error_code == LLMErrorCode.ERROR_RATE_LIMIT
+            or error_code == LLMErrorCode.ERROR_SERVER
+        )
         if not should_retry:
             return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
         delay = self._get_delay()
-        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+        logging.warning(
+            f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})"
+        )
         time.sleep(delay)
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        return (
+            "<tool_call>"
+            + json.dumps(
+                {"name": name, "args": args, "result": res},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "</tool_call>"
+        )
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -230,7 +369,9 @@ class Base(ABC):
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
         finally:
-            hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+            hist.append(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)}
+            )
         return hist
 
     def bind_tools(self, toolcall_session, tools):
@@ -254,14 +395,32 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=history,
+                        tools=self.tools,
+                        tool_choice="auto",
+                        **gen_conf,
+                    )
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
-                        raise Exception(f"500 response structure error. Response: {response}")
+                        raise Exception(
+                            f"500 response structure error. Response: {response}"
+                        )
 
-                    if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
-                        if hasattr(response.choices[0].message, "reasoning_content") and response.choices[0].message.reasoning_content:
-                            ans += "<think>" + response.choices[0].message.reasoning_content + "</think>"
+                    if (
+                        not hasattr(response.choices[0].message, "tool_calls")
+                        or not response.choices[0].message.tool_calls
+                    ):
+                        if (
+                            hasattr(response.choices[0].message, "reasoning_content")
+                            and response.choices[0].message.reasoning_content
+                        ):
+                            ans += (
+                                "<think>"
+                                + response.choices[0].message.reasoning_content
+                                + "</think>"
+                            )
 
                         ans += response.choices[0].message.content
                         if response.choices[0].finish_reason == "length":
@@ -275,15 +434,28 @@ class Base(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             tool_response = self.toolcall_session.tool_call(name, args)
-                            history = self._append_history(history, tool_call, tool_response)
+                            history = self._append_history(
+                                history, tool_call, tool_response
+                            )
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            logging.exception(
+                                msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}"
+                            )
+                            history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool call error: \n{tool_call}\nException:\n"
+                                    + str(e),
+                                }
+                            )
                             ans += self._verbose_tool_use(name, {}, str(e))
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append(
+                    {"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"}
+                )
                 response, token_count = self._chat(history, gen_conf)
                 ans += response
                 tk_count += token_count
@@ -320,7 +492,9 @@ class Base(ABC):
                 if index not in final_tool_calls:
                     final_tool_calls[index] = tool_call
 
-                final_tool_calls[index].function.arguments += tool_call.function.arguments
+                final_tool_calls[
+                    index
+                ].function.arguments += tool_call.function.arguments
 
         return final_tool_calls
 
@@ -339,7 +513,14 @@ class Base(ABC):
                 for _ in range(self.max_rounds + 1):
                     reasoning_start = False
                     logging.info(f"{tools=}")
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=history,
+                        stream=True,
+                        tools=tools,
+                        tool_choice="auto",
+                        **gen_conf,
+                    )
                     final_tool_calls = {}
                     answer = ""
                     for resp in response:
@@ -352,16 +533,29 @@ class Base(ABC):
                                         tool_call.function.arguments = ""
                                     final_tool_calls[index] = tool_call
                                 else:
-                                    final_tool_calls[index].function.arguments += tool_call.function.arguments if tool_call.function.arguments else ""
+                                    final_tool_calls[index].function.arguments += (
+                                        tool_call.function.arguments
+                                        if tool_call.function.arguments
+                                        else ""
+                                    )
                             continue
 
-                        if any([not resp.choices, not resp.choices[0].delta, not hasattr(resp.choices[0].delta, "content")]):
+                        if any(
+                            [
+                                not resp.choices,
+                                not resp.choices[0].delta,
+                                not hasattr(resp.choices[0].delta, "content"),
+                            ]
+                        ):
                             raise Exception("500 response structure error.")
 
                         if not resp.choices[0].delta.content:
                             resp.choices[0].delta.content = ""
 
-                        if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                        if (
+                            hasattr(resp.choices[0].delta, "reasoning_content")
+                            and resp.choices[0].delta.reasoning_content
+                        ):
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
@@ -375,11 +569,17 @@ class Base(ABC):
 
                         tol = self.total_token_count(resp)
                         if not tol:
-                            total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                            total_tokens += num_tokens_from_string(
+                                resp.choices[0].delta.content
+                            )
                         else:
                             total_tokens = tol
 
-                        finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
+                        finish_reason = (
+                            resp.choices[0].finish_reason
+                            if hasattr(resp.choices[0], "finish_reason")
+                            else ""
+                        )
                         if finish_reason == "length":
                             yield self._length_stop("")
 
@@ -393,25 +593,48 @@ class Base(ABC):
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
                             tool_response = self.toolcall_session.tool_call(name, args)
-                            history = self._append_history(history, tool_call, tool_response)
+                            history = self._append_history(
+                                history, tool_call, tool_response
+                            )
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            logging.exception(
+                                msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}"
+                            )
+                            history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool call error: \n{tool_call}\nException:\n"
+                                    + str(e),
+                                }
+                            )
                             yield self._verbose_tool_use(name, {}, str(e))
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
-                response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+                history.append(
+                    {"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"}
+                )
+                response = self.client.chat.completions.create(
+                    model=self.model_name, messages=history, stream=True, **gen_conf
+                )
                 for resp in response:
-                    if any([not resp.choices, not resp.choices[0].delta, not hasattr(resp.choices[0].delta, "content")]):
+                    if any(
+                        [
+                            not resp.choices,
+                            not resp.choices[0].delta,
+                            not hasattr(resp.choices[0].delta, "content"),
+                        ]
+                    ):
                         raise Exception("500 response structure error.")
                     if not resp.choices[0].delta.content:
                         resp.choices[0].delta.content = ""
                         continue
                     tol = self.total_token_count(resp)
                     if not tol:
-                        total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                        total_tokens += num_tokens_from_string(
+                            resp.choices[0].delta.content
+                        )
                     else:
                         total_tokens = tol
                     answer += resp.choices[0].delta.content
@@ -445,7 +668,7 @@ class Base(ABC):
         yield total_tokens
 
     def total_token_count(self, resp):
-       return total_token_count_from_response(resp)
+        return total_token_count_from_response(resp)
 
     def _calculate_dynamic_ctx(self, history):
         """Calculate dynamic context window size"""
@@ -487,7 +710,13 @@ class Base(ABC):
 class GptTurbo(Base):
     _FACTORY_NAME = "OpenAI"
 
-    def __init__(self, key, model_name="gpt-3.5-turbo", base_url="https://api.openai.com/v1", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name="gpt-3.5-turbo",
+        base_url="https://api.openai.com/v1",
+        **kwargs,
+    ):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -530,14 +759,22 @@ class AzureChat(Base):
         api_key = json.loads(key).get("api_key", "")
         api_version = json.loads(key).get("api_version", "2024-02-01")
         super().__init__(key, model_name, base_url, **kwargs)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
+        self.client = AzureOpenAI(
+            api_key=api_key, azure_endpoint=base_url, api_version=api_version
+        )
         self.model_name = model_name
 
 
 class BaiChuanChat(Base):
     _FACTORY_NAME = "BaiChuan"
 
-    def __init__(self, key, model_name="Baichuan3-Turbo", base_url="https://api.baichuan-ai.com/v1", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name="Baichuan3-Turbo",
+        base_url="https://api.baichuan-ai.com/v1",
+        **kwargs,
+    ):
         if not base_url:
             base_url = "https://api.baichuan-ai.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -559,7 +796,17 @@ class BaiChuanChat(Base):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=history,
-            extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
+            extra_body={
+                "tools": [
+                    {
+                        "type": "web_search",
+                        "web_search": {
+                            "enable": True,
+                            "search_mode": "performance_first",
+                        },
+                    }
+                ]
+            },
             **gen_conf,
         )
         ans = response.choices[0].message.content.strip()
@@ -581,7 +828,17 @@ class BaiChuanChat(Base):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=history,
-                extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
+                extra_body={
+                    "tools": [
+                        {
+                            "type": "web_search",
+                            "web_search": {
+                                "enable": True,
+                                "search_mode": "performance_first",
+                            },
+                        }
+                    ]
+                },
                 stream=True,
                 **self._format_params(gen_conf),
             )
@@ -593,7 +850,9 @@ class BaiChuanChat(Base):
                 ans = resp.choices[0].delta.content
                 tol = self.total_token_count(resp)
                 if not tol:
-                    total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                    total_tokens += num_tokens_from_string(
+                        resp.choices[0].delta.content
+                    )
                 else:
                     total_tokens = tol
                 if resp.choices[0].finish_reason == "length":
@@ -648,7 +907,9 @@ class ZhipuChat(Base):
         tk_count = 0
         try:
             logging.info(json.dumps(history, ensure_ascii=False, indent=2))
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+            response = self.client.chat.completions.create(
+                model=self.model_name, messages=history, stream=True, **gen_conf
+            )
             for resp in response:
                 if not resp.choices[0].delta.content:
                     continue
@@ -709,7 +970,9 @@ class LocalLLM(Base):
 
         answer = ""
         try:
-            res = self.client.stream_doc(on=endpoint, inputs=prompt, return_type=Generation)
+            res = self.client.stream_doc(
+                on=endpoint, inputs=prompt, return_type=Generation
+            )
             loop = asyncio.get_event_loop()
             try:
                 while True:
@@ -740,7 +1003,13 @@ class LocalLLM(Base):
 class VolcEngineChat(Base):
     _FACTORY_NAME = "VolcEngine"
 
-    def __init__(self, key, model_name, base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name,
+        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        **kwargs,
+    ):
         """
         Since do not want to modify the original database fields, and the VolcEngine authentication method is quite special,
         Assemble ark_api_key, ep_id into api_key, store it as a dictionary type, and parse it for use
@@ -748,14 +1017,22 @@ class VolcEngineChat(Base):
         """
         base_url = base_url if base_url else "https://ark.cn-beijing.volces.com/api/v3"
         ark_api_key = json.loads(key).get("ark_api_key", "")
-        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get(
+            "endpoint_id", ""
+        )
         super().__init__(ark_api_key, model_name, base_url, **kwargs)
 
 
 class MiniMaxChat(Base):
     _FACTORY_NAME = "MiniMax"
 
-    def __init__(self, key, model_name, base_url="https://api.minimax.chat/v1/text/chatcompletion_v2", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name,
+        base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
+        **kwargs,
+    ):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         if not base_url:
@@ -775,8 +1052,12 @@ class MiniMaxChat(Base):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = json.dumps({"model": self.model_name, "messages": history, **gen_conf})
-        response = requests.request("POST", url=self.base_url, headers=headers, data=payload)
+        payload = json.dumps(
+            {"model": self.model_name, "messages": history, **gen_conf}
+        )
+        response = requests.request(
+            "POST", url=self.base_url, headers=headers, data=payload
+        )
         response = response.json()
         ans = response["choices"][0]["message"]["content"].strip()
         if response["choices"][0]["finish_reason"] == "length":
@@ -868,7 +1149,9 @@ class MistralChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
+            response = self.client.chat_stream(
+                model=self.model_name, messages=history, **gen_conf, **kwargs
+            )
             for resp in response:
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
@@ -930,8 +1213,16 @@ class ReplicateChat(Base):
         self.client = Client(api_token=key)
 
     def _chat(self, history, gen_conf={}, **kwargs):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:] if item["role"] != "system"])
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
+        prompt = "\n".join(
+            [
+                item["role"] + ":" + item["content"]
+                for item in history[-5:]
+                if item["role"] != "system"
+            ]
+        )
         response = self.client.run(
             self.model_name,
             input={"system_prompt": system, "prompt": prompt, **gen_conf},
@@ -942,7 +1233,9 @@ class ReplicateChat(Base):
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:]])
+        prompt = "\n".join(
+            [item["role"] + ":" + item["content"] for item in history[-5:]]
+        )
         ans = ""
         try:
             response = self.client.run(
@@ -1040,7 +1333,9 @@ class HunyuanChat(Base):
 class SparkChat(Base):
     _FACTORY_NAME = "XunFei Spark"
 
-    def __init__(self, key, model_name, base_url="https://spark-api-open.xf-yun.com/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://spark-api-open.xf-yun.com/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://spark-api-open.xf-yun.com/v1"
         model2version = {
@@ -1051,7 +1346,9 @@ class SparkChat(Base):
             "Spark-4.0-Ultra": "4.0Ultra",
         }
         version2model = {v: k for k, v in model2version.items()}
-        assert model_name in model2version or model_name in version2model, f"The given model name is not supported yet. Support: {list(model2version.keys())}"
+        assert (
+            model_name in model2version or model_name in version2model
+        ), f"The given model name is not supported yet. Support: {list(model2version.keys())}"
         if model_name in model2version:
             model_version = model2version[model_name]
         else:
@@ -1074,26 +1371,45 @@ class BaiduYiyanChat(Base):
         self.model_name = model_name.lower()
 
     def _clean_conf(self, gen_conf):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        gen_conf["penalty_score"] = (
+            (gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0))
+            / 2
+        ) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         return gen_conf
 
     def _chat(self, history, gen_conf):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        response = self.client.do(model=self.model_name, messages=[h for h in history if h["role"] != "system"], system=system, **gen_conf).body
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
+        response = self.client.do(
+            model=self.model_name,
+            messages=[h for h in history if h["role"] != "system"],
+            system=system,
+            **gen_conf,
+        ).body
         ans = response["result"]
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        gen_conf["penalty_score"] = (
+            (gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0))
+            / 2
+        ) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         ans = ""
         total_tokens = 0
 
         try:
-            response = self.client.do(model=self.model_name, messages=history, system=system, stream=True, **gen_conf)
+            response = self.client.do(
+                model=self.model_name,
+                messages=history,
+                system=system,
+                stream=True,
+                **gen_conf,
+            )
             for resp in response:
                 resp = resp.body
                 ans = resp["result"]
@@ -1118,7 +1434,9 @@ class GoogleChat(Base):
         from google.oauth2 import service_account
 
         key = json.loads(key)
-        access_token = json.loads(base64.b64decode(key.get("google_service_account_key", "")))
+        access_token = json.loads(
+            base64.b64decode(key.get("google_service_account_key", ""))
+        )
         project_id = key.get("google_project_id", "")
         region = key.get("google_region", "")
 
@@ -1130,11 +1448,15 @@ class GoogleChat(Base):
             from google.auth.transport.requests import Request
 
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+                credits = service_account.Credentials.from_service_account_info(
+                    access_token, scopes=scopes
+                )
                 request = Request()
                 credits.refresh(request)
                 token = credits.token
-                self.client = AnthropicVertex(region=region, project_id=project_id, access_token=token)
+                self.client = AnthropicVertex(
+                    region=region, project_id=project_id, access_token=token
+                )
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
@@ -1142,8 +1464,12 @@ class GoogleChat(Base):
             from google.cloud import aiplatform
 
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
-                aiplatform.init(credentials=credits, project=project_id, location=region)
+                credits = service_account.Credentials.from_service_account_info(
+                    access_token
+                )
+                aiplatform.init(
+                    credentials=credits, project=project_id, location=region
+                )
             else:
                 aiplatform.init(project=project_id, location=region)
             self.client = glm.GenerativeModel(model_name=self.model_name)
@@ -1161,7 +1487,9 @@ class GoogleChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf={}, **kwargs):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
         if "claude" in self.model_name:
             response = self.client.messages.create(
                 model=self.model_name,
@@ -1172,7 +1500,11 @@ class GoogleChat(Base):
             ).json()
             ans = response["content"][0]["text"]
             if response["stop_reason"] == "max_tokens":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                ans += (
+                    "...\nFor the content length reason, it stopped, continue?"
+                    if is_english([ans])
+                    else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                )
             return (
                 ans,
                 response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
@@ -1236,7 +1568,9 @@ class GoogleChat(Base):
                     item["parts"] = item.pop("content")
             ans = ""
             try:
-                response = self.model.generate_content(history, generation_config=gen_conf, stream=True)
+                response = self.model.generate_content(
+                    history, generation_config=gen_conf, stream=True
+                )
                 for resp in response:
                     ans = resp.text
                     yield ans
@@ -1260,7 +1594,13 @@ class GPUStackChat(Base):
 class TokenPonyChat(Base):
     _FACTORY_NAME = "TokenPony"
 
-    def __init__(self, key, model_name, base_url="https://ragflow.vip-api.tokenpony.cn/v1", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name,
+        base_url="https://ragflow.vip-api.tokenpony.cn/v1",
+        **kwargs,
+    ):
         if not base_url:
             base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
 
@@ -1304,10 +1644,16 @@ class LiteLLMBase(ABC):
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
+        self.base_url = (
+            base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")
+        ).rstrip("/")
         # Configure retry parameters
-        self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
-        self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+        self.max_retries = kwargs.get(
+            "max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5))
+        )
+        self.base_delay = kwargs.get(
+            "retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0))
+        )
         self.max_rounds = kwargs.get("max_rounds", 5)
         self.is_tools = False
         self.tools = []
@@ -1328,15 +1674,45 @@ class LiteLLMBase(ABC):
         error_str = str(error).lower()
 
         keywords_mapping = [
-            (["quota", "capacity", "credit", "billing", "balance", "欠费"], LLMErrorCode.ERROR_QUOTA),
-            (["rate limit", "429", "tpm limit", "too many requests", "requests per minute"], LLMErrorCode.ERROR_RATE_LIMIT),
-            (["auth", "key", "apikey", "401", "forbidden", "permission"], LLMErrorCode.ERROR_AUTHENTICATION),
-            (["invalid", "bad request", "400", "format", "malformed", "parameter"], LLMErrorCode.ERROR_INVALID_REQUEST),
-            (["server", "503", "502", "504", "500", "unavailable"], LLMErrorCode.ERROR_SERVER),
+            (
+                ["quota", "capacity", "credit", "billing", "balance", "欠费"],
+                LLMErrorCode.ERROR_QUOTA,
+            ),
+            (
+                [
+                    "rate limit",
+                    "429",
+                    "tpm limit",
+                    "too many requests",
+                    "requests per minute",
+                ],
+                LLMErrorCode.ERROR_RATE_LIMIT,
+            ),
+            (
+                ["auth", "key", "apikey", "401", "forbidden", "permission"],
+                LLMErrorCode.ERROR_AUTHENTICATION,
+            ),
+            (
+                ["invalid", "bad request", "400", "format", "malformed", "parameter"],
+                LLMErrorCode.ERROR_INVALID_REQUEST,
+            ),
+            (
+                ["server", "503", "502", "504", "500", "unavailable"],
+                LLMErrorCode.ERROR_SERVER,
+            ),
             (["timeout", "timed out"], LLMErrorCode.ERROR_TIMEOUT),
-            (["connect", "network", "unreachable", "dns"], LLMErrorCode.ERROR_CONNECTION),
-            (["filter", "content", "policy", "blocked", "safety", "inappropriate"], LLMErrorCode.ERROR_CONTENT_FILTER),
-            (["model", "not found", "does not exist", "not available"], LLMErrorCode.ERROR_MODEL),
+            (
+                ["connect", "network", "unreachable", "dns"],
+                LLMErrorCode.ERROR_CONNECTION,
+            ),
+            (
+                ["filter", "content", "policy", "blocked", "safety", "inappropriate"],
+                LLMErrorCode.ERROR_CONTENT_FILTER,
+            ),
+            (
+                ["model", "not found", "does not exist", "not available"],
+                LLMErrorCode.ERROR_MODEL,
+            ),
             (["max rounds"], LLMErrorCode.ERROR_MODEL),
         ]
         for words, code in keywords_mapping:
@@ -1355,7 +1731,9 @@ class LiteLLMBase(ABC):
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
-        completion_args = self._construct_completion_args(history=history, stream=False, tools=False, **gen_conf)
+        completion_args = self._construct_completion_args(
+            history=history, stream=False, tools=False, **gen_conf
+        )
         response = litellm.completion(
             **completion_args,
             drop_params=True,
@@ -1363,7 +1741,13 @@ class LiteLLMBase(ABC):
         )
         # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
-        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+        if any(
+            [
+                not response.choices,
+                not response.choices[0].message,
+                not response.choices[0].message.content,
+            ]
+        ):
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
@@ -1372,10 +1756,14 @@ class LiteLLMBase(ABC):
         return ans, self.total_token_count(response)
 
     def _chat_streamly(self, history, gen_conf, **kwargs):
-        logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
+        logging.info(
+            "[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4)
+        )
         reasoning_start = False
 
-        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
+        completion_args = self._construct_completion_args(
+            history=history, stream=True, tools=False, **gen_conf
+        )
         stop = kwargs.get("stop")
         if stop:
             completion_args["stop"] = stop
@@ -1393,7 +1781,11 @@ class LiteLLMBase(ABC):
             if not hasattr(delta, "content") or delta.content is None:
                 delta.content = ""
 
-            if kwargs.get("with_reasoning", True) and hasattr(delta, "reasoning_content") and delta.reasoning_content:
+            if (
+                kwargs.get("with_reasoning", True)
+                and hasattr(delta, "reasoning_content")
+                and delta.reasoning_content
+            ):
                 ans = ""
                 if not reasoning_start:
                     reasoning_start = True
@@ -1407,7 +1799,11 @@ class LiteLLMBase(ABC):
             if not tol:
                 tol = num_tokens_from_string(delta.content)
 
-            finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
+            finish_reason = (
+                resp.choices[0].finish_reason
+                if hasattr(resp.choices[0], "finish_reason")
+                else ""
+            )
             if finish_reason == "length":
                 if is_chinese(ans):
                     ans += LENGTH_NOTIFICATION_CN
@@ -1429,16 +1825,29 @@ class LiteLLMBase(ABC):
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
         # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
+        should_retry = (
+            error_code == LLMErrorCode.ERROR_RATE_LIMIT
+            or error_code == LLMErrorCode.ERROR_SERVER
+        )
         if not should_retry:
             return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
         delay = self._get_delay()
-        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+        logging.warning(
+            f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})"
+        )
         time.sleep(delay)
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        return (
+            "<tool_call>"
+            + json.dumps(
+                {"name": name, "args": args, "result": res},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "</tool_call>"
+        )
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -1461,7 +1870,9 @@ class LiteLLMBase(ABC):
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
         finally:
-            hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+            hist.append(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)}
+            )
         return hist
 
     def bind_tools(self, toolcall_session, tools):
@@ -1522,7 +1933,9 @@ class LiteLLMBase(ABC):
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
 
-                    completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
+                    completion_args = self._construct_completion_args(
+                        history=history, stream=False, tools=True, **gen_conf
+                    )
                     response = litellm.completion(
                         **completion_args,
                         drop_params=True,
@@ -1531,13 +1944,22 @@ class LiteLLMBase(ABC):
 
                     tk_count += self.total_token_count(response)
 
-                    if not hasattr(response, "choices") or not response.choices or not response.choices[0].message:
-                        raise Exception(f"500 response structure error. Response: {response}")
+                    if (
+                        not hasattr(response, "choices")
+                        or not response.choices
+                        or not response.choices[0].message
+                    ):
+                        raise Exception(
+                            f"500 response structure error. Response: {response}"
+                        )
 
                     message = response.choices[0].message
 
                     if not hasattr(message, "tool_calls") or not message.tool_calls:
-                        if hasattr(message, "reasoning_content") and message.reasoning_content:
+                        if (
+                            hasattr(message, "reasoning_content")
+                            and message.reasoning_content
+                        ):
                             ans += f"<think>{message.reasoning_content}</think>"
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
@@ -1550,15 +1972,28 @@ class LiteLLMBase(ABC):
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
                             tool_response = self.toolcall_session.tool_call(name, args)
-                            history = self._append_history(history, tool_call, tool_response)
+                            history = self._append_history(
+                                history, tool_call, tool_response
+                            )
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            logging.exception(
+                                msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}"
+                            )
+                            history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool call error: \n{tool_call}\nException:\n"
+                                    + str(e),
+                                }
+                            )
                             ans += self._verbose_tool_use(name, {}, str(e))
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append(
+                    {"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"}
+                )
 
                 response, token_count = self._chat(history, gen_conf)
                 ans += response
@@ -1598,7 +2033,9 @@ class LiteLLMBase(ABC):
                 if index not in final_tool_calls:
                     final_tool_calls[index] = tool_call
 
-                final_tool_calls[index].function.arguments += tool_call.function.arguments
+                final_tool_calls[
+                    index
+                ].function.arguments += tool_call.function.arguments
 
         return final_tool_calls
 
@@ -1619,7 +2056,9 @@ class LiteLLMBase(ABC):
                     reasoning_start = False
                     logging.info(f"{tools=}")
 
-                    completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                    completion_args = self._construct_completion_args(
+                        history=history, stream=True, tools=True, **gen_conf
+                    )
                     response = litellm.completion(
                         **completion_args,
                         drop_params=True,
@@ -1643,13 +2082,18 @@ class LiteLLMBase(ABC):
                                         tool_call.function.arguments = ""
                                     final_tool_calls[index] = tool_call
                                 else:
-                                    final_tool_calls[index].function.arguments += tool_call.function.arguments or ""
+                                    final_tool_calls[index].function.arguments += (
+                                        tool_call.function.arguments or ""
+                                    )
                             continue
 
                         if not hasattr(delta, "content") or delta.content is None:
                             delta.content = ""
 
-                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        if (
+                            hasattr(delta, "reasoning_content")
+                            and delta.reasoning_content
+                        ):
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
@@ -1681,10 +2125,14 @@ class LiteLLMBase(ABC):
                             args = json_repair.loads(tool_call.function.arguments)
                             yield self._verbose_tool_use(name, args, "Begin to call...")
                             tool_response = self.toolcall_session.tool_call(name, args)
-                            history = self._append_history(history, tool_call, tool_response)
+                            history = self._append_history(
+                                history, tool_call, tool_response
+                            )
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
+                            logging.exception(
+                                msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}"
+                            )
                             history.append(
                                 {
                                     "role": "tool",
@@ -1695,9 +2143,13 @@ class LiteLLMBase(ABC):
                             yield self._verbose_tool_use(name, {}, str(e))
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append(
+                    {"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"}
+                )
 
-                completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                completion_args = self._construct_completion_args(
+                    history=history, stream=True, tools=True, **gen_conf
+                )
                 response = litellm.completion(
                     **completion_args,
                     drop_params=True,
