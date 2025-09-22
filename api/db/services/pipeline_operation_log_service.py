@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import time
 from datetime import datetime
 
 from peewee import fn
@@ -69,6 +70,7 @@ class PipelineOperationLogService(CommonService):
         ]
 
     @classmethod
+    @DB.connection_context()
     def create(cls, document_id, pipeline_id, task_type):
         from rag.flow.pipeline import Pipeline
 
@@ -76,6 +78,8 @@ class PipelineOperationLogService(CommonService):
         title = ""
         avatar = ""
         dsl = ""
+
+        time.sleep(5)  # race condition
 
         ok, document = DocumentService.get_by_id(document_id)
         if not ok:
@@ -132,6 +136,11 @@ class PipelineOperationLogService(CommonService):
         print(f"ready to save {log}", flush=True)
         obj = cls.save(**log)
         return obj
+
+    @classmethod
+    @DB.connection_context()
+    def record_pipeline_operation(cls, document_id, pipeline_id, task_type):
+        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type)
 
     @classmethod
     @DB.connection_context()

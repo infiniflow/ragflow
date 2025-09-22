@@ -651,7 +651,7 @@ async def do_handle_task(task):
                                                                                      timer() - start_ts))
 
     DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
-    PipelineOperationLogService.create(document_id=task_doc_id, pipeline_id="", task_type=PipelineTaskType.PARSE)
+    PipelineOperationLogService.record_pipeline_operation(document_id=task_doc_id, pipeline_id="", task_type=PipelineTaskType.PARSE)
 
     time_cost = timer() - start_ts
     task_time_cost = timer() - task_start_ts
@@ -687,6 +687,7 @@ async def handle_task():
         except Exception:
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
+        PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=PipelineTaskType.PARSE)
     redis_msg.ack()
 
 
