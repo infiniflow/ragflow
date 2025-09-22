@@ -240,7 +240,7 @@ class Canvas(Graph):
 
         if not self.path or self.path[-1].lower().find("userfillup") < 0:
             self.path.append("begin")
-            self.retrieval.append({"chunks": {}, "doc_aggs": {}})
+            self.retrieval.append({"chunks": [], "doc_aggs": []})
 
         yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
         self.retrieval.append({"chunks": {}, "doc_aggs": {}})
