@@ -18,8 +18,6 @@ import logging
 import random
 from collections import Counter
 
-from torch import layout
-
 from rag.utils import num_tokens_from_string
 from . import rag_tokenizer
 import re
