@@ -6,7 +6,7 @@ import { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
-import { useFetchOverviewTital } from './hook';
+import { useFetchFileLogList, useFetchOverviewTital } from './hook';
 import FileLogsTable from './overview-table';
 
 interface StatCardProps {
@@ -94,68 +94,37 @@ const FileLogsPage: FC = () => {
   const { data: topData } = useFetchOverviewTital();
   console.log('topData --> ', topData);
   useEffect(() => {
-    setTopAllData({
-      ...topAllData,
-      processing: {
-        value: topData?.processing || 0,
-        success: topData?.finished || 0,
-        failed: topData?.failed || 0,
-      },
+    setTopAllData((prev) => {
+      return {
+        ...prev,
+        processing: {
+          value: topData?.processing || 0,
+          success: topData?.finished || 0,
+          failed: topData?.failed || 0,
+        },
+      };
     });
-  }, [topData, topAllData]);
+  }, [topData]);
 
-  const mockData = useMemo(() => {
-    if (active === LogTabs.FILE_LOGS) {
-      return Array(30)
-        .fill(0)
-        .map((_, i) => ({
-          id: i === 0 ? '952734' : `14`,
-          fileName: 'PRD for DealBees 1.2 (1).txt',
-          source: 'GitHub',
-          pipeline:
-            i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
-          startDate: '14/03/2025 14:53:39',
-          task: i === 0 ? 'chunck' : 'Parser',
-          status: i === 0 ? 3 : i === 1 ? 4 : i === 2 ? 1 : 0,
-          statusName:
-            i === 0
-              ? 'Success'
-              : i === 1
-                ? 'Failed'
-                : i === 2
-                  ? 'Running'
-                  : 'Pending',
-        }));
-    }
-    if (active === LogTabs.DATASET_LOGS) {
-      return Array(8)
-        .fill(0)
-        .map((_, i) => ({
-          id: i === 0 ? '952734' : `14`,
-          fileName: 'PRD for DealBees 1.2 (1).txt',
-          source: 'GitHub',
-          startDate: '14/03/2025 14:53:39',
-          task: i === 0 ? 'chunck' : 'Parser',
-          pipeline:
-            i === 0 ? 'data demo for...' : i === 1 ? 'test' : 'kiki’s demo',
-          status: i === 0 ? 3 : i === 1 ? 4 : i === 2 ? 1 : 0,
-          statusName:
-            i === 0
-              ? 'Success'
-              : i === 1
-                ? 'Failed'
-                : i === 2
-                  ? 'Running'
-                  : 'Pending',
-        }));
-    }
-  }, [active]);
+  const {
+    data: tableOriginData,
+    searchString,
+    handleInputChange,
+    pagination,
+  } = useFetchFileLogList();
 
-  const pagination = {
-    current: 1,
-    pageSize: 10,
-    total: 100,
-  };
+  const tableList = useMemo(() => {
+    console.log('tableList', tableOriginData);
+    if (tableOriginData && tableOriginData.docs?.length) {
+      return tableOriginData.docs.map((item) => {
+        return {
+          ...item,
+          fileName: item.document_name,
+          statusName: item.operation_status,
+        };
+      });
+    }
+  }, [tableOriginData, active]);
 
   const changeActiveLogs = (active: (typeof LogTabs)[keyof typeof LogTabs]) => {
     setActive(active);
@@ -223,11 +192,16 @@ const FileLogsPage: FC = () => {
       </div>
 
       {/* Tabs & Search */}
-      <DatasetFilter active={active} setActive={changeActiveLogs} />
+      <DatasetFilter
+        active={active}
+        setActive={changeActiveLogs}
+        searchString={searchString}
+        onSearchChange={handleInputChange}
+      />
 
       {/* Table */}
       <FileLogsTable
-        data={mockData}
+        data={tableList}
         pagination={pagination}
         setPagination={handlePaginationChange}
         pageCount={10}

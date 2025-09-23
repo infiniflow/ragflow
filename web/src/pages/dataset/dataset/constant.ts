@@ -11,7 +11,7 @@ export const RunningStatusMap = {
   },
   [RunningStatus.CANCEL]: { label: 'CANCEL', color: 'var(--state-warning)' },
   [RunningStatus.DONE]: { label: 'SUCCESS', color: 'var(--state-success)' },
-  [RunningStatus.FAIL]: { label: 'FAIL', color: 'var(--state-error' },
+  [RunningStatus.FAIL]: { label: 'FAIL', color: 'rgba(var(--state-error))' },
 };
 
 export * from '@/constants/knowledge';
