@@ -37,20 +37,20 @@ export function LogSheet({ hideModal, messageId }: LogSheetProps) {
       <SheetContent className={cn('top-20')}>
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
-            <NotebookText className="size-4" />
+            <NotebookText className="size-4" /> {t('flow.log')}
           </SheetTitle>
         </SheetHeader>
         <section className="max-h-[82vh] overflow-auto mt-6">
           <DataflowTimeline traceList={data}></DataflowTimeline>
-          <Button
-            onClick={handleDownloadJson}
-            disabled={isEndOutputEmpty(data)}
-            className="w-full mt-8"
-          >
-            <SquareArrowOutUpRight />
-            {t('dataflow.exportJson')}
-          </Button>
         </section>
+        <Button
+          onClick={handleDownloadJson}
+          disabled={isEndOutputEmpty(data)}
+          className="w-full mt-8"
+        >
+          <SquareArrowOutUpRight />
+          {t('dataflow.exportJson')}
+        </Button>
       </SheetContent>
     </Sheet>
   );
