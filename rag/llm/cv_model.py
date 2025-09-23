@@ -75,7 +75,7 @@ class Base(ABC):
 
     def chat(self, system, history, gen_conf, images=[], **kwargs):
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.responses.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images)
             )
@@ -87,7 +87,7 @@ class Base(ABC):
         ans = ""
         tk_count = 0
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.responses.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
                 stream=True
@@ -174,7 +174,8 @@ class GptV4(Base):
 
     def describe(self, image):
         b64 = self.image2base64(image)
-        res = self.client.chat.completions.create(
+        # Check if this is a GPT-5 model and use responses.create API
+        res = self.client.responses.create(
             model=self.model_name,
             messages=self.prompt(b64),
         )
@@ -182,7 +183,7 @@ class GptV4(Base):
 
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
-        res = self.client.chat.completions.create(
+        res = self.client.responses.create(
             model=self.model_name,
             messages=self.vision_llm_prompt(b64, prompt),
         )

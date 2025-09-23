@@ -490,7 +490,8 @@ class Canvas(Graph):
 
         r = self.retrieval[-1]
         for ck in chunks_format({"chunks": chunks}):
-            cid = hash_str2int(ck["id"], 100)
+            cid = hash_str2int(ck["id"], 500)
+            # cid = uuid.uuid5(uuid.NAMESPACE_DNS, ck["id"])
             if cid not in r:
                 r["chunks"][cid] = ck
 
