@@ -82,7 +82,7 @@ class DocumentService(CommonService):
         fields = cls.get_cls_model_fields()
         docs = cls.model.select(*[*fields, UserCanvas.title]).join(File2Document, on = (File2Document.document_id == cls.model.id))\
             .join(File, on = (File.id == File2Document.file_id))\
-            .join(UserCanvas, on = ((cls.model.pipeline_id == UserCanvas.id) & (UserCanvas.canvas_category == CanvasCategory.DataFlow.value)), join_type=JOIN.LEFT)\
+            .join(UserCanvas, on = ((cls.model.pipeline_id == UserCanvas.id) & (UserCanvas.canvas_category == CanvasCategory.DataFlow.value)), join_type=JOIN.LEFT_OUTER)\
             .where(cls.model.kb_id == kb_id)
         if id:
             docs = docs.where(
