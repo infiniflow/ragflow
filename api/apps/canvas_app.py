@@ -23,7 +23,7 @@ import trio
 from flask import request, Response
 from flask_login import login_required, current_user
 
-from agent.component import LLM
+from agent.component.llm import LLM
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
@@ -474,7 +474,7 @@ def sessions(canvas_id):
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
 def prompts():
-    from rag.prompts.prompts import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+    from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
     return get_json_result(data={
         "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,

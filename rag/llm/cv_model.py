@@ -25,7 +25,7 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 from rag.nlp import is_english
-from rag.prompts import vision_llm_describe_prompt
+from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils import num_tokens_from_string
 
 

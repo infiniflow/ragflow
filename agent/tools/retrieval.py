@@ -23,8 +23,7 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from api.utils.api_utils import timeout
 from rag.app.tag import label_question
-from rag.prompts import kb_prompt
-from rag.prompts.prompts import cross_languages
+from rag.prompts.generator import cross_languages, kb_prompt
 
 
 class RetrievalParam(ToolParamBase):

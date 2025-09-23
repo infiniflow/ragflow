@@ -22,7 +22,7 @@ from typing import Tuple
 import jinja2
 import json_repair
 from api.utils import hash_str2int
-from rag.prompts.prompt_template import load_prompt
+from rag.prompts.template import load_prompt
 from rag.settings import TAG_FLD
 from rag.utils import encoder, num_tokens_from_string
 
