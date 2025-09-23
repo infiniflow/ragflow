@@ -143,7 +143,8 @@ class Base(ABC):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
+        
+        response = self.client.responses.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
             return "", 0
@@ -155,10 +156,12 @@ class Base(ABC):
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
+        
         if kwargs.get("stop") or "stop" in gen_conf:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+            response = self.client.responses.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
         else:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+            response = self.client.responses.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+        
         for resp in response:
             if not resp.choices:
                 continue
@@ -254,7 +257,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
+                    response = self.client.responses.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -339,7 +342,7 @@ class Base(ABC):
                 for _ in range(self.max_rounds + 1):
                     reasoning_start = False
                     logging.info(f"{tools=}")
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                    response = self.client.responses.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
                     final_tool_calls = {}
                     answer = ""
                     for resp in response:
@@ -402,7 +405,7 @@ class Base(ABC):
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
-                response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+                response = self.client.responses.create(model=self.model_name, messages=history, stream=True, **gen_conf)
                 for resp in response:
                     if any([not resp.choices, not resp.choices[0].delta, not hasattr(resp.choices[0].delta, "content")]):
                         raise Exception("500 response structure error.")
@@ -556,7 +559,7 @@ class BaiChuanChat(Base):
         }
 
     def _chat(self, history, gen_conf={}, **kwargs):
-        response = self.client.chat.completions.create(
+        response = self.client.responses.create(
             model=self.model_name,
             messages=history,
             extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
@@ -578,7 +581,7 @@ class BaiChuanChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.responses.create(
                 model=self.model_name,
                 messages=history,
                 extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
@@ -648,7 +651,7 @@ class ZhipuChat(Base):
         tk_count = 0
         try:
             logging.info(json.dumps(history, ensure_ascii=False, indent=2))
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+            response = self.client.responses.create(model=self.model_name, messages=history, stream=True, **gen_conf)
             for resp in response:
                 if not resp.choices[0].delta.content:
                     continue
@@ -1361,7 +1364,7 @@ class LiteLLMBase(ABC):
             drop_params=True,
             timeout=self.timeout,
         )
-        # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
+        # response = self.client.responses.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
             return "", 0
