@@ -146,7 +146,7 @@ class Base(ABC):
         
         response = self.client.responses.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
-        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+        if (not response.choices or not response.choices[0].message or not response.choices[0].message.content):
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
@@ -163,7 +163,7 @@ class Base(ABC):
             response = self.client.responses.create(model=self.model_name, messages=history, stream=True, **gen_conf)
         
         for resp in response:
-            if not resp.choices:
+            if not resp.choices or len(resp.choices) == 0:
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
