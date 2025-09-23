@@ -146,7 +146,7 @@ class Base(ABC):
         
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
-        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+        if (not response.choices or not response.choices[0].message or not response.choices[0].message.content):
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
