@@ -364,6 +364,9 @@ def elapsed2time(elapsed):
 
 
 def encrypt(input_string):
+    """
+    pair with decrypt. decrypt(encrypt(input_string)) == input_string
+    """
     file_path = os.path.join(
         file_utils.get_project_base_directory(),
         "conf",
@@ -372,6 +375,21 @@ def encrypt(input_string):
     pub_key = RSA.importKey(open(file_path).read())
     cipher = Cipher_pkcs1_v1_5.new(pub_key)
     cipher_text = cipher.encrypt(input_string.encode('utf-8'))
+    return base64.b64encode(cipher_text).decode("utf-8")
+
+
+def encrypt_after_base64(input_string):
+    """
+    decrypt(encrypt_after_base64(input_string)) == base64(input_string), which frontend and admin_client use.
+    """
+    file_path = os.path.join(
+        file_utils.get_project_base_directory(),
+        "conf",
+        "public.pen"
+    )
+    pub_key = RSA.importKey(open(file_path).read())
+    cipher = Cipher_pkcs1_v1_5.new(pub_key)
+    cipher_text = cipher.encrypt(base64.b64encode(input_string.encode('utf-8')))
     return base64.b64encode(cipher_text).decode("utf-8")
 
 
