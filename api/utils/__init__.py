@@ -363,6 +363,18 @@ def elapsed2time(elapsed):
     return '%02d:%02d:%02d' % (hour, minuter, second)
 
 
+def encrypt(input_string):
+    file_path = os.path.join(
+        file_utils.get_project_base_directory(),
+        "conf",
+        "public.pen"
+    )
+    pub_key = RSA.importKey(open(file_path).read())
+    cipher = Cipher_pkcs1_v1_5.new(pub_key)
+    cipher_text = cipher.encrypt(input_string.encode('utf-8'))
+    return base64.b64encode(cipher_text).decode("utf-8")
+
+
 def decrypt(line):
     file_path = os.path.join(
         file_utils.get_project_base_directory(),

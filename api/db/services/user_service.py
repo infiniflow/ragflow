@@ -102,6 +102,12 @@ class UserService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def query_user_by_email(cls, email):
+        users = cls.model.select().where((cls.model.email == email))
+        return list(users)
+
+    @classmethod
+    @DB.connection_context()
     def save(cls, **kwargs):
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()

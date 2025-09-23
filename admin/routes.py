@@ -38,13 +38,16 @@ def create_user():
         password = data['password']
         role = data.get('role', 'user')
 
-        user = UserMgr.create_user(username, password, role)
-        return success_response(user, "User created successfully", 201)
+        res = UserMgr.create_user(username, password, role)
+        if res["success"]:
+            return success_response(res["user_info"], "User created successfully")
+        else:
+            return error_response("create user failed")
 
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
-        return error_response(str(e), 500)
+        return error_response(str(e))
 
 
 @admin_bp.route('/users/<username>', methods=['DELETE'])
