@@ -43,7 +43,6 @@ def create_new_user(user_info: dict) -> dict:
         "user_info": <dict>, # if true, return user_info
     }
     """
-    print(f"call joint service to create new user: {user_info}", flush=True)
     # generate user_id and access_token for user
     user_id = uuid.uuid1().hex
     user_info['id'] = user_id
@@ -77,7 +76,6 @@ def create_new_user(user_info: dict) -> dict:
         "size": 0,
         "location": "",
     }
-    print(f"constructed user related service info, try to insert.", flush=True)
     try:
         tenant_llm = get_init_tenant_llm(user_id)
 

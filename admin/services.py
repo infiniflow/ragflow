@@ -37,7 +37,6 @@ class UserMgr:
 
     @staticmethod
     def create_user(username, password, role="user"):
-        print(f"request to create user {username}")
         # Validate the email address
         if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", username):
             raise AdminException(f"Invalid email address: {username}!")
@@ -53,7 +52,6 @@ class UserMgr:
             "last_login_time": get_format_time(),
             "is_superuser": role == "admin",
         }
-        print(f'user_info_dict: {user_info_dict}')
         return create_new_user(user_info_dict)
 
     @staticmethod
