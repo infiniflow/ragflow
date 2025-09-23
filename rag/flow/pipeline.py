@@ -26,6 +26,7 @@ from api.db import PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from rag.svr.task_executor import TaskCanceledException
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -100,7 +101,7 @@ class Pipeline(Graph):
             logging.exception(e)
 
         if has_canceled(self.task_id):
-            raise Exception("Cancel")
+            raise TaskCanceledException(message)
 
     def fetch_logs(self):
         log_key = f"{self._flow_id}-{self.task_id}-logs"
