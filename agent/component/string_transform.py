@@ -90,9 +90,7 @@ class StringTransform(Message, ABC):
         for k,v in kwargs.items():
             if not v:
                 v = ""
-            k = re.sub(r'\\m', 'm', k)
-            v = re.sub(r'\\m', 'm', v)
-            script = re.sub(k, v, script)
+            script = re.sub(k, lambda match: v, script)
 
         self.set_output("result", script)
 
