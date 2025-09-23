@@ -52,13 +52,15 @@ export function DataFlowSelect(props: IProps) {
               >
                 {t('dataFlow')}
               </FormLabel>
-              <div
-                className="text-sm flex text-text-primary cursor-pointer"
-                onClick={toDataPipLine}
-              >
-                {t('buildItFromScratch')}
-                <ArrowUpRight size={14} />
-              </div>
+              {toDataPipeline && (
+                <div
+                  className="text-sm flex text-text-primary cursor-pointer"
+                  onClick={toDataPipLine}
+                >
+                  {t('buildItFromScratch')}
+                  <ArrowUpRight size={14} />
+                </div>
+              )}
             </div>
 
             <div className="text-muted-foreground">

@@ -1,16 +1,18 @@
 import FileStatusBadge from '@/components/file-status-badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import React from 'react';
 import reactStringReplace from 'react-string-replace';
+import { RunningStatus } from './dataset/constant';
 export interface ILogInfo {
   taskId?: string;
   fileName: string;
   fileSize?: string;
   source?: string;
   task?: string;
-  state?: 'Running' | 'Success' | 'Failed' | 'Pending';
+  status?: RunningStatus;
   startTime?: string;
   endTime?: string;
   duration?: string;
@@ -76,7 +78,10 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
       <div className=" rounded-lg">
         <div className="flex flex-wrap ">
           {Object.keys(logInfo).map((key) => {
-            if (blackKeyList.includes(key)) {
+            if (
+              blackKeyList.includes(key) ||
+              !logInfo[key as keyof typeof logInfo]
+            ) {
               return null;
             }
             if (key === 'details') {
@@ -93,12 +98,17 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                 </div>
               );
             }
-            if (key === 'Status') {
+            if (key === 'status') {
               return (
-                <div className="flex flex-col" key={key}>
-                  <span className="text-text-secondary text-sm">Status</span>
+                <div className="flex flex-col w-1/2" key={key}>
+                  <span className="text-text-secondary text-sm">
+                    {t('status')}
+                  </span>
                   <div className="mt-1">
-                    <FileStatusBadge status={logInfo.state} />
+                    <FileStatusBadge
+                      status={logInfo.status as RunningStatus}
+                      name={RunningStatusMap[logInfo.status as RunningStatus]}
+                    />
                   </div>
                 </div>
               );

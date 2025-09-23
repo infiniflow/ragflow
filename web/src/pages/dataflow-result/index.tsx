@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DocumentPreview from './components/document-preview';
 import {
+  useFetchPipelineFileLogDetail,
   useGetChunkHighlights,
   useHandleChunkCardClick,
   useRerunDataflow,
@@ -28,7 +29,6 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { ChunkerContainer } from './chunker';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
 import TimelineDataFlow, {
@@ -44,7 +44,7 @@ const Chunk = () => {
   } = useFetchNextChunkList();
   const { selectedChunkId } = useHandleChunkCardClick();
   const [activeStepId, setActiveStepId] = useState<number | string>(0);
-  const { data: dataset } = useFetchKnowledgeBaseConfiguration();
+  const { data: dataset } = useFetchPipelineFileLogDetail();
   const { isChange, setIsChange } = useRerunDataflow();
   const { t } = useTranslation();
 
