@@ -61,6 +61,8 @@ def create():
         req["name"] = dataset_name
         req["tenant_id"] = current_user.id
         req["created_by"] = current_user.id
+        if not req.get("parser_id"):
+            req["parser_id"] = "naive"
         e, t = TenantService.get_by_id(current_user.id)
         if not e:
             return get_data_error_result(message="Tenant not found.")
