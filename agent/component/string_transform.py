@@ -17,6 +17,7 @@ import os
 import re
 from abc import ABC
 from jinja2 import Template as Jinja2Template
+import logging
 from agent.component.base import ComponentParamBase
 from api.utils.api_utils import timeout
 from .message import Message
@@ -90,9 +91,9 @@ class StringTransform(Message, ABC):
         for k,v in kwargs.items():
             if not v:
                 v = ""
-            k = re.sub(r'\\m', 'm', k)
-            v = re.sub(r'\\m', 'm', v)
-            script = re.sub(k, v, script)
+            # Pass a lambda to repl to treat `v` as a literal string,
+            # preventing `re.sub` from processing backslash escapes in `v`.
+            script = re.sub(k, lambda match: v, script)
 
         self.set_output("result", script)
 
