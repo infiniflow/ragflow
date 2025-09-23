@@ -33,9 +33,8 @@ def create_new_user(user_info: dict) -> dict:
     :param user_info: {
         "email": <example@example.com>,
         "nickname": <str, "name">,
-        "password": <base64 encoded password>,
+        "password": <decrypted password>,
         "login_channel": <enum, "password">,
-        "last_login_time": <datetime, YYYY-MM-DD HH:MM:SS>,
         "is_superuser": <bool, role == "admin">,
     }
     :return: {

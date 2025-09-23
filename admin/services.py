@@ -49,7 +49,6 @@ class UserMgr:
             "nickname": "",  # ask user to edit it manually in settings.
             "password": decrypt(password),
             "login_channel": "password",
-            "last_login_time": get_format_time(),
             "is_superuser": role == "admin",
         }
         return create_new_user(user_info_dict)
