@@ -163,7 +163,7 @@ class Base(ABC):
             response = self.client.responses.create(model=self.model_name, messages=history, stream=True, **gen_conf)
         
         for resp in response:
-            if not resp.choices or len(resp.choices) == 0:
+            if not resp.choices:
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
