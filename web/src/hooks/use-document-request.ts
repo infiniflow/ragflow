@@ -335,15 +335,18 @@ export const useSetDocumentParser = () => {
     mutationKey: [DocumentApiAction.SetDocumentParser],
     mutationFn: async ({
       parserId,
+      pipelineId,
       documentId,
       parserConfig,
     }: {
       parserId: string;
+      pipelineId: string;
       documentId: string;
       parserConfig: IChangeParserConfigRequestBody;
     }) => {
       const { data } = await kbService.document_change_parser({
         parser_id: parserId,
+        pipeline_id: pipelineId,
         doc_id: documentId,
         parser_config: parserConfig,
       });

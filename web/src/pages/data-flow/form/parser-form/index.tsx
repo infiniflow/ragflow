@@ -33,7 +33,9 @@ import { VideoFormFields } from './video-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
-const FileFormatOptions = buildOptions(FileType);
+const FileFormatOptions = buildOptions(FileType).filter(
+  (x) => x.value !== FileType.Video, // Temporarily hide the video option
+);
 
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
@@ -105,7 +107,7 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
 
   return (
     <section
-      className={cn('space-y-5 px-5 py-2.5 rounded-md', {
+      className={cn('space-y-5 py-2.5 rounded-md', {
         'bg-state-error-5': isHovering,
       })}
     >

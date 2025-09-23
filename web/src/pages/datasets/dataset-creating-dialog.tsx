@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
@@ -50,7 +50,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
         })
         .trim(),
       parser_id: z.string().optional(),
-      pipline_id: z.string().optional(),
+      pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
       // When parseType === 1, parser_id is required
@@ -67,11 +67,11 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
       console.log('form-data', data);
       // When parseType === 1, pipline_id required
-      if (data.parseType === 2 && !data.pipline_id) {
+      if (data.parseType === 2 && !data.pipeline_id) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.dataFlowRequired'),
-          path: ['pipline_id'],
+          path: ['pipeline_id'],
         });
       }
     });
@@ -126,19 +126,13 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
-        {parseType === 1 && (
-          <>
-            <ChunkMethodItem></ChunkMethodItem>
-          </>
-        )}
+        {parseType === 1 && <ChunkMethodItem></ChunkMethodItem>}
         {parseType === 2 && (
-          <>
-            <DataFlowSelect
-              isMult={false}
-              toDataPipeline={navigateToAgents}
-              formFieldName="pipline_id"
-            />
-          </>
+          <DataFlowSelect
+            isMult={false}
+            toDataPipeline={navigateToAgents}
+            formFieldName="pipeline_id"
+          />
         )}
       </form>
     </Form>

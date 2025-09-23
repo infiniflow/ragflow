@@ -22,8 +22,10 @@ from timeit import default_timer as timer
 import trio
 
 from agent.canvas import Graph
+from api.db import PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -53,22 +55,40 @@ class Pipeline(Graph):
             obj = json.loads(bin.encode("utf-8"))
             if obj:
                 if obj[-1]["component_id"] == component_name:
-                    obj[-1]["trace"].append({"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": timestamp-obj[-1]["trace"][-1]["timestamp"]})
+                    obj[-1]["trace"].append(
+                        {
+                            "progress": progress,
+                            "message": message,
+                            "datetime": datetime.datetime.now().strftime("%H:%M:%S"),
+                            "timestamp": timestamp,
+                            "elapsed_time": timestamp - obj[-1]["trace"][-1]["timestamp"],
+                        }
+                    )
                 else:
-                    obj.append({"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]})
+                    obj.append(
+                        {
+                            "component_id": component_name,
+                            "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}],
+                        }
+                    )
             else:
-                obj = [{"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]}]
+                obj = [
+                    {
+                        "component_id": component_name,
+                        "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}],
+                    }
+                ]
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
             if self._doc_id:
-                percentage = 1./len(self.components.items())
+                percentage = 1.0 / len(self.components.items())
                 msg = ""
-                finished = 0.
+                finished = 0.0
                 for o in obj:
-                    if o['component_id'] == "END":
+                    if o["component_id"] == "END":
                         continue
                     msg += f"\n[{o['component_id']}]:\n"
                     for t in o["trace"]:
-                        msg += "%s: %s\n"%(t["datetime"], t["message"])
+                        msg += "%s: %s\n" % (t["datetime"], t["message"])
                         if t["progress"] < 0:
                             finished = -1
                             break
@@ -141,8 +161,13 @@ class Pipeline(Graph):
         self.callback("END", 1, json.dumps(self.get_component_obj(self.path[-1]).output(), ensure_ascii=False))
 
         if self._doc_id:
-            DocumentService.update_by_id(self._doc_id,{
-                "progress": 1 if not self.error else -1,
-                "progress_msg": "Pipeline finished...\n" + self.error,
-                "process_duration": time.perf_counter() - st
-            })
+            DocumentService.update_by_id(
+                self._doc_id,
+                {
+                    "progress": 1 if not self.error else -1,
+                    "progress_msg": "Pipeline finished...\n" + self.error,
+                    "process_duration": time.perf_counter() - st,
+                },
+            )
+
+            PipelineOperationLogService.create(document_id=self._doc_id, pipeline_id=self._flow_id, task_type=PipelineTaskType.PARSE)

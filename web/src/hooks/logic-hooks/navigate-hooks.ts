@@ -93,8 +93,8 @@ export const useNavigatePage = () => {
   const navigateToChunkParsedResult = useCallback(
     (id: string, knowledgeId?: string) => () => {
       navigate(
-        // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=chunk`,
+        `${Routes.ParsedResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
+        // `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=chunk`,
       );
     },
     [navigate],
@@ -136,7 +136,7 @@ export const useNavigatePage = () => {
     (id: string, knowledgeId?: string) => () => {
       navigate(
         // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=dataflow`,
+        `${Routes.DataflowResult}?id=${id}&type=dataflow`,
       );
     },
     [navigate],

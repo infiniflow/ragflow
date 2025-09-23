@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 from api.db.services.canvas_service import UserCanvasService
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.utils.api_utils import timeout
 from api.utils.base64_image import image2id
 from api.utils.log_utils import init_root_logger, get_project_base_directory
@@ -45,7 +46,7 @@ import exceptiongroup
 import faulthandler
 import numpy as np
 from peewee import DoesNotExist
-from api.db import LLMType, ParserType
+from api.db import LLMType, ParserType, PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled
@@ -649,6 +650,7 @@ async def do_handle_task(task):
                                                                                      timer() - start_ts))
 
     DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+    PipelineOperationLogService.record_pipeline_operation(document_id=task_doc_id, pipeline_id="", task_type=PipelineTaskType.PARSE)
 
     time_cost = timer() - start_ts
     task_time_cost = timer() - task_start_ts
@@ -684,6 +686,7 @@ async def handle_task():
         except Exception:
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
+        PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=PipelineTaskType.PARSE)
     redis_msg.ack()
 
 

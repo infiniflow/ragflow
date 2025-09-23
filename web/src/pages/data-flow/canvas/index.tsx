@@ -30,6 +30,7 @@ import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useMoveNote } from '../hooks/use-move-note';
 import { useDropdownManager } from './context';
 
+import { useRunDataflow } from '../hooks/use-run-dataflow';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
@@ -151,6 +152,12 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     showModal: showLogSheet,
     hideModal: hideLogSheet,
   } = useSetModalState();
+
+  const {
+    run,
+    loading: running,
+    messageId,
+  } = useRunDataflow(showLogSheet!, hideRunOrChatDrawer);
 
   const onConnect = (connection: Connection) => {
     originalOnConnect(connection);
@@ -300,10 +307,13 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
       {runVisible && (
         <RunSheet
           hideModal={hideRunOrChatDrawer}
-          showModal={showLogSheet}
+          run={run}
+          loading={running}
         ></RunSheet>
       )}
-      {logSheetVisible && <LogSheet hideModal={hideLogSheet}></LogSheet>}
+      {logSheetVisible && (
+        <LogSheet hideModal={hideLogSheet} messageId={messageId}></LogSheet>
+      )}
     </div>
   );
 }
