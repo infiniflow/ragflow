@@ -23,6 +23,7 @@ import trio
 
 from agent.canvas import Graph
 from api.db.services.document_service import DocumentService
+from api.db.services.task_service import has_canceled
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -31,6 +32,8 @@ class Pipeline(Graph):
         if isinstance(dsl, dict):
             dsl = json.dumps(dsl, ensure_ascii=False)
         super().__init__(dsl, tenant_id, task_id)
+        if self._doc_id == "x":
+            self._doc_id = None
         self._doc_id = doc_id
         self._flow_id = flow_id
         self._kb_id = None
@@ -42,6 +45,9 @@ class Pipeline(Graph):
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         timestamp = timer()
+        if has_canceled(self.task_id):
+            progress = -1
+            message += "[CANCEL]"
         try:
             bin = REDIS_CONN.get(log_key)
             obj = json.loads(bin.encode("utf-8"))
@@ -72,6 +78,9 @@ class Pipeline(Graph):
                 DocumentService.update_by_id(self._doc_id, {"progress": finished, "progress_msg": msg})
         except Exception as e:
             logging.exception(e)
+
+        if has_canceled(self.task_id):
+            raise Exception("Cancel")
 
     def fetch_logs(self):
         log_key = f"{self._flow_id}-{self.task_id}-logs"
