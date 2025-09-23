@@ -23,7 +23,7 @@ from api.db.services.dialog_service import DialogService, chat
 from api.utils import get_uuid
 import json
 
-from rag.prompts import chunks_format
+from rag.prompts.generator import chunks_format
 
 
 class ConversationService(CommonService):
