@@ -90,7 +90,9 @@ class StringTransform(Message, ABC):
         for k,v in kwargs.items():
             if not v:
                 v = ""
-            script = re.sub(k, v, script)
+            # Pass a lambda to repl to treat `v` as a literal string,
+            # preventing `re.sub` from processing backslash escapes in `v`.
+            script = re.sub(k, lambda match: v, script)
 
         self.set_output("result", script)
 
