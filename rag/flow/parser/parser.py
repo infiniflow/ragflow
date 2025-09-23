@@ -231,7 +231,6 @@ class Parser(ProcessBase):
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
-
         if conf.get("output_format") == "markdown":
             mkdn = ""
             for b in bboxes:
@@ -295,6 +294,7 @@ class Parser(ProcessBase):
 
     def _markdown(self, name, blob):
         from functools import reduce
+
         from rag.app.naive import Markdown as naive_markdown_parser
         from rag.nlp import concat_img
 
@@ -346,7 +346,7 @@ class Parser(ProcessBase):
 
         else:
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"],lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"], lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
