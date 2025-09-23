@@ -12,8 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { formatDate } from '@/utils/date';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -28,18 +30,16 @@ import {
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
 import { ClipboardList, Eye } from 'lucide-react';
-import { Dispatch, FC, SetStateAction, useMemo, useState } from 'react';
+import { FC, useMemo, useState } from 'react';
+import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal from '../process-log-modal';
 import { LogTabs, ProcessingType } from './dataset-common';
+import { IFileLogItem } from './hook';
 
 interface DocumentLog {
-  id: string;
   fileName: string;
-  source: string;
-  pipeline: string;
-  startDate: string;
-  task: string;
-  status: 'Success' | 'Failed' | 'Running' | 'Pending';
+  status: RunningStatus;
+  statusName: typeof RunningStatusMap;
 }
 
 interface FileLogsTableProps {
@@ -57,14 +57,14 @@ interface FileLogsTableProps {
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
-  setIsModalVisible: Dispatch<SetStateAction<boolean>>,
+  showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
   navigateToDataflowResult: (
     id: string,
     knowledgeId?: string | undefined,
   ) => () => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
-  const columns: ColumnDef<DocumentLog>[] = [
+  const columns: ColumnDef<IFileLogItem & DocumentLog>[] = [
     // {
     //   id: 'select',
     //   header: ({ table }) => (
@@ -97,10 +97,10 @@ export const getFileLogsTableColumns = (
       cell: ({ row }) => (
         <div
           className="flex items-center gap-2 text-text-primary"
-          onClick={navigateToDataflowResult(
-            row.original.id,
-            row.original.kb_id,
-          )}
+          // onClick={navigateToDataflowResult(
+          //   row.original.id,
+          //   row.original.kb_id,
+          // )}
         >
           <FileIcon name={row.original.fileName}></FileIcon>
           {row.original.fileName}
@@ -108,47 +108,51 @@ export const getFileLogsTableColumns = (
       ),
     },
     {
-      accessorKey: 'source',
+      accessorKey: 'source_from',
       header: t('source'),
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.source}</div>
+        <div className="text-text-primary">{row.original.source_from}</div>
       ),
     },
     {
-      accessorKey: 'pipeline',
+      accessorKey: 'pipeline_title',
       header: t('dataPipeline'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
           <RAGFlowAvatar
-            avatar={null}
-            name={row.original.pipeline}
+            avatar={row.original.avatar}
+            name={row.original.pipeline_title}
             className="size-4"
           />
-          {row.original.pipeline}
+          {row.original.pipeline_title}
         </div>
       ),
     },
     {
-      accessorKey: 'startDate',
+      accessorKey: 'process_begin_at',
       header: t('startDate'),
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.startDate}</div>
+        <div className="text-text-primary">
+          {formatDate(row.original.process_begin_at)}
+        </div>
       ),
     },
     {
-      accessorKey: 'task',
+      accessorKey: 'task_type',
       header: t('task'),
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.task}</div>
+        <div className="text-text-primary">{row.original.task_type}</div>
       ),
     },
     {
-      accessorKey: 'status',
+      accessorKey: 'operation_status',
       header: t('status'),
       cell: ({ row }) => (
         <FileStatusBadge
-          status={row.original.status}
-          name={row.original.statusName}
+          status={row.original.operation_status as RunningStatus}
+          name={
+            RunningStatusMap[row.original.operation_status as RunningStatus]
+          }
         />
       ),
     },
@@ -162,7 +166,7 @@ export const getFileLogsTableColumns = (
             size="sm"
             className="p-1"
             onClick={() => {
-              setIsModalVisible(true);
+              showLog(row, LogTabs.FILE_LOGS);
             }}
           >
             <Eye />
@@ -185,10 +189,10 @@ export const getFileLogsTableColumns = (
 
 export const getDatasetLogsTableColumns = (
   t: TFunction<'translation', string>,
-  showLog: (row: Row<DocumentLog>, active: LogTabs) => void,
+  showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
-  const columns: ColumnDef<DocumentLog>[] = [
+  const columns: ColumnDef<IFileLogItem & DocumentLog>[] = [
     // {
     // id: 'select',
     // header: ({ table }) => (
@@ -270,18 +274,6 @@ export const getDatasetLogsTableColumns = (
   return columns;
 };
 
-const taskInfo = {
-  taskId: '#9527',
-  fileName: 'PRD for DealBees 1.2 (1).text',
-  fileSize: '2.4G',
-  source: 'Github',
-  task: 'Parse',
-  state: 'Running',
-  startTime: '14/03/2025 14:53:39',
-  duration: '800',
-  details:
-    '\n17:43:21 Task has been received.\n17:43:25 Page(1~100000001): Start to parse.\n17:43:25 Page(1~100000001): Start to tag for every chunk ...\n17:43:45 Page(1~100000001): Tagging 2 chunks completed in 18.99s\n17:43:45 Page(1~100000001): Generate 2 chunks\n17:43:55 Page(1~100000001): Embedding chunks (10.60s)\n17:43:55 Page(1~100000001): Indexing done (0.07s). Task done (33.97s)\n17:43:58 created task raptor\n17:43:58 Task has been received.\n17:44:36 Cluster one layer: 2 -> 1\n17:44:36 Indexing done (0.05s). Task done (37.88s)\n17:44:40 created task graphrag\n17:44:41 Task has been received.\n17:50:57 Entities extraction of chunk 0 1/3 done, 25 nodes, 26 edges, 14893 tokens.\n17:56:01 [ERROR][Exception]: Operation timed out after 7200 seconds and 1 attempts.',
-};
 const FileLogsTable: FC<FileLogsTableProps> = ({
   data,
   pagination,
@@ -295,15 +287,26 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
-  const [logInfo, setLogInfo] = useState(taskInfo);
-  const showLog = (row: Row<DocumentLog>, active: LogTabs) => {
-    setLogInfo(row.original);
+  const [logInfo, setLogInfo] = useState<IFileLogItem>({});
+  const showLog = (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => {
+    const logDetail = {
+      taskId: row.original.id,
+      fileName: row.original.document_name,
+      source: row.original.source_from,
+      task: row.original.dsl.task_id,
+      status: row.original.statusName,
+      startDate: formatDate(row.original.process_begin_at),
+      duration: (row.original.process_duration || 0) + 's',
+      details: row.original.progress_msg,
+    };
+    console.log('logDetail', logDetail);
+    setLogInfo(logDetail);
     setIsModalVisible(true);
   };
 
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
-      ? getFileLogsTableColumns(t, setIsModalVisible, navigateToDataflowResult)
+      ? getFileLogsTableColumns(t, showLog, navigateToDataflowResult)
       : getDatasetLogsTableColumns(t, showLog);
   }, [active, t]);
 
@@ -316,7 +319,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   );
 
   const table = useReactTable({
-    data,
+    data: data || [],
     columns,
     manualPagination: true,
     getCoreRowModel: getCoreRowModel(),
@@ -354,7 +357,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           ))}
         </TableHeader>
         <TableBody className="relative">
-          {table.getRowModel().rows.length ? (
+          {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow
                 key={row.id}

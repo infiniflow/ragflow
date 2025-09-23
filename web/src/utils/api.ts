@@ -46,6 +46,9 @@ export default {
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
   getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
+  // data pipeline log
+  fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
+  get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
