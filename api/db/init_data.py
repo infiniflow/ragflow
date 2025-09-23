@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import logging
-import base64
 import json
 import os
 import time

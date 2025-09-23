@@ -1,5 +1,4 @@
 import argparse
-import base64
 from typing import Dict, List, Any
 from lark import Lark, Transformer, Tree
 import requests
