@@ -622,6 +622,13 @@
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,
                     "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "qianwen-deepresearch-30b-a3b-131k",
+                    "tags": "LLM,CHAT,1M,AGENT,DEEPRESEARCH",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
                 }
             ]
         },
