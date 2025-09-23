@@ -263,6 +263,10 @@ export const initialRetrievalValues = {
       type: 'string',
       value: '',
     },
+    json: {
+      type: 'Array<Object>',
+      value: [],
+    },
   },
 };
 

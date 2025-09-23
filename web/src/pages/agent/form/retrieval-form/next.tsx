@@ -83,6 +83,10 @@ function RetrievalForm({ node }: INextOperatorForm) {
         title: 'formalized_content',
         type: initialRetrievalValues.outputs.formalized_content.type,
       },
+      {
+        title: 'json',
+        type: initialRetrievalValues.outputs.json.type,
+      },
     ];
   }, []);
 
