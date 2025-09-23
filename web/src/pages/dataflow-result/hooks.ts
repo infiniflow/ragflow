@@ -7,12 +7,73 @@ import {
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IChunk } from '@/interfaces/database/knowledge';
+import kbService from '@/services/knowledge-service';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IHighlight } from 'react-pdf-highlighter';
+import { useParams, useSearchParams } from 'umi';
 import { ChunkTextMode } from './constant';
+
+export interface IPipelineFileLogDetail {
+  avatar: string;
+  create_date: string;
+  create_time: number;
+  document_id: string;
+  document_name: string;
+  document_suffix: string;
+  document_type: string;
+  dsl: string;
+  id: string;
+  kb_id: string;
+  operation_status: string;
+  parser_id: string;
+  pipeline_id: string;
+  pipeline_title: string;
+  process_begin_at: string;
+  process_duration: number;
+  progress: number;
+  progress_msg: string;
+  source_from: string;
+  status: string;
+  task_type: string;
+  tenant_id: string;
+  update_date: string;
+  update_time: number;
+}
+export const useFetchPipelineFileLogDetail = (props?: {
+  isEdit?: boolean;
+  refreshCount?: number;
+}) => {
+  const { isEdit = true, refreshCount } = props || { isEdit: true };
+  const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const logId = searchParams.get('id') || id;
+
+  let queryKey: (string | number)[] = [];
+  if (typeof refreshCount === 'number') {
+    queryKey = ['fetchLogDetail', refreshCount];
+  }
+
+  const { data, isFetching: loading } = useQuery<IPipelineFileLogDetail>({
+    queryKey,
+    initialData: {} as IPipelineFileLogDetail,
+    gcTime: 0,
+    queryFn: async () => {
+      if (isEdit) {
+        const { data } = await kbService.get_pipeline_detail({
+          log_id: logId,
+        });
+        return data?.data ?? {};
+      } else {
+        return {};
+      }
+    },
+  });
+
+  return { data, loading };
+};
 
 export const useHandleChunkCardClick = () => {
   const [selectedChunkId, setSelectedChunkId] = useState<string>('');

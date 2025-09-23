@@ -8,6 +8,7 @@ import {
   TimelineSeparator,
   TimelineTitle,
 } from '@/components/originui/timeline';
+import { ITraceData } from '@/interfaces/database/agent';
 import { Aperture } from 'lucide-react';
 
 const items = [
@@ -48,7 +49,18 @@ const items = [
   },
 ];
 
-export function DataflowTimeline() {
+export type DataflowTimelineProps = {
+  traceList?: ITraceData[];
+};
+
+interface DataflowTrace {
+  datetime: string;
+  elapsed_time: number;
+  message: string;
+  progress: number;
+  timestamp: number;
+}
+export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
   return (
     <Timeline>
       {items.map((item) => (

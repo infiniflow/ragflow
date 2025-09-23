@@ -1,3 +1,4 @@
+import { crossLanguageOptions } from '@/components/cross-language-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { LLMFormField } from '@/components/llm-setting-items/llm-form-field';
 import {
@@ -46,11 +47,13 @@ export function ParserMethodFormField({
   prefix,
   optionsWithoutLLM,
 }: CommonProps & { optionsWithoutLLM?: { value: string; label: string }[] }) {
+  const { t } = useTranslation();
   return (
     <LayoutRecognizeFormField
       name={buildFieldNameWithPrefix(`parse_method`, prefix)}
       horizontal={false}
       optionsWithoutLLM={optionsWithoutLLM}
+      label={t('dataflow.parserMethod')}
     ></LayoutRecognizeFormField>
   );
 }
@@ -60,5 +63,24 @@ export function LargeModelFormField({ prefix }: CommonProps) {
     <LLMFormField
       name={buildFieldNameWithPrefix('llm_id', prefix)}
     ></LLMFormField>
+  );
+}
+
+export function LanguageFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`lang`, prefix)}
+      label={t('dataflow.lang')}
+    >
+      {(field) => (
+        <SelectWithSearch
+          options={crossLanguageOptions}
+          value={field.value}
+          onChange={field.onChange}
+        ></SelectWithSearch>
+      )}
+    </RAGFlowFormItem>
   );
 }

@@ -18,6 +18,10 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import {
+  ChunkMethodItem,
+  ParseTypeItem,
+} from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import get from 'lodash/get';
 import omit from 'lodash/omit';
@@ -30,6 +34,7 @@ import {
   AutoKeywordsFormField,
   AutoQuestionsFormField,
 } from '../auto-keywords-form-field';
+import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
@@ -45,7 +50,6 @@ import RaptorFormFields, {
 } from '../parse-configuration/raptor-form-fields';
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
-import { RAGFlowSelect } from '../ui/select';
 import { DynamicPageRange } from './dynamic-page-range';
 import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
 import {
@@ -62,6 +66,7 @@ interface IProps
   }> {
   loading: boolean;
   parserId: string;
+  pipelineId?: string;
   parserConfig: IParserConfig;
   documentExtension: string;
   documentId: string;
@@ -80,6 +85,7 @@ export function ChunkMethodDialog({
   hideModal,
   onOk,
   parserId,
+  pipelineId,
   documentExtension,
   visible,
   parserConfig,
@@ -100,12 +106,14 @@ export function ChunkMethodDialog({
   const fillDefaultParserValue = useFillDefaultValueOnMount();
 
   const FormSchema = z.object({
+    parseType: z.number(),
     parser_id: z
       .string()
       .min(1, {
         message: t('common.pleaseSelect'),
       })
       .trim(),
+    pipeline_id: z.string().optional(),
     parser_config: z.object({
       task_page_size: z.coerce.number().optional(),
       layout_recognize: z.string().optional(),
@@ -138,7 +146,8 @@ export function ChunkMethodDialog({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       parser_id: parserId,
-
+      pipeline_id: pipelineId,
+      parseType: pipelineId ? 2 : 1,
       parser_config: defaultParserValues,
     },
   });
@@ -201,6 +210,8 @@ export function ChunkMethodDialog({
         parserConfig?.pages?.map((x) => ({ from: x[0], to: x[1] })) ?? [];
       form.reset({
         parser_id: parserId,
+        pipeline_id: pipelineId,
+        parseType: pipelineId ? 2 : 1,
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
           ...omit(parserConfig, 'pages'),
@@ -223,7 +234,11 @@ export function ChunkMethodDialog({
     useGraphRag,
     visible,
   ]);
-
+  const parseType = useWatch({
+    control: form.control,
+    name: 'parseType',
+    defaultValue: 1,
+  });
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[50vw]">
@@ -237,7 +252,17 @@ export function ChunkMethodDialog({
             id={FormId}
           >
             <FormContainer>
-              <FormField
+              <ParseTypeItem />
+              {parseType === 1 && <ChunkMethodItem></ChunkMethodItem>}
+              {parseType === 2 && (
+                <DataFlowSelect
+                  isMult={false}
+                  // toDataPipeline={navigateToAgents}
+                  formFieldName="pipeline_id"
+                />
+              )}
+
+              {/* <FormField
                 control={form.control}
                 name="parser_id"
                 render={({ field }) => (
@@ -252,9 +277,11 @@ export function ChunkMethodDialog({
                     <FormMessage />
                   </FormItem>
                 )}
-              />
-              {showPages && <DynamicPageRange></DynamicPageRange>}
-              {showPages && layoutRecognize && (
+              /> */}
+              {showPages && parseType === 1 && (
+                <DynamicPageRange></DynamicPageRange>
+              )}
+              {showPages && parseType === 1 && layoutRecognize && (
                 <FormField
                   control={form.control}
                   name="parser_config.task_page_size"
@@ -279,50 +306,60 @@ export function ChunkMethodDialog({
                 />
               )}
             </FormContainer>
-            <FormContainer
-              show={showOne || showMaxTokenNumber}
-              className="space-y-3"
-            >
-              {showOne && <LayoutRecognizeFormField></LayoutRecognizeFormField>}
-              {showMaxTokenNumber && (
-                <>
-                  <MaxTokenNumberFormField
-                    max={
-                      selectedTag === DocumentParserType.KnowledgeGraph
-                        ? 8192 * 2
-                        : 2048
-                    }
-                  ></MaxTokenNumberFormField>
-                  <DelimiterFormField></DelimiterFormField>
-                </>
-              )}
-            </FormContainer>
-            <FormContainer
-              show={showAutoKeywords(selectedTag) || showExcelToHtml}
-              className="space-y-3"
-            >
-              {showAutoKeywords(selectedTag) && (
-                <>
-                  <AutoKeywordsFormField></AutoKeywordsFormField>
-                  <AutoQuestionsFormField></AutoQuestionsFormField>
-                </>
-              )}
-              {showExcelToHtml && <ExcelToHtmlFormField></ExcelToHtmlFormField>}
-            </FormContainer>
-            {showRaptorParseConfiguration(
-              selectedTag as DocumentParserType,
-            ) && (
-              <FormContainer>
-                <RaptorFormFields></RaptorFormFields>
-              </FormContainer>
-            )}
-            {showGraphRagItems(selectedTag as DocumentParserType) &&
-              useGraphRag && (
-                <FormContainer>
-                  <UseGraphRagFormField></UseGraphRagFormField>
+            {parseType === 1 && (
+              <>
+                <FormContainer
+                  show={showOne || showMaxTokenNumber}
+                  className="space-y-3"
+                >
+                  {showOne && (
+                    <LayoutRecognizeFormField></LayoutRecognizeFormField>
+                  )}
+                  {showMaxTokenNumber && (
+                    <>
+                      <MaxTokenNumberFormField
+                        max={
+                          selectedTag === DocumentParserType.KnowledgeGraph
+                            ? 8192 * 2
+                            : 2048
+                        }
+                      ></MaxTokenNumberFormField>
+                      <DelimiterFormField></DelimiterFormField>
+                    </>
+                  )}
                 </FormContainer>
-              )}
-            {showEntityTypes && <EntityTypesFormField></EntityTypesFormField>}
+                <FormContainer
+                  show={showAutoKeywords(selectedTag) || showExcelToHtml}
+                  className="space-y-3"
+                >
+                  {showAutoKeywords(selectedTag) && (
+                    <>
+                      <AutoKeywordsFormField></AutoKeywordsFormField>
+                      <AutoQuestionsFormField></AutoQuestionsFormField>
+                    </>
+                  )}
+                  {showExcelToHtml && (
+                    <ExcelToHtmlFormField></ExcelToHtmlFormField>
+                  )}
+                </FormContainer>
+                {showRaptorParseConfiguration(
+                  selectedTag as DocumentParserType,
+                ) && (
+                  <FormContainer>
+                    <RaptorFormFields></RaptorFormFields>
+                  </FormContainer>
+                )}
+                {showGraphRagItems(selectedTag as DocumentParserType) &&
+                  useGraphRag && (
+                    <FormContainer>
+                      <UseGraphRagFormField></UseGraphRagFormField>
+                    </FormContainer>
+                  )}
+                {showEntityTypes && (
+                  <EntityTypesFormField></EntityTypesFormField>
+                )}
+              </>
+            )}
           </form>
         </Form>
         <DialogFooter>

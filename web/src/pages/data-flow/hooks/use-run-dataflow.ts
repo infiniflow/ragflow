@@ -1,12 +1,17 @@
 import { useSendMessageBySSE } from '@/hooks/use-send-message';
 import api from '@/utils/api';
-import { useCallback } from 'react';
+import { get } from 'lodash';
+import { useCallback, useState } from 'react';
 import { useParams } from 'umi';
 import { useSaveGraphBeforeOpeningDebugDrawer } from './use-save-graph';
 
-export function useRunDataflow(showLogSheet: () => void) {
+export function useRunDataflow(
+  showLogSheet: () => void,
+  hideRunOrChatDrawer: () => void,
+) {
   const { send } = useSendMessageBySSE(api.runCanvas);
   const { id } = useParams();
+  const [messageId, setMessageId] = useState();
 
   const { handleRun: saveGraph, loading } =
     useSaveGraphBeforeOpeningDebugDrawer(showLogSheet!);
@@ -22,12 +27,22 @@ export function useRunDataflow(showLogSheet: () => void) {
         files: [fileResponseData.file],
       });
 
-      if (res && res?.response.status === 200 && res?.data?.code === 0) {
+      if (res && res?.response.status === 200 && get(res, 'data.code') === 0) {
         // fetch canvas
+        hideRunOrChatDrawer();
+
+        const msgId = get(res, 'data.data.message_id');
+        if (msgId) {
+          setMessageId(msgId);
+        }
+
+        return msgId;
       }
     },
-    [id, saveGraph, send],
+    [hideRunOrChatDrawer, id, saveGraph, send],
   );
 
-  return { run, loading: loading };
+  return { run, loading: loading, messageId };
 }
+
+export type RunDataflowType = ReturnType<typeof useRunDataflow>;

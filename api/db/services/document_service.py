@@ -601,6 +601,22 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def update_progress(cls):
         docs = cls.get_unfinished_docs()
+
+        cls._sync_progress(docs)
+
+
+    @classmethod
+    @DB.connection_context()
+    def update_progress_immediately(cls, docs:list[dict]):
+        if not docs:
+            return
+
+        cls._sync_progress(docs)
+
+
+    @classmethod
+    @DB.connection_context()
+    def _sync_progress(cls, docs:list[dict]):
         for d in docs:
             try:
                 tsks = Task.query(doc_id=d["id"], order_by=Task.create_time)

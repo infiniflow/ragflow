@@ -114,6 +114,9 @@ export default {
       processingType: 'Processing Type',
       dataPipeline: 'Data Pipeline',
       operations: 'Operations',
+      taskId: 'Task ID',
+      duration: 'Duration',
+      details: 'Details',
       status: 'Status',
       task: 'Task',
       startDate: 'Start Date',
@@ -1599,6 +1602,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       serverType: 'Server Type',
       addMCP: 'Add MCP',
       editMCP: 'Edit MCP',
+      toolsAvailable: 'tools available',
+      mcpServers: 'MCP Servers',
+      customizeTheListOfMcpServers: 'Customize the list of MCP servers',
     },
     search: {
       searchApps: 'Search Apps',
@@ -1694,6 +1700,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       searchMethod: 'Search method',
       filenameEmbdWeight: 'Filename embd weight',
       begin: 'File',
+      parserMethod: 'Parser method',
+      exportJson: 'Export JSON',
     },
   },
 };
