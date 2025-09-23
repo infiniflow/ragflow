@@ -24,6 +24,7 @@ import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { Output } from '../components/output';
 import { OutputFormatFormField } from './common-form-fields';
+import { InitialOutputFormatMap } from './constant';
 import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
@@ -32,7 +33,9 @@ import { VideoFormFields } from './video-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
-const FileFormatOptions = buildOptions(FileType);
+const FileFormatOptions = buildOptions(FileType).filter(
+  (x) => x.value !== FileType.Video, // Temporarily hide the video option
+);
 
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
@@ -50,14 +53,14 @@ type ParserItemProps = {
 };
 
 export const FormSchema = z.object({
-  parser: z.array(
+  setups: z.array(
     z.object({
       fileFormat: z.string().nullish(),
       output_format: z.string().optional(),
       parse_method: z.string().optional(),
-      llm_id: z.string().optional(),
       lang: z.string().optional(),
       fields: z.array(z.string()).optional(),
+      llm_id: z.string().optional(),
     }),
   ),
 });
@@ -71,10 +74,10 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
   const isHovering = useHover(ref);
 
   const prefix = `${name}.${index}`;
-  const fileFormat = form.getValues(`parser.${index}.fileFormat`);
+  const fileFormat = form.getValues(`setups.${index}.fileFormat`);
 
   const values = form.getValues();
-  const parserList = values.parser.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
+  const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
 
   const filteredFileFormatOptions = useMemo(() => {
     const otherFileFormatList = parserList
@@ -89,10 +92,22 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
-      : OutputFormatFormField;
+      : () => <></>;
+
+  const handleFileTypeChange = useCallback(
+    (value: FileType) => {
+      form.setValue(
+        `setups.${index}.output_format`,
+        InitialOutputFormatMap[value],
+        { shouldDirty: true, shouldValidate: true, shouldTouch: true },
+      );
+    },
+    [form, index],
+  );
+
   return (
     <section
-      className={cn('space-y-5 px-5 py-2.5 rounded-md', {
+      className={cn('space-y-5 py-2.5 rounded-md', {
         'bg-state-error-5': isHovering,
       })}
     >
@@ -110,11 +125,22 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
         name={buildFieldNameWithPrefix(`fileFormat`, prefix)}
         label={t('dataflow.fileFormats')}
       >
-        <SelectWithSearch
-          options={filteredFileFormatOptions}
-        ></SelectWithSearch>
+        {(field) => (
+          <SelectWithSearch
+            value={field.value}
+            onChange={(val) => {
+              field.onChange(val);
+              handleFileTypeChange(val as FileType);
+            }}
+            options={filteredFileFormatOptions}
+          ></SelectWithSearch>
+        )}
       </RAGFlowFormItem>
       <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
+      <OutputFormatFormField
+        prefix={prefix}
+        fileType={fileFormat as FileType}
+      />
       {index < fieldLength - 1 && <Separator />}
     </section>
   );
@@ -130,7 +156,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
     shouldUnregister: true,
   });
 
-  const name = 'parser';
+  const name = 'setups';
   const { fields, remove, append } = useFieldArray({
     name,
     control: form.control,
@@ -141,9 +167,9 @@ const ParserForm = ({ node }: INextOperatorForm) => {
       fileFormat: null,
       output_format: '',
       parse_method: '',
-      llm_id: '',
       lang: '',
       fields: [],
+      llm_id: '',
     });
   }, [append]);
 

@@ -1513,6 +1513,17 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       okText: '确认',
       cancelText: '取消',
     },
+    mcp: {
+      export: '导出',
+      import: '导入',
+      url: 'URL',
+      serverType: '服务器类型',
+      addMCP: '添加 MCP',
+      editMCP: '编辑 MCP',
+      toolsAvailable: '可用的工具',
+      mcpServers: 'MCP 服务器',
+      customizeTheListOfMcpServers: '自定义 MCP 服务器列表',
+    },
     search: {
       searchApps: '搜索',
       createSearch: '创建查询',
@@ -1606,6 +1617,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       overlappedPercent: '重叠百分比',
       searchMethod: '搜索方法',
       filenameEmbdWeight: '文件名嵌入权重',
+      begin: '文件',
+      parserMethod: '解析方法',
+      exportJson: '导出 JSON',
     },
   },
 };

@@ -1,21 +1,8 @@
 import {
-  initialKeywordsSimilarityWeightValue,
-  initialSimilarityThresholdValue,
-} from '@/components/similarity-slider';
-import {
-  AgentGlobals,
-  CodeTemplateStrMap,
-  ProgrammingLanguage,
-} from '@/constants/agent';
-
-import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
 } from '@/constants/chat';
-import { ModelVariableType } from '@/constants/knowledge';
-import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { t } from 'i18next';
 
 import {
   Circle,
@@ -38,10 +25,10 @@ export enum AgentDialogueMode {
   Task = 'task',
 }
 
-export const BeginId = 'begin';
+export const BeginId = 'File';
 
 export enum Operator {
-  Begin = 'Begin',
+  Begin = 'File',
   Note = 'Note',
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
@@ -80,28 +67,14 @@ export const SwitchOperatorOptions = [
 
 export const SwitchElseTo = 'end_cpn_ids';
 
-const initialQueryBaseValues = {
-  query: [],
-};
+export enum TokenizerSearchMethod {
+  Embedding = 'embedding',
+  FullText = 'full_text',
+}
 
-export const initialRetrievalValues = {
-  query: AgentGlobals.SysQuery,
-  top_n: 8,
-  top_k: 1024,
-  kb_ids: [],
-  rerank_id: '',
-  empty_response: '',
-  ...initialSimilarityThresholdValue,
-  ...initialKeywordsSimilarityWeightValue,
-  use_kg: false,
-  cross_languages: [],
-  outputs: {
-    formalized_content: {
-      type: 'string',
-      value: '',
-    },
-  },
-};
+export enum ImageParseMethod {
+  OCR = 'ocr',
+}
 
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
@@ -117,219 +90,17 @@ export const variableCheckBoxFieldMap = Object.keys(
   return pre;
 }, {});
 
-const initialLlmBaseValues = {
-  ...variableCheckBoxFieldMap,
-  temperature: 0.1,
-  top_p: 0.3,
-  frequency_penalty: 0.7,
-  presence_penalty: 0.4,
-  max_tokens: 256,
-};
-
-export const initialGenerateValues = {
-  ...initialLlmBaseValues,
-  prompt: i18n.t('flow.promptText'),
-  cite: true,
-  message_history_window_size: 12,
-  parameters: [],
-};
-
-export const initialRewriteQuestionValues = {
-  ...initialLlmBaseValues,
-  language: '',
-  message_history_window_size: 6,
-};
-
-export const initialRelevantValues = {
-  ...initialLlmBaseValues,
-};
-
-export const initialCategorizeValues = {
-  ...initialLlmBaseValues,
-  query: AgentGlobals.SysQuery,
-  parameter: ModelVariableType.Precise,
-  message_history_window_size: 1,
-  items: [],
-  outputs: {
-    category_name: {
-      type: 'string',
-    },
-  },
-};
-
-export const initialMessageValues = {
-  content: [''],
-};
-
-export const initialKeywordExtractValues = {
-  ...initialLlmBaseValues,
-  top_n: 3,
-  ...initialQueryBaseValues,
-};
-
-export const initialExeSqlValues = {
-  sql: '',
-  db_type: 'mysql',
-  database: '',
-  username: '',
-  host: '',
-  port: 3306,
-  password: '',
-  max_records: 1024,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialSwitchValues = {
-  conditions: [
-    {
-      logical_operator: SwitchLogicOperatorOptions[0],
-      items: [
-        {
-          operator: SwitchOperatorOptions[0].value,
-        },
-      ],
-      to: [],
-    },
-  ],
-  [SwitchElseTo]: [],
-};
-
-export const initialConcentratorValues = {};
-
 export const initialNoteValues = {
   text: '',
 };
 
-export const initialCrawlerValues = {
-  extract_type: 'markdown',
-  query: '',
-};
-
-export const initialInvokeValues = {
-  url: '',
-  method: 'GET',
-  timeout: 60,
-  headers: `{
-  "Accept": "*/*",
-  "Cache-Control": "no-cache",
-  "Connection": "keep-alive"
-}`,
-  proxy: '',
-  clean_html: false,
-  variables: [],
-  outputs: {
-    result: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialTemplateValues = {
-  content: '',
-  parameters: [],
-};
-
-export const initialEmailValues = {
-  smtp_server: '',
-  smtp_port: 465,
-  email: '',
-  password: '',
-  sender_name: '',
-  to_email: '',
-  cc_email: '',
-  subject: '',
-  content: '',
-  outputs: {
-    success: {
-      value: true,
-      type: 'boolean',
-    },
-  },
-};
-
-export const initialIterationValues = {
-  items_ref: '',
-  outputs: {},
-};
-export const initialIterationStartValues = {
-  outputs: {
-    item: {
-      type: 'unkown',
-    },
-    index: {
-      type: 'integer',
-    },
-  },
-};
-
-export const initialCodeValues = {
-  lang: ProgrammingLanguage.Python,
-  script: CodeTemplateStrMap[ProgrammingLanguage.Python],
-  arguments: {
-    arg1: '',
-    arg2: '',
-  },
-  outputs: {},
-};
-
-export const initialWaitingDialogueValues = {};
-
-export const initialChunkerValues = { outputs: {} };
-
 export const initialTokenizerValues = {
-  search_method: [],
+  search_method: [
+    TokenizerSearchMethod.Embedding,
+    TokenizerSearchMethod.FullText,
+  ],
   filename_embd_weight: 0.1,
-  outputs: {},
-};
-
-export const initialAgentValues = {
-  ...initialLlmBaseValues,
-  description: '',
-  user_prompt: '',
-  sys_prompt: t('flow.sysPromptDefultValue'),
-  prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
-  message_history_window_size: 12,
-  max_retries: 3,
-  delay_after_error: 1,
-  visual_files_var: '',
-  max_rounds: 1,
-  exception_method: '',
-  exception_goto: [],
-  exception_default_value: '',
-  tools: [],
-  mcp: [],
-  cite: true,
-  outputs: {
-    // structured_output: {
-    //   topic: {
-    //     type: 'string',
-    //     description:
-    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-    //     enum: ['general', 'news'],
-    //     default: 'general',
-    //   },
-    // },
-    content: {
-      type: 'string',
-      value: '',
-    },
-  },
-};
-
-export const initialUserFillUpValues = {
-  enable_tips: true,
-  tips: '',
-  inputs: [],
+  fields: ['text'],
   outputs: {},
 };
 
@@ -347,23 +118,33 @@ export enum StringTransformDelimiter {
   Space = ' ',
 }
 
-export const initialStringTransformValues = {
-  method: StringTransformMethod.Merge,
-  split_ref: '',
-  script: '',
-  delimiters: [StringTransformDelimiter.Comma],
-  outputs: {
-    result: {
-      type: 'string',
-    },
-  },
+export const initialParserValues = { outputs: {}, setups: [] };
+
+export const initialSplitterValues = {
+  outputs: {},
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [{ value: '\n' }],
 };
 
-export const initialParserValues = { outputs: {}, parser: [] };
+export enum Hierarchy {
+  H1 = '1',
+  H2 = '2',
+  H3 = '3',
+  H4 = '4',
+  H5 = '5',
+}
 
-export const initialSplitterValues = { outputs: {}, chunk_token_size: 512 };
-
-export const initialHierarchicalMergerValues = { outputs: {} };
+export const initialHierarchicalMergerValues = {
+  outputs: {},
+  hierarchy: Hierarchy.H3,
+  levels: [
+    { expressions: [{ expression: '^#[^#]' }] },
+    { expressions: [{ expression: '^##[^#]' }] },
+    { expressions: [{ expression: '^###[^#]' }] },
+    { expressions: [{ expression: '^####[^#]' }] },
+  ],
+};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -445,13 +226,36 @@ export enum FileType {
   Image = 'image',
   Email = 'email',
   TextMarkdown = 'text&markdown',
-  Docx = 'docx',
-  PowerPoint = 'ppt',
+  Docx = 'word',
+  PowerPoint = 'slides',
   Video = 'video',
   Audio = 'audio',
 }
 
-export enum TokenizerSearchMethod {
-  Embedding = 'embedding',
-  FullText = 'full_text',
-}
+export const FileTypeSuffixMap = {
+  [FileType.PDF]: ['pdf'],
+  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
+  [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
+  [FileType.Email]: ['eml', 'msg'],
+  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
+  [FileType.Docx]: ['doc', 'docx'],
+  [FileType.PowerPoint]: ['pptx'],
+  [FileType.Video]: [],
+  [FileType.Audio]: [
+    'da',
+    'wave',
+    'wav',
+    'mp3',
+    'aac',
+    'flac',
+    'ogg',
+    'aiff',
+    'au',
+    'midi',
+    'wma',
+    'realaudio',
+    'vqf',
+    'oggvorbis',
+    'ape',
+  ],
+};

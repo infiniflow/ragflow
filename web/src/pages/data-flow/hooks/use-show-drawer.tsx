@@ -5,7 +5,6 @@ import React, { useCallback, useEffect } from 'react';
 import { BeginId, Operator } from '../constant';
 import useGraphStore from '../store';
 import { useCacheChatLog } from './use-cache-chat-log';
-import { useGetBeginNodeDataInputs } from './use-get-begin-query';
 import { useSaveGraph } from './use-save-graph';
 
 export const useShowFormDrawer = () => {
@@ -84,20 +83,12 @@ export function useShowDrawer({
   } = useShowSingleDebugDrawer();
   const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
     useShowFormDrawer();
-  const inputs = useGetBeginNodeDataInputs();
 
   useEffect(() => {
     if (drawerVisible) {
       showRunModal();
     }
-  }, [
-    hideChatModal,
-    hideRunModal,
-    showChatModal,
-    showRunModal,
-    drawerVisible,
-    inputs,
-  ]);
+  }, [hideChatModal, hideRunModal, showChatModal, showRunModal, drawerVisible]);
 
   const hideRunOrChatDrawer = useCallback(() => {
     hideChatModal();

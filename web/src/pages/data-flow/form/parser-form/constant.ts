@@ -25,6 +25,7 @@ export enum TextMarkdownOutputFormat {
 
 export enum DocxOutputFormat {
   Markdown = 'markdown',
+  Json = 'json',
 }
 
 export enum PptOutputFormat {
@@ -49,4 +50,16 @@ export const OutputFormatMap = {
   [FileType.PowerPoint]: PptOutputFormat,
   [FileType.Video]: VideoOutputFormat,
   [FileType.Audio]: AudioOutputFormat,
+};
+
+export const InitialOutputFormatMap = {
+  [FileType.PDF]: PdfOutputFormat.Json,
+  [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
+  [FileType.Image]: ImageOutputFormat.Text,
+  [FileType.Email]: EmailOutputFormat.Text,
+  [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
+  [FileType.Docx]: DocxOutputFormat.Json,
+  [FileType.PowerPoint]: PptOutputFormat.Json,
+  [FileType.Video]: VideoOutputFormat.Json,
+  [FileType.Audio]: AudioOutputFormat.Text,
 };

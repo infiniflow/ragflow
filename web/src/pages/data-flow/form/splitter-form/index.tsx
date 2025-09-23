@@ -1,15 +1,15 @@
+import { DelimiterInput } from '@/components/delimiter-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialChunkerValues, initialSplitterValues } from '../../constant';
+import { initialSplitterValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -32,7 +32,7 @@ export const FormSchema = z.object({
 export type SplitterFormSchemaType = z.infer<typeof FormSchema>;
 
 const SplitterForm = ({ node }: INextOperatorForm) => {
-  const defaultValues = useFormValues(initialChunkerValues, node);
+  const defaultValues = useFormValues(initialSplitterValues, node);
   const { t } = useTranslation();
 
   const form = useForm<SplitterFormSchemaType>({
@@ -59,32 +59,36 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
         <SliderInputFormField
           name="overlapped_percent"
           max={0.3}
-          min={0.1}
+          min={0}
           step={0.01}
           label={t('dataflow.overlappedPercent')}
         ></SliderInputFormField>
-        <span>{t('flow.delimiters')}</span>
-        {fields.map((field, index) => (
-          <div key={field.id} className="flex items-center gap-2">
-            <div className="space-y-2 flex-1">
-              <RAGFlowFormItem
-                name={`${name}.${index}.value`}
-                label="delimiter"
-                labelClassName="!hidden"
-              >
-                <Input className="!m-0"></Input>
-              </RAGFlowFormItem>
-            </div>
-            <Button
-              type="button"
-              variant={'ghost'}
-              onClick={() => remove(index)}
-            >
-              <Trash2 />
-            </Button>
+        <section>
+          <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
+          <div className="space-y-4">
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex items-center gap-2">
+                <div className="space-y-2 flex-1">
+                  <RAGFlowFormItem
+                    name={`${name}.${index}.value`}
+                    label="delimiter"
+                    labelClassName="!hidden"
+                  >
+                    <DelimiterInput className="!m-0"></DelimiterInput>
+                  </RAGFlowFormItem>
+                </div>
+                <Button
+                  type="button"
+                  variant={'ghost'}
+                  onClick={() => remove(index)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            ))}
           </div>
-        ))}
-        <BlockButton onClick={() => append({ value: '' })}>
+        </section>
+        <BlockButton onClick={() => append({ value: '\n' })}>
           {t('common.add')}
         </BlockButton>
       </FormWrapper>

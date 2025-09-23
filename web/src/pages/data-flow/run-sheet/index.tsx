@@ -7,13 +7,14 @@ import {
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
-import { useRunDataflow } from '../hooks/use-run-dataflow';
+import { RunDataflowType } from '../hooks/use-run-dataflow';
 import { UploaderForm } from './uploader';
 
-const RunSheet = ({ hideModal, showModal: showLogSheet }: IModalProps<any>) => {
-  const { t } = useTranslation();
+type RunSheetProps = IModalProps<any> &
+  Pick<RunDataflowType, 'run' | 'loading'>;
 
-  const { run, loading } = useRunDataflow(() => {});
+const RunSheet = ({ hideModal, run, loading }: RunSheetProps) => {
+  const { t } = useTranslation();
 
   return (
     <Sheet onOpenChange={hideModal} open modal={false}>
