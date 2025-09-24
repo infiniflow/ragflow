@@ -712,10 +712,10 @@ async def handle_task():
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
-        task_document_name = ""
+        task_document_ids = []
         if task_type in ["graphrag"]:
-            task_document_name = task["name"]
-        PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=pipeline_task_type, fake_document_name=task_document_name)
+            task_document_ids = task["doc_ids"]
+        PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=pipeline_task_type, fake_document_ids=task_document_ids)
 
     redis_msg.ack()
 

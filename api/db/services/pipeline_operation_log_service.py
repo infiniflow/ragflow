@@ -81,7 +81,7 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create(cls, document_id, pipeline_id, task_type, fake_document_name=""):
+    def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
         from rag.flow.pipeline import Pipeline
 
         tenant_id = ""
@@ -91,8 +91,8 @@ class PipelineOperationLogService(CommonService):
         operation_status = ""
         referred_document_id = document_id
 
-        if referred_document_id == "x" and fake_document_name:
-            referred_document_id = DocumentService.get_doc_id_by_doc_name(fake_document_name) or document_id
+        if referred_document_id == "x" and fake_document_ids:
+            referred_document_id = fake_document_ids[0]
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
             raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
@@ -157,8 +157,8 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def record_pipeline_operation(cls, document_id, pipeline_id, task_type, fake_document_name=""):
-        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type, fake_document_name=fake_document_name)
+    def record_pipeline_operation(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
+        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type, fake_document_ids=fake_document_ids)
 
     @classmethod
     @DB.connection_context()
