@@ -409,6 +409,48 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Qwen/Qwen3-Max",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-Plus",
+                    "tags": "LLM,IMAGE2TEXT",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-23B-A22B-Thinking",
+                    "tags": "LLM,IMAGE2TEXT",
+                    "max_tokens": 124000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Omni-Flash-Realtime",
+                    "tags": "LLM,IMAGE2TEXT",
+                    "max_tokens": 64000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Omni-Flash",
+                    "tags": "LLM,IMAGE2TEXT",
+                    "max_tokens": 64000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen-Image-Plus",
+                    "tags": "LLM,IMAGE,IMAGE2TEXT",
+                    "max_tokens": 0,
+                    "model_type": "image",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwen3-coder-480b-a35b-instruct",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
