@@ -236,7 +236,7 @@ def active_required(f):
         usr = UserService.filter_by_id(user_id)
         # check is_active
         if not usr or not usr.is_active == ActiveEnum.ACTIVE.value:
-            return get_json_result(code=settings.RetCode.FORBIDDEN, message=f"User isn't active, please activate first.")
+            return get_json_result(code=settings.RetCode.FORBIDDEN, message="User isn't active, please activate first.")
         return f(*args, **kwargs)
     return wrapper
 
