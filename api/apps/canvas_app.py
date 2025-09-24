@@ -174,6 +174,16 @@ def run():
     return resp
 
 
+@manager.route('/cancel/<task_id>', methods=['PUT'])  # noqa: F821
+@login_required
+def cancel(task_id):
+    try:
+        REDIS_CONN.set(f"{task_id}-cancel", "x")
+    except Exception as e:
+        logging.exception(e)
+    return get_json_result(data=True)
+
+
 @manager.route('/reset', methods=['POST'])  # noqa: F821
 @validate_request("id")
 @login_required

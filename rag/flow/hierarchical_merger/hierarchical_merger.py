@@ -173,6 +173,6 @@ class HierarchicalMerger(ProcessBase):
             ]
             async with trio.open_nursery() as nursery:
                 for d in cks:
-                    nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), "_image_temps", get_uuid())
+                    nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
 
         self.callback(1, "Done.")
