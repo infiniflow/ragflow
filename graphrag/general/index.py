@@ -129,7 +129,7 @@ async def run_graphrag(
 async def run_graphrag_for_kb(
     row: dict,
     doc_ids: list[str],
-    language:str,
+    language: str,
     kb_parser_config: dict,
     chat_model,
     embedding_model,
@@ -139,14 +139,13 @@ async def run_graphrag_for_kb(
     with_community: bool = True,
     max_parallel_docs: int = 4,
 ) -> dict:
-    print("start graphrag for kb", flush=True)
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = trio.current_time()
     fields_for_chunks = ["content_with_weight", "doc_id"]
 
     if not doc_ids:
-        print(f"-------------------------- fetching all docs for {kb_id}", flush=True)
+        logging.info(f"Fetching all docs for {kb_id}")
         docs, _ = DocumentService.get_by_kb_id(
             kb_id=kb_id,
             page_number=0,
@@ -189,21 +188,14 @@ async def run_graphrag_for_kb(
         if current_chunk:
             chunks.append(current_chunk)
 
-
         return chunks
 
     all_doc_chunks: dict[str, list[str]] = {}
     total_chunks = 0
     for doc_id in doc_ids:
         chunks = load_doc_chunks(doc_id)
-        print("!!!!!!!!!!!!!!!!!!!!!!", flush=True)
-        print(f"{chunks=}", flush=True)
         all_doc_chunks[doc_id] = chunks
         total_chunks += len(chunks)
-        print(f"{total_chunks=}",flush=True)
-
-    print("?????????????????????", flush=True)
-    print(f"{all_doc_chunks=}", flush=True)
 
     if total_chunks == 0:
         callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
@@ -219,7 +211,7 @@ async def run_graphrag_for_kb(
         if not chunks:
             callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
             return
-        # Choose LightKGExt / GeneralKGExt
+
         kg_extractor = LightKGExt if ("method" not in kb_parser_config.get("graphrag", {}) or kb_parser_config["graphrag"]["method"] != "general") else GeneralKGExt
 
         deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
@@ -300,10 +292,6 @@ async def run_graphrag_for_kb(
     callback(msg=f"[GraphRAG] kb:{kb_id} post-merge lock acquired for resolution/community")
 
     try:
-        # If final_graph is empty and your backend supports "read latest graph", you can fetch it here:
-        # final_graph = final_graph or await load_graph(tenant_id, kb_id)
-
-        # Choose available node set: you can also pass None to let backend decide the scope
         subgraph_nodes = set()
         for sg in subgraphs.values():
             subgraph_nodes.update(set(sg.nodes()))
