@@ -169,6 +169,8 @@ class PipelineOperationLogService(CommonService):
         else:
             logs = cls.model.select(*fields).where(cls.model.kb_id == kb_id)
 
+        logs = logs.where(cls.model.document_id != "x")
+
         if operation_status:
             logs = logs.where(cls.model.operation_status.in_(operation_status))
         if types:
