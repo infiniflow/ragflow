@@ -1,6 +1,5 @@
 from flask import Blueprint, request
 
-from api.db.services import UserService
 from auth import login_verify
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr

@@ -3,6 +3,7 @@ from werkzeug.security import check_password_hash
 from api.db import ActiveEnum
 from api.db.services import UserService
 from api.db.joint_services.user_account_service import create_new_user
+from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import decrypt
@@ -122,7 +123,18 @@ class UserServiceMgr:
 
     @staticmethod
     def get_user_agents(username):
-        raise AdminException("list user agents: not implemented")
+        # use email to find user.
+        user_list = UserService.query_user_by_email(username)
+        if not user_list:
+            raise UserNotFoundError(username)
+        elif len(user_list) > 1:
+            raise AdminException(f"Exist more than 1 user: {username}!")
+        # find tenants
+        usr = user_list[0]
+        tenants = TenantService.get_joined_tenants_by_user_id(usr.id)
+        tenant_ids = [m["tenant_id"] for m in tenants]
+        # filter permitted agents and owned agents
+        return UserCanvasService.get_all_agents_by_tenant_ids(tenant_ids, usr.id)
 
 class ServiceMgr:
 

@@ -192,7 +192,7 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_all_kb_by_tenant_ids(cls, kb_ids, user_id):
+    def get_all_kb_by_tenant_ids(cls, tenant_ids, user_id):
         # will get all permitted kb, be cautious.
         fields = [
             cls.model.name,
@@ -207,17 +207,16 @@ class KnowledgebaseService(CommonService):
         ]
         # find team kb and owned kb
         kbs = cls.model.select(*fields).where(
-            (cls.model.tenant_id.in_(kb_ids) & (cls.model.permission ==TenantPermission.TEAM.value)) | (
+            (cls.model.tenant_id.in_(tenant_ids) & (cls.model.permission ==TenantPermission.TEAM.value)) | (
                 cls.model.tenant_id == user_id
             )
         )
-        # sort by create time asc
+        # sort by create_time asc
         kbs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later.
         offset, limit = 0, 50
         res = []
         while True:
-            print(f"offset: {offset}, limit: {limit}", flush=True)
             kb_batch = kbs.offset(offset).limit(limit)
             _temp = list(kb_batch.dicts())
             if not _temp:
