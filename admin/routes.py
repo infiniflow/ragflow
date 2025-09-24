@@ -1,7 +1,9 @@
 from flask import Blueprint, request
+
+from api.db.services import UserService
 from auth import login_verify
 from responses import success_response, error_response
-from services import UserMgr, ServiceMgr
+from services import UserMgr, ServiceMgr, UserServiceMgr
 from exceptions import AdminException
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
@@ -104,6 +106,31 @@ def get_user_details(username):
     try:
         user_details = UserMgr.get_user_details(username)
         return success_response(user_details)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/users/<username>/datasets', methods=['GET'])
+@login_verify
+def get_user_datasets(username):
+    try:
+        datasets_list = UserServiceMgr.get_user_datasets(username)
+        return success_response(datasets_list)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/users/<username>/agents', methods=['GET'])
+@login_verify
+def get_user_agents(username):
+    try:
+        agents_list = UserServiceMgr.get_user_agents(username)
+        return success_response(agents_list)
 
     except AdminException as e:
         return error_response(e.message, e.code)
