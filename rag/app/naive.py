@@ -470,9 +470,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                     tables.extend(figures)
             else:
                 sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
-
-            res = tokenize_table(tables, doc, is_english)
-            callback(0.8, "Finish parsing.")
+                figures = None
+            
+            return sections, tables, figures
+            # res = tokenize_table(tables, doc, is_english)
+            # callback(0.8, "Finish parsing.")
 
         else:
             if layout_recognizer == "Plain Text":
@@ -483,8 +485,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
             sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
                                           callback=callback)
-            res = tokenize_table(tables, doc, is_english)
-            callback(0.8, "Finish parsing.")
+            return sections, tables, figures if figures else None
+            # res = tokenize_table(tables, doc, is_english)
+            # callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -600,4 +603,5 @@ if __name__ == "__main__":
     def dummy(prog=None, msg=""):
         pass
 
-    chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
+    sections, tables, figures = chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
+    print(sections)
