@@ -402,7 +402,7 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen3-max-preview",
+                    "llm_name": "qwen3-max",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
                     "model_type": "chat",
@@ -479,6 +479,27 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen3-vl-plus",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-235b-a22b-instruct",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-235b-a22b-thinking",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwen3-235b-a22b-instruct-2507",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
@@ -494,6 +515,20 @@
                 },
                 {
                     "llm_name": "qwen3-235b-a22b",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-next-80b-a3b-instruct",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-next-80b-a3b-thinking",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
                     "model_type": "chat",
