@@ -1,5 +1,6 @@
 import re
 from werkzeug.security import check_password_hash
+from api.db import ActiveEnum
 from api.db.services import UserService
 from api.db.joint_services.user_account_service import create_new_user
 from api.utils import decrypt
@@ -89,8 +90,8 @@ class UserMgr:
         # format activate_status before handle
         _activate_status = activate_status.lower()
         target_status = {
-            'on': '1',
-            'off': '0',
+            'on': ActiveEnum.ACTIVE.value,
+            'off': ActiveEnum.INACTIVE.value,
         }.get(_activate_status)
         if not target_status:
             raise AdminException(f"Invalid activate_status: {activate_status}")
