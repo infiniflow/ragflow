@@ -1622,6 +1622,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       parserMethod: '解析方法',
       exportJson: '导出 JSON',
       viewResult: '查看结果',
+      running: '运行中',
     },
   },
 };

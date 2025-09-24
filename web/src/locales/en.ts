@@ -1704,6 +1704,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       parserMethod: 'Parser method',
       exportJson: 'Export JSON',
       viewResult: 'View Result',
+      running: 'Running',
     },
   },
 };

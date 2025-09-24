@@ -40,7 +40,10 @@ export function LogSheet({
 
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
-      <SheetContent className={cn('top-20')}>
+      <SheetContent
+        className={cn('top-20')}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2.5">
             <Logs className="size-4" /> {t('flow.log')}

@@ -34,6 +34,7 @@ export enum Operator {
   Tokenizer = 'Tokenizer',
   Splitter = 'Splitter',
   HierarchicalMerger = 'HierarchicalMerger',
+  Context = 'Context',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -76,6 +77,12 @@ export enum ImageParseMethod {
   OCR = 'ocr',
 }
 
+export enum TokenizerFields {
+  Text = 'text',
+  Questions = 'questions',
+  Summary = 'summary',
+}
+
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant. What can I do for you?`,
@@ -100,7 +107,7 @@ export const initialTokenizerValues = {
     TokenizerSearchMethod.FullText,
   ],
   filename_embd_weight: 0.1,
-  fields: ['text'],
+  fields: TokenizerFields.Text,
   outputs: {},
 };
 
@@ -146,6 +153,10 @@ export const initialHierarchicalMergerValues = {
   ],
 };
 
+export const initialContextValues = {
+  outputs: {},
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -178,6 +189,7 @@ export const NodeMap = {
   [Operator.Tokenizer]: 'tokenizerNode',
   [Operator.Splitter]: 'splitterNode',
   [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
+  [Operator.Context]: 'contextNode',
 };
 
 export enum BeginQueryType {
