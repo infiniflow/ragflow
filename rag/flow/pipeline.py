@@ -22,44 +22,74 @@ from timeit import default_timer as timer
 import trio
 
 from agent.canvas import Graph
+from api.db import PipelineTaskType
 from api.db.services.document_service import DocumentService
+from api.db.services.task_service import has_canceled
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from rag.utils.redis_conn import REDIS_CONN
 
 
 class Pipeline(Graph):
-    def __init__(self, dsl: str, tenant_id=None, doc_id=None, task_id=None, flow_id=None):
+    def __init__(self, dsl: str|dict, tenant_id=None, doc_id=None, task_id=None, flow_id=None):
+        if isinstance(dsl, dict):
+            dsl = json.dumps(dsl, ensure_ascii=False)
         super().__init__(dsl, tenant_id, task_id)
+        if self._doc_id == "x":
+            self._doc_id = None
         self._doc_id = doc_id
         self._flow_id = flow_id
         self._kb_id = None
-        if doc_id:
+        if self._doc_id:
             self._kb_id = DocumentService.get_knowledgebase_id(doc_id)
-            assert self._kb_id, f"Can't find KB of this document: {doc_id}"
+            if not self._kb_id:
+                self._doc_id = None
 
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
+        from rag.svr.task_executor import TaskCanceledException
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         timestamp = timer()
+        if has_canceled(self.task_id):
+            progress = -1
+            message += "[CANCEL]"
         try:
             bin = REDIS_CONN.get(log_key)
             obj = json.loads(bin.encode("utf-8"))
             if obj:
                 if obj[-1]["component_id"] == component_name:
-                    obj[-1]["trace"].append({"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": timestamp-obj[-1]["trace"][-1]["timestamp"]})
+                    obj[-1]["trace"].append(
+                        {
+                            "progress": progress,
+                            "message": message,
+                            "datetime": datetime.datetime.now().strftime("%H:%M:%S"),
+                            "timestamp": timestamp,
+                            "elapsed_time": timestamp - obj[-1]["trace"][-1]["timestamp"],
+                        }
+                    )
                 else:
-                    obj.append({"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]})
+                    obj.append(
+                        {
+                            "component_id": component_name,
+                            "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}],
+                        }
+                    )
             else:
-                obj = [{"component_id": component_name, "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}]}]
+                obj = [
+                    {
+                        "component_id": component_name,
+                        "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}],
+                    }
+                ]
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
             if self._doc_id:
-                percentage = 1./len(self.components.items())
+                percentage = 1.0 / len(self.components.items())
                 msg = ""
-                finished = 0.
+                finished = 0.0
                 for o in obj:
-                    if o['component_id'] == "END":
+                    if o["component_id"] == "END":
                         continue
                     msg += f"\n[{o['component_id']}]:\n"
                     for t in o["trace"]:
-                        msg += "%s: %s\n"%(t["datetime"], t["message"])
+                        msg += "%s: %s\n" % (t["datetime"], t["message"])
                         if t["progress"] < 0:
                             finished = -1
                             break
@@ -69,6 +99,9 @@ class Pipeline(Graph):
                 DocumentService.update_by_id(self._doc_id, {"progress": finished, "progress_msg": msg})
         except Exception as e:
             logging.exception(e)
+
+        if has_canceled(self.task_id):
+            raise TaskCanceledException(message)
 
     def fetch_logs(self):
         log_key = f"{self._flow_id}-{self.task_id}-logs"
@@ -129,8 +162,13 @@ class Pipeline(Graph):
         self.callback("END", 1, json.dumps(self.get_component_obj(self.path[-1]).output(), ensure_ascii=False))
 
         if self._doc_id:
-            DocumentService.update_by_id(self._doc_id,{
-                "progress": 1 if not self.error else -1,
-                "progress_msg": "Pipeline finished...\n" + self.error,
-                "process_duration": time.perf_counter() - st
-            })
+            DocumentService.update_by_id(
+                self._doc_id,
+                {
+                    "progress": 1 if not self.error else -1,
+                    "progress_msg": "Pipeline finished...\n" + self.error,
+                    "process_duration": time.perf_counter() - st,
+                },
+            )
+
+            PipelineOperationLogService.create(document_id=self._doc_id, pipeline_id=self._flow_id, task_type=PipelineTaskType.PARSE)

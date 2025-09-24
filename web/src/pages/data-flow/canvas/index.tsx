@@ -35,7 +35,6 @@ import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
 } from '../hooks/use-show-drawer';
-import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
@@ -65,9 +64,10 @@ const edgeTypes = {
 interface IProps {
   drawerVisible: boolean;
   hideDrawer(): void;
+  showLogSheet(): void;
 }
 
-function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
+function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
   const { t } = useTranslation();
   const {
     nodes,
@@ -147,17 +147,10 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     clearActiveDropdown,
   ]);
 
-  const {
-    visible: logSheetVisible,
-    showModal: showLogSheet,
-    hideModal: hideLogSheet,
-  } = useSetModalState();
-
-  const {
-    run,
-    loading: running,
-    messageId,
-  } = useRunDataflow(showLogSheet!, hideRunOrChatDrawer);
+  const { run, loading: running } = useRunDataflow(
+    showLogSheet!,
+    hideRunOrChatDrawer,
+  );
 
   const onConnect = (connection: Connection) => {
     originalOnConnect(connection);
@@ -311,9 +304,7 @@ function DataFlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           loading={running}
         ></RunSheet>
       )}
-      {logSheetVisible && (
-        <LogSheet hideModal={hideLogSheet} messageId={messageId}></LogSheet>
-      )}
+      {/* {logSheetVisible && <LogSheet hideModal={hideLogSheet}></LogSheet>} */}
     </div>
   );
 }

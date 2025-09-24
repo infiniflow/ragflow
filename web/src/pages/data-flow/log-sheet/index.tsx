@@ -5,11 +5,15 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { useFetchMessageTrace } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
+import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
-import { NotebookText, SquareArrowOutUpRight } from 'lucide-react';
-import { useEffect } from 'react';
+import {
+  ArrowUpRight,
+  CirclePause,
+  Logs,
+  SquareArrowOutUpRight,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import 'react18-json-view/src/style.css';
 import {
@@ -18,39 +22,53 @@ import {
 } from '../hooks/use-download-output';
 import { DataflowTimeline } from './dataflow-timeline';
 
-type LogSheetProps = IModalProps<any> & { messageId?: string };
+type LogSheetProps = IModalProps<any> & {
+  isParsing: boolean;
+  handleCancel(): void;
+  logs?: ITraceData[];
+};
 
-export function LogSheet({ hideModal, messageId }: LogSheetProps) {
+export function LogSheet({
+  hideModal,
+  isParsing,
+  logs,
+  handleCancel,
+}: LogSheetProps) {
   const { t } = useTranslation();
-  const { setMessageId, data } = useFetchMessageTrace(false);
 
-  const { handleDownloadJson } = useDownloadOutput(data);
-
-  useEffect(() => {
-    if (messageId) {
-      setMessageId(messageId);
-    }
-  }, [messageId, setMessageId]);
+  const { handleDownloadJson } = useDownloadOutput(logs);
 
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
       <SheetContent className={cn('top-20')}>
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-1">
-            <NotebookText className="size-4" />
+          <SheetTitle className="flex items-center gap-2.5">
+            <Logs className="size-4" /> {t('flow.log')}
+            <Button variant={'ghost'}>
+              {t('dataflow.viewResult')} <ArrowUpRight />
+            </Button>
           </SheetTitle>
         </SheetHeader>
         <section className="max-h-[82vh] overflow-auto mt-6">
-          <DataflowTimeline traceList={data}></DataflowTimeline>
+          <DataflowTimeline traceList={logs}></DataflowTimeline>
+        </section>
+        {isParsing ? (
+          <Button
+            className="w-full mt-8 bg-state-error/10 text-state-error"
+            onClick={handleCancel}
+          >
+            <CirclePause /> Cancel
+          </Button>
+        ) : (
           <Button
             onClick={handleDownloadJson}
-            disabled={isEndOutputEmpty(data)}
+            disabled={isEndOutputEmpty(logs)}
             className="w-full mt-8"
           >
             <SquareArrowOutUpRight />
             {t('dataflow.exportJson')}
           </Button>
-        </section>
+        )}
       </SheetContent>
     </Sheet>
   );
