@@ -250,7 +250,6 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         super().__init__(*args, **kwargs)
 
     def execute_sql(self, sql, params=None, commit=True):
-        from peewee import OperationalError
         for attempt in range(self.max_retries + 1):
             try:
                 return super().execute_sql(sql, params, commit)
@@ -289,8 +288,6 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
             self.connect()
 
     def begin(self):
-        from peewee import OperationalError
-
         for attempt in range(self.max_retries + 1):
             try:
                 return super().begin()
