@@ -9,7 +9,7 @@ A component that retrieves information from specified datasets.
 
 ## Scenarios
 
-A **Retrieval** component is essential in most RAG scenarios, where information is extracted from designated knowledge bases before being sent to the LLM for content generation. A **Retrieval** component can operate either as a standalone workflow module or as a tool for an **Agent** component. In the latter role, the **Agent** component has autonomous control over when to invoke it for query and retrieval.
+A **Retrieval** component is essential in most RAG scenarios, where information is extracted from designated datasets before being sent to the LLM for content generation. A **Retrieval** component can operate either as a standalone workflow module or as a tool for an **Agent** component. In the latter role, the **Agent** component has autonomous control over when to invoke it for query and retrieval.
 
 The following screenshot shows a reference design using the **Retrieval** component, where the component serves as a tool for an **Agent** component. You can find it from the **Report Agent Using Knowledge Base** Agent template.
 
@@ -17,7 +17,7 @@ The following screenshot shows a reference design using the **Retrieval** compon
 
 ## Prerequisites
 
-Ensure you [have properly configured your target knowledge base(s)](../../dataset/configure_knowledge_base.md).
+Ensure you [have properly configured your target dataset(s)](../../dataset/configure_knowledge_base.md).
 
 ## Quickstart
 
@@ -36,9 +36,9 @@ The **Retrieval** component depends on query variables to specify its queries.
 
 By default, you can use `sys.query`, which is the user query and the default output of the **Begin** component. All global variables defined before the **Retrieval** component can also be used as query statements. Use the `(x)` button or type `/` to show all the available query variables.
 
-### 3. Select knowledge base(s) to query
+### 3. Select dataset(s) to query
 
-You can specify one or multiple knowledge bases to retrieve data from. If selecting mutiple, ensure they use the same embedding model.
+You can specify one or multiple datasets to retrieve data from. If selecting mutiple, ensure they use the same embedding model.
 
 ### 4. Expand **Advanced Settings** to configure the retrieval method
 
@@ -52,7 +52,7 @@ Using a rerank model will *significantly* increase the system's response time. I
 
 ### 5. Enable cross-language search
 
-If your user query is different from the languages of the knowledge bases, you can select the target languages in the **Cross-language search** dropdown menu. The model will then translates queries to ensure accurate matching of semantic meaning across languages.
+If your user query is different from the languages of the datasets, you can select the target languages in the **Cross-language search** dropdown menu. The model will then translates queries to ensure accurate matching of semantic meaning across languages.
 
 
 ### 6. Test retrieval results
@@ -76,10 +76,10 @@ The **Retrieval** component relies on query variables to specify its queries. Al
 
 ### Knowledge bases 
 
-Select the knowledge base(s) to retrieve data from.
+Select the dataset(s) to retrieve data from.
 
-- If no knowledge base is selected, meaning conversations with the agent will not be based on any knowledge base, ensure that the **Empty response** field is left blank to avoid an error.
-- If you select multiple knowledge bases, you must ensure that the knowledge bases (datasets) you select use the same embedding model; otherwise, an error message would occur.
+- If no dataset is selected, meaning conversations with the agent will not be based on any dataset, ensure that the **Empty response** field is left blank to avoid an error.
+- If you select multiple datasets, you must ensure that the datasets you select use the same embedding model; otherwise, an error message would occur.
 
 ### Similarity threshold
 
@@ -110,11 +110,11 @@ Using a rerank model will *significantly* increase the system's response time.
 
 ### Empty response
 
-- Set this as a response if no results are retrieved from the knowledge base(s) for your query, or 
+- Set this as a response if no results are retrieved from the dataset(s) for your query, or 
 - Leave this field blank to allow the chat model to improvise when nothing is found.
 
 :::caution WARNING
-If you do not specify a knowledge base, you must leave this field blank; otherwise, an error would occur.
+If you do not specify a dataset, you must leave this field blank; otherwise, an error would occur.
 :::
 
 ### Cross-language search
@@ -124,10 +124,10 @@ Select one or more languages for cross‑language search. If no language is sele
 ### Use knowledge graph
 
 :::caution IMPORTANT
-Before enabling this feature, ensure you have properly [constructed a knowledge graph from each target knowledge base](../../dataset/construct_knowledge_graph.md).
+Before enabling this feature, ensure you have properly [constructed a knowledge graph from each target dataset](../../dataset/construct_knowledge_graph.md).
 :::
 
-Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.
+Whether to use knowledge graph(s) in the specified dataset(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.
 
 ### Output
 
