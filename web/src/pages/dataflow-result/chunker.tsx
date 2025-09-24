@@ -154,12 +154,7 @@ const ChunkerContainer = (props: IProps) => {
           <RerunButton step={step} onRerun={handleReRunFunc} />
         </div>
       )}
-      <div
-        className={classNames(
-          { [styles.pagePdfWrapper]: isPdf },
-          'flex flex-col w-full',
-        )}
-      >
+      <div className={classNames('flex flex-col w-full')}>
         <Spin spinning={loading} className={styles.spin} size="large">
           <div className="h-[50px] flex flex-row justify-between items-end pb-[5px]">
             <div>

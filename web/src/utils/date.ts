@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import { toFixed } from './common-util';
 
 export function formatDate(date: any) {
   if (!date) {
@@ -42,4 +43,21 @@ export function formatStandardDate(date: any) {
     return '';
   }
   return parsedDate.format('YYYY-MM-DD');
+}
+
+export function formatSecondsToHumanReadable(seconds: number): string {
+  if (isNaN(seconds) || seconds < 0) {
+    return '0s';
+  }
+
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = toFixed(seconds % 60, 3);
+
+  const parts = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (s || parts.length === 0) parts.push(`${s}s`);
+
+  return parts.join('');
 }

@@ -80,7 +80,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         fileSize: findRecord.size + '',
         source: findRecord.source_type,
         task: findRecord.status,
-        state: findRecord.run,
+        status: findRecord.run,
         startTime: findRecord.process_begin_at,
         endTime: findRecord.process_begin_at,
         duration: findRecord.process_duration + 's',

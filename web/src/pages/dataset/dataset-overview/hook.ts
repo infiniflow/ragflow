@@ -4,10 +4,12 @@ import {
 } from '@/hooks/logic-hooks';
 import kbService, {
   listDataPipelineLogDocument,
+  listPipelineDatasetLogs,
 } from '@/services/knowledge-service';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useSearchParams } from 'umi';
+import { LogTabs } from './dataset-common';
 
 export interface IOverviewTital {
   cancelled: number;
@@ -61,7 +63,7 @@ export interface IFileLogItem {
   update_time: number;
 }
 export interface IFileLogList {
-  docs: IFileLogItem[];
+  logs: IFileLogItem[];
   total: number;
 }
 
@@ -70,7 +72,14 @@ const useFetchFileLogList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
+  const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
+    LogTabs.FILE_LOGS,
+  );
   const knowledgeBaseId = searchParams.get('id') || id;
+  const fetchFunc =
+    active === LogTabs.DATASET_LOGS
+      ? listPipelineDatasetLogs
+      : listDataPipelineLogDocument;
   const { data } = useQuery<IFileLogList>({
     queryKey: [
       'fileLogList',
@@ -78,9 +87,10 @@ const useFetchFileLogList = () => {
       pagination.current,
       pagination.pageSize,
       searchString,
+      active,
     ],
     queryFn: async () => {
-      const { data: res = {} } = await listDataPipelineLogDocument({
+      const { data: res = {} } = await fetchFunc({
         kb_id: knowledgeBaseId,
         page: pagination.current,
         page_size: pagination.pageSize,
@@ -102,6 +112,8 @@ const useFetchFileLogList = () => {
     searchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
+    active,
+    setActive,
   };
 };
 

@@ -49,6 +49,7 @@ export default {
   // data pipeline log
   fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
   get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
+  fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
