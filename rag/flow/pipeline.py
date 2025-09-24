@@ -26,7 +26,6 @@ from api.db import PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from rag.svr.task_executor import TaskCanceledException
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -46,6 +45,7 @@ class Pipeline(Graph):
                 self._doc_id = None
 
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
+        from rag.svr.task_executor import TaskCanceledException
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         timestamp = timer()
         if has_canceled(self.task_id):
