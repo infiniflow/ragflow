@@ -141,6 +141,17 @@ class UserService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def update_user_password(cls, user_id, new_password):
+        with DB.atomic():
+            update_dict = {
+                "password": generate_password_hash(str(new_password)),
+                "update_time": current_timestamp(),
+                "update_date": datetime_format(datetime.now())
+            }
+            cls.model.update(update_dict).where(cls.model.id == user_id).execute()
+
+    @classmethod
+    @DB.connection_context()
     def is_admin(cls, user_id):
         return cls.model.select().where(
             cls.model.id == user_id,

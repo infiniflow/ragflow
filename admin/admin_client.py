@@ -22,6 +22,7 @@ sql_command: list_services
            | drop_user
            | alter_user
            | create_user
+           | activate_user
            | list_datasets
            | list_agents
 
@@ -47,6 +48,7 @@ USERS: "USERS"i
 DROP: "DROP"i
 USER: "USER"i
 ALTER: "ALTER"i
+ACTIVE: "ACTIVE"i
 PASSWORD: "PASSWORD"i
 DATASETS: "DATASETS"i
 OF: "OF"i
@@ -63,12 +65,14 @@ drop_user: DROP USER quoted_string ";"
 alter_user: ALTER USER PASSWORD quoted_string quoted_string ";"
 show_user: SHOW USER quoted_string ";"
 create_user: CREATE USER quoted_string quoted_string ";"
+activate_user: ALTER USER ACTIVE quoted_string status ";"
 
 list_datasets: LIST DATASETS OF quoted_string ";"
 list_agents: LIST AGENTS OF quoted_string ";"
 
 identifier: WORD
 quoted_string: QUOTED_STRING
+status: WORD
 
 QUOTED_STRING: /'[^']+'/ | /"[^"]+"/
 WORD: /[a-zA-Z0-9_\-\.]+/
@@ -127,6 +131,11 @@ class AdminTransformer(Transformer):
         user_name = items[2]
         password = items[3]
         return {"type": "create_user", "username": user_name, "password": password, "role": "user"}
+
+    def activate_user(self, items):
+        user_name = items[3]
+        activate_status = items[4]
+        return {"type": "activate_user", "activate_status": activate_status, "username": user_name}
 
     def list_datasets(self, items):
         user_name = items[3]
@@ -358,6 +367,8 @@ class AdminCLI:
                 self._handle_alter_user(command_dict)
             case 'create_user':
                 self._handle_create_user(command_dict)
+            case 'activate_user':
+                self._handle_activate_user(command_dict)
             case 'list_datasets':
                 self._handle_list_datasets(command_dict)
             case 'list_agents':
@@ -428,6 +439,13 @@ class AdminCLI:
         password_tree: Tree = command['password']
         password: str = password_tree.children[0].strip("'\"")
         print(f"Alter user: {username}, password: {password}")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{username}/password'
+        response = requests.put(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password), json={'new_password': encrypt(password)})
+        res_json = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Fail to alter password, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_create_user(self, command):
         username_tree: Tree = command['username']
@@ -447,6 +465,23 @@ class AdminCLI:
             self._print_table_simple(res_json['data'])
         else:
             print(f"Fail to create user {username}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _handle_activate_user(self, command):
+        username_tree: Tree = command['username']
+        username: str = username_tree.children[0].strip("'\"")
+        activate_tree: Tree = command['activate_status']
+        activate_status: str = activate_tree.children[0].strip("'\"")
+        if activate_status.lower() in ['on', 'off']:
+            print(f"Alter user {username} activate status, turn {activate_status.lower()}.")
+            url = f'http://{self.host}:{self.port}/api/v1/admin/users/{username}/activate'
+            response = requests.put(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password), json={'activate_status': activate_status})
+            res_json = response.json()
+            if response.status_code == 200:
+                print(res_json["message"])
+            else:
+                print(f"Fail to alter activate status, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Unknown activate status: {activate_status}.")
 
     def _handle_list_datasets(self, command):
         username_tree: Tree = command['username']

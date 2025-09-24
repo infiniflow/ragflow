@@ -16,7 +16,6 @@
 import logging
 import uuid
 
-from admin.exceptions import AdminException
 from api import settings
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM

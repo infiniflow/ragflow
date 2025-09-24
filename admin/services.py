@@ -1,7 +1,8 @@
 import re
+from werkzeug.security import check_password_hash
 from api.db.services import UserService
 from api.db.joint_services.user_account_service import create_new_user
-from api.utils import decrypt, get_format_time
+from api.utils import decrypt
 from exceptions import AdminException, UserAlreadyExistsError, UserNotFoundError
 from config import SERVICE_CONFIGS
 
@@ -36,13 +37,13 @@ class UserMgr:
         return result
 
     @staticmethod
-    def create_user(username, password, role="user"):
+    def create_user(username, password, role="user") -> dict:
         # Validate the email address
         if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", username):
             raise AdminException(f"Invalid email address: {username}!")
         # Check if the email address is already used
         if UserService.query(email=username):
-            raise UserAlreadyExistsError(f"User {username} already exists!")
+            raise UserAlreadyExistsError(username)
         # Construct user info data
         user_info_dict = {
             "email": username,
@@ -59,9 +60,45 @@ class UserMgr:
         raise AdminException("delete_user: not implemented")
 
     @staticmethod
-    def update_user_password(username, new_password):
-        # use email to find user
-        raise AdminException("update_user_password: not implemented")
+    def update_user_password(username, new_password) -> str:
+        # use email to find user. check exist and unique.
+        user_list = UserService.query_user_by_email(username)
+        if not user_list:
+            raise UserNotFoundError(username)
+        elif len(user_list) > 1:
+            raise AdminException(f"Exist more than 1 user: {username}!")
+        # check new_password different from old.
+        usr = user_list[0]
+        psw = decrypt(new_password)
+        if check_password_hash(usr.password, psw):
+            return "Same password, no need to update!"
+        # update password
+        UserService.update_user_password(usr.id, psw)
+        return "Password updated successfully!"
+
+    @staticmethod
+    def update_user_activate_status(username, activate_status: str):
+        # use email to find user. check exist and unique.
+        user_list = UserService.query_user_by_email(username)
+        if not user_list:
+            raise UserNotFoundError(username)
+        elif len(user_list) > 1:
+            raise AdminException(f"Exist more than 1 user: {username}!")
+        # check activate status different from new
+        usr = user_list[0]
+        # format activate_status before handle
+        _activate_status = activate_status.lower()
+        target_status = {
+            'on': '1',
+            'off': '0',
+        }.get(_activate_status)
+        if not target_status:
+            raise AdminException(f"Invalid activate_status: {activate_status}")
+        if target_status == usr.is_active:
+            return f"User activate status is already {_activate_status}!"
+        # update is_active
+        UserService.update_user(usr.id, {"is_active": target_status})
+        return f"Turn {_activate_status} user activate status successfully!"
 
 class ServiceMgr:
 
