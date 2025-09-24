@@ -169,6 +169,7 @@ export default {
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
   prompt: `${api_host}/canvas/prompts`,
+  cancelDataflow: (id: string) => `${api_host}/canvas/cancel/${id}`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,

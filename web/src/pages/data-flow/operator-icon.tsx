@@ -2,9 +2,9 @@ import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
 import {
   Blocks,
+  File,
   FileChartColumnIncreasing,
   Heading,
-  HousePlus,
   ListMinus,
 } from 'lucide-react';
 import { Operator } from './constant';
@@ -15,11 +15,11 @@ interface IProps {
 }
 
 export const OperatorIconMap = {
-  [Operator.Begin]: 'house-plus',
   [Operator.Note]: 'notebook-pen',
 };
 
 export const SVGIconMap = {
+  [Operator.Begin]: File,
   [Operator.Parser]: FileChartColumnIncreasing,
   [Operator.Tokenizer]: ListMinus,
   [Operator.Splitter]: Blocks,
@@ -42,7 +42,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
           className,
         )}
       >
-        <HousePlus className="rounded size-3" />
+        <File className="rounded size-3" />
       </div>
     );
   }
@@ -50,7 +50,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   return typeof Icon === 'string' ? (
     <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
   ) : (
-    <SvgIcon className="size-5"></SvgIcon>
+    <SvgIcon className={cn('size-5', className)}></SvgIcon>
   );
 };
 
