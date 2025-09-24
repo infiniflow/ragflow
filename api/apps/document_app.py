@@ -68,7 +68,19 @@ def upload():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
-    err, files = FileService.upload_document(kb, file_objs, current_user.id)
+
+    # Handle meta_fields
+    meta_fields = None
+    meta_fields_raw = request.form.get("meta_fields")
+    if meta_fields_raw:
+        try:
+            meta_fields = json.loads(meta_fields_raw)
+        except json.JSONDecodeError:
+            return get_data_error_result(message="meta_fields must be valid JSON")
+        if not isinstance(meta_fields, dict):
+            return get_data_error_result(message="meta_fields must be a JSON object")
+
+    err, files = FileService.upload_document(kb, file_objs, current_user.id, meta_fields)
 
     if err:
         return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
@@ -683,8 +695,19 @@ def set_meta():
         if not isinstance(meta, dict):
             return get_json_result(data=False, message="Only dictionary type supported.", code=settings.RetCode.ARGUMENT_ERROR)
         for k, v in meta.items():
-            if not isinstance(v, str) and not isinstance(v, int) and not isinstance(v, float):
-                return get_json_result(data=False, message=f"The type is not supported: {v}", code=settings.RetCode.ARGUMENT_ERROR)
+            # Allow list type for fields that contain list of dicts
+            if isinstance(v, list):
+                if not v:  # Allow empty lists
+                    continue
+                # Check if all items in the list are dicts
+                if not all(isinstance(item, dict) for item in v):
+                    return get_json_result(data=False, message=f"Field '{k}' contains non-dict items in list", code=settings.RetCode.ARGUMENT_ERROR)
+                # For now, we require each dict to have a 'name' field for filtering purposes
+                for item in v:
+                    if not isinstance(item, dict) or "name" not in item:
+                        return get_json_result(data=False, message=f"Each item in '{k}' list must be a dict with 'name' field", code=settings.RetCode.ARGUMENT_ERROR)
+            elif not isinstance(v, str) and not isinstance(v, int) and not isinstance(v, float):
+                return get_json_result(data=False, message=f"The type is not supported: {v}, type={type(v)}", code=settings.RetCode.ARGUMENT_ERROR)
     except Exception as e:
         return get_json_result(data=False, message=f"Json syntax error: {e}", code=settings.RetCode.ARGUMENT_ERROR)
     if not isinstance(meta, dict):

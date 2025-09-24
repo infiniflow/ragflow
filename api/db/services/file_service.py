@@ -403,7 +403,7 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id):
+    def upload_document(self, kb, file_objs, user_id, meta_fields=None):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -449,6 +449,8 @@ class FileService(CommonService):
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
                 }
+                if meta_fields:
+                    doc["meta_fields"] = meta_fields
                 DocumentService.insert(doc)
 
                 FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)

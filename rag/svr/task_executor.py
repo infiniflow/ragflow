@@ -102,6 +102,7 @@ CURRENT_TASKS = {}
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "30"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get("MAX_CONCURRENT_CHUNK_BUILDERS", "16"))
 MAX_CONCURRENT_MINIO = int(os.environ.get("MAX_CONCURRENT_MINIO", "30"))
+WORKER_HEARTBEAT_INTERVAL = max(1, int(os.environ.get("WORKER_HEARTBEAT_INTERVAL", "60")))
 task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
 embed_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
@@ -750,7 +751,7 @@ async def report_status():
             logging.exception("report_status got exception")
         finally:
             redis_lock.release()
-        await trio.sleep(30)
+        await trio.sleep(WORKER_HEARTBEAT_INTERVAL)
 
 
 async def task_manager():

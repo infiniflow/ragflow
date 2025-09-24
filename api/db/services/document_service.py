@@ -541,10 +541,18 @@ class DocumentService(CommonService):
             for k, v in r.meta_fields.items():
                 if k not in meta:
                     meta[k] = {}
-                v = str(v)
-                if v not in meta[k]:
-                    meta[k][v] = []
-                meta[k][v].append(doc_id)
+                # Special handling for list of dicts
+                if isinstance(v, list) and v and all(isinstance(item, dict) and "name" in item for item in v):
+                    for item in v:
+                        item_name = item["name"]
+                        if item_name not in meta[k]:
+                            meta[k][item_name] = []
+                        meta[k][item_name].append(doc_id)
+                else:
+                    v_str = str(v)
+                    if v_str not in meta[k]:
+                        meta[k][v_str] = []
+                    meta[k][v_str].append(doc_id)
         return meta
 
     @classmethod
