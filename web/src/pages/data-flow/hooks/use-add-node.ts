@@ -8,6 +8,7 @@ import {
   NodeMap,
   Operator,
   initialBeginValues,
+  initialContextValues,
   initialHierarchicalMergerValues,
   initialNoteValues,
   initialParserValues,
@@ -29,6 +30,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.Splitter]: initialSplitterValues,
       [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
+      [Operator.Context]: initialContextValues,
     };
   }, []);
 

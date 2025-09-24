@@ -89,9 +89,16 @@ export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
                         >
                           <span>{x.datetime}</span>
                           {item.component_id !== 'END' && (
-                            <span>{x.message}</span>
+                            <span
+                              className={cn({
+                                'text-state-error':
+                                  x.message.startsWith('[ERROR]'),
+                              })}
+                            >
+                              {x.message}
+                            </span>
                           )}
-                          <span>{x.elapsed_time.toString().slice(0, 6)}</span>
+                          <span>{x.elapsed_time.toString().slice(0, 6)}s</span>
                         </section>
                       ))}
                     </div>
