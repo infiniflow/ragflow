@@ -34,7 +34,7 @@ export function ToolBar({
   children,
   label,
   id,
-  showRun = true,
+  showRun = false,
 }: ToolBarProps) {
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
 

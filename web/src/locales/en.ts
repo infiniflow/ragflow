@@ -1705,6 +1705,13 @@ This delimiter is used to split the input text into several text pieces echo of 
       exportJson: 'Export JSON',
       viewResult: 'View Result',
       running: 'Running',
+      context: 'Context Generator',
+      contextDescription: 'Context Generator',
+      summary: 'Summary',
+      keywords: 'Keywords',
+      questions: 'Questions',
+      metadata: 'Metadata',
+      fieldName: 'Result Destination',
     },
   },
 };
