@@ -25,7 +25,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.utils.api_utils import timeout
 from api.utils.base64_image import image2id
 from api.utils.log_utils import init_root_logger, get_project_base_directory
-from graphrag.general.index import run_graphrag
+from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.flow.pipeline import Pipeline
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
@@ -83,6 +83,12 @@ FACTORY = {
     ParserType.EMAIL.value: email,
     ParserType.KG.value: naive,
     ParserType.TAG.value: tag
+}
+
+TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
+    "dataflow" : PipelineTaskType.PARSE,
+    "raptor": PipelineTaskType.RAPTOR,
+    "graphrag": PipelineTaskType.GRAPH_RAG,
 }
 
 UNACKED_ITERATOR = None
@@ -215,6 +221,10 @@ async def collect():
     canceled = False
     if msg.get("doc_id", "") == "x":
         task = msg
+        if task["task_type"] == "graphrag" and msg.get("doc_ids", []):
+            print(f"hack {msg['doc_ids']=}=",flush=True)
+            task = TaskService.get_task(msg["id"], msg["doc_ids"])
+            task["doc_ids"] = msg["doc_ids"]
     else:
         task = TaskService.get_task(msg["id"])
 
@@ -580,7 +590,18 @@ async def do_handle_task(task):
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:
-            await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
+            # await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
+            result = await run_graphrag_for_kb(
+                row=task,
+                doc_ids=task.get("doc_ids", []),
+                language=task_language,
+                kb_parser_config=task_parser_config,
+                chat_model=chat_model,
+                embedding_model=embedding_model,
+                callback=progress_callback,
+                with_resolution=with_resolution,
+                with_community=with_community,
+            )
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
         return
     else:
@@ -650,7 +671,6 @@ async def do_handle_task(task):
                                                                                      timer() - start_ts))
 
     DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
-    PipelineOperationLogService.record_pipeline_operation(document_id=task_doc_id, pipeline_id="", task_type=PipelineTaskType.PARSE)
 
     time_cost = timer() - start_ts
     task_time_cost = timer() - task_start_ts
@@ -667,6 +687,10 @@ async def handle_task():
     if not task:
         await trio.sleep(5)
         return
+
+    task_type = task["task_type"]
+    pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type, PipelineTaskType.PARSE) or PipelineTaskType.PARSE
+
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
@@ -686,7 +710,12 @@ async def handle_task():
         except Exception:
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
-        PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=PipelineTaskType.PARSE)
+    finally:
+        task_document_name = ""
+        if task_type in ["graphrag"]:
+            task_document_name = task["name"]
+        PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=pipeline_task_type, fake_document_name=task_document_name)
+
     redis_msg.ack()
 
 

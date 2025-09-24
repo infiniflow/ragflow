@@ -31,7 +31,7 @@ class PipelineOperationLogService(CommonService):
     model = PipelineOperationLog
 
     @classmethod
-    def get_cls_model_fields(cls):
+    def get_file_logs_fields(cls):
         return [
             cls.model.id,
             cls.model.document_id,
@@ -60,8 +60,28 @@ class PipelineOperationLogService(CommonService):
         ]
 
     @classmethod
+    def get_dataset_logs_fields(cls):
+        return [
+            cls.model.id,
+            cls.model.tenant_id,
+            cls.model.kb_id,
+            cls.model.progress,
+            cls.model.progress_msg,
+            cls.model.process_begin_at,
+            cls.model.process_duration,
+            cls.model.task_type,
+            cls.model.operation_status,
+            cls.model.avatar,
+            cls.model.status,
+            cls.model.create_time,
+            cls.model.create_date,
+            cls.model.update_time,
+            cls.model.update_date,
+        ]
+
+    @classmethod
     @DB.connection_context()
-    def create(cls, document_id, pipeline_id, task_type):
+    def create(cls, document_id, pipeline_id, task_type, fake_document_name=""):
         from rag.flow.pipeline import Pipeline
 
         tenant_id = ""
@@ -69,14 +89,19 @@ class PipelineOperationLogService(CommonService):
         avatar = ""
         dsl = ""
         operation_status = ""
+        referred_document_id = document_id
 
-        ok, document = DocumentService.get_by_id(document_id)
+        if referred_document_id == "x" and fake_document_name:
+            referred_document_id = DocumentService.get_doc_id_by_doc_name(fake_document_name) or document_id
+        ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document {document_id} not found")
+            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
         DocumentService.update_progress_immediately([document.to_dict()])
-        ok, document = DocumentService.get_by_id(document_id)
+        ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document {document_id} not found")
+            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
+        if document.progress not in [1, -1]:
+            return
         operation_status = document.run
 
         if pipeline_id:
@@ -84,7 +109,7 @@ class PipelineOperationLogService(CommonService):
             if not ok:
                 raise RuntimeError(f"Pipeline {pipeline_id} not found")
 
-            pipeline = Pipeline(dsl=json.dumps(user_pipeline.dsl), tenant_id=user_pipeline.user_id, doc_id=document_id, task_id="", flow_id=pipeline_id)
+            pipeline = Pipeline(dsl=json.dumps(user_pipeline.dsl), tenant_id=user_pipeline.user_id, doc_id=referred_document_id, task_id="", flow_id=pipeline_id)
 
             tenant_id = user_pipeline.user_id
             title = user_pipeline.title
@@ -93,7 +118,7 @@ class PipelineOperationLogService(CommonService):
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not ok:
-                raise RuntimeError(f"Cannot find knowledge base {document.kb_id} for document {document_id}")
+                raise RuntimeError(f"Cannot find knowledge base {document.kb_id} for referred_document {referred_document_id}")
 
             tenant_id = kb_info.tenant_id
             title = document.name
@@ -104,7 +129,7 @@ class PipelineOperationLogService(CommonService):
 
         log = dict(
             id=get_uuid(),
-            document_id=document_id,
+            document_id=document_id,  # "x" or real document_id
             tenant_id=tenant_id,
             kb_id=document.kb_id,
             pipeline_id=pipeline_id,
@@ -132,13 +157,13 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def record_pipeline_operation(cls, document_id, pipeline_id, task_type):
-        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type)
+    def record_pipeline_operation(cls, document_id, pipeline_id, task_type, fake_document_name=""):
+        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type, fake_document_name=fake_document_name)
 
     @classmethod
     @DB.connection_context()
-    def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix):
-        fields = cls.get_cls_model_fields()
+    def get_file_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix):
+        fields = cls.get_file_logs_fields()
         if keywords:
             logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (fn.LOWER(cls.model.document_name).contains(keywords.lower())))
         else:
@@ -150,6 +175,26 @@ class PipelineOperationLogService(CommonService):
             logs = logs.where(cls.model.document_type.in_(types))
         if suffix:
             logs = logs.where(cls.model.document_suffix.in_(suffix))
+
+        count = logs.count()
+        if desc:
+            logs = logs.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            logs = logs.order_by(cls.model.getter_by(orderby).asc())
+
+        if page_number and items_per_page:
+            logs = logs.paginate(page_number, items_per_page)
+
+        return list(logs.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status):
+        fields = cls.get_dataset_logs_fields()
+        logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == "x"))
+
+        if operation_status:
+            logs = logs.where(cls.model.operation_status.in_(operation_status))
 
         count = logs.count()
         if desc:

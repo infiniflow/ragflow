@@ -34,9 +34,9 @@ class Pipeline(Graph):
         if isinstance(dsl, dict):
             dsl = json.dumps(dsl, ensure_ascii=False)
         super().__init__(dsl, tenant_id, task_id)
+        self._doc_id = doc_id
         if self._doc_id == "x":
             self._doc_id = None
-        self._doc_id = doc_id
         self._flow_id = flow_id
         self._kb_id = None
         if self._doc_id:
