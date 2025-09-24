@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 from api.db.services.canvas_service import UserCanvasService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.utils.api_utils import timeout
 from api.utils.base64_image import image2id
@@ -140,6 +141,7 @@ def start_tracemalloc_and_snapshot(signum, frame):
         max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     logging.info(f"taken snapshot {snapshot_file}. max RSS={max_rss / 1000:.2f} MB, current memory usage: {current / 10**6:.2f} MB, Peak memory usage: {peak / 10**6:.2f} MB")
 
+
 # SIGUSR2 handler: stop tracemalloc
 def stop_tracemalloc(signum, frame):
     if tracemalloc.is_tracing():
@@ -147,6 +149,7 @@ def stop_tracemalloc(signum, frame):
         tracemalloc.stop()
     else:
         logging.info("tracemalloc not running")
+
 
 class TaskCanceledException(Exception):
     def __init__(self, msg):
@@ -461,11 +464,97 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
 
 async def run_dataflow(task: dict):
+    task_start_ts = timer()
     dataflow_id = task["dataflow_id"]
-    e, cvs = UserCanvasService.get_by_id(dataflow_id)
-    pipeline = Pipeline(cvs.dsl, tenant_id=task["tenant_id"], doc_id=task["doc_id"], task_id=task["id"], flow_id=dataflow_id)
-    pipeline.reset()
-    await pipeline.run(file=task.get("file"))
+    doc_id = task["doc_id"]
+    task_id = task["id"]
+    if task["task_type"] == "dataflow":
+        e, cvs = UserCanvasService.get_by_id(dataflow_id)
+        assert e, "User pipeline not found."
+        dsl = cvs.dsl
+    else:
+        e, pipeline_log = PipelineOperationLogService.get_by_id(dataflow_id)
+        assert e, "Pipeline log not found."
+        dsl = pipeline_log.dsl
+    pipeline = Pipeline(dsl, tenant_id=task["tenant_id"], doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
+    chunks = await pipeline.run(file=task["file"]) if task.get("file") else pipeline.run()
+    if doc_id == "x":
+        return
+
+    if not chunks:
+        PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE)
+        return
+
+    embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
+    if chunks.get("chunks"):
+        chunks = chunks["chunks"]
+    elif chunks.get("json"):
+        chunks = chunks["json"]
+    elif chunks.get("markdown"):
+        chunks = [{"text": [chunks["markdown"]]}]
+    elif chunks.get("text"):
+        chunks = [{"text": [chunks["text"]]}]
+    elif chunks.get("html"):
+        chunks = [{"text": [chunks["html"]]}]
+
+    keys = [k for o in chunks for k in list(o.keys())]
+    if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
+        set_progress(task_id, prog=0.82, msg="Start to embedding...")
+        e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+        embedding_id = kb.embd_id
+        embedding_model = LLMBundle(task["tenant_id"], LLMType.EMBEDDING, llm_name=embedding_id)
+        @timeout(60)
+        def batch_encode(txts):
+            nonlocal embedding_model
+            return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
+        vects = np.array([])
+        texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
+        delta = 0.20/(len(texts)//EMBEDDING_BATCH_SIZE)
+        prog = 0.8
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            async with embed_limiter:
+                vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + EMBEDDING_BATCH_SIZE]))
+            if len(vects) == 0:
+                vects = vts
+            else:
+                vects = np.concatenate((vects, vts), axis=0)
+            embedding_token_consumption += c
+            prog += delta
+            set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//EMBEDDING_BATCH_SIZE}")
+
+        assert len(vects) == len(chunks)
+        for i, ck in enumerate(chunks):
+            v = vects[i].tolist()
+            ck["q_%d_vec" % len(v)] = v
+
+    for ck in chunks:
+        ck["doc_id"] = task["doc_id"]
+        ck["kb_id"] = [str(task["kb_id"])]
+        ck["docnm_kwd"] = task["name"]
+        ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+        ck["create_timestamp_flt"] = datetime.now().timestamp()
+        ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+        if "questions" in ck:
+            del ck["questions"]
+        if "keywords" in ck:
+            del ck["keywords"]
+        if "summary" in ck:
+            del ck["summary"]
+        del ck["text"]
+
+    start_ts = timer()
+    set_progress(task_id, prog=0.82, msg="Start to index...")
+    e = await insert_es(task_id, task["tenant_id"], task["kb_id"], chunks, partial(set_progress, task_id, 0, 100000000))
+    if not e:
+        PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE)
+        return
+
+    time_cost = timer() - start_ts
+    task_time_cost = timer() - task_start_ts
+    set_progress(task_id, prog=1., msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
+    logging.info(
+        "[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks),  embedding_token_consumption, task_time_cost))
+    PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE)
 
 
 @timeout(3600)
@@ -508,6 +597,43 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
         res.append(d)
         tk_count += num_tokens_from_string(content)
     return res, tk_count
+
+
+async def delete_image(kb_id, chunk_id):
+    try:
+        async with minio_limiter:
+            STORAGE_IMPL.delete(kb_id, chunk_id)
+    except Exception:
+        logging.exception(f"Deleting image of chunk {chunk_id} got exception")
+        raise
+
+
+async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+    for b in range(0, len(chunks), DOC_BULK_SIZE):
+        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        task_canceled = has_canceled(task_id)
+        if task_canceled:
+            progress_callback(-1, msg="Task has been canceled.")
+            return
+        if b % 128 == 0:
+            progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
+        if doc_store_result:
+            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+            progress_callback(-1, msg=error_message)
+            raise Exception(error_message)
+        chunk_ids = [chunk["id"] for chunk in chunks[:b + DOC_BULK_SIZE]]
+        chunk_ids_str = " ".join(chunk_ids)
+        try:
+            TaskService.update_chunk_ids(task_id, chunk_ids_str)
+        except DoesNotExist:
+            logging.warning(f"do_handle_task update_chunk_ids failed since task {task_id} is unknown.")
+            doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
+            async with trio.open_nursery() as nursery:
+                for chunk_id in chunk_ids:
+                    nursery.start_soon(delete_image, task_dataset_id, chunk_id)
+            progress_callback(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
+            return
+    return True
 
 
 @timeout(60*60*2, 1)
@@ -559,7 +685,7 @@ async def do_handle_task(task):
 
     init_kb(task, vector_size)
 
-    if task_type == "dataflow":
+    if task_type[:len("dataflow")] == "dataflow":
         await run_dataflow(task)
         return
 
@@ -609,41 +735,9 @@ async def do_handle_task(task):
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
-    doc_store_result = ""
-
-    async def delete_image(kb_id, chunk_id):
-        try:
-            async with minio_limiter:
-                STORAGE_IMPL.delete(kb_id, chunk_id)
-        except Exception:
-            logging.exception(
-                "Deleting image of chunk {}/{}/{} got exception".format(task["location"], task["name"], chunk_id))
-            raise
-
-    for b in range(0, len(chunks), DOC_BULK_SIZE):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
-        task_canceled = has_canceled(task_id)
-        if task_canceled:
-            progress_callback(-1, msg="Task has been canceled.")
-            return
-        if b % 128 == 0:
-            progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
-        if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
-            progress_callback(-1, msg=error_message)
-            raise Exception(error_message)
-        chunk_ids = [chunk["id"] for chunk in chunks[:b + DOC_BULK_SIZE]]
-        chunk_ids_str = " ".join(chunk_ids)
-        try:
-            TaskService.update_chunk_ids(task["id"], chunk_ids_str)
-        except DoesNotExist:
-            logging.warning(f"do_handle_task update_chunk_ids failed since task {task['id']} is unknown.")
-            doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
-            async with trio.open_nursery() as nursery:
-                for chunk_id in chunk_ids:
-                    nursery.start_soon(delete_image, task_dataset_id, chunk_id)
-            progress_callback(-1, msg=f"Chunk updates failed since task {task['id']} is unknown.")
-            return
+    e = await insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback)
+    if not e:
+        return
 
     logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
                                                                                      task_to_page, len(chunks),

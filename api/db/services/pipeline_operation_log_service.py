@@ -19,7 +19,7 @@ from datetime import datetime
 from peewee import fn
 
 from api.db import VALID_PIPELINE_TASK_TYPES
-from api.db.db_models import DB, PipelineOperationLog
+from api.db.db_models import DB, PipelineOperationLog, Document
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
@@ -161,3 +161,17 @@ class PipelineOperationLogService(CommonService):
             logs = logs.paginate(page_number, items_per_page)
 
         return list(logs.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def get_documents_info(cls, id):
+        fields = [
+            Document.id,
+            Document.name,
+            Document.progress
+        ]
+        return cls.model.select(*fields).join(Document, on=(cls.model.document_id == Document.id)).where(
+            cls.model.id == id,
+            Document.progress > 0,
+            Document.progress < 1
+        ).dicts()

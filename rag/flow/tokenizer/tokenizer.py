@@ -120,8 +120,12 @@ class Tokenizer(ProcessBase):
                         ck["question_tks"] = rag_tokenizer.tokenize("\n".join(ck["questions"]))
                     if ck.get("keywords"):
                         ck["important_tks"] = rag_tokenizer.tokenize("\n".join(ck["keywords"]))
-                    ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
-                    ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
+                    if ck.get("summary"):
+                        ck["content_ltks"] = rag_tokenizer.tokenize(ck["summary"])
+                        ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
+                    else:
+                        ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
+                        ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
                         self.callback(i * 1.0 / len(chunks) / parts)
 

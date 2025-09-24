@@ -472,14 +472,14 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str="x", file:dict=None, priority: int=0) -> tuple[bool, str]:
+def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str="x", file:dict=None, priority: int=0, rerun:bool=False) -> tuple[bool, str]:
 
     task = dict(
         id=task_id,
         doc_id=doc_id,
         from_page=0,
         to_page=100000000,
-        task_type="dataflow",
+        task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
     )
 
