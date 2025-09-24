@@ -1,85 +1,112 @@
 import { CustomTimeline, TimelineNode } from '@/components/originui/timeline';
 import {
-  CheckLine,
-  FilePlayIcon,
-  Grid3x2,
+  Blocks,
+  File,
+  FilePlay,
+  FileStack,
+  Heading,
   ListPlus,
-  PlayIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
-export enum TimelineNodeType {
-  begin = 'begin',
-  parser = 'parser',
-  chunk = 'chunk',
-  indexer = 'indexer',
-  complete = 'complete',
-  end = 'end',
-}
-export const TimelineNodeArr = [
-  {
-    id: 1,
-    title: 'Begin',
-    icon: <PlayIcon size={13} />,
+import { TimelineNodeType } from '../../constant';
+import { IPipelineFileLogDetail } from '../../interface';
+
+export type ITimelineNodeObj = {
+  title: string;
+  icon: JSX.Element;
+  clickable?: boolean;
+  type: TimelineNodeType;
+};
+
+export const TimelineNodeObj = {
+  [TimelineNodeType.begin]: {
+    title: 'File',
+    icon: <File size={13} />,
     clickable: false,
-    type: TimelineNodeType.begin,
   },
-  {
-    id: 2,
+  [TimelineNodeType.parser]: {
     title: 'Parser',
-    icon: <FilePlayIcon size={13} />,
-    type: TimelineNodeType.parser,
+    icon: <FilePlay size={13} />,
   },
-  {
-    id: 3,
-    title: 'Chunker',
-    icon: <Grid3x2 size={13} />,
-    type: TimelineNodeType.chunk,
+  [TimelineNodeType.contextGenerator]: {
+    title: 'Context Generator',
+    icon: <FileStack size={13} />,
   },
-  {
-    id: 4,
-    title: 'Indexer',
+  [TimelineNodeType.titleSplitter]: {
+    title: 'Title Splitter',
+    icon: <Heading size={13} />,
+  },
+  [TimelineNodeType.characterSplitter]: {
+    title: 'Title Splitter',
+    icon: <Heading size={13} />,
+  },
+  [TimelineNodeType.splitter]: {
+    title: 'Character Splitter',
+    icon: <Blocks size={13} />,
+  },
+  [TimelineNodeType.tokenizer]: {
+    title: 'Tokenizer',
     icon: <ListPlus size={13} />,
     clickable: false,
-    type: TimelineNodeType.indexer,
   },
-  {
-    id: 5,
-    title: 'Complete',
-    icon: <CheckLine size={13} />,
-    clickable: false,
-    type: TimelineNodeType.complete,
-  },
-];
-
+};
+// export const TimelineNodeArr = [
+//   {
+//     id: 1,
+//     title: 'File',
+//     icon: <PlayIcon size={13} />,
+//     clickable: false,
+//     type: TimelineNodeType.begin,
+//   },
+//   {
+//     id: 2,
+//     title: 'Context Generator',
+//     icon: <PlayIcon size={13} />,
+//     type: TimelineNodeType.contextGenerator,
+//   },
+//   {
+//     id: 3,
+//     title: 'Title Splitter',
+//     icon: <PlayIcon size={13} />,
+//     type: TimelineNodeType.titleSplitter,
+//   },
+//   {
+//     id: 4,
+//     title: 'Character Splitter',
+//     icon: <PlayIcon size={13} />,
+//     type: TimelineNodeType.characterSplitter,
+//   },
+//   {
+//     id: 5,
+//     title: 'Tokenizer',
+//     icon: <CheckLine size={13} />,
+//     clickable: false,
+//     type: TimelineNodeType.tokenizer,
+//   },
+// ]
 export interface TimelineDataFlowProps {
   activeId: number | string;
   activeFunc: (id: number | string, step: TimelineNode) => void;
+  data: IPipelineFileLogDetail;
+  timelineNodes: TimelineNode[];
 }
-const TimelineDataFlow = ({ activeFunc, activeId }: TimelineDataFlowProps) => {
-  // const [activeStep, setActiveStep] = useState(2);
-  const timelineNodes: TimelineNode[] = useMemo(() => {
-    const nodes: TimelineNode[] = [];
-    TimelineNodeArr.forEach((node) => {
-      nodes.push({
-        ...node,
-        className: 'w-32',
-        completed: false,
-      });
-    });
-    return nodes;
-  }, []);
+const TimelineDataFlow = ({
+  activeFunc,
+  activeId,
+  data,
+  timelineNodes,
+}: TimelineDataFlowProps) => {
+  // const [timelineNodeArr,setTimelineNodeArr] = useState<ITimelineNodeObj & {id: number | string}>()
 
   const activeStep = useMemo(() => {
     const index = timelineNodes.findIndex((node) => node.id === activeId);
     return index > -1 ? index + 1 : 0;
   }, [activeId, timelineNodes]);
   const handleStepChange = (step: number, id: string | number) => {
-    // setActiveStep(step);
     activeFunc?.(
       id,
       timelineNodes.find((node) => node.id === activeStep) as TimelineNode,
     );
-    console.log(step, id);
   };
 
   return (

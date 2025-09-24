@@ -41,6 +41,7 @@ const {
   retrievalTestShare,
   getKnowledgeBasicInfo,
   fetchDataPipelineLog,
+  fetchPipelineDatasetLogs,
 } = api;
 
 const methods = {
@@ -179,6 +180,10 @@ const methods = {
     url: fetchDataPipelineLog,
     method: 'post',
   },
+  fetchPipelineDatasetLogs: {
+    url: fetchPipelineDatasetLogs,
+    method: 'post',
+  },
   get_pipeline_detail: {
     url: api.get_pipeline_detail,
     method: 'get',
@@ -223,5 +228,9 @@ export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
 ) => request.post(api.fetchDataPipelineLog, { data: body || {}, params });
+export const listPipelineDatasetLogs = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchDocumentListRequestBody,
+) => request.post(api.fetchPipelineDatasetLogs, { data: body || {}, params });
 
 export default kbService;
