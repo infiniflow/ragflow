@@ -1623,6 +1623,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       exportJson: '导出 JSON',
       viewResult: '查看结果',
       running: '运行中',
+      context: '上下文生成器',
+      contextDescription: '上下文生成器',
+      summary: '摘要',
+      keywords: '关键词',
+      questions: '问题',
+      metadata: '元数据',
+      fieldName: '结果目的地',
     },
   },
 };

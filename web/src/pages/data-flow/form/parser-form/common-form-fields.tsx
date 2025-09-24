@@ -8,8 +8,7 @@ import {
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { buildOptions } from '@/utils/form';
 import { useTranslation } from 'react-i18next';
-import { FileType } from '../../constant';
-import { OutputFormatMap } from './constant';
+import { FileType, OutputFormatMap } from '../../constant';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
