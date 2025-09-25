@@ -124,7 +124,7 @@ const FileLogsPage: FC = () => {
         };
       });
     }
-  }, [tableOriginData, active]);
+  }, [tableOriginData]);
 
   const changeActiveLogs = (active: (typeof LogTabs)[keyof typeof LogTabs]) => {
     setActive(active);

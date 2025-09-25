@@ -102,6 +102,9 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      fileSize: 'File Size',
+      fileType: 'File Type',
+      uploadedBy: 'Uploaded by',
       notGenerated: 'Not generated',
       generatedOn: 'Generated on',
       subbarFiles: 'Files',
@@ -128,7 +131,7 @@ export default {
       success: 'Success',
       failed: 'Failed',
       completed: 'Completed',
-      processLog: 'Process Log',
+      datasetLog: 'Dataset Log',
       created: 'Created',
       learnMore: 'Learn More',
       general: 'General',

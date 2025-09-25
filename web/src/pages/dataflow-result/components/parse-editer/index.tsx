@@ -2,8 +2,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { CheckedState } from '@radix-ui/react-checkbox';
-import { useState } from 'react';
-
+import { useEffect, useState } from 'react';
+import { ChunkTextMode } from '../../constant';
+import styles from '../../index.less';
 interface FormatPreserveEditorProps {
   initialValue: {
     key: string;
@@ -17,6 +18,7 @@ interface FormatPreserveEditorProps {
   isChunck?: boolean;
   handleCheckboxClick?: (id: string | number, checked: boolean) => void;
   selectedChunkIds?: string[];
+  textMode?: ChunkTextMode;
 }
 const FormatPreserveEditor = ({
   initialValue,
@@ -25,6 +27,7 @@ const FormatPreserveEditor = ({
   isChunck,
   handleCheckboxClick,
   selectedChunkIds,
+  textMode,
 }: FormatPreserveEditorProps) => {
   const [content, setContent] = useState(initialValue);
   // const [isEditing, setIsEditing] = useState(false);
@@ -32,6 +35,10 @@ const FormatPreserveEditor = ({
     undefined,
   );
   console.log('initialValue', initialValue);
+
+  useEffect(() => {
+    setContent(initialValue);
+  }, [initialValue]);
   const handleEdit = (e?: any, index?: number) => {
     console.log(e, index, content);
     if (content.key === 'json') {
@@ -143,7 +150,12 @@ const FormatPreserveEditor = ({
           )}
           {activeEditIndex !== index && (
             <div
-              className="text-text-secondary overflow-auto scrollbar-auto whitespace-pre-wrap"
+              className={cn(
+                'text-text-secondary overflow-auto scrollbar-auto whitespace-pre-wrap w-full',
+                {
+                  [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
+                },
+              )}
               key={index}
               onClick={(e) => {
                 handleEdit(e, index);

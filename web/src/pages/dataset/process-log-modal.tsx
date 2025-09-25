@@ -3,10 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import React from 'react';
+import React, { useMemo } from 'react';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
 export interface ILogInfo {
+  fileType?: string;
+  uploadedBy?: string;
+  uploadDate?: string;
+  processBeginAt?: string;
+  chunkNumber?: number;
+
   taskId?: string;
   fileName: string;
   fileSize?: string;
@@ -23,6 +29,7 @@ interface ProcessLogModalProps {
   visible: boolean;
   onCancel: () => void;
   logInfo: ILogInfo;
+  title: string;
 }
 
 const InfoItem: React.FC<{
@@ -37,35 +44,41 @@ const InfoItem: React.FC<{
     </div>
   );
 };
+export const replaceText = (text: string) => {
+  // Remove duplicate \n
+  const nextText = text.replace(/(\n)\1+/g, '$1');
 
+  const replacedText = reactStringReplace(
+    nextText,
+    /(\[ERROR\].+\s)/g,
+    (match, i) => {
+      return (
+        <span key={i} className={'text-red-600'}>
+          {match}
+        </span>
+      );
+    },
+  );
+
+  return replacedText;
+};
 const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   visible,
   onCancel,
-  logInfo,
+  logInfo: initData,
+  title,
 }) => {
   const { t } = useTranslate('knowledgeDetails');
   const blackKeyList = [''];
-  const replaceText = (text: string) => {
-    // Remove duplicate \n
-    const nextText = text.replace(/(\n)\1+/g, '$1');
+  console.log('logInfo', initData);
+  const logInfo = useMemo(() => {
+    console.log('logInfo', initData);
+    return initData;
+  }, [initData]);
 
-    const replacedText = reactStringReplace(
-      nextText,
-      /(\[ERROR\].+\s)/g,
-      (match, i) => {
-        return (
-          <span key={i} className={'text-red-600'}>
-            {match}
-          </span>
-        );
-      },
-    );
-
-    return replacedText;
-  };
   return (
     <Modal
-      title={t('processLog')}
+      title={title || 'log'}
       open={visible}
       onCancel={onCancel}
       footer={
@@ -77,7 +90,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
     >
       <div className=" rounded-lg">
         <div className="flex flex-wrap ">
-          {Object.keys(logInfo).map((key) => {
+          {Object?.keys(logInfo).map((key) => {
             if (
               blackKeyList.includes(key) ||
               !logInfo[key as keyof typeof logInfo]
@@ -86,7 +99,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
             }
             if (key === 'details') {
               return (
-                <div className="w-full" key={key}>
+                <div className="w-full  mt-2" key={key}>
                   <InfoItem
                     label={t(key)}
                     value={

@@ -42,7 +42,7 @@ const Chunk = () => {
     data: { documentInfo },
   } = useFetchNextChunkList();
   const { selectedChunkId } = useHandleChunkCardClick();
-  const [activeStepId, setActiveStepId] = useState<number | string>(0);
+  const [activeStepId, setActiveStepId] = useState<number | string>(2);
   const { data: dataset } = useFetchPipelineFileLogDetail();
   const { t } = useTranslation();
 
