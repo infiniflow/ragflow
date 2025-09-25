@@ -13,13 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import time
 from functools import partial
 from typing import Any
-
 import trio
-
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
@@ -43,17 +42,17 @@ class ProcessBase(ComponentBase):
         self.set_output("_created_time", time.perf_counter())
         for k, v in kwargs.items():
             self.set_output(k, v)
-        #try:
-        with trio.fail_after(self._param.timeout):
-            await self._invoke(**kwargs)
-            self.callback(1, "Done")
-        #except Exception as e:
-        #    if self.get_exception_default_value():
-        #        self.set_exception_default_value()
-        #    else:
-        #        self.set_output("_ERROR", str(e))
-        #    logging.exception(e)
-        #    self.callback(-1, str(e))
+        try:
+            with trio.fail_after(self._param.timeout):
+                await self._invoke(**kwargs)
+                self.callback(1, "Done")
+        except Exception as e:
+            if self.get_exception_default_value():
+                self.set_exception_default_value()
+            else:
+                self.set_output("_ERROR", str(e))
+            logging.exception(e)
+            self.callback(-1, str(e))
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
