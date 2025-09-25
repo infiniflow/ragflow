@@ -438,6 +438,21 @@ def get(doc_id):
         return server_error_response(e)
 
 
+@manager.route("/gets3url/<doc_id>", methods=["GET"])  # noqa: F821
+# @login_required
+def gets3url(doc_id):
+    try:
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+
+        b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
+        response = flask.make_response(STORAGE_IMPL.get_presigned_url(b, n, 3600))
+        return response
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "parser_id")

@@ -1,0 +1,100 @@
+include:
+  - ./docker-compose-base.yml
+
+# To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
+services:
+  ragflow:
+    depends_on:
+      mysql:
+        condition: service_healthy
+      # minio:
+      #   condition: service_healthy
+    image: ${RAGFLOW_IMAGE}
+    # Example configuration to set up an MCP server:
+    command:
+      - --enable-mcpserver
+      - --mcp-host=0.0.0.0
+      - --mcp-port=9383
+      - --mcp-base-url=http://127.0.0.1:9380
+      - --mcp-script-path=/ragflow/mcp/server/server.py
+      # MCP server defaults: --mode=host --no-transport-streamable-http-enabled
+      # For self-host mode, uncomment below:
+      # - --mcp-mode=self-host
+      # - --mcp-host-api-key=ragflow-ljMjA5MDUwM2QzMzExZjA4MmNmMDI0Mm
+    container_name: ragflow-server
+    ports:
+      - ${SVR_HTTP_PORT}:9380
+      - 81:81
+      - 443:443
+      - 5678:5678
+      - 5679:5679
+      - 9383:9383 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
+    volumes:
+      # - ../whisperx_backend:/ragflow/whisperx_backend
+      - ./ragflow-logs:/ragflow/logs
+      - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ../history_data_agent:/ragflow/history_data_agent
+      - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+      - ./entrypoint.sh:/ragflow/entrypoint.sh
+      - ../api:/ragflow/api
+      # - ../rag:/ragflow/rag
+      - ../agent:/ragflow/agent
+      - ../graphrag:/ragflow/graphrag
+      - ../agentic_reasoning:/ragflow/agentic_reasoning
+      - ../mcp:/ragflow/mcp
+      - ../plugin:/ragflow/plugin
+      # - monkeyocr_models:/ragflow/monkeyocr/model_weight
+      # - monkeyocr_cache:/ragflow/monkeyocr/cache
+
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+      - HF_ENDPOINT=${HF_ENDPOINT}
+      - MACOS=${MACOS}
+      - RAGFLOW_MCP_ROOT_PATH=/mcp
+      # MonkeyOCR specific environment variables
+      - MONKEYOCR_API_URL=${MONKEYOCR_API_URL}
+      - MONKEYOCR_MODEL_NAME=${MONKEYOCR_MODEL_NAME}
+      - MONKEYOCR_API_KEY=${MONKEYOCR_API_KEY}
+      - MONKEYOCR_ENABLED=true
+      - MONKEYOCR_CONFIG_PATH=/ragflow/conf/monkey_ocr_config.json
+      - MONKEYOCR_MODEL_PATH=/ragflow/monkeyocr/model_weight/Recognition
+      - MONKEYOCR_CACHE_DIR=/ragflow/monkeyocr/cache
+      - HF_HUB_CACHE=/ragflow/monkeyocr/model_weight
+    networks:
+      - ragflow
+    restart: on-failure
+    # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
+    # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  # executor:
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
+  #   image: ${RAGFLOW_IMAGE}
+  #   container_name: ragflow-executor
+  #   volumes:
+  #     - ./ragflow-logs:/ragflow/logs
+  #     - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+  #   env_file: .env
+  #   environment:
+  #     - TZ=${TIMEZONE}
+  #     - HF_ENDPOINT=${HF_ENDPOINT}
+  #     - MACOS=${MACOS}
+  #   entrypoint: "/ragflow/entrypoint_task_executor.sh 1 3"
+  #   networks:
+  #     - ragflow
+  #   restart: on-failure
+  #   # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
+  #   # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
+volumes:
+  monkeyocr_models:
+    driver: local
+  monkeyocr_cache:
+    driver: local
