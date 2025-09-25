@@ -17,7 +17,6 @@ import datetime
 import json
 import logging
 import random
-import time
 from timeit import default_timer as timer
 import trio
 from agent.canvas import Graph
