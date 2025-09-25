@@ -256,6 +256,23 @@ export const initialParserValues = {
       fields: Object.values(ParserFields),
       output_format: EmailOutputFormat.Text,
     },
+    {
+      fileFormat: FileType.TextMarkdown,
+      output_format: TextMarkdownOutputFormat.Text,
+    },
+    {
+      fileFormat: FileType.Docx,
+      output_format: DocxOutputFormat.Json,
+    },
+    {
+      fileFormat: FileType.PowerPoint,
+      output_format: PptOutputFormat.Json,
+    },
+    {
+      fileFormat: FileType.Audio,
+      llm_id: '',
+      output_format: AudioOutputFormat.Text,
+    },
   ],
 };
 
