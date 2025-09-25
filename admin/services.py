@@ -6,7 +6,7 @@ from api.db.joint_services.user_account_service import create_new_user
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils import decrypt
+from api.utils.crypt import decrypt
 from exceptions import AdminException, UserAlreadyExistsError, UserNotFoundError
 from config import SERVICE_CONFIGS
 
