@@ -9,7 +9,7 @@ import {
   NodeMap,
   Operator,
   initialBeginValues,
-  initialContextValues,
+  initialExtractorValues,
   initialHierarchicalMergerValues,
   initialNoteValues,
   initialParserValues,
@@ -24,6 +24,7 @@ import {
 
 export const useInitializeOperatorParams = () => {
   const llmId = useFetchModelId();
+  const { t } = useTranslation();
 
   const initialFormValuesMap = useMemo(() => {
     return {
@@ -33,9 +34,14 @@ export const useInitializeOperatorParams = () => {
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.Splitter]: initialSplitterValues,
       [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
-      [Operator.Extractor]: { ...initialContextValues, llm_id: llmId },
+      [Operator.Extractor]: {
+        ...initialExtractorValues,
+        llm_id: llmId,
+        sys_prompt: t('dataflow.prompts.system.summary'),
+        prompts: t('dataflow.prompts.user.summary'),
+      },
     };
-  }, [llmId]);
+  }, [llmId, t]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator) => {
