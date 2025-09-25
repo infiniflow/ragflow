@@ -1625,7 +1625,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       running: '运行中',
       extractor: '提取器',
       extractorDescription: '提取器',
-      summary: '摘要',
+      summary: '增强上下文',
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',

@@ -1,8 +1,8 @@
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
-import { MultiSelect } from '@/components/ui/multi-select';
 import { useBuildPromptExtraPromptOptions } from '@/pages/agent/form/agent-form/use-build-prompt-options';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { buildOptions } from '@/utils/form';
@@ -19,11 +19,7 @@ import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
-import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
-import { Output } from '../components/output';
-
-const outputList = buildOutputList(initialContextValues.outputs);
 
 export const FormSchema = z.object({
   sys_prompt: z.string(),
@@ -32,13 +28,13 @@ export const FormSchema = z.object({
   field_name: z.array(z.string()),
 });
 
-export type ContextFormSchemaType = z.infer<typeof FormSchema>;
+export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
 
-const ContextForm = ({ node }: INextOperatorForm) => {
+const ExtractorForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialContextValues, node);
   const { t } = useTranslation();
 
-  const form = useForm<ContextFormSchemaType>({
+  const form = useForm<ExtractorFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
   });
@@ -67,20 +63,16 @@ const ContextForm = ({ node }: INextOperatorForm) => {
         </RAGFlowFormItem>
         <RAGFlowFormItem label={t('dataflow.fieldName')} name="field_name">
           {(field) => (
-            <MultiSelect
-              onValueChange={field.onChange}
+            <SelectWithSearch
+              {...field}
               placeholder={t('dataFlowPlaceholder')}
-              defaultValue={field.value}
               options={options}
-            ></MultiSelect>
+            ></SelectWithSearch>
           )}
         </RAGFlowFormItem>
       </FormWrapper>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
     </Form>
   );
 };
 
-export default memo(ContextForm);
+export default memo(ExtractorForm);

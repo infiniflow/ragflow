@@ -291,7 +291,7 @@ export const initialHierarchicalMergerValues = {
 
 export const initialContextValues = {
   ...initialLlmBaseValues,
-  field_name: [ContextGeneratorFieldName.Summary],
+  field_name: ContextGeneratorFieldName.Summary,
   outputs: {},
 };
 

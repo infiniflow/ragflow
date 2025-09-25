@@ -1707,7 +1707,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       running: 'Running',
       extractor: 'Extractor',
       extractorDescription: 'Extractor',
-      summary: 'Summary',
+      summary: 'Augmented Context',
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
