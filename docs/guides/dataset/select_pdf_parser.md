@@ -27,7 +27,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 
 ## Procedure
 
-1. On your knowledge base's **Configuration** page, select a chunking method, say **General**.
+1. On your dataset's **Configuration** page, select a chunking method, say **General**.
 
    _The **PDF parser** dropdown menu appears._
 

@@ -43,7 +43,7 @@ The system's default chat model is used to summarize clustered content. Before p
 
 ## Configurations
 
-The RAPTOR feature is disabled by default. To enable it, manually switch on the **Use RAPTOR to enhance retrieval** toggle on your knowledge base's **Configuration** page.
+The RAPTOR feature is disabled by default. To enable it, manually switch on the **Use RAPTOR to enhance retrieval** toggle on your dataset's **Configuration** page.
 
 ### Prompt
 
