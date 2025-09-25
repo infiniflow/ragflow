@@ -20,10 +20,11 @@ import copy
 import logging
 import base64
 import pickle
-import file_utils
 import importlib
+
+from api.utils import file_utils
 from filelock import FileLock
-from common import bytes_to_string, string_to_bytes
+from api.utils.common import bytes_to_string, string_to_bytes
 from api.constants import SERVICE_CONF
 
 

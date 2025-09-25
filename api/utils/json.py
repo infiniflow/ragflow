@@ -1,7 +1,7 @@
 import datetime
 import json
 from enum import Enum, IntEnum
-from common import string_to_bytes, bytes_to_string
+from api.utils.common import string_to_bytes, bytes_to_string
 
 
 class BaseType:
