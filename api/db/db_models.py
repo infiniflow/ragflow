@@ -278,7 +278,7 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         # self.connect()
         try:
             self.close()
-        except:
+        except Exception:
             pass
         try:
             self.connect()
