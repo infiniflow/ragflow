@@ -52,6 +52,11 @@ class File2DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def delete_by_document_ids_or_file_ids(cls, document_ids, file_ids):
+        return cls.model.delete().where(cls.model.document_id.in_(document_ids) | cls.model.file_id.in_(file_ids)).execute()
+
+    @classmethod
+    @DB.connection_context()
     def delete_by_document_id(cls, doc_id):
         return cls.model.delete().where(cls.model.document_id == doc_id).execute()
 
