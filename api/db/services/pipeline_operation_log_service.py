@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 from datetime import datetime
 
 from peewee import fn
@@ -84,22 +85,20 @@ class PipelineOperationLogService(CommonService):
     def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
         from rag.flow.pipeline import Pipeline
 
-        tenant_id = ""
-        title = ""
-        avatar = ""
         dsl = ""
-        operation_status = ""
         referred_document_id = document_id
 
         if referred_document_id == "x" and fake_document_ids:
             referred_document_id = fake_document_ids[0]
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
+            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            return
         DocumentService.update_progress_immediately([document.to_dict()])
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
+            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            return
         if document.progress not in [1, -1]:
             return
         operation_status = document.run
