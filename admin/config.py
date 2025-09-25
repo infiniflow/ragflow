@@ -4,7 +4,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 from typing import Any
-from api.utils import read_config
+from api.utils.configs import read_config
 from urllib.parse import urlparse
 
 
