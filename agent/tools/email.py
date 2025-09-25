@@ -98,8 +98,8 @@ class EmailParam(ToolParamBase):
 
 class Email(ToolBase, ABC):
     component_name = "Email"
-    
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
         if not kwargs.get("to_email"):
             self.set_output("success", False)
