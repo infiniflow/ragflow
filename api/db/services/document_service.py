@@ -334,8 +334,7 @@ class DocumentService(CommonService):
                                process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
-            raise LookupError(
-                "Document not found which is supposed to be there")
+            logging.warning("Document not found which is supposed to be there")
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num +
                       token_num,
@@ -773,8 +772,9 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority, fake_doc_id="", doc_ids=[])
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
 
-    if ty == "graphrag":
+    if ty in ["graphrag", "raptor"]:
         task["doc_ids"] = doc_ids
+        DocumentService.begin2parse(doc["id"])
     assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 

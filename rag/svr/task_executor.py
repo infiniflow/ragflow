@@ -221,7 +221,7 @@ async def collect():
     canceled = False
     if msg.get("doc_id", "") == "x":
         task = msg
-        if task["task_type"] == "graphrag" and msg.get("doc_ids", []):
+        if task["task_type"] in ["graphrag", "raptor"] and msg.get("doc_ids", []):
             print(f"hack {msg['doc_ids']=}=",flush=True)
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
             task["doc_ids"] = msg["doc_ids"]
@@ -520,6 +520,52 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     return res, tk_count
 
 
+@timeout(3600)
+async def run_raptor_for_kb(row, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
+    fake_doc_id = "x" # x for dataset-level task
+
+    chunks = []
+    vctr_nm = "q_%d_vec"%vector_size
+    for doc_id in doc_ids:
+        for d in settings.retrievaler.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+                                                 fields=["content_with_weight", vctr_nm],
+                                                 sort_by_position=True):
+            chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+    raptor = Raptor(
+        row["parser_config"]["raptor"].get("max_cluster", 64),
+        chat_mdl,
+        embd_mdl,
+        row["parser_config"]["raptor"]["prompt"],
+        row["parser_config"]["raptor"]["max_token"],
+        row["parser_config"]["raptor"]["threshold"]
+    )
+    original_length = len(chunks)
+    chunks = await raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
+    doc = {
+        "doc_id": fake_doc_id,
+        "kb_id": [str(row["kb_id"])],
+        "docnm_kwd": row["name"],
+        "title_tks": rag_tokenizer.tokenize(row["name"])
+    }
+    if row["pagerank"]:
+        doc[PAGERANK_FLD] = int(row["pagerank"])
+    res = []
+    tk_count = 0
+    for content, vctr in chunks[original_length:]:
+        d = copy.deepcopy(doc)
+        d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
+        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+        d["create_timestamp_flt"] = datetime.now().timestamp()
+        d[vctr_nm] = vctr.tolist()
+        d["content_with_weight"] = content
+        d["content_ltks"] = rag_tokenizer.tokenize(content)
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+        res.append(d)
+        tk_count += num_tokens_from_string(content)
+    return res, tk_count
+
+
 @timeout(60*60*2, 1)
 async def do_handle_task(task):
     task_type = task.get("task_type", "")
@@ -578,7 +624,15 @@ async def do_handle_task(task):
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
-            chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
+            # chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
+            chunks, token_count = await run_raptor_for_kb(
+                row=task,
+                chat_mdl=chat_model,
+                embd_mdl=embedding_model,
+                vector_size=vector_size,
+                callback=progress_callback,
+                doc_ids=task.get("doc_ids", []),
+            )
     # Either using graphrag or Standard chunking methods
     elif task_type == "graphrag":
         if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
@@ -713,7 +767,7 @@ async def handle_task():
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
         task_document_ids = []
-        if task_type in ["graphrag"]:
+        if task_type in ["graphrag", "raptor"]:
             task_document_ids = task["doc_ids"]
         PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=pipeline_task_type, fake_document_ids=task_document_ids)
 
