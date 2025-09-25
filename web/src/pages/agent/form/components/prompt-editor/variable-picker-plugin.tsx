@@ -109,17 +109,26 @@ function VariablePickerMenuItem({
   );
 }
 
+export type VariablePickerMenuOptionType = {
+  label: string;
+  title: string;
+  value?: string;
+  options: Array<{
+    label: string;
+    value: string;
+    icon: ReactNode;
+  }>;
+};
+
 export type VariablePickerMenuPluginProps = {
   value?: string;
-  extraOptions?: Array<{
-    label: string;
-    title: string;
-    options: Array<{ label: string; value: string; icon?: ReactNode }>;
-  }>;
+  extraOptions?: VariablePickerMenuOptionType[];
+  baseOptions?: VariablePickerMenuOptionType[];
 };
 export default function VariablePickerMenuPlugin({
   value,
   extraOptions,
+  baseOptions,
 }: VariablePickerMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
   const isFirstRender = useRef(true);
@@ -131,6 +140,10 @@ export default function VariablePickerMenuPlugin({
   const [queryString, setQueryString] = React.useState<string | null>('');
 
   let options = useBuildQueryVariableOptions();
+
+  if (baseOptions) {
+    options = baseOptions as typeof options;
+  }
 
   const buildNextOptions = useCallback(() => {
     let filteredOptions = [...options, ...(extraOptions ?? [])];
