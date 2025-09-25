@@ -26,8 +26,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
-from rag.prompts import message_fit_in, citation_prompt
-from rag.prompts.prompts import tool_call_summary
+from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt
 
 
 class LLMParam(ComponentParamBase):
@@ -82,9 +81,9 @@ class LLMParam(ComponentParamBase):
 
 class LLM(ComponentBase):
     component_name = "LLM"
-    
-    def __init__(self, canvas, id, param: ComponentParamBase):
-        super().__init__(canvas, id, param)
+
+    def __init__(self, canvas, component_id, param: ComponentParamBase):
+        super().__init__(canvas, component_id, param)
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id),
                                   self._param.llm_id, max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error
@@ -210,7 +209,7 @@ class LLM(ComponentBase):
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
         prompt, msg, _ = self._prepare_prompt_variables()
-        error = ""
+        error: str = ""
 
         if self._param.output_structure:
             prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
