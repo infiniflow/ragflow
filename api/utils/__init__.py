@@ -24,7 +24,6 @@ import requests
 
 import importlib
 
-from . import file_utils
 from .common import string_to_bytes
 
 
