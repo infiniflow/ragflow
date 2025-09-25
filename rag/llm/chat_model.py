@@ -143,7 +143,7 @@ class Base(ABC):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
-        
+
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
         if (not response.choices or not response.choices[0].message or not response.choices[0].message.content):
@@ -156,12 +156,12 @@ class Base(ABC):
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
-        
+
         if kwargs.get("stop") or "stop" in gen_conf:
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
         else:
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
-        
+
         for resp in response:
             if not resp.choices:
                 continue
@@ -643,7 +643,7 @@ class ZhipuChat(Base):
             del gen_conf["max_tokens"]
         gen_conf = self._clean_conf_plealty(gen_conf)
         return gen_conf
-    
+
     def _clean_conf_plealty(self, gen_conf):
         if "presence_penalty" in gen_conf:
             del gen_conf["presence_penalty"]
