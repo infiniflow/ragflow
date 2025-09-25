@@ -112,7 +112,6 @@ class Pipeline(Graph):
 
 
     async def run(self, **kwargs):
-        st = time.perf_counter()
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         try:
             REDIS_CONN.set_obj(log_key, [], 60 * 10)
