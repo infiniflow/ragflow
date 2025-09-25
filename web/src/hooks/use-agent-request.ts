@@ -52,6 +52,7 @@ export const enum AgentApiAction {
   FetchExternalAgentInputs = 'fetchExternalAgentInputs',
   SetAgentSetting = 'setAgentSetting',
   FetchPrompt = 'fetchPrompt',
+  CancelDataflow = 'cancelDataflow',
 }
 
 export const EmptyDsl = {
@@ -387,7 +388,7 @@ export const useUploadCanvasFileWithProgress = (
         files.forEach((file) => {
           onError(file, error as Error);
         });
-        message.error(error?.message);
+        message.error((error as Error)?.message || 'Upload failed');
       }
     },
   });
@@ -425,7 +426,7 @@ export const useFetchMessageTrace = (
     },
   });
 
-  return { data, loading, refetch, setMessageId };
+  return { data, loading, refetch, setMessageId, messageId };
 };
 
 export const useTestDbConnect = () => {
@@ -571,7 +572,6 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
     initialData: {} as IAgentLogsResponse,
     gcTime: 0,
     queryFn: async () => {
-      console.log('useFetchAgentLog', searchParams);
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
       });
@@ -677,4 +677,25 @@ export const useFetchAgentList = ({
   });
 
   return { data, loading };
+};
+
+export const useCancelDataflow = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.CancelDataflow],
+    mutationFn: async (taskId: string) => {
+      const ret = await agentService.cancelDataflow(taskId);
+      if (ret?.data?.code === 0) {
+        message.success('success');
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret?.data?.code;
+    },
+  });
+
+  return { data, loading, cancelDataflow: mutateAsync };
 };

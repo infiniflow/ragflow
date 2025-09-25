@@ -1,3 +1,4 @@
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { Form } from '@/components/ui/form';
@@ -8,7 +9,11 @@ import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialTokenizerValues, TokenizerSearchMethod } from '../../constant';
+import {
+  initialTokenizerValues,
+  TokenizerFields,
+  TokenizerSearchMethod,
+} from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -21,11 +26,12 @@ const outputList = buildOutputList(initialTokenizerValues.outputs);
 export const FormSchema = z.object({
   search_method: z.array(z.string()).min(1),
   filename_embd_weight: z.number(),
+  fields: z.string(),
 });
 
 const SearchMethodOptions = buildOptions(TokenizerSearchMethod);
 
-const FieldsOptions = [{ label: 'text', value: 'text' }];
+const FieldsOptions = buildOptions(TokenizerFields);
 
 const TokenizerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
@@ -62,14 +68,7 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
           step={0.01}
         ></SliderInputFormField>
         <RAGFlowFormItem name="fields" label={t('dataflow.fields')}>
-          {(field) => (
-            <MultiSelect
-              options={FieldsOptions}
-              onValueChange={field.onChange}
-              defaultValue={field.value}
-              variant="inverted"
-            />
-          )}
+          {(field) => <SelectWithSearch options={FieldsOptions} {...field} />}
         </RAGFlowFormItem>
       </FormWrapper>
       <div className="p-5">

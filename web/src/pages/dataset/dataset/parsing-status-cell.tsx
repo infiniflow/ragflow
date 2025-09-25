@@ -7,11 +7,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
@@ -19,7 +14,7 @@ import { CircleX } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, RunningStatus } from './constant';
-import { ParsingCard, PopoverContent } from './parsing-card';
+import { ParsingCard } from './parsing-card';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import { UseSaveMetaShowType } from './use-save-meta';
@@ -122,23 +117,13 @@ export function ParsingStatusCell({
           )}
           {isParserRunning(run) ? (
             <>
-              <HoverCard>
-                <HoverCardTrigger asChild>
-                  <div
-                    className="flex items-center gap-1"
-                    onClick={() => handleShowLog(record)}
-                  >
-                    <Progress value={p} className="h-1 flex-1 min-w-10" />
-                    {p}%
-                  </div>
-                </HoverCardTrigger>
-                <HoverCardContent className="w-[40vw]">
-                  <PopoverContent
-                    record={record}
-                    handleShowLog={handleShowLog}
-                  ></PopoverContent>
-                </HoverCardContent>
-              </HoverCard>
+              <div
+                className="flex items-center gap-1 cursor-pointer"
+                onClick={() => handleShowLog(record)}
+              >
+                <Progress value={p} className="h-1 flex-1 min-w-10" />
+                {p}%
+              </div>
               <div
                 className="cursor-pointer flex items-center gap-3"
                 onClick={
