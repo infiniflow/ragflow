@@ -14,12 +14,13 @@
 #  limitations under the License.
 #
 import json
+import logging
 from datetime import datetime
 
 from peewee import fn
 
 from api.db import VALID_PIPELINE_TASK_TYPES
-from api.db.db_models import DB, PipelineOperationLog
+from api.db.db_models import DB, PipelineOperationLog, Document
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
@@ -84,22 +85,20 @@ class PipelineOperationLogService(CommonService):
     def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
         from rag.flow.pipeline import Pipeline
 
-        tenant_id = ""
-        title = ""
-        avatar = ""
         dsl = ""
-        operation_status = ""
         referred_document_id = document_id
 
         if referred_document_id == "x" and fake_document_ids:
             referred_document_id = fake_document_ids[0]
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
+            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            return
         DocumentService.update_progress_immediately([document.to_dict()])
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
+            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            return
         if document.progress not in [1, -1]:
             return
         operation_status = document.run
@@ -191,6 +190,20 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_documents_info(cls, id):
+        fields = [
+            Document.id,
+            Document.name,
+            Document.progress
+        ]
+        return cls.model.select(*fields).join(Document, on=(cls.model.document_id == Document.id)).where(
+            cls.model.id == id,
+            Document.progress > 0,
+            Document.progress < 1
+        ).dicts()
+    
+    @classmethod
+    @DB.connection_context()
     def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status):
         fields = cls.get_dataset_logs_fields()
         logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == "x"))
@@ -208,3 +221,4 @@ class PipelineOperationLogService(CommonService):
             logs = logs.paginate(page_number, items_per_page)
 
         return list(logs.dicts()), count
+
