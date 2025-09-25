@@ -133,10 +133,10 @@ export const useNavigatePage = () => {
   );
 
   const navigateToDataflowResult = useCallback(
-    (id: string, knowledgeId?: string) => () => {
+    (id: string, knowledgeId: string, doc_id?: string) => () => {
       navigate(
         // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.DataflowResult}?id=${id}&type=dataflow`,
+        `${Routes.DataflowResult}?id=${id}&doc_id=${doc_id}&${QueryStringMap.KnowledgeId}=${knowledgeId}&type=dataflow`,
       );
     },
     [navigate],

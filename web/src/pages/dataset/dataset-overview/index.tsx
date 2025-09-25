@@ -71,9 +71,7 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
 };
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
-  const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
-    LogTabs.FILE_LOGS,
-  );
+
   const [topAllData, setTopAllData] = useState({
     totalFiles: {
       value: 0,
@@ -111,12 +109,14 @@ const FileLogsPage: FC = () => {
     searchString,
     handleInputChange,
     pagination,
+    active,
+    setActive,
   } = useFetchFileLogList();
 
   const tableList = useMemo(() => {
     console.log('tableList', tableOriginData);
-    if (tableOriginData && tableOriginData.docs?.length) {
-      return tableOriginData.docs.map((item) => {
+    if (tableOriginData && tableOriginData.logs?.length) {
+      return tableOriginData.logs.map((item) => {
         return {
           ...item,
           fileName: item.document_name,

@@ -70,7 +70,7 @@ class TaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_task(cls, task_id):
+    def get_task(cls, task_id, doc_ids=[]):
         """Retrieve detailed task information by task ID.
 
         This method fetches comprehensive task details including associated document,
@@ -84,6 +84,10 @@ class TaskService(CommonService):
             dict: Task details dictionary containing all task information and related metadata.
                  Returns None if task is not found or has exceeded retry limit.
         """
+        doc_id = cls.model.doc_id
+        if doc_id == "x" and doc_ids:
+            doc_id = doc_ids[0]
+
         fields = [
             cls.model.id,
             cls.model.doc_id,
@@ -109,7 +113,7 @@ class TaskService(CommonService):
         ]
         docs = (
             cls.model.select(*fields)
-                .join(Document, on=(cls.model.doc_id == Document.id))
+                .join(Document, on=(doc_id == Document.id))
                 .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id))
                 .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
                 .where(cls.model.id == task_id)

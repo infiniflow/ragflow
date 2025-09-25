@@ -17,14 +17,17 @@ import {
 } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { FileType, initialParserValues } from '../../constant';
+import {
+  FileType,
+  InitialOutputFormatMap,
+  initialParserValues,
+} from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { Output } from '../components/output';
 import { OutputFormatFormField } from './common-form-fields';
-import { InitialOutputFormatMap } from './constant';
 import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';

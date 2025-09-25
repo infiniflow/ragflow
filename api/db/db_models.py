@@ -649,6 +649,9 @@ class Knowledgebase(DataBaseModel):
     pipeline_id = CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     pagerank = IntegerField(default=0, index=False)
+
+    graphrag_task_id = CharField(max_length=32, null=True, help_text="Graph RAG task ID", index=True)
+
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -1065,11 +1068,15 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="default parser ID", index=True)))
+        migrate(migrator.add_column("knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)))
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("document", "pipeline_id", CharField(max_length=32, null=True, help_text="default parser ID", index=True)))
+        migrate(migrator.add_column("document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

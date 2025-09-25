@@ -31,6 +31,7 @@ import {
 import { TFunction } from 'i18next';
 import { ClipboardList, Eye } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
+import { useParams } from 'umi';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal from '../process-log-modal';
 import { LogTabs, ProcessingType } from './dataset-common';
@@ -58,9 +59,11 @@ interface FileLogsTableProps {
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
   showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
+  kowledgeId: string,
   navigateToDataflowResult: (
     id: string,
-    knowledgeId?: string | undefined,
+    knowledgeId: string,
+    doc_id?: string,
   ) => () => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
@@ -175,7 +178,11 @@ export const getFileLogsTableColumns = (
             variant="ghost"
             size="sm"
             className="p-1"
-            onClick={navigateToDataflowResult(row.original.id)}
+            onClick={navigateToDataflowResult(
+              row.original.id,
+              kowledgeId,
+              row.original.document_id,
+            )}
           >
             <ClipboardList />
           </Button>
@@ -288,7 +295,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
   const [logInfo, setLogInfo] = useState<IFileLogItem>({});
-  const showLog = (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => {
+  const kowledgeId = useParams().id;
+  const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original.id,
       fileName: row.original.document_name,
@@ -306,7 +314,12 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
 
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
-      ? getFileLogsTableColumns(t, showLog, navigateToDataflowResult)
+      ? getFileLogsTableColumns(
+          t,
+          showLog,
+          kowledgeId || '',
+          navigateToDataflowResult,
+        )
       : getDatasetLogsTableColumns(t, showLog);
   }, [active, t]);
 
