@@ -28,7 +28,7 @@ from rag.llm.chat_model import ERROR_PREFIX
 class CategorizeParam(LLMParam):
 
     """
-    Define the Categorize component parameters.
+    Define the categorize component parameters.
     """
     def __init__(self):
         super().__init__()
