@@ -1,5 +1,7 @@
 import argparse
 import base64
+from Cryptodome.PublicKey import RSA
+from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from typing import Dict, List, Any
 from lark import Lark, Transformer, Tree
 import requests
@@ -19,6 +21,8 @@ sql_command: list_services
            | show_user
            | drop_user
            | alter_user
+           | create_user
+           | activate_user
            | list_datasets
            | list_agents
 
@@ -35,6 +39,7 @@ meta_arg: /[^\\s"']+/ | quoted_string
 LIST: "LIST"i
 SERVICES: "SERVICES"i
 SHOW: "SHOW"i
+CREATE: "CREATE"i
 SERVICE: "SERVICE"i
 SHUTDOWN: "SHUTDOWN"i
 STARTUP: "STARTUP"i
@@ -43,6 +48,7 @@ USERS: "USERS"i
 DROP: "DROP"i
 USER: "USER"i
 ALTER: "ALTER"i
+ACTIVE: "ACTIVE"i
 PASSWORD: "PASSWORD"i
 DATASETS: "DATASETS"i
 OF: "OF"i
@@ -58,12 +64,15 @@ list_users: LIST USERS ";"
 drop_user: DROP USER quoted_string ";"
 alter_user: ALTER USER PASSWORD quoted_string quoted_string ";"
 show_user: SHOW USER quoted_string ";"
+create_user: CREATE USER quoted_string quoted_string ";"
+activate_user: ALTER USER ACTIVE quoted_string status ";"
 
 list_datasets: LIST DATASETS OF quoted_string ";"
 list_agents: LIST AGENTS OF quoted_string ";"
 
 identifier: WORD
 quoted_string: QUOTED_STRING
+status: WORD
 
 QUOTED_STRING: /'[^']+'/ | /"[^"]+"/
 WORD: /[a-zA-Z0-9_\-\.]+/
@@ -118,6 +127,16 @@ class AdminTransformer(Transformer):
         new_password = items[4]
         return {"type": "alter_user", "username": user_name, "password": new_password}
 
+    def create_user(self, items):
+        user_name = items[2]
+        password = items[3]
+        return {"type": "create_user", "username": user_name, "password": password, "role": "user"}
+
+    def activate_user(self, items):
+        user_name = items[3]
+        activate_status = items[4]
+        return {"type": "activate_user", "activate_status": activate_status, "username": user_name}
+
     def list_datasets(self, items):
         user_name = items[3]
         return {"type": "list_datasets", "username": user_name}
@@ -150,6 +169,14 @@ class AdminTransformer(Transformer):
 def encode_to_base64(input_string):
     base64_encoded = base64.b64encode(input_string.encode('utf-8'))
     return base64_encoded.decode('utf-8')
+
+
+def encrypt(input_string):
+    pub = '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB\n-----END PUBLIC KEY-----'
+    pub_key = RSA.importKey(pub)
+    cipher = Cipher_pkcs1_v1_5.new(pub_key)
+    cipher_text = cipher.encrypt(base64.b64encode(input_string.encode('utf-8')))
+    return base64.b64encode(cipher_text).decode("utf-8")
 
 
 class AdminCommandParser:
@@ -220,6 +247,9 @@ class AdminCLI:
         if not data:
             print("No data to print")
             return
+        if isinstance(data, dict):
+            # handle single row data
+            data = [data]
 
         columns = list(data[0].keys())
         col_widths = {}
@@ -335,6 +365,10 @@ class AdminCLI:
                 self._handle_drop_user(command_dict)
             case 'alter_user':
                 self._handle_alter_user(command_dict)
+            case 'create_user':
+                self._handle_create_user(command_dict)
+            case 'activate_user':
+                self._handle_activate_user(command_dict)
             case 'list_datasets':
                 self._handle_list_datasets(command_dict)
             case 'list_agents':
@@ -349,9 +383,8 @@ class AdminCLI:
 
         url = f'http://{self.host}:{self.port}/api/v1/admin/services'
         response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
-        res_json = dict
+        res_json = response.json()
         if response.status_code == 200:
-            res_json = response.json()
             self._print_table_simple(res_json['data'])
         else:
             print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
@@ -377,9 +410,8 @@ class AdminCLI:
 
         url = f'http://{self.host}:{self.port}/api/v1/admin/users'
         response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
-        res_json = dict
+        res_json = response.json()
         if response.status_code == 200:
-            res_json = response.json()
             self._print_table_simple(res_json['data'])
         else:
             print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
@@ -388,6 +420,13 @@ class AdminCLI:
         username_tree: Tree = command['username']
         username: str = username_tree.children[0].strip("'\"")
         print(f"Showing user: {username}")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{username}'
+        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to get user {username}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_drop_user(self, command):
         username_tree: Tree = command['username']
@@ -400,16 +439,73 @@ class AdminCLI:
         password_tree: Tree = command['password']
         password: str = password_tree.children[0].strip("'\"")
         print(f"Alter user: {username}, password: {password}")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{username}/password'
+        response = requests.put(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password), json={'new_password': encrypt(password)})
+        res_json = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Fail to alter password, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _handle_create_user(self, command):
+        username_tree: Tree = command['username']
+        username: str = username_tree.children[0].strip("'\"")
+        password_tree: Tree = command['password']
+        password: str = password_tree.children[0].strip("'\"")
+        role: str = command['role']
+        print(f"Create user: {username}, password: {password}, role: {role}")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users'
+        response = requests.post(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
+            json={'username': username, 'password': encrypt(password), 'role': role}
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to create user {username}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _handle_activate_user(self, command):
+        username_tree: Tree = command['username']
+        username: str = username_tree.children[0].strip("'\"")
+        activate_tree: Tree = command['activate_status']
+        activate_status: str = activate_tree.children[0].strip("'\"")
+        if activate_status.lower() in ['on', 'off']:
+            print(f"Alter user {username} activate status, turn {activate_status.lower()}.")
+            url = f'http://{self.host}:{self.port}/api/v1/admin/users/{username}/activate'
+            response = requests.put(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password), json={'activate_status': activate_status})
+            res_json = response.json()
+            if response.status_code == 200:
+                print(res_json["message"])
+            else:
+                print(f"Fail to alter activate status, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Unknown activate status: {activate_status}.")
 
     def _handle_list_datasets(self, command):
         username_tree: Tree = command['username']
         username: str = username_tree.children[0].strip("'\"")
         print(f"Listing all datasets of user: {username}")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{username}/datasets'
+        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to get all datasets of {username}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_list_agents(self, command):
         username_tree: Tree = command['username']
         username: str = username_tree.children[0].strip("'\"")
         print(f"Listing all agents of user: {username}")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{username}/agents'
+        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to get all agents of {username}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_meta_command(self, command):
         meta_command = command['command']

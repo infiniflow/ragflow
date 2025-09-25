@@ -10,6 +10,7 @@ from flask import Flask
 from routes import admin_bp
 from api.utils.log_utils import init_root_logger
 from api.constants import SERVICE_CONF
+from api import settings
 from config import load_configurations, SERVICE_CONFIGS
 
 stop_event = threading.Event()
@@ -26,7 +27,7 @@ if __name__ == '__main__':
 
     app = Flask(__name__)
     app.register_blueprint(admin_bp)
-
+    settings.init_settings()
     SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
 
     try:

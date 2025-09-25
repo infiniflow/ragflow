@@ -23,6 +23,9 @@ from api.utils import file_utils
 
 
 def crypt(line):
+    """
+    decrypt(crypt(input_string)) == base64(input_string), which frontend and admin_client use.
+    """
     file_path = os.path.join(file_utils.get_project_base_directory(), "conf", "public.pem")
     rsa_key = RSA.importKey(open(file_path).read(), "Welcome")
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)

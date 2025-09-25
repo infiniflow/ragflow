@@ -102,6 +102,12 @@ class UserService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def query_user_by_email(cls, email):
+        users = cls.model.select().where((cls.model.email == email))
+        return list(users)
+
+    @classmethod
+    @DB.connection_context()
     def save(cls, **kwargs):
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
@@ -132,6 +138,17 @@ class UserService(CommonService):
                 user_dict["update_date"] = datetime_format(datetime.now())
                 cls.model.update(user_dict).where(
                     cls.model.id == user_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def update_user_password(cls, user_id, new_password):
+        with DB.atomic():
+            update_dict = {
+                "password": generate_password_hash(str(new_password)),
+                "update_time": current_timestamp(),
+                "update_date": datetime_format(datetime.now())
+            }
+            cls.model.update(update_dict).where(cls.model.id == user_id).execute()
 
     @classmethod
     @DB.connection_context()
