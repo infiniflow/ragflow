@@ -121,7 +121,7 @@ class DocumentService(CommonService):
                      orderby, desc, keywords, run_status, types, suffix):
         fields = cls.get_cls_model_fields()
         if keywords:
-            docs = cls.model.select(*[*fields, UserCanvas.title])\
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name")])\
                 .join(File2Document, on=(File2Document.document_id == cls.model.id))\
                 .join(File, on=(File.id == File2Document.file_id))\
                 .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
@@ -130,7 +130,7 @@ class DocumentService(CommonService):
                     (fn.LOWER(cls.model.name).contains(keywords.lower()))
                 )
         else:
-            docs = cls.model.select(*[*fields, UserCanvas.title])\
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name")])\
                 .join(File2Document, on=(File2Document.document_id == cls.model.id))\
                 .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
                 .join(File, on=(File.id == File2Document.file_id))\

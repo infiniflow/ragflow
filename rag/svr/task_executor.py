@@ -50,7 +50,7 @@ from peewee import DoesNotExist
 from api.db import LLMType, ParserType, PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID
+from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
 from api import settings
 from api.versions import get_ragflow_version
@@ -222,7 +222,7 @@ async def collect():
         return None, None
 
     canceled = False
-    if msg.get("doc_id", "") == "x":
+    if msg.get("doc_id", "") == GRAPH_RAPTOR_FAKE_DOC_ID:
         task = msg
         if task["task_type"] == "graphrag" and msg.get("doc_ids", []):
             print(f"hack {msg['doc_ids']=}=",flush=True)
