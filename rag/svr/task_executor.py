@@ -537,8 +537,25 @@ async def run_dataflow(task: dict):
             v = vects[i].tolist()
             ck["q_%d_vec" % len(v)] = v
 
+    metadata = {}
+    def dict_update(meta):
+        nonlocal metadata
+        if not meta or not isinstance(meta, dict):
+            return
+        for k,v in meta.items():
+            if k not in metadata:
+                metadata[k] = v
+                continue
+            if isinstance(metadata[k], list):
+                if isinstance(v, list):
+                    metadata[k].extend(v)
+                else:
+                    metadata[k].append(v)
+            else:
+                metadata[k] = v
+
     for ck in chunks:
-        ck["doc_id"] = task["doc_id"]
+        ck["doc_id"] = doc_id
         ck["kb_id"] = [str(task["kb_id"])]
         ck["docnm_kwd"] = task["name"]
         ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
@@ -550,7 +567,18 @@ async def run_dataflow(task: dict):
             del ck["keywords"]
         if "summary" in ck:
             del ck["summary"]
+        if "metadata" in ck:
+            dict_update(ck["metadata"])
+            del ck["metadata"]
         del ck["text"]
+
+    if metadata:
+        e, doc = DocumentService.get_by_id(doc_id)
+        if e:
+            if isinstance(doc.meta_fields, str):
+                doc.meta_fields = json.loads(doc.meta_fields)
+            dict_update(doc.meta_fields)
+            DocumentService.update_by_id(doc_id, {"meta_fields": metadata})
 
     start_ts = timer()
     set_progress(task_id, prog=0.82, msg="Start to index...")
@@ -562,8 +590,7 @@ async def run_dataflow(task: dict):
     time_cost = timer() - start_ts
     task_time_cost = timer() - task_start_ts
     set_progress(task_id, prog=1., msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
-    logging.info(
-        "[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks),  embedding_token_consumption, task_time_cost))
+    logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks),  embedding_token_consumption, task_time_cost))
     PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE)
 
 
