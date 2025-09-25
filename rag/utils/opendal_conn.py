@@ -3,7 +3,7 @@ import logging
 import pymysql
 from urllib.parse import quote_plus
 
-from api.utils import get_base_config
+from api.utils.configs import get_base_config
 from rag.utils import singleton
 
 
