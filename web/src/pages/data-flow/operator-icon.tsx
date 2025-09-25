@@ -25,7 +25,7 @@ export const SVGIconMap = {
   [Operator.Tokenizer]: ListMinus,
   [Operator.Splitter]: Blocks,
   [Operator.HierarchicalMerger]: Heading,
-  [Operator.Context]: FileStack,
+  [Operator.Extractor]: FileStack,
 };
 
 const Empty = () => {

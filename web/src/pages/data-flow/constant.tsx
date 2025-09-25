@@ -119,7 +119,7 @@ export enum Operator {
   Tokenizer = 'Tokenizer',
   Splitter = 'Splitter',
   HierarchicalMerger = 'HierarchicalMerger',
-  Context = 'Context',
+  Extractor = 'Extractor',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -327,7 +327,7 @@ export const NodeMap = {
   [Operator.Tokenizer]: 'tokenizerNode',
   [Operator.Splitter]: 'splitterNode',
   [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
-  [Operator.Context]: 'contextNode',
+  [Operator.Extractor]: 'contextNode',
 };
 
 export enum BeginQueryType {

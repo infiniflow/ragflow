@@ -24,7 +24,7 @@ export const FormConfigMap = {
   [Operator.HierarchicalMerger]: {
     component: HierarchicalMergerForm,
   },
-  [Operator.Context]: {
+  [Operator.Extractor]: {
     component: ContextForm,
   },
 };

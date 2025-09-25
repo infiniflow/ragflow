@@ -33,7 +33,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.Splitter]: initialSplitterValues,
       [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
-      [Operator.Context]: { ...initialContextValues, llm_id: llmId },
+      [Operator.Extractor]: { ...initialContextValues, llm_id: llmId },
     };
   }, [llmId]);
 
