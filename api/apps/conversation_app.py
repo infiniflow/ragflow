@@ -15,7 +15,7 @@
 #
 import json
 import re
-import traceback
+import logging
 from copy import deepcopy
 from flask import Response, request
 from flask_login import current_user, login_required
