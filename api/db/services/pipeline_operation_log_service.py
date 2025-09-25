@@ -14,16 +14,18 @@
 #  limitations under the License.
 #
 import json
+import logging
 from datetime import datetime
 
 from peewee import fn
 
 from api.db import VALID_PIPELINE_TASK_TYPES
-from api.db.db_models import DB, PipelineOperationLog
+from api.db.db_models import DB, PipelineOperationLog, Document
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils import current_timestamp, datetime_format, get_uuid
 
 
@@ -84,22 +86,20 @@ class PipelineOperationLogService(CommonService):
     def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
         from rag.flow.pipeline import Pipeline
 
-        tenant_id = ""
-        title = ""
-        avatar = ""
         dsl = ""
-        operation_status = ""
         referred_document_id = document_id
 
-        if referred_document_id == "x" and fake_document_ids:
+        if referred_document_id == GRAPH_RAPTOR_FAKE_DOC_ID and fake_document_ids:
             referred_document_id = fake_document_ids[0]
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
+            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            return
         DocumentService.update_progress_immediately([document.to_dict()])
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            raise RuntimeError(f"Document for referred_document_id {referred_document_id} not found")
+            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            return
         if document.progress not in [1, -1]:
             return
         operation_status = document.run
@@ -129,7 +129,7 @@ class PipelineOperationLogService(CommonService):
 
         log = dict(
             id=get_uuid(),
-            document_id=document_id,  # "x" or real document_id
+            document_id=document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
             tenant_id=tenant_id,
             kb_id=document.kb_id,
             pipeline_id=pipeline_id,
@@ -169,7 +169,7 @@ class PipelineOperationLogService(CommonService):
         else:
             logs = cls.model.select(*fields).where(cls.model.kb_id == kb_id)
 
-        logs = logs.where(cls.model.document_id != "x")
+        logs = logs.where(cls.model.document_id != GRAPH_RAPTOR_FAKE_DOC_ID)
 
         if operation_status:
             logs = logs.where(cls.model.operation_status.in_(operation_status))
@@ -191,9 +191,23 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_documents_info(cls, id):
+        fields = [
+            Document.id,
+            Document.name,
+            Document.progress
+        ]
+        return cls.model.select(*fields).join(Document, on=(cls.model.document_id == Document.id)).where(
+            cls.model.id == id,
+            Document.progress > 0,
+            Document.progress < 1
+        ).dicts()
+    
+    @classmethod
+    @DB.connection_context()
     def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status):
         fields = cls.get_dataset_logs_fields()
-        logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == "x"))
+        logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
 
         if operation_status:
             logs = logs.where(cls.model.operation_status.in_(operation_status))
@@ -208,3 +222,4 @@ class PipelineOperationLogService(CommonService):
             logs = logs.paginate(page_number, items_per_page)
 
         return list(logs.dicts()), count
+

@@ -1,4 +1,5 @@
 import base64
+import logging
 from functools import partial
 from io import BytesIO
 
@@ -8,7 +9,7 @@ test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAA6ElEQVR4nO3
 test_image = base64.b64decode(test_image_base64)
 
 
-async def image2id(d: dict, storage_put_func: partial, objname:str, bucket:str="IMAGETEMPS"):
+async def image2id(d: dict, storage_put_func: partial, objname:str, bucket:str="imagetemps"):
     import logging
     from io import BytesIO
     import trio
@@ -46,7 +47,10 @@ def id2image(image_id:str|None, storage_get_func: partial):
     if len(arr) != 2:
         return
     bkt, nm = image_id.split("-")
-    blob = storage_get_func(bucket=bkt, filename=nm)
-    if not blob:
-        return
-    return Image.open(BytesIO(blob))
+    try:
+        blob = storage_get_func(bucket=bkt, filename=nm)
+        if not blob:
+            return
+        return Image.open(BytesIO(blob))
+    except Exception as e:
+        logging.exception(e)

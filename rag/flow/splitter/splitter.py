@@ -99,7 +99,7 @@ class Splitter(ProcessBase):
             {
                 "text": RAGFlowPdfParser.remove_tag(c),
                 "image": img,
-                "positions": RAGFlowPdfParser.extract_positions(c),
+                "positions": [[pos[0][-1]+1, *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(c)],
             }
             for c, img in zip(chunks, images)
         ]

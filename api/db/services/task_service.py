@@ -35,6 +35,8 @@ from rag.utils.redis_conn import REDIS_CONN
 from api import settings
 from rag.nlp import search
 
+CANVAS_DEBUG_DOC_ID = "dataflow_x"
+GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_x"
 
 def trim_header_by_lines(text: str, max_length) -> str:
     # Trim header text to maximum length while preserving line breaks
@@ -85,7 +87,7 @@ class TaskService(CommonService):
                  Returns None if task is not found or has exceeded retry limit.
         """
         doc_id = cls.model.doc_id
-        if doc_id == "x" and doc_ids:
+        if doc_id == CANVAS_DEBUG_DOC_ID and doc_ids:
             doc_id = doc_ids[0]
 
         fields = [
@@ -476,14 +478,14 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str="x", file:dict=None, priority: int=0) -> tuple[bool, str]:
+def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DEBUG_DOC_ID, file:dict=None, priority: int=0, rerun:bool=False) -> tuple[bool, str]:
 
     task = dict(
         id=task_id,
         doc_id=doc_id,
         from_page=0,
         to_page=100000000,
-        task_type="dataflow",
+        task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
     )
 
