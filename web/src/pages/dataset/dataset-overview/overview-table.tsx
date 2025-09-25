@@ -1,7 +1,6 @@
 import FileStatusBadge from '@/components/file-status-badge';
-import { FileIcon } from '@/components/icon-font';
+import { FileIcon, IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
@@ -15,7 +14,7 @@ import {
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { formatDate } from '@/utils/date';
+import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -29,32 +28,13 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
-import { ClipboardList, Eye } from 'lucide-react';
+import { ArrowUpDown, ClipboardList, Eye } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 import { useParams } from 'umi';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal from '../process-log-modal';
-import { LogTabs, ProcessingType } from './dataset-common';
-import { IFileLogItem } from './hook';
-
-interface DocumentLog {
-  fileName: string;
-  status: RunningStatus;
-  statusName: typeof RunningStatusMap;
-}
-
-interface FileLogsTableProps {
-  data: DocumentLog[];
-  pageCount: number;
-  pagination: {
-    current: number;
-    pageSize: number;
-    total: number;
-  };
-  setPagination: (pagination: { page: number; pageSize: number }) => void;
-  loading?: boolean;
-  active: (typeof LogTabs)[keyof typeof LogTabs];
-}
+import { LogTabs, ProcessingType, ProcessingTypeMap } from './dataset-common';
+import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
@@ -133,7 +113,18 @@ export const getFileLogsTableColumns = (
     },
     {
       accessorKey: 'process_begin_at',
-      header: t('startDate'),
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="transparent"
+            className="border-none"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
+            {t('startDate')}
+            <ArrowUpDown />
+          </Button>
+        );
+      },
       cell: ({ row }) => (
         <div className="text-text-primary">
           {formatDate(row.original.process_begin_at)}
@@ -227,34 +218,60 @@ export const getDatasetLogsTableColumns = (
       ),
     },
     {
-      accessorKey: 'startDate',
-      header: t('startDate'),
+      accessorKey: 'process_begin_at',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="transparent"
+            className="border-none"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
+            {t('startDate')}
+            <ArrowUpDown />
+          </Button>
+        );
+      },
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.startDate}</div>
-      ),
-    },
-    {
-      accessorKey: 'processingType',
-      header: t('processingType'),
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2 text-text-primary">
-          {ProcessingType.knowledgeGraph === row.original.processingType && (
-            <SvgIcon name={`data-flow/knowledgegraph`} width={24}></SvgIcon>
-          )}
-          {ProcessingType.raptor === row.original.processingType && (
-            <SvgIcon name={`data-flow/raptor`} width={24}></SvgIcon>
-          )}
-          {row.original.processingType}
+        <div className="text-text-primary">
+          {formatDate(row.original.process_begin_at)}
         </div>
       ),
     },
     {
-      accessorKey: 'status',
+      accessorKey: 'task_type',
+      header: t('processingType'),
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 text-text-primary">
+          {ProcessingType.knowledgeGraph === row.original.task_type && (
+            <IconFontFill
+              name={`knowledgegraph`}
+              className="text-text-secondary"
+            ></IconFontFill>
+          )}
+          {ProcessingType.raptor === row.original.task_type && (
+            <IconFontFill
+              name={`dataflow-01`}
+              className="text-text-secondary"
+            ></IconFontFill>
+          )}
+          {ProcessingTypeMap[row.original.task_type as ProcessingType] ||
+            row.original.task_type}
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'operation_status',
       header: t('status'),
       cell: ({ row }) => (
+        // <FileStatusBadge
+        //   status={row.original.status}
+        //   name={row.original.statusName}
+        // />
         <FileStatusBadge
-          status={row.original.status}
-          name={row.original.statusName}
+          status={row.original.operation_status as RunningStatus}
+          name={
+            RunningStatusMap[row.original.operation_status as RunningStatus]
+          }
         />
       ),
     },
@@ -294,17 +311,19 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
-  const [logInfo, setLogInfo] = useState<IFileLogItem>({});
+  const [logInfo, setLogInfo] = useState<IFileLogItem>();
   const kowledgeId = useParams().id;
   const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
-      taskId: row.original.id,
+      taskId: row.original?.dsl?.task_id,
       fileName: row.original.document_name,
       source: row.original.source_from,
-      task: row.original.dsl.task_id,
+      task: row.original?.task_type,
       status: row.original.statusName,
       startDate: formatDate(row.original.process_begin_at),
-      duration: (row.original.process_duration || 0) + 's',
+      duration: formatSecondsToHumanReadable(
+        row.original.process_duration || 0,
+      ),
       details: row.original.progress_msg,
     };
     console.log('logDetail', logDetail);
@@ -331,7 +350,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     [pagination],
   );
 
-  const table = useReactTable({
+  const table = useReactTable<IFileLogItem & DocumentLog>({
     data: data || [],
     columns,
     manualPagination: true,
@@ -405,11 +424,14 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           />
         </div>
       </div>
-      <ProcessLogModal
-        visible={isModalVisible}
-        onCancel={() => setIsModalVisible(false)}
-        logInfo={logInfo}
-      />
+      {isModalVisible && (
+        <ProcessLogModal
+          title={active === LogTabs.FILE_LOGS ? t('fileLogs') : t('datasetLog')}
+          visible={isModalVisible}
+          onCancel={() => setIsModalVisible(false)}
+          logInfo={logInfo}
+        />
+      )}
     </div>
   );
 };

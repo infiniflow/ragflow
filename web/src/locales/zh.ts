@@ -94,6 +94,9 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      fileSize: '文件大小',
+      fileType: '文件类型',
+      uploadedBy: '创建者',
       notGenerated: '未生成',
       generatedOn: '生成于',
       subbarFiles: '文件列表',
@@ -116,7 +119,7 @@ export default {
       success: '成功',
       failed: '失败',
       completed: '已完成',
-      processLog: '处理进度日志',
+      datasetLog: '知识库日志',
       created: '创建于',
       learnMore: '了解更多',
       general: '通用',

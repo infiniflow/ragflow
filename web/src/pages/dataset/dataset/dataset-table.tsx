@@ -27,6 +27,7 @@ import {
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { getExtension } from '@/utils/document-util';
+import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import ProcessLogModal from '../process-log-modal';
@@ -184,6 +185,7 @@ export function DatasetTable({
         <ChunkMethodDialog
           documentId={changeParserRecord.id}
           parserId={changeParserRecord.parser_id}
+          pipelineId={changeParserRecord.pipeline_id}
           parserConfig={changeParserRecord.parser_config}
           documentExtension={getExtension(changeParserRecord.name)}
           onOk={onChangeParserOk}
@@ -213,6 +215,7 @@ export function DatasetTable({
       )}
       {logVisible && (
         <ProcessLogModal
+          title={t('knowledgeDetails.fileLogs')}
           visible={logVisible}
           onCancel={() => hideLog()}
           logInfo={logInfo}

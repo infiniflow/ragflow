@@ -51,7 +51,7 @@ import RaptorFormFields, {
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
-import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
+import { useShowAutoKeywords } from './hooks';
 import {
   useDefaultParserValues,
   useFillDefaultValueOnMount,
@@ -93,8 +93,6 @@ export function ChunkMethodDialog({
 }: IProps) {
   const { t } = useTranslation();
 
-  const { parserList } = useFetchParserListOnMount(documentExtension);
-
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
   const useGraphRag = useMemo(() => {
@@ -105,48 +103,58 @@ export function ChunkMethodDialog({
 
   const fillDefaultParserValue = useFillDefaultValueOnMount();
 
-  const FormSchema = z.object({
-    parseType: z.number(),
-    parser_id: z
-      .string()
-      .min(1, {
-        message: t('common.pleaseSelect'),
-      })
-      .trim(),
-    pipeline_id: z.string().optional(),
-    parser_config: z.object({
-      task_page_size: z.coerce.number().optional(),
-      layout_recognize: z.string().optional(),
-      chunk_token_num: z.coerce.number().optional(),
-      delimiter: z.string().optional(),
-      auto_keywords: z.coerce.number().optional(),
-      auto_questions: z.coerce.number().optional(),
-      html4excel: z.boolean().optional(),
-      raptor: z
-        .object({
-          use_raptor: z.boolean().optional(),
-          prompt: z.string().optional().optional(),
-          max_token: z.coerce.number().optional(),
-          threshold: z.coerce.number().optional(),
-          max_cluster: z.coerce.number().optional(),
-          random_seed: z.coerce.number().optional(),
+  const FormSchema = z
+    .object({
+      parseType: z.number(),
+      parser_id: z
+        .string()
+        .min(1, {
+          message: t('common.pleaseSelect'),
         })
-        .optional(),
-      graphrag: z.object({
-        use_graphrag: z.boolean().optional(),
+        .trim(),
+      pipeline_id: z.string().optional(),
+      parser_config: z.object({
+        task_page_size: z.coerce.number().optional(),
+        layout_recognize: z.string().optional(),
+        chunk_token_num: z.coerce.number().optional(),
+        delimiter: z.string().optional(),
+        auto_keywords: z.coerce.number().optional(),
+        auto_questions: z.coerce.number().optional(),
+        html4excel: z.boolean().optional(),
+        raptor: z
+          .object({
+            use_raptor: z.boolean().optional(),
+            prompt: z.string().optional().optional(),
+            max_token: z.coerce.number().optional(),
+            threshold: z.coerce.number().optional(),
+            max_cluster: z.coerce.number().optional(),
+            random_seed: z.coerce.number().optional(),
+          })
+          .optional(),
+        graphrag: z.object({
+          use_graphrag: z.boolean().optional(),
+        }),
+        entity_types: z.array(z.string()).optional(),
+        pages: z
+          .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
+          .optional(),
       }),
-      entity_types: z.array(z.string()).optional(),
-      pages: z
-        .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
-        .optional(),
-    }),
-  });
+    })
+    .superRefine((data, ctx) => {
+      if (data.parseType === 2 && !data.pipeline_id) {
+        ctx.addIssue({
+          path: ['pipeline_id'],
+          message: t('common.pleaseSelect'),
+          code: 'custom',
+        });
+      }
+    });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      parser_id: parserId,
-      pipeline_id: pipelineId,
+      parser_id: parserId || '',
+      pipeline_id: pipelineId || '',
       parseType: pipelineId ? 2 : 1,
       parser_config: defaultParserValues,
     },
@@ -209,8 +217,8 @@ export function ChunkMethodDialog({
       const pages =
         parserConfig?.pages?.map((x) => ({ from: x[0], to: x[1] })) ?? [];
       form.reset({
-        parser_id: parserId,
-        pipeline_id: pipelineId,
+        parser_id: parserId || '',
+        pipeline_id: pipelineId || '',
         parseType: pipelineId ? 2 : 1,
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
@@ -231,13 +239,14 @@ export function ChunkMethodDialog({
     knowledgeDetails.parser_config,
     parserConfig,
     parserId,
+    pipelineId,
     useGraphRag,
     visible,
   ]);
   const parseType = useWatch({
     control: form.control,
     name: 'parseType',
-    defaultValue: 1,
+    defaultValue: pipelineId ? 2 : 1,
   });
   return (
     <Dialog open onOpenChange={hideModal}>

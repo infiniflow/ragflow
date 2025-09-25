@@ -46,7 +46,15 @@ export function ParsingStatusCell({
 } & UseChangeDocumentParserShowType &
   UseSaveMetaShowType) {
   const { t } = useTranslation();
-  const { run, parser_id, progress, chunk_num, id } = record;
+  const {
+    run,
+    parser_id,
+    pipeline_id,
+    pipeline_name,
+    progress,
+    chunk_num,
+    id,
+  } = record;
   const operationIcon = IconMap[run];
   const p = Number((progress * 100).toFixed(2));
   const { handleRunDocumentByIds } = useHandleRunDocumentByIds(id);
@@ -80,7 +88,11 @@ export function ParsingStatusCell({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant={'transparent'} className="border-none" size={'sm'}>
-              {parser_id === 'naive' ? 'general' : parser_id}
+              {pipeline_id
+                ? pipeline_name || pipeline_id
+                : parser_id === 'naive'
+                  ? 'general'
+                  : parser_id}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>

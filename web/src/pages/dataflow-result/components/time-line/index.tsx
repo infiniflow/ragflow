@@ -37,11 +37,11 @@ export const TimelineNodeObj = {
     icon: <Heading size={13} />,
   },
   [TimelineNodeType.characterSplitter]: {
-    title: 'Title Splitter',
+    title: 'Character Splitter',
     icon: <Heading size={13} />,
   },
   [TimelineNodeType.splitter]: {
-    title: 'Character Splitter',
+    title: 'Splitter',
     icon: <Blocks size={13} />,
   },
   [TimelineNodeType.tokenizer]: {
@@ -50,40 +50,7 @@ export const TimelineNodeObj = {
     clickable: false,
   },
 };
-// export const TimelineNodeArr = [
-//   {
-//     id: 1,
-//     title: 'File',
-//     icon: <PlayIcon size={13} />,
-//     clickable: false,
-//     type: TimelineNodeType.begin,
-//   },
-//   {
-//     id: 2,
-//     title: 'Context Generator',
-//     icon: <PlayIcon size={13} />,
-//     type: TimelineNodeType.contextGenerator,
-//   },
-//   {
-//     id: 3,
-//     title: 'Title Splitter',
-//     icon: <PlayIcon size={13} />,
-//     type: TimelineNodeType.titleSplitter,
-//   },
-//   {
-//     id: 4,
-//     title: 'Character Splitter',
-//     icon: <PlayIcon size={13} />,
-//     type: TimelineNodeType.characterSplitter,
-//   },
-//   {
-//     id: 5,
-//     title: 'Tokenizer',
-//     icon: <CheckLine size={13} />,
-//     clickable: false,
-//     type: TimelineNodeType.tokenizer,
-//   },
-// ]
+
 export interface TimelineDataFlowProps {
   activeId: number | string;
   activeFunc: (id: number | string, step: TimelineNode) => void;

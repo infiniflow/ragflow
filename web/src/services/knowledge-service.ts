@@ -42,6 +42,10 @@ const {
   getKnowledgeBasicInfo,
   fetchDataPipelineLog,
   fetchPipelineDatasetLogs,
+  runGraphRag,
+  traceGraphRag,
+  runRaptor,
+  traceRaptor,
 } = api;
 
 const methods = {
@@ -186,6 +190,23 @@ const methods = {
   },
   get_pipeline_detail: {
     url: api.get_pipeline_detail,
+    method: 'get',
+  },
+
+  runGraphRag: {
+    url: runGraphRag,
+    method: 'post',
+  },
+  traceGraphRag: {
+    url: traceGraphRag,
+    method: 'get',
+  },
+  runRaptor: {
+    url: runRaptor,
+    method: 'post',
+  },
+  traceRaptor: {
+    url: traceRaptor,
     method: 'get',
   },
 };
