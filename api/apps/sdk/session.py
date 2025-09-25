@@ -182,7 +182,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
     stream = True
     reference = True
 
-    completion = client.responses.create(
+    completion = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
