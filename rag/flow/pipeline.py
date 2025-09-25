@@ -20,12 +20,9 @@ import random
 import time
 from timeit import default_timer as timer
 import trio
-
 from agent.canvas import Graph
-from api.db import PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled, TaskService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from rag.utils.redis_conn import REDIS_CONN
 
 
