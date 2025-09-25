@@ -39,6 +39,7 @@ from flask import (
     make_response,
     send_file,
 )
+from flask_login import current_user
 from flask import (
     request as flask_request,
 )
@@ -48,7 +49,9 @@ from werkzeug.http import HTTP_STATUS_CODES
 
 from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
+from api.db import ActiveEnum
 from api.db.db_models import APIToken
+from api.db.services import UserService
 from api.db.services.llm_service import LLMService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils import CustomJSONEncoder, get_uuid, json_dumps
@@ -224,6 +227,18 @@ def not_allowed_parameters(*params):
         return wrapper
 
     return decorator
+
+
+def active_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user_id = current_user.id
+        usr = UserService.filter_by_id(user_id)
+        # check is_active
+        if not usr or not usr.is_active == ActiveEnum.ACTIVE.value:
+            return get_json_result(code=settings.RetCode.FORBIDDEN, message="User isn't active, please activate first.")
+        return f(*args, **kwargs)
+    return wrapper
 
 
 def is_localhost(ip):

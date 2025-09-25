@@ -949,7 +949,8 @@ export default {
       multimodalModels: 'Мультимодальные модели',
       textOnlyModels: 'Только текстовые модели',
       allModels: 'Все модели',
-      codeExecDescription: 'Напишите свою пользовательскую логику на Python или Javascript.',
+      codeExecDescription:
+        'Напишите свою пользовательскую логику на Python или Javascript.',
       stringTransformDescription:
         'Изменяет текстовое содержимое. В настоящее время поддерживает: разделение или объединение текста.',
       foundation: 'Основа',

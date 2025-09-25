@@ -63,6 +63,36 @@ class UserCanvasService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_agents_by_tenant_ids(cls, tenant_ids, user_id):
+        # will get all permitted agents, be cautious
+        fields = [
+            cls.model.title,
+            cls.model.permission,
+            cls.model.canvas_type,
+            cls.model.canvas_category
+        ]
+        # find team agents and owned agents
+        agents = cls.model.select(*fields).where(
+            (cls.model.user_id.in_(tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (
+                cls.model.user_id == user_id
+            )
+        )
+        # sort by create_time, asc
+        agents.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 50
+        res = []
+        while True:
+            ag_batch = agents.offset(offset).limit(limit)
+            _temp = list(ag_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def get_by_tenant_id(cls, pid):
         try:
 
