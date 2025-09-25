@@ -1,20 +1,12 @@
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { buildOptions } from '@/utils/form';
 import { useTranslation } from 'react-i18next';
+import { ParserFields } from '../../constant';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
-const options = buildOptions([
-  'from',
-  'to',
-  'cc',
-  'bcc',
-  'date',
-  'subject',
-  'body',
-  'attachments',
-]);
+const options = buildOptions(ParserFields);
 
 export function EmailFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
@@ -24,7 +16,14 @@ export function EmailFormFields({ prefix }: CommonProps) {
         name={buildFieldNameWithPrefix(`fields`, prefix)}
         label={t('dataflow.fields')}
       >
-        <SelectWithSearch options={options}></SelectWithSearch>
+        {(field) => (
+          <MultiSelect
+            options={options}
+            onValueChange={field.onChange}
+            defaultValue={field.value}
+            variant="inverted"
+          ></MultiSelect>
+        )}
       </RAGFlowFormItem>
     </>
   );

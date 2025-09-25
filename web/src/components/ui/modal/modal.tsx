@@ -31,6 +31,7 @@ export interface ModalProps {
 export interface ModalType extends FC<ModalProps> {
   show: typeof modalIns.show;
   hide: typeof modalIns.hide;
+  destroy: typeof modalIns.destroy;
 }
 
 const Modal: ModalType = ({
@@ -75,13 +76,13 @@ const Modal: ModalType = ({
 
   const handleCancel = useCallback(() => {
     onOpenChange?.(false);
-    // onCancel?.();
-  }, [onOpenChange]);
+    onCancel?.();
+  }, [onCancel, onOpenChange]);
 
   const handleOk = useCallback(() => {
     onOpenChange?.(true);
-    // onOk?.();
-  }, [onOpenChange]);
+    onOk?.();
+  }, [onOk, onOpenChange]);
   const handleChange = (open: boolean) => {
     onOpenChange?.(open);
     console.log('open', open, onOpenChange);
@@ -208,5 +209,6 @@ Modal.show = modalIns
       return modalIns.show;
     };
 Modal.hide = modalIns.hide;
+Modal.destroy = modalIns.destroy;
 
 export { Modal };

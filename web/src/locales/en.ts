@@ -1579,6 +1579,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       sqlStatementTip:
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
+      release: 'Publish',
     },
     llmTools: {
       bad_calculator: {
@@ -1702,6 +1703,15 @@ This delimiter is used to split the input text into several text pieces echo of 
       begin: 'File',
       parserMethod: 'Parser method',
       exportJson: 'Export JSON',
+      viewResult: 'View Result',
+      running: 'Running',
+      context: 'Context Generator',
+      contextDescription: 'Context Generator',
+      summary: 'Summary',
+      keywords: 'Keywords',
+      questions: 'Questions',
+      metadata: 'Metadata',
+      fieldName: 'Result Destination',
     },
   },
 };
