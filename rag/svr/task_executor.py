@@ -222,10 +222,9 @@ async def collect():
         return None, None
 
     canceled = False
-    if msg.get("doc_id", "") == GRAPH_RAPTOR_FAKE_DOC_ID:
+    if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
         task = msg
         if task["task_type"] in ["graphrag", "raptor"] and msg.get("doc_ids", []):
-            print(f"hack {msg['doc_ids']=}=",flush=True)
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
             task["doc_ids"] = msg["doc_ids"]
     else:

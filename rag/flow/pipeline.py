@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import datetime
+import inspect
 import json
 import logging
 import random
@@ -143,6 +144,10 @@ class Pipeline(Graph):
             async def invoke():
                 nonlocal last_cpn, cpn_obj
                 await cpn_obj.invoke(**last_cpn.output())
+                #if inspect.iscoroutinefunction(cpn_obj.invoke):
+                #    await cpn_obj.invoke(**last_cpn.output())
+                #else:
+                #    cpn_obj.invoke(**last_cpn.output())
 
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(invoke)

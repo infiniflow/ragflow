@@ -14,9 +14,10 @@
 #  limitations under the License.
 import random
 from agent.component.llm import LLMParam, LLM
+from rag.flow.base import ProcessBase, ProcessParamBase
 
 
-class ExtractorParam(LLMParam):
+class ExtractorParam(ProcessParamBase, LLMParam):
     def __init__(self):
         super().__init__()
         self.field_name = ""
@@ -26,7 +27,7 @@ class ExtractorParam(LLMParam):
         self.check_empty(self.field_name, "Result Destination")
 
 
-class Extractor(LLM):
+class Extractor(ProcessBase, LLM):
     component_name = "Extractor"
 
     async def _invoke(self, **kwargs):
