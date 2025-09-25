@@ -1,7 +1,8 @@
 from flask import Blueprint, request
+
 from auth import login_verify
 from responses import success_response, error_response
-from services import UserMgr, ServiceMgr
+from services import UserMgr, ServiceMgr, UserServiceMgr
 from exceptions import AdminException
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
@@ -38,13 +39,18 @@ def create_user():
         password = data['password']
         role = data.get('role', 'user')
 
-        user = UserMgr.create_user(username, password, role)
-        return success_response(user, "User created successfully", 201)
+        res = UserMgr.create_user(username, password, role)
+        if res["success"]:
+            user_info = res["user_info"]
+            user_info.pop("password") # do not return password
+            return success_response(user_info, "User created successfully")
+        else:
+            return error_response("create user failed")
 
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
-        return error_response(str(e), 500)
+        return error_response(str(e))
 
 
 @admin_bp.route('/users/<username>', methods=['DELETE'])
@@ -69,8 +75,8 @@ def change_password(username):
             return error_response("New password is required", 400)
 
         new_password = data['new_password']
-        UserMgr.update_user_password(username, new_password)
-        return success_response(None, "Password updated successfully")
+        msg = UserMgr.update_user_password(username, new_password)
+        return success_response(None, msg)
 
     except AdminException as e:
         return error_response(e.message, e.code)
@@ -78,12 +84,52 @@ def change_password(username):
         return error_response(str(e), 500)
 
 
+@admin_bp.route('/users/<username>/activate', methods=['PUT'])
+@login_verify
+def alter_user_activate_status(username):
+    try:
+        data = request.get_json()
+        if not data or 'activate_status' not in data:
+            return error_response("Activation status is required", 400)
+        activate_status = data['activate_status']
+        msg = UserMgr.update_user_activate_status(username, activate_status)
+        return success_response(None, msg)
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
 @admin_bp.route('/users/<username>', methods=['GET'])
 @login_verify
 def get_user_details(username):
     try:
         user_details = UserMgr.get_user_details(username)
         return success_response(user_details)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/users/<username>/datasets', methods=['GET'])
+@login_verify
+def get_user_datasets(username):
+    try:
+        datasets_list = UserServiceMgr.get_user_datasets(username)
+        return success_response(datasets_list)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/users/<username>/agents', methods=['GET'])
+@login_verify
+def get_user_agents(username):
+    try:
+        agents_list = UserServiceMgr.get_user_agents(username)
+        return success_response(agents_list)
 
     except AdminException as e:
         return error_response(e.message, e.code)

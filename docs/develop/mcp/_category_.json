@@ -3,6 +3,6 @@
   "position": 40,
   "link": {
     "type": "generated-index",
-    "description": "Guides and references on accessing RAGFlow's knowledge bases via MCP."
+    "description": "Guides and references on accessing RAGFlow's datasets via MCP."
   }
 }
