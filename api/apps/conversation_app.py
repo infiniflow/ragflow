@@ -15,7 +15,7 @@
 #
 import json
 import re
-import traceback
+import logging
 from copy import deepcopy
 from flask import Response, request
 from flask_login import current_user, login_required
@@ -226,7 +226,7 @@ def completion():
                 if not is_embedded:
                     ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
-                traceback.print_exc()
+                logging.exception(e)
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
