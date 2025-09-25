@@ -129,7 +129,7 @@ module.exports = { main };
 class CodeExec(ToolBase, ABC):
     component_name = "CodeExec"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         lang = kwargs.get("lang", self._param.lang)
         script = kwargs.get("script", self._param.script)

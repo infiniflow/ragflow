@@ -78,7 +78,7 @@ class ExeSQLParam(ToolParamBase):
 class ExeSQL(ToolBase, ABC):
     component_name = "ExeSQL"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
 
         def convert_decimals(obj):

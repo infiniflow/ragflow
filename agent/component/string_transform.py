@@ -56,7 +56,7 @@ class StringTransform(Message, ABC):
             "type": "line"
         } for k, o in self.get_input_elements_from_text(self._param.script).items()}
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         if self._param.method == "split":
             self._split(kwargs.get("line"))
