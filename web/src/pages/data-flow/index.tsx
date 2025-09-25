@@ -136,9 +136,13 @@ export default function DataFlow() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button variant={'secondary'} onClick={handleRunAgent}>
+          <Button
+            variant={'secondary'}
+            onClick={handleRunAgent}
+            disabled={isParsing}
+          >
             <CirclePlay className={isParsing ? 'animate-spin' : ''} />
-            {isParsing ? 'running' : t('flow.run')}
+            {isParsing ? t('dataflow.running') : t('flow.run')}
           </Button>
           <Button variant={'secondary'} onClick={showVersionDialog}>
             <History />

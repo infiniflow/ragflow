@@ -40,6 +40,7 @@ import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
+import { ContextNode } from './node/context-node';
 import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { HierarchicalMergerNode } from './node/hierarchical-merger-node';
 import NoteNode from './node/note-node';
@@ -55,6 +56,7 @@ export const nodeTypes: NodeTypes = {
   tokenizerNode: TokenizerNode,
   splitterNode: SplitterNode,
   hierarchicalMergerNode: HierarchicalMergerNode,
+  contextNode: ContextNode,
 };
 
 const edgeTypes = {

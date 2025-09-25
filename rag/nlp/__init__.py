@@ -285,6 +285,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
         res.append(d)
     return res
 
+
 def tokenize_chunks_with_images(chunks, doc, eng, images):
     res = []
     # wrap up as es documents
@@ -298,6 +299,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images):
         tokenize(d, ck, eng)
         res.append(d)
     return res
+
 
 def tokenize_table(tbls, doc, eng, batch_size=10):
     res = []

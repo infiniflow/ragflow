@@ -50,7 +50,6 @@ export const TimelineNodeObj = {
     clickable: false,
   },
 };
-
 export interface TimelineDataFlowProps {
   activeId: number | string;
   activeFunc: (id: number | string, step: TimelineNode) => void;

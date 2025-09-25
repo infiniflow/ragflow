@@ -121,12 +121,20 @@ class DocumentService(CommonService):
                      orderby, desc, keywords, run_status, types, suffix):
         fields = cls.get_cls_model_fields()
         if keywords:
-            docs = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(
-                (cls.model.kb_id == kb_id),
-                (fn.LOWER(cls.model.name).contains(keywords.lower()))
-            )
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name")])\
+                .join(File2Document, on=(File2Document.document_id == cls.model.id))\
+                .join(File, on=(File.id == File2Document.file_id))\
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
+                .where(
+                    (cls.model.kb_id == kb_id),
+                    (fn.LOWER(cls.model.name).contains(keywords.lower()))
+                )
         else:
-            docs = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(cls.model.kb_id == kb_id)
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name")])\
+                .join(File2Document, on=(File2Document.document_id == cls.model.id))\
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
+                .join(File, on=(File.id == File2Document.file_id))\
+                .where(cls.model.kb_id == kb_id)
 
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))
@@ -334,8 +342,7 @@ class DocumentService(CommonService):
                                process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
-            raise LookupError(
-                "Document not found which is supposed to be there")
+            logging.warning("Document not found which is supposed to be there")
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num +
                       token_num,
@@ -507,6 +514,9 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_doc_id_by_doc_name(cls, doc_name):
+        """
+        highly rely on the strict deduplication guarantee from Document
+        """
         fields = [cls.model.id]
         doc_id = cls.model.select(*fields) \
             .where(cls.model.name == doc_name)
@@ -656,6 +666,7 @@ class DocumentService(CommonService):
                         queue_raptor_o_graphrag_tasks(d, "graphrag", priority)
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                     else:
+                        prg = 1
                         status = TaskStatus.DONE.value
 
                 msg = "\n".join(sorted(msg))
@@ -741,7 +752,11 @@ class DocumentService(CommonService):
             "cancelled": int(cancelled),
         }
 
-def queue_raptor_o_graphrag_tasks(doc, ty, priority):
+def queue_raptor_o_graphrag_tasks(doc, ty, priority, fake_doc_id="", doc_ids=[]):
+    """
+    You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
+    Optionally, specify a list of doc_ids to determine which documents participate in the task.
+    """
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
@@ -751,7 +766,7 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
         nonlocal doc
         return {
             "id": get_uuid(),
-            "doc_id": doc["id"],
+            "doc_id": fake_doc_id if fake_doc_id else doc["id"],
             "from_page": 100000000,
             "to_page": 100000000,
             "task_type": ty,
@@ -764,7 +779,12 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     hasher.update(ty.encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
+
+    if ty in ["graphrag", "raptor"]:
+        task["doc_ids"] = doc_ids
+        DocumentService.begin2parse(doc["id"])
     assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    return task["id"]
 
 
 def get_queue_length(priority):

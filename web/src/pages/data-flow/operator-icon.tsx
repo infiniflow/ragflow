@@ -4,6 +4,7 @@ import {
   Blocks,
   File,
   FileChartColumnIncreasing,
+  FileStack,
   Heading,
   ListMinus,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ export const SVGIconMap = {
   [Operator.Tokenizer]: ListMinus,
   [Operator.Splitter]: Blocks,
   [Operator.HierarchicalMerger]: Heading,
+  [Operator.Extractor]: FileStack,
 };
 
 const Empty = () => {

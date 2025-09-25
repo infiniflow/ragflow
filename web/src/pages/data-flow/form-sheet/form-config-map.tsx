@@ -1,4 +1,5 @@
 import { Operator } from '../constant';
+import ExtractorForm from '../form/extractor-form';
 import HierarchicalMergerForm from '../form/hierarchical-merger-form';
 import ParserForm from '../form/parser-form';
 import SplitterForm from '../form/splitter-form';
@@ -22,5 +23,8 @@ export const FormConfigMap = {
   },
   [Operator.HierarchicalMerger]: {
     component: HierarchicalMergerForm,
+  },
+  [Operator.Extractor]: {
+    component: ExtractorForm,
   },
 };
