@@ -36,6 +36,7 @@ from api import settings
 from rag.nlp import search
 
 CANVAS_DEBUG_DOC_ID = "dataflow_x"
+GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_x"
 
 def trim_header_by_lines(text: str, max_length) -> str:
     # Trim header text to maximum length while preserving line breaks

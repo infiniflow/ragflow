@@ -25,6 +25,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils import current_timestamp, datetime_format, get_uuid
 
 
@@ -88,7 +89,7 @@ class PipelineOperationLogService(CommonService):
         dsl = ""
         referred_document_id = document_id
 
-        if referred_document_id == "x" and fake_document_ids:
+        if referred_document_id == GRAPH_RAPTOR_FAKE_DOC_ID and fake_document_ids:
             referred_document_id = fake_document_ids[0]
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
@@ -128,7 +129,7 @@ class PipelineOperationLogService(CommonService):
 
         log = dict(
             id=get_uuid(),
-            document_id=document_id,  # "x" or real document_id
+            document_id=document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
             tenant_id=tenant_id,
             kb_id=document.kb_id,
             pipeline_id=pipeline_id,
@@ -168,7 +169,7 @@ class PipelineOperationLogService(CommonService):
         else:
             logs = cls.model.select(*fields).where(cls.model.kb_id == kb_id)
 
-        logs = logs.where(cls.model.document_id != "x")
+        logs = logs.where(cls.model.document_id != GRAPH_RAPTOR_FAKE_DOC_ID)
 
         if operation_status:
             logs = logs.where(cls.model.operation_status.in_(operation_status))
@@ -206,7 +207,7 @@ class PipelineOperationLogService(CommonService):
     @DB.connection_context()
     def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status):
         fields = cls.get_dataset_logs_fields()
-        logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == "x"))
+        logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
 
         if operation_status:
             logs = logs.where(cls.model.operation_status.in_(operation_status))
