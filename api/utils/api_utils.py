@@ -54,7 +54,8 @@ from api.db.db_models import APIToken
 from api.db.services import UserService
 from api.db.services.llm_service import LLMService
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils import CustomJSONEncoder, get_uuid, json_dumps
+from api.utils.json import CustomJSONEncoder, json_dumps
+from api.utils import get_uuid
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)

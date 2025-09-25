@@ -15,7 +15,7 @@
 #
 import os
 import logging
-from api.utils import get_base_config, decrypt_database_config
+from api.utils.configs import get_base_config, decrypt_database_config
 from api.utils.file_utils import get_project_base_directory
 
 # Server

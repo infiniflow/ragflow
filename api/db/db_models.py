@@ -32,6 +32,8 @@ from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
 from api import settings, utils
 from api.db import ParserType, SerializedType
+from api.utils.json import json_dumps, json_loads
+from api.utils.configs import deserialize_b64, serialize_b64
 
 
 def singleton(cls, *args, **kw):
@@ -70,12 +72,12 @@ class JSONField(LongTextField):
     def db_value(self, value):
         if value is None:
             value = self.default_value
-        return utils.json_dumps(value)
+        return json_dumps(value)
 
     def python_value(self, value):
         if not value:
             return self.default_value
-        return utils.json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+        return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
 
 
 class ListField(JSONField):
@@ -91,21 +93,21 @@ class SerializedField(LongTextField):
 
     def db_value(self, value):
         if self._serialized_type == SerializedType.PICKLE:
-            return utils.serialize_b64(value, to_str=True)
+            return serialize_b64(value, to_str=True)
         elif self._serialized_type == SerializedType.JSON:
             if value is None:
                 return None
-            return utils.json_dumps(value, with_type=True)
+            return json_dumps(value, with_type=True)
         else:
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
     def python_value(self, value):
         if self._serialized_type == SerializedType.PICKLE:
-            return utils.deserialize_b64(value)
+            return deserialize_b64(value)
         elif self._serialized_type == SerializedType.JSON:
             if value is None:
                 return {}
-            return utils.json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+            return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
         else:
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
