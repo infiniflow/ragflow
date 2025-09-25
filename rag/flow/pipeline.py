@@ -21,7 +21,7 @@ from timeit import default_timer as timer
 import trio
 from agent.canvas import Graph
 from api.db.services.document_service import DocumentService
-from api.db.services.task_service import has_canceled, TaskService
+from api.db.services.task_service import has_canceled, TaskService, CANVAS_DEBUG_DOC_ID
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -30,7 +30,7 @@ class Pipeline(Graph):
         if isinstance(dsl, dict):
             dsl = json.dumps(dsl, ensure_ascii=False)
         super().__init__(dsl, tenant_id, task_id)
-        if doc_id == "x":
+        if doc_id == CANVAS_DEBUG_DOC_ID:
             doc_id = None
         self._doc_id = doc_id
         self._flow_id = flow_id

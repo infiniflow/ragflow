@@ -50,7 +50,7 @@ from peewee import DoesNotExist
 from api.db import LLMType, ParserType, PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import TaskService, has_canceled
+from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
 from api import settings
 from api.versions import get_ragflow_version
@@ -488,7 +488,7 @@ async def run_dataflow(task: dict):
         dsl = pipeline_log.dsl
     pipeline = Pipeline(dsl, tenant_id=task["tenant_id"], doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
     chunks = await pipeline.run(file=task["file"]) if task.get("file") else pipeline.run()
-    if doc_id == "x":
+    if doc_id == CANVAS_DEBUG_DOC_ID:
         return
 
     if not chunks:
@@ -650,7 +650,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
 async def do_handle_task(task):
     task_type = task.get("task_type", "")
 
-    if task_type == "dataflow" and task.get("doc_id", "") == "x":
+    if task_type == "dataflow" and task.get("doc_id", "") == CANVAS_DEBUG_DOC_ID:
         await run_dataflow(task)
         return
 
@@ -809,7 +809,8 @@ async def handle_task():
         task_document_ids = []
         if task_type in ["graphrag"]:
             task_document_ids = task["doc_ids"]
-        PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=pipeline_task_type, fake_document_ids=task_document_ids)
+        if task["doc_id"] != CANVAS_DEBUG_DOC_ID:
+            PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id=task.get("dataflow_id", "") or "", task_type=pipeline_task_type, fake_document_ids=task_document_ids)
 
     redis_msg.ack()
 
