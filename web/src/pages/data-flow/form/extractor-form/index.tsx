@@ -3,7 +3,6 @@ import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
-import { useBuildPromptExtraPromptOptions } from '@/pages/agent/form/agent-form/use-build-prompt-options';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,10 +14,10 @@ import {
   ContextGeneratorFieldName,
   initialContextValues,
 } from '../../constant';
+import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
-import useGraphStore from '../../store';
 import { FormWrapper } from '../components/form-wrapper';
 
 export const FormSchema = z.object({
@@ -39,9 +38,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
     resolver: zodResolver(FormSchema),
   });
 
-  const { edges } = useGraphStore((state) => state);
-
-  const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
+  const promptOptions = useBuildNodeOutputOptions(node?.id);
 
   const options = buildOptions(ContextGeneratorFieldName, t, 'dataflow');
 
@@ -51,16 +48,6 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
     <Form {...form}>
       <FormWrapper>
         <LargeModelFormField></LargeModelFormField>
-        <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
-          <PromptEditor
-            placeholder={t('flow.messagePlaceholder')}
-            showToolbar={true}
-            extraOptions={extraOptions}
-          ></PromptEditor>
-        </RAGFlowFormItem>
-        <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
-          <PromptEditor showToolbar={true}></PromptEditor>
-        </RAGFlowFormItem>
         <RAGFlowFormItem label={t('dataflow.fieldName')} name="field_name">
           {(field) => (
             <SelectWithSearch
@@ -69,6 +56,19 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
               options={options}
             ></SelectWithSearch>
           )}
+        </RAGFlowFormItem>
+        <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
+          <PromptEditor
+            placeholder={t('flow.messagePlaceholder')}
+            showToolbar={true}
+            baseOptions={promptOptions}
+          ></PromptEditor>
+        </RAGFlowFormItem>
+        <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
+          <PromptEditor
+            showToolbar={true}
+            baseOptions={promptOptions}
+          ></PromptEditor>
         </RAGFlowFormItem>
       </FormWrapper>
     </Form>
