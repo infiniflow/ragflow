@@ -638,7 +638,7 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
 
 @timeout(3600)
 async def run_raptor_for_kb(row, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
-    fake_doc_id = "x" # x for dataset-level task
+    fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
