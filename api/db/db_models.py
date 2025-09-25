@@ -26,12 +26,14 @@ from functools import wraps
 
 from flask_login import UserMixin
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-from peewee import BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
+from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
 from api import settings, utils
 from api.db import ParserType, SerializedType
+from api.utils.json import json_dumps, json_loads
+from api.utils.configs import deserialize_b64, serialize_b64
 
 
 def singleton(cls, *args, **kw):
@@ -70,12 +72,12 @@ class JSONField(LongTextField):
     def db_value(self, value):
         if value is None:
             value = self.default_value
-        return utils.json_dumps(value)
+        return json_dumps(value)
 
     def python_value(self, value):
         if not value:
             return self.default_value
-        return utils.json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+        return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
 
 
 class ListField(JSONField):
@@ -91,21 +93,21 @@ class SerializedField(LongTextField):
 
     def db_value(self, value):
         if self._serialized_type == SerializedType.PICKLE:
-            return utils.serialize_b64(value, to_str=True)
+            return serialize_b64(value, to_str=True)
         elif self._serialized_type == SerializedType.JSON:
             if value is None:
                 return None
-            return utils.json_dumps(value, with_type=True)
+            return json_dumps(value, with_type=True)
         else:
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
     def python_value(self, value):
         if self._serialized_type == SerializedType.PICKLE:
-            return utils.deserialize_b64(value)
+            return deserialize_b64(value)
         elif self._serialized_type == SerializedType.JSON:
             if value is None:
                 return {}
-            return utils.json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+            return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
         else:
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
@@ -245,19 +247,26 @@ class JsonSerializedField(SerializedField):
 
 class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
     def __init__(self, *args, **kwargs):
-        self.max_retries = kwargs.pop('max_retries', 5)
-        self.retry_delay = kwargs.pop('retry_delay', 1)
+        self.max_retries = kwargs.pop("max_retries", 5)
+        self.retry_delay = kwargs.pop("retry_delay", 1)
         super().__init__(*args, **kwargs)
 
     def execute_sql(self, sql, params=None, commit=True):
-        from peewee import OperationalError
         for attempt in range(self.max_retries + 1):
             try:
                 return super().execute_sql(sql, params, commit)
-            except OperationalError as e:
-                if e.args[0] in (2013, 2006) and attempt < self.max_retries:
+            except (OperationalError, InterfaceError) as e:
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection']
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    (str(e) in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
                     logging.warning(
-                        f"Lost connection (attempt {attempt+1}/{self.max_retries}): {e}"
+                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
                     )
                     self._handle_connection_loss()
                     time.sleep(self.retry_delay * (2 ** attempt))
@@ -267,16 +276,34 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         return None
 
     def _handle_connection_loss(self):
-        self.close_all()
-        self.connect()
+        # self.close_all()
+        # self.connect()
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.connect()
+        except Exception as e:
+            logging.error(f"Failed to reconnect: {e}")
+            time.sleep(0.1)
+            self.connect()
 
     def begin(self):
-        from peewee import OperationalError
         for attempt in range(self.max_retries + 1):
             try:
                 return super().begin()
-            except OperationalError as e:
-                if e.args[0] in (2013, 2006) and attempt < self.max_retries:
+            except (OperationalError, InterfaceError) as e:
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection']
+
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    (str(e) in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
                     logging.warning(
                         f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
                     )
@@ -301,7 +328,16 @@ class BaseDataBase:
     def __init__(self):
         database_config = settings.DATABASE.copy()
         db_name = database_config.pop("name")
-        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
+        
+        pool_config = {
+            'max_retries': 5,
+            'retry_delay': 1,
+        }
+        database_config.update(pool_config)
+        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(
+            db_name, **database_config
+        )
+        # self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         logging.info("init database on cluster mode successfully")
 
 
@@ -815,6 +851,7 @@ class UserCanvas(DataBaseModel):
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -824,10 +861,10 @@ class UserCanvas(DataBaseModel):
 class CanvasTemplate(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-
-    description = TextField(null=True, help_text="Canvas description")
+    title = JSONField(null=True, default=dict, help_text="Canvas title")
+    description = JSONField(null=True, default=dict, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -1062,6 +1099,23 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("dialog", "meta_data_filter", JSONField(null=True, default={})))
+    except Exception:
+        pass
+
+    try:
+        migrate(migrator.alter_column_type("canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

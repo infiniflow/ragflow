@@ -15,6 +15,7 @@ type RAGFlowFormItemProps = {
   tooltip?: ReactNode;
   children: ReactNode | ((field: ControllerRenderProps) => ReactNode);
   horizontal?: boolean;
+  required?: boolean;
 };
 
 export function RAGFlowFormItem({
@@ -23,6 +24,7 @@ export function RAGFlowFormItem({
   tooltip,
   children,
   horizontal = false,
+  required = false,
 }: RAGFlowFormItemProps) {
   const form = useFormContext();
   return (
@@ -35,7 +37,11 @@ export function RAGFlowFormItem({
             'flex items-center': horizontal,
           })}
         >
-          <FormLabel tooltip={tooltip} className={cn({ 'w-1/4': horizontal })}>
+          <FormLabel
+            required={required}
+            tooltip={tooltip}
+            className={cn({ 'w-1/4': horizontal })}
+          >
             {label}
           </FormLabel>
           <FormControl>

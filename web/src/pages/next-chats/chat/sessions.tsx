@@ -70,7 +70,12 @@ export function Sessions({
         />
       </section>
       <div className="flex justify-between items-center mb-4 pt-10">
-        <span className="text-base font-bold">Conversations</span>
+        <div className="flex items-center gap-3">
+          <span className="text-base font-bold">{t('chat.conversations')}</span>
+          <span className="text-text-secondary text-xs">
+            {conversationList.length}
+          </span>
+        </div>
         <Button variant={'ghost'} onClick={addTemporaryConversation}>
           <Plus></Plus>
         </Button>

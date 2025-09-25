@@ -36,10 +36,8 @@ try:
     updated_dataset = dataset_instance.update(updated_message)
 
     # get the dataset (list datasets)
-    dataset_list = ragflow_instance.list_datasets(id=dataset_instance.id)
-    dataset_instance_2 = dataset_list[0]
     print(dataset_instance)
-    print(dataset_instance_2)
+    print(updated_dataset)
 
     # delete the dataset (delete datasets)
     to_be_deleted_datasets = [dataset_instance.id]

@@ -30,7 +30,7 @@ from yarl import URL
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate
+from rag.utils import num_tokens_from_string, truncate, total_token_count_from_response
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
@@ -44,15 +44,7 @@ class Base(ABC):
         raise NotImplementedError("Please implement encode method!")
 
     def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
+        return total_token_count_from_response(resp)
 
 
 class DefaultRerank(Base):
@@ -362,7 +354,7 @@ class OpenAI_APIRerank(Base):
         max_rank = np.max(rank)
 
         # Avoid division by zero if all ranks are identical
-        if np.isclose(min_rank, max_rank, atol=1e-3):
+        if not np.isclose(min_rank, max_rank, atol=1e-3):
             rank = (rank - min_rank) / (max_rank - min_rank)
         else:
             rank = np.zeros_like(rank)

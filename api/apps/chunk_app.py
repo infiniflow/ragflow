@@ -33,8 +33,7 @@ from api.utils.api_utils import get_data_error_result, get_json_result, server_e
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import cross_languages, keyword_extraction
-from rag.prompts.prompts import gen_meta_filter
+from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
 from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 
@@ -93,6 +92,7 @@ def list_chunk():
 def get():
     chunk_id = request.args["chunk_id"]
     try:
+        chunk = None
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
@@ -290,6 +290,10 @@ def retrieval_test():
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
+    if not kb_ids:
+        return get_json_result(data=False, message='Please specify dataset firstly.',
+                               code=settings.RetCode.DATA_ERROR)
+
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))

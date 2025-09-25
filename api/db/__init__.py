@@ -23,6 +23,11 @@ class StatusEnum(Enum):
     INVALID = "0"
 
 
+class ActiveEnum(Enum):
+    ACTIVE = "1"
+    INACTIVE = "0"
+
+
 class UserTenantRole(StrEnum):
     OWNER = 'owner'
     ADMIN = 'admin'
@@ -74,7 +79,9 @@ class TaskStatus(StrEnum):
     DONE = "3"
     FAIL = "4"
 
+
 VALID_TASK_STATUS     = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL}
+
 
 class ParserType(StrEnum):
     PRESENTATION = "presentation"
@@ -105,10 +112,19 @@ class CanvasType(StrEnum):
     DocBot = "docbot"
 
 
+class CanvasCategory(StrEnum):
+    Agent = "agent_canvas"
+    DataFlow = "dataflow_canvas"
+
+VALID_CANVAS_CATEGORIES = {CanvasCategory.Agent, CanvasCategory.DataFlow}
+
+
 class MCPServerType(StrEnum):
     SSE = "sse"
     STREAMABLE_HTTP = "streamable-http"
 
+
 VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
+
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"

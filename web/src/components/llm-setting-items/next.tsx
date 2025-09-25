@@ -102,8 +102,8 @@ export function LlmSettingFieldItems({
         control={form.control}
         name={'parameter'}
         render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('freedom')}</FormLabel>
+          <FormItem className="flex justify-between items-center">
+            <FormLabel className="flex-1">{t('freedom')}</FormLabel>
             <FormControl>
               <Select
                 {...field}
@@ -112,7 +112,7 @@ export function LlmSettingFieldItems({
                   field.onChange(val);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="flex-1 !m-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -134,6 +134,7 @@ export function LlmSettingFieldItems({
         label="temperature"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('top_p')}
@@ -141,6 +142,7 @@ export function LlmSettingFieldItems({
         label="topP"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('presence_penalty')}
@@ -148,6 +150,7 @@ export function LlmSettingFieldItems({
         label="presencePenalty"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('frequency_penalty')}
@@ -155,12 +158,14 @@ export function LlmSettingFieldItems({
         label="frequencyPenalty"
         max={1}
         step={0.01}
+        min={0}
       ></SliderInputSwitchFormField>
       <SliderInputSwitchFormField
         name={getFieldWithPrefix('max_tokens')}
         checkName="maxTokensEnabled"
         label="maxTokens"
         max={128000}
+        min={0}
       ></SliderInputSwitchFormField>
     </div>
   );

@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.3">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.5">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -47,7 +47,7 @@
 
 ## 💡 RAGFlow とは？
 
-[RAGFlow](https://ragflow.io/) は、深い文書理解に基づいたオープンソースの RAG (Retrieval-Augmented Generation) エンジンである。LLM（大規模言語モデル）を組み合わせることで、様々な複雑なフォーマットのデータから根拠のある引用に裏打ちされた、信頼できる質問応答機能を実現し、あらゆる規模のビジネスに適した RAG ワークフローを提供します。
+[RAGFlow](https://ragflow.io/) は、先進的なRAG（Retrieval-Augmented Generation）技術と Agent 機能を融合し、大規模言語モデル（LLM）に優れたコンテキスト層を構築する最先端のオープンソース RAG エンジンです。あらゆる規模の企業に対応可能な合理化された RAG ワークフローを提供し、統合型コンテキストエンジンと事前構築されたAgentテンプレートにより、開発者が複雑なデータを驚異的な効率性と精度で高精細なプロダクションレディAIシステムへ変換することを可能にします。
 
 ## 🎮 Demo
 
@@ -160,7 +160,7 @@
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-   > 以下のコマンドは、RAGFlow Docker イメージの v0.20.3-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.20.3-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.20.3 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.3 と設定します。
+   > 以下のコマンドは、RAGFlow Docker イメージの v0.20.5-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.20.5-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.20.5 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.5 と設定します。
 
    ```bash
    $ cd ragflow/docker
@@ -173,8 +173,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.20.3           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.20.3-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.20.5           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.20.5-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -266,7 +266,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 🔨 ソースコードからサービスを起動する方法
 
-1. uv をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
+1. `uv` と `pre-commit` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
 
    ```bash
    pipx install uv pre-commit
@@ -301,12 +301,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```
 
 5. オペレーティングシステムにjemallocがない場合は、次のようにインストールします:
-   
+
    ```bash
    # ubuntu
    sudo apt-get install libjemalloc-dev
    # centos
    sudo yum install jemalloc
+   # mac
+   sudo brew install jemalloc
    ```
 
 6. バックエンドサービスを起動する:

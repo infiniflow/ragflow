@@ -67,7 +67,7 @@ def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | N
 
     cond = list()
     for k, v in condition.items():
-        if not isinstance(k, str) or k in ["kb_id"] or not v:
+        if not isinstance(k, str) or not v:
             continue
         if field_keyword(k):
             if isinstance(v, list):

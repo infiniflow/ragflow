@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,24 +14,36 @@
 #  limitations under the License.
 #
 import logging
+import os
 import re
-from collections import defaultdict, Counter
+from collections import Counter, defaultdict
 from copy import deepcopy
 from typing import Callable
-import trio
+
 import networkx as nx
+import trio
 
 from api.utils.api_utils import timeout
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
-from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
-    handle_single_relationship_extraction, split_string_by_multi_markers, flat_uniq_list, chat_limiter, get_from_to, GraphChange
+from graphrag.utils import (
+    GraphChange,
+    chat_limiter,
+    flat_uniq_list,
+    get_from_to,
+    get_llm_cache,
+    handle_single_entity_extraction,
+    handle_single_relationship_extraction,
+    set_llm_cache,
+    split_string_by_multi_markers,
+)
 from rag.llm.chat_model import Base as CompletionLLM
-from rag.prompts import message_fit_in
+from rag.prompts.generator import message_fit_in
 from rag.utils import truncate
 
 GRAPH_FIELD_SEP = "<SEP>"
 DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]
 ENTITY_EXTRACTION_MAX_GLEANINGS = 2
+MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK = int(os.environ.get("MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK", 10))
 
 
 class Extractor:
@@ -47,7 +59,7 @@ class Extractor:
         self._language = language
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
 
-    @timeout(60*20)
+    @timeout(60 * 20)
     def _chat(self, system, history, gen_conf={}):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
@@ -55,6 +67,7 @@ class Extractor:
         if response:
             return response
         _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
+        response = ""
         for attempt in range(3):
             try:
                 response = self._llm.chat(system_msg[0]["content"], hist, conf)
@@ -74,38 +87,37 @@ class Extractor:
         maybe_edges = defaultdict(list)
         ent_types = [t.lower() for t in self._entity_types]
         for record in records:
-            record_attributes = split_string_by_multi_markers(
-                record, [tuple_delimiter]
-            )
+            record_attributes = split_string_by_multi_markers(record, [tuple_delimiter])
 
-            if_entities = handle_single_entity_extraction(
-                record_attributes, chunk_key
-            )
+            if_entities = handle_single_entity_extraction(record_attributes, chunk_key)
             if if_entities is not None and if_entities.get("entity_type", "unknown").lower() in ent_types:
                 maybe_nodes[if_entities["entity_name"]].append(if_entities)
                 continue
 
-            if_relation = handle_single_relationship_extraction(
-                record_attributes, chunk_key
-            )
+            if_relation = handle_single_relationship_extraction(record_attributes, chunk_key)
             if if_relation is not None:
-                maybe_edges[(if_relation["src_id"], if_relation["tgt_id"])].append(
-                    if_relation
-                )
+                maybe_edges[(if_relation["src_id"], if_relation["tgt_id"])].append(if_relation)
         return dict(maybe_nodes), dict(maybe_edges)
 
-    async def __call__(
-        self, doc_id: str, chunks: list[str],
-            callback: Callable | None = None
-    ):
-
+    async def __call__(self, doc_id: str, chunks: list[str], callback: Callable | None = None):
         self.callback = callback
         start_ts = trio.current_time()
-        out_results = []
-        async with trio.open_nursery() as nursery:
-            for i, ck in enumerate(chunks):
-                ck = truncate(ck, int(self._llm.max_length*0.8))
-                nursery.start_soon(self._process_single_content, (doc_id, ck), i, len(chunks), out_results)
+
+        async def extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK):
+            out_results = []
+            limiter = trio.Semaphore(max_concurrency)
+
+            async def worker(chunk_key_dp: tuple[str, str], idx: int, total: int):
+                async with limiter:
+                    await self._process_single_content(chunk_key_dp, idx, total, out_results)
+
+            async with trio.open_nursery() as nursery:
+                for i, ck in enumerate(chunks):
+                    nursery.start_soon(worker, (doc_id, ck), i, len(chunks))
+
+            return out_results
+
+        out_results = await extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK)
 
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
@@ -118,7 +130,7 @@ class Extractor:
             sum_token_count += token_count
         now = trio.current_time()
         if callback:
-            callback(msg = f"Entities and relationships extraction done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {sum_token_count} tokens, {now-start_ts:.2f}s.")
+            callback(msg=f"Entities and relationships extraction done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {sum_token_count} tokens, {now - start_ts:.2f}s.")
         start_ts = now
         logging.info("Entities merging...")
         all_entities_data = []
@@ -127,7 +139,7 @@ class Extractor:
                 nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data)
         now = trio.current_time()
         if callback:
-            callback(msg = f"Entities merging done, {now-start_ts:.2f}s.")
+            callback(msg=f"Entities merging done, {now - start_ts:.2f}s.")
 
         start_ts = now
         logging.info("Relationships merging...")
@@ -137,12 +149,10 @@ class Extractor:
                 nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data)
         now = trio.current_time()
         if callback:
-            callback(msg = f"Relationships merging done, {now-start_ts:.2f}s.")
+            callback(msg=f"Relationships merging done, {now - start_ts:.2f}s.")
 
         if not len(all_entities_data) and not len(all_relationships_data):
-            logging.warning(
-                "Didn't extract any entities and relationships, maybe your LLM is not working"
-            )
+            logging.warning("Didn't extract any entities and relationships, maybe your LLM is not working")
 
         if not len(all_entities_data):
             logging.warning("Didn't extract any entities")
@@ -155,15 +165,11 @@ class Extractor:
         if not entities:
             return
         entity_type = sorted(
-            Counter(
-                [dp["entity_type"] for dp in entities]
-            ).items(),
+            Counter([dp["entity_type"] for dp in entities]).items(),
             key=lambda x: x[1],
             reverse=True,
         )[0][0]
-        description = GRAPH_FIELD_SEP.join(
-            sorted(set([dp["description"] for dp in entities]))
-        )
+        description = GRAPH_FIELD_SEP.join(sorted(set([dp["description"] for dp in entities])))
         already_source_ids = flat_uniq_list(entities, "source_id")
         description = await self._handle_entity_relation_summary(entity_name, description)
         node_data = dict(
@@ -174,13 +180,7 @@ class Extractor:
         node_data["entity_name"] = entity_name
         all_relationships_data.append(node_data)
 
-    async def _merge_edges(
-            self,
-            src_id: str,
-            tgt_id: str,
-            edges_data: list[dict],
-            all_relationships_data=None
-    ):
+    async def _merge_edges(self, src_id: str, tgt_id: str, edges_data: list[dict], all_relationships_data=None):
         if not edges_data:
             return
         weight = sum([edge["weight"] for edge in edges_data])
@@ -188,14 +188,7 @@ class Extractor:
         description = await self._handle_entity_relation_summary(f"{src_id} -> {tgt_id}", description)
         keywords = flat_uniq_list(edges_data, "keywords")
         source_id = flat_uniq_list(edges_data, "source_id")
-        edge_data = dict(
-            src_id=src_id,
-            tgt_id=tgt_id,
-            description=description,
-            keywords=keywords,
-            weight=weight,
-            source_id=source_id
-        )
+        edge_data = dict(src_id=src_id, tgt_id=tgt_id, description=description, keywords=keywords, weight=weight, source_id=source_id)
         all_relationships_data.append(edge_data)
 
     async def _merge_graph_nodes(self, graph: nx.Graph, nodes: list[str], change: GraphChange):
@@ -231,14 +224,10 @@ class Extractor:
         node0_attrs["description"] = await self._handle_entity_relation_summary(nodes[0], node0_attrs["description"])
         graph.nodes[nodes[0]].update(node0_attrs)
 
-    async def _handle_entity_relation_summary(
-            self,
-            entity_or_relation_name: str,
-            description: str
-    ) -> str:
+    async def _handle_entity_relation_summary(self, entity_or_relation_name: str, description: str) -> str:
         summary_max_tokens = 512
         use_description = truncate(description, summary_max_tokens)
-        description_list=use_description.split(GRAPH_FIELD_SEP),
+        description_list = (use_description.split(GRAPH_FIELD_SEP),)
         if len(description_list) <= 12:
             return use_description
         prompt_template = SUMMARIZE_DESCRIPTIONS_PROMPT
@@ -250,5 +239,5 @@ class Extractor:
         use_prompt = prompt_template.format(**context_base)
         logging.info(f"Trigger summary: {entity_or_relation_name}")
         async with chat_limiter:
-            summary = await trio.to_thread.run_sync(lambda: self._chat(use_prompt, [{"role": "user", "content": "Output: "}]))
+            summary = await trio.to_thread.run_sync(self._chat, "", [{"role": "user", "content": use_prompt}])
         return summary

@@ -40,6 +40,7 @@ import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useMoveNote } from '../hooks/use-move-note';
 import { useDropdownManager } from './context';
 
+import Spotlight from '@/components/spotlight';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
@@ -225,6 +226,14 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   };
 
   const OnConnectEnd = (event: MouseEvent | TouchEvent) => {
+    const target = event.target as HTMLElement;
+    // Clicking Handle will also trigger OnConnectEnd.
+    // To solve the problem that the operator on the right side added by clicking Handle will overlap with the original operator, this event is blocked here.
+    // TODO: However, a better way is to add both operators in the same way as OnConnectEnd.
+    if (target?.classList.contains('react-flow__handle')) {
+      return;
+    }
+
     if ('clientX' in event && 'clientY' in event) {
       const { clientX, clientY } = event;
       setDropdownPosition({ x: clientX, y: clientY });
@@ -301,6 +310,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onBeforeDelete={handleBeforeDelete}
         >
           <AgentBackground></AgentBackground>
+          <Spotlight className="z-0" opcity={0.7} coverage={70} />
           <Controls position={'bottom-center'} orientation="horizontal">
             <ControlButton>
               <Tooltip>

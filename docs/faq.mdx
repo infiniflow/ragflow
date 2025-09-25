@@ -30,17 +30,17 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 Each RAGFlow release is available in two editions:
 
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.3-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.3`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.5-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.5`
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.20.3-slim` and `v0.20.3`:  
+RAGFlow offers two Docker image editions, `v0.20.5-slim` and `v0.20.5`:  
   
-- `infiniflow/ragflow:v0.20.3-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.20.3`: The RAGFlow Docker image with embedding models including:
+- `infiniflow/ragflow:v0.20.5-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.20.5`: The RAGFlow Docker image with embedding models including:
   - Built-in embedding models:
     - `BAAI/bge-large-zh-v1.5`
     - `maidalun1020/bce-embedding-base_v1`
@@ -498,7 +498,7 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 
 ### Where are my uploaded files stored in RAGFlow's image?
 
-All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a dataset, it is located at `<knowledgebase_id>/filename`.
 
 ---
 
@@ -507,3 +507,16 @@ All uploaded files are stored in Minio, RAGFlow's object storage solution. For i
 You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
 
 ---
+
+### How to accelerate the question-answering speed of my chat assistant?
+
+See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
+
+---
+
+### How to accelerate the question-answering speed of my Agent?
+
+See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
+
+---
+

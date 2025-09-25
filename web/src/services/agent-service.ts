@@ -33,6 +33,7 @@ const {
   getFrequencyOptions,
   getScheduleHistory,
   getScheduleStats,
+  prompt,
 } = api;
 
 const methods = {
@@ -150,6 +151,10 @@ const methods = {
   },
   getScheduleStats: {
     url: getScheduleStats,
+    method: 'get',
+  },
+  fetchPrompt: {
+    url: prompt,
     method: 'get',
   },
 } as const;

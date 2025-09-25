@@ -41,37 +41,43 @@ class Docx(DocxParser):
         pass
 
     def get_picture(self, document, paragraph):
-        img = paragraph._element.xpath('.//pic:pic')
-        if not img:
+        imgs = paragraph._element.xpath('.//pic:pic')
+        if not imgs:
             return None
-        img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')
-        if not embed:
-            return None
-        embed = embed[0]
-        try:
-            related_part = document.part.related_parts[embed]
-            image_blob = related_part.image.blob
-        except UnrecognizedImageError:
-            logging.info("Unrecognized image format. Skipping image.")
-            return None
-        except UnexpectedEndOfFileError:
-            logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
-            return None
-        except InvalidImageStreamError:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        except UnicodeDecodeError:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        except Exception:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        try:
-            image = Image.open(BytesIO(image_blob)).convert('RGB')
-            return image
-        except Exception:
-            return None
+        res_img = None
+        for img in imgs:
+            embed = img.xpath('.//a:blip/@r:embed')
+            if not embed:
+                continue
+            embed = embed[0]
+            try:
+                related_part = document.part.related_parts[embed]
+                image_blob = related_part.image.blob
+            except UnrecognizedImageError:
+                logging.info("Unrecognized image format. Skipping image.")
+                continue
+            except UnexpectedEndOfFileError:
+                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+                continue
+            except InvalidImageStreamError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except UnicodeDecodeError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except Exception:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            try:
+                image = Image.open(BytesIO(image_blob)).convert('RGB')
+                if res_img is None:
+                    res_img = image
+                else:
+                    res_img = concat_img(res_img, image)
+            except Exception:
+                continue
+
+        return res_img
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -501,23 +507,37 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
         sections, tables = markdown_parser(filename, binary, separate_tables=False)
 
-        # Process images for each section
-        section_images = []
-        for section_text, _ in sections:
-            images = markdown_parser.get_pictures(section_text) if section_text else None
-            if images:
-                # If multiple images found, combine them using concat_img
-                combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                section_images.append(combined_image)
-            else:
-                section_images.append(None)
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
+        
+        if vision_model:
+            # Process images for each section
+            section_images = []
+            for idx, (section_text, _) in enumerate(sections):
+                images = markdown_parser.get_pictures(section_text) if section_text else None
+
+                if images:
+                    # If multiple images found, combine them using concat_img
+                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
+                    section_images.append(combined_image)
+                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data= [((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                    boosted_figures = markdown_vision_parser(callback=callback)
+                    sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
+                else:
+                    section_images.append(None)
+        else:
+            logging.warning("No visual model detected. Skipping figure parsing enhancement.")
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = HtmlParser()(filename, binary)
+        chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+        sections = HtmlParser()(filename, binary, chunk_token_num)
         sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 

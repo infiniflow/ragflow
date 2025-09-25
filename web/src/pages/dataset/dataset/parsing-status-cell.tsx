@@ -15,9 +15,9 @@ import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { CircleX, RefreshCw } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RunningStatus } from './constant';
+import { DocumentType, RunningStatus } from './constant';
 import { ParsingCard, PopoverContent } from './parsing-card';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
@@ -61,9 +61,13 @@ export function ParsingStatusCell({
     showSetMetaModal(record);
   }, [record, showSetMetaModal]);
 
+  const showParse = useMemo(() => {
+    return record.type !== DocumentType.Virtual;
+  }, [record]);
+
   return (
     <section className="flex gap-8 items-center">
-      <div className="w-fit flex items-center justify-between">
+      <div className="w-[100px] text-ellipsis overflow-hidden flex items-center justify-between">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant={'transparent'} className="border-none" size={'sm'}>
@@ -80,38 +84,42 @@ export function ParsingStatusCell({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <ConfirmDeleteDialog
-        title={t(`knowledgeDetails.redo`, { chunkNum: chunk_num })}
-        hidden={isZeroChunk || isRunning}
-        onOk={handleOperationIconClick(true)}
-        onCancel={handleOperationIconClick(false)}
-      >
-        <div
-          className="cursor-pointer flex items-center gap-3"
-          onClick={
-            isZeroChunk || isRunning
-              ? handleOperationIconClick(false)
-              : () => {}
-          }
-        >
-          <Separator orientation="vertical" className="h-2.5" />
-          {operationIcon}
-        </div>
-      </ConfirmDeleteDialog>
-      {isParserRunning(run) ? (
-        <HoverCard>
-          <HoverCardTrigger asChild>
-            <div className="flex items-center gap-1">
-              <Progress value={p} className="h-1 flex-1 min-w-10" />
-              {p}%
+      {showParse && (
+        <>
+          <ConfirmDeleteDialog
+            title={t(`knowledgeDetails.redo`, { chunkNum: chunk_num })}
+            hidden={isZeroChunk || isRunning}
+            onOk={handleOperationIconClick(true)}
+            onCancel={handleOperationIconClick(false)}
+          >
+            <div
+              className="cursor-pointer flex items-center gap-3"
+              onClick={
+                isZeroChunk || isRunning
+                  ? handleOperationIconClick(false)
+                  : () => {}
+              }
+            >
+              <Separator orientation="vertical" className="h-2.5" />
+              {operationIcon}
             </div>
-          </HoverCardTrigger>
-          <HoverCardContent className="w-[40vw]">
-            <PopoverContent record={record}></PopoverContent>
-          </HoverCardContent>
-        </HoverCard>
-      ) : (
-        <ParsingCard record={record}></ParsingCard>
+          </ConfirmDeleteDialog>
+          {isParserRunning(run) ? (
+            <HoverCard>
+              <HoverCardTrigger asChild>
+                <div className="flex items-center gap-1">
+                  <Progress value={p} className="h-1 flex-1 min-w-10" />
+                  {p}%
+                </div>
+              </HoverCardTrigger>
+              <HoverCardContent className="w-[40vw]">
+                <PopoverContent record={record}></PopoverContent>
+              </HoverCardContent>
+            </HoverCard>
+          ) : (
+            <ParsingCard record={record}></ParsingCard>
+          )}
+        </>
       )}
     </section>
   );

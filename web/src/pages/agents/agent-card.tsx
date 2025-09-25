@@ -1,5 +1,6 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
+import { SharedBadge } from '@/components/shared-badge';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IFlow } from '@/interfaces/database/agent';
 import { AgentDropdown } from './agent-dropdown';
@@ -20,6 +21,7 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
           <MoreButton></MoreButton>
         </AgentDropdown>
       }
+      sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
       onClick={navigateToAgent(data?.id)}
     />
   );

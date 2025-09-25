@@ -5,7 +5,7 @@ slug: /python_api_reference
 
 # Python API
 
-A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../develop/acquire_ragflow_api_key.md).
+A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 :::tip NOTE
 Run the following command to download the Python SDK:
@@ -85,11 +85,11 @@ completion = client.chat.completions.create(
 )
 
 if stream:
-for chunk in completion:
-    print(chunk)
-    if reference and chunk.choices[0].finish_reason == "stop":
-        print(f"Reference:\n{chunk.choices[0].delta.reference}")
-        print(f"Final content:\n{chunk.choices[0].delta.final_content}")
+    for chunk in completion:
+        print(chunk)
+        if reference and chunk.choices[0].finish_reason == "stop":
+            print(f"Reference:\n{chunk.choices[0].delta.reference}")
+            print(f"Final content:\n{chunk.choices[0].delta.final_content}")
 else:
     print(completion.choices[0].message.content)
     if reference:
@@ -921,7 +921,7 @@ chunk.update({"content":"sdfx..."})
 ### Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,highlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,cross_languages:list[str]=None,metadata_condition: dict=None) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -971,16 +971,13 @@ Indicates whether to enable keyword-based matching:
 - `True`: Enable keyword-based matching.
 - `False`: Disable keyword-based matching (default).
 
-##### highlight: `bool`
-
-Specifies whether to enable highlighting of matched terms in the results:
-
-- `True`: Enable highlighting of matched terms.
-- `False`: Disable highlighting of matched terms (default).
-
 ##### cross_languages:  `list[string]`  
 
 The languages that should be translated into, in order to achieve keywords retrievals in different languages.
+
+##### metadata_condition: `dict`
+
+filter condition for `meta_fields`.
 
 #### Returns
 

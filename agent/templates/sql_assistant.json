@@ -1,7 +1,11 @@
 {
     "id": 17,
-    "title": "SQL Assistant",
-    "description": "SQL Assistant is an AI-powered tool that lets business users turn plain-English questions into fully formed SQL queries. Simply type your question (e.g., “Show me last quarter’s top 10 products by revenue”) and SQL Assistant generates the exact SQL, runs it against your database, and returns the results in seconds. ",
+    "title": {
+        "en": "SQL Assistant",
+        "zh": "SQL助理"},
+    "description": {
+        "en": "SQL Assistant is an AI-powered tool that lets business users turn plain-English questions into fully formed SQL queries. Simply type your question (e.g., “Show me last quarter’s top 10 products by revenue”) and SQL Assistant generates the exact SQL, runs it against your database, and returns the results in seconds. ",
+        "zh": "用户能够将简单文本问题转化为完整的SQL查询并输出结果。只需输入您的问题（例如，“展示上个季度前十名按收入排序的产品”），SQL助理就会生成精确的SQL语句，对其运行您的数据库，并几秒钟内返回结果。"},
     "canvas_type": "Marketing",
     "dsl": {
             "components": {
@@ -79,7 +83,7 @@
                             },
                             "password": "20010812Yy!",
                             "port": 3306,
-                            "sql": "Agent:WickedGoatsDivide@content",
+                            "sql": "{Agent:WickedGoatsDivide@content}",
                             "username": "13637682833@163.com"
                         }
                     },
@@ -110,9 +114,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
-                                "ed31364c727211f0bdb2bafe6e7908e6"
-                            ],
+                            "kb_ids": [],
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -120,7 +122,7 @@
                                     "value": ""
                                 }
                             },
-                            "query": "sys.query",
+                            "query": "{sys.query}",
                             "rerank_id": "",
                             "similarity_threshold": 0.2,
                             "top_k": 1024,
@@ -141,9 +143,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
-                                "0f968106727311f08357bafe6e7908e6"
-                            ],
+                            "kb_ids": [],
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -151,7 +151,7 @@
                                     "value": ""
                                 }
                             },
-                            "query": "sys.query",
+                            "query": "{sys.query}",
                             "rerank_id": "",
                             "similarity_threshold": 0.2,
                             "top_k": 1024,
@@ -172,9 +172,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
-                                "4ad1f9d0727311f0827dbafe6e7908e6"
-                            ],
+                            "kb_ids": [],
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -182,7 +180,7 @@
                                     "value": ""
                                 }
                             },
-                            "query": "sys.query",
+                            "query": "{sys.query}",
                             "rerank_id": "",
                             "similarity_threshold": 0.2,
                             "top_k": 1024,
@@ -343,9 +341,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [
-                                    "ed31364c727211f0bdb2bafe6e7908e6"
-                                ],
+                                "kb_ids": [],
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
@@ -353,7 +349,7 @@
                                         "value": ""
                                     }
                                 },
-                                "query": "sys.query",
+                                "query": "{sys.query}",
                                 "rerank_id": "",
                                 "similarity_threshold": 0.2,
                                 "top_k": 1024,
@@ -383,9 +379,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [
-                                    "0f968106727311f08357bafe6e7908e6"
-                                ],
+                                "kb_ids": [],
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
@@ -393,7 +387,7 @@
                                         "value": ""
                                     }
                                 },
-                                "query": "sys.query",
+                                "query": "{sys.query}",
                                 "rerank_id": "",
                                 "similarity_threshold": 0.2,
                                 "top_k": 1024,
@@ -423,9 +417,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [
-                                    "4ad1f9d0727311f0827dbafe6e7908e6"
-                                ],
+                                "kb_ids": [],
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
@@ -433,7 +425,7 @@
                                         "value": ""
                                     }
                                 },
-                                "query": "sys.query",
+                                "query": "{sys.query}",
                                 "rerank_id": "",
                                 "similarity_threshold": 0.2,
                                 "top_k": 1024,
@@ -535,7 +527,7 @@
                                 },
                                 "password": "20010812Yy!",
                                 "port": 3306,
-                                "sql": "Agent:WickedGoatsDivide@content",
+                                "sql": "{Agent:WickedGoatsDivide@content}",
                                 "username": "13637682833@163.com"
                             },
                             "label": "ExeSQL",

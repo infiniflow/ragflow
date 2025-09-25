@@ -16,9 +16,8 @@
 from abc import ABC
 import asyncio
 from crawl4ai import AsyncWebCrawler
-
 from agent.tools.base import ToolParamBase, ToolBase
-from api.utils.web_utils import is_valid_url
+
 
 
 class CrawlerParam(ToolParamBase):
@@ -39,6 +38,7 @@ class Crawler(ToolBase, ABC):
     component_name = "Crawler"
 
     def _run(self, history, **kwargs):
+        from api.utils.web_utils import is_valid_url
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not is_valid_url(ans):
@@ -64,5 +64,5 @@ class Crawler(ToolBase, ABC):
             elif self._param.extract_type == 'markdown':
                 return result.markdown
             elif self._param.extract_type == 'content':
-                result.extracted_content
+                return result.extracted_content
             return result.markdown

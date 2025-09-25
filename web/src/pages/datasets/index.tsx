@@ -55,7 +55,7 @@ export default function Datasets() {
   return (
     <section className="py-4 flex-1 flex flex-col">
       <ListFilterBar
-        title={t('header.knowledgeBase')}
+        title={t('header.dataset')}
         searchString={searchString}
         onSearchChange={handleInputChange}
         value={filterValue}
@@ -70,7 +70,7 @@ export default function Datasets() {
         </Button>
       </ListFilterBar>
       <div className="flex-1">
-        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[78vh] overflow-auto px-8">
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[calc(100dvh-280px)] overflow-auto px-8">
           {kbs.map((dataset) => {
             return (
               <DatasetCard

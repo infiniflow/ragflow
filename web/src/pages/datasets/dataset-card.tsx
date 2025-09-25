@@ -4,6 +4,7 @@ import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
+import { t } from 'i18next';
 import { ChevronRight } from 'lucide-react';
 import { DatasetDropdown } from './dataset-dropdown';
 import { useRenameDataset } from './use-rename-dataset';
@@ -20,7 +21,10 @@ export function DatasetCard({
 
   return (
     <HomeCard
-      data={{ ...dataset, description: `${dataset.doc_num} files` }}
+      data={{
+        ...dataset,
+        description: `${dataset.doc_num} ${t('knowledgeDetails.files')}`,
+      }}
       moreDropdown={
         <DatasetDropdown
           showDatasetRenameModal={showDatasetRenameModal}

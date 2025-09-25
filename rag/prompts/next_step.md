@@ -5,8 +5,7 @@ Your job is:
 3. Use `complete_task` if no further step you need to take from tools. (All necessary steps done or little hope to be done)
 
 # ========== TASK ANALYSIS =============
-{{ task_analisys }}
-
+{{ task_analysis }}
 
 # ==========  TOOLS (JSON-Schema) ==========
 You may invoke only the tools listed below.  
@@ -16,8 +15,24 @@ Return a JSON array of objects in which item is with exactly two top-level keys:
 
 {{ desc }}
 
+
+# ==========  MULTI-STEP EXECUTION ==========
+When tasks require multiple independent steps, you can execute them in parallel by returning multiple tool calls in a single JSON array.
+
+• **Data Collection**: Gathering information from multiple sources simultaneously
+• **Validation**: Cross-checking facts using different tools
+• **Comprehensive Analysis**: Analyzing different aspects of the same problem
+• **Efficiency**: Reducing total execution time when steps don't depend on each other
+
+**Example Scenarios:**
+- Searching multiple databases for the same query
+- Checking weather in multiple cities
+- Validating information through different APIs
+- Performing calculations on different datasets
+- Gathering user preferences from multiple sources
+
 # ==========  RESPONSE FORMAT ==========
-✦ **When you need a tool**  
+**When you need a tool**  
 Return ONLY the Json (no additional keys, no commentary, end with `<|stop|>`), such as following:
 [{
   "name": "<tool_name1>",
@@ -27,7 +42,20 @@ Return ONLY the Json (no additional keys, no commentary, end with `<|stop|>`), s
   "arguments": { /* tool arguments matching its schema */ }
 }...]<|stop|>
 
-✦ **When you are certain the task is solved OR no further information can be obtained**  
+**When you need multiple tools:**
+Return ONLY:
+[{
+  "name": "<tool_name1>",
+  "arguments": { /* tool arguments matching its schema */ }
+},{
+  "name": "<tool_name2>",
+  "arguments": { /* tool arguments matching its schema */ }
+},{
+  "name": "<tool_name3>",
+  "arguments": { /* tool arguments matching its schema */ }
+}...]<|stop|>
+
+**When you are certain the task is solved OR no further information can be obtained**  
 Return ONLY:
 [{
   "name": "complete_task",
@@ -61,3 +89,4 @@ Internal guideline:
 2. **Act**: Emit the JSON object to call the tool.
 
 Today is {{ today }}. Remember that success in answering questions accurately is paramount - take all necessary steps to ensure your answer is correct.
+

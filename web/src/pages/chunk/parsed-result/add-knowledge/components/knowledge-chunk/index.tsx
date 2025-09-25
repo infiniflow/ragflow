@@ -197,7 +197,7 @@ const Chunk = () => {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{documentInfo.name}</BreadcrumbPage>
+              <BreadcrumbPage>{documentInfo?.name}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -249,6 +249,7 @@ const Chunk = () => {
                     switchChunk={handleSwitchChunk}
                     removeChunk={handleRemoveChunk}
                     checked={selectedChunkIds.length === data.length}
+                    selectedChunkIds={selectedChunkIds}
                   />
                 </div>
                 <div className={styles.pageContent}>

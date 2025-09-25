@@ -21,11 +21,9 @@ from copy import deepcopy
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-
 import trio
 from langfuse import Langfuse
 from peewee import fn
-
 from agentic_reasoning import DeepResearcher
 from api import settings
 from api.db import LLMType, ParserType, StatusEnum
@@ -41,8 +39,8 @@ from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in
-from rag.prompts.prompts import gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
+from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
+    gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
 from rag.utils import num_tokens_from_string, rmSpace
 from rag.utils.tavily_conn import Tavily
 
@@ -178,7 +176,7 @@ def chat_solo(dialog, messages, stream=True):
         delta_ans = ""
         for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
             answer = ans
-            delta_ans = ans[len(last_ans) :]
+            delta_ans = ans[len(last_ans):]
             if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
@@ -255,6 +253,23 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
     return answer, idx
 
 
+def convert_conditions(metadata_condition):
+    if metadata_condition is None:
+        metadata_condition = {}
+    op_mapping = {
+        "is": "=",
+        "not is": "≠"
+    }
+    return [
+        {
+            "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
+            "key": cond["name"],
+            "value": cond["value"]
+        }
+        for cond in metadata_condition.get("conditions", [])
+    ]
+
+
 def meta_filter(metas: dict, filters: list[dict]):
     doc_ids = set([])
 
@@ -269,19 +284,19 @@ def meta_filter(metas: dict, filters: list[dict]):
                 value = str(value)
 
             for conds in [
-                    (operator == "contains", str(value).lower() in str(input).lower()),
-                    (operator == "not contains", str(value).lower() not in str(input).lower()),
-                    (operator == "start with", str(input).lower().startswith(str(value).lower())),
-                    (operator == "end with", str(input).lower().endswith(str(value).lower())),
-                    (operator == "empty", not input),
-                    (operator == "not empty", input),
-                    (operator == "=", input == value),
-                    (operator == "≠", input != value),
-                    (operator == ">", input > value),
-                    (operator == "<", input < value),
-                    (operator == "≥", input >= value),
-                    (operator == "≤", input <= value),
-                ]:
+                (operator == "contains", str(value).lower() in str(input).lower()),
+                (operator == "not contains", str(value).lower() not in str(input).lower()),
+                (operator == "start with", str(input).lower().startswith(str(value).lower())),
+                (operator == "end with", str(input).lower().endswith(str(value).lower())),
+                (operator == "empty", not input),
+                (operator == "not empty", input),
+                (operator == "=", input == value),
+                (operator == "≠", input != value),
+                (operator == ">", input > value),
+                (operator == "<", input < value),
+                (operator == "≥", input >= value),
+                (operator == "≤", input <= value),
+            ]:
                 try:
                     if all(conds):
                         ids.extend(docids)
@@ -350,7 +365,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True))
+        ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         if ans:
             yield ans
             return
@@ -441,7 +456,8 @@ def chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
-                ck = settings.kg_retrievaler.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, LLMType.CHAT))
+                ck = settings.kg_retrievaler.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
+                                                       LLMBundle(dialog.tenant_id, LLMType.CHAT))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -452,7 +468,8 @@ def chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
-        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res)}
+        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions),
+               "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
@@ -550,7 +567,8 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.start_generation(
-            trace_context=trace_context, name="chat", model=llm_model_config["llm_name"], input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
+            trace_context=trace_context, name="chat", model=llm_model_config["llm_name"],
+            input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
         )
 
     if stream:
@@ -560,12 +578,12 @@ def chat(dialog, messages, stream=True, **kwargs):
             if thought:
                 ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
-            delta_ans = ans[len(last_ans) :]
+            delta_ans = ans[len(last_ans):]
             if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
             yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        delta_ans = answer[len(last_ans) :]
+        delta_ans = answer[len(last_ans):]
         if delta_ans:
             yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
         yield decorate_answer(thought + answer)
@@ -578,7 +596,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield res
 
 
-def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
+def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
     sys_prompt = "You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question."
     user_prompt = """
 Table name: {};
@@ -614,6 +632,13 @@ Please write the SQL, only SQL, without any other explanations or text.
                         break
                     flds.append(k)
                 sql = "select doc_id,docnm_kwd," + ",".join(flds) + sql[8:]
+
+        if kb_ids:
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+            if "where" not in sql.lower():
+                sql += f" WHERE {kb_filter}"
+            else:
+                sql += f" AND {kb_filter}"
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
@@ -654,7 +679,9 @@ Please write the SQL, only SQL, without any other explanations or text.
 
     # compose Markdown table
     columns = (
-        "|" + "|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in column_idx]) + ("|Source|" if docid_idx and docid_idx else "|")
+            "|" + "|".join(
+        [re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in column_idx]) + (
+                "|Source|" if docid_idx and docid_idx else "|")
     )
 
     line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
@@ -731,7 +758,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
                 doc_ids = None
 
     kbinfos = retriever.retrieval(
-        question = question,
+        question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,
         kb_ids=kb_ids,
@@ -753,7 +780,8 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
 
     def decorate_answer(answer):
         nonlocal knowledges, kbinfos, sys_prompt
-        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
+        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]],
+                                                 embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
         if not recall_docs:

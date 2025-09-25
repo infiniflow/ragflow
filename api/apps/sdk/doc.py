@@ -35,11 +35,12 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks
+from api.db.services.dialog_service import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import cross_languages, keyword_extraction
+from rag.prompts.generator import cross_languages, keyword_extraction
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -1350,6 +1351,9 @@ def retrieval_test(tenant_id):
             highlight:
               type: boolean
               description: Whether to highlight matched content.
+            metadata_condition:
+              type: object
+              description: metadata filter condition.
       - in: header
         name: Authorization
         type: string
@@ -1413,6 +1417,10 @@ def retrieval_test(tenant_id):
     for doc_id in doc_ids:
         if doc_id not in doc_ids_list:
             return get_error_data_result(f"The datasets don't own the document {doc_id}")
+    if not doc_ids:
+        metadata_condition = req.get("metadata_condition", {})
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        doc_ids = meta_filter(metas, convert_conditions(metadata_condition))
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))

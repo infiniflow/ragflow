@@ -1,7 +1,9 @@
 export default {
   translation: {
     common: {
+      noResults: 'No results.',
       selectPlaceholder: 'select value',
+      selectAll: 'Select All',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Yes',
@@ -36,10 +38,15 @@ export default {
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
       submit: 'Submit',
+      clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
       add: 'Add',
+      remove: 'Remove',
+      search: 'Search',
+      noDataFound: 'No data found.',
+      noData: 'No data',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
         namePlaceholder: 'My MCP Server',
@@ -95,6 +102,28 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      generateKnowledgeGraph:
+        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+      generateRaptor:
+        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+      generate: 'Generate',
+      raptor: 'Raptor',
+      knowledgeGraph: 'Knowledge Graph',
+      processingType: 'Processing Type',
+      dataPipeline: 'Data Pipeline',
+      operations: 'Operations',
+      status: 'Status',
+      task: 'Task',
+      startDate: 'Start Date',
+      source: 'Source',
+      fileName: 'File Name',
+      datasetLogs: 'Dataset Logs',
+      fileLogs: 'File Logs',
+      overview: 'Overview',
+      success: 'Success',
+      failed: 'Failed',
+      completed: 'Completed',
+      processLog: 'Process Log',
       created: 'Created',
       learnMore: 'Learn More',
       general: 'General',
@@ -132,6 +161,10 @@ export default {
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
+      noTestResultsForRuned:
+        'No relevant results found. Try adjusting your query or parameters.',
+      noTestResultsForNotRuned:
+        'No test has been run yet. Results will appear here.',
       testingDescription:
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
@@ -141,7 +174,8 @@ export default {
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
-      keywordSimilarityWeightTip: '',
+      keywordSimilarityWeightTip:
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Testing',
@@ -183,6 +217,7 @@ export default {
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
+      close: 'Close',
       rerankModel: 'Rerank model',
       rerankPlaceholder: 'Please select',
       rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
@@ -192,7 +227,7 @@ export default {
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the chat model specified in 'System model settings'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
@@ -226,6 +261,16 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      enableAutoGenerate: 'Enable Auto Generate',
+      teamPlaceholder: 'Please select a team.',
+      dataFlowPlaceholder: 'Please select a data flow.',
+      buildItFromScratch: 'Build it from scratch',
+      useRAPTORToEnhanceRetrieval: 'Use RAPTOR to Enhance Retrieval',
+      extractKnowledgeGraph: 'Extract Knowledge Graph',
+      dataFlow: 'Data Flow',
+      parseType: 'Parse Type',
+      manualSetup: 'Manual Setup',
+      builtIn: 'Built-in',
       titleDescription:
         'Update your knowledge base configuration here, particularly the chunking method.',
       name: 'Knowledge base name',
@@ -437,6 +482,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      messagePlaceholder: 'Type your message here...',
+      exit: 'Exit',
+      multipleModels: 'Multiple Models',
+      applyModelConfigs: 'Apply model configs',
+      conversations: 'Conversations',
+      chatApps: 'Chat Apps',
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant settings',
@@ -835,9 +886,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       hint: 'hint',
     },
     fileManager: {
+      files: 'Files',
       name: 'Name',
       uploadDate: 'Upload Date',
-      knowledgeBase: 'Knowledge Base',
+      knowledgeBase: 'Dataset',
       size: 'Size',
       action: 'Action',
       addToKnowledge: 'Link to Knowledge Base',
@@ -860,11 +912,94 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      recommended: 'Recommended',
+      customerSupport: 'Customer Support',
+      marketing: 'Marketing',
+      consumerApp: 'Consumer App',
+      other: 'Other',
+      agents: 'Agents',
+      days: 'Days',
+      beginInput: 'Begin Input',
+      ref: 'Variable',
+      stockCode: 'Stock Code',
+      apiKeyPlaceholder:
+        'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
+      flowStart: 'Start',
+      flowNum: 'Num',
+      test: 'Test',
+      extractDepth: 'Extract Depth',
+      format: 'Format',
+      basic: 'basic',
+      advanced: 'advanced',
+      general: 'general',
+      searchDepth: 'Search Depth',
+      tavilyTopic: 'Tavily Topic',
+      maxResults: 'Max Results',
+      includeAnswer: 'Include Answer',
+      includeRawContent: 'Include Raw Content',
+      includeImages: 'Include Images',
+      includeImageDescriptions: 'Include Image Descriptions',
+      includeDomains: 'Include Domains',
+      ExcludeDomains: 'Exclude Domains',
+      Days: 'Days',
+      comma: 'Comma',
+      semicolon: 'Semicolon',
+      period: 'Period',
+      lineBreak: 'Line Break',
+      tab: 'Tab',
+      space: 'Space',
+      delimiters: 'Delimiters',
+      merge: 'Merge',
+      split: 'Split',
+      script: 'Script',
+      iterationItemDescription:
+        'It represents the current element in the iteration, which can be referenced and manipulated in subsequent steps.',
+      guidingQuestion: 'Guidance Question',
+      onFailure: 'On Failure',
+      userPromptDefaultValue:
+        'This is the order you need to send to the agent.',
+      search: 'Search',
+      communication: 'Communication',
+      developer: 'Developer',
+      typeCommandOrsearch: 'Type a command or search...',
+      builtIn: 'Built-in',
+      ExceptionDefaultValue: 'Exception default value',
+      exceptionMethod: 'Exception method',
+      maxRounds: 'Max reflection rounds',
+      delayEfterError: 'Delay after error',
+      maxRetries: 'Max reflection rounds',
+      advancedSettings: 'Advanced Settings',
+      addTools: 'Add Tools',
+      sysPromptDefultValue: `
+      <role>
+        You are a helpful assistant, an AI assistant specialized in problem-solving for the user. 
+        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
+      </role>
+      <instructions>
+        1. Understand the user’s request.  
+        2. Decompose it into logical subtasks.  
+        3. Execute each subtask step by step, reasoning transparently.  
+        4. Validate accuracy and consistency.  
+        5. Summarize the final result clearly.
+      </instructions>`,
+      singleLineText: 'Single-line text',
+      multimodalModels: 'Multimodal Models',
+      textOnlyModels: 'Text-only Models',
+      allModels: 'All Models',
+      codeExecDescription: 'Write your custom Python or Javascript logic.',
+      stringTransformDescription:
+        'Modifies text content. Currently supports: Splitting or concatenating text.',
+      foundation: 'Foundation',
+      tools: 'Tools',
+      dataManipulation: 'Data Manipulation',
+      flow: 'Flow',
+      dialog: 'Dialogue',
       cite: 'Cite',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',
       description: 'Description',
+      descriptionMessage: 'This is an agent for a specific task.',
       examples: 'Examples',
       to: 'To',
       msg: 'Messages',
@@ -925,6 +1060,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'A component that searches from duckduckgo.com, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
       channel: 'Channel',
       channelTip: `Perform text search or news search on the component's input`,
       text: 'Text',
@@ -1289,6 +1427,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       globalVariables: 'Global variables',
       systemPrompt: 'System prompt',
+      userPrompt: 'User prompt',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -1352,6 +1491,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       openingSwitchTip:
         'Your users will see this welcome message at the beginning.',
       modeTip: 'The mode defines how the workflow is initiated.',
+      mode: 'Mode',
+      conversational: 'conversational',
+      task: 'task',
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       schedule: {
@@ -1420,7 +1562,9 @@ This delimiter is used to split the input text into several text pieces echo of 
         refresh: 'Refresh',
       },
       query: 'Query variables',
+      queryTip: 'Select the variable you want to use',
       agent: 'Agent',
+      addAgent: 'Add Agent',
       agentDescription:
         'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
       maxRecords: 'Max records',
@@ -1474,6 +1618,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       goto: 'Fail Branch',
       comment: 'Default Value',
+      sqlStatement: 'SQL Statement',
+      sqlStatementTip:
+        'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
+      frameworkPrompts: 'Framework',
     },
     llmTools: {
       bad_calculator: {
@@ -1499,6 +1647,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       editMCP: 'Edit MCP',
     },
     search: {
+      searchApps: 'Search Apps',
       createSearch: 'Create Search',
       searchGreeting: 'How can I help you today ？',
       profile: 'Hide Profile',
@@ -1522,6 +1671,35 @@ This delimiter is used to split the input text into several text pieces echo of 
       descriptionValue: 'You are an intelligent assistant.',
       okText: 'Save',
       cancelText: 'Cancel',
+      chooseDataset: 'Please select a dataset first',
+    },
+    language: {
+      english: 'English',
+      chinese: 'Chinese',
+      spanish: 'Spanish',
+      french: 'French',
+      german: 'German',
+      japanese: 'Japanese',
+      korean: 'Korean',
+      vietnamese: 'Vietnamese',
+    },
+    pagination: {
+      total: 'Total {{total}}',
+      page: '{{page}} /Page',
+    },
+    dataflowParser: {
+      parseSummary: 'Parse Summary',
+      parseSummaryTip: 'Parser：deepdoc',
+      rerunFromCurrentStep: 'Rerun From Current Step',
+      rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
+    },
+    dataflow: {
+      parser: 'Parser',
+      parserDescription: 'Parser',
+      chunker: 'Chunker',
+      chunkerDescription: 'Chunker',
+      tokenizer: 'Tokenizer',
+      tokenizerDescription: 'Tokenizer',
     },
   },
 };

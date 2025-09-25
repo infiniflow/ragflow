@@ -9,7 +9,7 @@ Initiate an AI-powered chat with a configured chat assistant.
 
 ---
 
-Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. Chats in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base, finished file parsing, and [run a retrieval test](../dataset/run_retrieval_test.md), you can go ahead and start an AI conversation.
+Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. Chats in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset, finished file parsing, and [run a retrieval test](../dataset/run_retrieval_test.md), you can go ahead and start an AI conversation.
 
 ## Start an AI chat
 
@@ -21,12 +21,12 @@ You start an AI conversation by creating an assistant.
 
 2. Update **Assistant settings**:
 
-   - **Assistant name** is the name of your chat assistant. Each assistant corresponds to a dialogue with a unique combination of knowledge bases, prompts, hybrid search configurations, and large model settings.
+   - **Assistant name** is the name of your chat assistant. Each assistant corresponds to a dialogue with a unique combination of datasets, prompts, hybrid search configurations, and large model settings.
    - **Empty response**:
-     - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then, when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
-     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations.
+     - If you wish to *confine* RAGFlow's answers to your datasets, leave a response here. Then, when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
+     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your datasets, leave it blank, which may give rise to hallucinations.
    - **Show quote**: This is a key feature of RAGFlow and enabled by default. RAGFlow does not work like a black box. Instead, it clearly shows the sources of information that its responses are based on.
-   - Select the corresponding knowledge bases. You can select one or multiple knowledge bases, but ensure that they use the same embedding model, otherwise an error would occur.
+   - Select the corresponding datasets. You can select one or multiple datasets, but ensure that they use the same embedding model, otherwise an error would occur.
 
 3. Update **Prompt engine**:
 
@@ -37,18 +37,18 @@ You start an AI conversation by creating an assistant.
      - If **Rerank model** is selected, the hybrid score system uses keyword similarity and reranker score, and the default weight assigned to the reranker score is 1-0.7=0.3.
    - **Top N** determines the *maximum* number of chunks to feed to the LLM. In other words, even if more chunks are retrieved, only the top N chunks are provided as input.
    - **Multi-turn optimization** enhances user queries using existing context in a multi-round conversation. It is enabled by default. When enabled, it will consume additional LLM tokens and significantly increase the time to generate answers.
-   - **Use knowledge graph** indicates whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.
+   - **Use knowledge graph** indicates whether to use knowledge graph(s) in the specified dataset(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.
    - **Reasoning** indicates whether to generate answers through reasoning processes like Deepseek-R1/OpenAI o1. Once enabled, the chat model autonomously integrates Deep Research during question answering when encountering an unknown topic. This involves the chat model dynamically searching external knowledge and generating final answers through reasoning.
    - **Rerank model** sets the reranker model to use. It is left empty by default.
      - If **Rerank model** is left empty, the hybrid score system uses keyword similarity and vector similarity, and the default weight assigned to the vector similarity component is 1-0.7=0.3.
      - If **Rerank model** is selected, the hybrid score system uses keyword similarity and reranker score, and the default weight assigned to the reranker score is 1-0.7=0.3.
    - [Cross-language search](../../references/glossary.mdx#cross-language-search): Optional  
      Select one or more target languages from the dropdown menu. The system’s default chat model will then translate your query into the selected target language(s). This translation ensures accurate semantic matching across languages, allowing you to retrieve relevant results regardless of language differences.  
-     - When selecting target languages, please ensure that these languages are present in the knowledge base to guarantee an effective search.
+     - When selecting target languages, please ensure that these languages are present in the dataset to guarantee an effective search.
      - If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
    - **Variable** refers to the variables (keys) to be used in the system prompt. `{knowledge}` is a reserved variable. Click **Add** to add more variables for the system prompt.
       - If you are uncertain about the logic behind **Variable**, leave it *as-is*.
-      - As of v0.20.3, if you add custom variables here, the only way you can pass in their values is to call:
+      - As of v0.20.5, if you add custom variables here, the only way you can pass in their values is to call:
          - HTTP method [Converse with chat assistant](../../references/http_api_reference.md#converse-with-chat-assistant), or
          - Python method [Converse with chat assistant](../../references/python_api_reference.md#converse-with-chat-assistant).
 
@@ -77,28 +77,24 @@ You start an AI conversation by creating an assistant.
 
 5. Now, let's start the show:
 
-   ![question1](https://github.com/user-attachments/assets/c4114a3d-74ff-40a3-9719-6b47c7b11ab1)
+   ![chat_thermal_solution](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_thermal_solution.jpg)
 
 :::tip NOTE
 
 1. Click the light bulb icon above the answer to view the expanded system prompt:
 
-![](https://github.com/user-attachments/assets/515ab187-94e8-412a-82f2-aba52cd79e09)
+![prompt_display](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_display.jpg)
 
    *The light bulb icon is available only for the current dialogue.*
 
 2. Scroll down the expanded prompt to view the time consumed for each task:
 
-![enlighten](https://github.com/user-attachments/assets/fedfa2ee-21a7-451b-be66-20125619923c)
+![time_elapsed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/time_elapsed.jpg)
 :::
 
 ## Update settings of an existing chat assistant
 
-Hover over an intended chat assistant **>** **Edit** to show the chat configuration dialogue:
-
-![edit_chat](https://github.com/user-attachments/assets/5c514cf0-a959-4cfe-abad-5e42a0e23974)
-
-![chat_config](https://github.com/user-attachments/assets/1a4eaed2-5430-4585-8ab6-930549838c5b)
+![chat_setting](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_setting.jpg)
 
 ## Integrate chat capabilities into your application or webpage
 
@@ -110,9 +106,11 @@ RAGFlow offers HTTP and Python APIs for you to integrate RAGFlow's capabilities 
 
 You can use iframe to embed the created chat assistant into a third-party webpage:
 
-1. Before proceeding, you must [acquire an API key](../models/llm_api_key_setup.md); otherwise, an error message would appear.
+1. Before proceeding, you must [acquire an API key](../../develop/acquire_ragflow_api_key.md); otherwise, an error message would appear.
 2. Hover over an intended chat assistant **>** **Edit** to show the **iframe** window:
 
-   ![chat-embed](https://github.com/user-attachments/assets/13ea3021-31c4-4a14-9b32-328cd3318fb5)
+   ![chat-embed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_chat_into_webpage.jpg)
 
-3. Copy the iframe and embed it into a specific location on your webpage.
+3. Copy the iframe and embed it into your webpage.
+
+![chat-embed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embedded_chat_app.jpg)

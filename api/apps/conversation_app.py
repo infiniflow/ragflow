@@ -15,7 +15,7 @@
 #
 import json
 import re
-import traceback
+import logging
 from copy import deepcopy
 from flask import Response, request
 from flask_login import current_user, login_required
@@ -29,8 +29,8 @@ from api.db.services.search_service import SearchService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
-from rag.prompts.prompt_template import load_prompt
-from rag.prompts.prompts import chunks_format
+from rag.prompts.template import load_prompt
+from rag.prompts.generator import chunks_format
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
@@ -226,7 +226,7 @@ def completion():
                 if not is_embedded:
                     ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
-                traceback.print_exc()
+                logging.exception(e)
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
@@ -400,6 +400,8 @@ def related_questions():
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT, chat_id)
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
     prompt = load_prompt("related_question")
     ans = chat_mdl.chat(
         prompt,

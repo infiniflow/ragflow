@@ -39,11 +39,11 @@ Knowledge graphs can also be used for multi-hop question-answering tasks. See [C
 
 The system's default chat model is used to summarize clustered content. Before proceeding, ensure that you have a chat model properly configured:
 
-![Image](https://github.com/user-attachments/assets/6bc34279-68c3-4d99-8d20-b7bd1dafc1c1)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
 
 ## Configurations
 
-The RAPTOR feature is disabled by default. To enable it, manually switch on the **Use RAPTOR to enhance retrieval** toggle on your knowledge base's **Configuration** page.
+The RAPTOR feature is disabled by default. To enable it, manually switch on the **Use RAPTOR to enhance retrieval** toggle on your dataset's **Configuration** page.
 
 ### Prompt
 

@@ -16,184 +16,15 @@
 import base64
 import datetime
 import hashlib
-import io
-import json
 import os
-import pickle
 import socket
 import time
 import uuid
 import requests
-import logging
-import copy
-from enum import Enum, IntEnum
+
 import importlib
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from filelock import FileLock
-from api.constants import SERVICE_CONF
 
-from . import file_utils
-
-
-def conf_realpath(conf_name):
-    conf_path = f"conf/{conf_name}"
-    return os.path.join(file_utils.get_project_base_directory(), conf_path)
-
-
-def read_config(conf_name=SERVICE_CONF):
-    local_config = {}
-    local_path = conf_realpath(f'local.{conf_name}')
-
-    # load local config file
-    if os.path.exists(local_path):
-        local_config = file_utils.load_yaml_conf(local_path)
-        if not isinstance(local_config, dict):
-            raise ValueError(f'Invalid config file: "{local_path}".')
-
-    global_config_path = conf_realpath(conf_name)
-    global_config = file_utils.load_yaml_conf(global_config_path)
-
-    if not isinstance(global_config, dict):
-        raise ValueError(f'Invalid config file: "{global_config_path}".')
-
-    global_config.update(local_config)
-    return global_config
-
-
-CONFIGS = read_config()
-
-
-def show_configs():
-    msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
-    for k, v in CONFIGS.items():
-        if isinstance(v, dict):
-            if "password" in v:
-                v = copy.deepcopy(v)
-                v["password"] = "*" * 8
-            if "access_key" in v:
-                v = copy.deepcopy(v)
-                v["access_key"] = "*" * 8
-            if "secret_key" in v:
-                v = copy.deepcopy(v)
-                v["secret_key"] = "*" * 8
-            if "secret" in v:
-                v = copy.deepcopy(v)
-                v["secret"] = "*" * 8
-            if "sas_token" in v:
-                v = copy.deepcopy(v)
-                v["sas_token"] = "*" * 8
-            if "oauth" in k:
-                v =  copy.deepcopy(v)
-                for key, val in v.items():
-                  if "client_secret" in val:
-                      val["client_secret"] = "*" * 8
-            if "authentication" in k:
-                v =  copy.deepcopy(v)
-                for key, val in v.items():
-                  if "http_secret_key" in val:
-                      val["http_secret_key"] = "*" * 8
-        msg += f"\n\t{k}: {v}"
-    logging.info(msg)
-
-
-def get_base_config(key, default=None):
-    if key is None:
-        return None
-    if default is None:
-        default = os.environ.get(key.upper())
-    return CONFIGS.get(key, default)
-
-
-use_deserialize_safe_module = get_base_config(
-    'use_deserialize_safe_module', False)
-
-
-class BaseType:
-    def to_dict(self):
-        return dict([(k.lstrip("_"), v) for k, v in self.__dict__.items()])
-
-    def to_dict_with_type(self):
-        def _dict(obj):
-            module = None
-            if issubclass(obj.__class__, BaseType):
-                data = {}
-                for attr, v in obj.__dict__.items():
-                    k = attr.lstrip("_")
-                    data[k] = _dict(v)
-                module = obj.__module__
-            elif isinstance(obj, (list, tuple)):
-                data = []
-                for i, vv in enumerate(obj):
-                    data.append(_dict(vv))
-            elif isinstance(obj, dict):
-                data = {}
-                for _k, vv in obj.items():
-                    data[_k] = _dict(vv)
-            else:
-                data = obj
-            return {"type": obj.__class__.__name__,
-                    "data": data, "module": module}
-
-        return _dict(self)
-
-
-class CustomJSONEncoder(json.JSONEncoder):
-    def __init__(self, **kwargs):
-        self._with_type = kwargs.pop("with_type", False)
-        super().__init__(**kwargs)
-
-    def default(self, obj):
-        if isinstance(obj, datetime.datetime):
-            return obj.strftime('%Y-%m-%d %H:%M:%S')
-        elif isinstance(obj, datetime.date):
-            return obj.strftime('%Y-%m-%d')
-        elif isinstance(obj, datetime.timedelta):
-            return str(obj)
-        elif issubclass(type(obj), Enum) or issubclass(type(obj), IntEnum):
-            return obj.value
-        elif isinstance(obj, set):
-            return list(obj)
-        elif issubclass(type(obj), BaseType):
-            if not self._with_type:
-                return obj.to_dict()
-            else:
-                return obj.to_dict_with_type()
-        elif isinstance(obj, type):
-            return obj.__name__
-        else:
-            return json.JSONEncoder.default(self, obj)
-
-
-def rag_uuid():
-    return uuid.uuid1().hex
-
-
-def string_to_bytes(string):
-    return string if isinstance(
-        string, bytes) else string.encode(encoding="utf-8")
-
-
-def bytes_to_string(byte):
-    return byte.decode(encoding="utf-8")
-
-
-def json_dumps(src, byte=False, indent=None, with_type=False):
-    dest = json.dumps(
-        src,
-        indent=indent,
-        cls=CustomJSONEncoder,
-        with_type=with_type)
-    if byte:
-        dest = string_to_bytes(dest)
-    return dest
-
-
-def json_loads(src, object_hook=None, object_pairs_hook=None):
-    if isinstance(src, bytes):
-        src = bytes_to_string(src)
-    return json.loads(src, object_hook=object_hook,
-                      object_pairs_hook=object_pairs_hook)
+from .common import string_to_bytes
 
 
 def current_timestamp():
@@ -213,45 +44,6 @@ def date_string_to_timestamp(time_str, format_string="%Y-%m-%d %H:%M:%S"):
     time_array = time.strptime(time_str, format_string)
     time_stamp = int(time.mktime(time_array) * 1000)
     return time_stamp
-
-
-def serialize_b64(src, to_str=False):
-    dest = base64.b64encode(pickle.dumps(src))
-    if not to_str:
-        return dest
-    else:
-        return bytes_to_string(dest)
-
-
-def deserialize_b64(src):
-    src = base64.b64decode(
-        string_to_bytes(src) if isinstance(
-            src, str) else src)
-    if use_deserialize_safe_module:
-        return restricted_loads(src)
-    return pickle.loads(src)
-
-
-safe_module = {
-    'numpy',
-    'rag_flow'
-}
-
-
-class RestrictedUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
-        import importlib
-        if module.split('.')[0] in safe_module:
-            _module = importlib.import_module(module)
-            return getattr(_module, name)
-        # Forbid everything else.
-        raise pickle.UnpicklingError("global '%s.%s' is forbidden" %
-                                     (module, name))
-
-
-def restricted_loads(src):
-    """Helper function analogous to pickle.loads()."""
-    return RestrictedUnpickler(io.BytesIO(src)).load()
 
 
 def get_lan_ip():
@@ -298,47 +90,6 @@ def from_dict_hook(in_dict: dict):
         return in_dict
 
 
-def decrypt_database_password(password):
-    encrypt_password = get_base_config("encrypt_password", False)
-    encrypt_module = get_base_config("encrypt_module", False)
-    private_key = get_base_config("private_key", None)
-
-    if not password or not encrypt_password:
-        return password
-
-    if not private_key:
-        raise ValueError("No private key")
-
-    module_fun = encrypt_module.split("#")
-    pwdecrypt_fun = getattr(
-        importlib.import_module(
-            module_fun[0]),
-        module_fun[1])
-
-    return pwdecrypt_fun(private_key, password)
-
-
-def decrypt_database_config(
-        database=None, passwd_key="password", name="database"):
-    if not database:
-        database = get_base_config(name, {})
-
-    database[passwd_key] = decrypt_database_password(database[passwd_key])
-    return database
-
-
-def update_config(key, value, conf_name=SERVICE_CONF):
-    conf_path = conf_realpath(conf_name=conf_name)
-    if not os.path.isabs(conf_path):
-        conf_path = os.path.join(
-            file_utils.get_project_base_directory(), conf_path)
-
-    with FileLock(os.path.join(os.path.dirname(conf_path), ".lock")):
-        config = file_utils.load_yaml_conf(conf_path=conf_path) or {}
-        config[key] = value
-        file_utils.rewrite_yaml_conf(conf_path=conf_path, config=config)
-
-
 def get_uuid():
     return uuid.uuid1().hex
 
@@ -363,37 +114,6 @@ def elapsed2time(elapsed):
     return '%02d:%02d:%02d' % (hour, minuter, second)
 
 
-def decrypt(line):
-    file_path = os.path.join(
-        file_utils.get_project_base_directory(),
-        "conf",
-        "private.pem")
-    rsa_key = RSA.importKey(open(file_path).read(), "Welcome")
-    cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    return cipher.decrypt(base64.b64decode(
-        line), "Fail to decrypt password!").decode('utf-8')
-
-
-def decrypt2(crypt_text):
-    from base64 import b64decode, b16decode
-    from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
-    from Crypto.PublicKey import RSA
-    decode_data = b64decode(crypt_text)
-    if len(decode_data) == 127:
-        hex_fixed = '00' + decode_data.hex()
-        decode_data = b16decode(hex_fixed.upper())
-
-    file_path = os.path.join(
-        file_utils.get_project_base_directory(),
-        "conf",
-        "private.pem")
-    pem = open(file_path).read()
-    rsa_key = RSA.importKey(pem, "Welcome")
-    cipher = Cipher_PKCS1_v1_5.new(rsa_key)
-    decrypt_text = cipher.decrypt(decode_data, None)
-    return (b64decode(decrypt_text)).decode()
-
-
 def download_img(url):
     if not url:
         return ""
@@ -408,5 +128,5 @@ def delta_seconds(date_string: str):
     return (datetime.datetime.now() - dt).total_seconds()
 
 
-def hash_str2int(line:str, mod: int=10 ** 8) -> int:
+def hash_str2int(line: str, mod: int = 10 ** 8) -> int:
     return int(hashlib.sha1(line.encode("utf-8")).hexdigest(), 16) % mod

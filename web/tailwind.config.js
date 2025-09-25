@@ -17,6 +17,15 @@ module.exports = {
         '2xl': '1400px',
       },
     },
+    screens: {
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1400px',
+      '3xl': '1780px',
+      '4xl': '1980px',
+    },
     extend: {
       colors: {
         border: 'var(--colors-outline-neutral-strong)',
@@ -55,7 +64,7 @@ module.exports = {
         'input-border': 'var(--input-border)',
 
         /* design colors */
-
+        'bg-title': 'var(--bg-title)',
         'bg-base': 'var(--bg-base)',
         'bg-card': 'var(--bg-card)',
         'bg-component': 'var(--bg-component)',

@@ -39,7 +39,7 @@ export default function DatasetWrapper() {
       </PageHeader>
       <div className="flex flex-1 min-h-0">
         <SideBar></SideBar>
-        <div className="flex-1">
+        <div className="flex-1 overflow-auto">
           <Outlet />
         </div>
       </div>

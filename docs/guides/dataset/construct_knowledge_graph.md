@@ -5,7 +5,7 @@ slug: /construct_knowledge_graph
 
 # Construct knowledge graph
 
-Generate a knowledge graph for your knowledge base.
+Generate a knowledge graph for your dataset.
 
 ---
 
@@ -13,7 +13,7 @@ To enhance multi-hop question-answering, RAGFlow adds a knowledge graph construc
 
 ![Image](https://github.com/user-attachments/assets/1ec21d8e-f255-4d65-9918-69b72dfa142b)
 
-From v0.16.0 onward, RAGFlow supports constructing a knowledge graph on a knowledge base, allowing you to construct a *unified* graph across multiple files within your knowledge base. When a newly uploaded file starts parsing, the generated graph will automatically update.
+From v0.16.0 onward, RAGFlow supports constructing a knowledge graph on a dataset, allowing you to construct a *unified* graph across multiple files within your dataset. When a newly uploaded file starts parsing, the generated graph will automatically update.
 
 :::danger WARNING
 Constructing a knowledge graph requires significant memory, computational resources, and tokens.
@@ -31,13 +31,13 @@ RAPTOR (Recursive Abstractive Processing for Tree Organized Retrieval) can also 
 
 The system's default chat model is used to generate knowledge graph. Before proceeding, ensure that you have a chat model properly configured:
 
-![Image](https://github.com/user-attachments/assets/6bc34279-68c3-4d99-8d20-b7bd1dafc1c1)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
 
 ## Configurations
 
 ### Entity types (*Required*)
 
-The types of the entities to extract from your knowledge base. The default types are: **organization**, **person**, **event**, and **category**. Add or remove types to suit your specific knowledge base.
+The types of the entities to extract from your dataset. The default types are: **organization**, **person**, **event**, and **category**. Add or remove types to suit your specific dataset.
 
 ### Method
 
@@ -62,26 +62,26 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 
 ## Procedure
 
-1. On the **Configuration** page of your knowledge base, switch on **Extract knowledge graph** or adjust its settings as needed, and click **Save** to confirm your changes.
+1. On the **Configuration** page of your dataset, switch on **Extract knowledge graph** or adjust its settings as needed, and click **Save** to confirm your changes.
 
-   - *The default knowledge graph configurations for your knowledge base are now set and files uploaded from this point onward will automatically use these settings during parsing.*
+   - *The default knowledge graph configurations for your dataset are now set and files uploaded from this point onward will automatically use these settings during parsing.*
    - *Files parsed before this update will retain their original knowledge graph settings.*
 
-2. The knowledge graph of your knowledge base does *not* automatically update *until* a newly uploaded file is parsed.
+2. The knowledge graph of your dataset does *not* automatically update *until* a newly uploaded file is parsed.
 
    _A **Knowledge graph** entry appears under **Configuration** once a knowledge graph is created._
 
 3. Click **Knowledge graph** to view the details of the generated graph.
 4. To use the created knowledge graph, do either of the following:
    
-   - In your **Chat Configuration** dialogue, click the **Assistant settings** tab to add the corresponding knowledge base(s) and click the **Prompt engine** tab to switch on the **Use knowledge graph** toggle.
-   - If you are using an agent, click the **Retrieval** agent component to specify the knowledge base(s) and switch on the **Use knowledge graph** toggle.
+   - In the **Chat setting** panel of your chat app, switch on the **Use knowledge graph** toggle.
+   - If you are using an agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **Use knowledge graph** toggle.
 
 ## Frequently asked questions
 
-### Can I have different knowledge graph settings for different files in my knowledge base?
+### Can I have different knowledge graph settings for different files in my dataset?
 
-Yes, you can. Just one graph is generated per knowledge base. The smaller graphs of your files will be *combined* into one big, unified graph at the end of the graph extraction process.
+Yes, you can. Just one graph is generated per dataset. The smaller graphs of your files will be *combined* into one big, unified graph at the end of the graph extraction process.
 
 ### Does the knowledge graph automatically update when I remove a related file?
 
@@ -89,7 +89,7 @@ Nope. The knowledge graph does *not* automatically update *until* a newly upload
 
 ### How to remove a generated knowledge graph?
 
-To remove the generated knowledge graph, delete all related files in your knowledge base. Although the **Knowledge graph** entry will still be visible, the graph has actually been deleted.
+To remove the generated knowledge graph, delete all related files in your dataset. Although the **Knowledge graph** entry will still be visible, the graph has actually been deleted.
 
 ### Where is the created knowledge graph stored?
 
