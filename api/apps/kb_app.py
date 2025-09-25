@@ -545,9 +545,6 @@ def run_graphrag():
     if task and task.progress not in [-1, 1]:
         return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running.")
 
-    document_ids = []
-    sample_document = {}
-
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=kb_id,
         page_number=0,
@@ -559,13 +556,11 @@ def run_graphrag():
         types=[],
         suffix=[],
     )
-    for document in documents:
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
 
-        if not sample_document and document["parser_config"].get("graphrag", {}).get("use_graphrag", False):
-            sample_document = document
-            document_ids.insert(0, document["id"])
-        else:
-            document_ids.append(document["id"])
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
 
     task_id = queue_raptor_o_graphrag_tasks(doc=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
@@ -585,7 +580,6 @@ def trace_graphrag():
     ok, kb = KnowledgebaseService.get_by_id(kb_id)
     if not ok:
         return get_error_data_result(message="Invalid Knowledgebase ID")
-
 
     task_id = kb.graphrag_task_id
     if not task_id:
@@ -619,9 +613,6 @@ def run_raptor():
     if task and task.progress not in [-1, 1]:
         return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running.")
 
-    document_ids = []
-    sample_document = {}
-
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=kb_id,
         page_number=0,
@@ -633,13 +624,11 @@ def run_raptor():
         types=[],
         suffix=[],
     )
-    for document in documents:
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
 
-        if not sample_document:
-            sample_document = document
-            document_ids.insert(0, document["id"])
-        else:
-            document_ids.append(document["id"])
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
 
     task_id = queue_raptor_o_graphrag_tasks(doc=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
@@ -659,7 +648,6 @@ def trace_raptor():
     ok, kb = KnowledgebaseService.get_by_id(kb_id)
     if not ok:
         return get_error_data_result(message="Invalid Knowledgebase ID")
-
 
     task_id = kb.raptor_task_id
     if not task_id:
