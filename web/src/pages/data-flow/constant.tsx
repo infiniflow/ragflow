@@ -289,7 +289,7 @@ export const initialHierarchicalMergerValues = {
   ],
 };
 
-export const initialContextValues = {
+export const initialExtractorValues = {
   ...initialLlmBaseValues,
   field_name: ContextGeneratorFieldName.Summary,
   outputs: {},
@@ -318,6 +318,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
+  [Operator.Extractor]: [Operator.Begin],
 };
 
 export const NodeMap = {

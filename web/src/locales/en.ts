@@ -1712,6 +1712,53 @@ This delimiter is used to split the input text into several text pieces echo of 
       questions: 'Questions',
       metadata: 'Metadata',
       fieldName: 'Result Destination',
+      prompts: {
+        system: {
+          keywords: `Role
+You are a text analyzer.
+
+Task
+Extract the most important keywords/phrases of a given piece of text content.
+
+Requirements
+- Summarize the text content, and give the top 5 important keywords/phrases.
+- The keywords MUST be in the same language as the given piece of text content.
+- The keywords are delimited by ENGLISH COMMA.
+- Output keywords ONLY.`,
+          questions: `Role
+You are a text analyzer.
+
+Task
+Propose 3 questions about a given piece of text content.
+
+Requirements
+- Understand and summarize the text content, and propose the top 3 important questions.
+- The questions SHOULD NOT have overlapping meanings.
+- The questions SHOULD cover the main content of the text as much as possible.
+- The questions MUST be in the same language as the given piece of text content.
+- One question per line.
+- Output questions ONLY.`,
+          summary: `Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.
+
+Key Instructions:
+1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.
+2. Language: Write the summary in the same language as the source text.
+3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.
+4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.`,
+          metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
+
+Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+        },
+        user: {
+          keywords: `Text Content
+[Insert text here]`,
+          questions: `Text Content
+[Insert text here]`,
+          summary: `Text to Summarize:
+[Insert text here]`,
+          metadata: `Content: [INSERT CONTENT HERE]`,
+        },
+      },
     },
   },
 };

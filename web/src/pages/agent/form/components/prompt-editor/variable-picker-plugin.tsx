@@ -131,11 +131,11 @@ export default function VariablePickerMenuPlugin({
   baseOptions,
 }: VariablePickerMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
-  const isFirstRender = useRef(true);
-
   const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
     minLength: 0,
   });
+
+  const previousValue = useRef<string | undefined>();
 
   const [queryString, setQueryString] = React.useState<string | null>('');
 
@@ -280,8 +280,8 @@ export default function VariablePickerMenuPlugin({
   );
 
   useEffect(() => {
-    if (editor && value && isFirstRender.current) {
-      isFirstRender.current = false;
+    if (editor && value && value !== previousValue.current) {
+      previousValue.current = value;
       editor.update(
         () => {
           parseTextToVariableNodes(value);
