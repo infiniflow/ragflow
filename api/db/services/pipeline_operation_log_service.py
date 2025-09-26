@@ -15,12 +15,12 @@
 #
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from peewee import fn
 
-from api.db import VALID_PIPELINE_TASK_TYPES
-from api.db.db_models import DB, PipelineOperationLog, Document
+from api.db import VALID_PIPELINE_TASK_TYPES, PipelineTaskType
+from api.db.db_models import DB, Document, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
@@ -127,6 +127,19 @@ class PipelineOperationLogService(CommonService):
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")
 
+        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR]:
+            finish_at = document.process_begin_at + timedelta(seconds=document.process_duration)
+            if task_type == PipelineTaskType.GRAPH_RAG:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"graphrag_task_finish_at": finish_at},
+                )
+            elif task_type == PipelineTaskType.RAPTOR:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"raptor_task_finish_at": finish_at},
+                )
+
         log = dict(
             id=get_uuid(),
             document_id=document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
@@ -192,17 +205,18 @@ class PipelineOperationLogService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_documents_info(cls, id):
-        fields = [
-            Document.id,
-            Document.name,
-            Document.progress
-        ]
-        return cls.model.select(*fields).join(Document, on=(cls.model.document_id == Document.id)).where(
-            cls.model.id == id,
-            Document.progress > 0,
-            Document.progress < 1
-        ).dicts()
-    
+        fields = [Document.id, Document.name, Document.progress]
+        return (
+            cls.model.select(*fields)
+            .join(Document, on=(cls.model.document_id == Document.id))
+            .where(
+                cls.model.id == id,
+                Document.progress > 0,
+                Document.progress < 1,
+            )
+            .dicts()
+        )
+
     @classmethod
     @DB.connection_context()
     def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status):
@@ -222,4 +236,3 @@ class PipelineOperationLogService(CommonService):
             logs = logs.paginate(page_number, items_per_page)
 
         return list(logs.dicts()), count
-
