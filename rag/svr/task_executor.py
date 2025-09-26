@@ -223,10 +223,9 @@ async def collect():
         return None, None
 
     canceled = False
-    if msg.get("doc_id", "") == GRAPH_RAPTOR_FAKE_DOC_ID:
+    if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
         task = msg
         if task["task_type"] in ["graphrag", "raptor", "mindmap"] and msg.get("doc_ids", []):
-            print(f"hack {msg['doc_ids']=}=",flush=True)
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
             task["doc_ids"] = msg["doc_ids"]
     else:
@@ -833,7 +832,6 @@ async def do_handle_task(task):
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
         return
     elif task_type == "mindmap":
-        time.sleep(2)
         progress_callback(1, "place holder")
         pass
         return

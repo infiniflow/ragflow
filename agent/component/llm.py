@@ -102,6 +102,8 @@ class LLM(ComponentBase):
 
     def get_input_elements(self) -> dict[str, Any]:
         res = self.get_input_elements_from_text(self._param.sys_prompt)
+        if isinstance(self._param.prompts, str):
+            self._param.prompts = [{"role": "user", "content": self._param.prompts}]
         for prompt in self._param.prompts:
             d = self.get_input_elements_from_text(prompt["content"])
             res.update(d)
@@ -114,6 +116,8 @@ class LLM(ComponentBase):
         self._param.sys_prompt += txt
 
     def _sys_prompt_and_msg(self, msg, args):
+        if isinstance(self._param.prompts, str):
+            self._param.prompts = [{"role": "user", "content": self._param.prompts}]
         for p in self._param.prompts:
             if msg and msg[-1]["role"] == p["role"]:
                 continue
