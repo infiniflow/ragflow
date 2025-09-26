@@ -31,6 +31,7 @@ class Extractor(ProcessBase, LLM):
     component_name = "Extractor"
 
     async def _invoke(self, **kwargs):
+        self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
         inputs = self.get_input_elements()
         chunks = []
@@ -50,7 +51,8 @@ class Extractor(ProcessBase, LLM):
                 msg.insert(0, {"role": "system", "content": sys_prompt})
                 ck[self._param.field_name] = self._generate(msg)
                 prog += 1./len(chunks)
-                self.callback(prog, f"{i+1} / {len(chunks)}")
+                if i % (len(chunks)//100+1) == 1:
+                    self.callback(prog, f"{i+1} / {len(chunks)}")
             self.set_output("chunks", chunks)
         else:
             msg, sys_prompt = self._sys_prompt_and_msg([], args)

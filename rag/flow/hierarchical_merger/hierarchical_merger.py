@@ -53,6 +53,7 @@ class HierarchicalMerger(ProcessBase):
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return
 
+        self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to merge hierarchically.")
         if from_upstream.output_format in ["markdown", "text", "html"]:
             if from_upstream.output_format == "markdown":
