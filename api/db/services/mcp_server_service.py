@@ -84,3 +84,8 @@ class MCPServerService(CommonService):
             return bool(mcp_server), mcp_server
         except Exception:
             return False, None
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_tenant_id(cls, tenant_id: str):
+        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()

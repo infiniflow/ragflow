@@ -18,13 +18,20 @@ import uuid
 
 from api import settings
 from api.db import FileType, UserTenantRole, ActiveEnum
+from api.db.services.api_service import APITokenService, API4ConversationService
+from api.db.services.canvas_service import UserCanvasService
+from api.db.services.conversation_service import ConversationService
+from api.db.services.dialog_service import DialogService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.file_service import FileService
+from api.db.services.mcp_server_service import MCPServerService
+from api.db.services.search_service import SearchService
 from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search
@@ -148,26 +155,42 @@ def delete_user_data(user_id: str) -> dict:
             if kb_ids:
                 # step1.1.1 delete files in storage, rm bucket
                 for kb_id in kb_ids:
-                    STORAGE_IMPL.remove_bucket(kb_id)
+                    if STORAGE_IMPL.bucket_exists(kb_id):
+                        STORAGE_IMPL.remove_bucket(kb_id)
                 done_msg += f"- Removed {len(kb_ids)} dataset's buckets.\n"
                 # step1.1.2 delete file and document info in db
                 doc_ids = DocumentService.get_all_doc_ids_by_kb_ids(kb_ids)
                 if doc_ids:
-                    doc_res = DocumentService.delete_by_ids(doc_ids)
+                    doc_res = DocumentService.delete_by_ids([i["id"] for i in doc_ids])
                     done_msg += f"- Deleted {doc_res} document records.\n"
                 file_ids = FileService.get_all_file_ids_by_tenant_id(usr.id)
                 if file_ids:
-                    file_res = FileService.delete_by_ids(file_ids)
+                    file_res = FileService.delete_by_ids([f["id"] for f in file_ids])
                     done_msg += f"- Deleted {file_res} file records.\n"
                 if doc_ids or file_ids:
-                    rl_res = File2DocumentService.delete_by_document_ids_or_file_ids(doc_ids, file_ids)
+                    rl_res = File2DocumentService.delete_by_document_ids_or_file_ids(
+                        [i["id"] for i in doc_ids],
+                        [f["id"] for f in file_ids]
+                    )
                     done_msg += f"- Deleted {rl_res} document-file relation records.\n"
-                # step1.1.3 delete dataset info
+                # step1.1.3 delete chunk in es
                 r = settings.docStoreConn.delete({"kb_id": kb_ids},
                                          search.index_name(tenant_id), kb_ids)
                 done_msg += f"- Deleted {r} doc store records.\n"
                 kb_res = KnowledgebaseService.delete_by_ids(kb_ids)
                 done_msg += f"- Deleted {kb_res} knowledgebase records.\n"
+                # step1.1.4 delete agents
+                ag_res = delete_user_agents(usr.id)
+                done_msg += f"- Deleted {ag_res['agents_deleted_count']} agent, {ag_res['version_deleted_count']} versions records.\n"
+                # step1.1.5 delete dialogs
+                d_res = delete_user_dialogs(usr.id)
+                done_msg += f"- Deleted {d_res['dialogs_deleted_count']} dialogs, {d_res['conversations_deleted_count']} conversations, {d_res['api_token_deleted_count']} api tokens, {d_res['api4conversation_deleted_count']} api4conversations.\n"
+                # step1.1.6 delete mcp server
+                mcp_res = MCPServerService.delete_by_tenant_id(usr.id)
+                done_msg += f"- Deleted {mcp_res} MCP server.\n"
+                # step1.1.7 delete search
+                search_res = SearchService.delete_by_tenant_id(usr.id)
+                done_msg += f"- Deleted {search_res} search records.\n"
             # step1.2 delete tenant_llm and tenant_langfuse
             llm_res = TenantLLMService.delete_by_tenant_id(tenant_id)
             done_msg += f"- Deleted {llm_res} tenant-LLM records.\n"
@@ -178,7 +201,13 @@ def delete_user_data(user_id: str) -> dict:
             done_msg += f"- Deleted {t_res} tenant.\n"
         # step2 delete user-tenant relation
         if tenants:
-            ut_res = TenantService.delete_by_ids([t["id"] for t in tenants])
+            # step2.1 delete docs and files in joined team
+            joined_tenants = [t for t in tenants if t["role"] == UserTenantRole.NORMAL.value]
+            if joined_tenants:
+                pass
+
+            # step2.2 delete relation
+            ut_res = UserTenantService.delete_by_ids([t["id"] for t in tenants])
             done_msg += f"- Deleted {ut_res} user-tenant records.\n"
         # step3 finally delete user
         u_res = UserService.delete_by_id(usr.id)
@@ -189,3 +218,53 @@ def delete_user_data(user_id: str) -> dict:
     except Exception as e:
         logging.exception(e)
         return {"success": False, "message": f"Fail to delete user, error: {str(e)}. Already done:\n{done_msg}"}
+
+
+def delete_user_agents(user_id: str) -> dict:
+    """
+    use user_id to delete
+    :return: {
+        "agents_deleted_count": 1,
+        "version_deleted_count": 2
+    }
+    """
+    agents_deleted_count, agents_version_deleted_count = 0, 0
+    user_agents = UserCanvasService.get_all_agents_by_tenant_ids([user_id], user_id)
+    if user_agents:
+        agents_version = UserCanvasVersionService.get_all_canvas_version_by_canvas_ids([a['id'] for a in user_agents])
+        agents_version_deleted_count = UserCanvasVersionService.delete_by_ids([v['id'] for v in agents_version])
+        agents_deleted_count = UserCanvasService.delete_by_ids([a['id'] for a in user_agents])
+    return {
+        "agents_deleted_count": agents_deleted_count,
+        "version_deleted_count": agents_version_deleted_count
+    }
+
+
+def delete_user_dialogs(user_id: str) -> dict:
+    """
+    use user_id to delete
+    :return: {
+        "dialogs_deleted_count": 1,
+        "conversations_deleted_count": 1,
+        "api_token_deleted_count": 2,
+        "api4conversation_deleted_count": 2
+    }
+    """
+    dialog_deleted_count, conversations_deleted_count, api_token_deleted_count, api4conversation_deleted_cnt = 0, 0, 0, 0
+    user_dialogs = DialogService.get_all_dialogs_by_tenant_id(user_id)
+    if user_dialogs:
+        # delete conversation
+        conversations = ConversationService.get_all_conversation_by_dialog_ids([ud['id'] for ud in user_dialogs])
+        conversations_deleted_count = ConversationService.delete_by_ids([c['id'] for c in conversations])
+        # delete api token
+        api_token_deleted_count = APITokenService.delete_by_tenant_id(user_id)
+        # delete api for conversation
+        api4conversation_deleted_cnt = API4ConversationService.delete_by_dialog_ids([ud['id'] for ud in user_dialogs])
+        # delete dialog at last
+        dialog_deleted_count = DialogService.delete_by_ids([ud['id'] for ud in user_dialogs])
+    return {
+        "dialogs_deleted_count": dialog_deleted_count,
+        "conversations_deleted_count": conversations_deleted_count,
+        "api_token_deleted_count": api_token_deleted_count,
+        "api4conversation_deleted_count": api4conversation_deleted_cnt
+    }
