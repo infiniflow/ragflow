@@ -20,6 +20,9 @@ import random
 import sys
 import threading
 import time
+
+import json_repair
+
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
@@ -520,7 +523,7 @@ async def run_dataflow(task: dict):
             return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
         vects = np.array([])
         texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
-        delta = 0.20/(len(texts)//EMBEDDING_BATCH_SIZE)
+        delta = 0.20/(len(texts)//EMBEDDING_BATCH_SIZE+1)
         prog = 0.8
         for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
@@ -531,7 +534,8 @@ async def run_dataflow(task: dict):
                 vects = np.concatenate((vects, vts), axis=0)
             embedding_token_consumption += c
             prog += delta
-            set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//EMBEDDING_BATCH_SIZE}")
+            if i % (len(texts)//EMBEDDING_BATCH_SIZE/100+1) == 1:
+                set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//EMBEDDING_BATCH_SIZE}")
 
         assert len(vects) == len(chunks)
         for i, ck in enumerate(chunks):
@@ -541,9 +545,23 @@ async def run_dataflow(task: dict):
     metadata = {}
     def dict_update(meta):
         nonlocal metadata
-        if not meta or not isinstance(meta, dict):
+        if not meta:
             return
-        for k,v in meta.items():
+        if isinstance(meta, str):
+            try:
+                meta = json_repair.loads(meta)
+            except Exception:
+                logging.error("Meta data format error.")
+                return
+        if not isinstance(meta, dict):
+            return
+        for k, v in meta.items():
+            if isinstance(v, list):
+                v = [vv for vv in v if isinstance(vv, str)]
+                if not v:
+                    continue
+            if not isinstance(v, list) and not isinstance(v, str):
+                continue
             if k not in metadata:
                 metadata[k] = v
                 continue
@@ -563,10 +581,19 @@ async def run_dataflow(task: dict):
         ck["create_timestamp_flt"] = datetime.now().timestamp()
         ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
         if "questions" in ck:
+            if "question_tks" not in ck:
+                ck["question_kwd"] = ck["questions"].split("\n")
+                ck["question_tks"] = rag_tokenizer.tokenize(str(ck["questions"]))
             del ck["questions"]
         if "keywords" in ck:
+            if "important_tks" not in ck:
+                ck["important_kwd"] = ck["keywords"].split(",")
+                ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
             del ck["keywords"]
         if "summary" in ck:
+            if "content_ltks" not in ck:
+                ck["content_ltks"] = rag_tokenizer.tokenize(str(ck["summary"]))
+                ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
             del ck["summary"]
         if "metadata" in ck:
             dict_update(ck["metadata"])

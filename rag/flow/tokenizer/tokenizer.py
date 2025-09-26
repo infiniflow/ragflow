@@ -108,6 +108,7 @@ class Tokenizer(ProcessBase):
             self.set_output("_ERROR", f"Input error: {str(e)}")
             return
 
+        self.set_output("output_format", "chunks")
         parts = sum(["full_text" in self._param.search_method, "embedding" in self._param.search_method])
         if "full_text" in self._param.search_method:
             self.callback(random.randint(1, 5) / 100.0, "Start to tokenize.")
@@ -117,11 +118,13 @@ class Tokenizer(ProcessBase):
                     ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
                     ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
                     if ck.get("questions"):
-                        ck["question_tks"] = rag_tokenizer.tokenize("\n".join(ck["questions"]))
+                        ck["question_kwd"] = ck["questions"].split("\n")
+                        ck["question_tks"] = rag_tokenizer.tokenize(str(ck["questions"]))
                     if ck.get("keywords"):
-                        ck["important_tks"] = rag_tokenizer.tokenize(",".join(ck["keywords"]))
+                        ck["important_kwd"] = ck["keywords"].split(",")
+                        ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
                     if ck.get("summary"):
-                        ck["content_ltks"] = rag_tokenizer.tokenize(ck["summary"])
+                        ck["content_ltks"] = rag_tokenizer.tokenize(str(ck["summary"]))
                         ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     else:
                         ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])

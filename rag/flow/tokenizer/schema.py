@@ -24,7 +24,7 @@ class TokenizerFromUpstream(BaseModel):
     name: str = ""
     file: dict | None = Field(default=None)
 
-    output_format: Literal["json", "markdown", "text", "html"] | None = Field(default=None)
+    output_format: Literal["json", "markdown", "text", "html", "chunks"] | None = Field(default=None)
 
     chunks: list[dict[str, Any]] | None = Field(default=None)
 
