@@ -127,7 +127,7 @@ class Message(ComponentBase):
         ]
         return any([re.search(p, content) for p in patt])
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         rand_cnt = random.choice(self._param.content)
         if self._param.stream and not self._is_jinjia2(rand_cnt):
