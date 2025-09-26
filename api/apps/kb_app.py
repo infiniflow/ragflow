@@ -543,8 +543,8 @@ def run_graphrag():
         if not ok:
             logging.warning(f"A valid GraphRAG task id is expected for kb {kb_id}")
 
-    if task and task.progress not in [-1, 1]:
-        return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running.")
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running.")
 
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=kb_id,
@@ -612,8 +612,8 @@ def run_raptor():
         if not ok:
             logging.warning(f"A valid RAPTOR task id is expected for kb {kb_id}")
 
-    if task and task.progress not in [-1, 1]:
-        return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running.")
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running.")
 
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=kb_id,
@@ -681,8 +681,8 @@ def run_mindmap():
         if not ok:
             logging.warning(f"A valid Mindmap task id is expected for kb {kb_id}")
 
-    if task and task.progress not in [-1, 1]:
-        return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Mindmap Task is already running.")
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Mindmap Task is already running.")
 
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=kb_id,
