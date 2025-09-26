@@ -29,6 +29,7 @@ import {
   Logs,
   ScreenShare,
   Settings,
+  Timer,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback } from 'react';
@@ -44,6 +45,7 @@ import {
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
+import { ScheduleModal, useScheduleModal } from './schedule-modal';
 import { SettingDialog } from './setting-dialog';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
@@ -87,6 +89,11 @@ export default function Agent() {
     hideModal: hideVersionDialog,
     showModal: showVersionDialog,
   } = useSetModalState();
+  const {
+    visible: scheduleVisible,
+    showModal: showScheduleModal,
+    hideModal: hideScheduleModal,
+  } = useScheduleModal();
 
   const {
     visible: settingDialogVisible,
@@ -155,6 +162,10 @@ export default function Agent() {
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
+              <AgentDropdownMenuItem onClick={showScheduleModal}>
+                <Timer />
+                {t('flow.schedule.title')}
+              </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={showSettingDialog}>
                 <Settings />
@@ -195,6 +206,14 @@ export default function Agent() {
         <DropdownProvider>
           <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
         </DropdownProvider>
+      )}
+      {scheduleVisible && (
+        <ScheduleModal
+          visible={scheduleVisible}
+          hideModal={hideScheduleModal}
+          canvasId={id!}
+          canvasTitle={agentDetail.title}
+        />
       )}
       {settingDialogVisible && (
         <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
