@@ -651,7 +651,11 @@ class Knowledgebase(DataBaseModel):
     pagerank = IntegerField(default=0, index=False)
 
     graphrag_task_id = CharField(max_length=32, null=True, help_text="Graph RAG task ID", index=True)
+    graphrag_task_finish_at = DateTimeField(null=True)
     raptor_task_id = CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True)
+    raptor_task_finish_at = DateTimeField(null=True)
+    mindmap_task_id = CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)
+    mindmap_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1082,6 +1086,22 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "graphrag_task_finish_at", DateTimeField(null=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "raptor_task_finish_at", CharField(null=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "mindmap_task_finish_at", CharField(null=True)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

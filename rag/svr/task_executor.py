@@ -93,6 +93,7 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "dataflow" : PipelineTaskType.PARSE,
     "raptor": PipelineTaskType.RAPTOR,
     "graphrag": PipelineTaskType.GRAPH_RAG,
+    "mindmap": PipelineTaskType.MINDMAP,
 }
 
 UNACKED_ITERATOR = None
@@ -227,7 +228,7 @@ async def collect():
     canceled = False
     if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
         task = msg
-        if task["task_type"] in ["graphrag", "raptor"] and msg.get("doc_ids", []):
+        if task["task_type"] in ["graphrag", "raptor", "mindmap"] and msg.get("doc_ids", []):
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
             task["doc_ids"] = msg["doc_ids"]
     else:
@@ -822,6 +823,10 @@ async def do_handle_task(task):
             logging.info(f"GraphRAG task result for task {task}:\n{result}")
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
         return
+    elif task_type == "mindmap":
+        progress_callback(1, "place holder")
+        pass
+        return
     else:
         # Standard chunking methods
         start_ts = timer()
@@ -898,7 +903,7 @@ async def handle_task():
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
         task_document_ids = []
-        if task_type in ["graphrag", "raptor"]:
+        if task_type in ["graphrag", "raptor", "mindmap"]:
             task_document_ids = task["doc_ids"]
         if not task.get("dataflow_id", ""):
             PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, fake_document_ids=task_document_ids)
