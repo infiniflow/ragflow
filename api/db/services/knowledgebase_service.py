@@ -232,6 +232,8 @@ class KnowledgebaseService(CommonService):
             cls.model.graphrag_task_finish_at,
             cls.model.raptor_task_id,
             cls.model.raptor_task_finish_at,
+            cls.model.mindmap_task_id,
+            cls.model.mindmap_task_finish_at,
             cls.model.create_time,
             cls.model.update_time
             ]
