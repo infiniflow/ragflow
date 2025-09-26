@@ -1,3 +1,4 @@
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
@@ -6,7 +7,7 @@ import { Form } from '@/components/ui/form';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useCallback } from 'react';
+import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -19,6 +20,7 @@ import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
+import { useSwitchPrompt } from './use-switch-prompt';
 
 export const FormSchema = z.object({
   field_name: z.string(),
@@ -43,25 +45,13 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
 
   const options = buildOptions(ContextGeneratorFieldName, t, 'dataflow');
 
-  const setPromptValue = useCallback(
-    (field: keyof ExtractorFormSchemaType, key: string, value: string) => {
-      form.setValue(field, t(`dataflow.prompts.${key}.${value}`), {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-    },
-    [form, t],
-  );
-
-  const handleFieldNameChange = useCallback(
-    (value: string) => {
-      if (value) {
-        setPromptValue('sys_prompt', 'system', value);
-        setPromptValue('prompts', 'user', value);
-      }
-    },
-    [setPromptValue],
-  );
+  const {
+    handleFieldNameChange,
+    confirmSwitch,
+    hideModal,
+    visible,
+    cancelSwitch,
+  } = useSwitchPrompt(form);
 
   useWatchFormChange(node?.id, form);
 
@@ -96,6 +86,15 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
           ></PromptEditor>
         </RAGFlowFormItem>
       </FormWrapper>
+      {visible && (
+        <ConfirmDeleteDialog
+          title={t('dataflow.switchPromptMessage')}
+          open
+          onOpenChange={hideModal}
+          onOk={confirmSwitch}
+          onCancel={cancelSwitch}
+        ></ConfirmDeleteDialog>
+      )}
     </Form>
   );
 };

@@ -1765,6 +1765,9 @@ Important structured information may include: names, dates, locations, events, k
           metadata: `Content: [INSERT CONTENT HERE]`,
         },
       },
+      cancel: 'Cancel',
+      swicthPromptMessage:
+        'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
     },
   },
 };

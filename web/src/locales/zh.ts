@@ -1683,6 +1683,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           metadata: `内容：[在此处插入内容]`,
         },
       },
+      cancel: '取消',
+      switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
     },
   },
 };

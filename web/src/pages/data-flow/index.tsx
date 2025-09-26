@@ -103,7 +103,6 @@ export default function DataFlow() {
   const { handleCancel } = useCancelCurrentDataflow({
     messageId,
     setMessageId,
-    hideLogSheet,
   });
 
   const time = useWatchAgentChange(chatDrawerVisible);

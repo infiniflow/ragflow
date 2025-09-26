@@ -4,11 +4,9 @@ import { useCallback } from 'react';
 export function useCancelCurrentDataflow({
   messageId,
   setMessageId,
-  hideLogSheet,
 }: {
   messageId: string;
   setMessageId: (messageId: string) => void;
-  hideLogSheet(): void;
 }) {
   const { cancelDataflow } = useCancelDataflow();
 
@@ -16,9 +14,8 @@ export function useCancelCurrentDataflow({
     const code = await cancelDataflow(messageId);
     if (code === 0) {
       setMessageId('');
-      hideLogSheet();
     }
-  }, [cancelDataflow, hideLogSheet, messageId, setMessageId]);
+  }, [cancelDataflow, messageId, setMessageId]);
 
   return { handleCancel };
 }
