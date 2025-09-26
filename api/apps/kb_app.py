@@ -538,9 +538,10 @@ def run_graphrag():
         return get_error_data_result(message="Invalid Knowledgebase ID")
 
     task_id = kb.graphrag_task_id
-    ok, task = TaskService.get_by_id(task_id)
-    if not ok:
-        logging.warning(f"A valid GraphRAG task id is expected for kb {kb_id}")
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid GraphRAG task id is expected for kb {kb_id}")
 
     if task and task.progress not in [-1, 1]:
         return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running.")
@@ -583,7 +584,7 @@ def trace_graphrag():
 
     task_id = kb.graphrag_task_id
     if not task_id:
-        return get_error_data_result(message="GraphRAG Task ID Not Found")
+        return get_json_result(data={})
 
     ok, task = TaskService.get_by_id(task_id)
     if not ok:
@@ -606,9 +607,10 @@ def run_raptor():
         return get_error_data_result(message="Invalid Knowledgebase ID")
 
     task_id = kb.raptor_task_id
-    ok, task = TaskService.get_by_id(task_id)
-    if not ok:
-        logging.warning(f"A valid RAPTOR task id is expected for kb {kb_id}")
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid RAPTOR task id is expected for kb {kb_id}")
 
     if task and task.progress not in [-1, 1]:
         return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running.")
@@ -651,7 +653,7 @@ def trace_raptor():
 
     task_id = kb.raptor_task_id
     if not task_id:
-        return get_error_data_result(message="RAPTOR Task ID Not Found")
+        return get_json_result(data={})
 
     ok, task = TaskService.get_by_id(task_id)
     if not ok:
