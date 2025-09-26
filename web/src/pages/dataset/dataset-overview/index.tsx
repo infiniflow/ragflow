@@ -1,5 +1,6 @@
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
+import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { parseColorToRGBA } from '@/utils/common-util';
 import { CircleQuestionMark } from 'lucide-react';
 import { FC, useEffect, useMemo, useState } from 'react';
@@ -90,6 +91,9 @@ const FileLogsPage: FC = () => {
   });
 
   const { data: topData } = useFetchOverviewTital();
+  const {
+    pagination: { total: fileTotal },
+  } = useFetchDocumentList();
   console.log('topData --> ', topData);
   useEffect(() => {
     setTopAllData((prev) => {
@@ -104,11 +108,24 @@ const FileLogsPage: FC = () => {
     });
   }, [topData]);
 
+  useEffect(() => {
+    setTopAllData((prev) => {
+      return {
+        ...prev,
+        totalFiles: {
+          value: fileTotal || 0,
+          precent: 0,
+        },
+      };
+    });
+  }, [fileTotal]);
+
   const {
     data: tableOriginData,
     searchString,
     handleInputChange,
     pagination,
+    setPagination,
     active,
     setActive,
   } = useFetchFileLogList();
@@ -131,6 +148,11 @@ const FileLogsPage: FC = () => {
   };
   const handlePaginationChange = (page: number, pageSize: number) => {
     console.log('Pagination changed:', { page, pageSize });
+    setPagination({
+      ...pagination,
+      page,
+      pageSize: pageSize,
+    });
   };
 
   const isDark = useIsDarkTheme();

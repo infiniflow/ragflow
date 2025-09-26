@@ -9,6 +9,7 @@ import {
 import { Modal } from '@/components/ui/modal/modal';
 import { cn } from '@/lib/utils';
 import { toFixed } from '@/utils/common-util';
+import { formatDate } from '@/utils/date';
 import { UseMutateAsyncFunction } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
@@ -29,7 +30,13 @@ export enum GenerateType {
 const MenuItem: React.FC<{
   name: GenerateType;
   data: ITraceInfo;
-  pauseGenerate: () => void;
+  pauseGenerate: ({
+    task_id,
+    type,
+  }: {
+    task_id: string;
+    type: GenerateType;
+  }) => void;
   runGenerate: UseMutateAsyncFunction<
     any,
     Error,
@@ -38,13 +45,12 @@ const MenuItem: React.FC<{
     },
     unknown
   >;
-}> = ({ name, runGenerate, data, pauseGenerate }) => {
-  console.log(name, 'pppp', data);
+}> = ({ name: type, runGenerate, data, pauseGenerate }) => {
   const iconKeyMap = {
     KnowledgeGraph: 'knowledgegraph',
     Raptor: 'dataflow-01',
   };
-  const type = useMemo(() => {
+  const status = useMemo(() => {
     if (!data) {
       return generateStatus.start;
     }
@@ -60,9 +66,9 @@ const MenuItem: React.FC<{
   }, [data]);
 
   const percent =
-    type === generateStatus.failed
+    status === generateStatus.failed
       ? 100
-      : type === generateStatus.running
+      : status === generateStatus.running
         ? data.progress * 100
         : 0;
 
@@ -72,9 +78,9 @@ const MenuItem: React.FC<{
         'border cursor-pointer p-2 rounded-md focus:bg-transparent',
         {
           'hover:border-accent-primary hover:bg-[rgba(59,160,92,0.1)]':
-            type === generateStatus.start,
+            status === generateStatus.start,
           'hover:border-border hover:bg-[rgba(59,160,92,0)]':
-            type !== generateStatus.start,
+            status !== generateStatus.start,
         },
       )}
       onSelect={(e) => {
@@ -87,56 +93,65 @@ const MenuItem: React.FC<{
       <div
         className="flex items-start gap-2 flex-col w-full"
         onClick={() => {
-          if (type === generateStatus.start) {
-            runGenerate({ type: name });
+          if (status === generateStatus.start) {
+            runGenerate({ type });
           }
         }}
       >
         <div className="flex justify-start text-text-primary items-center gap-2">
           <IconFontFill
-            name={iconKeyMap[name]}
+            name={iconKeyMap[type]}
             className="text-accent-primary"
           />
-          {t(`knowledgeDetails.${lowerFirst(name)}`)}
+          {t(`knowledgeDetails.${lowerFirst(type)}`)}
         </div>
-        {type === generateStatus.start && (
+        {status === generateStatus.start && (
           <div className="text-text-secondary text-sm">
-            {t(`knowledgeDetails.generate${name}`)}
+            {t(`knowledgeDetails.generate${type}`)}
           </div>
         )}
-        {(type === generateStatus.running ||
-          type === generateStatus.failed) && (
+        {(status === generateStatus.running ||
+          status === generateStatus.failed) && (
           <div className="flex justify-between items-center w-full px-2.5 py-1">
             <div
               className={cn(' bg-border-button h-1 rounded-full', {
-                'w-[calc(100%-100px)]': type === generateStatus.running,
-                'w-[calc(100%-50px)]': type === generateStatus.failed,
+                'w-[calc(100%-100px)]': status === generateStatus.running,
+                'w-[calc(100%-50px)]': status === generateStatus.failed,
               })}
             >
               <div
                 className={cn('h-1 rounded-full', {
-                  'bg-state-error': type === generateStatus.failed,
-                  'bg-accent-primary': type === generateStatus.running,
+                  'bg-state-error': status === generateStatus.failed,
+                  'bg-accent-primary': status === generateStatus.running,
                 })}
                 style={{ width: `${toFixed(percent)}%` }}
               ></div>
             </div>
-            {type === generateStatus.running && (
+            {status === generateStatus.running && (
               <span>{(toFixed(percent) as string) + '%'}</span>
             )}
-            <span
-              className="text-state-error"
-              onClick={(e) => {
-                e.stopPropagation();
-                pauseGenerate();
-              }}
-            >
-              {type === generateStatus.failed ? (
+            {status === generateStatus.failed && (
+              <span
+                className="text-state-error"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  runGenerate({ type });
+                }}
+              >
                 <IconFontFill name="reparse" className="text-accent-primary" />
-              ) : (
+              </span>
+            )}
+            {status !== generateStatus.failed && (
+              <span
+                className="text-state-error"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  pauseGenerate({ task_id: data.id, type });
+                }}
+              >
                 <CirclePause />
-              )}
-            </span>
+              </span>
+            )}
           </div>
         )}
         <div className="w-full  whitespace-pre-line text-wrap rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto px-2.5 py-1">
@@ -202,7 +217,12 @@ const Generate: React.FC = () => {
 
 export default Generate;
 
-export type IGenerateLogProps = {
+export type IGenerateLogButtonProps = {
+  finish_at: string;
+  task_id: string;
+};
+
+export type IGenerateLogProps = IGenerateLogButtonProps & {
   id?: string;
   status: 0 | 1;
   message?: string;
@@ -214,16 +234,7 @@ export type IGenerateLogProps = {
 };
 export const GenerateLogButton = (props: IGenerateLogProps) => {
   const { t } = useTranslation();
-  const {
-    id,
-    status,
-    message,
-    created_at,
-    updated_at,
-    type,
-    className,
-    onDelete,
-  } = props;
+  const { task_id, message, finish_at, type, onDelete } = props;
   const handleDelete = () => {
     Modal.show({
       visible: true,
@@ -278,11 +289,11 @@ export const GenerateLogButton = (props: IGenerateLogProps) => {
       className={cn('flex bg-bg-card rounded-md py-1 px-3', props.className)}
     >
       <div className="flex items-center justify-between w-full">
-        {status === 1 && (
+        {finish_at && (
           <>
             <div>
               {message || t('knowledgeDetails.generatedOn')}
-              {created_at}
+              {formatDate(finish_at)}
             </div>
             <Trash2
               size={14}
@@ -295,7 +306,7 @@ export const GenerateLogButton = (props: IGenerateLogProps) => {
             />
           </>
         )}
-        {status === 0 && <div>{t('knowledgeDetails.notGenerated')}</div>}
+        {!finish_at && <div>{t('knowledgeDetails.notGenerated')}</div>}
       </div>
     </div>
   );

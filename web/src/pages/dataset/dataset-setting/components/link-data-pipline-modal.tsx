@@ -1,19 +1,14 @@
-import { DataFlowSelect } from '@/components/data-pipeline-select';
-import Input from '@/components/originui/input';
-import { Button } from '@/components/ui/button';
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+  DataFlowSelect,
+  IDataPipelineSelectNode,
+} from '@/components/data-pipeline-select';
+import { Button } from '@/components/ui/button';
+import { Form } from '@/components/ui/form';
 import { Modal } from '@/components/ui/modal/modal';
-import { Switch } from '@/components/ui/switch';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { pipelineFormSchema } from '../form-schema';
@@ -28,13 +23,14 @@ const LinkDataPipelineModal = ({
   data: IDataPipelineNodeProps | undefined;
   open: boolean;
   setOpen: (open: boolean) => void;
-  onSubmit?: (data: any) => void;
+  onSubmit?: (pipeline: IDataPipelineSelectNode | undefined) => void;
 }) => {
   const isEdit = !!data;
+  const [list, setList] = useState<IDataPipelineSelectNode[]>();
   const form = useForm<z.infer<typeof pipelineFormSchema>>({
     resolver: zodResolver(pipelineFormSchema),
     defaultValues: {
-      data_flow: [],
+      pipeline_id: '',
       set_default: false,
       file_filter: '',
     },
@@ -43,11 +39,12 @@ const LinkDataPipelineModal = ({
   const { navigateToAgents } = useNavigatePage();
   const handleFormSubmit = (values: any) => {
     console.log(values, data);
-    const param = {
-      ...data,
-      ...values,
-    };
-    onSubmit?.(param);
+    // const param = {
+    //   ...data,
+    //   ...values,
+    // };
+    const pipeline = list?.find((item) => item.id === values.pipeline_id);
+    onSubmit?.(pipeline);
   };
   return (
     <Modal
@@ -67,10 +64,11 @@ const LinkDataPipelineModal = ({
             {!isEdit && (
               <DataFlowSelect
                 toDataPipeline={navigateToAgents}
-                formFieldName="data_flow"
+                formFieldName="pipeline_id"
+                setDataList={setList}
               />
             )}
-            <FormField
+            {/* <FormField
               control={form.control}
               name={'file_filter'}
               render={({ field }) => (
@@ -135,7 +133,7 @@ const LinkDataPipelineModal = ({
                   </FormItem>
                 )}
               />
-            )}
+            )} */}
             <div className="flex justify-end gap-1">
               <Button
                 type="button"
