@@ -89,6 +89,18 @@ const ApiKeyModal = ({
             />
           </Form.Item>
         )}
+        {llmFactory?.toLowerCase() === 'Anthropic'.toLowerCase() && (
+          <Form.Item<FieldType>
+            label={t('baseUrl')}
+            name="base_url"
+            tooltip={t('baseUrlTip')}
+          >
+            <Input
+              placeholder="https://api.anthropic.com/v1"
+              onKeyDown={handleKeyDown}
+            />
+          </Form.Item>
+        )}
         {llmFactory?.toLowerCase() === 'Minimax'.toLowerCase() && (
           <Form.Item<FieldType> label={'Group ID'} name="group_id">
             <Input />

@@ -24,7 +24,7 @@ from flask import request
 from flask_login import current_user, login_required
 
 from agent.canvas import Canvas
-from agent.component import LLM
+from agent.component.llm import LLM
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.db.services.document_service import DocumentService

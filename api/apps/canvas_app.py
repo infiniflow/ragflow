@@ -23,7 +23,7 @@ import trio
 from flask import request, Response
 from flask_login import login_required, current_user
 
-from agent.component import LLM
+from agent.component.llm import LLM
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
@@ -348,6 +348,22 @@ def test_db_connect():
             cursor = db.cursor()
             cursor.execute("SELECT 1")
             cursor.close()
+        elif req["db_type"] == 'IBM DB2':
+            import ibm_db
+            conn_str = (
+                f"DATABASE={req['database']};"
+                f"HOSTNAME={req['host']};"
+                f"PORT={req['port']};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            logging.info(conn_str)
+            conn = ibm_db.connect(conn_str, "", "")
+            stmt = ibm_db.exec_immediate(conn, "SELECT 1 FROM sysibm.sysdummy1")
+            ibm_db.fetch_assoc(stmt)
+            ibm_db.close(conn)
+            return get_json_result(data="Database Connection Successful!")
         else:
             return server_error_response("Unsupported database type.")
         if req["db_type"] != 'mssql':
@@ -474,7 +490,7 @@ def sessions(canvas_id):
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
 def prompts():
-    from rag.prompts.prompts import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+    from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
     return get_json_result(data={
         "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,

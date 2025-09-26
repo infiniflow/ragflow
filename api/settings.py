@@ -24,7 +24,7 @@ import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.opensearch_conn
 from api.constants import RAG_FLOW_SERVICE_NAME
-from api.utils import decrypt_database_config, get_base_config
+from api.utils.configs import decrypt_database_config, get_base_config
 from api.utils.file_utils import get_project_base_directory
 from rag.nlp import search
 

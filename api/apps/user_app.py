@@ -34,7 +34,6 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from api.utils import (
     current_timestamp,
     datetime_format,
-    decrypt,
     download_img,
     get_format_time,
     get_uuid,
@@ -46,6 +45,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.crypt import decrypt
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821

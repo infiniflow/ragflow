@@ -19,7 +19,7 @@ from PIL import Image
 
 from api.utils.api_utils import timeout
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
-from rag.prompts import vision_llm_figure_describe_prompt
+from rag.prompts.generator import vision_llm_figure_describe_prompt
 
 
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):

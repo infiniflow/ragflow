@@ -58,6 +58,6 @@ class ProcessBase(ComponentBase):
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     async def _invoke(self, **kwargs):
         raise NotImplementedError()
