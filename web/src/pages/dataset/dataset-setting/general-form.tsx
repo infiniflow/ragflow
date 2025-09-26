@@ -1,4 +1,5 @@
 import { AvatarUpload } from '@/components/avatar-upload';
+import PageRankFormField from '@/components/page-rank-form-field';
 import {
   FormControl,
   FormField,
@@ -9,6 +10,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { TagItems } from './components/tag-item';
 import { EmbeddingModelItem } from './configuration/common-item';
 import { PermissionFormField } from './permission-form-field';
 
@@ -87,6 +89,9 @@ export function GeneralForm() {
       />
       <PermissionFormField></PermissionFormField>
       <EmbeddingModelItem></EmbeddingModelItem>
+      <PageRankFormField></PageRankFormField>
+
+      <TagItems></TagItems>
     </>
   );
 }

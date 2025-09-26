@@ -417,8 +417,10 @@ def list_pipeline_logs():
         desc = False
     else:
         desc = True
-    create_time_from = int(request.args.get("create_time_from", 0))
-    create_time_to = int(request.args.get("create_time_to", 0))
+    create_date_from = request.args.get("create_date_from", "")
+    create_date_to = request.args.get("create_date_to", "")
+    if create_date_to > create_date_from:
+        return get_data_error_result(message="Create data filter is abnormal.")
 
     req = request.get_json()
 
@@ -437,17 +439,7 @@ def list_pipeline_logs():
     suffix = req.get("suffix", [])
 
     try:
-        logs, tol = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix)
-
-        if create_time_from or create_time_to:
-            filtered_docs = []
-            for doc in logs:
-                doc_create_time = doc.get("create_time", 0)
-                if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
-                    filtered_docs.append(doc)
-            logs = filtered_docs
-
-
+        logs, tol = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from, create_date_to)
         return get_json_result(data={"total": tol, "logs": logs})
     except Exception as e:
         return server_error_response(e)
@@ -467,8 +459,10 @@ def list_pipeline_dataset_logs():
         desc = False
     else:
         desc = True
-    create_time_from = int(request.args.get("create_time_from", 0))
-    create_time_to = int(request.args.get("create_time_to", 0))
+    create_date_from = request.args.get("create_date_from", "")
+    create_date_to = request.args.get("create_date_to", "")
+    if create_date_to > create_date_from:
+        return get_data_error_result(message="Create data filter is abnormal.")
 
     req = request.get_json()
 
@@ -479,17 +473,7 @@ def list_pipeline_dataset_logs():
             return get_data_error_result(message=f"Invalid filter operation_status status conditions: {', '.join(invalid_status)}")
 
     try:
-        logs, tol = PipelineOperationLogService.get_dataset_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, operation_status)
-
-        if create_time_from or create_time_to:
-            filtered_docs = []
-            for doc in logs:
-                doc_create_time = doc.get("create_time", 0)
-                if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
-                    filtered_docs.append(doc)
-            logs = filtered_docs
-
-
+        logs, tol = PipelineOperationLogService.get_dataset_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from, create_date_to)
         return get_json_result(data={"total": tol, "logs": logs})
     except Exception as e:
         return server_error_response(e)

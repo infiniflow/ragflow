@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   GenerateLogButton,
   GenerateType,
+  IGenerateLogButtonProps,
 } from '@/pages/dataset/dataset/generate-button/generate';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
@@ -51,10 +52,14 @@ export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
 type GraphRagItemsProps = {
   marginBottom?: boolean;
   className?: string;
-  showGenerateItem?: boolean;
+  data: IGenerateLogButtonProps;
 };
 
-export function UseGraphRagFormField() {
+export function UseGraphRagFormField({
+  data,
+}: {
+  data: IGenerateLogButtonProps;
+}) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
 
@@ -73,10 +78,16 @@ export function UseGraphRagFormField() {
             </FormLabel>
             <div className="w-3/4">
               <FormControl>
-                <Switch
+                {/* <Switch
                   checked={field.value}
                   onCheckedChange={field.onChange}
-                ></Switch>
+                ></Switch> */}
+                <GenerateLogButton
+                  {...data}
+                  className="w-full text-text-secondary"
+                  status={1}
+                  type={GenerateType.KnowledgeGraph}
+                />
               </FormControl>
             </div>
           </div>
@@ -93,8 +104,8 @@ export function UseGraphRagFormField() {
 // The three types "table", "resume" and "one" do not display this configuration.
 const GraphRagItems = ({
   marginBottom = false,
-  showGenerateItem = false,
   className = 'p-10',
+  data,
 }: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
@@ -120,7 +131,7 @@ const GraphRagItems = ({
 
   return (
     <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
-      <UseGraphRagFormField></UseGraphRagFormField>
+      <UseGraphRagFormField data={data}></UseGraphRagFormField>
       {useRaptor && (
         <>
           <EntityTypesFormField name="parser_config.graphrag.entity_types"></EntityTypesFormField>
@@ -216,7 +227,7 @@ const GraphRagItems = ({
               </FormItem>
             )}
           />
-          {showGenerateItem && (
+          {/* {showGenerateItem && (
             <div className="w-full flex items-center">
               <div className="text-sm whitespace-nowrap w-1/4">
                 {t('extractKnowledgeGraph')}
@@ -227,7 +238,7 @@ const GraphRagItems = ({
                 type={GenerateType.KnowledgeGraph}
               />
             </div>
-          )}
+          )} */}
         </>
       )}
     </FormContainer>

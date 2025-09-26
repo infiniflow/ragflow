@@ -15,17 +15,17 @@ export function useDefaultParserValues() {
       auto_keywords: 0,
       auto_questions: 0,
       html4excel: false,
-      raptor: {
-        use_raptor: false,
-        prompt: t('knowledgeConfiguration.promptText'),
-        max_token: 256,
-        threshold: 0.1,
-        max_cluster: 64,
-        random_seed: 0,
-      },
-      graphrag: {
-        use_graphrag: false,
-      },
+      // raptor: {
+      //   use_raptor: false,
+      //   prompt: t('knowledgeConfiguration.promptText'),
+      //   max_token: 256,
+      //   threshold: 0.1,
+      //   max_cluster: 64,
+      //   random_seed: 0,
+      // },
+      // graphrag: {
+      //   use_graphrag: false,
+      // },
       entity_types: [],
       pages: [],
     };

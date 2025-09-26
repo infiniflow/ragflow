@@ -68,7 +68,8 @@ export default function DataFlow() {
   const { handleExportJson } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
+  const { handleRun, loading: running } =
+    useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
 
   const {
     visible: versionDialogVisible,
@@ -136,14 +137,18 @@ export default function DataFlow() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button
+          <ButtonLoading
             variant={'secondary'}
             onClick={handleRunAgent}
             disabled={isParsing}
+            loading={running}
           >
-            <CirclePlay className={isParsing ? 'animate-spin' : ''} />
-            {isParsing ? t('dataflow.running') : t('flow.run')}
-          </Button>
+            {running || (
+              <CirclePlay className={isParsing ? 'animate-spin' : ''} />
+            )}
+
+            {isParsing || running ? t('dataflow.running') : t('flow.run')}
+          </ButtonLoading>
           <Button variant={'secondary'} onClick={showVersionDialog}>
             <History />
             {t('flow.historyversion')}

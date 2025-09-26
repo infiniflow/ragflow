@@ -2,7 +2,11 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { EmptyDsl, useSetAgent } from '@/hooks/use-agent-request';
 import { DSL } from '@/interfaces/database/agent';
 import { AgentCategory } from '@/pages/agent/constant';
-import { BeginId, Operator } from '@/pages/data-flow/constant';
+import {
+  BeginId,
+  Operator,
+  initialParserValues,
+} from '@/pages/data-flow/constant';
 import { useCallback } from 'react';
 import { FlowType } from '../constant';
 import { FormSchemaType } from '../create-agent-form';
@@ -24,8 +28,37 @@ export const DataflowEmptyDsl = {
         sourcePosition: 'left',
         targetPosition: 'right',
       },
+      {
+        data: {
+          form: initialParserValues,
+          label: 'Parser',
+          name: 'Parser_0',
+        },
+        dragging: false,
+        id: 'Parser:HipSignsRhyme',
+        measured: {
+          height: 57,
+          width: 200,
+        },
+        position: {
+          x: 316.99524094206413,
+          y: 195.39629819663406,
+        },
+        selected: true,
+        sourcePosition: 'right',
+        targetPosition: 'left',
+        type: 'parserNode',
+      },
     ],
-    edges: [],
+    edges: [
+      {
+        id: 'xy-edge__Filestart-Parser:HipSignsRhymeend',
+        source: BeginId,
+        sourceHandle: 'start',
+        target: 'Parser:HipSignsRhyme',
+        targetHandle: 'end',
+      },
+    ],
   },
   components: {
     [Operator.Begin]: {

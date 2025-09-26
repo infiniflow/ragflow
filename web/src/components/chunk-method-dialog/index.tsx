@@ -23,7 +23,6 @@ import {
   ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
-import get from 'lodash/get';
 import omit from 'lodash/omit';
 import {} from 'module';
 import { useEffect, useMemo } from 'react';
@@ -41,13 +40,6 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
-import {
-  UseGraphRagFormField,
-  showGraphRagItems,
-} from '../parse-configuration/graph-rag-form-fields';
-import RaptorFormFields, {
-  showRaptorParseConfiguration,
-} from '../parse-configuration/raptor-form-fields';
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
@@ -121,19 +113,19 @@ export function ChunkMethodDialog({
         auto_keywords: z.coerce.number().optional(),
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
-        raptor: z
-          .object({
-            use_raptor: z.boolean().optional(),
-            prompt: z.string().optional().optional(),
-            max_token: z.coerce.number().optional(),
-            threshold: z.coerce.number().optional(),
-            max_cluster: z.coerce.number().optional(),
-            random_seed: z.coerce.number().optional(),
-          })
-          .optional(),
-        graphrag: z.object({
-          use_graphrag: z.boolean().optional(),
-        }),
+        // raptor: z
+        //   .object({
+        //     use_raptor: z.boolean().optional(),
+        //     prompt: z.string().optional().optional(),
+        //     max_token: z.coerce.number().optional(),
+        //     threshold: z.coerce.number().optional(),
+        //     max_cluster: z.coerce.number().optional(),
+        //     random_seed: z.coerce.number().optional(),
+        //   })
+        //   .optional(),
+        // graphrag: z.object({
+        //   use_graphrag: z.boolean().optional(),
+        // }),
         entity_types: z.array(z.string()).optional(),
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
@@ -223,13 +215,13 @@ export function ChunkMethodDialog({
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
           ...omit(parserConfig, 'pages'),
-          graphrag: {
-            use_graphrag: get(
-              parserConfig,
-              'graphrag.use_graphrag',
-              useGraphRag,
-            ),
-          },
+          // graphrag: {
+          //   use_graphrag: get(
+          //     parserConfig,
+          //     'graphrag.use_graphrag',
+          //     useGraphRag,
+          //   ),
+          // },
         }),
       });
     }
@@ -351,19 +343,19 @@ export function ChunkMethodDialog({
                     <ExcelToHtmlFormField></ExcelToHtmlFormField>
                   )}
                 </FormContainer>
-                {showRaptorParseConfiguration(
+                {/* {showRaptorParseConfiguration(
                   selectedTag as DocumentParserType,
                 ) && (
                   <FormContainer>
                     <RaptorFormFields></RaptorFormFields>
                   </FormContainer>
-                )}
-                {showGraphRagItems(selectedTag as DocumentParserType) &&
+                )} */}
+                {/* {showGraphRagItems(selectedTag as DocumentParserType) &&
                   useGraphRag && (
                     <FormContainer>
                       <UseGraphRagFormField></UseGraphRagFormField>
                     </FormContainer>
-                  )}
+                  )} */}
                 {showEntityTypes && (
                   <EntityTypesFormField></EntityTypesFormField>
                 )}

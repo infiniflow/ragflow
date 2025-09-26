@@ -268,11 +268,6 @@ export const initialParserValues = {
       fileFormat: FileType.PowerPoint,
       output_format: PptOutputFormat.Json,
     },
-    {
-      fileFormat: FileType.Audio,
-      llm_id: '',
-      output_format: AudioOutputFormat.Text,
-    },
   ],
 };
 

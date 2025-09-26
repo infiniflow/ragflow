@@ -115,7 +115,7 @@ const FormatPreserveEditor = ({
       ) : (
         <>
           {content.key === 'json' && */}
-      {content.value.map((item, index) => (
+      {content.value?.map((item, index) => (
         <section
           key={index}
           className={
