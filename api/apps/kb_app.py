@@ -420,7 +420,7 @@ def list_pipeline_logs():
     create_date_from = request.args.get("create_date_from", "")
     create_date_to = request.args.get("create_date_to", "")
     if create_date_to > create_date_from:
-        return get_data_error_result(message=f"Create data filter is abnormal.")
+        return get_data_error_result(message="Create data filter is abnormal.")
 
     req = request.get_json()
 
@@ -462,7 +462,7 @@ def list_pipeline_dataset_logs():
     create_date_from = request.args.get("create_date_from", "")
     create_date_to = request.args.get("create_date_to", "")
     if create_date_to > create_date_from:
-        return get_data_error_result(message=f"Create data filter is abnormal.")
+        return get_data_error_result(message="Create data filter is abnormal.")
 
     req = request.get_json()
 
