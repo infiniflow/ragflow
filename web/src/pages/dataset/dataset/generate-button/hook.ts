@@ -1,8 +1,9 @@
 import message from '@/components/ui/message';
+import agentService from '@/services/agent-service';
 import kbService from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { GenerateType } from './generate';
 export const generateStatus = {
@@ -14,6 +15,7 @@ export const generateStatus = {
 
 enum DatasetKey {
   generate = 'generate',
+  pauseGenerate = 'pauseGenerate',
 }
 
 export interface ITraceInfo {
@@ -126,9 +128,28 @@ export const useDatasetGenerate = () => {
       return data;
     },
   });
-  const pauseGenerate = useCallback(() => {
-    // TODO: pause generate
-    console.log('pause generate');
-  }, []);
+  // const pauseGenerate = useCallback(() => {
+  //   // TODO: pause generate
+  //   console.log('pause generate');
+  // }, []);
+  const { mutateAsync: pauseGenerate } = useMutation({
+    mutationKey: [DatasetKey.pauseGenerate],
+    mutationFn: async ({
+      task_id,
+      type,
+    }: {
+      task_id: string;
+      type: GenerateType;
+    }) => {
+      const { data } = await agentService.cancelDataflow(task_id);
+      if (data.code === 0) {
+        message.success(t('message.operated'));
+        queryClient.invalidateQueries({
+          queryKey: [type],
+        });
+      }
+      return data;
+    },
+  });
   return { runGenerate: mutateAsync, pauseGenerate, data, loading };
 };

@@ -41,6 +41,16 @@ export const useFetchKnowledgeConfigurationOnMount = (
     const parser_config = {
       ...form.formState?.defaultValues?.parser_config,
       ...knowledgeDetails.parser_config,
+      raptor: {
+        ...form.formState?.defaultValues?.parser_config?.raptor,
+        ...knowledgeDetails.parser_config?.raptor,
+        use_raptor: true,
+      },
+      graphrag: {
+        ...form.formState?.defaultValues?.parser_config?.graphrag,
+        ...knowledgeDetails.parser_config?.graphrag,
+        use_graphrag: true,
+      },
     };
     const formValues = {
       ...pick({ ...knowledgeDetails, parser_config: parser_config }, [

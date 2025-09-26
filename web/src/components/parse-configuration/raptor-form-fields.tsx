@@ -4,6 +4,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import {
   GenerateLogButton,
   GenerateType,
+  IGenerateLogButtonProps,
 } from '@/pages/dataset/dataset/generate-button/generate';
 import random from 'lodash/random';
 import { Shuffle } from 'lucide-react';
@@ -18,7 +19,6 @@ import {
   FormMessage,
 } from '../ui/form';
 import { ExpandedInput } from '../ui/input';
-import { Switch } from '../ui/switch';
 import { Textarea } from '../ui/textarea';
 
 export const excludedParseMethods = [
@@ -56,11 +56,7 @@ const Prompt = 'parser_config.raptor.prompt';
 
 // The three types "table", "resume" and "one" do not display this configuration.
 
-const RaptorFormFields = ({
-  showGenerateItem = false,
-}: {
-  showGenerateItem?: boolean;
-}) => {
+const RaptorFormFields = ({ data }: { data: IGenerateLogButtonProps }) => {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
@@ -108,13 +104,12 @@ const RaptorFormFields = ({
                 </FormLabel>
                 <div className="w-3/4">
                   <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={(e) => {
-                        changeRaptor(e);
-                        field.onChange(e);
-                      }}
-                    ></Switch>
+                    <GenerateLogButton
+                      {...data}
+                      className="w-full text-text-secondary"
+                      status={1}
+                      type={GenerateType.Raptor}
+                    />
                   </FormControl>
                 </div>
               </div>
@@ -219,18 +214,6 @@ const RaptorFormFields = ({
               </FormItem>
             )}
           />
-          {showGenerateItem && (
-            <div className="w-full flex items-center">
-              <div className="text-sm whitespace-nowrap w-1/4">
-                {t('extractRaptor')}
-              </div>
-              <GenerateLogButton
-                className="w-3/4 text-text-secondary"
-                status={1}
-                type={GenerateType.Raptor}
-              />
-            </div>
-          )}
         </div>
       )}
     </>
