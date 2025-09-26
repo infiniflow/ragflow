@@ -50,6 +50,10 @@ export default {
   fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
   get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
   fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
+  runGraphRag: `${api_host}/kb/run_graphrag`,
+  traceGraphRag: `${api_host}/kb/trace_graphrag`,
+  runRaptor: `${api_host}/kb/run_raptor`,
+  traceRaptor: `${api_host}/kb/trace_raptor`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,

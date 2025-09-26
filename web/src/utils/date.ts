@@ -1,5 +1,4 @@
 import dayjs from 'dayjs';
-import { toFixed } from './common-util';
 
 export function formatDate(date: any) {
   if (!date) {
@@ -52,12 +51,13 @@ export function formatSecondsToHumanReadable(seconds: number): string {
 
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  const s = toFixed(seconds % 60, 3);
-
+  // const s = toFixed(seconds % 60, 3);
+  const s = seconds % 60;
+  const formattedSeconds = s === 0 ? '0' : s.toFixed(3).replace(/\.?0+$/, '');
   const parts = [];
-  if (h > 0) parts.push(`${h}h`);
-  if (m > 0) parts.push(`${m}m`);
-  if (s || parts.length === 0) parts.push(`${s}s`);
+  if (h > 0) parts.push(`${h}h `);
+  if (m > 0) parts.push(`${m}m `);
+  if (s || parts.length === 0) parts.push(`${formattedSeconds}s`);
 
   return parts.join('');
 }

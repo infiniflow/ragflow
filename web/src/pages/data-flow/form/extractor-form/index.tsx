@@ -6,13 +6,13 @@ import { Form } from '@/components/ui/form';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   ContextGeneratorFieldName,
-  initialContextValues,
+  initialExtractorValues,
 } from '../../constant';
 import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
 import { useFormValues } from '../../hooks/use-form-values';
@@ -21,26 +21,47 @@ import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 
 export const FormSchema = z.object({
+  field_name: z.string(),
   sys_prompt: z.string(),
   prompts: z.string().optional(),
   ...LlmSettingSchema,
-  field_name: z.array(z.string()),
 });
 
 export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
 
 const ExtractorForm = ({ node }: INextOperatorForm) => {
-  const defaultValues = useFormValues(initialContextValues, node);
+  const defaultValues = useFormValues(initialExtractorValues, node);
   const { t } = useTranslation();
 
   const form = useForm<ExtractorFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    // mode: 'onChange',
   });
 
   const promptOptions = useBuildNodeOutputOptions(node?.id);
 
   const options = buildOptions(ContextGeneratorFieldName, t, 'dataflow');
+
+  const setPromptValue = useCallback(
+    (field: keyof ExtractorFormSchemaType, key: string, value: string) => {
+      form.setValue(field, t(`dataflow.prompts.${key}.${value}`), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    },
+    [form, t],
+  );
+
+  const handleFieldNameChange = useCallback(
+    (value: string) => {
+      if (value) {
+        setPromptValue('sys_prompt', 'system', value);
+        setPromptValue('prompts', 'user', value);
+      }
+    },
+    [setPromptValue],
+  );
 
   useWatchFormChange(node?.id, form);
 
@@ -51,7 +72,11 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
         <RAGFlowFormItem label={t('dataflow.fieldName')} name="field_name">
           {(field) => (
             <SelectWithSearch
-              {...field}
+              onChange={(value) => {
+                field.onChange(value);
+                handleFieldNameChange(value);
+              }}
+              value={field.value}
               placeholder={t('dataFlowPlaceholder')}
               options={options}
             ></SelectWithSearch>

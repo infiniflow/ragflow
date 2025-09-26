@@ -249,7 +249,6 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
         }
         const timeNode = {
           ...TimelineNodeObj[name],
-          clickable: true,
           id: index,
           className: 'w-32',
           completed: false,
