@@ -32,6 +32,11 @@ redis:
   db: 1
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
+baiduvdb:
+  endpoint: 'http://${BAIDU_VDB_ENDPOINT:-http://127.0.0.1:5287}'
+  username: '${BAIDU_VDB_USER:-root}'
+  password: '${BAIDU_VDB_PASSWORD:-password}'
+  replication: '${BAIDU_VDB_REPLICATION:-1}'
 # postgres:
 #   name: '${POSTGRES_DBNAME:-rag_flow}'
 #   user: '${POSTGRES_USER:-rag_flow}'

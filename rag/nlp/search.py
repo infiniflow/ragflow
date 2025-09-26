@@ -30,9 +30,10 @@ def index_name(uid): return f"ragflow_{uid}"
 
 
 class Dealer:
-    def __init__(self, dataStore: DocStoreConnection):
-        self.qryr = query.FulltextQueryer()
+    def __init__(self, dataStore: DocStoreConnection, docEngine: str = "elasticsearch"):
+        self.qryr = query.FulltextQueryer(docEngine=docEngine)
         self.dataStore = dataStore
+        self.docEngine = docEngine
 
     @dataclass
     class SearchResult:

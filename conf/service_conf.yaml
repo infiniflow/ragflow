@@ -32,6 +32,11 @@ redis:
   db: 1
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+baiduvdb:
+  endpoint: 'http://127.0.0.:5287'
+  username: 'root'
+  password: 'mochow'
+  replication: 1
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'

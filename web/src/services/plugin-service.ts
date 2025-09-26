@@ -2,9 +2,7 @@ import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
 
-const {
-  llm_tools
-} = api;
+const { llm_tools } = api;
 
 const methods = {
   getLlmTools: {

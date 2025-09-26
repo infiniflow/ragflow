@@ -648,7 +648,7 @@ async def do_handle_task(task):
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
         if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity/BaiduVDB status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
         chunk_ids = [chunk["id"] for chunk in chunks[:b + DOC_BULK_SIZE]]
