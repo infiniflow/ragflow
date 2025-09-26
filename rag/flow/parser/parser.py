@@ -148,7 +148,7 @@ class ParserParam(ProcessParamBase):
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
             if pdf_parse_method.lower() not in ["deepdoc", "plain_text"]:
-                self.check_empty(pdf_config.get("lang", ""), "Language")
+                self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
             self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
@@ -172,7 +172,7 @@ class ParserParam(ProcessParamBase):
         if image_config:
             image_parse_method = image_config.get("parse_method", "")
             if image_parse_method not in ["ocr"]:
-                self.check_empty(image_config.get("lang", ""), "Language")
+                self.check_empty(image_config.get("lang", ""), "Image VLM language")
 
         text_config = self.setups.get("text&markdown", "")
         if text_config:
@@ -181,7 +181,7 @@ class ParserParam(ProcessParamBase):
 
         audio_config = self.setups.get("audio", "")
         if audio_config:
-            self.check_empty(audio_config.get("llm_id"), "VLM")
+            self.check_empty(audio_config.get("llm_id"), "Audio VLM")
             audio_language = audio_config.get("lang", "")
             self.check_empty(audio_language, "Language")
 

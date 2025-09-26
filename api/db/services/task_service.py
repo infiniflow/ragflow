@@ -488,8 +488,9 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
         task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
     )
-
-    TaskService.model.delete().where(TaskService.model.id == task["id"]).execute()
+    if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
+        TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()
+        DocumentService.begin2parse(doc_id)
     bulk_insert_into_db(model=Task, data_source=[task], replace_on_conflict=True)
 
     task["kb_id"] = DocumentService.get_knowledgebase_id(doc_id)

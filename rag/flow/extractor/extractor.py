@@ -31,6 +31,7 @@ class Extractor(ProcessBase, LLM):
     component_name = "Extractor"
 
     async def _invoke(self, **kwargs):
+        self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
         inputs = self.get_input_elements()
         chunks = []
