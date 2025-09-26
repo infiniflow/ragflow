@@ -79,21 +79,21 @@ export default function Agents() {
                 onClick={showCreatingModal}
               >
                 <Clipboard />
-                Create from Blank
+                {t('flow.createFromBlank')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 justifyBetween={false}
                 onClick={navigateToAgentTemplates}
               >
                 <ClipboardPlus />
-                Create from Template
+                {t('flow.createFromTemplate')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 justifyBetween={false}
                 onClick={handleImportJson}
               >
                 <FileInput />
-                Import json file
+                {t('flow.importJsonFile')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
