@@ -1,4 +1,5 @@
 version = 1
+revision = 3
 requires-python = ">=3.10, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'darwin'",
@@ -2501,6 +2502,32 @@ dependencies = [
 ]
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/34/87/7940713f929d0280cff1bde207479cb588a0d3a4dd49a0e2e69bfff46363/hyppo-0.4.0-py3-none-any.whl", hash = "sha256:4e75565b8deb601485cd7bc1b5c3f44e6ddf329136fc81e65d011f9b4e95132f" },
+]
+
+[[package]]
+name = "ibm-db"
+version = "3.2.7"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/dd/a5/182413f7fe28ee7a67d8be5afa1139ccc60cfb5c13c0e9be81e2205bddbb/ibm_db-3.2.7.tar.gz", hash = "sha256:b3c3b4550364a43bf1daa4519b668e6e00e7c3935291f8c444c4ec989417e861" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/50/cd/a6549ed35424875f07ea89dbd44093b7d9dc4a03d9e29e56c5167bd7d568/ibm_db-3.2.7-cp310-cp310-macosx_10_15_x86_64.whl", hash = "sha256:7c2b451ffe67be602e93d94b2d2042dd051ec0757cfd6e4d7344cb594f2d3508" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/50/5a/be83503ec6ef9b2a47175b38b1099595a8d06237ac3fcc82d967b834672a/ibm_db-3.2.7-cp310-cp310-macosx_14_0_arm64.whl", hash = "sha256:9a1b139a9c21ff7216aac83ba29dceb6c8a9df3d6aee44ff1fe845cb60d3caed" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/cc/fa/379405785d27d10110992ee17f150c8ef1ee0c3eadca2d1451c8c03ff075/ibm_db-3.2.7-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1e5e60297b4680cc566caa67f513aa68883ef48b0c612028a38883620807b09c" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/52/e1/c18aee07888666b3249b4f54d3cb67ae5041600b5fc3ed281817e868eaa8/ibm_db-3.2.7-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bf1c30e67e9e573e33524c393a1426e0dffa2da34ba42a0ec510e0f75766976f" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/26/01/f80a407192351aa304206504d6b15ccbb061f45dc9fc3e37c8c00c7e222b/ibm_db-3.2.7-cp310-cp310-win32.whl", hash = "sha256:171014c2caa0419055943ff3badae5118cc3a191360f03b80c8366ef374d5c28" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/98/1b/29f98a0d4d9896635d7b7fa53a51f8753214f0deed23ac7987d726299b12/ibm_db-3.2.7-cp310-cp310-win_amd64.whl", hash = "sha256:3425c158a65dd43e4b09dc968c18042a656ed6ef2e1db0164f032e97681823b7" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/c8/04/18e42549f498569db7a437453db51ae3d61105ad4da7b1fe64e9e59aedee/ibm_db-3.2.7-cp311-cp311-macosx_10_15_x86_64.whl", hash = "sha256:ba493d07e1845b8b1169ad27ace92f0ff540cc9a623f2753b8c68dc66c59d7df" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/c5/f3/85c8963ee8047183c435059abaf40771d40c6e9268ca32d66be0b66b7a6c/ibm_db-3.2.7-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:abed0a7c644b9ddf2c49bf5c0938f936f0b2dffd1703c9819440021be141716e" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/6d/fb/8d2ff4b6bcd6b05d13af855bedc47e597430a6c3372e0ab7579659cad9bb/ibm_db-3.2.7-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1cabd3d3e8c879ef60d91e1fe1356cf8603f8b4b69cc7dda39d4a8698a055044" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/77/26/c43e02bb4cf62b1e93bf617440f5da6d3888935ef09d4fbd86fe07f3f920/ibm_db-3.2.7-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:aab5dceec45d69b0bbd333be66597dbaedf663c6c56a0fbd6196ecd1836e4095" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/05/d0/787d7a9864d3782238ca3b14a4484c642931e1363a760b0828c9ee26ad58/ibm_db-3.2.7-cp311-cp311-win32.whl", hash = "sha256:16272ad07912051d9ab5cbe3a9e2d3d888365d071334f9620d8e0b2ed69ee4f9" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/1e/7c/998c663d0a65984c76c2c2c8d01cdbdd174bd817359e0e4024b9b316a9cc/ibm_db-3.2.7-cp311-cp311-win_amd64.whl", hash = "sha256:4b479e92b6954ab7f65c9d247a65fb0cde6a48899f71a8881b58023c0ace1f49" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/4d/0f/048679ca8516b73f3547c64f968b9654181d79f6cd2706914f37c2486da3/ibm_db-3.2.7-cp312-cp312-macosx_10_15_x86_64.whl", hash = "sha256:24e8a538475997f20569f221247808507b63349df51119fe9b2f8e48a0bf6f9b" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/f0/36/4cc64c70ebc74b2765005cd5357df18512c358cc6f5e87c6b0e70cff4053/ibm_db-3.2.7-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:24a53fb8e3c200bf2a55095f1ae4c065f2136f8be87ca1db89a874bd82d88ea5" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/09/d7/ae63f1257736c5e6a06cd2be133b4bc38f68893504f046b4c850144b65cd/ibm_db-3.2.7-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:91f68be7bd0d2940023da43d0a94f196fe267ca825df7874b8174583c8678ea0" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/d9/24/af465d93f549b0dbc944f256cdb2b470574018285e1478b6c50305a609ac/ibm_db-3.2.7-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5d39fe5001c078f2b824d1805ca9737060203a00a9dd9a8fe4b6f6b32b271cb5" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/48/04/c512eed2c701e8762e90f000fd1a768dd749ffb070a62b8cd92722c16327/ibm_db-3.2.7-cp312-cp312-win32.whl", hash = "sha256:20388753f52050e07e845b74146dbbe3f892dcfdfb015638e8f57c2fb2e056b8" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/07/cc/ae978e6d020f3b17f2e68cc2c60fe8381fffd1271608e871b5b4ee6434f2/ibm_db-3.2.7-cp312-cp312-win_amd64.whl", hash = "sha256:6e507ddf93b8406b0b88ff6bf07658a3100ce98cb1e735e5ec8e0a56e30ea856" },
 ]
 
 [[package]]
@@ -5323,6 +5350,7 @@ dependencies = [
     { name = "html-text" },
     { name = "httpx", extra = ["socks"] },
     { name = "huggingface-hub" },
+    { name = "ibm-db" },
     { name = "infinity-emb" },
     { name = "infinity-sdk" },
     { name = "itsdangerous" },
@@ -5479,6 +5507,7 @@ requires-dist = [
     { name = "html-text", specifier = "==0.6.2" },
     { name = "httpx", extras = ["socks"], specifier = "==0.27.2" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
+    { name = "ibm-db", specifier = ">=3.2.7" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
     { name = "infinity-sdk", specifier = "==0.6.0.dev5" },
     { name = "itsdangerous", specifier = "==2.1.2" },
@@ -5563,6 +5592,7 @@ requires-dist = [
     { name = "yfinance", specifier = "==0.2.65" },
     { name = "zhipuai", specifier = "==2.0.1" },
 ]
+provides-extras = ["full"]
 
 [package.metadata.requires-dev]
 test = [

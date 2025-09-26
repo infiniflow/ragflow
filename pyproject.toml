@@ -132,6 +132,7 @@ dependencies = [
     "litellm>=1.74.15.post1",
     "flask-mail>=0.10.0",
     "lark>=1.2.2",
+    "ibm-db>=3.2.7",
 ]
 
 [project.optional-dependencies]
@@ -157,6 +158,9 @@ test = [
     "requests-toolbelt>=1.0.0",
 ]
 
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple"
+
 [tool.setuptools]
 packages = [
     'agent',
@@ -169,9 +173,6 @@ packages = [
     'rag',
     'sdk.python.ragflow_sdk',
 ]
-
-[[tool.uv.index]]
-url = "https://mirrors.aliyun.com/pypi/simple"
 
 [tool.ruff]
 line-length = 200

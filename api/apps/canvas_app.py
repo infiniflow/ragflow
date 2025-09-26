@@ -348,6 +348,22 @@ def test_db_connect():
             cursor = db.cursor()
             cursor.execute("SELECT 1")
             cursor.close()
+        elif req["db_type"] == 'IBM DB2':
+            import ibm_db
+            conn_str = (
+                f"DATABASE={req['database']};"
+                f"HOSTNAME={req['host']};"
+                f"PORT={req['port']};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            logging.info(conn_str)
+            conn = ibm_db.connect(conn_str, "", "")
+            stmt = ibm_db.exec_immediate(conn, "SELECT 1 FROM sysibm.sysdummy1")
+            ibm_db.fetch_assoc(stmt)
+            ibm_db.close(conn)
+            return get_json_result(data="Database Connection Successful!")
         else:
             return server_error_response("Unsupported database type.")
         if req["db_type"] != 'mssql':
