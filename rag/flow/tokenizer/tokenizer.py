@@ -119,7 +119,7 @@ class Tokenizer(ProcessBase):
                     if ck.get("questions"):
                         ck["question_tks"] = rag_tokenizer.tokenize("\n".join(ck["questions"]))
                     if ck.get("keywords"):
-                        ck["important_tks"] = rag_tokenizer.tokenize("\n".join(ck["keywords"]))
+                        ck["important_tks"] = rag_tokenizer.tokenize(",".join(ck["keywords"]))
                     if ck.get("summary"):
                         ck["content_ltks"] = rag_tokenizer.tokenize(ck["summary"])
                         ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
