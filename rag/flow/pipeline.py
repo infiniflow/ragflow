@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import datetime
-import inspect
 import json
 import logging
 import random
