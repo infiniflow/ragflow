@@ -156,7 +156,7 @@ class CodeExec(ToolBase, ABC):
             self.set_output("_ERROR", "construct code request error: " + str(e))
 
         try:
-            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
             logging.info(f"http://{settings.SANDBOX_HOST}:9385/run,  code_req: {code_req}, resp.status_code {resp.status_code}:")
             if resp.status_code != 200:
                 resp.raise_for_status()

@@ -21,6 +21,7 @@ import pandas as pd
 import pymysql
 import psycopg2
 import pyodbc
+import ibm_db
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api.utils.api_utils import timeout
 
@@ -53,7 +54,7 @@ class ExeSQLParam(ToolParamBase):
         self.max_records = 1024
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql'])
+        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
         self.check_empty(self.host, "IP Address")
@@ -123,6 +124,52 @@ class ExeSQL(ToolBase, ABC):
                     r'PWD=' + self._param.password
             )
             db = pyodbc.connect(conn_str)
+        elif self._param.db_type == 'IBM DB2':
+            conn_str = (
+                f"DATABASE={self._param.database};"
+                f"HOSTNAME={self._param.host};"
+                f"PORT={self._param.port};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={self._param.username};"
+                f"PWD={self._param.password};"
+            )
+            try:
+                conn = ibm_db.connect(conn_str, "", "")
+            except Exception as e:
+                raise Exception("Database Connection Failed! \n" + str(e))
+
+            sql_res = []
+            formalized_content = []
+            for single_sql in sqls:
+                single_sql = single_sql.replace("```", "").strip()
+                if not single_sql:
+                    continue
+                single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
+
+                stmt = ibm_db.exec_immediate(conn, single_sql)
+                rows = []
+                row = ibm_db.fetch_assoc(stmt)
+                while row and len(rows) < self._param.max_records:
+                    rows.append(row)
+                    row = ibm_db.fetch_assoc(stmt)
+
+                if not rows:
+                    sql_res.append({"content": "No record in the database!"})
+                    continue
+
+                df = pd.DataFrame(rows)
+                for col in df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        df[col] = df[col].dt.strftime("%Y-%m-%d")
+
+                sql_res.append(convert_decimals(df.to_dict(orient="records")))
+                formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
+
+            ibm_db.close(conn)
+
+            self.set_output("json", sql_res)
+            self.set_output("formalized_content", "\n\n".join(formalized_content))
+            return self.output("formalized_content")
         try:
             cursor = db.cursor()
         except Exception as e:
