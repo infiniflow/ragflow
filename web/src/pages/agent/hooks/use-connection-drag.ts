@@ -7,6 +7,8 @@ import { useAddNode } from './use-add-node';
 interface ConnectionStartParams {
   nodeId: string;
   handleId: string;
+  startX?: number;
+  startY?: number;
 }
 
 /**
@@ -34,6 +36,8 @@ export const useConnectionDrag = (
   // Reference to prevent immediate close
   const preventCloseRef = useRef(false);
 
+  const DRAG_THRESHOLD = 5;
+
   const { addCanvasNode } = useAddNode(reactFlowInstance);
   const { setActiveDropdown } = useDropdownManager();
 
@@ -41,12 +45,23 @@ export const useConnectionDrag = (
    * Connection start handler function
    */
   const onConnectStart = useCallback((event: any, params: any) => {
+    console.log('[DEBUG] onConnectStart:', {
+      nodeId: params?.nodeId,
+      handleId: params?.handleId,
+      clientX: event?.clientX,
+      clientY: event?.clientY,
+    });
     isConnectedRef.current = false;
 
     if (params && params.nodeId && params.handleId) {
+      const startX = event?.clientX || 0;
+      const startY = event?.clientY || 0;
+
       connectionStartRef.current = {
         nodeId: params.nodeId,
         handleId: params.handleId,
+        startX,
+        startY,
       };
     } else {
       connectionStartRef.current = null;
@@ -58,45 +73,68 @@ export const useConnectionDrag = (
    */
   const onConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent) => {
+      console.log('[DEBUG] onConnectEnd triggered');
       if ('clientX' in event && 'clientY' in event) {
         const { clientX, clientY } = event;
-        setDropdownPosition({ x: clientX, y: clientY });
 
         if (!isConnectedRef.current && connectionStartRef.current) {
-          // Create placeholder node and establish connection
-          const mockEvent = { clientX, clientY };
-          const contextData = {
-            nodeId: connectionStartRef.current.nodeId,
-            id: connectionStartRef.current.handleId,
-            type: 'source' as const,
-            position: Position.Right,
-            isFromConnectionDrag: true,
-          };
+          const startX = connectionStartRef.current.startX || 0;
+          const startY = connectionStartRef.current.startY || 0;
+          const dragDistance = Math.sqrt(
+            Math.pow(clientX - startX, 2) + Math.pow(clientY - startY, 2),
+          );
 
-          // Use Placeholder operator to create node
-          const newNodeId = addCanvasNode(
-            Operator.Placeholder,
-            contextData,
-          )(mockEvent);
+          console.log('[DEBUG] dragDistance:', {
+            dragDistance,
+            threshold: DRAG_THRESHOLD,
+            isDrag: dragDistance > DRAG_THRESHOLD,
+          });
 
-          // Record the created placeholder node ID
-          if (newNodeId) {
-            setCreatedPlaceholderRef(newNodeId);
-          }
+          if (dragDistance > DRAG_THRESHOLD) {
+            console.log('[DEBUG] Creating placeholder node (drag detected)');
+            const mockEvent = { clientX, clientY };
+            const contextData = {
+              nodeId: connectionStartRef.current.nodeId,
+              id: connectionStartRef.current.handleId,
+              type: 'source' as const,
+              position: Position.Right,
+              isFromConnectionDrag: true,
+            };
 
-          // Calculate placeholder node position and display dropdown menu
-          if (newNodeId && reactFlowInstance) {
-            const dropdownScreenPosition = calculateDropdownPosition(
-              clientX,
-              clientY,
-            );
+            // Use Placeholder operator to create node
+            const newNodeId = addCanvasNode(
+              Operator.Placeholder,
+              contextData,
+            )(mockEvent);
 
-            setDropdownPosition({
-              x: dropdownScreenPosition.x,
-              y: dropdownScreenPosition.y,
-            });
+            // Record the created placeholder node ID
+            if (newNodeId) {
+              setCreatedPlaceholderRef(newNodeId);
+            }
 
-            setActiveDropdown('drag');
+            // Calculate placeholder node position and display dropdown menu
+            if (newNodeId && reactFlowInstance) {
+              const dropdownScreenPosition = calculateDropdownPosition(
+                clientX,
+                clientY,
+              );
+
+              setDropdownPosition({
+                x: dropdownScreenPosition.x,
+                y: dropdownScreenPosition.y,
+              });
+
+              setActiveDropdown('drag');
+              showModal();
+              preventCloseRef.current = true;
+              setTimeout(() => {
+                preventCloseRef.current = false;
+              }, PREVENT_CLOSE_DELAY);
+            }
+          } else {
+            console.log('[DEBUG] Showing dropdown directly (click detected)');
+            setDropdownPosition({ x: clientX, y: clientY });
+            setActiveDropdown('handle');
             showModal();
             preventCloseRef.current = true;
             setTimeout(() => {
@@ -117,6 +155,7 @@ export const useConnectionDrag = (
       calculateDropdownPosition,
       setActiveDropdown,
       showModal,
+      DRAG_THRESHOLD,
     ],
   );
 

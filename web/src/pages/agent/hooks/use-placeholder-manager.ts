@@ -112,7 +112,6 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
       // Mark that user has selected a node
       userSelectedNodeRef.current = true;
       createdPlaceholderRef.current = null;
-      console.log('### onNodeCreated完成');
     },
     [reactFlowInstance],
   );
