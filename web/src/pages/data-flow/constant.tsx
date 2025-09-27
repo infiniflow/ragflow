@@ -250,6 +250,7 @@ export const initialParserValues = {
       fileFormat: FileType.Image,
       output_format: ImageOutputFormat.Text,
       parse_method: ImageParseMethod.OCR,
+      system_prompt: '',
     },
     {
       fileFormat: FileType.Email,

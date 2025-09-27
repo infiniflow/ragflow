@@ -64,6 +64,7 @@ export const FormSchema = z.object({
       lang: z.string().optional(),
       fields: z.array(z.string()).optional(),
       llm_id: z.string().optional(),
+      system_prompt: z.string().optional(),
     }),
   ),
 });
