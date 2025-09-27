@@ -100,6 +100,7 @@ function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
+            system_prompt: cur.system_prompt,
           };
           break;
         case FileType.Email:
