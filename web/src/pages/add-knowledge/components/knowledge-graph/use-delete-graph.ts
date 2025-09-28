@@ -1,7 +1,7 @@
 import {
   useKnowledgeBaseId,
   useRemoveKnowledgeGraph,
-} from '@/hooks/use-knowledge-request';
+} from '@/hooks/knowledge-hooks';
 import { useCallback } from 'react';
 import { useNavigate } from 'umi';
 

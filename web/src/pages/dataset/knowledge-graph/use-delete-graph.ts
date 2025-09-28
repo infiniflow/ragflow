@@ -1,5 +1,5 @@
-import { useRemoveKnowledgeGraph } from '@/hooks/knowledge-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useRemoveKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { useCallback } from 'react';
 import { useParams } from 'umi';
 
