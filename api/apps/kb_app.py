@@ -28,7 +28,7 @@ from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
-from api.db import StatusEnum, FileSource, VALID_FILE_TYPES
+from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
@@ -713,3 +713,36 @@ def trace_mindmap():
         return get_error_data_result(message="Mindmap Task Not Found or Error Occurred")
 
     return get_json_result(data=task.to_dict())
+
+
+@manager.route("/unbind_task", methods=["DELETE"])  # noqa: F821
+@login_required
+def delete_kb_task():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_json_result(data=True)
+
+    pipeline_task_type = request.args.get("pipeline_task_type", "")
+    if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+        return get_error_data_result(message="Invalid task type")
+
+    kb_task_id = ""
+    match pipeline_task_type:
+        case PipelineTaskType.GRAPH_RAG:
+            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+            kb_task_id = "graphrag_task_id"
+        case PipelineTaskType.RAPTOR:
+            kb_task_id = "raptor_task_id"
+        case PipelineTaskType.MINDMAP:
+            kb_task_id = "mindmap_task_id"
+        case _:
+            return get_error_data_result(message="Internal Error: Invalid task type")
+
+    ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id: ""})
+    if not ok:
+        return server_error_response(f"Internal error: cannot delete task {pipeline_task_type}")
+
+    return get_json_result(data=True)
