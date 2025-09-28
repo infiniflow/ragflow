@@ -21,7 +21,6 @@ import pandas as pd
 import pymysql
 import psycopg2
 import pyodbc
-import ibm_db
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api.utils.api_utils import timeout
 
@@ -125,6 +124,7 @@ class ExeSQL(ToolBase, ABC):
             )
             db = pyodbc.connect(conn_str)
         elif self._param.db_type == 'IBM DB2':
+            import ibm_db
             conn_str = (
                 f"DATABASE={self._param.database};"
                 f"HOSTNAME={self._param.host};"
