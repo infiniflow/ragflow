@@ -924,8 +924,3 @@ export enum AgentExceptionMethod {
   Comment = 'comment',
   Goto = 'goto',
 }
-
-export enum AgentCategory {
-  AgentCanvas = 'agent_canvas',
-  DataflowCanvas = 'dataflow_canvas',
-}

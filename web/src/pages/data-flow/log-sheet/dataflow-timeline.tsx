@@ -10,6 +10,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 import { File } from 'lucide-react';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
@@ -82,25 +83,29 @@ export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
                       </div>
                     </section>
                     <div className="divide-y space-y-1">
-                      {traces.map((x, idx) => (
-                        <section
-                          key={idx}
-                          className="text-text-secondary text-xs space-x-2 py-2.5 !m-0"
-                        >
-                          <span>{x.datetime}</span>
-                          {item.component_id !== 'END' && (
-                            <span
-                              className={cn({
-                                'text-state-error':
-                                  x.message.startsWith('[ERROR]'),
-                              })}
-                            >
-                              {x.message}
+                      {traces
+                        .filter((x) => !isEmpty(x.message))
+                        .map((x, idx) => (
+                          <section
+                            key={idx}
+                            className="text-text-secondary text-xs space-x-2 py-2.5 !m-0"
+                          >
+                            <span>{x.datetime}</span>
+                            {item.component_id !== 'END' && (
+                              <span
+                                className={cn({
+                                  'text-state-error':
+                                    x.message.startsWith('[ERROR]'),
+                                })}
+                              >
+                                {x.message}
+                              </span>
+                            )}
+                            <span>
+                              {x.elapsed_time.toString().slice(0, 6)}s
                             </span>
-                          )}
-                          <span>{x.elapsed_time.toString().slice(0, 6)}s</span>
-                        </section>
-                      ))}
+                          </section>
+                        ))}
                     </div>
                   </TimelineContent>
                 </TimelineTitle>

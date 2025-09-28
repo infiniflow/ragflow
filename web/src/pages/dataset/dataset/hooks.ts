@@ -79,7 +79,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     if (findRecord) {
       log = {
         fileType: findRecord?.suffix,
-        uploadedBy: findRecord?.created_by,
+        uploadedBy: findRecord?.nickname,
         fileName: findRecord?.name,
         uploadDate: formatDate(findRecord.create_date),
         fileSize: formatBytes(findRecord.size || 0),

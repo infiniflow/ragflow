@@ -17,13 +17,21 @@ import { useCallback } from 'react';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
+import { useSelectFilters } from './hooks/use-selelct-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
 
 export default function Agents() {
-  const { data, pagination, setPagination, searchString, handleInputChange } =
-    useFetchAgentListByPage();
+  const {
+    data,
+    pagination,
+    setPagination,
+    searchString,
+    handleInputChange,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchAgentListByPage();
   const { navigateToAgentTemplates } = useNavigatePage();
 
   const {
@@ -50,6 +58,8 @@ export default function Agents() {
     hideFileUploadModal,
   } = useHandleImportJsonFile();
 
+  const filters = useSelectFilters();
+
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
       setPagination({ page, pageSize });
@@ -65,6 +75,9 @@ export default function Agents() {
           searchString={searchString}
           onSearchChange={handleInputChange}
           icon="agent"
+          filters={filters}
+          onChange={handleFilterSubmit}
+          value={filterValue}
         >
           <DropdownMenu>
             <DropdownMenuTrigger>

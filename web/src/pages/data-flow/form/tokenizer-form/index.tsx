@@ -31,11 +31,15 @@ export const FormSchema = z.object({
 
 const SearchMethodOptions = buildOptions(TokenizerSearchMethod);
 
-const FieldsOptions = buildOptions(TokenizerFields);
-
 const TokenizerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialTokenizerValues, node);
+
+  const FieldsOptions = buildOptions(
+    TokenizerFields,
+    t,
+    'dataflow.tokenizerFieldsOptions',
+  );
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,

@@ -1,4 +1,5 @@
 import { TimelineNode } from '@/components/originui/timeline';
+import message from '@/components/ui/message';
 import {
   useCreateChunk,
   useDeleteChunk,
@@ -10,7 +11,8 @@ import { IChunk } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
 import { formatSecondsToHumanReadable } from '@/utils/date';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { t } from 'i18next';
 import { camelCase, upperFirst } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
@@ -169,22 +171,16 @@ export const useUpdateChunk = () => {
   };
 };
 
-export const useFetchParserList = () => {
-  const [loading, setLoading] = useState(false);
-  return {
-    loading,
-  };
-};
-
 export const useRerunDataflow = ({
   data,
 }: {
   data: IPipelineFileLogDetail;
 }) => {
-  const [loading, setLoading] = useState(false);
   const [isChange, setIsChange] = useState(false);
-  const handleReRunFunc = useCallback(
-    (newData: { value: IDslComponent; key: string }) => {
+
+  const { mutateAsync: handleReRunFunc, isPending: loading } = useMutation({
+    mutationKey: ['pipelineRerun', data],
+    mutationFn: async (newData: { value: IDslComponent; key: string }) => {
       const newDsl = {
         ...data.dsl,
         components: {
@@ -197,16 +193,21 @@ export const useRerunDataflow = ({
       const params = {
         id: data.id,
         dsl: newDsl,
-        compenent_id: newData.key,
+        component_id: newData.key,
       };
-      console.log('newDsl', newDsl, params);
+      const { data: result } = await kbService.pipelineRerun(params);
+      if (result.code === 0) {
+        message.success(t('message.operated'));
+        // queryClient.invalidateQueries({
+        //   queryKey: [type],
+        // });
+      }
+      return result;
     },
-    [data],
-  );
+  });
 
   return {
     loading,
-    setLoading,
     isChange,
     setIsChange,
     handleReRunFunc,
@@ -225,7 +226,6 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
         type:
           | TimelineNodeType.begin
           | TimelineNodeType.parser
-          | TimelineNodeType.splitter
           | TimelineNodeType.tokenizer
           | TimelineNodeType.characterSplitter
           | TimelineNodeType.titleSplitter,
@@ -242,10 +242,9 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
           tempType = TimelineNodeType.tokenizer;
         } else if (
           name === TimelineNodeType.characterSplitter ||
-          name === TimelineNodeType.titleSplitter ||
-          name === TimelineNodeType.splitter
+          name === TimelineNodeType.titleSplitter
         ) {
-          tempType = TimelineNodeType.splitter;
+          tempType = TimelineNodeType.characterSplitter;
         }
         const timeNode = {
           ...TimelineNodeObj[name],

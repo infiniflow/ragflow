@@ -108,8 +108,9 @@ class ParserParam(ProcessParamBase):
                 "parse_method": "ocr",
                 "llm_id": "",
                 "lang": "Chinese",
+                "system_prompt": "",
                 "suffix": ["jpg", "jpeg", "png", "gif"],
-                "output_format": "json",
+                "output_format": "text",
             },
             "email": {
                 "suffix": [
@@ -329,11 +330,16 @@ class Parser(ProcessBase):
         else:
             lang = conf["lang"]
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"], lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["parse_method"], lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
-            txt = cv_model.describe(img_binary.read())
+
+            system_prompt = conf.get("system_prompt")
+            if system_prompt:
+                txt = cv_model.describe_with_prompt(img_binary.read(), system_prompt)
+            else:
+                txt = cv_model.describe(img_binary.read())
 
         self.set_output("text", txt)
 

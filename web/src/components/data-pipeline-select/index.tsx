@@ -1,3 +1,4 @@
+import { AgentCategory } from '@/constants/agent';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchAgentList } from '@/hooks/use-agent-request';
 import { buildSelectOptions } from '@/utils/component-util';
@@ -33,8 +34,8 @@ export function DataFlowSelect(props: IProps) {
   const toDataPipLine = () => {
     toDataPipeline?.();
   };
-  const { data: dataPipelineOptions, loading } = useFetchAgentList({
-    canvas_category: 'dataflow_canvas',
+  const { data: dataPipelineOptions } = useFetchAgentList({
+    canvas_category: AgentCategory.DataflowCanvas,
   });
   const options = useMemo(() => {
     const option = buildSelectOptions(

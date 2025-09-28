@@ -6,10 +6,9 @@ export enum ChunkTextMode {
 export enum TimelineNodeType {
   begin = 'file',
   parser = 'parser',
-  splitter = 'splitter',
-  contextGenerator = 'contextGenerator',
-  titleSplitter = 'titleSplitter',
-  characterSplitter = 'characterSplitter',
-  tokenizer = 'tokenizer',
+  contextGenerator = 'extractor',
+  titleSplitter = 'hierarchicalMerger',
+  characterSplitter = 'splitter',
+  tokenizer = 'indexer',
   end = 'end',
 }

@@ -10,7 +10,6 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import {
   LexicalTypeaheadMenuPlugin,
   MenuOption,
-  useBasicTypeaheadTriggerMatch,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin';
 import {
   $createParagraphNode,
@@ -131,9 +130,23 @@ export default function VariablePickerMenuPlugin({
   baseOptions,
 }: VariablePickerMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
-  const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
-    minLength: 0,
-  });
+
+  // const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
+  //   minLength: 0,
+  // });
+
+  const testTriggerFn = React.useCallback((text: string) => {
+    const lastChar = text.slice(-1);
+    if (lastChar === '/') {
+      console.log('Found trigger character "/"');
+      return {
+        leadOffset: text.length - 1,
+        matchingString: '',
+        replaceableString: '/',
+      };
+    }
+    return null;
+  }, []);
 
   const previousValue = useRef<string | undefined>();
 
@@ -291,6 +304,21 @@ export default function VariablePickerMenuPlugin({
     }
   }, [parseTextToVariableNodes, editor, value]);
 
+  // Fixed the issue where the cursor would go to the end when changing its own data
+  useEffect(() => {
+    return editor.registerUpdateListener(({ editorState, tags }) => {
+      // If we trigger the programmatic update ourselves, we should not write back to avoid an infinite loop.
+      if (tags.has(ProgrammaticTag)) return;
+
+      editorState.read(() => {
+        const text = $getRoot().getTextContent();
+        if (text !== previousValue.current) {
+          previousValue.current = text;
+        }
+      });
+    });
+  }, [editor]);
+
   return (
     <LexicalTypeaheadMenuPlugin<VariableOption | VariableInnerOption>
       onQueryChange={setQueryString}
@@ -301,7 +329,7 @@ export default function VariablePickerMenuPlugin({
           closeMenu,
         )
       }
-      triggerFn={checkForTriggerMatch}
+      triggerFn={testTriggerFn}
       options={buildNextOptions()}
       menuRenderFn={(anchorElementRef, { selectOptionAndCleanUp }) => {
         const nextOptions = buildNextOptions();
