@@ -1708,6 +1708,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       filenameEmbdWeight: 'Filename embd weight',
       begin: 'File',
       parserMethod: 'Parser method',
+      systemPrompt: 'System Prompt',
+      systemPromptPlaceholder:
+        'Enter system prompt for image analysis, if empty the system default value will be used',
       exportJson: 'Export JSON',
       viewResult: 'View Result',
       running: 'Running',
