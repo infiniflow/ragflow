@@ -471,3 +471,17 @@ class KnowledgebaseService(CommonService):
             else:
                 raise e
 
+    @classmethod
+    @DB.connection_context()
+    def decrease_document_num_in_delete(cls, kb_id, doc_num_info: dict):
+        kb_row = cls.model.get_by_id(kb_id)
+        if not kb_row:
+            raise RuntimeError(f"kb_id {kb_id} does not exist")
+        update_dict = {
+            'doc_num': kb_row.doc_num - doc_num_info['doc_num'],
+            'chunk_num': kb_row.chunk_num - doc_num_info['chunk_num'],
+            'token_num': kb_row.token_num - doc_num_info['token_num'],
+            'update_time': current_timestamp(),
+            'update_date': datetime_format(datetime.now())
+        }
+        return cls.model.update(update_dict).where(cls.model.id == kb_id).execute()

@@ -180,23 +180,6 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_all_file_by_creator_id(cls, creator_id):
-        fields = [cls.model.id, cls.model.parent_id, cls.model.location]
-        files = cls.model.select(*fields).where(cls.model.created_by == creator_id)
-        files.order_by(cls.model.create_time.asc())
-        offset, limit = 0, 100
-        res = []
-        while True:
-            file_batch = files.offset(offset).limit(limit)
-            _temp = list(file_batch.dicts())
-            if not _temp:
-                break
-            res.extend(_temp)
-            offset += limit
-        return res
-
-    @classmethod
-    @DB.connection_context()
     def create_folder(cls, file, parent_id, name, count):
         # Recursively create folder structure
         # Args:

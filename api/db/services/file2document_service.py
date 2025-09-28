@@ -40,6 +40,12 @@ class File2DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_by_document_ids(cls, document_ids):
+        objs = cls.model.select().where(cls.model.document_id.in_(document_ids))
+        return list(objs.dicts())
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, obj):
         if not cls.save(**obj):
             raise RuntimeError("Database error (File)!")
