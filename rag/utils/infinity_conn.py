@@ -719,7 +719,7 @@ class InfinityConnection(DocStoreConnection):
                 else:
                     for w in sorted(keywords, key=len, reverse=True):
                         t = re.sub(
-                            w,
+                            re.escape(w),
                             f"<em>{w}</em>",
                             t,
                             flags=re.IGNORECASE | re.MULTILINE,
