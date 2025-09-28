@@ -53,12 +53,15 @@ type GraphRagItemsProps = {
   marginBottom?: boolean;
   className?: string;
   data: IGenerateLogButtonProps;
+  onDelete?: () => void;
 };
 
 export function UseGraphRagFormField({
   data,
+  onDelete,
 }: {
   data: IGenerateLogButtonProps;
+  onDelete?: () => void;
 }) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
@@ -84,6 +87,7 @@ export function UseGraphRagFormField({
                 ></Switch> */}
                 <GenerateLogButton
                   {...data}
+                  onDelete={onDelete}
                   className="w-full text-text-secondary"
                   status={1}
                   type={GenerateType.KnowledgeGraph}
@@ -106,6 +110,7 @@ const GraphRagItems = ({
   marginBottom = false,
   className = 'p-10',
   data,
+  onDelete,
 }: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
@@ -131,7 +136,10 @@ const GraphRagItems = ({
 
   return (
     <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
-      <UseGraphRagFormField data={data}></UseGraphRagFormField>
+      <UseGraphRagFormField
+        data={data}
+        onDelete={onDelete}
+      ></UseGraphRagFormField>
       {useRaptor && (
         <>
           <EntityTypesFormField name="parser_config.graphrag.entity_types"></EntityTypesFormField>

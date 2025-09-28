@@ -4,6 +4,7 @@ import {
   IFetchKnowledgeListRequestBody,
   IFetchKnowledgeListRequestParams,
 } from '@/interfaces/request/knowledge';
+import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
@@ -253,5 +254,15 @@ export const listPipelineDatasetLogs = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
 ) => request.post(api.fetchPipelineDatasetLogs, { data: body || {}, params });
+
+export function deletePipelineTask({
+  kb_id,
+  type,
+}: {
+  kb_id: string;
+  type: ProcessingType;
+}) {
+  return request.delete(api.unbindPipelineTask({ kb_id, type }));
+}
 
 export default kbService;

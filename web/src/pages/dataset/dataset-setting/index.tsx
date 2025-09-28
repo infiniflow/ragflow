@@ -12,7 +12,10 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
-import { IGenerateLogButtonProps } from '../dataset/generate-button/generate';
+import {
+  GenerateType,
+  IGenerateLogButtonProps,
+} from '../dataset/generate-button/generate';
 import LinkDataPipeline, {
   IDataPipelineNodeProps,
 } from './components/link-data-pipeline';
@@ -81,6 +84,7 @@ export default function DatasetSettings() {
     useState<IGenerateLogButtonProps>();
   const [raptorGenerateData, setRaptorGenerateData] =
     useState<IGenerateLogButtonProps>();
+
   useEffect(() => {
     console.log('🚀 ~ DatasetSettings ~ knowledgeDetails:', knowledgeDetails);
     if (knowledgeDetails) {
@@ -109,6 +113,7 @@ export default function DatasetSettings() {
       console.error('An error occurred during submission:', error);
     }
   }
+
   const handleLinkOrEditSubmit = (
     data: IDataPipelineSelectNode | undefined,
   ) => {
@@ -118,6 +123,20 @@ export default function DatasetSettings() {
       form.setValue('pipeline_id', data.id || '');
       // form.setValue('pipeline_name', data.name || '');
       // form.setValue('pipeline_avatar', data.avatar || '');
+    }
+  };
+
+  const handleDeletePipelineTask = (type: GenerateType) => {
+    if (type === GenerateType.KnowledgeGraph) {
+      setGraphRagGenerateData({
+        finish_at: '',
+        task_id: '',
+      } as IGenerateLogButtonProps);
+    } else if (type === GenerateType.Raptor) {
+      setRaptorGenerateData({
+        finish_at: '',
+        task_id: '',
+      } as IGenerateLogButtonProps);
     }
   };
   return (
@@ -140,10 +159,14 @@ export default function DatasetSettings() {
                 <GraphRagItems
                   className="border-none p-0"
                   data={graphRagGenerateData as IGenerateLogButtonProps}
+                  onDelete={() =>
+                    handleDeletePipelineTask(GenerateType.KnowledgeGraph)
+                  }
                 ></GraphRagItems>
                 <Divider />
                 <RaptorFormFields
                   data={raptorGenerateData as IGenerateLogButtonProps}
+                  onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
                 ></RaptorFormFields>
                 <Divider />
                 <LinkDataPipeline

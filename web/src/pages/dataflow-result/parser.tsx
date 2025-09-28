@@ -1,16 +1,15 @@
 import { TimelineNode } from '@/components/originui/timeline';
 import Spotlight from '@/components/spotlight';
-import { Spin } from '@/components/ui/spin';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
 import FormatPreserEditor from './components/parse-editer';
 import RerunButton from './components/rerun-button';
 import { TimelineNodeType } from './constant';
-import { useChangeChunkTextMode, useFetchParserList } from './hooks';
+import { useChangeChunkTextMode } from './hooks';
 import { IDslComponent } from './interface';
 interface IProps {
   isChange: boolean;
@@ -23,15 +22,15 @@ interface IProps {
 const ParserContainer = (props: IProps) => {
   const { isChange, setIsChange, step, data, reRunFunc, reRunLoading } = props;
   const { t } = useTranslation();
-  const { loading } = useFetchParserList();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
   const initialValue = useMemo(() => {
     const outputs = data?.value?.obj?.params?.outputs;
     const key = outputs?.output_format?.value;
+    if (!outputs || !key) return { key: '', type: '', value: [] };
     const value = outputs[key]?.value;
     const type = outputs[key]?.type;
-    console.log('outputs-->', outputs);
+    console.log('outputs-->', outputs, data, key, value);
     return {
       key,
       type,
@@ -40,6 +39,10 @@ const ParserContainer = (props: IProps) => {
   }, [data]);
 
   const [initialText, setInitialText] = useState(initialValue);
+
+  useEffect(() => {
+    setInitialText(initialValue);
+  }, [initialValue]);
   const handleSave = (newContent: any) => {
     console.log('newContent-change-->', newContent, initialValue);
     if (JSON.stringify(newContent) !== JSON.stringify(initialValue)) {
@@ -109,8 +112,7 @@ const ParserContainer = (props: IProps) => {
 
   const isChunck =
     step?.type === TimelineNodeType.characterSplitter ||
-    step?.type === TimelineNodeType.titleSplitter ||
-    step?.type === TimelineNodeType.splitter;
+    step?.type === TimelineNodeType.titleSplitter;
 
   const handleCreateChunk = useCallback(
     (text: string) => {
@@ -124,6 +126,7 @@ const ParserContainer = (props: IProps) => {
     },
     [initialText],
   );
+
   return (
     <>
       {isChange && (
@@ -136,71 +139,72 @@ const ParserContainer = (props: IProps) => {
         </div>
       )}
       <div className={classNames('flex flex-col w-full')}>
-        <Spin spinning={loading} className="" size="large">
-          <div className="h-[50px] flex flex-col justify-end pb-[5px]">
-            {!isChunck && (
-              <div>
-                <h2 className="text-[16px]">
-                  {t('dataflowParser.parseSummary')}
-                </h2>
-                <div className="text-[12px] text-text-secondary italic ">
-                  {t('dataflowParser.parseSummaryTip')}
-                </div>
+        {/* <Spin spinning={false} className="" size="large"> */}
+        <div className="h-[50px] flex flex-col justify-end pb-[5px]">
+          {!isChunck && (
+            <div>
+              <h2 className="text-[16px]">
+                {t('dataflowParser.parseSummary')}
+              </h2>
+              <div className="text-[12px] text-text-secondary italic ">
+                {t('dataflowParser.parseSummaryTip')}
               </div>
-            )}
-            {isChunck && (
-              <div>
-                <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
-                <div className="text-[12px] text-text-secondary italic">
-                  {t('chunk.chunkResultTip')}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {isChunck && (
-            <div className="pt-[5px] pb-[5px] flex justify-between items-center">
-              <CheckboxSets
-                selectAllChunk={selectAllChunk}
-                removeChunk={handleRemoveChunk}
-                checked={selectedChunkIds.length === initialText.value.length}
-                selectedChunkIds={selectedChunkIds}
-              />
-              <ChunkResultBar
-                changeChunkTextMode={changeChunkTextMode}
-                createChunk={handleCreateChunk}
-              />
             </div>
           )}
+          {isChunck && (
+            <div>
+              <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
+              <div className="text-[12px] text-text-secondary italic">
+                {t('chunk.chunkResultTip')}
+              </div>
+            </div>
+          )}
+        </div>
 
-          <div
-            className={cn(
-              ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-none',
-              {
-                'h-[calc(100vh-240px)]': isChunck,
-                'h-[calc(100vh-180px)]': !isChunck,
-              },
-            )}
-          >
+        {isChunck && (
+          <div className="pt-[5px] pb-[5px] flex justify-between items-center">
+            <CheckboxSets
+              selectAllChunk={selectAllChunk}
+              removeChunk={handleRemoveChunk}
+              checked={selectedChunkIds.length === initialText.value.length}
+              selectedChunkIds={selectedChunkIds}
+            />
+            <ChunkResultBar
+              changeChunkTextMode={changeChunkTextMode}
+              createChunk={handleCreateChunk}
+            />
+          </div>
+        )}
+
+        <div
+          className={cn(
+            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-none',
+            {
+              'h-[calc(100vh-240px)]': isChunck,
+              'h-[calc(100vh-180px)]': !isChunck,
+            },
+          )}
+        >
+          {initialText && (
             <FormatPreserEditor
               initialValue={initialText}
               onSave={handleSave}
-              className={
-                initialText.key !== 'json' ? '!h-[calc(100vh-220px)]' : ''
-              }
+              // className={
+              //   initialText.key !== 'json' ? '!h-[calc(100vh-220px)]' : ''
+              // }
               isChunck={isChunck}
               textMode={textMode}
               isDelete={
                 step?.type === TimelineNodeType.characterSplitter ||
-                step?.type === TimelineNodeType.titleSplitter ||
-                step?.type === TimelineNodeType.splitter
+                step?.type === TimelineNodeType.titleSplitter
               }
               handleCheckboxClick={handleCheckboxClick}
               selectedChunkIds={selectedChunkIds}
             />
-            <Spotlight opcity={0.6} coverage={60} />
-          </div>
-        </Spin>
+          )}
+          <Spotlight opcity={0.6} coverage={60} />
+        </div>
+        {/* </Spin> */}
       </div>
     </>
   );

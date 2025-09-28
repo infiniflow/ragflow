@@ -16,17 +16,23 @@ import { lowerFirst } from 'lodash';
 import { CirclePause, Trash2, WandSparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ProcessingType } from '../../dataset-overview/dataset-common';
 import { replaceText } from '../../process-log-modal';
 import {
   ITraceInfo,
   generateStatus,
   useDatasetGenerate,
   useTraceGenerate,
+  useUnBindTask,
 } from './hook';
 export enum GenerateType {
   KnowledgeGraph = 'KnowledgeGraph',
   Raptor = 'Raptor',
 }
+export const GenerateTypeMap = {
+  [GenerateType.KnowledgeGraph]: ProcessingType.knowledgeGraph,
+  [GenerateType.Raptor]: ProcessingType.raptor,
+};
 const MenuItem: React.FC<{
   name: GenerateType;
   data: ITraceInfo;
@@ -78,9 +84,11 @@ const MenuItem: React.FC<{
         'border cursor-pointer p-2 rounded-md focus:bg-transparent',
         {
           'hover:border-accent-primary hover:bg-[rgba(59,160,92,0.1)]':
-            status === generateStatus.start,
+            status === generateStatus.start ||
+            status === generateStatus.completed,
           'hover:border-border hover:bg-[rgba(59,160,92,0)]':
-            status !== generateStatus.start,
+            status !== generateStatus.start &&
+            status !== generateStatus.completed,
         },
       )}
       onSelect={(e) => {
@@ -93,7 +101,10 @@ const MenuItem: React.FC<{
       <div
         className="flex items-start gap-2 flex-col w-full"
         onClick={() => {
-          if (status === generateStatus.start) {
+          if (
+            status === generateStatus.start ||
+            status === generateStatus.completed
+          ) {
             runGenerate({ type });
           }
         }}
@@ -234,7 +245,21 @@ export type IGenerateLogProps = IGenerateLogButtonProps & {
 };
 export const GenerateLogButton = (props: IGenerateLogProps) => {
   const { t } = useTranslation();
-  const { task_id, message, finish_at, type, onDelete } = props;
+  const { message, finish_at, type, onDelete } = props;
+
+  const { handleUnbindTask } = useUnBindTask();
+
+  const handleDeleteFunc = async () => {
+    const data = await handleUnbindTask({
+      type: GenerateTypeMap[type as GenerateType],
+    });
+    Modal.destroy();
+    console.log('handleUnbindTask', data);
+    if (data.code === 0) {
+      onDelete?.();
+    }
+  };
+
   const handleDelete = () => {
     Modal.show({
       visible: true,
@@ -259,14 +284,14 @@ export const GenerateLogButton = (props: IGenerateLogProps) => {
         ></div>
       ),
       onVisibleChange: () => {
-        Modal.hide();
+        Modal.destroy();
       },
       footer: (
         <div className="flex justify-end gap-2">
           <Button
             type="button"
             variant={'outline'}
-            onClick={() => Modal.hide()}
+            onClick={() => Modal.destroy()}
           >
             {t('dataflowParser.changeStepModalCancelText')}
           </Button>
@@ -275,7 +300,7 @@ export const GenerateLogButton = (props: IGenerateLogProps) => {
             variant={'secondary'}
             className="!bg-state-error text-text-primary"
             onClick={() => {
-              Modal.hide();
+              handleDeleteFunc();
             }}
           >
             {t('common.delete')}
@@ -284,6 +309,7 @@ export const GenerateLogButton = (props: IGenerateLogProps) => {
       ),
     });
   };
+
   return (
     <div
       className={cn('flex bg-bg-card rounded-md py-1 px-3', props.className)}

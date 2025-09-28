@@ -54,6 +54,9 @@ export default {
   traceGraphRag: `${api_host}/kb/trace_graphrag`,
   runRaptor: `${api_host}/kb/run_raptor`,
   traceRaptor: `${api_host}/kb/trace_raptor`,
+  unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
+    `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
+  pipelineRerun: `${api_host}/canvas/rerun`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
