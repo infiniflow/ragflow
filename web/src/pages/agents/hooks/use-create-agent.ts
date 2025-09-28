@@ -1,7 +1,7 @@
+import { AgentCategory } from '@/constants/agent';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { EmptyDsl, useSetAgent } from '@/hooks/use-agent-request';
 import { DSL } from '@/interfaces/database/agent';
-import { AgentCategory } from '@/pages/agent/constant';
 import {
   BeginId,
   Operator,

@@ -47,3 +47,8 @@ export const initialLlmBaseValues = {
   presence_penalty: 0.4,
   max_tokens: 256,
 };
+
+export enum AgentCategory {
+  AgentCanvas = 'agent_canvas',
+  DataflowCanvas = 'dataflow_canvas',
+}

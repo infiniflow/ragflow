@@ -2,10 +2,10 @@ import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
 import { SharedBadge } from '@/components/shared-badge';
 import { Button } from '@/components/ui/button';
+import { AgentCategory } from '@/constants/agent';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IFlow } from '@/interfaces/database/agent';
-import { DatabaseZap } from 'lucide-react';
-import { AgentCategory } from '../agent/constant';
+import { Route } from 'lucide-react';
 import { AgentDropdown } from './agent-dropdown';
 import { useRenameAgent } from './use-rename-agent';
 
@@ -33,7 +33,7 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
       icon={
         data.canvas_category === AgentCategory.DataflowCanvas && (
           <Button variant={'ghost'} size={'sm'}>
-            <DatabaseZap />
+            <Route />
           </Button>
         )
       }
