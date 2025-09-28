@@ -250,21 +250,23 @@ class LLMBundle(LLM4Tenant):
     def chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
-
+        logging.info('--------------------------------------a')
         ans = ""
         chat_partial = partial(self.mdl.chat_streamly, system, history, gen_conf)
         total_tokens = 0
+        logging.info('--------------------------------------b')
         if self.is_tools and self.mdl.is_tools:
             chat_partial = partial(self.mdl.chat_streamly_with_tools, system, history, gen_conf)
         use_kwargs = self._clean_param(chat_partial, **kwargs)
         for txt in chat_partial(**use_kwargs):
+            logging.info('--------------------------------------c')
             if isinstance(txt, int):
                 total_tokens = txt
                 if self.langfuse:
                     generation.update(output={"output": ans})
                     generation.end()
                 break
-
+            logging.info('--------------------------------------d'+txt)
             if txt.endswith("</think>"):
                 ans = ans.rstrip("</think>")
 
@@ -273,7 +275,7 @@ class LLMBundle(LLM4Tenant):
 
             ans += txt
             yield ans
-
+        logging.info('--------------------------------------e')
         if total_tokens > 0:
             if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, txt, self.llm_name):
                 logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
