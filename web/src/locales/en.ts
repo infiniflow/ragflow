@@ -1583,6 +1583,9 @@ This delimiter is used to split the input text into several text pieces echo of 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
+      createFromBlank: 'Create from Blank',
+      createFromTemplate: 'Create from Template',
+      importJsonFile: 'Import json file',
     },
     llmTools: {
       bad_calculator: {
@@ -1705,6 +1708,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       filenameEmbdWeight: 'Filename embd weight',
       begin: 'File',
       parserMethod: 'Parser method',
+      systemPrompt: 'System Prompt',
+      systemPromptPlaceholder:
+        'Enter system prompt for image analysis, if empty the system default value will be used',
       exportJson: 'Export JSON',
       viewResult: 'View Result',
       running: 'Running',
@@ -1762,6 +1768,9 @@ Important structured information may include: names, dates, locations, events, k
           metadata: `Content: [INSERT CONTENT HERE]`,
         },
       },
+      cancel: 'Cancel',
+      swicthPromptMessage:
+        'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
     },
   },
 };

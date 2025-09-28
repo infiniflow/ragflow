@@ -298,21 +298,23 @@ class TaskService(CommonService):
                         ((prog == -1) | (prog > cls.model.progress))
                     )
                 ).execute()
-            return
+        else:
+            with DB.lock("update_progress", -1):
+                if info["progress_msg"]:
+                    progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
+                    cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
+                if "progress" in info:
+                    prog = info["progress"]
+                    cls.model.update(progress=prog).where(
+                        (cls.model.id == id) &
+                        (
+                            (cls.model.progress != -1) &
+                            ((prog == -1) | (prog > cls.model.progress))
+                        )
+                    ).execute()
 
-        with DB.lock("update_progress", -1):
-            if info["progress_msg"]:
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
-                cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
-            if "progress" in info:
-                prog = info["progress"]
-                cls.model.update(progress=prog).where(
-                    (cls.model.id == id) &
-                    (
-                        (cls.model.progress != -1) &
-                        ((prog == -1) | (prog > cls.model.progress))
-                    )
-                ).execute()
+        process_duration = (datetime.now() - task.begin_at).total_seconds()
+        cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
 
 
 def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
@@ -336,7 +338,14 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         - Previous task chunks may be reused if available
     """
     def new_task():
-        return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0, "from_page": 0, "to_page": 100000000}
+        return {
+            "id": get_uuid(),
+            "doc_id": doc["id"],
+            "progress": 0.0,
+            "from_page": 0,
+            "to_page": 100000000,
+            "begin_at": datetime.now(),
+        }
 
     parse_task_array = []
 
@@ -487,9 +496,11 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
         to_page=100000000,
         task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
+        begin_at=datetime.now(),
     )
-
-    TaskService.model.delete().where(TaskService.model.id == task["id"]).execute()
+    if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
+        TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()
+        DocumentService.begin2parse(doc_id)
     bulk_insert_into_db(model=Task, data_source=[task], replace_on_conflict=True)
 
     task["kb_id"] = DocumentService.get_knowledgebase_id(doc_id)

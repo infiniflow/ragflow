@@ -108,8 +108,9 @@ class ParserParam(ProcessParamBase):
                 "parse_method": "ocr",
                 "llm_id": "",
                 "lang": "Chinese",
+                "system_prompt": "",
                 "suffix": ["jpg", "jpeg", "png", "gif"],
-                "output_format": "json",
+                "output_format": "text",
             },
             "email": {
                 "suffix": [
@@ -148,7 +149,7 @@ class ParserParam(ProcessParamBase):
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
             if pdf_parse_method.lower() not in ["deepdoc", "plain_text"]:
-                self.check_empty(pdf_config.get("lang", ""), "Language")
+                self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
             self.check_valid_value(pdf_output_format, "PDF output format abnormal.", self.allowed_output_format["pdf"])
@@ -172,7 +173,7 @@ class ParserParam(ProcessParamBase):
         if image_config:
             image_parse_method = image_config.get("parse_method", "")
             if image_parse_method not in ["ocr"]:
-                self.check_empty(image_config.get("lang", ""), "Language")
+                self.check_empty(image_config.get("lang", ""), "Image VLM language")
 
         text_config = self.setups.get("text&markdown", "")
         if text_config:
@@ -181,7 +182,7 @@ class ParserParam(ProcessParamBase):
 
         audio_config = self.setups.get("audio", "")
         if audio_config:
-            self.check_empty(audio_config.get("llm_id"), "VLM")
+            self.check_empty(audio_config.get("llm_id"), "Audio VLM")
             audio_language = audio_config.get("lang", "")
             self.check_empty(audio_language, "Language")
 
@@ -329,11 +330,16 @@ class Parser(ProcessBase):
         else:
             lang = conf["lang"]
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"], lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["parse_method"], lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
-            txt = cv_model.describe(img_binary.read())
+
+            system_prompt = conf.get("system_prompt")
+            if system_prompt:
+                txt = cv_model.describe_with_prompt(img_binary.read(), system_prompt)
+            else:
+                txt = cv_model.describe(img_binary.read())
 
         self.set_output("text", txt)
 

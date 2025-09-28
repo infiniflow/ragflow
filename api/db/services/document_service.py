@@ -636,8 +636,6 @@ class DocumentService(CommonService):
                 prg = 0
                 finished = True
                 bad = 0
-                has_raptor = False
-                has_graphrag = False
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
                 priority = 0
@@ -649,25 +647,14 @@ class DocumentService(CommonService):
                     prg += t.progress if t.progress >= 0 else 0
                     if t.progress_msg.strip():
                         msg.append(t.progress_msg)
-                    if t.task_type == "raptor":
-                        has_raptor = True
-                    elif t.task_type == "graphrag":
-                        has_graphrag = True
                     priority = max(priority, t.priority)
                 prg /= len(tsks)
                 if finished and bad:
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
-                    if (d["parser_config"].get("raptor") or {}).get("use_raptor") and not has_raptor:
-                        queue_raptor_o_graphrag_tasks(d, "raptor", priority)
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif (d["parser_config"].get("graphrag") or {}).get("use_graphrag") and not has_graphrag:
-                        queue_raptor_o_graphrag_tasks(d, "graphrag", priority)
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    else:
-                        prg = 1
-                        status = TaskStatus.DONE.value
+                    prg = 1
+                    status = TaskStatus.DONE.value
 
                 msg = "\n".join(sorted(msg))
                 info = {
@@ -679,7 +666,7 @@ class DocumentService(CommonService):
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
-                    if msg.endswith("created task graphrag") or msg.endswith("created task raptor"):
+                    if msg.endswith("created task graphrag") or msg.endswith("created task raptor") or msg.endswith("created task mindmap"):
                         info["progress_msg"] += "\n%d tasks are ahead in the queue..."%get_queue_length(priority)
                 else:
                     info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
@@ -770,7 +757,8 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority, fake_doc_id="", doc_ids=[])
             "from_page": 100000000,
             "to_page": 100000000,
             "task_type": ty,
-            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " created task " + ty
+            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " created task " + ty,
+            "begin_at": datetime.now(),
         }
 
     task = new_task()
@@ -780,7 +768,7 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority, fake_doc_id="", doc_ids=[])
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
 
-    if ty in ["graphrag", "raptor"]:
+    if ty in ["graphrag", "raptor", "mindmap"]:
         task["doc_ids"] = doc_ids
         DocumentService.begin2parse(doc["id"])
     assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."

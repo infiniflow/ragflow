@@ -15,12 +15,12 @@
 #
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from peewee import fn
 
-from api.db import VALID_PIPELINE_TASK_TYPES
-from api.db.db_models import DB, PipelineOperationLog, Document
+from api.db import VALID_PIPELINE_TASK_TYPES, PipelineTaskType
+from api.db.db_models import DB, Document, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
@@ -83,10 +83,7 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
-        from rag.flow.pipeline import Pipeline
-
-        dsl = ""
+    def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[], dsl:str="{}"):
         referred_document_id = document_id
 
         if referred_document_id == GRAPH_RAPTOR_FAKE_DOC_ID and fake_document_ids:
@@ -108,13 +105,9 @@ class PipelineOperationLogService(CommonService):
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
             if not ok:
                 raise RuntimeError(f"Pipeline {pipeline_id} not found")
-
-            pipeline = Pipeline(dsl=json.dumps(user_pipeline.dsl), tenant_id=user_pipeline.user_id, doc_id=referred_document_id, task_id="", flow_id=pipeline_id)
-
             tenant_id = user_pipeline.user_id
             title = user_pipeline.title
             avatar = user_pipeline.avatar
-            dsl = json.loads(str(pipeline))
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not ok:
@@ -126,6 +119,24 @@ class PipelineOperationLogService(CommonService):
 
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")
+
+        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+            finish_at = document.process_begin_at + timedelta(seconds=document.process_duration)
+            if task_type == PipelineTaskType.GRAPH_RAG:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"graphrag_task_finish_at": finish_at},
+                )
+            elif task_type == PipelineTaskType.RAPTOR:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"raptor_task_finish_at": finish_at},
+                )
+            elif task_type == PipelineTaskType.MINDMAP:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"mindmap_task_finish_at": finish_at},
+                )
 
         log = dict(
             id=get_uuid(),
@@ -143,7 +154,7 @@ class PipelineOperationLogService(CommonService):
             progress_msg=document.progress_msg,
             process_begin_at=document.process_begin_at,
             process_duration=document.process_duration,
-            dsl=dsl,
+            dsl=json.loads(dsl),
             task_type=task_type,
             operation_status=operation_status,
             avatar=avatar,
@@ -162,7 +173,7 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_file_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix):
+    def get_file_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from=None, create_date_to=None):
         fields = cls.get_file_logs_fields()
         if keywords:
             logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (fn.LOWER(cls.model.document_name).contains(keywords.lower())))
@@ -177,6 +188,10 @@ class PipelineOperationLogService(CommonService):
             logs = logs.where(cls.model.document_type.in_(types))
         if suffix:
             logs = logs.where(cls.model.document_suffix.in_(suffix))
+        if create_date_from:
+            logs = logs.where(cls.model.create_date >= create_date_from)
+        if create_date_to:
+            logs = logs.where(cls.model.create_date <= create_date_to)
 
         count = logs.count()
         if desc:
@@ -192,25 +207,30 @@ class PipelineOperationLogService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_documents_info(cls, id):
-        fields = [
-            Document.id,
-            Document.name,
-            Document.progress
-        ]
-        return cls.model.select(*fields).join(Document, on=(cls.model.document_id == Document.id)).where(
-            cls.model.id == id,
-            Document.progress > 0,
-            Document.progress < 1
-        ).dicts()
-    
+        fields = [Document.id, Document.name, Document.progress]
+        return (
+            cls.model.select(*fields)
+            .join(Document, on=(cls.model.document_id == Document.id))
+            .where(
+                cls.model.id == id,
+                Document.progress > 0,
+                Document.progress < 1,
+            )
+            .dicts()
+        )
+
     @classmethod
     @DB.connection_context()
-    def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status):
+    def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from=None, create_date_to=None):
         fields = cls.get_dataset_logs_fields()
         logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
 
         if operation_status:
             logs = logs.where(cls.model.operation_status.in_(operation_status))
+        if create_date_from:
+            logs = logs.where(cls.model.create_date >= create_date_from)
+        if create_date_to:
+            logs = logs.where(cls.model.create_date <= create_date_to)
 
         count = logs.count()
         if desc:
@@ -222,4 +242,3 @@ class PipelineOperationLogService(CommonService):
             logs = logs.paginate(page_number, items_per_page)
 
         return list(logs.dicts()), count
-

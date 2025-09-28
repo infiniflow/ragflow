@@ -76,22 +76,23 @@ class Pipeline(Graph):
                     }
                 ]
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
-            if self._doc_id and self.task_id:
+            if component_name != "END" and self._doc_id and self.task_id:
                 percentage = 1.0 / len(self.components.items())
-                msg = ""
                 finished = 0.0
                 for o in obj:
-                    if o["component_id"] == "END":
-                        continue
-                    msg += f"\n[{o['component_id']}]:\n"
                     for t in o["trace"]:
-                        msg += "%s: %s\n" % (t["datetime"], t["message"])
                         if t["progress"] < 0:
                             finished = -1
                             break
                     if finished < 0:
                         break
                     finished += o["trace"][-1]["progress"] * percentage
+
+                msg = ""
+                if len(obj[-1]["trace"]) == 1:
+                    msg += f"\n-------------------------------------\n[{self.get_component_name(o['component_id'])}]:\n"
+                t = obj[-1]["trace"][-1]
+                msg += "%s: %s\n" % (t["datetime"], t["message"])
                 TaskService.update_progress(self.task_id, {"progress": finished, "progress_msg": msg})
         except Exception as e:
             logging.exception(e)

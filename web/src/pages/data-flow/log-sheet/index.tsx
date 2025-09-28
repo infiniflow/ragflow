@@ -57,16 +57,16 @@ export function LogSheet({
         </section>
         {isParsing ? (
           <Button
-            className="w-full mt-8 bg-state-error/10 text-state-error"
+            className="w-full mt-8 bg-state-error/10 text-state-error hover:bg-state-error hover:text-bg-base"
             onClick={handleCancel}
           >
-            <CirclePause /> Cancel
+            <CirclePause /> {t('dataflow.cancel')}
           </Button>
         ) : (
           <Button
             onClick={handleDownloadJson}
             disabled={isEndOutputEmpty(logs)}
-            className="w-full mt-8"
+            className="w-full mt-8 bg-accent-primary-5 text-text-secondary hover:bg-accent-primary-5  hover:text-accent-primary hover:border-accent-primary hover:border"
           >
             <SquareArrowOutUpRight />
             {t('dataflow.exportJson')}

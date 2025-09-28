@@ -14,6 +14,7 @@ import {
   NodeHandleId,
   Operator,
 } from './constant';
+import { ExtractorFormSchemaType } from './form/extractor-form';
 import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
 import { ParserFormSchemaType } from './form/parser-form';
 import { SplitterFormSchemaType } from './form/splitter-form';
@@ -99,6 +100,7 @@ function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
+            system_prompt: cur.system_prompt,
           };
           break;
         case FileType.Email:
@@ -143,6 +145,10 @@ function transformHierarchicalMergerParams(
   return { ...params, hierarchy: Number(params.hierarchy), levels };
 }
 
+function transformExtractorParams(params: ExtractorFormSchemaType) {
+  return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+}
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: RAGFlowNodeType[],
@@ -173,6 +179,9 @@ export const buildDslComponentsByGraph = (
 
         case Operator.HierarchicalMerger:
           params = transformHierarchicalMergerParams(params);
+          break;
+        case Operator.Extractor:
+          params = transformExtractorParams(params);
           break;
 
         default:

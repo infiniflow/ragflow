@@ -250,6 +250,7 @@ export const initialParserValues = {
       fileFormat: FileType.Image,
       output_format: ImageOutputFormat.Text,
       parse_method: ImageParseMethod.OCR,
+      system_prompt: '',
     },
     {
       fileFormat: FileType.Email,
@@ -267,11 +268,6 @@ export const initialParserValues = {
     {
       fileFormat: FileType.PowerPoint,
       output_format: PptOutputFormat.Json,
-    },
-    {
-      fileFormat: FileType.Audio,
-      llm_id: '',
-      output_format: AudioOutputFormat.Text,
     },
   ],
 };

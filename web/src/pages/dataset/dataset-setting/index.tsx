@@ -84,7 +84,6 @@ export default function DatasetSettings() {
     useState<IGenerateLogButtonProps>();
   const [raptorGenerateData, setRaptorGenerateData] =
     useState<IGenerateLogButtonProps>();
-
   useEffect(() => {
     console.log('🚀 ~ DatasetSettings ~ knowledgeDetails:', knowledgeDetails);
     if (knowledgeDetails) {
@@ -113,7 +112,6 @@ export default function DatasetSettings() {
       console.error('An error occurred during submission:', error);
     }
   }
-
   const handleLinkOrEditSubmit = (
     data: IDataPipelineSelectNode | undefined,
   ) => {

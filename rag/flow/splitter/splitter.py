@@ -59,6 +59,7 @@ class Splitter(ProcessBase):
             else:
                 deli += d
 
+        self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")
         if from_upstream.output_format in ["markdown", "text", "html"]:
             if from_upstream.output_format == "markdown":
@@ -99,7 +100,7 @@ class Splitter(ProcessBase):
             {
                 "text": RAGFlowPdfParser.remove_tag(c),
                 "image": img,
-                "positions": [[pos[0][-1]+1, *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(c)],
+                "positions": [[pos[0][-1], *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(c)],
             }
             for c, img in zip(chunks, images)
         ]
