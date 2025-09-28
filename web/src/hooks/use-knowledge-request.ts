@@ -30,6 +30,7 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
   FetchMetadata = 'fetchMetadata',
+  FetchKnowledgeList = 'fetchKnowledgeList',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -304,3 +305,25 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
 
   return { data, loading };
 }
+
+export const useFetchKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+): {
+  list: IKnowledge[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await listDataset();
+      const list = data?.data?.kbs ?? [];
+      return shouldFilterListWithoutDocument
+        ? list.filter((x: IKnowledge) => x.chunk_num > 0)
+        : list;
+    },
+  });
+
+  return { list: data, loading };
+};

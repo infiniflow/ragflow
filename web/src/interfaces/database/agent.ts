@@ -30,6 +30,7 @@ export interface ISwitchForm {
   no: string;
 }
 
+import { AgentCategory } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 
@@ -273,5 +274,5 @@ export interface IPipeLineListRequest {
   keywords?: string;
   orderby?: string;
   desc?: boolean;
-  canvas_category?: 'agent_canvas' | 'dataflow_canvas';
+  canvas_category?: AgentCategory;
 }

@@ -17,7 +17,6 @@ const {
   testDbConnect,
   getInputElements,
   debug,
-  listCanvasTeam,
   settingCanvas,
   uploadCanvasFile,
   trace,
@@ -84,10 +83,6 @@ const methods = {
   debugSingle: {
     url: debug,
     method: 'post',
-  },
-  listCanvasTeam: {
-    url: listCanvasTeam,
-    method: 'get',
   },
   settingCanvas: {
     url: settingCanvas,
