@@ -114,7 +114,7 @@ class PipelineOperationLogService(CommonService):
                 raise RuntimeError(f"Cannot find knowledge base {document.kb_id} for referred_document {referred_document_id}")
 
             tenant_id = kb_info.tenant_id
-            title = document.name
+            title = document.parser_id
             avatar = document.thumbnail
 
         if task_type not in VALID_PIPELINE_TASK_TYPES:

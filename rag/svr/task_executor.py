@@ -652,7 +652,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         raptor_config["threshold"],
     )
     original_length = len(chunks)
-    chunks = await raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
+    chunks = await raptor(chunks, row["kb_parser_config"]["raptor"]["random_seed"], callback)
     doc = {
         "doc_id": fake_doc_id,
         "kb_id": [str(row["kb_id"])],

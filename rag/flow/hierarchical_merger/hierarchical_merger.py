@@ -68,9 +68,10 @@ class HierarchicalMerger(ProcessBase):
 
             lines = [ln for ln in payload.split("\n") if ln]
         else:
-            lines = [o.get("text", "") for o in from_upstream.json_result]
+            arr = from_upstream.chunks if from_upstream.output_format == "chunks" else from_upstream.json_result
+            lines = [o.get("text", "") for o in arr]
             sections, section_images = [], []
-            for o in from_upstream.json_result or []:
+            for o in arr or []:
                 sections.append((o.get("text", ""), o.get("position_tag", "")))
                 section_images.append(o.get("img_id"))
 
@@ -128,21 +129,26 @@ class HierarchicalMerger(ProcessBase):
         all_pathes = []
         def dfs(n, path, depth):
             nonlocal all_pathes
-            if depth < self._param.hierarchy:
-                path = deepcopy(path)
+            if not n["children"] and path:
+                all_pathes.append(path)
 
             for nn in n["children"]:
-                path.extend([nn["index"], *nn["texts"]])
-                dfs(nn, path, depth+1)
+                if depth < self._param.hierarchy:
+                    _path = deepcopy(path)
+                else:
+                    _path = path
+                _path.extend([nn["index"], *nn["texts"]])
+                dfs(nn, _path, depth+1)
 
-            if depth == self._param.hierarchy:
-                all_pathes.append(path)
+                if depth == self._param.hierarchy:
+                    all_pathes.append(_path)
 
         for i in range(len(lines)):
             print(i, lines[i])
         dfs(root, [], 0)
-        print("sSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS", json.dumps(root, ensure_ascii=False, indent=2))
 
+        if root["texts"]:
+            all_pathes.insert(0, root["texts"])
         if from_upstream.output_format in ["markdown", "text", "html"]:
             cks = []
             for path in all_pathes:
@@ -161,7 +167,7 @@ class HierarchicalMerger(ProcessBase):
                 for i in path:
                     txt += lines[i] + "\n"
                     concat_img(img, id2image(section_images[i], partial(STORAGE_IMPL.get)))
-                cks.append(cks)
+                cks.append(txt)
                 images.append(img)
 
             cks = [
@@ -175,5 +181,6 @@ class HierarchicalMerger(ProcessBase):
             async with trio.open_nursery() as nursery:
                 for d in cks:
                     nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
+            self.set_output("chunks", cks)
 
         self.callback(1, "Done.")
