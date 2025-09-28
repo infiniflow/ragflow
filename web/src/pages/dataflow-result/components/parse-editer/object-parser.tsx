@@ -81,25 +81,10 @@ export const ObjectContainer = (props: IProps) => {
         }
       >
         {activeEditIndex && (
-          // <Textarea
-          //   className={cn(
-          //     'w-full bg-transparent text-text-secondary border-none focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none !h-6 min-h-6 p-0',
-          //     className,
-          //   )}
-          //   defaultValue={escapeNewlines(content.value[index].text)}
-          //   onChange={handleChange}
-          //   onBlur={(e) => handleSave(e)}
-          //   autoSize={{ maxRows: 100, minRows: 1 }}
-          //   autoFocus
-          // />
           <div
             ref={editDivRef}
             contentEditable={true}
             onBlur={handleSave}
-            //   onKeyUp={handleChange}
-            // dangerouslySetInnerHTML={{
-            //   __html: escapeNewlines(content.value),
-            // }}
             className={cn(
               'w-full bg-transparent text-text-secondary border-none focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none p-0',
               className,
