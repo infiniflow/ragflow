@@ -248,6 +248,28 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_docs_by_creator_id(cls, creator_id):
+        fields = [
+            cls.model.id, cls.model.kb_id, Knowledgebase.tenant_id
+        ]
+        docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.created_by == creator_id
+        )
+        docs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 100
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(limit)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")

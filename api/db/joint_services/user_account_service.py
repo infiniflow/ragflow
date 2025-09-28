@@ -17,6 +17,7 @@ import logging
 import uuid
 
 from api import settings
+from api.utils.api_utils import group_by
 from api.db import FileType, UserTenantRole, ActiveEnum
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
@@ -30,6 +31,7 @@ from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.file_service import FileService
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.search_service import SearchService
+from api.db.services.task_service import TaskService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
@@ -149,6 +151,7 @@ def delete_user_data(user_id: str) -> dict:
     try:
         # step1. delete owned tenant info
         if owned_tenant:
+            done_msg += "Start to delete owned tenant.\n"
             tenant_id = owned_tenant[0]["tenant_id"]
             kb_ids = KnowledgebaseService.get_kb_ids(usr.id)
             # step1.1 delete kb related file and info
@@ -163,6 +166,8 @@ def delete_user_data(user_id: str) -> dict:
                 if doc_ids:
                     doc_res = DocumentService.delete_by_ids([i["id"] for i in doc_ids])
                     done_msg += f"- Deleted {doc_res} document records.\n"
+                    task_res = TaskService.delete_by_doc_ids([i["id"] for i in doc_ids])
+                    done_msg += f"- Deleted {task_res} task records.\n"
                 file_ids = FileService.get_all_file_ids_by_tenant_id(usr.id)
                 if file_ids:
                     file_res = FileService.delete_by_ids([f["id"] for f in file_ids])
@@ -176,7 +181,7 @@ def delete_user_data(user_id: str) -> dict:
                 # step1.1.3 delete chunk in es
                 r = settings.docStoreConn.delete({"kb_id": kb_ids},
                                          search.index_name(tenant_id), kb_ids)
-                done_msg += f"- Deleted {r} doc store records.\n"
+                done_msg += f"- Deleted {r} chunk records.\n"
                 kb_res = KnowledgebaseService.delete_by_ids(kb_ids)
                 done_msg += f"- Deleted {kb_res} knowledgebase records.\n"
                 # step1.1.4 delete agents
@@ -204,9 +209,46 @@ def delete_user_data(user_id: str) -> dict:
             # step2.1 delete docs and files in joined team
             joined_tenants = [t for t in tenants if t["role"] == UserTenantRole.NORMAL.value]
             if joined_tenants:
-                pass
+                done_msg += "Start to delete data in joined tenants.\n"
+                created_documents = DocumentService.get_all_docs_by_creator_id(usr.id)
+                if created_documents:
+                    # step2.1.1 delete document record
+                    doc_res = DocumentService.delete_by_ids([d['id'] for d in created_documents])
+                    done_msg += f"- Deleted {doc_res} documents.\n"
+                    # step2.1.2 delete chunks
+                    doc_groups = group_by(created_documents, "tenant_id")
+                    for k, v in doc_groups.items():
+                        v = group_by(v, "kb_id")
+                    # chunks in {'tenant_id': {'kb_id': [{'id': doc_id}]}} structure
+                    chunk_res = 0
+                    for _tenant_id, kb_doc in doc_groups.items():
+                        for _kb_id, doc in kb_doc.items():
+                            chunk_res += settings.docStoreConn.delete(
+                                {"doc_id": [d["id"] for d in doc]},
+                                search.index_name(_tenant_id), _kb_id
+                            )
+                    done_msg += f"- Deleted {chunk_res} chunks.\n"
+                    # step2.1.3 delete tasks
+                    t_res = TaskService.delete_by_doc_ids([d['id'] for d in created_documents])
+                    done_msg += f"- Deleted {t_res} tasks.\n"
+                created_files = FileService.get_all_file_by_creator_id(usr.id)
+                if created_files:
+                    # step2.2.1 delete file in storage
+                    for f in created_files:
+                        STORAGE_IMPL.rm(f["parent_id"], f["location"])
+                    done_msg += f"- Deleted {len(created_files)} uploaded file.\n"
+                    # step2.2.2 delete file record
+                    f_res = FileService.delete_by_ids([f['id'] for f in created_files])
+                    done_msg += f"- Deleted {f_res} file records.\n"
+                # step2.3 delete document-file relation record
+                if created_files or created_documents:
+                    d_f_res = File2DocumentService.delete_by_document_ids_or_file_ids(
+                        [d['id'] for d in created_documents],
+                        [f['id'] for f in created_files]
+                    )
+                    done_msg += f"- Deleted {d_f_res} document-file relation records.\n"
 
-            # step2.2 delete relation
+            # step2.4 delete relation
             ut_res = UserTenantService.delete_by_ids([t["id"] for t in tenants])
             done_msg += f"- Deleted {ut_res} user-tenant records.\n"
         # step3 finally delete user
