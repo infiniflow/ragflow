@@ -9,6 +9,7 @@ import {
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  deleteKnowledgeGraph,
   getKnowledgeGraph,
   listDataset,
 } from '@/services/knowledge-service';
@@ -30,6 +31,7 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
   FetchMetadata = 'fetchMetadata',
+  RemoveKnowledgeGraph = 'removeKnowledgeGraph',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -296,3 +298,28 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
 
   return { data, loading };
 }
+
+export const useRemoveKnowledgeGraph = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.RemoveKnowledgeGraph],
+    mutationFn: async () => {
+      const { data } = await deleteKnowledgeGraph(knowledgeBaseId);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeGraph'],
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, removeKnowledgeGraph: mutateAsync };
+};
