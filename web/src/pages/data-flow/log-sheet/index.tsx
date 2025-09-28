@@ -1,3 +1,4 @@
+import { SkeletonCard } from '@/components/skeleton-card';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -6,7 +7,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { IModalProps } from '@/interfaces/common';
-import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpRight,
@@ -20,19 +20,23 @@ import {
   isEndOutputEmpty,
   useDownloadOutput,
 } from '../hooks/use-download-output';
+import { UseFetchLogReturnType } from '../hooks/use-fetch-log';
 import { DataflowTimeline } from './dataflow-timeline';
 
 type LogSheetProps = IModalProps<any> & {
-  isParsing: boolean;
   handleCancel(): void;
-  logs?: ITraceData[];
-};
+} & Pick<
+    UseFetchLogReturnType,
+    'isCompleted' | 'isLogEmpty' | 'isParsing' | 'logs'
+  >;
 
 export function LogSheet({
   hideModal,
   isParsing,
   logs,
   handleCancel,
+  isCompleted,
+  isLogEmpty,
 }: LogSheetProps) {
   const { t } = useTranslation();
 
@@ -47,13 +51,17 @@ export function LogSheet({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2.5">
             <Logs className="size-4" /> {t('flow.log')}
-            <Button variant={'ghost'}>
+            <Button variant={'ghost'} disabled={!isCompleted}>
               {t('dataflow.viewResult')} <ArrowUpRight />
             </Button>
           </SheetTitle>
         </SheetHeader>
         <section className="max-h-[82vh] overflow-auto mt-6">
-          <DataflowTimeline traceList={logs}></DataflowTimeline>
+          {isLogEmpty ? (
+            <SkeletonCard className="mt-2" />
+          ) : (
+            <DataflowTimeline traceList={logs}></DataflowTimeline>
+          )}
         </section>
         {isParsing ? (
           <Button

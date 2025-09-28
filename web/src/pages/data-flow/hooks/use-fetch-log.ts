@@ -1,10 +1,16 @@
 import { useFetchMessageTrace } from '@/hooks/use-agent-request';
 import { isEmpty } from 'lodash';
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
-export function useFetchLog() {
-  const { setMessageId, data, loading, messageId } =
-    useFetchMessageTrace(false);
+export function useFetchLog(logSheetVisible: boolean) {
+  const {
+    setMessageId,
+    data,
+    loading,
+    messageId,
+    setISStopFetchTrace,
+    isStopFetchTrace,
+  } = useFetchMessageTrace();
 
   const isCompleted = useMemo(() => {
     if (Array.isArray(data)) {
@@ -13,18 +19,38 @@ export function useFetchLog() {
         latest?.component_id === 'END' && !isEmpty(latest?.trace[0].message)
       );
     }
-    return true;
+    return false;
   }, [data]);
 
   const isLogEmpty = !data || !data.length;
 
+  const stopFetchTrace = useCallback(() => {
+    setISStopFetchTrace(true);
+  }, [setISStopFetchTrace]);
+
+  // cancel request
+  useEffect(() => {
+    if (isCompleted) {
+      stopFetchTrace();
+    }
+  }, [isCompleted, stopFetchTrace]);
+
+  useEffect(() => {
+    if (logSheetVisible) {
+      setISStopFetchTrace(false);
+    }
+  }, [logSheetVisible, setISStopFetchTrace]);
+
   return {
-    data,
+    logs: data,
     isLogEmpty,
     isCompleted,
     loading,
-    isParsing: !isLogEmpty && !isCompleted,
+    isParsing: !isLogEmpty && !isCompleted && !isStopFetchTrace,
     messageId,
     setMessageId,
+    stopFetchTrace,
   };
 }
+
+export type UseFetchLogReturnType = ReturnType<typeof useFetchLog>;

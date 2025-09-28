@@ -1771,6 +1771,12 @@ Important structured information may include: names, dates, locations, events, k
       cancel: 'Cancel',
       swicthPromptMessage:
         'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
+      tokenizerFieldsOptions: {
+        text: 'Text',
+        keywords: 'Keywords',
+        questions: 'Questions',
+        summary: 'Augmented Context',
+      },
     },
   },
 };

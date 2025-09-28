@@ -89,20 +89,29 @@ export default function DataFlow() {
     hideModal: hideLogSheet,
   } = useSetModalState();
 
-  const { isParsing, data, messageId, setMessageId } = useFetchLog();
+  const {
+    isParsing,
+    logs,
+    messageId,
+    setMessageId,
+    isCompleted,
+    stopFetchTrace,
+    isLogEmpty,
+  } = useFetchLog(logSheetVisible);
 
   const handleRunAgent = useCallback(() => {
     if (isParsing) {
       // show log sheet
       showLogSheet();
     } else {
+      hideLogSheet();
       handleRun();
     }
-  }, [handleRun, isParsing, showLogSheet]);
+  }, [handleRun, hideLogSheet, isParsing, showLogSheet]);
 
   const { handleCancel } = useCancelCurrentDataflow({
     messageId,
-    setMessageId,
+    stopFetchTrace,
   });
 
   const time = useWatchAgentChange(chatDrawerVisible);
@@ -139,7 +148,6 @@ export default function DataFlow() {
           <ButtonLoading
             variant={'secondary'}
             onClick={handleRunAgent}
-            disabled={isParsing}
             loading={running}
           >
             {running || (
@@ -199,7 +207,9 @@ export default function DataFlow() {
         <LogSheet
           hideModal={hideLogSheet}
           isParsing={isParsing}
-          logs={data}
+          isCompleted={isCompleted}
+          isLogEmpty={isLogEmpty}
+          logs={logs}
           handleCancel={handleCancel}
         ></LogSheet>
       )}
