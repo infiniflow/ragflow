@@ -83,6 +83,14 @@ class PipelineOperationLogService(CommonService):
         ]
 
     @classmethod
+    def save(cls, **kwargs):
+        """
+        wrap this function in a transaction
+        """
+        sample_obj = cls.model(**kwargs).save(force_insert=True)
+        return sample_obj
+
+    @classmethod
     @DB.connection_context()
     def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[], dsl: str = "{}"):
         referred_document_id = document_id
@@ -164,16 +172,18 @@ class PipelineOperationLogService(CommonService):
         log["create_date"] = datetime_format(datetime.now())
         log["update_time"] = current_timestamp()
         log["update_date"] = datetime_format(datetime.now())
-        obj = cls.save(**log)
 
-        limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1))
-        total = cls.model.select().where(cls.model.kb_id == document.kb_id).count()
+        with DB.atomic():
+            obj = cls.save(**log)
 
-        if total > limit:
-            keep_ids = [m.id for m in cls.model.select(cls.model.id).where(cls.model.kb_id == document.kb_id).order_by(cls.model.create_time.desc()).limit(limit)]
+            limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1))
+            total = cls.model.select().where(cls.model.kb_id == document.kb_id).count()
 
-            deleted = cls.model.delete().where(cls.model.kb_id == document.kb_id, cls.model.id.not_in(keep_ids)).execute()
-            logging.info(f"[PipelineOperationLogService] Cleaned {deleted} old logs, kept latest {limit} for {document.kb_id}")
+            if total > limit:
+                keep_ids = [m.id for m in cls.model.select(cls.model.id).where(cls.model.kb_id == document.kb_id).order_by(cls.model.create_time.desc()).limit(limit)]
+
+                deleted = cls.model.delete().where(cls.model.kb_id == document.kb_id, cls.model.id.not_in(keep_ids)).execute()
+                logging.info(f"[PipelineOperationLogService] Cleaned {deleted} old logs, kept latest {limit} for {document.kb_id}")
 
         return obj
 
