@@ -49,6 +49,11 @@ export default {
   // data pipeline log
   fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
   get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
+  fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
+  runGraphRag: `${api_host}/kb/run_graphrag`,
+  traceGraphRag: `${api_host}/kb/trace_graphrag`,
+  runRaptor: `${api_host}/kb/run_raptor`,
+  traceRaptor: `${api_host}/kb/trace_raptor`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -169,6 +174,7 @@ export default {
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
   prompt: `${api_host}/canvas/prompts`,
+  cancelDataflow: (id: string) => `${api_host}/canvas/cancel/${id}`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,

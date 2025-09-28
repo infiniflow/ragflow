@@ -94,6 +94,9 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      fileSize: '文件大小',
+      fileType: '文件类型',
+      uploadedBy: '创建者',
       notGenerated: '未生成',
       generatedOn: '生成于',
       subbarFiles: '文件列表',
@@ -116,7 +119,7 @@ export default {
       success: '成功',
       failed: '失败',
       completed: '已完成',
-      processLog: '处理进度日志',
+      datasetLog: '知识库日志',
       created: '创建于',
       learnMore: '了解更多',
       general: '通用',
@@ -1490,6 +1493,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       sqlStatementTip:
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
+      release: '发布',
+      createFromBlank: '从空白创建',
+      createFromTemplate: '从模板创建',
+      importJsonFile: '导入 JSON 文件',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1619,7 +1626,68 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       filenameEmbdWeight: '文件名嵌入权重',
       begin: '文件',
       parserMethod: '解析方法',
+      systemPrompt: '系统提示词',
+      systemPromptPlaceholder:
+        '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
       exportJson: '导出 JSON',
+      viewResult: '查看结果',
+      running: '运行中',
+      extractor: '提取器',
+      extractorDescription: '提取器',
+      summary: '增强上下文',
+      keywords: '关键词',
+      questions: '问题',
+      metadata: '元数据',
+      fieldName: '结果目的地',
+      prompts: {
+        system: {
+          keywords: `角色
+你是一名文本分析员。
+
+任务
+从给定的文本内容中提取最重要的关键词/短语。
+
+要求
+- 总结文本内容，并给出最重要的5个关键词/短语。
+- 关键词必须与给定的文本内容使用相同的语言。
+- 关键词之间用英文逗号分隔。
+- 仅输出关键词。`,
+          questions: `角色
+你是一名文本分析员。
+
+任务
+针对给定的文本内容提出3个问题。
+
+要求
+- 理解并总结文本内容，并提出最重要的3个问题。
+- 问题的含义不应重叠。
+- 问题应尽可能涵盖文本的主要内容。
+- 问题必须与给定的文本内容使用相同的语言。
+- 每行一个问题。
+- 仅输出问题。`,
+          summary: `扮演一个精准的摘要者。你的任务是为提供的内容创建一个简洁且忠实于原文的摘要。
+
+关键说明：
+1. 准确性：摘要必须严格基于所提供的信息。请勿引入任何未明确说明的新事实、结论或解释。
+2. 语言：摘要必须使用与原文相同的语言。
+3. 客观性：不带偏见地呈现要点，保留内容的原始意图和语气。请勿进行编辑。
+4. 简洁性：专注于最重要的思想，省略细节和多余的内容。`,
+          metadata: `从给定内容中提取重要的结构化信息。仅输出有效的 JSON 字符串，不包含任何附加文本。如果未找到重要的结构化信息，则输出一个空的 JSON 对象：{}。
+
+重要的结构化信息可能包括：姓名、日期、地点、事件、关键事实、数字数据或其他可提取实体。`,
+        },
+        user: {
+          keywords: `文本内容
+[在此处插入文本]`,
+          questions: `文本内容
+[在此处插入文本]`,
+          summary: `要总结的文本：
+[在此处插入文本]`,
+          metadata: `内容：[在此处插入内容]`,
+        },
+      },
+      cancel: '取消',
+      switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
     },
   },
 };

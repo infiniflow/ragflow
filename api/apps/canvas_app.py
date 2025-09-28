@@ -28,7 +28,8 @@ from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.task_service import queue_dataflow
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
@@ -40,6 +41,7 @@ from api.db.db_models import APIToken
 import time
 
 from api.utils.file_utils import filename_type, read_potential_broken_pdf
+from rag.flow.pipeline import Pipeline
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -144,6 +146,7 @@ def run():
 
     if cvs.canvas_category == CanvasCategory.DataFlow:
         task_id = get_uuid()
+        Pipeline(cvs.dsl, tenant_id=current_user.id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
         ok, error_message = queue_dataflow(tenant_id=user_id, flow_id=req["id"], task_id=task_id, file=files[0], priority=0)
         if not ok:
             return get_data_error_result(message=error_message)
@@ -172,6 +175,35 @@ def run():
     resp.headers.add_header("X-Accel-Buffering", "no")
     resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
     return resp
+
+
+@manager.route('/rerun', methods=['POST'])  # noqa: F821
+@validate_request("id", "dsl", "component_id")
+@login_required
+def rerun():
+    req = request.json
+    doc = PipelineOperationLogService.get_documents_info(req["id"])
+    if not doc:
+        return get_data_error_result(message="Document not found.")
+    doc = doc[0]
+    if 0 < doc["progress"] < 1:
+        return get_data_error_result(message=f"`{doc['name']}` is processing...")
+
+    dsl = req["dsl"]
+    dsl["path"] = [req["component_id"]]
+    PipelineOperationLogService.update_by_id(req["id"], {"dsl": dsl})
+    queue_dataflow(tenant_id=current_user.id, flow_id=req["id"], task_id=get_uuid(), doc_id=doc["id"], priority=0, rerun=True)
+    return get_json_result(data=True)
+
+
+@manager.route('/cancel/<task_id>', methods=['PUT'])  # noqa: F821
+@login_required
+def cancel(task_id):
+    try:
+        REDIS_CONN.set(f"{task_id}-cancel", "x")
+    except Exception as e:
+        logging.exception(e)
+    return get_json_result(data=True)
 
 
 @manager.route('/reset', methods=['POST'])  # noqa: F821

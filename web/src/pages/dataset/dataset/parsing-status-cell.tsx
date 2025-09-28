@@ -7,11 +7,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
@@ -19,7 +14,7 @@ import { CircleX } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, RunningStatus } from './constant';
-import { ParsingCard, PopoverContent } from './parsing-card';
+import { ParsingCard } from './parsing-card';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import { UseSaveMetaShowType } from './use-save-meta';
@@ -28,7 +23,9 @@ const IconMap = {
   [RunningStatus.UNSTART]: (
     <div className="w-0 h-0 border-l-[10px] border-l-accent-primary border-t-8 border-r-4 border-b-8 border-transparent"></div>
   ),
-  [RunningStatus.RUNNING]: <CircleX size={14} color="var(--state-error)" />,
+  [RunningStatus.RUNNING]: (
+    <CircleX size={14} color="rgba(var(--state-error))" />
+  ),
   [RunningStatus.CANCEL]: (
     <IconFontFill name="reparse" className="text-accent-primary" />
   ),
@@ -51,7 +48,15 @@ export function ParsingStatusCell({
 } & UseChangeDocumentParserShowType &
   UseSaveMetaShowType) {
   const { t } = useTranslation();
-  const { run, parser_id, progress, chunk_num, id } = record;
+  const {
+    run,
+    parser_id,
+    pipeline_id,
+    pipeline_name,
+    progress,
+    chunk_num,
+    id,
+  } = record;
   const operationIcon = IconMap[run];
   const p = Number((progress * 100).toFixed(2));
   const { handleRunDocumentByIds } = useHandleRunDocumentByIds(id);
@@ -85,7 +90,11 @@ export function ParsingStatusCell({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant={'transparent'} className="border-none" size={'sm'}>
-              {parser_id === 'naive' ? 'general' : parser_id}
+              {pipeline_id
+                ? pipeline_name || pipeline_id
+                : parser_id === 'naive'
+                  ? 'general'
+                  : parser_id}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
@@ -122,23 +131,13 @@ export function ParsingStatusCell({
           )}
           {isParserRunning(run) ? (
             <>
-              <HoverCard>
-                <HoverCardTrigger asChild>
-                  <div
-                    className="flex items-center gap-1"
-                    onClick={() => handleShowLog(record)}
-                  >
-                    <Progress value={p} className="h-1 flex-1 min-w-10" />
-                    {p}%
-                  </div>
-                </HoverCardTrigger>
-                <HoverCardContent className="w-[40vw]">
-                  <PopoverContent
-                    record={record}
-                    handleShowLog={handleShowLog}
-                  ></PopoverContent>
-                </HoverCardContent>
-              </HoverCard>
+              <div
+                className="flex items-center gap-1 cursor-pointer"
+                onClick={() => handleShowLog(record)}
+              >
+                <Progress value={p} className="h-1 flex-1 min-w-10" />
+                {p}%
+              </div>
               <div
                 className="cursor-pointer flex items-center gap-3"
                 onClick={

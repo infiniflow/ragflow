@@ -1,61 +1,202 @@
 import { TimelineNode } from '@/components/originui/timeline';
 import Spotlight from '@/components/spotlight';
 import { Spin } from '@/components/ui/spin';
+import { cn } from '@/lib/utils';
 import classNames from 'classnames';
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import FormatPreserveEditor from './components/parse-editer';
+import ChunkResultBar from './components/chunk-result-bar';
+import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
+import FormatPreserEditor from './components/parse-editer';
 import RerunButton from './components/rerun-button';
-import { useFetchParserList, useFetchPaserText } from './hooks';
+import { TimelineNodeType } from './constant';
+import { useChangeChunkTextMode, useFetchParserList } from './hooks';
+import { IDslComponent } from './interface';
 interface IProps {
   isChange: boolean;
   setIsChange: (isChange: boolean) => void;
   step?: TimelineNode;
+  data: { value: IDslComponent; key: string };
+  reRunLoading: boolean;
+  reRunFunc: (data: { value: IDslComponent; key: string }) => void;
 }
 const ParserContainer = (props: IProps) => {
-  const { isChange, setIsChange, step } = props;
-  const { data: initialValue, rerun: onSave } = useFetchPaserText();
+  const { isChange, setIsChange, step, data, reRunFunc, reRunLoading } = props;
   const { t } = useTranslation();
   const { loading } = useFetchParserList();
+  const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
+  const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
+  const initialValue = useMemo(() => {
+    const outputs = data?.value?.obj?.params?.outputs;
+    const key = outputs?.output_format?.value;
+    const value = outputs[key]?.value;
+    const type = outputs[key]?.type;
+    console.log('outputs-->', outputs);
+    return {
+      key,
+      type,
+      value,
+    };
+  }, [data]);
 
   const [initialText, setInitialText] = useState(initialValue);
-  const handleSave = (newContent: string) => {
-    console.log('保存内容:', newContent);
-    if (newContent !== initialText) {
+  const handleSave = (newContent: any) => {
+    console.log('newContent-change-->', newContent, initialValue);
+    if (JSON.stringify(newContent) !== JSON.stringify(initialValue)) {
       setIsChange(true);
-      onSave(newContent);
+      setInitialText(newContent);
     } else {
       setIsChange(false);
     }
     // Here, the API is called to send newContent to the backend
   };
-  const handleReRunFunc = () => {
+
+  const handleReRunFunc = useCallback(() => {
+    const newData: { value: IDslComponent; key: string } = {
+      ...data,
+      value: {
+        ...data.value,
+        obj: {
+          ...data.value.obj,
+          params: {
+            ...(data.value?.obj?.params || {}),
+            outputs: {
+              ...(data.value?.obj?.params?.outputs || {}),
+              [initialText.key]: {
+                type: initialText.type,
+                value: initialText.value,
+              },
+            },
+          },
+        },
+      },
+    };
+    reRunFunc(newData);
     setIsChange(false);
-  };
+  }, [data, initialText, reRunFunc, setIsChange]);
+
+  const handleRemoveChunk = useCallback(async () => {
+    if (selectedChunkIds.length > 0) {
+      initialText.value = initialText.value.filter(
+        (item: any, index: number) => !selectedChunkIds.includes(index + ''),
+      );
+      setSelectedChunkIds([]);
+    }
+  }, [selectedChunkIds, initialText]);
+
+  const handleCheckboxClick = useCallback(
+    (id: string | number, checked: boolean) => {
+      console.log('handleCheckboxClick', id, checked, selectedChunkIds);
+      setSelectedChunkIds((prev) => {
+        if (checked) {
+          return [...prev, id.toString()];
+        } else {
+          return prev.filter((item) => item.toString() !== id.toString());
+        }
+      });
+    },
+    [],
+  );
+
+  const selectAllChunk = useCallback(
+    (checked: boolean) => {
+      setSelectedChunkIds(
+        checked ? initialText.value.map((x, index: number) => index) : [],
+      );
+    },
+    [initialText.value],
+  );
+
+  const isChunck =
+    step?.type === TimelineNodeType.characterSplitter ||
+    step?.type === TimelineNodeType.titleSplitter ||
+    step?.type === TimelineNodeType.splitter;
+
+  const handleCreateChunk = useCallback(
+    (text: string) => {
+      console.log('handleCreateChunk', text);
+      const newText = [...initialText.value, { text: text || ' ' }];
+      setInitialText({
+        ...initialText,
+        value: newText,
+      });
+      console.log('newText', newText, initialText);
+    },
+    [initialText],
+  );
   return (
     <>
       {isChange && (
         <div className=" absolute top-2 right-6">
-          <RerunButton step={step} onRerun={handleReRunFunc} />
+          <RerunButton
+            step={step}
+            onRerun={handleReRunFunc}
+            loading={reRunLoading}
+          />
         </div>
       )}
       <div className={classNames('flex flex-col w-full')}>
         <Spin spinning={loading} className="" size="large">
           <div className="h-[50px] flex flex-col justify-end pb-[5px]">
-            <div>
-              <h2 className="text-[16px]">
-                {t('dataflowParser.parseSummary')}
-              </h2>
-              <div className="text-[12px] text-text-secondary italic ">
-                {t('dataflowParser.parseSummaryTip')}
+            {!isChunck && (
+              <div>
+                <h2 className="text-[16px]">
+                  {t('dataflowParser.parseSummary')}
+                </h2>
+                <div className="text-[12px] text-text-secondary italic ">
+                  {t('dataflowParser.parseSummaryTip')}
+                </div>
               </div>
-            </div>
+            )}
+            {isChunck && (
+              <div>
+                <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
+                <div className="text-[12px] text-text-secondary italic">
+                  {t('chunk.chunkResultTip')}
+                </div>
+              </div>
+            )}
           </div>
-          <div className=" border rounded-lg p-[20px] box-border h-[calc(100vh-180px)] overflow-auto scrollbar-none">
-            <FormatPreserveEditor
+
+          {isChunck && (
+            <div className="pt-[5px] pb-[5px] flex justify-between items-center">
+              <CheckboxSets
+                selectAllChunk={selectAllChunk}
+                removeChunk={handleRemoveChunk}
+                checked={selectedChunkIds.length === initialText.value.length}
+                selectedChunkIds={selectedChunkIds}
+              />
+              <ChunkResultBar
+                changeChunkTextMode={changeChunkTextMode}
+                createChunk={handleCreateChunk}
+              />
+            </div>
+          )}
+
+          <div
+            className={cn(
+              ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-none',
+              {
+                'h-[calc(100vh-240px)]': isChunck,
+                'h-[calc(100vh-180px)]': !isChunck,
+              },
+            )}
+          >
+            <FormatPreserEditor
               initialValue={initialText}
               onSave={handleSave}
-              className="!h-[calc(100vh-220px)]"
+              className={
+                initialText.key !== 'json' ? '!h-[calc(100vh-220px)]' : ''
+              }
+              isChunck={isChunck}
+              textMode={textMode}
+              isDelete={
+                step?.type === TimelineNodeType.characterSplitter ||
+                step?.type === TimelineNodeType.titleSplitter ||
+                step?.type === TimelineNodeType.splitter
+              }
+              handleCheckboxClick={handleCheckboxClick}
+              selectedChunkIds={selectedChunkIds}
             />
             <Spotlight opcity={0.6} coverage={60} />
           </div>

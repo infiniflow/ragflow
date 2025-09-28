@@ -29,6 +29,7 @@ const {
   fetchAgentLogs,
   fetchExternalAgentInputs,
   prompt,
+  cancelDataflow,
 } = api;
 
 const methods = {
@@ -119,6 +120,10 @@ const methods = {
   fetchPrompt: {
     url: prompt,
     method: 'get',
+  },
+  cancelDataflow: {
+    url: cancelDataflow,
+    method: 'put',
   },
 } as const;
 

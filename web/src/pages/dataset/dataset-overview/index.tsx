@@ -1,5 +1,6 @@
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
+import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { parseColorToRGBA } from '@/utils/common-util';
 import { CircleQuestionMark } from 'lucide-react';
 import { FC, useEffect, useMemo, useState } from 'react';
@@ -71,9 +72,7 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
 };
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
-  const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
-    LogTabs.FILE_LOGS,
-  );
+
   const [topAllData, setTopAllData] = useState({
     totalFiles: {
       value: 0,
@@ -92,6 +91,9 @@ const FileLogsPage: FC = () => {
   });
 
   const { data: topData } = useFetchOverviewTital();
+  const {
+    pagination: { total: fileTotal },
+  } = useFetchDocumentList();
   console.log('topData --> ', topData);
   useEffect(() => {
     setTopAllData((prev) => {
@@ -106,17 +108,32 @@ const FileLogsPage: FC = () => {
     });
   }, [topData]);
 
+  useEffect(() => {
+    setTopAllData((prev) => {
+      return {
+        ...prev,
+        totalFiles: {
+          value: fileTotal || 0,
+          precent: 0,
+        },
+      };
+    });
+  }, [fileTotal]);
+
   const {
     data: tableOriginData,
     searchString,
     handleInputChange,
     pagination,
+    setPagination,
+    active,
+    setActive,
   } = useFetchFileLogList();
 
   const tableList = useMemo(() => {
     console.log('tableList', tableOriginData);
-    if (tableOriginData && tableOriginData.docs?.length) {
-      return tableOriginData.docs.map((item) => {
+    if (tableOriginData && tableOriginData.logs?.length) {
+      return tableOriginData.logs.map((item) => {
         return {
           ...item,
           fileName: item.document_name,
@@ -124,13 +141,18 @@ const FileLogsPage: FC = () => {
         };
       });
     }
-  }, [tableOriginData, active]);
+  }, [tableOriginData]);
 
   const changeActiveLogs = (active: (typeof LogTabs)[keyof typeof LogTabs]) => {
     setActive(active);
   };
   const handlePaginationChange = (page: number, pageSize: number) => {
     console.log('Pagination changed:', { page, pageSize });
+    setPagination({
+      ...pagination,
+      page,
+      pageSize: pageSize,
+    });
   };
 
   const isDark = useIsDarkTheme();

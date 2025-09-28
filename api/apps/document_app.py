@@ -32,7 +32,7 @@ from api.db.services.document_service import DocumentService, doc_upload_and_par
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
+from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks, queue_dataflow
 from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
 from api.utils.api_utils import (
@@ -480,8 +480,11 @@ def run():
                         kb_table_num_map[kb_id] = count
                         if kb_table_num_map[kb_id] <= 0:
                             KnowledgebaseService.delete_field_map(kb_id)
-                bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-                queue_tasks(doc, bucket, name, 0)
+                if doc.get("pipeline_id", ""):
+                    queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=id)
+                else:
+                    bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
+                    queue_tasks(doc, bucket, name, 0)
 
         return get_json_result(data=True)
     except Exception as e:

@@ -1,4 +1,4 @@
-import message from '@/components/ui/message';
+import { TimelineNode } from '@/components/originui/timeline';
 import {
   useCreateChunk,
   useDeleteChunk,
@@ -8,40 +8,17 @@ import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IChunk } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
+import { formatSecondsToHumanReadable } from '@/utils/date';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { camelCase, upperFirst } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams, useSearchParams } from 'umi';
-import { ChunkTextMode } from './constant';
+import { ITimelineNodeObj, TimelineNodeObj } from './components/time-line';
+import { ChunkTextMode, TimelineNodeType } from './constant';
+import { IDslComponent, IPipelineFileLogDetail } from './interface';
 
-export interface IPipelineFileLogDetail {
-  avatar: string;
-  create_date: string;
-  create_time: number;
-  document_id: string;
-  document_name: string;
-  document_suffix: string;
-  document_type: string;
-  dsl: string;
-  id: string;
-  kb_id: string;
-  operation_status: string;
-  parser_id: string;
-  pipeline_id: string;
-  pipeline_title: string;
-  process_begin_at: string;
-  process_duration: number;
-  progress: number;
-  progress_msg: string;
-  source_from: string;
-  status: string;
-  task_type: string;
-  tenant_id: string;
-  update_date: string;
-  update_time: number;
-}
 export const useFetchPipelineFileLogDetail = (props?: {
   isEdit?: boolean;
   refreshCount?: number;
@@ -199,52 +176,104 @@ export const useFetchParserList = () => {
   };
 };
 
-export const useRerunDataflow = () => {
+export const useRerunDataflow = ({
+  data,
+}: {
+  data: IPipelineFileLogDetail;
+}) => {
   const [loading, setLoading] = useState(false);
   const [isChange, setIsChange] = useState(false);
+  const handleReRunFunc = useCallback(
+    (newData: { value: IDslComponent; key: string }) => {
+      const newDsl = {
+        ...data.dsl,
+        components: {
+          ...data.dsl.components,
+          [newData.key]: newData.value,
+        },
+      };
+
+      // this Data provided to the interface
+      const params = {
+        id: data.id,
+        dsl: newDsl,
+        compenent_id: newData.key,
+      };
+      console.log('newDsl', newDsl, params);
+    },
+    [data],
+  );
+
   return {
     loading,
     setLoading,
     isChange,
     setIsChange,
+    handleReRunFunc,
   };
 };
 
-export const useFetchPaserText = () => {
-  const initialText =
-    '第一行文本\n\t第二行缩进文本\n第三行  多个空格 第一行文本\n\t第二行缩进文本\n第三行 ' +
-    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
-    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
-    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
-    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
-    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  ' +
-    '多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格第一行文本\n\t第二行缩进文本\n第三行  多个空格';
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<string>(initialText);
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
+export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
+  const timelineNodes: TimelineNode[] = useMemo(() => {
+    const nodes: Array<ITimelineNodeObj & { id: number | string }> = [];
+    console.log('time-->', data);
+    const times = data?.dsl?.components;
+    if (times) {
+      const getNode = (
+        key: string,
+        index: number,
+        type:
+          | TimelineNodeType.begin
+          | TimelineNodeType.parser
+          | TimelineNodeType.splitter
+          | TimelineNodeType.tokenizer
+          | TimelineNodeType.characterSplitter
+          | TimelineNodeType.titleSplitter,
+      ) => {
+        const node = times[key].obj;
+        const name = camelCase(
+          node.component_name,
+        ) as keyof typeof TimelineNodeObj;
 
-  const {
-    // data,
-    // isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: ['createChunk'],
-    mutationFn: async (payload: any) => {
-      // let service = kbService.create_chunk;
-      // if (payload.chunk_id) {
-      //   service = kbService.set_chunk;
-      // }
-      // const { data } = await service(payload);
-      // if (data.code === 0) {
-      message.success(t('message.created'));
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
-      }, 1000); // Delay to ensure the list is updated
-      // }
-      // return data?.code;
-    },
-  });
+        let tempType = type;
+        if (name === TimelineNodeType.parser) {
+          tempType = TimelineNodeType.parser;
+        } else if (name === TimelineNodeType.tokenizer) {
+          tempType = TimelineNodeType.tokenizer;
+        } else if (
+          name === TimelineNodeType.characterSplitter ||
+          name === TimelineNodeType.titleSplitter ||
+          name === TimelineNodeType.splitter
+        ) {
+          tempType = TimelineNodeType.splitter;
+        }
+        const timeNode = {
+          ...TimelineNodeObj[name],
+          id: index,
+          className: 'w-32',
+          completed: false,
+          date: formatSecondsToHumanReadable(
+            node.params?.outputs?._elapsed_time?.value || 0,
+          ),
+          type: tempType,
+          detail: { value: times[key], key: key },
+        };
+        console.log('timeNodetype-->', type);
+        nodes.push(timeNode);
 
-  return { data, loading, rerun: mutateAsync };
+        if (times[key].downstream && times[key].downstream.length > 0) {
+          const nextKey = times[key].downstream[0];
+
+          // nodes.push(timeNode);
+          getNode(nextKey, index + 1, tempType);
+        }
+      };
+      getNode(upperFirst(TimelineNodeType.begin), 1, TimelineNodeType.begin);
+      // setTimelineNodeArr(nodes as unknown as ITimelineNodeObj & {id: number | string})
+    }
+    return nodes;
+  }, [data]);
+  return {
+    timelineNodes,
+  };
 };

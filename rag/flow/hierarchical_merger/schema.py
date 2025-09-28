@@ -25,11 +25,11 @@ class HierarchicalMergerFromUpstream(BaseModel):
     file: dict | None = Field(default=None)
     chunks: list[dict[str, Any]] | None = Field(default=None)
 
-    output_format: Literal["json", "markdown", "text", "html"] | None = Field(default=None)
+    output_format: Literal["json", "chunks"] | None = Field(default=None)
     json_result: list[dict[str, Any]] | None = Field(default=None, alias="json")
     markdown_result: str | None = Field(default=None, alias="markdown")
     text_result: str | None = Field(default=None, alias="text")
-    html_result: list[str] | None = Field(default=None, alias="html")
+    html_result: str | None = Field(default=None, alias="html")
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 

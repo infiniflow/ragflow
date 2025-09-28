@@ -41,6 +41,11 @@ const {
   retrievalTestShare,
   getKnowledgeBasicInfo,
   fetchDataPipelineLog,
+  fetchPipelineDatasetLogs,
+  runGraphRag,
+  traceGraphRag,
+  runRaptor,
+  traceRaptor,
 } = api;
 
 const methods = {
@@ -179,8 +184,29 @@ const methods = {
     url: fetchDataPipelineLog,
     method: 'post',
   },
+  fetchPipelineDatasetLogs: {
+    url: fetchPipelineDatasetLogs,
+    method: 'post',
+  },
   get_pipeline_detail: {
     url: api.get_pipeline_detail,
+    method: 'get',
+  },
+
+  runGraphRag: {
+    url: runGraphRag,
+    method: 'post',
+  },
+  traceGraphRag: {
+    url: traceGraphRag,
+    method: 'get',
+  },
+  runRaptor: {
+    url: runRaptor,
+    method: 'post',
+  },
+  traceRaptor: {
+    url: traceRaptor,
     method: 'get',
   },
 };
@@ -223,5 +249,9 @@ export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
 ) => request.post(api.fetchDataPipelineLog, { data: body || {}, params });
+export const listPipelineDatasetLogs = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchDocumentListRequestBody,
+) => request.post(api.fetchPipelineDatasetLogs, { data: body || {}, params });
 
 export default kbService;

@@ -12,7 +12,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import json
 import random
 from functools import partial
 
@@ -60,6 +59,7 @@ class Splitter(ProcessBase):
             else:
                 deli += d
 
+        self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")
         if from_upstream.output_format in ["markdown", "text", "html"]:
             if from_upstream.output_format == "markdown":
@@ -78,7 +78,7 @@ class Splitter(ProcessBase):
                 deli,
                 self._param.overlapped_percent,
             )
-            self.set_output("chunks", [{"text": c} for c in cks])
+            self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])
 
             self.callback(1, "Done.")
             return
@@ -100,13 +100,12 @@ class Splitter(ProcessBase):
             {
                 "text": RAGFlowPdfParser.remove_tag(c),
                 "image": img,
-                "positions": RAGFlowPdfParser.extract_positions(c),
+                "positions": [[pos[0][-1], *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(c)],
             }
             for c, img in zip(chunks, images)
         ]
         async with trio.open_nursery() as nursery:
             for d in cks:
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), "_image_temps", get_uuid())
-        print("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS\n", json.dumps(cks, ensure_ascii=False, indent=2))
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
         self.set_output("chunks",  cks)
         self.callback(1, "Done.")

@@ -1,8 +1,10 @@
+import message from '@/components/ui/message';
 import { useSendMessageBySSE } from '@/hooks/use-send-message';
 import api from '@/utils/api';
 import { get } from 'lodash';
-import { useCallback, useState } from 'react';
+import { useCallback, useContext } from 'react';
 import { useParams } from 'umi';
+import { LogContext } from '../context';
 import { useSaveGraphBeforeOpeningDebugDrawer } from './use-save-graph';
 
 export function useRunDataflow(
@@ -11,7 +13,7 @@ export function useRunDataflow(
 ) {
   const { send } = useSendMessageBySSE(api.runCanvas);
   const { id } = useParams();
-  const [messageId, setMessageId] = useState();
+  const { setMessageId } = useContext(LogContext);
 
   const { handleRun: saveGraph, loading } =
     useSaveGraphBeforeOpeningDebugDrawer(showLogSheet!);
@@ -37,12 +39,14 @@ export function useRunDataflow(
         }
 
         return msgId;
+      } else {
+        message.error(get(res, 'data.message', ''));
       }
     },
-    [hideRunOrChatDrawer, id, saveGraph, send],
+    [hideRunOrChatDrawer, id, saveGraph, send, setMessageId],
   );
 
-  return { run, loading: loading, messageId };
+  return { run, loading: loading };
 }
 
 export type RunDataflowType = ReturnType<typeof useRunDataflow>;

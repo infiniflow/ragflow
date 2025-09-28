@@ -124,10 +124,13 @@ VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"
-    DOWNLOAD = "DOWNLOAD"
+    DOWNLOAD = "Download"
+    RAPTOR = "RAPTOR"
+    GRAPH_RAG = "GraphRAG"
+    MINDMAP = "Mindmap"
 
 
-VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD}
+VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"

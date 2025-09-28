@@ -1,9 +1,4 @@
 import { Button } from '@/components/ui/button';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
@@ -88,20 +83,13 @@ export const PopoverContent = ({ record }: IProps) => {
 
 export function ParsingCard({ record, handleShowLog }: IProps) {
   return (
-    <HoverCard>
-      <HoverCardTrigger asChild>
-        <Button
-          variant={'transparent'}
-          className="border-none"
-          size={'sm'}
-          onClick={() => handleShowLog?.(record)}
-        >
-          <Dot run={record.run}></Dot>
-        </Button>
-      </HoverCardTrigger>
-      <HoverCardContent className="w-[40vw]">
-        <PopoverContent record={record}></PopoverContent>
-      </HoverCardContent>
-    </HoverCard>
+    <Button
+      variant={'transparent'}
+      className="border-none"
+      size={'sm'}
+      onClick={() => handleShowLog?.(record)}
+    >
+      <Dot run={record.run}></Dot>
+    </Button>
   );
 }

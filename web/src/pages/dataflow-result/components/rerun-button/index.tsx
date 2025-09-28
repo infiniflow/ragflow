@@ -4,16 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { CircleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useRerunDataflow } from '../../hooks';
 interface RerunButtonProps {
   className?: string;
   step?: TimelineNode;
   onRerun?: () => void;
+  loading?: boolean;
 }
 const RerunButton = (props: RerunButtonProps) => {
-  const { className, step, onRerun } = props;
+  const { className, step, onRerun, loading } = props;
   const { t } = useTranslation();
-  const { loading } = useRerunDataflow();
   const clickFunc = () => {
     console.log('click rerun button');
     Modal.show({
@@ -29,15 +28,15 @@ const RerunButton = (props: RerunButtonProps) => {
           }}
         ></div>
       ),
-      onVisibleChange: () => {
-        Modal.hide();
-      },
-      onOk: () => {
-        onRerun?.();
-        Modal.hide();
-      },
-      onCancel: () => {
-        Modal.hide();
+      okText: t('modal.okText'),
+      cancelText: t('modal.cancelText'),
+      onVisibleChange: (visible: boolean) => {
+        if (!visible) {
+          Modal.destroy();
+        } else {
+          onRerun?.();
+          Modal.destroy();
+        }
       },
     });
   };

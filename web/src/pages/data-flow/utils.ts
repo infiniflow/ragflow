@@ -1,7 +1,6 @@
 import { IAgentForm } from '@/interfaces/database/agent';
 import { DSLComponents, RAGFlowNodeType } from '@/interfaces/database/flow';
-import { removeUselessFieldsFromValues } from '@/utils/form';
-import { Edge, Node, XYPosition } from '@xyflow/react';
+import { Edge, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
 import { curry, get, intersectionWith, isEmpty, isEqual, sample } from 'lodash';
@@ -15,6 +14,7 @@ import {
   NodeHandleId,
   Operator,
 } from './constant';
+import { ExtractorFormSchemaType } from './form/extractor-form';
 import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
 import { ParserFormSchemaType } from './form/parser-form';
 import { SplitterFormSchemaType } from './form/splitter-form';
@@ -24,24 +24,13 @@ const buildComponentDownstreamOrUpstream = (
   edges: Edge[],
   nodeId: string,
   isBuildDownstream = true,
-  nodes: Node[],
 ) => {
   return edges
     .filter((y) => {
-      const node = nodes.find((x) => x.id === nodeId);
       let isNotUpstreamTool = true;
       let isNotUpstreamAgent = true;
       let isNotExceptionGoto = true;
-      if (isBuildDownstream && node?.data.label === Operator.Agent) {
-        isNotExceptionGoto = y.sourceHandle !== NodeHandleId.AgentException;
-        // Exclude the tool operator downstream of the agent operator
-        isNotUpstreamTool = !y.target.startsWith(Operator.Tool);
-        // Exclude the agent operator downstream of the agent operator
-        isNotUpstreamAgent = !(
-          y.target.startsWith(Operator.Agent) &&
-          y.targetHandle === NodeHandleId.AgentTop
-        );
-      }
+
       return (
         y[isBuildDownstream ? 'source' : 'target'] === nodeId &&
         isNotUpstreamTool &&
@@ -54,9 +43,9 @@ const buildComponentDownstreamOrUpstream = (
 
 const removeUselessDataInTheOperator = curry(
   (operatorName: string, params: Record<string, unknown>) => {
-    if (operatorName === Operator.Categorize) {
-      return removeUselessFieldsFromValues(params, '');
-    }
+    // if (operatorName === Operator.Categorize) {
+    //   return removeUselessFieldsFromValues(params, '');
+    // }
     return params;
   },
 );
@@ -111,6 +100,7 @@ function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
+            system_prompt: cur.system_prompt,
           };
           break;
         case FileType.Email:
@@ -155,6 +145,10 @@ function transformHierarchicalMergerParams(
   return { ...params, hierarchy: Number(params.hierarchy), levels };
 }
 
+function transformExtractorParams(params: ExtractorFormSchemaType) {
+  return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+}
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: RAGFlowNodeType[],
@@ -186,6 +180,9 @@ export const buildDslComponentsByGraph = (
         case Operator.HierarchicalMerger:
           params = transformHierarchicalMergerParams(params);
           break;
+        case Operator.Extractor:
+          params = transformExtractorParams(params);
+          break;
 
         default:
           break;
@@ -197,8 +194,8 @@ export const buildDslComponentsByGraph = (
           component_name: operatorName,
           params: buildOperatorParams(operatorName)(params) ?? {},
         },
-        downstream: buildComponentDownstreamOrUpstream(edges, id, true, nodes),
-        upstream: buildComponentDownstreamOrUpstream(edges, id, false, nodes),
+        downstream: buildComponentDownstreamOrUpstream(edges, id, true),
+        upstream: buildComponentDownstreamOrUpstream(edges, id, false),
         parent_id: x?.parentId,
       };
     });
@@ -351,25 +348,6 @@ export const generateNodeNamesWithIncreasingIndex = (
 
 export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
   const form: Record<string, any> = { ...(nodeData?.form ?? {}) };
-
-  // Delete the downstream node corresponding to the to field of the Categorize operator
-  if (nodeData?.label === Operator.Categorize) {
-    form.category_description = Object.keys(form.category_description).reduce<
-      Record<string, Record<string, any>>
-    >((pre, cur) => {
-      pre[cur] = {
-        ...form.category_description[cur],
-        to: undefined,
-      };
-      return pre;
-    }, {});
-  }
-
-  // Delete the downstream nodes corresponding to the yes and no fields of the Relevant operator
-  if (nodeData?.label === Operator.Relevant) {
-    form.yes = undefined;
-    form.no = undefined;
-  }
 
   return {
     ...(nodeData ?? { label: '' }),

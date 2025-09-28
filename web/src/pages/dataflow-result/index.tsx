@@ -7,6 +7,7 @@ import {
   useGetChunkHighlights,
   useHandleChunkCardClick,
   useRerunDataflow,
+  useTimelineDataFlow,
 } from './hooks';
 
 import DocumentHeader from './components/document-preview/document-header';
@@ -29,13 +30,11 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { ChunkerContainer } from './chunker';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
-import TimelineDataFlow, {
-  TimelineNodeArr,
-  TimelineNodeType,
-} from './components/time-line';
+import TimelineDataFlow from './components/time-line';
+import { TimelineNodeType } from './constant';
 import styles from './index.less';
+import { IDslComponent } from './interface';
 import ParserContainer from './parser';
 
 const Chunk = () => {
@@ -43,10 +42,11 @@ const Chunk = () => {
     data: { documentInfo },
   } = useFetchNextChunkList();
   const { selectedChunkId } = useHandleChunkCardClick();
-  const [activeStepId, setActiveStepId] = useState<number | string>(0);
+  const [activeStepId, setActiveStepId] = useState<number | string>(2);
   const { data: dataset } = useFetchPipelineFileLogDetail();
-  const { isChange, setIsChange } = useRerunDataflow();
   const { t } = useTranslation();
+
+  const { timelineNodes } = useTimelineDataFlow(dataset);
 
   const { navigateToDataset, getQueryString, navigateToDatasetList } =
     useNavigatePage();
@@ -69,8 +69,15 @@ const Chunk = () => {
     return 'unknown';
   }, [documentInfo]);
 
+  const {
+    handleReRunFunc,
+    isChange,
+    setIsChange,
+    loading: reRunLoading,
+  } = useRerunDataflow({
+    data: dataset,
+  });
   const handleStepChange = (id: number | string, step: TimelineNode) => {
-    console.log(id, step);
     if (isChange) {
       Modal.show({
         visible: true,
@@ -114,12 +121,14 @@ const Chunk = () => {
   };
 
   const { type } = useGetKnowledgeSearchParams();
+
   const currentTimeNode: TimelineNode = useMemo(() => {
     return (
-      TimelineNodeArr.find((node) => node.id === activeStepId) ||
+      timelineNodes.find((node) => node.id === activeStepId) ||
       ({} as TimelineNode)
     );
-  }, [activeStepId]);
+  }, [activeStepId, timelineNodes]);
+
   return (
     <>
       <PageHeader>
@@ -134,10 +143,10 @@ const Chunk = () => {
             <BreadcrumbItem>
               <BreadcrumbLink
                 onClick={navigateToDataset(
-                  getQueryString(QueryStringMap.id) as string,
+                  getQueryString(QueryStringMap.KnowledgeId) as string,
                 )}
               >
-                {dataset.name}
+                {t('knowledgeDetails.overview')}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -152,6 +161,8 @@ const Chunk = () => {
           <TimelineDataFlow
             activeFunc={handleStepChange}
             activeId={activeStepId}
+            data={dataset}
+            timelineNodes={timelineNodes}
           />
         </div>
       )}
@@ -173,20 +184,31 @@ const Chunk = () => {
           </div>
           <div className="h-dvh border-r -mt-3"></div>
           <div className="w-3/5 h-full">
-            {currentTimeNode?.type === TimelineNodeType.chunk && (
+            {/* {currentTimeNode?.type === TimelineNodeType.splitter && (
               <ChunkerContainer
                 isChange={isChange}
                 setIsChange={setIsChange}
                 step={currentTimeNode as TimelineNode}
               />
-            )}
-            {currentTimeNode?.type === TimelineNodeType.parser && (
+            )} */}
+            {/* {currentTimeNode?.type === TimelineNodeType.parser && ( */}
+            {(currentTimeNode?.type === TimelineNodeType.parser ||
+              currentTimeNode?.type === TimelineNodeType.splitter) && (
               <ParserContainer
                 isChange={isChange}
+                reRunLoading={reRunLoading}
                 setIsChange={setIsChange}
                 step={currentTimeNode as TimelineNode}
+                data={
+                  currentTimeNode.detail as {
+                    value: IDslComponent;
+                    key: string;
+                  }
+                }
+                reRunFunc={handleReRunFunc}
               />
             )}
+            {/* )} */}
             <Spotlight opcity={0.6} coverage={60} />
           </div>
         </div>

@@ -14,19 +14,21 @@
 #  limitations under the License.
 #
 import json
+import logging
 
 from flask import request
 from flask_login import login_required, current_user
 
 from api.db.services import duplicate_name
-from api.db.services.document_service import DocumentService
+from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
+from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
-from api.db import StatusEnum, FileSource, VALID_FILE_TYPES
+from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
@@ -61,6 +63,8 @@ def create():
         req["name"] = dataset_name
         req["tenant_id"] = current_user.id
         req["created_by"] = current_user.id
+        if not req.get("parser_id"):
+            req["parser_id"] = "naive"
         e, t = TenantService.get_by_id(current_user.id)
         if not e:
             return get_data_error_result(message="Tenant not found.")
@@ -413,8 +417,10 @@ def list_pipeline_logs():
         desc = False
     else:
         desc = True
-    create_time_from = int(request.args.get("create_time_from", 0))
-    create_time_to = int(request.args.get("create_time_to", 0))
+    create_date_from = request.args.get("create_date_from", "")
+    create_date_to = request.args.get("create_date_to", "")
+    if create_date_to > create_date_from:
+        return get_data_error_result(message="Create data filter is abnormal.")
 
     req = request.get_json()
 
@@ -433,18 +439,42 @@ def list_pipeline_logs():
     suffix = req.get("suffix", [])
 
     try:
-        docs, tol = PipelineOperationLogService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix)
-
-        if create_time_from or create_time_to:
-            filtered_docs = []
-            for doc in docs:
-                doc_create_time = doc.get("create_time", 0)
-                if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
-                    filtered_docs.append(doc)
-            docs = filtered_docs
+        logs, tol = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from, create_date_to)
+        return get_json_result(data={"total": tol, "logs": logs})
+    except Exception as e:
+        return server_error_response(e)
 
 
-        return get_json_result(data={"total": tol, "docs": docs})
+@manager.route("/list_pipeline_dataset_logs", methods=["POST"])  # noqa: F821
+@login_required
+def list_pipeline_dataset_logs():
+    kb_id = request.args.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
+    orderby = request.args.get("orderby", "create_time")
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
+    create_date_from = request.args.get("create_date_from", "")
+    create_date_to = request.args.get("create_date_to", "")
+    if create_date_to > create_date_from:
+        return get_data_error_result(message="Create data filter is abnormal.")
+
+    req = request.get_json()
+
+    operation_status = req.get("operation_status", [])
+    if operation_status:
+        invalid_status = {s for s in operation_status if s not in ["success", "failed", "running", "pending"]}
+        if invalid_status:
+            return get_data_error_result(message=f"Invalid filter operation_status status conditions: {', '.join(invalid_status)}")
+
+    try:
+        logs, tol = PipelineOperationLogService.get_dataset_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from, create_date_to)
+        return get_json_result(data={"total": tol, "logs": logs})
     except Exception as e:
         return server_error_response(e)
 
@@ -476,3 +506,243 @@ def pipeline_log_detail():
         return get_data_error_result(message="Invalid pipeline log ID")
 
     return get_json_result(data=log.to_dict())
+
+
+@manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
+@login_required
+def run_graphrag():
+    req = request.json
+
+    kb_id = req.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.graphrag_task_id
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid GraphRAG task id is expected for kb {kb_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running.")
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(doc=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": task_id}):
+        logging.warning(f"Cannot save graphrag_task_id for kb {kb_id}")
+
+    return get_json_result(data={"graphrag_task_id": task_id})
+
+
+@manager.route("/trace_graphrag", methods=["GET"])  # noqa: F821
+@login_required
+def trace_graphrag():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.graphrag_task_id
+    if not task_id:
+        return get_json_result(data={})
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return get_error_data_result(message="GraphRAG Task Not Found or Error Occurred")
+
+    return get_json_result(data=task.to_dict())
+
+
+@manager.route("/run_raptor", methods=["POST"])  # noqa: F821
+@login_required
+def run_raptor():
+    req = request.json
+
+    kb_id = req.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.raptor_task_id
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid RAPTOR task id is expected for kb {kb_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running.")
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(doc=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": task_id}):
+        logging.warning(f"Cannot save raptor_task_id for kb {kb_id}")
+
+    return get_json_result(data={"raptor_task_id": task_id})
+
+
+@manager.route("/trace_raptor", methods=["GET"])  # noqa: F821
+@login_required
+def trace_raptor():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.raptor_task_id
+    if not task_id:
+        return get_json_result(data={})
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return get_error_data_result(message="RAPTOR Task Not Found or Error Occurred")
+
+    return get_json_result(data=task.to_dict())
+
+
+@manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
+@login_required
+def run_mindmap():
+    req = request.json
+
+    kb_id = req.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.mindmap_task_id
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid Mindmap task id is expected for kb {kb_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Mindmap Task is already running.")
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(doc=sample_document, ty="mindmap", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"mindmap_task_id": task_id}):
+        logging.warning(f"Cannot save mindmap_task_id for kb {kb_id}")
+
+    return get_json_result(data={"mindmap_task_id": task_id})
+
+
+@manager.route("/trace_mindmap", methods=["GET"])  # noqa: F821
+@login_required
+def trace_mindmap():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.mindmap_task_id
+    if not task_id:
+        return get_json_result(data={})
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return get_error_data_result(message="Mindmap Task Not Found or Error Occurred")
+
+    return get_json_result(data=task.to_dict())
+
+
+@manager.route("/unbind_task", methods=["DELETE"])  # noqa: F821
+@login_required
+def delete_kb_task():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_json_result(data=True)
+
+    pipeline_task_type = request.args.get("pipeline_task_type", "")
+    if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+        return get_error_data_result(message="Invalid task type")
+
+    kb_task_id = ""
+    match pipeline_task_type:
+        case PipelineTaskType.GRAPH_RAG:
+            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+            kb_task_id = "graphrag_task_id"
+        case PipelineTaskType.RAPTOR:
+            kb_task_id = "raptor_task_id"
+        case PipelineTaskType.MINDMAP:
+            kb_task_id = "mindmap_task_id"
+        case _:
+            return get_error_data_result(message="Internal Error: Invalid task type")
+
+    ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id: ""})
+    if not ok:
+        return server_error_response(f"Internal error: cannot delete task {pipeline_task_type}")
+
+    return get_json_result(data=True)

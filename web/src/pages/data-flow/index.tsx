@@ -30,13 +30,17 @@ import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import DataFlowCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
+import { LogContext } from './context';
+import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
+import { useFetchLog } from './hooks/use-fetch-log';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
+import { LogSheet } from './log-sheet';
 import { SettingDialog } from './setting-dialog';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
@@ -64,10 +68,9 @@ export default function DataFlow() {
   const { handleExportJson } = useHandleExportOrImportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
-  const handleRunAgent = useCallback(() => {
-    handleRun();
-  }, [handleRun]);
+  const { handleRun, loading: running } =
+    useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
+
   const {
     visible: versionDialogVisible,
     hideModal: hideVersionDialog,
@@ -79,6 +82,28 @@ export default function DataFlow() {
     hideModal: hideSettingDialog,
     showModal: showSettingDialog,
   } = useSetModalState();
+
+  const {
+    visible: logSheetVisible,
+    showModal: showLogSheet,
+    hideModal: hideLogSheet,
+  } = useSetModalState();
+
+  const { isParsing, data, messageId, setMessageId } = useFetchLog();
+
+  const handleRunAgent = useCallback(() => {
+    if (isParsing) {
+      // show log sheet
+      showLogSheet();
+    } else {
+      handleRun();
+    }
+  }, [handleRun, isParsing, showLogSheet]);
+
+  const { handleCancel } = useCancelCurrentDataflow({
+    messageId,
+    setMessageId,
+  });
 
   const time = useWatchAgentChange(chatDrawerVisible);
 
@@ -111,15 +136,26 @@ export default function DataFlow() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button variant={'secondary'} onClick={handleRunAgent}>
-            <CirclePlay />
-            {t('flow.run')}
-          </Button>
+          <ButtonLoading
+            variant={'secondary'}
+            onClick={handleRunAgent}
+            disabled={isParsing}
+            loading={running}
+          >
+            {running || (
+              <CirclePlay className={isParsing ? 'animate-spin' : ''} />
+            )}
+
+            {isParsing || running ? t('dataflow.running') : t('flow.run')}
+          </ButtonLoading>
           <Button variant={'secondary'} onClick={showVersionDialog}>
             <History />
             {t('flow.historyversion')}
           </Button>
-
+          {/* <Button variant={'secondary'}>
+            <Send />
+            {t('flow.release')}
+          </Button> */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
@@ -140,15 +176,17 @@ export default function DataFlow() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <ReactFlowProvider>
-        <DropdownProvider>
-          <DataFlowCanvas
-            drawerVisible={chatDrawerVisible}
-            hideDrawer={hideChatDrawer}
-          ></DataFlowCanvas>
-        </DropdownProvider>
-      </ReactFlowProvider>
-
+      <LogContext.Provider value={{ messageId, setMessageId }}>
+        <ReactFlowProvider>
+          <DropdownProvider>
+            <DataFlowCanvas
+              drawerVisible={chatDrawerVisible}
+              hideDrawer={hideChatDrawer}
+              showLogSheet={showLogSheet}
+            ></DataFlowCanvas>
+          </DropdownProvider>
+        </ReactFlowProvider>
+      </LogContext.Provider>
       {versionDialogVisible && (
         <DropdownProvider>
           <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
@@ -156,6 +194,14 @@ export default function DataFlow() {
       )}
       {settingDialogVisible && (
         <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
+      )}
+      {logSheetVisible && (
+        <LogSheet
+          hideModal={hideLogSheet}
+          isParsing={isParsing}
+          logs={data}
+          handleCancel={handleCancel}
+        ></LogSheet>
       )}
     </section>
   );

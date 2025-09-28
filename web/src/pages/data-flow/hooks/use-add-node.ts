@@ -1,3 +1,4 @@
+import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { lowerFirst } from 'lodash';
@@ -8,6 +9,7 @@ import {
   NodeMap,
   Operator,
   initialBeginValues,
+  initialExtractorValues,
   initialHierarchicalMergerValues,
   initialNoteValues,
   initialParserValues,
@@ -21,6 +23,9 @@ import {
 } from '../utils';
 
 export const useInitializeOperatorParams = () => {
+  const llmId = useFetchModelId();
+  const { t } = useTranslation();
+
   const initialFormValuesMap = useMemo(() => {
     return {
       [Operator.Begin]: initialBeginValues,
@@ -29,8 +34,14 @@ export const useInitializeOperatorParams = () => {
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.Splitter]: initialSplitterValues,
       [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
+      [Operator.Extractor]: {
+        ...initialExtractorValues,
+        llm_id: llmId,
+        sys_prompt: t('dataflow.prompts.system.summary'),
+        prompts: t('dataflow.prompts.user.summary'),
+      },
     };
-  }, []);
+  }, [llmId, t]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator) => {
