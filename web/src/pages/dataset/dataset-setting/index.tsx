@@ -12,7 +12,10 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
-import { IGenerateLogButtonProps } from '../dataset/generate-button/generate';
+import {
+  GenerateType,
+  IGenerateLogButtonProps,
+} from '../dataset/generate-button/generate';
 import LinkDataPipeline, {
   IDataPipelineNodeProps,
 } from './components/link-data-pipeline';
@@ -120,6 +123,20 @@ export default function DatasetSettings() {
       // form.setValue('pipeline_avatar', data.avatar || '');
     }
   };
+
+  const handleDeletePipelineTask = (type: GenerateType) => {
+    if (type === GenerateType.KnowledgeGraph) {
+      setGraphRagGenerateData({
+        finish_at: '',
+        task_id: '',
+      } as IGenerateLogButtonProps);
+    } else if (type === GenerateType.Raptor) {
+      setRaptorGenerateData({
+        finish_at: '',
+        task_id: '',
+      } as IGenerateLogButtonProps);
+    }
+  };
   return (
     <section className="p-5 h-full flex flex-col">
       <TopTitle
@@ -140,10 +157,14 @@ export default function DatasetSettings() {
                 <GraphRagItems
                   className="border-none p-0"
                   data={graphRagGenerateData as IGenerateLogButtonProps}
+                  onDelete={() =>
+                    handleDeletePipelineTask(GenerateType.KnowledgeGraph)
+                  }
                 ></GraphRagItems>
                 <Divider />
                 <RaptorFormFields
                   data={raptorGenerateData as IGenerateLogButtonProps}
+                  onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
                 ></RaptorFormFields>
                 <Divider />
                 <LinkDataPipeline

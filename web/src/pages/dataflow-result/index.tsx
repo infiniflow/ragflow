@@ -94,18 +94,18 @@ const Chunk = () => {
           ></div>
         ),
         onVisibleChange: () => {
-          Modal.hide();
+          Modal.destroy();
         },
         footer: (
           <div className="flex justify-end gap-2">
-            <Button variant={'outline'} onClick={() => Modal.hide()}>
+            <Button variant={'outline'} onClick={() => Modal.destroy()}>
               {t('dataflowParser.changeStepModalCancelText')}
             </Button>
             <Button
               variant={'secondary'}
               className="!bg-state-error text-text-primary"
               onClick={() => {
-                Modal.hide();
+                Modal.destroy();
                 setActiveStepId(id);
                 setIsChange(false);
               }}
@@ -193,7 +193,8 @@ const Chunk = () => {
             )} */}
             {/* {currentTimeNode?.type === TimelineNodeType.parser && ( */}
             {(currentTimeNode?.type === TimelineNodeType.parser ||
-              currentTimeNode?.type === TimelineNodeType.splitter) && (
+              currentTimeNode?.type === TimelineNodeType.characterSplitter ||
+              currentTimeNode?.type === TimelineNodeType.titleSplitter) && (
               <ParserContainer
                 isChange={isChange}
                 reRunLoading={reRunLoading}

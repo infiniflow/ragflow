@@ -38,10 +38,6 @@ export const TimelineNodeObj = {
   },
   [TimelineNodeType.characterSplitter]: {
     title: 'Character Splitter',
-    icon: <Heading size={13} />,
-  },
-  [TimelineNodeType.splitter]: {
-    title: 'Splitter',
     icon: <Blocks size={13} />,
   },
   [TimelineNodeType.tokenizer]: {

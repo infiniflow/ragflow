@@ -1,10 +1,11 @@
 import message from '@/components/ui/message';
 import agentService from '@/services/agent-service';
-import kbService from '@/services/knowledge-service';
+import kbService, { deletePipelineTask } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useEffect, useState } from 'react';
 import { useParams } from 'umi';
+import { ProcessingType } from '../../dataset-overview/dataset-common';
 import { GenerateType } from './generate';
 export const generateStatus = {
   running: 'running',
@@ -152,4 +153,22 @@ export const useDatasetGenerate = () => {
     },
   });
   return { runGenerate: mutateAsync, pauseGenerate, data, loading };
+};
+
+export const useUnBindTask = () => {
+  const { id } = useParams();
+  const { mutateAsync: handleUnbindTask } = useMutation({
+    mutationKey: [DatasetKey.pauseGenerate],
+    mutationFn: async ({ type }: { type: ProcessingType }) => {
+      const { data } = await deletePipelineTask({ kb_id: id as string, type });
+      if (data.code === 0) {
+        message.success(t('message.operated'));
+        // queryClient.invalidateQueries({
+        //   queryKey: [type],
+        // });
+      }
+      return data;
+    },
+  });
+  return { handleUnbindTask };
 };

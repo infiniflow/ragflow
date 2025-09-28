@@ -5,6 +5,7 @@ export interface IDocumentInfo {
   create_date: string;
   create_time: number;
   created_by: string;
+  nickname: string;
   id: string;
   kb_id: string;
   location: string;

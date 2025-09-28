@@ -56,7 +56,13 @@ const Prompt = 'parser_config.raptor.prompt';
 
 // The three types "table", "resume" and "one" do not display this configuration.
 
-const RaptorFormFields = ({ data }: { data: IGenerateLogButtonProps }) => {
+const RaptorFormFields = ({
+  data,
+  onDelete,
+}: {
+  data: IGenerateLogButtonProps;
+  onDelete: () => void;
+}) => {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
@@ -106,6 +112,7 @@ const RaptorFormFields = ({ data }: { data: IGenerateLogButtonProps }) => {
                   <FormControl>
                     <GenerateLogButton
                       {...data}
+                      onDelete={onDelete}
                       className="w-full text-text-secondary"
                       status={1}
                       type={GenerateType.Raptor}
