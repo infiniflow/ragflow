@@ -162,7 +162,7 @@ class ExeSQL(ToolBase, ABC):
                     if pd.api.types.is_datetime64_any_dtype(df[col]):
                         df[col] = df[col].dt.strftime("%Y-%m-%d")
 
-                single_res = single_res.where(pd.notnull(single_res), None)
+                df = df.where(pd.notnull(df), None)
 
                 sql_res.append(convert_decimals(df.to_dict(orient="records")))
                 formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
