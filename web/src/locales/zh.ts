@@ -1626,6 +1626,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       filenameEmbdWeight: '文件名嵌入权重',
       begin: '文件',
       parserMethod: '解析方法',
+      systemPrompt: '系统提示词',
+      systemPromptPlaceholder:
+        '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
       exportJson: '导出 JSON',
       viewResult: '查看结果',
       running: '运行中',
