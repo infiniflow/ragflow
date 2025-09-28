@@ -416,13 +416,11 @@ export const useUploadCanvasFileWithProgress = (
   return { data, loading, uploadCanvasFile: mutateAsync };
 };
 
-export const useFetchMessageTrace = (
-  isStopFetchTrace: boolean,
-  canvasId?: string,
-) => {
+export const useFetchMessageTrace = (canvasId?: string) => {
   const { id } = useParams();
   const queryId = id || canvasId;
   const [messageId, setMessageId] = useState('');
+  const [isStopFetchTrace, setISStopFetchTrace] = useState(false);
 
   const {
     data,
@@ -442,11 +440,19 @@ export const useFetchMessageTrace = (
         message_id: messageId,
       });
 
-      return data?.data ?? [];
+      return Array.isArray(data?.data) ? data?.data : [];
     },
   });
 
-  return { data, loading, refetch, setMessageId, messageId };
+  return {
+    data,
+    loading,
+    refetch,
+    setMessageId,
+    messageId,
+    isStopFetchTrace,
+    setISStopFetchTrace,
+  };
 };
 
 export const useTestDbConnect = () => {

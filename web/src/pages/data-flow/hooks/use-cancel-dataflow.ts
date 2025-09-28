@@ -3,19 +3,19 @@ import { useCallback } from 'react';
 
 export function useCancelCurrentDataflow({
   messageId,
-  setMessageId,
+  stopFetchTrace,
 }: {
   messageId: string;
-  setMessageId: (messageId: string) => void;
+  stopFetchTrace(): void;
 }) {
   const { cancelDataflow } = useCancelDataflow();
 
   const handleCancel = useCallback(async () => {
     const code = await cancelDataflow(messageId);
     if (code === 0) {
-      setMessageId('');
+      stopFetchTrace();
     }
-  }, [cancelDataflow, messageId, setMessageId]);
+  }, [cancelDataflow, messageId, stopFetchTrace]);
 
   return { handleCancel };
 }
