@@ -98,6 +98,15 @@ def login():
         return get_json_result(data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
+
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return get_json_result(
+            data=False,
+            code=settings.RetCode.FORBIDDEN,
+            message="This account has been disabled, please contact the administrator!",
+        )
+
+
     if user:
         response_data = user.to_json()
         user.access_token = get_uuid()
