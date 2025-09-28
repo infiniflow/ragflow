@@ -1494,6 +1494,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
+      createFromBlank: '从空白创建',
+      createFromTemplate: '从模板创建',
+      importJsonFile: '导入 JSON 文件',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1680,6 +1683,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           metadata: `内容：[在此处插入内容]`,
         },
       },
+      cancel: '取消',
+      switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
     },
   },
 };

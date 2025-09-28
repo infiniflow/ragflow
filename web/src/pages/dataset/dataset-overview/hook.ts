@@ -45,11 +45,17 @@ const useFetchFileLogList = () => {
     queryKey: [
       'fileLogList',
       knowledgeBaseId,
-      pagination.current,
-      pagination.pageSize,
+      pagination,
       searchString,
       active,
     ],
+    placeholderData: (previousData) => {
+      if (previousData === undefined) {
+        return { logs: [], total: 0 };
+      }
+      return previousData;
+    },
+    enabled: true,
     queryFn: async () => {
       const { data: res = {} } = await fetchFunc({
         kb_id: knowledgeBaseId,
@@ -73,6 +79,7 @@ const useFetchFileLogList = () => {
     searchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
+    setPagination,
     active,
     setActive,
   };
