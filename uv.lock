@@ -1,4 +1,5 @@
 version = 1
+revision = 3
 requires-python = ">=3.10, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'darwin'",
@@ -5563,6 +5564,7 @@ requires-dist = [
     { name = "yfinance", specifier = "==0.2.65" },
     { name = "zhipuai", specifier = "==2.0.1" },
 ]
+provides-extras = ["full"]
 
 [package.metadata.requires-dev]
 test = [

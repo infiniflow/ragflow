@@ -137,7 +137,7 @@ class Agent(LLM, ToolBase):
             res.update(cpn.get_input_form())
         return res
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60)))
     def _invoke(self, **kwargs):
         if kwargs.get("user_prompt"):
             usr_pmt = ""

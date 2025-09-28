@@ -1,6 +1,6 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
-import { useFetchKnowledgeGraph } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';

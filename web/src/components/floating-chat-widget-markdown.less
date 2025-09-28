@@ -1,0 +1,58 @@
+/* floating-chat-widget-markdown.less */
+
+.widget-citation-popover {
+  max-width: 90vw;
+  /* Use viewport width for better responsiveness */
+  width: max-content;
+
+  .ant-popover-inner {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .ant-popover-inner-content {
+    padding: 12px;
+  }
+}
+
+/* Responsive breakpoints for popover width */
+@media (min-width: 480px) {
+  .widget-citation-popover {
+    max-width: 360px;
+  }
+}
+
+.widget-citation-content {
+
+  p,
+  div,
+  span,
+  button {
+    word-break: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+  }
+}
+
+.floating-chat-widget {
+
+  /* General styles for markdown content within the widget */
+  p,
+  div,
+  ul,
+  ol,
+  blockquote {
+    line-height: 1.6;
+  }
+
+  /* Enhanced image styles */
+  img,
+  .ant-image,
+  .ant-image-img {
+    max-width: 100% !important;
+    height: auto !important;
+    border-radius: 8px;
+    margin: 8px 0 !important;
+    display: inline-block !important;
+  }
+}
