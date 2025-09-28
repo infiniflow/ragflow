@@ -37,7 +37,6 @@ export function CommonHandle({
           className,
         )}
         onClick={(e) => {
-          console.log('[DEBUG] Handle clicked directly');
           e.stopPropagation();
 
           if (!canShowDropdown()) {
