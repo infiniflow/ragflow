@@ -40,12 +40,14 @@ class TokenizerFromUpstream(BaseModel):
         if self.chunks:
             return self
 
-        if self.output_format in {"markdown", "text"}:
+        if self.output_format in {"markdown", "text", "html"}:
             if self.output_format == "markdown" and not self.markdown_result:
                 raise ValueError("output_format=markdown requires a markdown payload (field: 'markdown' or 'markdown_result').")
             if self.output_format == "text" and not self.text_result:
                 raise ValueError("output_format=text requires a text payload (field: 'text' or 'text_result').")
+            if self.output_format == "html" and not self.html_result:
+                raise ValueError("output_format=text requires a html payload (field: 'html' or 'html_result').")
         else:
-            if not self.json_result:
+            if not self.json_result and not self.chunks:
                 raise ValueError("When no chunks are provided and output_format is not markdown/text, a JSON list payload is required (field: 'json' or 'json_result').")
         return self

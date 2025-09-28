@@ -102,7 +102,7 @@ class Splitter(ProcessBase):
                 "image": img,
                 "positions": [[pos[0][-1], *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(c)],
             }
-            for c, img in zip(chunks, images)
+            for c, img in zip(chunks, images) if c.strip()
         ]
         async with trio.open_nursery() as nursery:
             for d in cks:

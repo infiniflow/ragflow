@@ -19,17 +19,19 @@ import re
 import sys
 from functools import partial
 
+import flask
 import trio
 from flask import request, Response
 from flask_login import login_required, current_user
 
 from agent.component import LLM
+from api import settings
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID
+from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
@@ -37,11 +39,12 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
-from api.db.db_models import APIToken
+from api.db.db_models import APIToken, Task
 import time
 
 from api.utils.file_utils import filename_type, read_potential_broken_pdf
 from rag.flow.pipeline import Pipeline
+from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -188,6 +191,15 @@ def rerun():
     doc = doc[0]
     if 0 < doc["progress"] < 1:
         return get_data_error_result(message=f"`{doc['name']}` is processing...")
+
+    if settings.docStoreConn.indexExist(search.index_name(current_user.id), doc["kb_id"]):
+        settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(current_user.id), doc["kb_id"])
+    doc["progress_msg"] = ""
+    doc["chunk_num"] = 0
+    doc["token_num"] = 0
+    DocumentService.clear_chunk_num_when_rerun(doc["id"])
+    DocumentService.update_by_id(id, doc)
+    TaskService.filter_delete([Task.doc_id == id])
 
     dsl = req["dsl"]
     dsl["path"] = [req["component_id"]]
@@ -420,8 +432,8 @@ def getversion( version_id):
 @login_required
 def list_canvas():
     keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 150))
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
     orderby = request.args.get("orderby", "create_time")
     canvas_category = request.args.get("canvas_category")
     if request.args.get("desc", "true").lower() == "false":
@@ -429,9 +441,12 @@ def list_canvas():
     else:
         desc = True
     owner_ids = request.args.get("owner_ids", [])
+    if owner_ids and isinstance(owner_ids, str):
+        owner_ids = [owner_ids]
     if not owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
         tenants = [m["tenant_id"] for m in tenants]
+        tenants.append(current_user.id)
         canvas, total = UserCanvasService.get_by_tenant_ids(
             tenants, current_user.id, page_number,
             items_per_page, orderby, desc, keywords, canvas_category)
@@ -525,3 +540,11 @@ def prompts():
         #"context_ranking": RANK_MEMORY,
         "citation_guidelines": CITATION_PROMPT_TEMPLATE
     })
+
+
+@manager.route('/download', methods=['GET'])  # noqa: F821
+def download():
+    id = request.args.get("id")
+    created_by = request.args.get("created_by")
+    blob = FileService.get_blob(created_by, id)
+    return flask.make_response(blob)
