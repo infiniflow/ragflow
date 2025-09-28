@@ -22,7 +22,6 @@ from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
 import trio
-from PIL.ImageChops import offset
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher

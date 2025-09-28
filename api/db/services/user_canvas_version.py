@@ -1,5 +1,3 @@
-from PIL.ImageChops import offset
-
 from api.db.db_models import UserCanvasVersion, DB
 from api.db.services.common_service import CommonService
 from peewee import DoesNotExist
