@@ -467,15 +467,6 @@ def detect_table_of_contents(pages:list[str], chat_mdl):
             return i
     return -1
 
-
-TOC_FROM_IMG_SYSTEM = load_prompt("toc_from_img_system")
-TOC_FROM_IMG_USER = load_prompt("toc_from_img_user")
-def gen_toc_from_img(img_url, vision_mdl):
-    ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_FROM_IMG_SYSTEM).render(),
-                   PROMPT_JINJA_ENV.from_string(TOC_FROM_IMG_USER).render(url=img_url), 
-                   vision_mdl)
-    return ans
-
 TOC_LEVELS = load_prompt("assign_toc_levels")
 def assign_toc_levels(toc_secs, chat_mdl):
     ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_LEVELS).render(),
