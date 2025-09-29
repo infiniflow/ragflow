@@ -15,6 +15,7 @@
 import re
 import json
 import math
+import time
 import jinja2
 import base64
 import logging
@@ -35,7 +36,7 @@ from rag.utils import encoder, num_tokens_from_string
 
 STOP_TOKEN="<|STOP|>"
 COMPLETE_TASK="complete_task"
-
+MAX_RETRIES = 3
 
 def get_value(d, k1, k2):
     return d.get(k1, d.get(k2))
@@ -559,60 +560,65 @@ Example B (NOT a TOC page):
 
 
 def gen_toc_from_pdf(filename, empty_pages, start_page, chat_mdl):
+    # Collect TOC items gathered across pages
     toc = []
+
+    # Open in-memory PDF and iterate over a pruned subset of pages to reduce cost
     with pdfplumber.open(BytesIO(filename)) as pdf:
         for i, page in enumerate(prune_pages(pdf.pages)):
+            # Skip empty candidates and pages before the detected TOC start page
             if i in empty_pages or i < start_page:
                 continue
-            
+
+            # Render the page to a high-res JPEG data URL for vision model consumption
             img_url = gen_image_from_page(page)
-            import requests
-            # === 直接请求 /v1/chat/completions（写死，唯一变量是 message）===
-            url = "https://api.siliconflow.cn/v1/chat/completions"
-            headers = {
-                "Authorization": "Bearer sk-ipkxipfjzorweuhfwudgzhcfevdjqjnneltugjffkgtogypn",  # 替换为你的实际 API Key
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "model": "THUDM/GLM-4.1V-9B-Thinking",
-                "messages": build_img_toc_messages(img_url),  # 唯一变量：message
-                "stream": True,
-                "temperature": 0.2,
-            }
+            # Build vision-LLM messages instructing strict JSON-only TOC extraction
+            msg = build_img_toc_messages(img_url)
 
-            response = requests.post(url, json=payload, headers=headers, stream=True)
-            print("\n\nResponse Status Code:\n", response.status_code)
-            full_content = ""
-            full_reasoning_content = ""
-            for chunk in response.iter_lines():
-                if not chunk:
-                    continue
-                chunk_str = chunk.decode("utf-8")
-                if chunk_str.startswith("data:"):
-                    chunk_str = chunk_str[len("data:"):].strip()
-                if chunk_str != "[DONE]":
-                    chunk_data = json_repair.loads(chunk_str)
-                    delta = chunk_data["choices"][0].get("delta", {})
-                    content = delta.get("content", "")
-                    reasoning_content = delta.get("reasoning_content", "")
-                    if content:
-                        print(content, end="", flush=True)
-                        full_content += content
-                    if reasoning_content:
-                        print(reasoning_content, end="", flush=True)
-                        full_reasoning_content += reasoning_content
+            # Exponential backoff on transient parsing/LLM errors
+            delay = 1.0
+            for attempt in range(MAX_RETRIES):
+                try:
+                    raw = chat_mdl.chat(
+                        msg[0]["content"],
+                        msg[1:],
+                        {"temperature": 0.2},
+                    )
+                    # Strip think tags and code fences before JSON repair/parse
+                    raw = re.sub(
+                        r"(^.*</think>|```json\n|```\n*$)",
+                        "",
+                        raw,
+                        flags=re.DOTALL,
+                    )
+                    ans = json_repair.loads(raw)
+                    break
+                except Exception as e:
+                    logging.warning(
+                        f"TOC page {i} attempt {attempt}/{MAX_RETRIES} failed: {e}"
+                    )
+                    if attempt < MAX_RETRIES:
+                        time.sleep(delay)
+                        delay *= 2
+                    else:
+                        logging.exception(
+                            f"TOC page {i} failed after retries."
+                        )
+                        ans = None
 
-            raw = full_content or full_reasoning_content or ""
-            raw = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", raw, flags=re.DOTALL)
-            ans = json_repair.loads(raw)
-
+            # If the page is not a TOC, stop and return collected TOC with the page index
             if ans[0].get("title") == "-1":
                 return toc, i
             else:
+                # Otherwise accumulate extracted TOC items and continue
                 toc.extend(ans)
+
+        # If no explicit stop page was detected, return TOC and -1
         return toc, -1
 
+
 def prune_pages(pages):
+    # Heuristic: only scan the first 25% (up to 25) pages as likely TOC candidates
     total = len(pages)
 
     if total <= 100:
@@ -620,10 +626,13 @@ def prune_pages(pages):
     else:
         N = 25
     
+    # Always keep at least one page
     N = max(1, N)
     return pages[:N]
 
+
 def get_page_num(section):
+    # Extract the starting page number from a section meta string like '@7-8'
     if not section:
         return 0
     
@@ -633,7 +642,9 @@ def get_page_num(section):
     if not m:
         return 0
 
+    # Return the first page number as the section's page hint
     return int(m.group(1))
+
 
 def match_toc_sections(
         sections,
@@ -642,16 +653,16 @@ def match_toc_sections(
         min_coverage
 ):
     """
-    从 start_section_idx 开始，依次为 TOC 中的每一条标题匹配 sections 中的最佳位置。
-    命中后游标前移；未命中返回 -1。
-    仅做：标准化（NFKC、空白压缩、lower）+ 去掉“尾随页码/点线”（…… 12 /  .... 7 /  23）
-    不做：前导编号（1./1.2/第一章/Chapter 1）去除，不做标点清理，保留多语言特征。
+    Match each TOC title to the best section index starting from start_section_idx.
+    Cursor moves forward after a match; unmatched items get index -1.
+    Only strip trailing page dots/numbers (e.g., "...... 12") and normalize (NFKC, spaces, lower).
+    Leading numbering (e.g., "1.", "第一章", "Chapter 1") is intentionally preserved for matching.
     """
     import re
     import unicodedata
     from difflib import SequenceMatcher
 
-    # 仅去除“尾随页码/点线”
+    # Regex to remove only trailing dot leaders and page numbers (e.g., "...... 12", " 23")
     P_TRAILING_PAGE = re.compile(
         r"""(
               [\.\·…]{2,}\s*\d+\s*$   # ...... 12 / …… 23 / ···· 7
@@ -661,39 +672,43 @@ def match_toc_sections(
     )
 
     def normalize(s: str) -> str:
+        # Unicode normalize, lower, collapse whitespace
         if not s:
             return ""
         s = unicodedata.normalize("NFKC", s).lower()
-        s = s.replace("\u3000", " ")           # 全角空格 -> 半角空格
+        s = s.replace("\u3000", " ")           # full-width space -> half-width space
         s = re.sub(r"\s+", " ", s).strip()
         return s
 
     def strip_trailing_page(s: str) -> str:
-        """仅移除尾随页码/点线，保留其余语言与标点特征"""
+        # Remove only trailing page cues; keep numbering/punctuation for multi-language robustness
         s = normalize(s)
         s = P_TRAILING_PAGE.sub("", s).strip()
         return s
 
-    # 仅从 start_section_idx 开始做候选
+    # Build normalized section candidates starting at the provided cursor
     norm_sections = []
     for idx, sec in enumerate(sections):
         if idx < max(0, start_section_idx):
             continue
         text = sec[0] if isinstance(sec, (list, tuple)) else str(sec)
         n_full = normalize(text)
-        n_core = strip_trailing_page(text)   # 只去尾随页码/点线
+        n_core = strip_trailing_page(text)   # only remove trailing page markers
         if n_core:
             norm_sections.append((idx, n_full, n_core))
 
     def similarity(a: str, b: str) -> float:
+        # Fuzzy ratio as a fallback
         if not a or not b:
             return 0.0
         return SequenceMatcher(None, a, b).ratio()
 
     res = []
+    # Matching cursor moves forward to enforce TOC order
     scan_from = max(0, start_section_idx)
 
     for item in toc:
+        # Support dict {'title': ...} or plain string
         title = item.get("title") if isinstance(item, dict) else str(item)
         t_full = normalize(title)
         t_core = strip_trailing_page(title)
@@ -702,32 +717,34 @@ def match_toc_sections(
         best_score = -1.0
 
         if t_core:
-            # 线性向后扫描
+            # Linear forward scan to keep document order
             for idx, s_full, s_core in norm_sections:
                 if idx < scan_from:
                     continue
 
-                # 1) 强匹配：完全相等（full 或 仅去尾随页码后的 core）
+                # Strong match: exact equality on full or core
                 if s_full == t_full or s_core == t_core:
                     best_idx, best_score = idx, 1.0
                     break
 
-                # 2) 双向包含 + 对称覆盖率
+                # Bidirectional containment with coverage threshold (symmetric-ish)
                 if t_core in s_core or s_core in t_core:
                     overlap = min(len(t_core), len(s_core))
                     cov = overlap / max(len(t_core), len(s_core), 1)
                     if cov >= float(min_coverage) and cov > best_score:
                         best_idx, best_score = idx, cov
-                        # 不立即 break，继续看看是否有更高得分
+                        # Keep scanning; might find a higher score
 
-                # 3) 相似度兜底
+                # Fuzzy similarity fallback
                 sim = similarity(t_core, s_core)
                 if sim >= float(min_coverage) and sim > best_score:
                     best_idx, best_score = idx, sim
 
+        # Record match (or -1 if not found)
         res.append((title, best_idx))
         if best_idx != -1:
-            scan_from = best_idx + 1  # 命中后推进
+            # Advance cursor to maintain TOC order mapping
+            scan_from = best_idx + 1
 
     return res
 
@@ -752,31 +769,25 @@ def run_toc(filename,
     print("Max page number:", max_page)
 
     # 2) Prune pages to remove unlikely TOC candidates
-    # pruned_pages = prune_pages(pages)
-    # empty_pages = [i for i, p in enumerate(pruned_pages) if p == ""]
+    pruned_pages = prune_pages(pages)
+    empty_pages = [i for i, p in enumerate(pruned_pages) if p == ""]
     
     # 3) Detect TOC
-    # toc_start_page = detect_table_of_contents(pruned_pages, chat_mdl)
-    # toc_start_page = 6 # for test
-    # print("\n\nDetected TOC start page:\n", toc_start_page)
-
+    toc_start_page = detect_table_of_contents(pruned_pages, chat_mdl)
+    print("\n\nDetected TOC start page:\n", toc_start_page)
 
     # 4) Generate TOC from images
-    # toc_secs, start_page_idx = gen_toc_from_pdf(filename, empty_pages, toc_start_page, vision_mdl)
-    # print("\n\nDetected TOC sections:\n", toc_secs)
+    toc_secs, start_page_idx = gen_toc_from_pdf(filename, empty_pages, toc_start_page, vision_mdl)
+    print("\n\nDetected TOC sections:\n", toc_secs)
 
     # 5) Assign hierarchy levels to TOC
-    # toc_with_levels = assign_toc_levels(toc_secs, chat_mdl)
-    # print("\n\nDetected TOC with levels:\n", toc_with_levels)
+    toc_with_levels = assign_toc_levels(toc_secs, chat_mdl)
+    print("\n\nDetected TOC with levels:\n", toc_with_levels)
 
     # 6) match TOC with sections
-
-    # start_section_idx = page_begin_idx[start_page_idx] if start_page_idx >=0 and start_page_idx < len(page_begin_idx) else 0
-    start_section_idx = 83 # for test
-    # print("\n\nStart section index for matching:", start_section_idx)
-
-    toc_with_levels =  [{'structure': '1', 'title': '封面'}, {'structure': '1', 'title': '扉页'}, {'structure': '1', 'title': '版权信息'}, {'structure': '1', 'title': '自序 开启自我改变的原动力'}, {'structure': '1', 'title': '上篇 内观自己，摆脱焦虑'}, {'structure': '2', 'title': '第一章 大脑——一切问题的起源'}, {'structure': '3', 'title': '第一节 大脑：重新认识你自己'}, {'structure': '3', 'title': '第二节 焦虑：焦虑的根源'}, {'structure': '3', 'title': '第三节 耐心：得耐心者得天下'}, {'structure': '2', 'title': '第二章 潜意识——生命留给我们的彩蛋'}, {'structure': '3', 'title': '第一节 模糊：人生是一场消除模糊的比赛'}, {'structure': '3', 'title': '第二节 感性：顶级的成长竟然是"凭感觉>"'}, {'structure': '2', 'title': '第三章 元认知——人类的终极能力'}, {'structure': '3', 'title': '第一节 元认知：成长慢，是因为你不会"飞"'}, {'structure': '3', 'title': '第二节 自控力：我们生而为人就是为了成为思维舵手'}, {'structure': '1', 'title': '下篇 外观世界，借力前行'}, {'structure': '2', 'title': '第四章 专注力——情绪和智慧的交叉地带'}, {'structure': '3', 'title': '第一节 情绪专注：一招提振你的注意力'}, {'structure': '3', 'title': '第二节 学习专注：深度沉浸是进化双刃剑的安全剑柄'}, {'structure': '2', 'title': '第五章 学习力——学习不是一味地努力'}, {'structure': '3', 'title': '第一节 匹配：舒适区边缘，适用于万物的方法论'}, {'structure': '3', 'title': '第二节 深度：深度学习，人生为数不多的好出路'}, {'structure': '3', 'title': '第三节 关联：高手的"暗箱>"'}, {'structure': '3', 'title': '第四节 体系：建立个人认知体系其实很简单'}, {'structure': '3', 'title': '第五节 打卡：莫迷恋打卡，打卡打不出未来'}, {'structure': '3', 'title': '第六节 反馈：是时候告诉你什么是真正的学习了'}, {'structure': '3', 'title': '第七节 休息：你没成功，可能是因为太刻苦了'}, {'structure': '2', 'title': '第六章 行动力——没有行动世界只是个概念'}, {'structure': '3', 'title': '第一节 清晰：一个观念，重构你的行动力'}, {'structure': '3', 'title': '第二节 "傻瓜"：这个世界会奖励那些不计得失的"傻瓜>"'}, {'structure': '3', 'title': '第三节 行动："道理都懂，就是不做"怎么破解'}, {'structure': '2', 'title': '第七章 情绪力——情绪是多角度看问题的智慧'}, {'structure': '3', 'title': '第一节 心智带宽：唯有富足，方能解忧'}, {'structure': '3', 'title': '第二节 单一视角：你的坏情绪，源于视角单一'}, {'structure': '3', 'title': '第三节 游戏心态：幸福的人，总是在做另外一件事'}, {'structure': '2', 'title': '第八章 早冥读写跑，人生五件套——成本最低的成长之道'}, {'structure': '3', 'title': '第一节 早起：无闹钟、不参团、不打卡，我是如何坚持早起的'}, {'structure': '3', 'title': '第二节 冥想：终有一天，你要解锁这条隐藏赛道'}, {'structure': '3', 'title': '第三节 阅读：如何让自己真正爱上阅读'}, {'structure': '3', 'title': '第四节 写作：谢谢你，费曼先生'}, {'structure': '3', 'title': '第五节 运动：灵魂想要走得远，身体必须在路上'}, {'structure': '1', 'title': '结语 一流的生活不是富有，而是觉知'}, {'structure': '1', 'title': '后记 共同改变，一起前行'}, {'structure': '1', 'title': '参考文献'}]
-
+    start_section_idx = page_begin_idx[start_page_idx] if start_page_idx >=0 and start_page_idx < len(page_begin_idx) else 0
+    print("\n\nStart section index for matching:", start_section_idx)
 
     pairs = match_toc_sections(sections, toc_with_levels, start_section_idx, min_coverage)
-    return pairs    
+    print("\n\nMatched TOC sections with indices:\n", pairs)
+    return pairs
