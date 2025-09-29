@@ -554,6 +554,9 @@ export default {
       baseUrl: 'ベースURL',
       baseUrlTip:
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
+      tongyiBaseUrlTip:
+        '中国ユーザーの場合、記入不要または https://dashscope.aliyuncs.com/compatible-mode/v1 を使用してください。国際ユーザーは https://dashscope-intl.aliyuncs.com/compatible-mode/v1 を使用してください',
+      tongyiBaseUrlPlaceholder: '（国際ユーザーのみ、ヒントをご覧ください）',
       modify: '変更',
       systemModelSettings: 'デフォルトモデルを設定する',
       chatModel: 'チャットモデル',

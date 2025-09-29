@@ -88,10 +88,18 @@ const ApiKeyModal = ({
           <Form.Item<FieldType>
             label={t('baseUrl')}
             name="base_url"
-            tooltip={t('baseUrlTip')}
+            tooltip={
+              llmFactory === LLMFactory.TongYiQianWen
+                ? t('tongyiBaseUrlTip')
+                : t('baseUrlTip')
+            }
           >
             <Input
-              placeholder="https://api.openai.com/v1"
+              placeholder={
+                llmFactory === LLMFactory.TongYiQianWen
+                  ? t('tongyiBaseUrlPlaceholder')
+                  : 'https://api.openai.com/v1'
+              }
               onKeyDown={handleKeyDown}
             />
           </Form.Item>
