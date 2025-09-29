@@ -1,4 +1,3 @@
-#
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,14 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import datetime
-import json
-import logging
 import re
-from copy import deepcopy
-from typing import Tuple
+import json
+import math
 import jinja2
+import base64
+import logging
+import datetime
+import unicodedata
+import pdfplumber
 import json_repair
+from os import write
+from io import BytesIO
+from typing import Tuple
+from copy import deepcopy
+from api.db import LLMType
 from api.utils import hash_str2int
 from rag.prompts.prompt_template import load_prompt
 from rag.settings import TAG_FLD
@@ -440,7 +446,7 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
 
 
 def gen_json(system_prompt:str, user_prompt:str, chat_mdl):
-    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+    _, msg = message_fit_in(form_message(system_prompt, user_prompt), 1000000)
     ans = chat_mdl.chat(msg[0]["content"], msg[1:])
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
@@ -450,203 +456,314 @@ def gen_json(system_prompt:str, user_prompt:str, chat_mdl):
 
 
 TOC_DETECTION = load_prompt("toc_detection")
-def detect_table_of_contents(page_1024:list[str], chat_mdl):
-    toc_secs = []
-    for i, sec in enumerate(page_1024[:22]):
-        ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_DETECTION).render(page_txt=sec), "Only JSON please.", chat_mdl)
-        if toc_secs and not ans["exists"]:
-            break
-        toc_secs.append(sec)
-    return toc_secs
+def detect_table_of_contents(pages:list[str], chat_mdl):
+    for i, sec in enumerate(pages):
+        if sec == "":
+            continue
+        ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_DETECTION).render(), f"Input:{sec}", chat_mdl)
+        print(f"TOC detection for page {i}: {ans}")
+        if ans.get("exists", False):
+            return i
+    return -1
 
 
-TOC_EXTRACTION = load_prompt("toc_extraction")
-TOC_EXTRACTION_CONTINUE = load_prompt("toc_extraction_continue")
-def extract_table_of_contents(toc_pages, chat_mdl):
-    if not toc_pages:
-        return []
+TOC_FROM_IMG_SYSTEM = load_prompt("toc_from_img_system")
+TOC_FROM_IMG_USER = load_prompt("toc_from_img_user")
+def gen_toc_from_img(img_url, vision_mdl):
+    ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_FROM_IMG_SYSTEM).render(),
+                   PROMPT_JINJA_ENV.from_string(TOC_FROM_IMG_USER).render(url=img_url), 
+                   vision_mdl)
+    return ans
 
-    return gen_json(PROMPT_JINJA_ENV.from_string(TOC_EXTRACTION).render(toc_page="\n".join(toc_pages)), "Only JSON please.", chat_mdl)
+TOC_LEVELS = load_prompt("assign_toc_levels")
+def assign_toc_levels(toc_secs, chat_mdl):
+    ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_LEVELS).render(),
+                   str(toc_secs),
+                   chat_mdl
+                   )
+    
+    return ans
+
+def gen_image_from_page(page):
+    pil_img = page.to_image(resolution=300, antialias=True).original
+    img_buf = BytesIO()
+
+    if pil_img.mode in ("RGBA", "LA"):
+        pil_img = pil_img.convert("RGB")    
+
+    pil_img.save(img_buf, format="JPEG")
+    b64 = base64.b64encode(img_buf.getvalue()).decode("utf-8")
+    img_buf.close()
+
+    img_url = f"data:image/jpeg;base64,{b64}"
+    return img_url
 
 
-def toc_index_extractor(toc:list[dict], content:str, chat_mdl):
-    tob_extractor_prompt = """
-    You are given a table of contents in a json format and several pages of a document, your job is to add the physical_index to the table of contents in the json format.
-
-    The provided pages contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X.
-
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
-
-    The response should be in the following JSON format: 
-    [
+def build_img_toc_messages(url):
+    return [
         {
-            "structure": <structure index, "x.x.x" or None> (string),
-            "title": <title of the section>,
-            "physical_index": "<physical_index_X>" (keep the format)
+            "role": "system",
+            "content": """You are a strict Table-of-Contents (TOC) extractor.
+
+INPUT:
+- You will receive one page of a PDF as an image.
+
+YOUR TASK:
+1. Determine if this page is a TOC (Table of Contents).
+   - A TOC page usually has short, list-like headings (e.g. "Chapter 1", "第一章", "Section 2.3"),
+     often aligned or followed by dots/leaders and page numbers.
+   - A TOC page contains at least 3 such distinct headings.
+   - If the page is mostly narrative text, title page, author info, or ads, it is NOT a TOC.
+
+2. If it IS a TOC page:
+   - Return ONLY a **valid JSON array**.
+   - Each element must be an object with two fields:
+       {"structure": "0", "title": "<the heading text>"}
+   - "structure" must always be the string "0".
+   - "title" must be the exact heading text extracted from the TOC (do not invent or summarize).
+   - Keep the order as it appears on the page.
+
+3. If it is NOT a TOC page:
+   - Return ONLY the following JSON:
+       [
+         {"structure": "0", "title": "-1"}
+       ]
+
+STRICT RULES:
+- Do NOT include explanations, reasoning, or any text outside the JSON.
+- Do NOT wrap the output in ```json fences.
+- Output must start with `[` and end with `]`.
+- Ensure the JSON is syntactically valid (no trailing commas).
+
+EXAMPLES:
+
+Example A (TOC page):
+[
+  {"structure": "0", "title": "Introduction"},
+  {"structure": "0", "title": "Chapter 1: Basics"},
+  {"structure": "0", "title": "Chapter 2: Advanced Topics"}
+]
+
+Example B (NOT a TOC page):
+[
+  {"structure": "0", "title": "-1"}
+]"""
         },
-        ...
+        {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": url, "detail": "high"}}
+            ],
+        },
     ]
 
-    Only add the physical_index to the sections that are in the provided pages.
-    If the title of the section are not in the provided pages, do not add the physical_index to it.
-    Directly return the final JSON structure. Do not output anything else."""
 
-    prompt = tob_extractor_prompt + '\nTable of contents:\n' + json.dumps(toc, ensure_ascii=False, indent=2) + '\nDocument pages:\n' + content
-    return gen_json(prompt, "Only JSON please.", chat_mdl)
-
-
-TOC_INDEX = load_prompt("toc_index")
-def table_of_contents_index(toc_arr: list[dict], sections: list[str], chat_mdl):
-    if not toc_arr or not sections:
-        return []
-
-    toc_map = {}
-    for i, it in enumerate(toc_arr):
-        k1 = (it["structure"]+it["title"]).replace(" ", "")
-        k2 = it["title"].strip()
-        if k1 not in toc_map:
-            toc_map[k1] = []
-        if k2 not in toc_map:
-            toc_map[k2] = []
-        toc_map[k1].append(i)
-        toc_map[k2].append(i)
-
-    for it in toc_arr:
-        it["indices"] = []
-    for i, sec in enumerate(sections):
-        sec = sec.strip()
-        if sec.replace(" ", "") in toc_map:
-            for j in toc_map[sec.replace(" ", "")]:
-                toc_arr[j]["indices"].append(i)
-
-    all_pathes = []
-    def dfs(start, path):
-        nonlocal all_pathes
-        if start >= len(toc_arr):
-            if path:
-                all_pathes.append(path)
-            return
-        if not toc_arr[start]["indices"]:
-            dfs(start+1, path)
-            return
-        added = False
-        for j in toc_arr[start]["indices"]:
-            if path and j < path[-1][0]:
+def gen_toc_from_pdf(filename, empty_pages, start_page, chat_mdl):
+    toc = []
+    with pdfplumber.open(BytesIO(filename)) as pdf:
+        for i, page in enumerate(prune_pages(pdf.pages)):
+            if i in empty_pages or i < start_page:
                 continue
-            _path = deepcopy(path)
-            _path.append((j, start))
-            added = True
-            dfs(start+1, _path)
-        if not added and path:
-            all_pathes.append(path)
+            
+            img_url = gen_image_from_page(page)
+            import requests
+            # === 直接请求 /v1/chat/completions（写死，唯一变量是 message）===
+            url = "https://api.siliconflow.cn/v1/chat/completions"
+            headers = {
+                "Authorization": "Bearer sk-ipkxipfjzorweuhfwudgzhcfevdjqjnneltugjffkgtogypn",  # 替换为你的实际 API Key
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": "THUDM/GLM-4.1V-9B-Thinking",
+                "messages": build_img_toc_messages(img_url),  # 唯一变量：message
+                "stream": True,
+                "temperature": 0.2,
+            }
 
-    dfs(0, [])
-    path = max(all_pathes, key=lambda x:len(x))
-    for it in toc_arr:
-        it["indices"] = []
-    for j, i in path:
-        toc_arr[i]["indices"] = [j]
-    print(json.dumps(toc_arr, ensure_ascii=False, indent=2))
+            response = requests.post(url, json=payload, headers=headers, stream=True)
+            print("\n\nResponse Status Code:\n", response.status_code)
+            full_content = ""
+            full_reasoning_content = ""
+            for chunk in response.iter_lines():
+                if not chunk:
+                    continue
+                chunk_str = chunk.decode("utf-8")
+                if chunk_str.startswith("data:"):
+                    chunk_str = chunk_str[len("data:"):].strip()
+                if chunk_str != "[DONE]":
+                    chunk_data = json_repair.loads(chunk_str)
+                    delta = chunk_data["choices"][0].get("delta", {})
+                    content = delta.get("content", "")
+                    reasoning_content = delta.get("reasoning_content", "")
+                    if content:
+                        print(content, end="", flush=True)
+                        full_content += content
+                    if reasoning_content:
+                        print(reasoning_content, end="", flush=True)
+                        full_reasoning_content += reasoning_content
 
-    i = 0
-    while i < len(toc_arr):
-        it  = toc_arr[i]
-        if it["indices"]:
-            i += 1
-            continue
+            raw = full_content or full_reasoning_content or ""
+            raw = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", raw, flags=re.DOTALL)
+            ans = json_repair.loads(raw)
 
-        if i>0 and toc_arr[i-1]["indices"]:
-            st_i = toc_arr[i-1]["indices"][-1]
-        else:
-            st_i = 0
-        e = i + 1
-        while e <len(toc_arr) and not toc_arr[e]["indices"]:
-            e += 1
-        if e >= len(toc_arr):
-            e = len(sections)
-        else:
-            e = toc_arr[e]["indices"][0]
+            if ans[0].get("title") == "-1":
+                return toc, i
+            else:
+                toc.extend(ans)
+        return toc, -1
 
-        for j in range(st_i, min(e+1, len(sections))):
-            ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_INDEX).render(
-                structure=it["structure"],
-                title=it["title"],
-                text=sections[j]), "Only JSON please.", chat_mdl)
-            if ans["exist"] == "yes":
-                it["indices"].append(j)
-                break
+def prune_pages(pages):
+    total = len(pages)
 
-        i += 1
-
-    return toc_arr
-
-
-def check_if_toc_transformation_is_complete(content, toc, chat_mdl):
-    prompt = """
-    You are given a raw table of contents and a  table of contents.
-    Your job is to check if the  table of contents is complete.
-
-    Reply format:
-    {{
-        "thinking": <why do you think the cleaned table of contents is complete or not>
-        "completed": "yes" or "no"
-    }}
-    Directly return the final JSON structure. Do not output anything else."""
-
-    prompt = prompt + '\n Raw Table of contents:\n' + content + '\n Cleaned Table of contents:\n' + toc
-    response = gen_json(prompt, "Only JSON please.", chat_mdl)
-    return response['completed']
-
-
-def toc_transformer(toc_pages, chat_mdl):
-    init_prompt = """
-    You are given a table of contents, You job is to transform the whole table of content into a JSON format included table_of_contents.
-
-    The `structure` is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
-    The `title` is a short phrase or a several-words term.
+    if total <= 100:
+        N = math.ceil(total * 0.25)
+    else:
+        N = 25
     
-    The response should be in the following JSON format: 
-    [
-        {
-            "structure": <structure index, "x.x.x" or None> (string),
-            "title": <title of the section>
-        },
-        ...
-    ],
-    You should transform the full table of contents in one go.
-    Directly return the final JSON structure, do not output anything else. """
+    N = max(1, N)
+    return pages[:N]
 
-    toc_content = "\n".join(toc_pages)
-    prompt = init_prompt + '\n Given table of contents\n:' + toc_content
-    def clean_toc(arr):
-        for a in arr:
-            a["title"] = re.sub(r"[.·….]{2,}", "", a["title"])
-    last_complete = gen_json(prompt, "Only JSON please.", chat_mdl)
-    if_complete = check_if_toc_transformation_is_complete(toc_content, json.dumps(last_complete, ensure_ascii=False, indent=2), chat_mdl)
-    clean_toc(last_complete)
-    if if_complete == "yes":
-        return last_complete
+def get_page_num(section):
+    if not section:
+        return 0
+    
+    poss = section[1].split('\t')[0]
+    head = poss.lstrip('@')     # '7-8'
+    m = re.match(r'^(\d+)(?:-(\d+))?$', head)
+    if not m:
+        return 0
 
-    while not (if_complete == "yes"):
-        prompt = f"""
-        Your task is to continue the table of contents json structure, directly output the remaining part of the json structure.
-        The response should be in the following JSON format: 
+    return int(m.group(1))
 
-        The raw table of contents json structure is:
-        {toc_content}
+def match_toc_sections(
+        sections,
+        toc,
+        start_section_idx,
+        min_coverage
+):
+    def normalize(s: str) -> str:
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKC", s)  
+        s = s.replace("\u3000", " ")
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+    
+    norm_sections = []
+    for idx, (text, poss) in enumerate(sections[start_section_idx:], start=start_section_idx):
+        norm_sec = normalize(text)
+        if norm_sec:
+            norm_sections.append((idx, norm_sec))
+        
+    res = []
+    for item in toc:
+        title = item['title']
+        norm_title = normalize(title)
+        best = None
 
-        The incomplete transformed table of contents json structure is:
-        {json.dumps(last_complete[-24:], ensure_ascii=False, indent=2)}
+        # 1) exact match
+        for idx, norm_sec in norm_sections:
+            if norm_sec == norm_title:
+                best = (len(norm_sec), idx)
+                break
+        
+        # 2) substring match
+        if best is None and norm_title:
+            L = len(norm_title)
+            for idx, norm_sec in norm_sections:
+                cov = len(norm_sec) / max(L, 1)
+                if cov >= min_coverage:
+                    cand = (len(norm_sec), idx)
+                    if (best is None) or (cand[0] > best[0]) or (cand[0] == best[0] and cand[1] < best[1]):
+                        best = cand
 
-        Please continue the json structure, directly output the remaining part of the json structure."""
-        new_complete = gen_json(prompt, "Only JSON please.", chat_mdl)
-        if not new_complete or str(last_complete).find(str(new_complete)) >= 0:
-            break
-        clean_toc(new_complete)
-        last_complete.extend(new_complete)
-        if_complete = check_if_toc_transformation_is_complete(toc_content, json.dumps(last_complete, ensure_ascii=False, indent=2), chat_mdl)
+        res.append((title, best[1] if best else -1))
+    return res
 
-    return last_complete
+def covered_ranges(pairs):
+    res= []
+    n = len(pairs)
+    i = 0
+    while i < n:
+        if pairs[i][1] == -1:
+            titles = []
+            start_i = i
+            while i < n and pairs[i][1] == -1:
+                titles.append(pairs[i][0])
+                i += 1
+            end_i = i - 1
+
+            left_val = None
+            j = start_i - 1
+            while j >= 0:
+                if pairs[j][1] != -1:
+                    left_val = pairs[j][1]
+                    break
+                j -= 1
+
+            right_val = None
+            k = end_i + 1
+            while k < n:
+                if pairs[k][1] != -1:
+                    right_val = pairs[k][1]
+                    break
+                k += 1
+
+            start = (left_val + 1) if left_val is not None else 0
+            end = right_val if right_val is not None else (len(pairs) - 1)
+
+            if start <= end:
+                res.append((titles, (start, end)))
+        else:
+            i += 1
+    return res
 
 
+def run_toc(filename,
+            sections,
+            chat_mdl,
+            vision_mdl,
+            min_coverage = 0.5
+            ):
+    
+    # 1) Get pages
+    max_page = get_page_num(sections[-1])
+    pages = ["" for _ in range(max_page)]
+    page_begin_idx = [-1 for _ in range(max_page)] 
+    for idx, sec in enumerate(sections):
+        print(idx, "\t",sec)
+        page_num = get_page_num(sec)
+        pages[page_num-1] += sec[0] + "\n"
+        if page_begin_idx[page_num-1] == -1:
+            page_begin_idx[page_num-1] = idx    
+    print("Max page number:", max_page)
 
+    # 2) Prune pages to remove unlikely TOC candidates
+    # pruned_pages = prune_pages(pages)
+    # empty_pages = [i for i, p in enumerate(pruned_pages) if p == ""]
+    
+    # 3) Detect TOC
+    # toc_start_page = detect_table_of_contents(pruned_pages, chat_mdl)
+    # toc_start_page = 6 # for test
+    # print("\n\nDetected TOC start page:\n", toc_start_page)
+
+
+    # 4) Generate TOC from images
+    # toc_secs, start_page_idx = gen_toc_from_pdf(filename, empty_pages, toc_start_page, vision_mdl)
+    # print("\n\nDetected TOC sections:\n", toc_secs)
+
+    # 5) Assign hierarchy levels to TOC
+    # toc_with_levels = assign_toc_levels(toc_secs, chat_mdl)
+    # print("\n\nDetected TOC with levels:\n", toc_with_levels)
+
+    # 6) match TOC with sections
+
+    # start_section_idx = page_begin_idx[start_page_idx] if start_page_idx >=0 and start_page_idx < len(page_begin_idx) else 0
+    start_section_idx = 83
+    # print("\n\nStart section index for matching:", start_section_idx)
+
+    toc_with_levels =  [{'structure': '1', 'title': '封面'}, {'structure': '1', 'title': '扉页'}, {'structure': '1', 'title': '版权信息'}, {'structure': '1', 'title': '自序 开启自我改变的原动力'}, {'structure': '1', 'title': '上篇 内观自己，摆脱焦虑'}, {'structure': '2', 'title': '第一章 大脑——一切问题的起源'}, {'structure': '3', 'title': '第一节 大脑：重新认识你自己'}, {'structure': '3', 'title': '第二节 焦虑：焦虑的根源'}, {'structure': '3', 'title': '第三节 耐心：得耐心者得天下'}, {'structure': '2', 'title': '第二章 潜意识——生命留给我们的彩蛋'}, {'structure': '3', 'title': '第一节 模糊：人生是一场消除模糊的比赛'}, {'structure': '3', 'title': '第二节 感性：顶级的成长竟然是"凭感觉>"'}, {'structure': '2', 'title': '第三章 元认知——人类的终极能力'}, {'structure': '3', 'title': '第一节 元认知：成长慢，是因为你不会"飞"'}, {'structure': '3', 'title': '第二节 自控力：我们生而为人就是为了成为思维舵手'}, {'structure': '1', 'title': '下篇 外观世界，借力前行'}, {'structure': '2', 'title': '第四章 专注力——情绪和智慧的交叉地带'}, {'structure': '3', 'title': '第一节 情绪专注：一招提振你的注意力'}, {'structure': '3', 'title': '第二节 学习专注：深度沉浸是进化双刃剑的安全剑柄'}, {'structure': '2', 'title': '第五章 学习力——学习不是一味地努力'}, {'structure': '3', 'title': '第一节 匹配：舒适区边缘，适用于万物的方法论'}, {'structure': '3', 'title': '第二节 深度：深度学习，人生为数不多的好出路'}, {'structure': '3', 'title': '第三节 关联：高手的"暗箱>"'}, {'structure': '3', 'title': '第四节 体系：建立个人认知体系其实很简单'}, {'structure': '3', 'title': '第五节 打卡：莫迷恋打卡，打卡打不出未来'}, {'structure': '3', 'title': '第六节 反馈：是时候告诉你什么是真正的学习了'}, {'structure': '3', 'title': '第七节 休息：你没成功，可能是因为太刻苦了'}, {'structure': '2', 'title': '第六章 行动力——没有行动世界只是个概念'}, {'structure': '3', 'title': '第一节 清晰：一个观念，重构你的行动力'}, {'structure': '3', 'title': '第二节 "傻瓜"：这个世界会奖励那些不计得失的"傻瓜>"'}, {'structure': '3', 'title': '第三节 行动："道理都懂，就是不做"怎么破解'}, {'structure': '2', 'title': '第七章 情绪力——情绪是多角度看问题的智慧'}, {'structure': '3', 'title': '第一节 心智带宽：唯有富足，方能解忧'}, {'structure': '3', 'title': '第二节 单一视角：你的坏情绪，源于视角单一'}, {'structure': '3', 'title': '第三节 游戏心态：幸福的人，总是在做另外一件事'}, {'structure': '2', 'title': '第八章 早冥读写跑，人生五件套——成本最低的成长之道'}, {'structure': '3', 'title': '第一节 早起：无闹钟、不参团、不打卡，我是如何坚持早起的'}, {'structure': '3', 'title': '第二节 冥想：终有一天，你要解锁这条隐藏赛道'}, {'structure': '3', 'title': '第三节 阅读：如何让自己真正爱上阅读'}, {'structure': '3', 'title': '第四节 写作：谢谢你，费曼先生'}, {'structure': '3', 'title': '第五节 运动：灵魂想要走得远，身体必须在路上'}, {'structure': '1', 'title': '结语 一流的生活不是富有，而是觉知'}, {'structure': '1', 'title': '后记 共同改变，一起前行'}, {'structure': '1', 'title': '参考文献'}]
+
+
+    pairs = match_toc_sections(sections, toc_with_levels, start_section_idx, min_coverage)
+    return pairs    
