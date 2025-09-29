@@ -731,7 +731,7 @@ def match_toc_sections(
 
         res.append((title, best_idx))
         if best_idx != -1:
-            scan_from = best_idx + 1  # 命中后推进
+            scan_from = best_idx + 1 
 
     return res
 
