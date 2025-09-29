@@ -2,7 +2,7 @@ import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Modal } from 'antd';
-import { useEffect } from 'react';
+import { KeyboardEventHandler, useCallback, useEffect } from 'react';
 import { ApiKeyPostBody } from '../../interface';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
@@ -20,7 +20,11 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = [LLMFactory.OpenAI, LLMFactory.AzureOpenAI];
+const modelsWithBaseUrl = [
+  LLMFactory.OpenAI,
+  LLMFactory.AzureOpenAI,
+  LLMFactory.TongYiQianWen,
+];
 
 const ApiKeyModal = ({
   visible,
@@ -34,17 +38,20 @@ const ApiKeyModal = ({
   const [form] = Form.useForm();
   const { t } = useTranslate('setting');
 
-  const handleOk = async () => {
+  const handleOk = useCallback(async () => {
     const ret = await form.validateFields();
 
     return onOk(ret);
-  };
+  }, [form, onOk]);
 
-  const handleKeyDown = async (e) => {
-    if (e.key === 'Enter') {
-      await handleOk();
-    }
-  };
+  const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = useCallback(
+    async (e) => {
+      if (e.key === 'Enter') {
+        await handleOk();
+      }
+    },
+    [handleOk],
+  );
 
   useEffect(() => {
     if (visible) {
