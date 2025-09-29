@@ -701,6 +701,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       baseUrl: 'Base-Url',
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
+      tongyiBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
       modify: 'Modify',
       systemModelSettings: 'Set default models',
       chatModel: 'Chat model',
@@ -972,14 +975,14 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTools: 'Add Tools',
       sysPromptDefultValue: `
       <role>
-        You are a helpful assistant, an AI assistant specialized in problem-solving for the user. 
+        You are a helpful assistant, an AI assistant specialized in problem-solving for the user.
         If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
       </role>
       <instructions>
-        1. Understand the user’s request.  
-        2. Decompose it into logical subtasks.  
-        3. Execute each subtask step by step, reasoning transparently.  
-        4. Validate accuracy and consistency.  
+        1. Understand the user’s request.
+        2. Decompose it into logical subtasks.
+        3. Execute each subtask step by step, reasoning transparently.
+        4. Validate accuracy and consistency.
         5. Summarize the final result clearly.
       </instructions>`,
       singleLineText: 'Single-line text',

@@ -512,6 +512,10 @@ export default {
       baseUrl: 'Base-Url',
       baseUrlTip:
         'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
+      tongyiBaseUrlTip:
+        'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://dashscope.aliyuncs.com/compatible-mode/v1. Untuk pengguna internasional, gunakan https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder:
+        '(Hanya untuk pengguna internasional, silakan lihat tip)',
       modify: 'Ubah',
       systemModelSettings: 'Tetapkan model default',
       chatModel: 'Model Obrolan',
