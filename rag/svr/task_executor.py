@@ -503,9 +503,9 @@ async def run_dataflow(task: dict):
 
     embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
     if chunks.get("chunks"):
-        chunks = chunks["chunks"]
+        chunks = copy.deepcopy(chunks["chunks"])
     elif chunks.get("json"):
-        chunks = chunks["json"]
+        chunks = copy.deepcopy(chunks["json"])
     elif chunks.get("markdown"):
         chunks = [{"text": [chunks["markdown"]]}]
     elif chunks.get("text"):

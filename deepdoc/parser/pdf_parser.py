@@ -1104,12 +1104,14 @@ class RAGFlowPdfParser:
                 if self.boxes[min_i]["bottom"] < top+self.page_cum_height[pn]:
                     min_i += 1
                 self.boxes.insert(min_i, {
-                    "page_number": pn+1, "x0": left, "x1": right, "top": top+self.page_cum_height[pn], "bottom": bott+self.page_cum_height[pn], "layout_type": layout_type, "text": txt, "image": img
+                    "page_number": pn+1, "x0": left, "x1": right, "top": top+self.page_cum_height[pn], "bottom": bott+self.page_cum_height[pn], "layout_type": layout_type, "text": txt, "image": img,
+                    "positions": [[pn+1, int(left), int(right), int(top), int(bott)]]
                 })
 
         for b in self.boxes:
             b["position_tag"] = self._line_tag(b, zoomin)
             b["image"] = self.crop(b["position_tag"], zoomin)
+            b["positions"] = [[pos[0][-1]+1, *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(b["position_tag"])]
 
         insert_table_figures(tbls, "table")
         insert_table_figures(figs, "figure")
