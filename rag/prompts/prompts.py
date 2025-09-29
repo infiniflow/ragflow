@@ -560,19 +560,15 @@ Example B (NOT a TOC page):
 
 
 def gen_toc_from_pdf(filename, empty_pages, start_page, chat_mdl):
-    # Collect TOC items gathered across pages
     toc = []
 
-    # Open in-memory PDF and iterate over a pruned subset of pages to reduce cost
     with pdfplumber.open(BytesIO(filename)) as pdf:
         for i, page in enumerate(prune_pages(pdf.pages)):
-            # Skip empty candidates and pages before the detected TOC start page
             if i in empty_pages or i < start_page:
                 continue
 
             # Render the page to a high-res JPEG data URL for vision model consumption
             img_url = gen_image_from_page(page)
-            # Build vision-LLM messages instructing strict JSON-only TOC extraction
             msg = build_img_toc_messages(img_url)
 
             # Exponential backoff on transient parsing/LLM errors
@@ -584,7 +580,6 @@ def gen_toc_from_pdf(filename, empty_pages, start_page, chat_mdl):
                         msg[1:],
                         {"temperature": 0.2},
                     )
-                    # Strip think tags and code fences before JSON repair/parse
                     raw = re.sub(
                         r"(^.*</think>|```json\n|```\n*$)",
                         "",
@@ -610,10 +605,8 @@ def gen_toc_from_pdf(filename, empty_pages, start_page, chat_mdl):
             if ans[0].get("title") == "-1":
                 return toc, i
             else:
-                # Otherwise accumulate extracted TOC items and continue
                 toc.extend(ans)
 
-        # If no explicit stop page was detected, return TOC and -1
         return toc, -1
 
 
@@ -626,7 +619,6 @@ def prune_pages(pages):
     else:
         N = 25
     
-    # Always keep at least one page
     N = max(1, N)
     return pages[:N]
 
@@ -698,17 +690,14 @@ def match_toc_sections(
             norm_sections.append((idx, n_full, n_core))
 
     def similarity(a: str, b: str) -> float:
-        # Fuzzy ratio as a fallback
         if not a or not b:
             return 0.0
         return SequenceMatcher(None, a, b).ratio()
 
     res = []
-    # Matching cursor moves forward to enforce TOC order
     scan_from = max(0, start_section_idx)
 
     for item in toc:
-        # Support dict {'title': ...} or plain string
         title = item.get("title") if isinstance(item, dict) else str(item)
         t_full = normalize(title)
         t_core = strip_trailing_page(title)
@@ -740,11 +729,9 @@ def match_toc_sections(
                 if sim >= float(min_coverage) and sim > best_score:
                     best_idx, best_score = idx, sim
 
-        # Record match (or -1 if not found)
         res.append((title, best_idx))
         if best_idx != -1:
-            # Advance cursor to maintain TOC order mapping
-            scan_from = best_idx + 1
+            scan_from = best_idx + 1  # 命中后推进
 
     return res
 
@@ -790,4 +777,5 @@ def run_toc(filename,
 
     pairs = match_toc_sections(sections, toc_with_levels, start_section_idx, min_coverage)
     print("\n\nMatched TOC sections with indices:\n", pairs)
-    return pairs
+
+    return pairs # [(title, section_idx), ...] 
