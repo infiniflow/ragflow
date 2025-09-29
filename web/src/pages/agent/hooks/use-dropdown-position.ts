@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import {
-  HALF_PLACEHOLDER_NODE_HEIGHT,
+  DROPDOWN_HORIZONTAL_OFFSET,
+  DROPDOWN_VERTICAL_OFFSET,
   HALF_PLACEHOLDER_NODE_WIDTH,
 } from '../constant';
 
@@ -29,8 +30,11 @@ export const useDropdownPosition = (reactFlowInstance: any) => {
 
       // Calculate dropdown position in flow coordinate system
       const dropdownFlowPosition = {
-        x: placeholderNodePosition.x - HALF_PLACEHOLDER_NODE_WIDTH, // Placeholder node left-aligned offset
-        y: placeholderNodePosition.y + HALF_PLACEHOLDER_NODE_HEIGHT, // Placeholder node height plus spacing
+        x:
+          placeholderNodePosition.x +
+          HALF_PLACEHOLDER_NODE_WIDTH +
+          DROPDOWN_HORIZONTAL_OFFSET,
+        y: placeholderNodePosition.y - DROPDOWN_VERTICAL_OFFSET,
       };
 
       // Convert flow coordinates back to screen coordinates

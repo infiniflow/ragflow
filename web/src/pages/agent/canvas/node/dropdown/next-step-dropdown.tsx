@@ -107,7 +107,7 @@ function OperatorItemList({
             </DropdownMenuItem>
           )}
         </TooltipTrigger>
-        <TooltipContent side="right">
+        <TooltipContent side="right" sideOffset={24}>
           <p>{t(`flow.${lowerFirst(operator)}Description`)}</p>
         </TooltipContent>
       </Tooltip>
@@ -127,7 +127,7 @@ function AccordionOperators({
   return (
     <Accordion
       type="multiple"
-      className="px-2 text-text-title max-h-[45vh] overflow-auto"
+      className="px-2 text-text-title max-h-[45vh] overflow-auto scrollbar-none"
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">
@@ -249,7 +249,7 @@ export function InnerNextStepDropdown({
         style={{
           position: 'fixed',
           left: position.x,
-          top: position.y + 10,
+          top: position.y,
           zIndex: 1000,
         }}
         onClick={(e) => e.stopPropagation()}

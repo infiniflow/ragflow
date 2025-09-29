@@ -283,3 +283,17 @@
     transform: translateY(0);
   }
 }
+
+/* 隐藏滚动条但保持滚动功能 */
+.hideScrollbar {
+  /* Webkit浏览器 (Chrome, Safari, Edge) */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Firefox */
+  scrollbar-width: none;
+
+  /* IE和Edge */
+  -ms-overflow-style: none;
+}
