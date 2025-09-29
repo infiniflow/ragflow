@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/tooltip';
 import { IModalProps } from '@/interfaces/common';
 import { useGetNodeDescription, useGetNodeName } from '@/pages/data-flow/hooks';
+import useGraphStore from '@/pages/data-flow/store';
 import { Position } from '@xyflow/react';
 import { t } from 'i18next';
 import {
@@ -20,6 +21,7 @@ import {
   memo,
   useContext,
   useEffect,
+  useMemo,
   useRef,
 } from 'react';
 import { Operator } from '../../../constant';
@@ -110,6 +112,26 @@ function OperatorItemList({
   return <ul className="space-y-2">{operators.map(renderOperatorItem)}</ul>;
 }
 
+const singleOperators = [
+  Operator.Tokenizer,
+  Operator.Splitter,
+  Operator.HierarchicalMerger,
+  Operator.Parser,
+];
+// Limit the number of operators of a certain type on the canvas to only one
+function useRestrictSingleOperatorOnCanvas() {
+  const list: Operator[] = [];
+  const { findNodeByName } = useGraphStore((state) => state);
+
+  singleOperators.forEach((operator) => {
+    if (!findNodeByName(operator)) {
+      list.push(operator);
+    }
+  });
+
+  return list;
+}
+
 function AccordionOperators({
   isCustomDropdown = false,
   mousePosition,
@@ -117,15 +139,16 @@ function AccordionOperators({
   isCustomDropdown?: boolean;
   mousePosition?: { x: number; y: number };
 }) {
+  const singleOperators = useRestrictSingleOperatorOnCanvas();
+  const operators = useMemo(() => {
+    const list = [...singleOperators];
+    list.push(Operator.Extractor);
+    return list;
+  }, [singleOperators]);
+
   return (
     <OperatorItemList
-      operators={[
-        Operator.Parser,
-        Operator.Tokenizer,
-        Operator.Splitter,
-        Operator.HierarchicalMerger,
-        Operator.Extractor,
-      ]}
+      operators={operators}
       isCustomDropdown={isCustomDropdown}
       mousePosition={mousePosition}
     ></OperatorItemList>

@@ -1687,15 +1687,20 @@ This delimiter is used to split the input text into several text pieces echo of 
     },
     dataflow: {
       parser: 'Parser',
-      parserDescription: 'Parser',
-      chunker: 'Chunker',
-      chunkerDescription: 'Chunker',
+      parserDescription:
+        'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Tokenizer',
-      tokenizerDescription: 'Tokenizer',
-      splitter: 'Splitter',
-      splitterDescription: 'Splitter',
-      hierarchicalMergerDescription: 'Hierarchical merger',
-      hierarchicalMerger: 'Hierarchical merger',
+      tokenizerDescription:
+        'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      splitter: 'Token Splitter',
+      splitterDescription:
+        'Split text into chunks by token length with optional delimiters and overlap.',
+      hierarchicalMergerDescription:
+        'Split documents into sections by title hierarchy with regex rules for finer control.',
+      hierarchicalMerger: 'Title Splitter',
+      extractor: 'Context Generator',
+      extractorDescription:
+        'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       outputFormat: 'Output format',
       lang: 'Language',
       fileFormats: 'File formats',
@@ -1713,8 +1718,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       exportJson: 'Export JSON',
       viewResult: 'View Result',
       running: 'Running',
-      extractor: 'Extractor',
-      extractorDescription: 'Extractor',
       summary: 'Augmented Context',
       keywords: 'Keywords',
       questions: 'Questions',
