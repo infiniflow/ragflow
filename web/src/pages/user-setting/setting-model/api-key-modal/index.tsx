@@ -87,14 +87,14 @@ const ApiKeyModal = ({
             name="base_url"
             tooltip={
               llmFactory === LLMFactory.TongYiQianWen
-                ? 'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+                ? t('tongyiBaseUrlTip')
                 : t('baseUrlTip')
             }
           >
             <Input
               placeholder={
                 llmFactory === LLMFactory.TongYiQianWen
-                  ? '(International users only, please see tip)'
+                  ? t('tongyiBaseUrlPlaceholder')
                   : 'https://api.openai.com/v1'
               }
               onKeyDown={handleKeyDown}

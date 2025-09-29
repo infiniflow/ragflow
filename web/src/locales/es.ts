@@ -340,6 +340,10 @@ export default {
       baseUrl: 'URL base',
       baseUrlTip:
         'Si tu clave API es de OpenAI, ignora esto. Cualquier otro proveedor intermedio proporcionará esta URL base junto con la clave API.',
+      tongyiBaseUrlTip:
+        'Para usuarios chinos, no es necesario rellenar o usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuarios internacionales, usar https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder:
+        '(Solo para usuarios internacionales, por favor ver consejo)',
       modify: 'Modificar',
       systemModelSettings: 'Establecer modelos predeterminados',
       chatModel: 'Modelo de chat',
