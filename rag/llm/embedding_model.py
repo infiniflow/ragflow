@@ -756,7 +756,7 @@ class SILICONFLOWEmbed(Base):
             texts_batch = texts[i : i + batch_size]
             if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
                 # limit 512, 340 is almost safe
-                texts_batch = [" " if not text.strip() else truncate(text, 300) for text in texts_batch]
+                texts_batch = [" " if not text.strip() else truncate(text, 256) for text in texts_batch]
             else:
                 texts_batch = [" " if not text.strip() else text for text in texts_batch]
 
