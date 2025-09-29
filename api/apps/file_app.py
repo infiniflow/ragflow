@@ -178,6 +178,9 @@ def list_files():
         if not e:
             return get_data_error_result(message="Folder not found!")
 
+        if file.tenant_id != current_user.id:
+            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
         files, total = FileService.get_by_pf_id(
             current_user.id, pf_id, page_number, items_per_page, orderby, desc, keywords)
 
@@ -223,6 +226,9 @@ def get_all_parent_folders():
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(message="Folder not found!")
+
+        if file.tenant_id != current_user.id:
+            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
 
         parent_folders = FileService.get_all_parent_folders(file_id)
         parent_folders_res = []

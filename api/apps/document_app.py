@@ -68,8 +68,10 @@ def upload():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
-    err, files = FileService.upload_document(kb, file_objs, current_user.id)
+    if kb.tenant_id != current_user.id:
+        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
 
+    err, files = FileService.upload_document(kb, file_objs, current_user.id)
     if err:
         return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
 
