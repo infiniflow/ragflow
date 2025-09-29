@@ -57,8 +57,11 @@ def create_user():
 @login_verify
 def delete_user(username):
     try:
-        UserMgr.delete_user(username)
-        return success_response(None, "User and all data deleted successfully")
+        res = UserMgr.delete_user(username)
+        if res["success"]:
+            return success_response(None, res["message"])
+        else:
+            return error_response(res["message"])
 
     except AdminException as e:
         return error_response(e.message, e.code)

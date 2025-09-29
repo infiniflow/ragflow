@@ -659,6 +659,16 @@ def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
     return transformed_data
 
 
+def group_by(list_of_dict, key):
+    res = {}
+    for item in list_of_dict:
+        if item[key] in res.keys():
+            res[item[key]].append(item)
+        else:
+            res[item[key]] = [item]
+    return res
+
+
 def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, str]:
     results = {}
     tool_call_sessions = []

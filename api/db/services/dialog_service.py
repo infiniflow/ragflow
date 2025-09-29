@@ -159,6 +159,22 @@ class DialogService(CommonService):
 
         return list(dialogs.dicts()), count
 
+    @classmethod
+    @DB.connection_context()
+    def get_all_dialogs_by_tenant_id(cls, tenant_id):
+        fields = [cls.model.id]
+        dialogs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
+        dialogs.order_by(cls.model.create_time.asc())
+        offset, limit = 0, 100
+        res = []
+        while True:
+            d_batch = dialogs.offset(offset).limit(limit)
+            _temp = list(d_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
 
 def chat_solo(dialog, messages, stream=True):
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":

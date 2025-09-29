@@ -66,6 +66,7 @@ class UserCanvasService(CommonService):
     def get_all_agents_by_tenant_ids(cls, tenant_ids, user_id):
         # will get all permitted agents, be cautious
         fields = [
+            cls.model.id,
             cls.model.title,
             cls.model.permission,
             cls.model.canvas_type,
@@ -93,7 +94,7 @@ class UserCanvasService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_id(cls, pid):
+    def get_by_canvas_id(cls, pid):
         try:
 
             fields = [
@@ -165,7 +166,7 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def accessible(cls, canvas_id, tenant_id):
         from api.db.services.user_service import UserTenantService
-        e, c = UserCanvasService.get_by_tenant_id(canvas_id)
+        e, c = UserCanvasService.get_by_canvas_id(canvas_id)
         if not e:
             return False
 

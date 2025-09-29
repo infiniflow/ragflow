@@ -108,6 +108,19 @@ class RAGFlowMinio:
             logging.exception(f"obj_exist {bucket}/{filename} got exception")
             return False
 
+    def bucket_exists(self, bucket):
+        try:
+            if not self.conn.bucket_exists(bucket):
+                return False
+            else:
+                return True
+        except S3Error as e:
+            if e.code in ["NoSuchKey", "NoSuchBucket", "ResourceNotFound"]:
+                return False
+        except Exception:
+            logging.exception(f"bucket_exist {bucket} got exception")
+            return False
+
     def get_presigned_url(self, bucket, fnm, expires):
         for _ in range(10):
             try:
