@@ -24,7 +24,7 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import { Operator } from '../../../constant';
+import { Operator, SingleOperators } from '../../../constant';
 import { AgentInstanceContext, HandleContext } from '../../../context';
 import OperatorIcon from '../../../operator-icon';
 
@@ -112,18 +112,12 @@ function OperatorItemList({
   return <ul className="space-y-2">{operators.map(renderOperatorItem)}</ul>;
 }
 
-const singleOperators = [
-  Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
-  Operator.Parser,
-];
 // Limit the number of operators of a certain type on the canvas to only one
 function useRestrictSingleOperatorOnCanvas() {
   const list: Operator[] = [];
   const { findNodeByName } = useGraphStore((state) => state);
 
-  singleOperators.forEach((operator) => {
+  SingleOperators.forEach((operator) => {
     if (!findNodeByName(operator)) {
       list.push(operator);
     }

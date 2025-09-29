@@ -42,8 +42,8 @@ import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
-import { ContextNode } from './node/context-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { ExtractorNode } from './node/extractor-node';
 import { HierarchicalMergerNode } from './node/hierarchical-merger-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
@@ -58,7 +58,7 @@ export const nodeTypes: NodeTypes = {
   tokenizerNode: TokenizerNode,
   splitterNode: SplitterNode,
   hierarchicalMergerNode: HierarchicalMergerNode,
-  contextNode: ContextNode,
+  contextNode: ExtractorNode,
 };
 
 const edgeTypes = {
@@ -316,7 +316,6 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
           loading={running}
         ></RunSheet>
       )}
-      {/* {logSheetVisible && <LogSheet hideModal={hideLogSheet}></LogSheet>} */}
     </div>
   );
 }

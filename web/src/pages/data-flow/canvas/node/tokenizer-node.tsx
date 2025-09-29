@@ -2,7 +2,6 @@ import { IRagNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
 import { NodeHandleId } from '../../constant';
-import { needsSingleStepDebugging } from '../../utils';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
@@ -20,7 +19,8 @@ function TokenizerNode({
       selected={selected}
       id={id}
       label={data.label}
-      showRun={needsSingleStepDebugging(data.label)}
+      showRun={false}
+      showCopy={false}
     >
       <NodeWrapper selected={selected}>
         <CommonHandle
