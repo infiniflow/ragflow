@@ -1705,7 +1705,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent',
       searchMethod: 'Search method',
-      filenameEmbdWeight: 'Filename embd weight',
       begin: 'File',
       parserMethod: 'Parser method',
       systemPrompt: 'System Prompt',
@@ -1771,6 +1770,11 @@ Important structured information may include: names, dates, locations, events, k
       cancel: 'Cancel',
       swicthPromptMessage:
         'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
+      tokenizerSearchMethodOptions: {
+        full_text: 'Full-text',
+        embedding: 'Embedding',
+      },
+      filenameEmbeddingWeight: 'Filename embedding weight',
       tokenizerFieldsOptions: {
         text: 'Text',
         keywords: 'Keywords',
