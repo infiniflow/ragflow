@@ -2,7 +2,7 @@ import re
 from werkzeug.security import check_password_hash
 from api.db import ActiveEnum
 from api.db.services import UserService
-from api.db.joint_services.user_account_service import create_new_user
+from api.db.joint_services.user_account_service import create_new_user, delete_user_data
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -61,7 +61,13 @@ class UserMgr:
     @staticmethod
     def delete_user(username):
         # use email to delete
-        raise AdminException("delete_user: not implemented")
+        user_list = UserService.query_user_by_email(username)
+        if not user_list:
+            raise UserNotFoundError(username)
+        if len(user_list) > 1:
+            raise AdminException(f"Exist more than 1 user: {username}!")
+        usr = user_list[0]
+        return delete_user_data(usr.id)
 
     @staticmethod
     def update_user_password(username, new_password) -> str:
@@ -134,7 +140,13 @@ class UserServiceMgr:
         tenants = TenantService.get_joined_tenants_by_user_id(usr.id)
         tenant_ids = [m["tenant_id"] for m in tenants]
         # filter permitted agents and owned agents
-        return UserCanvasService.get_all_agents_by_tenant_ids(tenant_ids, usr.id)
+        res = UserCanvasService.get_all_agents_by_tenant_ids(tenant_ids, usr.id)
+        return [{
+            'title': r['title'],
+            'permission': r['permission'],
+            'canvas_type': r['canvas_type'],
+            'canvas_category': r['canvas_category']
+        } for r in res]
 
 class ServiceMgr:
 

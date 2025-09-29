@@ -290,6 +290,17 @@ class UserTenantService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_user_tenant_relation_by_user_id(cls, user_id):
+        fields = [
+            cls.model.id,
+            cls.model.user_id,
+            cls.model.tenant_id,
+            cls.model.role
+        ]
+        return list(cls.model.select(*fields).where(cls.model.user_id == user_id).dicts().dicts())
+
+    @classmethod
+    @DB.connection_context()
     def get_num_members(cls, user_id: str):
         cnt_members = cls.model.select(peewee.fn.COUNT(cls.model.id)).where(cls.model.tenant_id == user_id).scalar()
         return cnt_members
