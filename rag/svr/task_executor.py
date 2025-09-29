@@ -245,7 +245,7 @@ async def collect():
 
     task_type = msg.get("task_type", "")
     task["task_type"] = task_type
-    if task_type == "dataflow":
+    if task_type[:8] == "dataflow":
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]
         task["kb_id"] = msg.get("kb_id", "")
@@ -491,6 +491,7 @@ async def run_dataflow(task: dict):
         e, pipeline_log = PipelineOperationLogService.get_by_id(dataflow_id)
         assert e, "Pipeline log not found."
         dsl = pipeline_log.dsl
+        dataflow_id = pipeline_log.pipeline_id
     pipeline = Pipeline(dsl, tenant_id=task["tenant_id"], doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
     chunks = await pipeline.run(file=task["file"]) if task.get("file") else await pipeline.run()
     if doc_id == CANVAS_DEBUG_DOC_ID:
@@ -652,7 +653,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         raptor_config["threshold"],
     )
     original_length = len(chunks)
-    chunks = await raptor(chunks, row["parser_config"]["raptor"]["random_seed"], callback)
+    chunks = await raptor(chunks, row["kb_parser_config"]["raptor"]["random_seed"], callback)
     doc = {
         "doc_id": fake_doc_id,
         "kb_id": [str(row["kb_id"])],

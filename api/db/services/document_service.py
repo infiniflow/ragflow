@@ -29,7 +29,8 @@ from peewee import fn, Case, JOIN
 from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole, CanvasCategory
-from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas
+from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, \
+    User
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -121,19 +122,21 @@ class DocumentService(CommonService):
                      orderby, desc, keywords, run_status, types, suffix):
         fields = cls.get_cls_model_fields()
         if keywords:
-            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name")])\
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])\
                 .join(File2Document, on=(File2Document.document_id == cls.model.id))\
                 .join(File, on=(File.id == File2Document.file_id))\
                 .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
+                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)\
                 .where(
                     (cls.model.kb_id == kb_id),
                     (fn.LOWER(cls.model.name).contains(keywords.lower()))
                 )
         else:
-            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name")])\
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])\
                 .join(File2Document, on=(File2Document.document_id == cls.model.id))\
                 .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
                 .join(File, on=(File.id == File2Document.file_id))\
+                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)\
                 .where(cls.model.kb_id == kb_id)
 
         if run_status:

@@ -68,7 +68,34 @@ def create():
         e, t = TenantService.get_by_id(current_user.id)
         if not e:
             return get_data_error_result(message="Tenant not found.")
-        #req["embd_id"] = t.embd_id
+        req["parser_config"] = {
+            "layout_recognize": "DeepDOC",
+            "chunk_token_num": 512,
+            "delimiter": "\n",
+            "auto_keywords": 0,
+            "auto_questions": 0,
+            "html4excel": False,
+            "topn_tags": 3,
+            "raptor": {
+                "use_raptor": True,
+                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                "max_token": 256,
+                "threshold": 0.1,
+                "max_cluster": 64,
+                "random_seed": 0
+            },
+            "graphrag": {
+                "use_graphrag": True,
+                "entity_types": [
+                    "organization",
+                    "person",
+                    "geo",
+                    "event",
+                    "category"
+                ],
+                "method": "light"
+            }
+        }
         if not KnowledgebaseService.save(**req):
             return get_data_error_result()
         return get_json_result(data={"kb_id": req["id"]})
@@ -729,19 +756,21 @@ def delete_kb_task():
     if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
         return get_error_data_result(message="Invalid task type")
 
-    kb_task_id = ""
     match pipeline_task_type:
         case PipelineTaskType.GRAPH_RAG:
             settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
             kb_task_id = "graphrag_task_id"
+            kb_task_finish_at = "graphrag_task_finish_at"
         case PipelineTaskType.RAPTOR:
             kb_task_id = "raptor_task_id"
+            kb_task_finish_at = "raptor_task_finish_at"
         case PipelineTaskType.MINDMAP:
             kb_task_id = "mindmap_task_id"
+            kb_task_finish_at = "mindmap_task_finish_at"
         case _:
             return get_error_data_result(message="Internal Error: Invalid task type")
 
-    ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id: ""})
+    ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id: "", kb_task_finish_at: None})
     if not ok:
         return server_error_response(f"Internal error: cannot delete task {pipeline_task_type}")
 

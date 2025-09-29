@@ -123,7 +123,7 @@ class PipelineOperationLogService(CommonService):
                 raise RuntimeError(f"Cannot find knowledge base {document.kb_id} for referred_document {referred_document_id}")
 
             tenant_id = kb_info.tenant_id
-            title = document.name
+            title = document.parser_id
             avatar = document.thumbnail
 
         if task_type not in VALID_PIPELINE_TASK_TYPES:
@@ -228,14 +228,12 @@ class PipelineOperationLogService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_documents_info(cls, id):
-        fields = [Document.id, Document.name, Document.progress]
+        fields = [Document.id, Document.name, Document.progress, Document.kb_id]
         return (
             cls.model.select(*fields)
             .join(Document, on=(cls.model.document_id == Document.id))
             .where(
-                cls.model.id == id,
-                Document.progress > 0,
-                Document.progress < 1,
+                cls.model.id == id
             )
             .dicts()
         )
