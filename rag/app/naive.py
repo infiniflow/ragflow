@@ -472,9 +472,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
                 figures = None
             
-            return sections, tables, figures
-            # res = tokenize_table(tables, doc, is_english)
-            # callback(0.8, "Finish parsing.")
+            res = tokenize_table(tables, doc, is_english)
+            callback(0.8, "Finish parsing.")
 
         else:
             if layout_recognizer == "Plain Text":
