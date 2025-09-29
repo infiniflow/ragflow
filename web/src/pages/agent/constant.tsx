@@ -90,6 +90,7 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  Placeholder = 'Placeholder',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -780,6 +781,11 @@ export const initialTavilyExtractValues = {
   },
 };
 
+export const initialPlaceholderValues = {
+  // Placeholder node doesn't need any specific form values
+  // It's just a visual placeholder
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -900,6 +906,7 @@ export const NodeMap = {
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',
   [Operator.TavilyExtract]: 'ragNode',
+  [Operator.Placeholder]: 'placeholderNode',
 };
 
 export enum BeginQueryType {
@@ -950,3 +957,12 @@ export enum AgentExceptionMethod {
   Comment = 'comment',
   Goto = 'goto',
 }
+
+export const PLACEHOLDER_NODE_WIDTH = 200;
+export const PLACEHOLDER_NODE_HEIGHT = 60;
+export const DROPDOWN_SPACING = 25;
+export const DROPDOWN_ADDITIONAL_OFFSET = 50;
+export const HALF_PLACEHOLDER_NODE_WIDTH = PLACEHOLDER_NODE_WIDTH / 2;
+export const HALF_PLACEHOLDER_NODE_HEIGHT =
+  PLACEHOLDER_NODE_HEIGHT + DROPDOWN_SPACING + DROPDOWN_ADDITIONAL_OFFSET;
+export const PREVENT_CLOSE_DELAY = 300;
