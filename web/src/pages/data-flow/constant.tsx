@@ -325,13 +325,14 @@ export const CategorizeAnchorPointPositions = [
 
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
-export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [],
+export const RestrictedUpstreamMap: Record<Operator, Operator[]> = {
+  [Operator.Begin]: [] as Operator[],
   [Operator.Parser]: [Operator.Begin],
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
+  [Operator.Note]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -411,3 +412,10 @@ export const FileTypeSuffixMap = {
     'ape',
   ],
 };
+
+export const SingleOperators = [
+  Operator.Tokenizer,
+  Operator.Splitter,
+  Operator.HierarchicalMerger,
+  Operator.Parser,
+];
