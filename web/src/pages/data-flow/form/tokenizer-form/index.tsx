@@ -29,12 +29,15 @@ export const FormSchema = z.object({
   fields: z.string(),
 });
 
-const SearchMethodOptions = buildOptions(TokenizerSearchMethod);
-
 const TokenizerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialTokenizerValues, node);
 
+  const SearchMethodOptions = buildOptions(
+    TokenizerSearchMethod,
+    t,
+    `dataflow.tokenizerSearchMethodOptions`,
+  );
   const FieldsOptions = buildOptions(
     TokenizerFields,
     t,
@@ -67,7 +70,7 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
         </RAGFlowFormItem>
         <SliderInputFormField
           name="filename_embd_weight"
-          label={t('dataflow.filenameEmbdWeight')}
+          label={t('dataflow.filenameEmbeddingWeight')}
           max={0.5}
           step={0.01}
         ></SliderInputFormField>
