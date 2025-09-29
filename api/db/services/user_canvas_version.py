@@ -24,7 +24,24 @@ class UserCanvasVersionService(CommonService):
             return None
         except Exception:
             return None
-    
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_canvas_version_by_canvas_ids(cls, canvas_ids):
+        fields = [cls.model.id]
+        versions = cls.model.select(*fields).where(cls.model.user_canvas_id.in_(canvas_ids))
+        versions.order_by(cls.model.create_time.asc())
+        offset, limit = 0, 100
+        res = []
+        while True:
+            version_batch = versions.offset(offset).limit(limit)
+            _temp = list(version_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
     @classmethod
     @DB.connection_context()
     def delete_all_versions(cls, user_canvas_id):
