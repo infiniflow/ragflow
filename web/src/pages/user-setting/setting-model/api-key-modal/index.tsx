@@ -20,7 +20,11 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = [LLMFactory.OpenAI, LLMFactory.AzureOpenAI];
+const modelsWithBaseUrl = [
+  LLMFactory.OpenAI,
+  LLMFactory.AzureOpenAI,
+  LLMFactory.TongYiQianWen,
+];
 
 const ApiKeyModal = ({
   visible,
@@ -81,10 +85,18 @@ const ApiKeyModal = ({
           <Form.Item<FieldType>
             label={t('baseUrl')}
             name="base_url"
-            tooltip={t('baseUrlTip')}
+            tooltip={
+              llmFactory === LLMFactory.TongYiQianWen
+                ? 'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+                : t('baseUrlTip')
+            }
           >
             <Input
-              placeholder="https://api.openai.com/v1"
+              placeholder={
+                llmFactory === LLMFactory.TongYiQianWen
+                  ? '(International users only, please see tip)'
+                  : 'https://api.openai.com/v1'
+              }
               onKeyDown={handleKeyDown}
             />
           </Form.Item>

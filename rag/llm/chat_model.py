@@ -146,7 +146,7 @@ class Base(ABC):
 
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
-        if (not response.choices or not response.choices[0].message or not response.choices[0].message.content):
+        if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
@@ -457,7 +457,7 @@ class Base(ABC):
         yield total_tokens
 
     def total_token_count(self, resp):
-       return total_token_count_from_response(resp)
+        return total_token_count_from_response(resp)
 
     def _calculate_dynamic_ctx(self, history):
         """Calculate dynamic context window size"""
