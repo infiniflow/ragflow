@@ -1,6 +1,7 @@
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
+import { AntToolTip } from '@/components/ui/tooltip';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { t } from 'i18next';
 import { CircleQuestionMark } from 'lucide-react';
@@ -17,19 +18,30 @@ interface StatCardProps {
   value: number;
   icon: JSX.Element;
   children?: JSX.Element;
+  tooltip?: string;
 }
 interface CardFooterProcessProps {
   success: number;
   failed: number;
 }
 
-const StatCard: FC<StatCardProps> = ({ title, value, children, icon }) => {
+const StatCard: FC<StatCardProps> = ({
+  title,
+  value,
+  children,
+  icon,
+  tooltip,
+}) => {
   return (
     <div className="bg-bg-card  p-4 rounded-lg border border-border flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h3 className="flex items-center gap-1 text-sm font-medium text-text-secondary">
           {title}
-          <CircleQuestionMark size={12} />
+          {tooltip && (
+            <AntToolTip title={tooltip} trigger="hover">
+              <CircleQuestionMark size={12} />
+            </AntToolTip>
+          )}
         </h3>
         {icon}
       </div>
@@ -51,15 +63,19 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
       <div className="w-full flex justify-between gap-4 rounded-lg text-sm font-bold text-text-primary">
         <div className="flex items-center justify-between  rounded-md w-1/2 p-2 bg-state-success-5">
           <div className="flex items-center rounded-lg gap-1">
-            <div className="w-2 h-2 rounded-full bg-state-success"></div>
-            <div>{t('knowledgeDetails.success')}</div>
+            <div className="w-2 h-2 rounded-full bg-state-success "></div>
+            <div className="font-normal text-text-secondary text-xs">
+              {t('knowledgeDetails.success')}
+            </div>
           </div>
           <div>{success || 0}</div>
         </div>
         <div className="flex items-center justify-between rounded-md w-1/2 bg-state-error-5 p-2">
           <div className="flex items-center rounded-lg gap-1">
             <div className="w-2 h-2 rounded-full bg-state-error"></div>
-            <div>{t('knowledgeDetails.failed')}</div>
+            <div className="font-normal text-text-secondary text-xs">
+              {t('knowledgeDetails.failed')}
+            </div>
           </div>
           <div>{failed || 0}</div>
         </div>
@@ -189,7 +205,7 @@ const FileLogsPage: FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-3 md:grid-cols-3 gap-4 mb-6">
         <StatCard
-          title="Total Files"
+          title={t('datasetOverview.totalFiles')}
           value={topAllData.totalFiles.value}
           icon={
             isDark ? (
@@ -204,11 +220,13 @@ const FileLogsPage: FC = () => {
               {topAllData.totalFiles.precent > 0 ? '+' : ''}
               {topAllData.totalFiles.precent}%{' '}
             </span>
-            from last week
+            <span className="font-normal text-text-secondary text-xs">
+              from last week
+            </span>
           </div>
         </StatCard>
         <StatCard
-          title="Downloading"
+          title={t('datasetOverview.downloading')}
           value={topAllData.downloads.value}
           icon={
             isDark ? (
@@ -217,6 +235,7 @@ const FileLogsPage: FC = () => {
               <SvgIcon name="data-flow/data-icon-bri" width={40} />
             )
           }
+          tooltip={t('datasetOverview.downloadTip')}
         >
           <CardFooterProcess
             success={topAllData.downloads.success}
@@ -224,7 +243,7 @@ const FileLogsPage: FC = () => {
           />
         </StatCard>
         <StatCard
-          title="Processing"
+          title={t('datasetOverview.processing')}
           value={topAllData.processing.value}
           icon={
             isDark ? (
@@ -233,6 +252,7 @@ const FileLogsPage: FC = () => {
               <SvgIcon name="data-flow/processing-icon-bri" width={40} />
             )
           }
+          tooltip={t('datasetOverview.processingTip')}
         >
           <CardFooterProcess
             success={topAllData.processing.success}

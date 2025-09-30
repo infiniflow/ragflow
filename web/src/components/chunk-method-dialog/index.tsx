@@ -240,6 +240,11 @@ export function ChunkMethodDialog({
     name: 'parseType',
     defaultValue: pipelineId ? 2 : 1,
   });
+  useEffect(() => {
+    if (parseType === 1) {
+      form.setValue('pipeline_id', '');
+    }
+  }, [parseType, form]);
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[50vw]">

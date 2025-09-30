@@ -1695,5 +1695,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       filenameEmbeddingWeight: '文件名嵌入权重',
       switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
     },
+    datasetOverview: {
+      downloadTip: '正在从数据源下载文件。',
+      processingTip: '正在由数据流处理文件。',
+      totalFiles: '文件总数',
+      downloading: '正在下载',
+      processing: '正在处理',
+    },
   },
 };

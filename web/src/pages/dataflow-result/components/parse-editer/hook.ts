@@ -5,8 +5,8 @@ export const useParserInit = ({
   initialValue,
 }: {
   initialValue:
-    | Pick<IJsonContainerProps, 'initialValue'>
-    | Pick<IObjContainerProps, 'initialValue'>;
+    | IJsonContainerProps['initialValue']
+    | IObjContainerProps['initialValue'];
 }) => {
   const [content, setContent] = useState(initialValue);
 

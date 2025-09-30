@@ -8,7 +8,7 @@ import { IJsonContainerProps } from './interface';
 export const parserKeyMap = {
   json: 'text',
   chunks: 'text',
-};
+} as const;
 
 export const ArrayContainer = (props: IJsonContainerProps) => {
   const {
@@ -33,24 +33,15 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     editDivRef,
   } = useParserInit({ initialValue });
 
+  const parserKey = parserKeyMap[content.key as keyof typeof parserKeyMap];
+
   const handleEdit = useCallback(
     (e?: any, index?: number) => {
-      setContent((pre) => ({
-        ...pre,
-        value: pre.value.map((item, i) => {
-          if (i === index) {
-            return {
-              ...item,
-              [parserKeyMap[content.key]]: unescapeNewlines(e.target.innerText),
-            };
-          }
-          return item;
-        }),
-      }));
       setActiveEditIndex(index);
     },
     [setContent, setActiveEditIndex],
   );
+
   const handleSave = useCallback(
     (e: any) => {
       const saveData = {
@@ -59,7 +50,7 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
           if (index === activeEditIndex) {
             return {
               ...item,
-              [parserKeyMap[content.key]]: e.target.innerText,
+              [parserKey]: e.target.textContent || '',
             };
           } else {
             return item;
@@ -75,26 +66,28 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
   useEffect(() => {
     if (activeEditIndex !== undefined && editDivRef.current) {
       editDivRef.current.focus();
-      editDivRef.current.textContent = escapeNewlines(
-        content.value[activeEditIndex][parserKeyMap[content.key]],
-      );
+      editDivRef.current.textContent =
+        content.value[activeEditIndex][parserKey];
     }
-  }, [activeEditIndex, content]);
+  }, [editDivRef, activeEditIndex, content, parserKey]);
 
   return (
     <>
       {content.value?.map((item, index) => {
-        if (item[parserKeyMap[content.key]] === '') {
+        if (
+          item[parserKeyMap[content.key as keyof typeof parserKeyMap]] === ''
+        ) {
           return null;
         }
         return (
           <section
             key={index}
-            className={
+            className={cn(
               isChunck
                 ? 'bg-bg-card my-2 p-2 rounded-lg flex gap-1 items-start'
-                : ''
-            }
+                : '',
+              activeEditIndex === index && isChunck ? 'bg-bg-title' : '',
+            )}
           >
             {isChunck && !isReadonly && (
               <Checkbox
@@ -113,6 +106,7 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
                 onBlur={handleSave}
                 className={cn(
                   'w-full bg-transparent text-text-secondary border-none focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none p-0',
+
                   className,
                 )}
               ></div>
@@ -120,7 +114,7 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
             {activeEditIndex !== index && (
               <div
                 className={cn(
-                  'text-text-secondary overflow-auto scrollbar-auto whitespace-pre-wrap w-full',
+                  'text-text-secondary overflow-auto scrollbar-auto w-full',
                   {
                     [styles.contentEllipsis]:
                       textMode === ChunkTextMode.Ellipse,
@@ -134,7 +128,7 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
                   }
                 }}
               >
-                {escapeNewlines(item[parserKeyMap[content.key]])}
+                {item[parserKeyMap[content.key]]}
               </div>
             )}
           </section>

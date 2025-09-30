@@ -1,3 +1,4 @@
+import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
@@ -9,13 +10,7 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import {
-  Banknote,
-  DatabaseZap,
-  FileSearch2,
-  FolderOpen,
-  GitGraph,
-} from 'lucide-react';
+import { Banknote, DatabaseZap, FileSearch2, FolderOpen } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -35,29 +30,29 @@ export function SideBar({ refreshCount }: PropType) {
   const items = useMemo(() => {
     const list = [
       {
-        icon: DatabaseZap,
+        icon: <DatabaseZap className="size-4" />,
         label: t(`knowledgeDetails.overview`),
         key: Routes.DataSetOverview,
       },
       {
-        icon: FolderOpen,
+        icon: <FolderOpen className="size-4" />,
         label: t(`knowledgeDetails.subbarFiles`),
         key: Routes.DatasetBase,
       },
       {
-        icon: FileSearch2,
+        icon: <FileSearch2 className="size-4" />,
         label: t(`knowledgeDetails.testing`),
         key: Routes.DatasetTesting,
       },
       {
-        icon: Banknote,
+        icon: <Banknote className="size-4" />,
         label: t(`knowledgeDetails.configuration`),
         key: Routes.DataSetSetting,
       },
     ];
     if (!isEmpty(routerData?.graph)) {
       list.push({
-        icon: GitGraph,
+        icon: <IconFontFill name="knowledgegraph" className="size-4" />,
         label: t(`knowledgeDetails.knowledgeGraph`),
         key: Routes.KnowledgeGraph,
       });
@@ -105,7 +100,7 @@ export function SideBar({ refreshCount }: PropType) {
               )}
               onClick={handleMenuClick(item.key)}
             >
-              <item.icon className="size-4" />
+              {item.icon}
               <span>{item.label}</span>
             </Button>
           );
