@@ -503,9 +503,9 @@ async def run_dataflow(task: dict):
 
     embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
     if chunks.get("chunks"):
-        chunks = chunks["chunks"]
+        chunks = copy.deepcopy(chunks["chunks"])
     elif chunks.get("json"):
-        chunks = chunks["json"]
+        chunks = copy.deepcopy(chunks["json"])
     elif chunks.get("markdown"):
         chunks = [{"text": [chunks["markdown"]]}]
     elif chunks.get("text"):
@@ -515,34 +515,40 @@ async def run_dataflow(task: dict):
 
     keys = [k for o in chunks for k in list(o.keys())]
     if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
-        set_progress(task_id, prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
-        e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-        embedding_id = kb.embd_id
-        embedding_model = LLMBundle(task["tenant_id"], LLMType.EMBEDDING, llm_name=embedding_id)
-        @timeout(60)
-        def batch_encode(txts):
-            nonlocal embedding_model
-            return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
-        vects = np.array([])
-        texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
-        delta = 0.20/(len(texts)//EMBEDDING_BATCH_SIZE+1)
-        prog = 0.8
-        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
-            async with embed_limiter:
-                vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + EMBEDDING_BATCH_SIZE]))
-            if len(vects) == 0:
-                vects = vts
-            else:
-                vects = np.concatenate((vects, vts), axis=0)
-            embedding_token_consumption += c
-            prog += delta
-            if i % (len(texts)//EMBEDDING_BATCH_SIZE/100+1) == 1:
-                set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//EMBEDDING_BATCH_SIZE}")
+        try:
+            set_progress(task_id, prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
+            e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+            embedding_id = kb.embd_id
+            embedding_model = LLMBundle(task["tenant_id"], LLMType.EMBEDDING, llm_name=embedding_id)
+            @timeout(60)
+            def batch_encode(txts):
+                nonlocal embedding_model
+                return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
+            vects = np.array([])
+            texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
+            delta = 0.20/(len(texts)//EMBEDDING_BATCH_SIZE+1)
+            prog = 0.8
+            for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+                async with embed_limiter:
+                    vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + EMBEDDING_BATCH_SIZE]))
+                if len(vects) == 0:
+                    vects = vts
+                else:
+                    vects = np.concatenate((vects, vts), axis=0)
+                embedding_token_consumption += c
+                prog += delta
+                if i % (len(texts)//EMBEDDING_BATCH_SIZE/100+1) == 1:
+                    set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//EMBEDDING_BATCH_SIZE}")
 
-        assert len(vects) == len(chunks)
-        for i, ck in enumerate(chunks):
-            v = vects[i].tolist()
-            ck["q_%d_vec" % len(v)] = v
+            assert len(vects) == len(chunks)
+            for i, ck in enumerate(chunks):
+                v = vects[i].tolist()
+                ck["q_%d_vec" % len(v)] = v
+        except Exception as e:
+            set_progress(task_id, prog=-1, msg=f"[ERROR]: {e}")
+            PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+            return
+
 
     metadata = {}
     def dict_update(meta):
