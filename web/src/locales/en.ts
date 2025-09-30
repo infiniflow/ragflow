@@ -1065,7 +1065,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         {input}
   The above is the content you need to summarize.`,
       createGraph: 'Create agent',
-      createFromTemplates: 'Create from templates',
+      createFromTemplates: 'Create from template',
       retrieval: 'Retrieval',
       generate: 'Generate',
       answer: 'Interact',
@@ -1586,9 +1586,12 @@ This delimiter is used to split the input text into several text pieces echo of 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
-      createFromBlank: 'Create from Blank',
-      createFromTemplate: 'Create from Template',
-      importJsonFile: 'Import json file',
+      createFromBlank: 'Create from blank',
+      createFromTemplate: 'Create from template',
+      importJsonFile: 'Import JSON file',
+      ceateAgent: 'Agent flow',
+      createPipeline: 'Data pipeline',
+      chooseAgentType: 'Choose Agent Type',
     },
     llmTools: {
       bad_calculator: {
