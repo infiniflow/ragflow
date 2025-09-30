@@ -275,16 +275,14 @@ class KnowledgebaseService(CommonService):
             cls.model.update_time
             ]
         kbs = cls.model.select(*fields)\
-                .join(Tenant, on=((Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value)))\
                 .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
             .where(
             (cls.model.id == kb_id),
             (cls.model.status == StatusEnum.VALID.value)
-        )
+        ).dicts()
         if not kbs:
             return
-        d = kbs[0].to_dict()
-        return d
+        return kbs[0]
 
     @classmethod
     @DB.connection_context()
