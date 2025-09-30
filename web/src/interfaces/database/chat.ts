@@ -60,6 +60,7 @@ export interface IDialog {
   top_k: number;
   top_n: number;
   meta_data_filter: MetaDataFilter;
+  do_refer?: string;
 }
 
 interface MetaDataFilter {

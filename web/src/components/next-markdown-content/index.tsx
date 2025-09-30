@@ -1,6 +1,6 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
+import { IReferenceChunk, IReferenceObject, IDialog } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo } from 'react';
@@ -44,11 +44,13 @@ function MarkdownContent({
   reference,
   clickDocumentButton,
   content,
+  dialog,
 }: {
   content: string;
   loading: boolean;
   reference?: IReferenceObject;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
+  dialog?: IDialog;
 }) {
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
@@ -207,6 +209,10 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
+      if (dialog?.do_refer === "0") {
+        return text.replace(currentReg, '').replace(/ID:\d+/g, '');
+      }
+
       let replacedText = reactStringReplace(text, currentReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
 
@@ -244,7 +250,7 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [renderPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [renderPopoverContent, getReferenceInfo, handleDocumentButtonClick, dialog?.do_refer],
   );
 
   return (
