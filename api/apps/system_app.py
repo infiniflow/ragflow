@@ -177,7 +177,7 @@ def healthz():
     return jsonify(result), (200 if all_ok else 500)
 
 
-@manager.route("/ping", methods=["GET"])
+@manager.route("/ping", methods=["GET"]) # noqa: F821
 def ping():
     return "pong", 200
 
