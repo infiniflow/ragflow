@@ -33,7 +33,7 @@ from zhipuai import ZhipuAI
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate
+from rag.utils import num_tokens_from_string, truncate, total_token_count_from_response
 
 
 class Base(ABC):
@@ -52,15 +52,7 @@ class Base(ABC):
         raise NotImplementedError("Please implement encode method!")
 
     def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
+        return total_token_count_from_response(resp)
 
 
 class DefaultEmbedding(Base):
@@ -497,7 +489,6 @@ class MistralEmbed(Base):
     def encode_queries(self, text):
         import time
         import random
-
         retry_max = 5
         while retry_max > 0:
             try:
@@ -662,7 +653,7 @@ class OpenAI_APIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        #base_url = urljoin(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -945,6 +936,7 @@ class GiteeEmbed(SILICONFLOWEmbed):
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
 
+
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 
@@ -963,7 +955,7 @@ class Ai302Embed(Base):
         super().__init__(key, model_name, base_url)
 
 
-class CometEmbed(OpenAIEmbed):
+class CometAPIEmbed(OpenAIEmbed):
     _FACTORY_NAME = "CometAPI"
 
     def __init__(self, key, model_name, base_url="https://api.cometapi.com/v1"):

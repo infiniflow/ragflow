@@ -53,7 +53,7 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         args = {}
         for para in self._param.variables:

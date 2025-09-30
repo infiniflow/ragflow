@@ -11,7 +11,7 @@ Accept an invite to join a team, decline an invite, or leave a team.
 
 Once you join a team, you can do the following:
 
-- Upload documents to the team owner's shared datasets (knowledge bases).
+- Upload documents to the team owner's shared datasets.
 - Parse documents in the team owner's shared datasets.
 - Use the team owner's shared Agents.
 
@@ -22,7 +22,7 @@ You cannot invite users to a team unless you are its owner.
 ## Prerequisites
 
 1. Ensure that your Email address that received the team invitation is associated with a RAGFlow user account.
-2. The team owner should share his knowledge bases by setting their **Permission** to **Team**.
+2. The team owner should share his datasets by setting their **Permission** to **Team**.
 
 ## Accept or decline team invite
 
@@ -32,6 +32,6 @@ You cannot invite users to a team unless you are its owner.
 
 _On the **Team** page, you can view the information about members of your team and the teams you have joined._
 
-_After accepting the team invite, you should be able to view and update the team owner's knowledge bases whose **Permissions** is set to **Team**._
+_After accepting the team invite, you should be able to view and update the team owner's datasets whose **Permissions** is set to **Team**._
 
 ## Leave a joined team

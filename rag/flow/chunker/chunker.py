@@ -241,7 +241,6 @@ class Chunker(ProcessBase):
             "laws": self._laws,
             "presentation": self._presentation,
             "one": self._one,
-            "toc": self._toc,
         }
 
         try:

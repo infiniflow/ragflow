@@ -626,7 +626,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       answerTitle: '智能回答',
       multiTurn: '多轮对话优化',
       multiTurnTip:
-        '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
+        '在多轮对话时，对查询问题根据上下文进行优化。会调用大模型额外消耗 token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
       descriptionPlaceholder:
@@ -714,6 +714,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       baseUrl: 'Base-Url',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
+      tongyiBaseUrlTip:
+        '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
+      tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
       modify: '修改',
       systemModelSettings: '设置默认模型',
       chatModel: '聊天模型',
