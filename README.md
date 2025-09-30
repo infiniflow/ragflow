@@ -341,11 +341,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 5. If your operating system does not have jemalloc, please install it as follows:
 
    ```bash
-   # ubuntu
+   # Ubuntu
    sudo apt-get install libjemalloc-dev
-   # centos
+   # CentOS
    sudo yum install jemalloc
-   # mac
+   # OpenSUSE
+   sudo zypper install jemalloc
+   # macOS
    sudo brew install jemalloc
    ```
 
