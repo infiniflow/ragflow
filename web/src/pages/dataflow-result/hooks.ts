@@ -1,10 +1,6 @@
 import { TimelineNode } from '@/components/originui/timeline';
 import message from '@/components/ui/message';
-import {
-  useCreateChunk,
-  useDeleteChunk,
-  useSelectChunkList,
-} from '@/hooks/chunk-hooks';
+import { useCreateChunk, useDeleteChunk } from '@/hooks/chunk-hooks';
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IChunk } from '@/interfaces/database/knowledge';
@@ -18,7 +14,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams, useSearchParams } from 'umi';
 import { ITimelineNodeObj, TimelineNodeObj } from './components/time-line';
-import { ChunkTextMode, TimelineNodeType } from './constant';
+import {
+  ChunkTextMode,
+  PipelineResultSearchParams,
+  TimelineNodeType,
+} from './constant';
 import { IDslComponent, IPipelineFileLogDetail } from './interface';
 
 export const useFetchPipelineFileLogDetail = (props?: {
@@ -55,28 +55,21 @@ export const useFetchPipelineFileLogDetail = (props?: {
 };
 
 export const useHandleChunkCardClick = () => {
-  const [selectedChunkId, setSelectedChunkId] = useState<string>('');
+  const [selectedChunk, setSelectedChunk] = useState<IChunk>();
 
-  const handleChunkCardClick = useCallback((chunkId: string) => {
-    setSelectedChunkId(chunkId);
+  const handleChunkCardClick = useCallback((chunk: IChunk) => {
+    console.log('click-chunk-->', chunk);
+    setSelectedChunk(chunk);
   }, []);
 
-  return { handleChunkCardClick, selectedChunkId };
+  return { handleChunkCardClick, selectedChunk };
 };
 
-export const useGetSelectedChunk = (selectedChunkId: string) => {
-  const data = useSelectChunkList();
-  return (
-    data?.data?.find((x) => x.chunk_id === selectedChunkId) ?? ({} as IChunk)
-  );
-};
-
-export const useGetChunkHighlights = (selectedChunkId: string) => {
+export const useGetChunkHighlights = (selectedChunk?: IChunk) => {
   const [size, setSize] = useState({ width: 849, height: 1200 });
-  const selectedChunk: IChunk = useGetSelectedChunk(selectedChunkId);
 
   const highlights: IHighlight[] = useMemo(() => {
-    return buildChunkHighlights(selectedChunk, size);
+    return selectedChunk ? buildChunkHighlights(selectedChunk, size) : [];
   }, [selectedChunk, size]);
 
   const setWidthAndHeight = useCallback((width: number, height: number) => {
@@ -274,5 +267,25 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
   }, [data]);
   return {
     timelineNodes,
+  };
+};
+
+export const useGetPipelineResultSearchParams = () => {
+  const [currentQueryParameters] = useSearchParams();
+  const is_read_only = currentQueryParameters.get(
+    PipelineResultSearchParams.IsReadOnly,
+  ) as 'true' | 'false';
+  console.log('is_read_only', is_read_only);
+  return {
+    type: currentQueryParameters.get(PipelineResultSearchParams.Type) || '',
+    documentId:
+      currentQueryParameters.get(PipelineResultSearchParams.DocumentId) || '',
+    knowledgeId:
+      currentQueryParameters.get(PipelineResultSearchParams.KnowledgeId) || '',
+    isReadOnly: is_read_only === 'true',
+    agentId:
+      currentQueryParameters.get(PipelineResultSearchParams.AgentId) || '',
+    agentTitle:
+      currentQueryParameters.get(PipelineResultSearchParams.AgentTitle) || '',
   };
 };

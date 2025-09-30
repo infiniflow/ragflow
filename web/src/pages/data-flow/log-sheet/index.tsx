@@ -6,8 +6,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
+import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
 import {
   ArrowUpRight,
   CirclePause,
@@ -41,7 +43,7 @@ export function LogSheet({
   const { t } = useTranslation();
 
   const { handleDownloadJson } = useDownloadOutput(logs);
-
+  const { navigateToDataflowResult } = useNavigatePage();
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
       <SheetContent
@@ -51,7 +53,20 @@ export function LogSheet({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2.5">
             <Logs className="size-4" /> {t('flow.log')}
-            <Button variant={'ghost'} disabled={!isCompleted}>
+            <Button
+              variant={'ghost'}
+              disabled={!isCompleted}
+              onClick={navigateToDataflowResult({
+                id: 'cfc28d6c9c4911f088bf047c16ec874f', // 'log_id',
+                [PipelineResultSearchParams.AgentId]:
+                  'cfc28d6c9c4911f088bf047c16ec874f', // 'agent_id',
+                [PipelineResultSearchParams.DocumentId]:
+                  '05b0e19a9d9d11f0b674047c16ec874f', //'doc_id',
+                [PipelineResultSearchParams.AgentTitle]: 'full', //'title',
+                [PipelineResultSearchParams.IsReadOnly]: 'true',
+                [PipelineResultSearchParams.Type]: 'dataflow',
+              })}
+            >
               {t('dataflow.viewResult')} <ArrowUpRight />
             </Button>
           </SheetTitle>

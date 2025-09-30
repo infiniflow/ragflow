@@ -1,22 +1,8 @@
 import { CheckedState } from '@radix-ui/react-checkbox';
-import { ChunkTextMode } from '../../constant';
-import { ArrayContainer, parserKeyMap } from './json-parser';
+import { FormatPreserveEditorProps } from './interface';
+import { ArrayContainer } from './json-parser';
 import { ObjectContainer } from './object-parser';
-interface FormatPreserveEditorProps {
-  initialValue: {
-    key: keyof typeof parserKeyMap | 'text' | 'html';
-    type: string;
-    value: Array<{ [key: string]: string }>;
-  };
-  onSave: (value: any) => void;
-  className?: string;
-  isSelect?: boolean;
-  isDelete?: boolean;
-  isChunck?: boolean;
-  handleCheckboxClick?: (id: string | number, checked: boolean) => void;
-  selectedChunkIds?: string[];
-  textMode?: ChunkTextMode;
-}
+
 const FormatPreserveEditor = ({
   initialValue,
   onSave,
@@ -25,6 +11,8 @@ const FormatPreserveEditor = ({
   handleCheckboxClick,
   selectedChunkIds,
   textMode,
+  clickChunk,
+  isReadonly,
 }: FormatPreserveEditorProps) => {
   console.log('initialValue', initialValue);
 
@@ -42,6 +30,7 @@ const FormatPreserveEditor = ({
     <div className="editor-container">
       {['json', 'chunks'].includes(initialValue.key) && (
         <ArrayContainer
+          isReadonly={isReadonly}
           className={className}
           initialValue={initialValue}
           handleCheck={handleCheck}
@@ -51,11 +40,13 @@ const FormatPreserveEditor = ({
           unescapeNewlines={unescapeNewlines}
           textMode={textMode}
           isChunck={isChunck}
+          clickChunk={clickChunk}
         />
       )}
 
       {['text', 'html'].includes(initialValue.key) && (
         <ObjectContainer
+          isReadonly={isReadonly}
           className={className}
           initialValue={initialValue}
           handleCheck={handleCheck}
@@ -65,6 +56,7 @@ const FormatPreserveEditor = ({
           unescapeNewlines={unescapeNewlines}
           textMode={textMode}
           isChunck={isChunck}
+          clickChunk={clickChunk}
         />
       )}
     </div>

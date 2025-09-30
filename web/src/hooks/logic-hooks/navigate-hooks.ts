@@ -1,3 +1,4 @@
+import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'umi';
@@ -19,6 +20,13 @@ export const useNavigatePage = () => {
   const navigateToDataset = useCallback(
     (id: string) => () => {
       navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
+    },
+    [navigate],
+  );
+
+  const navigateToDataFile = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.DatasetBase}${Routes.DatasetBase}/${id}`);
     },
     [navigate],
   );
@@ -133,10 +141,16 @@ export const useNavigatePage = () => {
   );
 
   const navigateToDataflowResult = useCallback(
-    (id: string, knowledgeId: string, doc_id?: string) => () => {
+    (props: NavigateToDataflowResultProps) => () => {
+      let params: string[] = [];
+      Object.keys(props).forEach((key) => {
+        if (props[key]) {
+          params.push(`${key}=${props[key]}`);
+        }
+      });
       navigate(
         // `${Routes.ParsedResult}/${id}?${QueryStringMap.KnowledgeId}=${knowledgeId}`,
-        `${Routes.DataflowResult}?id=${id}&doc_id=${doc_id}&${QueryStringMap.KnowledgeId}=${knowledgeId}&type=dataflow`,
+        `${Routes.DataflowResult}?${params.join('&')}`,
       );
     },
     [navigate],
@@ -163,5 +177,6 @@ export const useNavigatePage = () => {
     navigateToOldProfile,
     navigateToDataflowResult,
     navigateToDataflow,
+    navigateToDataFile,
   };
 };

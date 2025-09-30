@@ -210,6 +210,10 @@ const methods = {
     url: traceRaptor,
     method: 'get',
   },
+  pipelineRerun: {
+    url: api.pipelineRerun,
+    method: 'post',
+  },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);

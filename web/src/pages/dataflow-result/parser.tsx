@@ -10,17 +10,28 @@ import FormatPreserEditor from './components/parse-editer';
 import RerunButton from './components/rerun-button';
 import { TimelineNodeType } from './constant';
 import { useChangeChunkTextMode } from './hooks';
-import { IDslComponent } from './interface';
+import { IChunk, IDslComponent } from './interface';
 interface IProps {
+  isReadonly: boolean;
   isChange: boolean;
   setIsChange: (isChange: boolean) => void;
   step?: TimelineNode;
   data: { value: IDslComponent; key: string };
   reRunLoading: boolean;
+  clickChunk: (chunk: IChunk) => void;
   reRunFunc: (data: { value: IDslComponent; key: string }) => void;
 }
 const ParserContainer = (props: IProps) => {
-  const { isChange, setIsChange, step, data, reRunFunc, reRunLoading } = props;
+  const {
+    isChange,
+    setIsChange,
+    step,
+    data,
+    reRunFunc,
+    reRunLoading,
+    clickChunk,
+    isReadonly,
+  } = props;
   const { t } = useTranslation();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
@@ -83,13 +94,13 @@ const ParserContainer = (props: IProps) => {
       initialText.value = initialText.value.filter(
         (item: any, index: number) => !selectedChunkIds.includes(index + ''),
       );
+      setIsChange(true);
       setSelectedChunkIds([]);
     }
-  }, [selectedChunkIds, initialText]);
+  }, [selectedChunkIds, initialText, setIsChange]);
 
   const handleCheckboxClick = useCallback(
     (id: string | number, checked: boolean) => {
-      console.log('handleCheckboxClick', id, checked, selectedChunkIds);
       setSelectedChunkIds((prev) => {
         if (checked) {
           return [...prev, id.toString()];
@@ -116,20 +127,18 @@ const ParserContainer = (props: IProps) => {
 
   const handleCreateChunk = useCallback(
     (text: string) => {
-      console.log('handleCreateChunk', text);
       const newText = [...initialText.value, { text: text || ' ' }];
       setInitialText({
         ...initialText,
         value: newText,
       });
-      console.log('newText', newText, initialText);
     },
     [initialText],
   );
 
   return (
     <>
-      {isChange && (
+      {isChange && !isReadonly && (
         <div className=" absolute top-2 right-6">
           <RerunButton
             step={step}
@@ -163,13 +172,16 @@ const ParserContainer = (props: IProps) => {
 
         {isChunck && (
           <div className="pt-[5px] pb-[5px] flex justify-between items-center">
-            <CheckboxSets
-              selectAllChunk={selectAllChunk}
-              removeChunk={handleRemoveChunk}
-              checked={selectedChunkIds.length === initialText.value.length}
-              selectedChunkIds={selectedChunkIds}
-            />
+            {!isReadonly && (
+              <CheckboxSets
+                selectAllChunk={selectAllChunk}
+                removeChunk={handleRemoveChunk}
+                checked={selectedChunkIds.length === initialText.value.length}
+                selectedChunkIds={selectedChunkIds}
+              />
+            )}
             <ChunkResultBar
+              isReadonly={isReadonly}
               changeChunkTextMode={changeChunkTextMode}
               createChunk={handleCreateChunk}
             />
@@ -189,15 +201,14 @@ const ParserContainer = (props: IProps) => {
             <FormatPreserEditor
               initialValue={initialText}
               onSave={handleSave}
-              // className={
-              //   initialText.key !== 'json' ? '!h-[calc(100vh-220px)]' : ''
-              // }
+              isReadonly={isReadonly}
               isChunck={isChunck}
               textMode={textMode}
               isDelete={
                 step?.type === TimelineNodeType.characterSplitter ||
                 step?.type === TimelineNodeType.titleSplitter
               }
+              clickChunk={clickChunk}
               handleCheckboxClick={handleCheckboxClick}
               selectedChunkIds={selectedChunkIds}
             />

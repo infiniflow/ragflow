@@ -7,28 +7,17 @@ import { ChunkTextMode } from '../../constant';
 interface ChunkResultBarProps {
   changeChunkTextMode: React.Dispatch<React.SetStateAction<string | number>>;
   createChunk: (text: string) => void;
+  isReadonly: boolean;
 }
-export default ({ changeChunkTextMode, createChunk }: ChunkResultBarProps) => {
+export default ({
+  changeChunkTextMode,
+  createChunk,
+  isReadonly,
+}: ChunkResultBarProps) => {
   const { t } = useTranslate('chunk');
   const [textSelectValue, setTextSelectValue] = useState<string | number>(
     ChunkTextMode.Full,
   );
-  // const handleFilterChange = (e: string | number) => {
-  //   const value = e === -1 ? undefined : (e as number);
-  //   selectAllChunk(false);
-  //   handleSetAvailable(value);
-  // };
-  // const filterContent = (
-  //   <div className="w-[200px]">
-  //     <Radio.Group onChange={handleFilterChange} value={available}>
-  //       <div className="flex flex-col gap-2 p-4">
-  //         <Radio value={-1}>{t('all')}</Radio>
-  //         <Radio value={1}>{t('enabled')}</Radio>
-  //         <Radio value={0}>{t('disabled')}</Radio>
-  //       </div>
-  //     </Radio.Group>
-  //   </div>
-  // );
   const textSelectOptions = [
     { label: t(ChunkTextMode.Full), value: ChunkTextMode.Full },
     { label: t(ChunkTextMode.Ellipse), value: ChunkTextMode.Ellipse },
@@ -57,31 +46,15 @@ export default ({ changeChunkTextMode, createChunk }: ChunkResultBarProps) => {
           </div>
         ))}
       </div>
-      {/* <Input
-        className="bg-bg-card text-muted-foreground"
-        style={{ width: 200 }}
-        placeholder={t('search')}
-        icon={<SearchOutlined />}
-        onChange={handleInputChange}
-        value={searchString}
-      />
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button className="bg-bg-card text-muted-foreground hover:bg-card">
-            <ListFilter />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="p-0 w-[200px]">
-          {filterContent}
-        </PopoverContent>
-      </Popover> */}
-      <Button
-        onClick={() => createChunk('')}
-        variant={'secondary'}
-        className="bg-bg-card text-muted-foreground hover:bg-card"
-      >
-        <Plus size={44} />
-      </Button>
+      {!isReadonly && (
+        <Button
+          onClick={() => createChunk('')}
+          variant={'secondary'}
+          className="bg-bg-card text-muted-foreground hover:bg-card"
+        >
+          <Plus size={44} />
+        </Button>
+      )}
     </div>
   );
 };

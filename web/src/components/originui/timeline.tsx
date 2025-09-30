@@ -246,7 +246,7 @@ const CustomTimeline = ({
   orientation = 'horizontal',
   lineStyle = 'solid',
   lineColor = 'var(--text-secondary)',
-  indicatorColor = 'var(--accent-primary)',
+  indicatorColor = 'rgb(var(--accent-primary))',
   defaultValue = 1,
   className,
   activeStyle,

@@ -39,7 +39,9 @@ function InnerButtonEdge({
     targetPosition,
   });
   const selectedStyle = useMemo(() => {
-    return selected ? { strokeWidth: 1, stroke: 'var(--accent-primary)' } : {};
+    return selected
+      ? { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' }
+      : {};
   }, [selected]);
 
   const onEdgeClick = () => {
@@ -56,7 +58,7 @@ function InnerButtonEdge({
       let index = idx - 1;
       while (index >= 0) {
         if (path[index] === source) {
-          return { strokeWidth: 1, stroke: 'var(--accent-primary)' };
+          return { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' };
         }
         index--;
       }

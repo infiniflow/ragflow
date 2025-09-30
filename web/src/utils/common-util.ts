@@ -174,6 +174,32 @@ export function parseColorToRGB(color: string): [number, number, number] {
     colorStr = getCSSVariableValue(varName);
   }
 
+  // Handle rgb(var(--accent-primary)) format
+  if (colorStr.startsWith('rgb(var(')) {
+    const varMatch = colorStr.match(/rgb\(var\(([^)]+)\)\)/);
+    if (!varMatch) {
+      console.error(`Invalid nested CSS variable: ${color}`);
+      return [0, 0, 0];
+    }
+    const varName = varMatch[1];
+    if (!varName) {
+      console.error(`Invalid nested CSS variable: ${colorStr}`);
+      return [0, 0, 0];
+    }
+    // Get the CSS variable value which should be in format "r, g, b"
+    const rgbValues = getCSSVariableValue(varName);
+    const rgbMatch = rgbValues.match(/^(\d+),?\s*(\d+),?\s*(\d+)$/);
+    if (rgbMatch) {
+      return [
+        parseInt(rgbMatch[1]),
+        parseInt(rgbMatch[2]),
+        parseInt(rgbMatch[3]),
+      ];
+    }
+    console.error(`Unsupported RGB CSS variable format: ${rgbValues}`);
+    return [0, 0, 0];
+  }
+
   // Handles hexadecimal colors (e.g. #FF5733)
   if (colorStr.startsWith('#')) {
     const cleanedHex = colorStr.replace(/^#/, '');

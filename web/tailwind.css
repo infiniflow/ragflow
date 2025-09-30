@@ -116,8 +116,10 @@
     /* Output Variables Box */
     --bg-accent: rgba(76, 164, 231, 0.05);
 
-    --state-success: #3ba05c;
-    --state-warning: #faad14;
+    /* --state-success: #3ba05c; */
+    --state-success: 59 160 92;
+    /* --state-warning: #767573; */
+    --state-warning: 118 117 115;
     --state-error: 216 73 75;
 
     --team-group: #5ab77e;

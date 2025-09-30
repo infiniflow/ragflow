@@ -14,6 +14,8 @@ import {
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
+import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
   ColumnDef,
@@ -41,9 +43,7 @@ export const getFileLogsTableColumns = (
   showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
   kowledgeId: string,
   navigateToDataflowResult: (
-    id: string,
-    knowledgeId: string,
-    doc_id?: string,
+    props: NavigateToDataflowResultProps,
   ) => () => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
@@ -165,18 +165,23 @@ export const getFileLogsTableColumns = (
           >
             <Eye />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="p-1"
-            onClick={navigateToDataflowResult(
-              row.original.id,
-              kowledgeId,
-              row.original.document_id,
-            )}
-          >
-            <ClipboardList />
-          </Button>
+          {row.original.pipeline_id && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="p-1"
+              onClick={navigateToDataflowResult({
+                id: row.original.id,
+                [PipelineResultSearchParams.KnowledgeId]: kowledgeId,
+                [PipelineResultSearchParams.DocumentId]:
+                  row.original.document_id,
+                [PipelineResultSearchParams.IsReadOnly]: 'false',
+                [PipelineResultSearchParams.Type]: 'dataflow',
+              })}
+            >
+              <ClipboardList />
+            </Button>
+          )}
         </div>
       ),
     },
@@ -371,6 +376,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       ? Math.ceil(pagination.total / pagination.pageSize)
       : 0,
   });
+
   return (
     <div className="w-full h-[calc(100vh-360px)]">
       <Table rootClassName="max-h-[calc(100vh-380px)]">
