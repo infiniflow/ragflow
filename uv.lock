@@ -4854,9 +4854,9 @@ wheels = [
 
 [[package]]
 name = "pyicu"
-version = "2.15.2"
+version = "2.15.3"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/9f/57/9db810ab75133a1c87ac2e327fb59199d78d233f575fbb63bfd3492b769c/pyicu-2.15.2.tar.gz", hash = "sha256:561e77eedff17cec6839f26211f7a5ce3c071b776e8a0ec9d1207f46cbce598f" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/88/b0/c8b61bac55424e2ff80e20d7251c3f002baff3c07c34cee3849e3505d8f5/pyicu-2.15.3.tar.gz", hash = "sha256:f32e78e1cb64d0aeb14f027e037a8944861d3114548818a6adf0081ef51aefc3" }
 
 [[package]]
 name = "pyjwt"
@@ -5514,7 +5514,7 @@ requires-dist = [
     { name = "psycopg2-binary", specifier = "==2.9.9" },
     { name = "pyclipper", specifier = "==1.3.0.post5" },
     { name = "pycryptodomex", specifier = "==3.20.0" },
-    { name = "pyicu", specifier = ">=2.13.1,<3.0.0" },
+    { name = "pyicu", specifier = ">=2.15.3,<3.0.0" },
     { name = "pymysql", specifier = ">=1.1.1,<2.0.0" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypdf", specifier = "==6.0.0" },
