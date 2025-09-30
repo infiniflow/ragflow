@@ -91,6 +91,20 @@ class RedisDB:
         if self.REDIS.get(a) == b:
             return True
 
+    def info(self):
+        info = self.REDIS.info()
+        return {
+            'redis_version': info["redis_version"],
+            'server_mode': info["server_mode"],
+            'used_memory': info["used_memory_human"],
+            'total_system_memory': info["total_system_memory_human"],
+            'mem_fragmentation_ratio': info["mem_fragmentation_ratio"],
+            'connected_clients': info["connected_clients"],
+            'blocked_clients': info["blocked_clients"],
+            'instantaneous_ops_per_sec': info["instantaneous_ops_per_sec"],
+            'total_commands_processed': info["total_commands_processed"]
+        }
+
     def is_alive(self):
         return self.REDIS is not None
 

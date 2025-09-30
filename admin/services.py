@@ -7,6 +7,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.crypt import decrypt
+from api.utils import health_utils
 from api.common.exceptions import AdminException, UserAlreadyExistsError, UserNotFoundError
 from config import SERVICE_CONFIGS
 
@@ -164,7 +165,22 @@ class ServiceMgr:
 
     @staticmethod
     def get_service_details(service_id: int):
-        raise AdminException("get_service_details: not implemented")
+        service_id = int(service_id)
+        configs = SERVICE_CONFIGS.configs
+        service_config_mapping = {
+            c.id: {
+                'name': c.name,
+                'detail_func_name': c.detail_func_name
+            } for c in configs
+        }
+        service_info = service_config_mapping.get(service_id, {})
+        if not service_info:
+            raise AdminException(f"Invalid service_id: {service_id}")
+
+        detail_func = getattr(health_utils, service_info.get('detail_func_name'))
+        res = detail_func()
+        res.update({'service_name': service_info.get('name')})
+        return res
 
     @staticmethod
     def shutdown_service(service_id: int):

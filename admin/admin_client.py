@@ -390,6 +390,22 @@ class AdminCLI:
         service_id: int = command['number']
         print(f"Showing service: {service_id}")
 
+        url = f'http://{self.host}:{self.port}/api/v1/admin/services/{service_id}'
+        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        res_json = response.json()
+        if response.status_code == 200:
+            res_data = res_json['data']
+            if res_data['alive']:
+                print(f"Service {res_data['service_name']} is alive. Detail:")
+                if isinstance(res_data['message'], str):
+                    print(res_data['message'])
+                else:
+                    self._print_table_simple(res_data['message'])
+            else:
+                print(f"Service {res_data['service_name']} is down. Detail: {res_data['message']}")
+        else:
+            print(f"Fail to show service, code: {res_json['code']}, message: {res_json['message']}")
+
     def _handle_restart_service(self, command):
         service_id: int = command['number']
         print(f"Restart service {service_id}")
