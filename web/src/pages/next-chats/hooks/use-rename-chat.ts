@@ -68,6 +68,8 @@ export const useRenameChat = () => {
     (record?: IDialog) => {
       if (record) {
         setChat(record);
+      } else {
+        setChat({} as IDialog);
       }
       showChatRenameModal();
     },
