@@ -1,3 +1,4 @@
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -32,6 +33,7 @@ const useFetchFileLogList = () => {
   const [searchParams] = useSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const { id } = useParams();
   const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
     LogTabs.FILE_LOGS,
@@ -48,6 +50,7 @@ const useFetchFileLogList = () => {
       pagination,
       searchString,
       active,
+      filterValue,
     ],
     placeholderData: (previousData) => {
       if (previousData === undefined) {
@@ -57,13 +60,16 @@ const useFetchFileLogList = () => {
     },
     enabled: true,
     queryFn: async () => {
-      const { data: res = {} } = await fetchFunc({
-        kb_id: knowledgeBaseId,
-        page: pagination.current,
-        page_size: pagination.pageSize,
-        keywords: searchString,
-        // order_by: '',
-      });
+      const { data: res = {} } = await fetchFunc(
+        {
+          kb_id: knowledgeBaseId,
+          page: pagination.current,
+          page_size: pagination.pageSize,
+          keywords: searchString,
+          // order_by: '',
+        },
+        { ...filterValue },
+      );
       return res.data || [];
     },
   });
@@ -82,6 +88,8 @@ const useFetchFileLogList = () => {
     setPagination,
     active,
     setActive,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 

@@ -1,10 +1,12 @@
+import { FilterCollection } from '@/components/list-filter-bar/interface';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { parseColorToRGBA } from '@/utils/common-util';
+import { t } from 'i18next';
 import { CircleQuestionMark } from 'lucide-react';
 import { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { RunningStatus, RunningStatusMap } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
 import { useFetchFileLogList, useFetchOverviewTital } from './hook';
@@ -15,6 +17,10 @@ interface StatCardProps {
   value: number;
   icon: JSX.Element;
   children?: JSX.Element;
+}
+interface CardFooterProcessProps {
+  success: number;
+  failed: number;
 }
 
 const StatCard: FC<StatCardProps> = ({ title, value, children, icon }) => {
@@ -35,10 +41,6 @@ const StatCard: FC<StatCardProps> = ({ title, value, children, icon }) => {
   );
 };
 
-interface CardFooterProcessProps {
-  success: number;
-  failed: number;
-}
 const CardFooterProcess: FC<CardFooterProcessProps> = ({
   success = 0,
   failed = 0,
@@ -47,12 +49,7 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
   return (
     <div className="flex items-center flex-col gap-2">
       <div className="w-full flex justify-between gap-4 rounded-lg text-sm font-bold text-text-primary">
-        <div
-          className="flex items-center justify-between  rounded-md w-1/2 p-2"
-          style={{
-            backgroundColor: `${parseColorToRGBA('var(--state-success)', 0.05)}`,
-          }}
-        >
+        <div className="flex items-center justify-between  rounded-md w-1/2 p-2 bg-state-success-5">
           <div className="flex items-center rounded-lg gap-1">
             <div className="w-2 h-2 rounded-full bg-state-success"></div>
             <div>{t('knowledgeDetails.success')}</div>
@@ -70,6 +67,35 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
     </div>
   );
 };
+
+const filters = [
+  {
+    field: 'operation_status',
+    label: t('knowledgeDetails.status'),
+    list: Object.values(RunningStatus).map((value) => {
+      // const value = key as RunningStatus;
+      console.log(value);
+      return {
+        id: value,
+        label: RunningStatusMap[value].label,
+      };
+    }),
+  },
+  {
+    field: 'types',
+    label: t('knowledgeDetails.task'),
+    list: [
+      {
+        id: 'Parse',
+        label: 'Parse',
+      },
+      {
+        id: 'Download',
+        label: 'Download',
+      },
+    ],
+  },
+];
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
 
@@ -89,12 +115,11 @@ const FileLogsPage: FC = () => {
       failed: 0,
     },
   });
-
   const { data: topData } = useFetchOverviewTital();
   const {
     pagination: { total: fileTotal },
   } = useFetchDocumentList();
-  console.log('topData --> ', topData);
+
   useEffect(() => {
     setTopAllData((prev) => {
       return {
@@ -127,6 +152,8 @@ const FileLogsPage: FC = () => {
     pagination,
     setPagination,
     active,
+    filterValue,
+    handleFilterSubmit,
     setActive,
   } = useFetchFileLogList();
 
@@ -156,6 +183,7 @@ const FileLogsPage: FC = () => {
   };
 
   const isDark = useIsDarkTheme();
+
   return (
     <div className="p-5 min-w-[880px] border-border border rounded-lg mr-5">
       {/* Stats Cards */}
@@ -215,10 +243,13 @@ const FileLogsPage: FC = () => {
 
       {/* Tabs & Search */}
       <DatasetFilter
+        filters={filters as FilterCollection[]}
+        value={filterValue}
         active={active}
         setActive={changeActiveLogs}
         searchString={searchString}
         onSearchChange={handleInputChange}
+        onChange={handleFilterSubmit}
       />
 
       {/* Table */}

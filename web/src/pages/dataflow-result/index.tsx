@@ -5,6 +5,7 @@ import DocumentPreview from './components/document-preview';
 import {
   useFetchPipelineFileLogDetail,
   useGetChunkHighlights,
+  useGetPipelineResultSearchParams,
   useHandleChunkCardClick,
   useRerunDataflow,
   useTimelineDataFlow,
@@ -25,10 +26,7 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
-import {
-  QueryStringMap,
-  useNavigatePage,
-} from '@/hooks/logic-hooks/navigate-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
 import TimelineDataFlow from './components/time-line';
@@ -38,22 +36,29 @@ import { IDslComponent } from './interface';
 import ParserContainer from './parser';
 
 const Chunk = () => {
+  const { isReadOnly, knowledgeId, agentId, agentTitle } =
+    useGetPipelineResultSearchParams();
+
   const {
     data: { documentInfo },
   } = useFetchNextChunkList();
-  const { selectedChunkId } = useHandleChunkCardClick();
+  const { selectedChunk, handleChunkCardClick } = useHandleChunkCardClick();
   const [activeStepId, setActiveStepId] = useState<number | string>(2);
   const { data: dataset } = useFetchPipelineFileLogDetail();
   const { t } = useTranslation();
 
   const { timelineNodes } = useTimelineDataFlow(dataset);
 
-  const { navigateToDataset, getQueryString, navigateToDatasetList } =
-    useNavigatePage();
+  const {
+    navigateToDataset,
+    navigateToDatasetList,
+    navigateToAgents,
+    navigateToDataflow,
+  } = useNavigatePage();
   const fileUrl = useGetDocumentUrl();
 
   const { highlights, setWidthAndHeight } =
-    useGetChunkHighlights(selectedChunkId);
+    useGetChunkHighlights(selectedChunk);
 
   const fileType = useMemo(() => {
     switch (documentInfo?.type) {
@@ -77,6 +82,7 @@ const Chunk = () => {
   } = useRerunDataflow({
     data: dataset,
   });
+
   const handleStepChange = (id: number | string, step: TimelineNode) => {
     if (isChange) {
       Modal.show({
@@ -135,18 +141,32 @@ const Chunk = () => {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToDatasetList}>
-                {t('knowledgeDetails.dataset')}
+              <BreadcrumbLink
+                onClick={() => {
+                  if (knowledgeId) {
+                    navigateToDatasetList();
+                  }
+                  if (agentId) {
+                    navigateToAgents();
+                  }
+                }}
+              >
+                {knowledgeId ? t('knowledgeDetails.dataset') : t('header.flow')}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbLink
-                onClick={navigateToDataset(
-                  getQueryString(QueryStringMap.KnowledgeId) as string,
-                )}
+                onClick={() => {
+                  if (knowledgeId) {
+                    navigateToDataset(knowledgeId)();
+                  }
+                  if (agentId) {
+                    navigateToDataflow(agentId)();
+                  }
+                }}
               >
-                {t('knowledgeDetails.overview')}
+                {knowledgeId ? t('knowledgeDetails.overview') : agentTitle}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -194,8 +214,10 @@ const Chunk = () => {
             {/* {currentTimeNode?.type === TimelineNodeType.parser && ( */}
             {(currentTimeNode?.type === TimelineNodeType.parser ||
               currentTimeNode?.type === TimelineNodeType.characterSplitter ||
-              currentTimeNode?.type === TimelineNodeType.titleSplitter) && (
+              currentTimeNode?.type === TimelineNodeType.titleSplitter ||
+              currentTimeNode?.type === TimelineNodeType.contextGenerator) && (
               <ParserContainer
+                isReadonly={isReadOnly}
                 isChange={isChange}
                 reRunLoading={reRunLoading}
                 setIsChange={setIsChange}
@@ -206,6 +228,7 @@ const Chunk = () => {
                     key: string;
                   }
                 }
+                clickChunk={handleChunkCardClick}
                 reRunFunc={handleReRunFunc}
               />
             )}

@@ -83,8 +83,8 @@ const TimelineDataFlow = ({
           nodeSize={24}
           activeStyle={{
             nodeSize: 30,
-            iconColor: 'var(--accent-primary)',
-            textColor: 'var(--accent-primary)',
+            iconColor: 'rgb(var(--accent-primary))',
+            textColor: 'rgb(var(--accent-primary))',
           }}
         />
       </div>

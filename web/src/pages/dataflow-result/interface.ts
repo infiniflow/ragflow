@@ -1,3 +1,5 @@
+import { PipelineResultSearchParams } from './constant';
+
 interface ComponentParams {
   debug_inputs: Record<string, any>;
   delay_after_error: number;
@@ -59,4 +61,20 @@ export interface IPipelineFileLogDetail {
   tenant_id: string;
   update_date: string;
   update_time: number;
+}
+
+export interface IChunk {
+  positions: number[][];
+  image_id: string;
+  text: string;
+}
+
+export interface NavigateToDataflowResultProps {
+  id: string;
+  [PipelineResultSearchParams.KnowledgeId]?: string;
+  [PipelineResultSearchParams.DocumentId]: string;
+  [PipelineResultSearchParams.AgentId]?: string;
+  [PipelineResultSearchParams.AgentTitle]?: string;
+  [PipelineResultSearchParams.IsReadOnly]?: string;
+  [PipelineResultSearchParams.Type]: string;
 }

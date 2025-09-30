@@ -1,37 +1,16 @@
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { CheckedState } from '@radix-ui/react-checkbox';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from '../../index.less';
+import { useParserInit } from './hook';
+import { IJsonContainerProps } from './interface';
 export const parserKeyMap = {
   json: 'text',
-  chunks: 'content_with_weight',
+  chunks: 'text',
 };
-type IProps = {
-  initialValue: {
-    key: keyof typeof parserKeyMap;
-    type: string;
-    value: {
-      [key: string]: string;
-    }[];
-  };
-  isChunck?: boolean;
-  handleCheck: (e: CheckedState, index: number) => void;
-  selectedChunkIds: string[] | undefined;
-  unescapeNewlines: (text: string) => string;
-  escapeNewlines: (text: string) => string;
-  onSave: (data: {
-    value: {
-      text: string;
-    }[];
-    key: string;
-    type: string;
-  }) => void;
-  className?: string;
-  textMode?: ChunkTextMode;
-};
-export const ArrayContainer = (props: IProps) => {
+
+export const ArrayContainer = (props: IJsonContainerProps) => {
   const {
     initialValue,
     isChunck,
@@ -42,29 +21,27 @@ export const ArrayContainer = (props: IProps) => {
     onSave,
     className,
     textMode,
+    clickChunk,
+    isReadonly,
   } = props;
 
-  const [content, setContent] = useState(initialValue);
+  const {
+    content,
+    setContent,
+    activeEditIndex,
+    setActiveEditIndex,
+    editDivRef,
+  } = useParserInit({ initialValue });
 
-  useEffect(() => {
-    setContent(initialValue);
-    console.log('initialValue json parse', initialValue);
-  }, [initialValue]);
-
-  const [activeEditIndex, setActiveEditIndex] = useState<number | undefined>(
-    undefined,
-  );
-  const editDivRef = useRef<HTMLDivElement>(null);
   const handleEdit = useCallback(
     (e?: any, index?: number) => {
-      console.log(e, e.target.innerText);
       setContent((pre) => ({
         ...pre,
         value: pre.value.map((item, i) => {
           if (i === index) {
             return {
               ...item,
-              [parserKeyMap[content.key]]: e.target.innerText,
+              [parserKeyMap[content.key]]: unescapeNewlines(e.target.innerText),
             };
           }
           return item;
@@ -76,14 +53,13 @@ export const ArrayContainer = (props: IProps) => {
   );
   const handleSave = useCallback(
     (e: any) => {
-      console.log(e, e.target.innerText);
       const saveData = {
         ...content,
         value: content.value?.map((item, index) => {
           if (index === activeEditIndex) {
             return {
               ...item,
-              [parserKeyMap[content.key]]: unescapeNewlines(e.target.innerText),
+              [parserKeyMap[content.key]]: e.target.innerText,
             };
           } else {
             return item;
@@ -99,8 +75,9 @@ export const ArrayContainer = (props: IProps) => {
   useEffect(() => {
     if (activeEditIndex !== undefined && editDivRef.current) {
       editDivRef.current.focus();
-      editDivRef.current.textContent =
-        content.value[activeEditIndex][parserKeyMap[content.key]];
+      editDivRef.current.textContent = escapeNewlines(
+        content.value[activeEditIndex][parserKeyMap[content.key]],
+      );
     }
   }, [activeEditIndex, content]);
 
@@ -119,7 +96,7 @@ export const ArrayContainer = (props: IProps) => {
                 : ''
             }
           >
-            {isChunck && (
+            {isChunck && !isReadonly && (
               <Checkbox
                 onCheckedChange={(e) => {
                   handleCheck(e, index);
@@ -132,16 +109,8 @@ export const ArrayContainer = (props: IProps) => {
             {activeEditIndex === index && (
               <div
                 ref={editDivRef}
-                contentEditable={true}
+                contentEditable={!isReadonly}
                 onBlur={handleSave}
-                //   onKeyUp={handleChange}
-                // dangerouslySetInnerHTML={{
-                //   __html: DOMPurify.sanitize(
-                //     escapeNewlines(
-                //       content.value[index][parserKeyMap[content.key]],
-                //     ),
-                //   ),
-                // }}
                 className={cn(
                   'w-full bg-transparent text-text-secondary border-none focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none p-0',
                   className,
@@ -159,7 +128,10 @@ export const ArrayContainer = (props: IProps) => {
                 )}
                 key={index}
                 onClick={(e) => {
-                  handleEdit(e, index);
+                  clickChunk(item);
+                  if (!isReadonly) {
+                    handleEdit(e, index);
+                  }
                 }}
               >
                 {escapeNewlines(item[parserKeyMap[content.key]])}

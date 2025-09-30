@@ -1,24 +1,10 @@
 import { cn } from '@/lib/utils';
-import { CheckedState } from '@radix-ui/react-checkbox';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from '../../index.less';
-
-type IProps = {
-  initialValue: {
-    key: string;
-    type: string;
-    value: string;
-  };
-  isChunck?: boolean;
-  handleCheck: (e: CheckedState, index: number) => void;
-  unescapeNewlines: (text: string) => string;
-  escapeNewlines: (text: string) => string;
-  onSave: (data: { value: string; key: string; type: string }) => void;
-  className?: string;
-  textMode?: ChunkTextMode;
-};
-export const ObjectContainer = (props: IProps) => {
+import { useParserInit } from './hook';
+import { IObjContainerProps } from './interface';
+export const ObjectContainer = (props: IObjContainerProps) => {
   const {
     initialValue,
     isChunck,
@@ -27,36 +13,34 @@ export const ObjectContainer = (props: IProps) => {
     onSave,
     className,
     textMode,
+    clickChunk,
+    isReadonly,
   } = props;
 
-  const [content, setContent] = useState(initialValue);
+  const {
+    content,
+    setContent,
+    activeEditIndex,
+    setActiveEditIndex,
+    editDivRef,
+  } = useParserInit({ initialValue });
 
-  useEffect(() => {
-    setContent(initialValue);
-    console.log('initialValue object parse', initialValue);
-  }, [initialValue]);
-
-  const [activeEditIndex, setActiveEditIndex] = useState<number | undefined>(
-    undefined,
-  );
-  const editDivRef = useRef<HTMLDivElement>(null);
   const handleEdit = useCallback(
     (e?: any) => {
-      console.log(e, e.target.innerText);
       setContent((pre) => ({
         ...pre,
-        value: e.target.innerText,
+        value: escapeNewlines(e.target.innerText),
       }));
       setActiveEditIndex(1);
     },
     [setContent, setActiveEditIndex],
   );
+
   const handleSave = useCallback(
     (e: any) => {
-      console.log(e, e.target.innerText);
       const saveData = {
         ...content,
-        value: unescapeNewlines(e.target.innerText),
+        value: e.target.innerText,
       };
       onSave(saveData);
       setActiveEditIndex(undefined);
@@ -83,7 +67,7 @@ export const ObjectContainer = (props: IProps) => {
         {activeEditIndex && (
           <div
             ref={editDivRef}
-            contentEditable={true}
+            contentEditable={!isReadonly}
             onBlur={handleSave}
             className={cn(
               'w-full bg-transparent text-text-secondary border-none focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none p-0',
@@ -100,7 +84,10 @@ export const ObjectContainer = (props: IProps) => {
               },
             )}
             onClick={(e) => {
-              handleEdit(e);
+              clickChunk(content);
+              if (!isReadonly) {
+                handleEdit(e);
+              }
             }}
           >
             {escapeNewlines(content.value)}

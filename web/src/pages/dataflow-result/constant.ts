@@ -9,6 +9,15 @@ export enum TimelineNodeType {
   contextGenerator = 'extractor',
   titleSplitter = 'hierarchicalMerger',
   characterSplitter = 'splitter',
-  tokenizer = 'indexer',
+  tokenizer = 'tokenizer',
   end = 'end',
+}
+
+export enum PipelineResultSearchParams {
+  DocumentId = 'doc_id',
+  KnowledgeId = 'knowledgeId',
+  Type = 'type',
+  IsReadOnly = 'is_read_only',
+  AgentId = 'agent_id',
+  AgentTitle = 'agent_title',
 }
