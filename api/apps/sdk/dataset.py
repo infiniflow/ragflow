@@ -491,7 +491,7 @@ def knowledge_graph(tenant_id,dataset_id):
     obj = {"graph": {}, "mind_map": {}}
     if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), dataset_id):
         return get_result(data=obj)
-    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [dataset_id])
+    sres = settings.retriever.search(req, search.index_name(kb.tenant_id), [dataset_id])
     if not len(sres.ids):
         return get_result(data=obj)
 

@@ -386,7 +386,7 @@ async def build_chunks(task, progress_callback):
         examples = []
         all_tags = get_tags_from_cache(kb_ids)
         if not all_tags:
-            all_tags = settings.retrievaler.all_tags_in_portion(tenant_id, kb_ids, S)
+            all_tags = settings.retriever.all_tags_in_portion(tenant_id, kb_ids, S)
             set_tags_to_cache(kb_ids, all_tags)
         else:
             all_tags = json.loads(all_tags)
@@ -399,7 +399,7 @@ async def build_chunks(task, progress_callback):
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
                 return
-            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
+            if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
                 docs_to_tag.append(d)
@@ -495,7 +495,7 @@ async def run_dataflow(dsl:str, tenant_id:str, doc_id:str, task_id:str, flow_id:
 async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
-    for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
+    for d in settings.retriever.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
                                              fields=["content_with_weight", vctr_nm]):
         chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
 

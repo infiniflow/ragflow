@@ -55,7 +55,7 @@ def retrieval(tenant_id):
         print("doc_ids",doc_ids)
         if not doc_ids and metadata_condition is not None:
             doc_ids = ['-999']
-        ranks = settings.retrievaler.retrieval(
+        ranks = settings.retriever.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,
@@ -70,7 +70,7 @@ def retrieval(tenant_id):
         )
 
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question,
+            ck = settings.kg_retriever.retrieval(question,
                                                    [tenant_id],
                                                    [kb_id],
                                                    embd_mdl,
