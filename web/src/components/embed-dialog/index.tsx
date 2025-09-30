@@ -236,32 +236,33 @@ function EmbedDialog({
           <div>
             <span>{t('embedCode', { keyPrefix: 'search' })}</span>
             <HightLightMarkdown>{text}</HightLightMarkdown>
-          <div className="max-h-[350px] overflow-auto">
-            <span>{t('embedCode', { keyPrefix: 'search' })}</span>
-            <div className="max-h-full overflow-y-auto">
-              <HightLightMarkdown>{text}</HightLightMarkdown>
-            </div>
+              <div className="max-h-[350px] overflow-auto">
+                <span>{t('embedCode', { keyPrefix: 'search' })}</span>
+                <div className="max-h-full overflow-y-auto">
+                  <HightLightMarkdown>{text}</HightLightMarkdown>
+                </div>
+              </div>
+              <div className=" font-medium mt-4 mb-1">
+                {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
+                <span className="ml-1 inline-block">ID</span>
+              </div>
+              <div className="bg-bg-card rounded-lg flex justify-between p-2">
+                <span>{token} </span>
+                <CopyToClipboard text={token}></CopyToClipboard>
+              </div>
+              <a
+                className="cursor-pointer text-accent-primary inline-block"
+                href={
+                  isAgent
+                    ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-agent'
+                    : 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-chat-assistant'
+                }
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t('howUseId', { keyPrefix: isAgent ? 'flow' : 'chat' })}
+              </a>
           </div>
-          <div className=" font-medium mt-4 mb-1">
-            {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
-            <span className="ml-1 inline-block">ID</span>
-          </div>
-          <div className="bg-bg-card rounded-lg flex justify-between p-2">
-            <span>{token} </span>
-            <CopyToClipboard text={token}></CopyToClipboard>
-          </div>
-          <a
-            className="cursor-pointer text-accent-primary inline-block"
-            href={
-              isAgent
-                ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-agent'
-                : 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-chat-assistant'
-            }
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t('howUseId', { keyPrefix: isAgent ? 'flow' : 'chat' })}
-          </a>
         </section>
       </DialogContent>
     </Dialog>
