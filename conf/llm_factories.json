@@ -3534,6 +3534,13 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "claude-sonnet-4-5-20250929",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "claude-sonnet-4-20250514",
                     "tags": "LLM,CHAT,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
