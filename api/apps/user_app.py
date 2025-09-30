@@ -105,9 +105,7 @@ def login():
             code=settings.RetCode.FORBIDDEN,
             message="This account has been disabled, please contact the administrator!",
         )
-
-
-    if user:
+    elif user:
         response_data = user.to_json()
         user.access_token = get_uuid()
         login_user(user)
@@ -236,6 +234,9 @@ def oauth_callback(channel):
         # User exists, try to log in
         user = users[0]
         user.access_token = get_uuid()
+        if user and hasattr(user, 'is_active') and user.is_active == "0":
+            return redirect("/?error=user_inactive")
+
         login_user(user)
         user.save()
         return redirect(f"/?auth={user.get_id()}")
@@ -326,6 +327,8 @@ def github_callback():
     # User has already registered, try to log in
     user = users[0]
     user.access_token = get_uuid()
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
     login_user(user)
     user.save()
     return redirect("/?auth=%s" % user.get_id())
@@ -427,6 +430,8 @@ def feishu_callback():
 
     # User has already registered, try to log in
     user = users[0]
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
     user.access_token = get_uuid()
     login_user(user)
     user.save()
