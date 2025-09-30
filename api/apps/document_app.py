@@ -577,7 +577,7 @@ def change_parser():
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     try:
-        if req.get("pipeline_id"):
+        if "pipeline_id" in req:
             if doc.pipeline_id == req["pipeline_id"]:
                 return get_json_result(data=True)
             DocumentService.update_by_id(doc.id, {"pipeline_id": req["pipeline_id"]})
