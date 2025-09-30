@@ -28,7 +28,7 @@ from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
-from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES
+from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES, VALID_TASK_STATUS
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
@@ -453,7 +453,7 @@ def list_pipeline_logs():
 
     operation_status = req.get("operation_status", [])
     if operation_status:
-        invalid_status = {s for s in operation_status if s not in ["success", "failed", "running", "pending"]}
+        invalid_status = {s for s in operation_status if s not in VALID_TASK_STATUS}
         if invalid_status:
             return get_data_error_result(message=f"Invalid filter operation_status status conditions: {', '.join(invalid_status)}")
 
@@ -495,7 +495,7 @@ def list_pipeline_dataset_logs():
 
     operation_status = req.get("operation_status", [])
     if operation_status:
-        invalid_status = {s for s in operation_status if s not in ["success", "failed", "running", "pending"]}
+        invalid_status = {s for s in operation_status if s not in VALID_TASK_STATUS}
         if invalid_status:
             return get_data_error_result(message=f"Invalid filter operation_status status conditions: {', '.join(invalid_status)}")
 

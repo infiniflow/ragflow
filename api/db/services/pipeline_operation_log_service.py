@@ -176,7 +176,7 @@ class PipelineOperationLogService(CommonService):
         with DB.atomic():
             obj = cls.save(**log)
 
-            limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1))
+            limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1000))
             total = cls.model.select().where(cls.model.kb_id == document.kb_id).count()
 
             if total > limit:

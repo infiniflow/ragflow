@@ -440,9 +440,7 @@ def list_canvas():
         desc = False
     else:
         desc = True
-    owner_ids = request.args.get("owner_ids", [])
-    if owner_ids and isinstance(owner_ids, str):
-        owner_ids = [owner_ids]
+    owner_ids = [id for id in request.args.get("owner_ids", "").strip().split(",") if id]
     if not owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
         tenants = [m["tenant_id"] for m in tenants]
