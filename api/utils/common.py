@@ -38,7 +38,6 @@ def convert_bytes(size_in_bytes: int) -> str:
         size /= 1024
         i += 1
 
-    # 根据大小决定小数位数
     if i == 0 or size >= 100:
         return f"{size:.0f} {units[i]}"
     elif size >= 10:

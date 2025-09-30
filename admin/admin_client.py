@@ -402,7 +402,7 @@ class AdminCLI:
                 else:
                     self._print_table_simple(res_data['message'])
             else:
-                print(f"Service {res_data['service_name']} is down, detail: {res_data['message']}")
+                print(f"Service {res_data['service_name']} is down. Detail: {res_data['message']}")
         else:
             print(f"Fail to show service, code: {res_json['code']}, message: {res_json['message']}")
 
