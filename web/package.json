@@ -62,7 +62,7 @@
     "@xyflow/react": "^12.3.6",
     "ahooks": "^3.7.10",
     "antd": "^5.12.7",
-    "axios": "^1.6.3",
+    "axios": "^1.12.0",
     "class-variance-authority": "^0.7.0",
     "classnames": "^2.5.1",
     "clsx": "^2.1.1",
