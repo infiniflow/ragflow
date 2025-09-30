@@ -127,16 +127,8 @@ const routes = [
     component: '@/pages/file-manager',
   },
   {
-    path: '/flow',
-    component: '@/pages/flow/list',
-  },
-  {
     path: Routes.AgentList,
     component: `@/pages/${Routes.Agents}`,
-  },
-  {
-    path: '/flow/:id',
-    component: '@/pages/flow',
   },
   {
     path: '/search',
