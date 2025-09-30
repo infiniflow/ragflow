@@ -36,7 +36,7 @@ from zhipuai import ZhipuAI
 
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
-from rag.utils import num_tokens_from_string
+from rag.utils import num_tokens_from_string, total_token_count_from_response
 
 
 # Error message constants
@@ -143,9 +143,10 @@ class Base(ABC):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
+
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
-        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+        if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
@@ -155,10 +156,12 @@ class Base(ABC):
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
+
         if kwargs.get("stop") or "stop" in gen_conf:
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
         else:
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+
         for resp in response:
             if not resp.choices:
                 continue
@@ -190,21 +193,30 @@ class Base(ABC):
             return ans + LENGTH_NOTIFICATION_CN
         return ans + LENGTH_NOTIFICATION_EN
 
-    def _exceptions(self, e, attempt):
+    @property
+    def _retryable_errors(self) -> set[str]:
+        return {
+            LLMErrorCode.ERROR_RATE_LIMIT,
+            LLMErrorCode.ERROR_SERVER,
+        }
+
+    def _should_retry(self, error_code: str) -> bool:
+        return error_code in self._retryable_errors
+
+    def _exceptions(self, e, attempt) -> str | None:
         logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
         if attempt == self.max_retries:
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
-        # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
-        if not should_retry:
-            return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        if self._should_retry(error_code):
+            delay = self._get_delay()
+            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            time.sleep(delay)
+            return None
 
-        delay = self._get_delay()
-        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
-        time.sleep(delay)
+        return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
@@ -445,15 +457,7 @@ class Base(ABC):
         yield total_tokens
 
     def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
+        return total_token_count_from_response(resp)
 
     def _calculate_dynamic_ctx(self, history):
         """Calculate dynamic context window size"""
@@ -540,6 +544,14 @@ class AzureChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
         self.model_name = model_name
+
+    @property
+    def _retryable_errors(self) -> set[str]:
+        return {
+            LLMErrorCode.ERROR_RATE_LIMIT,
+            LLMErrorCode.ERROR_SERVER,
+            LLMErrorCode.ERROR_QUOTA,
+        }
 
 
 class BaiChuanChat(Base):
@@ -629,6 +641,10 @@ class ZhipuChat(Base):
     def _clean_conf(self, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
+        gen_conf = self._clean_conf_plealty(gen_conf)
+        return gen_conf
+
+    def _clean_conf_plealty(self, gen_conf):
         if "presence_penalty" in gen_conf:
             del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf:
@@ -636,22 +652,14 @@ class ZhipuChat(Base):
         return gen_conf
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict):
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
+        gen_conf = self._clean_conf_plealty(gen_conf)
 
         return super().chat_with_tools(system, history, gen_conf)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
+        gen_conf = self._clean_conf(gen_conf)
         ans = ""
         tk_count = 0
         try:
@@ -677,11 +685,7 @@ class ZhipuChat(Base):
         yield tk_count
 
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict):
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
-
+        gen_conf = self._clean_conf_plealty(gen_conf)
         return super().chat_streamly_with_tools(system, history, gen_conf)
 
 
@@ -858,6 +862,7 @@ class MistralChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf={}, **kwargs):
+        gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
@@ -870,9 +875,7 @@ class MistralChat(Base):
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
+        gen_conf = self._clean_conf(gen_conf)
         ans = ""
         total_tokens = 0
         try:
@@ -1302,10 +1305,6 @@ class LiteLLMBase(ABC):
         "302.AI",
     ]
 
-    import litellm
-
-    litellm._turn_on_debug()
-
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
         self.provider = kwargs.get("provider", "")
@@ -1429,21 +1428,30 @@ class LiteLLMBase(ABC):
             return ans + LENGTH_NOTIFICATION_CN
         return ans + LENGTH_NOTIFICATION_EN
 
-    def _exceptions(self, e, attempt):
+    @property
+    def _retryable_errors(self) -> set[str]:
+        return {
+            LLMErrorCode.ERROR_RATE_LIMIT,
+            LLMErrorCode.ERROR_SERVER,
+        }
+
+    def _should_retry(self, error_code: str) -> bool:
+        return error_code in self._retryable_errors
+
+    def _exceptions(self, e, attempt) -> str | None:
         logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
         if attempt == self.max_retries:
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
-        # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
-        if not should_retry:
-            return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        if self._should_retry(error_code):
+            delay = self._get_delay()
+            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            time.sleep(delay)
+            return None
 
-        delay = self._get_delay()
-        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
-        time.sleep(delay)
+        return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"

@@ -13,7 +13,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 This quick start guide describes a general process from:
 
 - Starting up a local RAGFlow server, 
-- Creating a knowledge base, 
+- Creating a dataset, 
 - Intervening with file parsing, to 
 - Establishing an AI chat based on your datasets.
 
@@ -280,29 +280,29 @@ To add and configure an LLM:
 
 > Some models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a specific LLM. And you may need to update your API key to access these models. 
 
-## Create your first knowledge base
+## Create your first dataset
 
-You are allowed to upload files to a knowledge base in RAGFlow and parse them into datasets. A knowledge base is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular knowledge base or multiple knowledge bases. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD, MDX), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
+You are allowed to upload files to a dataset in RAGFlow and parse them into datasets. A dataset is virtually a collection of datasets. Question answering in RAGFlow can be based on a particular dataset or multiple datasets. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD, MDX), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
 
-To create your first knowledge base:
+To create your first dataset:
 
 1. Click the **Dataset** tab in the top middle of the page **>** **Create dataset**.
 
-2. Input the name of your knowledge base and click **OK** to confirm your changes.
+2. Input the name of your dataset and click **OK** to confirm your changes.
 
-   _You are taken to the **Configuration** page of your knowledge base._
+   _You are taken to the **Configuration** page of your dataset._
 
-   ![knowledge base configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_knowledge_base.jpg)
+   ![dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_knowledge_base.jpg)
 
-3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your knowledge base. 
+3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your dataset. 
 
 :::danger IMPORTANT 
-Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
+Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific dataset are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
 :::
 
-   _You are taken to the **Dataset** page of your knowledge base._
+   _You are taken to the **Dataset** page of your dataset._
 
-4. Click **+ Add file** **>** **Local files** to start uploading a particular file to the knowledge base. 
+4. Click **+ Add file** **>** **Local files** to start uploading a particular file to the dataset. 
 
 5. In the uploaded file entry, click the play button to start file parsing:
 
@@ -341,17 +341,17 @@ You can add keywords or questions to a file chunk to improve its ranking for que
 
 ## Set up an AI chat
 
-Conversations in RAGFlow are based on a particular knowledge base or multiple knowledge bases. Once you have created your knowledge base and finished file parsing, you can go ahead and start an AI conversation.
+Conversations in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset and finished file parsing, you can go ahead and start an AI conversation.
 
 1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue *of your next dialogue*.
    > RAGFlow offer the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
 2. Update **Assistant settings**:
 
-   - Name your assistant and specify your knowledge bases.
+   - Name your assistant and specify your datasets.
    - **Empty response**:
-     - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
-     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations.
+     - If you wish to *confine* RAGFlow's answers to your datasets, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
+     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your datasets, leave it blank, which may give rise to hallucinations.
 
 3. Update **Prompt engine** or leave it as is for the beginning.
 

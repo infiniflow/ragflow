@@ -63,7 +63,7 @@ class GoogleScholarParam(ToolParamBase):
 class GoogleScholar(ToolBase, ABC):
     component_name = "GoogleScholar"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")

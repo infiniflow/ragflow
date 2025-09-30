@@ -7,6 +7,8 @@ import DocumentPreviewer from '../pdf-previewer';
 interface IProps extends IModalProps<any> {
   documentId: string;
   chunk: IChunk | IReferenceChunk;
+  width?: string | number;
+  height?: string | number;
 }
 
 export const PdfDrawer = ({
@@ -14,13 +16,16 @@ export const PdfDrawer = ({
   hideModal,
   documentId,
   chunk,
+  width = '50vw',
+  height,
 }: IProps) => {
   return (
     <Drawer
       title="Document Previewer"
       onClose={hideModal}
       open={visible}
-      width={'50vw'}
+      width={width}
+      height={height}
     >
       <DocumentPreviewer
         documentId={documentId}

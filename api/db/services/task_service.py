@@ -316,6 +316,12 @@ class TaskService(CommonService):
         process_duration = (datetime.now() - task.begin_at).total_seconds()
         cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
 
+    @classmethod
+    @DB.connection_context()
+    def delete_by_doc_ids(cls, doc_ids):
+        """Delete task associated with a document."""
+        return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
+
 
 def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """Create and queue document processing tasks.

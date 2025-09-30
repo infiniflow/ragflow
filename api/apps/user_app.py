@@ -34,7 +34,6 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from api.utils import (
     current_timestamp,
     datetime_format,
-    decrypt,
     download_img,
     get_format_time,
     get_uuid,
@@ -46,6 +45,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.crypt import decrypt
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -98,7 +98,14 @@ def login():
         return get_json_result(data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
-    if user:
+
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return get_json_result(
+            data=False,
+            code=settings.RetCode.FORBIDDEN,
+            message="This account has been disabled, please contact the administrator!",
+        )
+    elif user:
         response_data = user.to_json()
         user.access_token = get_uuid()
         login_user(user)
@@ -227,6 +234,9 @@ def oauth_callback(channel):
         # User exists, try to log in
         user = users[0]
         user.access_token = get_uuid()
+        if user and hasattr(user, 'is_active') and user.is_active == "0":
+            return redirect("/?error=user_inactive")
+
         login_user(user)
         user.save()
         return redirect(f"/?auth={user.get_id()}")
@@ -317,6 +327,8 @@ def github_callback():
     # User has already registered, try to log in
     user = users[0]
     user.access_token = get_uuid()
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
     login_user(user)
     user.save()
     return redirect("/?auth=%s" % user.get_id())
@@ -418,6 +430,8 @@ def feishu_callback():
 
     # User has already registered, try to log in
     user = users[0]
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
     user.access_token = get_uuid()
     login_user(user)
     user.save()

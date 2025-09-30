@@ -18,7 +18,7 @@ import logging
 import time
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db import CanvasCategory
+from api.db import CanvasCategory, TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
@@ -63,7 +63,38 @@ class UserCanvasService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_id(cls, pid):
+    def get_all_agents_by_tenant_ids(cls, tenant_ids, user_id):
+        # will get all permitted agents, be cautious
+        fields = [
+            cls.model.id,
+            cls.model.title,
+            cls.model.permission,
+            cls.model.canvas_type,
+            cls.model.canvas_category
+        ]
+        # find team agents and owned agents
+        agents = cls.model.select(*fields).where(
+            (cls.model.user_id.in_(tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (
+                cls.model.user_id == user_id
+            )
+        )
+        # sort by create_time, asc
+        agents.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 50
+        res = []
+        while True:
+            ag_batch = agents.offset(offset).limit(limit)
+            _temp = list(ag_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_canvas_id(cls, pid):
         try:
 
             fields = [
@@ -138,7 +169,7 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def accessible(cls, canvas_id, tenant_id):
         from api.db.services.user_service import UserTenantService
-        e, c = UserCanvasService.get_by_tenant_id(canvas_id)
+        e, c = UserCanvasService.get_by_canvas_id(canvas_id)
         if not e:
             return False
 

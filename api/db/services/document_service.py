@@ -245,6 +245,46 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_doc_ids_by_kb_ids(cls, kb_ids):
+        fields = [cls.model.id]
+        docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
+        docs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 100
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(limit)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_docs_by_creator_id(cls, creator_id):
+        fields = [
+            cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id
+        ]
+        docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.created_by == creator_id
+        )
+        docs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 100
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(limit)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
@@ -517,9 +557,6 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_doc_id_by_doc_name(cls, doc_name):
-        """
-        highly rely on the strict deduplication guarantee from Document
-        """
         fields = [cls.model.id]
         doc_id = cls.model.select(*fields) \
             .where(cls.model.name == doc_name)
@@ -681,8 +718,16 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_kb_doc_count(cls, kb_id):
-        return len(cls.model.select(cls.model.id).where(
-            cls.model.kb_id == kb_id).dicts())
+        return cls.model.select().where(cls.model.kb_id == kb_id).count()
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_kb_doc_count(cls):
+        result = {}
+        rows = cls.model.select(cls.model.kb_id, fn.COUNT(cls.model.id).alias('count')).group_by(cls.model.kb_id)
+        for row in rows:
+            result[row.kb_id] = row.count
+        return result
 
     @classmethod
     @DB.connection_context()

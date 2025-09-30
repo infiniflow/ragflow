@@ -27,7 +27,7 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
 from api.utils import get_uuid, hash_str2int
-from rag.prompts.prompts import chunks_format
+from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 
 class Graph:
@@ -490,7 +490,8 @@ class Canvas(Graph):
 
         r = self.retrieval[-1]
         for ck in chunks_format({"chunks": chunks}):
-            cid = hash_str2int(ck["id"], 100)
+            cid = hash_str2int(ck["id"], 500)
+            # cid = uuid.uuid5(uuid.NAMESPACE_DNS, ck["id"])
             if cid not in r:
                 r["chunks"][cid] = ck
 

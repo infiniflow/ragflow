@@ -23,6 +23,11 @@ class StatusEnum(Enum):
     INVALID = "0"
 
 
+class ActiveEnum(Enum):
+    ACTIVE = "1"
+    INACTIVE = "0"
+
+
 class UserTenantRole(StrEnum):
     OWNER = 'owner'
     ADMIN = 'admin'
@@ -111,7 +116,7 @@ class CanvasCategory(StrEnum):
     Agent = "agent_canvas"
     DataFlow = "dataflow_canvas"
 
-VALID_CAVAS_CATEGORIES = {CanvasCategory.Agent, CanvasCategory.DataFlow}
+VALID_CANVAS_CATEGORIES = {CanvasCategory.Agent, CanvasCategory.DataFlow}
 
 
 class MCPServerType(StrEnum):
