@@ -337,14 +337,12 @@ class Parser(ProcessBase):
 
         self.set_output("text", txt)
 
-    def _audio(self, from_upstream: ParserFromUpstream):
+    def _audio(self, name, blob):
         import os
         import tempfile
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an audio.")
 
-        blob = from_upstream.blob
-        name = from_upstream.name
         conf = self._param.setups["audio"]
         self.set_output("output_format", conf["output_format"])
 
@@ -360,11 +358,8 @@ class Parser(ProcessBase):
 
             self.set_output("text", txt)
 
-    def _email(self, from_upstream: ParserFromUpstream):
+    def _email(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an email.")
-
-        blob = from_upstream.blob
-        name = from_upstream.name
 
         email_content = {}
         conf = self._param.setups["email"]
