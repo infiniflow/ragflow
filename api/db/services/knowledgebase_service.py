@@ -261,7 +261,7 @@ class KnowledgebaseService(CommonService):
             cls.model.chunk_num,
             cls.model.parser_id,
             cls.model.pipeline_id,
-            UserCanvas.title,
+            UserCanvas.title.alias("pipeline_name"),
             UserCanvas.avatar.alias("pipeline_avatar"),
             cls.model.parser_config,
             cls.model.pagerank,
