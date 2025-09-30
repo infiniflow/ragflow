@@ -27,6 +27,7 @@ export const useConnectionDrag = (
   ) => { x: number; y: number },
   removePlaceholderNode: () => void,
   clearActiveDropdown: () => void,
+  checkAndRemoveExistingPlaceholder: () => void,
 ) => {
   // Reference for whether connection is established
   const isConnectedRef = useRef(false);
@@ -87,6 +88,10 @@ export const useConnectionDrag = (
             mouseStartPosRef.current = null;
             return;
           }
+
+          // Check and remove existing placeholder-node before creating new one
+          checkAndRemoveExistingPlaceholder();
+
           // Create placeholder node and establish connection
           const mockEvent = { clientX, clientY };
           const contextData = {
@@ -147,6 +152,7 @@ export const useConnectionDrag = (
       setActiveDropdown,
       showModal,
       setHighlightedPlaceholderEdgeId,
+      checkAndRemoveExistingPlaceholder,
     ],
   );
 

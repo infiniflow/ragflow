@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { Operator } from '../constant';
 import useGraphStore from '../store';
 
 /**
@@ -10,6 +11,46 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
   const createdPlaceholderRef = useRef<string | null>(null);
   // Flag indicating whether user has selected a node
   const userSelectedNodeRef = useRef(false);
+
+  /**
+   * Check if placeholder node exists and remove it if found
+   * Ensures only one placeholder can exist on the panel
+   */
+  const checkAndRemoveExistingPlaceholder = useCallback(() => {
+    const { nodes, edges } = useGraphStore.getState();
+
+    // Find existing placeholder node
+    const existingPlaceholder = nodes.find(
+      (node) => node.data?.label === Operator.Placeholder,
+    );
+
+    if (existingPlaceholder && reactFlowInstance) {
+      // Remove edges related to placeholder
+      const edgesToRemove = edges.filter(
+        (edge) =>
+          edge.target === existingPlaceholder.id ||
+          edge.source === existingPlaceholder.id,
+      );
+
+      // Remove placeholder node
+      const nodesToRemove = [existingPlaceholder];
+
+      if (nodesToRemove.length > 0 || edgesToRemove.length > 0) {
+        reactFlowInstance.deleteElements({
+          nodes: nodesToRemove,
+          edges: edgesToRemove,
+        });
+      }
+
+      // Clear highlighted placeholder edge
+      useGraphStore.getState().setHighlightedPlaceholderEdgeId(null);
+
+      // Update ref reference
+      if (createdPlaceholderRef.current === existingPlaceholder.id) {
+        createdPlaceholderRef.current = null;
+      }
+    }
+  }, [reactFlowInstance]);
 
   /**
    * Function to remove placeholder node
@@ -146,6 +187,7 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
     onNodeCreated,
     setCreatedPlaceholderRef,
     resetUserSelectedFlag,
+    checkAndRemoveExistingPlaceholder,
     createdPlaceholderRef: createdPlaceholderRef.current,
     userSelectedNodeRef: userSelectedNodeRef.current,
   };
