@@ -3,7 +3,7 @@ import uuid
 from functools import wraps
 from flask import request, jsonify
 
-from exceptions import AdminException
+from api.common.exceptions import AdminException
 from api.db.init_data import encode_to_base64
 from api.db.services import UserService
 

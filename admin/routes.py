@@ -3,7 +3,7 @@ from flask import Blueprint, request
 from auth import login_verify
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr
-from exceptions import AdminException
+from api.common.exceptions import AdminException
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
