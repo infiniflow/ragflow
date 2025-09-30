@@ -84,6 +84,9 @@ export const useConnectionDrag = (
           }
 
           if (isHandleClick) {
+            removePlaceholderNode();
+            hideModal();
+            clearActiveDropdown();
             connectionStartRef.current = null;
             mouseStartPosRef.current = null;
             return;
@@ -153,6 +156,9 @@ export const useConnectionDrag = (
       showModal,
       setHighlightedPlaceholderEdgeId,
       checkAndRemoveExistingPlaceholder,
+      removePlaceholderNode,
+      hideModal,
+      clearActiveDropdown,
     ],
   );
 
