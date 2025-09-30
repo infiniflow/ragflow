@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import DocumentPreview from './components/document-preview';
 import {
   useFetchPipelineFileLogDetail,
+  useFetchPipelineResult,
   useGetChunkHighlights,
   useGetPipelineResultSearchParams,
   useHandleChunkCardClick,
@@ -26,28 +27,38 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import { Images } from '@/constants/common';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
 import TimelineDataFlow from './components/time-line';
 import { TimelineNodeType } from './constant';
 import styles from './index.less';
-import { IDslComponent } from './interface';
+import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
 const Chunk = () => {
-  const { isReadOnly, knowledgeId, agentId, agentTitle } =
+  const { isReadOnly, knowledgeId, agentId, agentTitle, documentExtension } =
     useGetPipelineResultSearchParams();
+
+  const isAgent = !!agentId;
+
+  const { pipelineResult } = useFetchPipelineResult({ agentId });
 
   const {
     data: { documentInfo },
-  } = useFetchNextChunkList();
+  } = useFetchNextChunkList(!isAgent);
+
   const { selectedChunk, handleChunkCardClick } = useHandleChunkCardClick();
   const [activeStepId, setActiveStepId] = useState<number | string>(2);
-  const { data: dataset } = useFetchPipelineFileLogDetail();
+  const { data: dataset } = useFetchPipelineFileLogDetail({
+    isAgent,
+  });
   const { t } = useTranslation();
 
-  const { timelineNodes } = useTimelineDataFlow(dataset);
+  const { timelineNodes } = useTimelineDataFlow(
+    agentId ? (pipelineResult as IPipelineFileLogDetail) : dataset,
+  );
 
   const {
     navigateToDataset,
@@ -55,12 +66,17 @@ const Chunk = () => {
     navigateToAgents,
     navigateToDataflow,
   } = useNavigatePage();
-  const fileUrl = useGetDocumentUrl();
+  let fileUrl = useGetDocumentUrl(isAgent);
 
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunk);
 
   const fileType = useMemo(() => {
+    if (isAgent) {
+      return Images.some((x) => x === documentExtension)
+        ? 'visual'
+        : documentExtension;
+    }
     switch (documentInfo?.type) {
       case 'doc':
         return documentInfo?.name.split('.').pop() || 'doc';
@@ -72,7 +88,7 @@ const Chunk = () => {
         return documentInfo?.type;
     }
     return 'unknown';
-  }, [documentInfo]);
+  }, [documentExtension, documentInfo?.name, documentInfo?.type, isAgent]);
 
   const {
     handleReRunFunc,

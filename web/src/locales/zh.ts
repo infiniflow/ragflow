@@ -1500,6 +1500,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
+      chooseAgentType: '选择智能体类型',
     },
     footer: {
       profile: 'All rights reserved @ React',

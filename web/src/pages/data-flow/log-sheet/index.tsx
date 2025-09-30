@@ -7,6 +7,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import 'react18-json-view/src/style.css';
+import { useParams } from 'umi';
 import {
   isEndOutputEmpty,
   useDownloadOutput,
@@ -27,9 +29,10 @@ import { DataflowTimeline } from './dataflow-timeline';
 
 type LogSheetProps = IModalProps<any> & {
   handleCancel(): void;
+  uploadedFileData?: Record<string, any>;
 } & Pick<
     UseFetchLogReturnType,
-    'isCompleted' | 'isLogEmpty' | 'isParsing' | 'logs'
+    'isCompleted' | 'isLogEmpty' | 'isParsing' | 'logs' | 'messageId'
   >;
 
 export function LogSheet({
@@ -39,11 +42,16 @@ export function LogSheet({
   handleCancel,
   isCompleted,
   isLogEmpty,
+  messageId,
+  uploadedFileData,
 }: LogSheetProps) {
   const { t } = useTranslation();
+  const { id } = useParams();
+  const { data: agent } = useFetchAgent();
 
   const { handleDownloadJson } = useDownloadOutput(logs);
   const { navigateToDataflowResult } = useNavigatePage();
+
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
       <SheetContent
@@ -57,14 +65,16 @@ export function LogSheet({
               variant={'ghost'}
               disabled={!isCompleted}
               onClick={navigateToDataflowResult({
-                id: 'cfc28d6c9c4911f088bf047c16ec874f', // 'log_id',
-                [PipelineResultSearchParams.AgentId]:
-                  'cfc28d6c9c4911f088bf047c16ec874f', // 'agent_id',
-                [PipelineResultSearchParams.DocumentId]:
-                  '05b0e19a9d9d11f0b674047c16ec874f', //'doc_id',
-                [PipelineResultSearchParams.AgentTitle]: 'full', //'title',
+                id: messageId, // 'log_id',
+                [PipelineResultSearchParams.AgentId]: id, // 'agent_id',
+                [PipelineResultSearchParams.DocumentId]: uploadedFileData?.id, //'doc_id',
+                [PipelineResultSearchParams.AgentTitle]: agent.title, //'title',
                 [PipelineResultSearchParams.IsReadOnly]: 'true',
                 [PipelineResultSearchParams.Type]: 'dataflow',
+                [PipelineResultSearchParams.CreatedBy]:
+                  uploadedFileData?.created_by,
+                [PipelineResultSearchParams.DocumentExtension]:
+                  uploadedFileData?.extension,
               })}
             >
               {t('dataflow.viewResult')} <ArrowUpRight />
