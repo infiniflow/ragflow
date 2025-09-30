@@ -290,9 +290,9 @@ export default {
       linkDataPipeline: 'Link Data Pipeline',
       enableAutoGenerate: 'Enable Auto Generate',
       teamPlaceholder: 'Please select a team.',
-      dataFlowPlaceholder: 'Please select a data flow.',
+      dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
-      dataFlow: 'Data Flow',
+      dataFlow: 'Pipeline',
       parseType: 'Parse Type',
       manualSetup: 'Manual Setup',
       builtIn: 'Built-in',
@@ -420,7 +420,7 @@ export default {
 <p>In a Tag column, <b>comma</b> is used to separate tags.</p>
 <i>Lines of texts that fail to follow the above rules will be ignored.</i>
 `,
-      useRaptor: 'Use RAPTOR to enhance retrieval',
+      useRaptor: 'RAPTOR',
       useRaptorTip:
         'Enable RAPTOR for multi-hop question-answering tasks. See https://ragflow.io/docs/dev/enable_raptor for details.',
       prompt: 'Prompt',
@@ -466,7 +466,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Add tag',
-      useGraphRag: 'Extract knowledge graph',
+      useGraphRag: 'Knowledge graph',
       useGraphRagTip:
         'Construct a knowledge graph over file chunks of the current knowledge base to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
       graphRagMethod: 'Method',
@@ -474,7 +474,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
-      community: 'Community reports generation',
+      community: 'Community reports',
       communityTip:
         'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted:
@@ -1790,6 +1790,13 @@ Important structured information may include: names, dates, locations, events, k
         questions: 'Questions',
         summary: 'Augmented Context',
       },
+    },
+    datasetOverview: {
+      downloadTip: 'Files being downloaded from data sources. ',
+      processingTip: 'Files being processed by data flows.',
+      totalFiles: 'Total Files',
+      downloading: 'Downloading',
+      processing: 'Processing',
     },
   },
 };

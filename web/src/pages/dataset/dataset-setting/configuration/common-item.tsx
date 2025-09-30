@@ -42,7 +42,7 @@ export function ChunkMethodItem(props: IProps) {
                 'w-1/4 whitespace-pre-wrap': line === 1,
               })}
             >
-              {t('chunkMethod')}
+              {t('dataPipeline')}
             </FormLabel>
             <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
               <FormControl>

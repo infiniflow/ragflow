@@ -99,7 +99,7 @@ export function ParsingStatusCell({
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuItem onClick={handleShowChangeParserModal}>
-              {t('knowledgeDetails.chunkMethod')}
+              {t('knowledgeDetails.dataPipeline')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleShowSetMetaModal}>
               {t('knowledgeDetails.setMetaData')}

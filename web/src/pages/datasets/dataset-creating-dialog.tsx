@@ -1,3 +1,4 @@
+import { DataFlowSelect } from '@/components/data-pipeline-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -18,11 +19,10 @@ import { Input } from '@/components/ui/input';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-
-import { DataFlowSelect } from '@/components/data-pipeline-select';
 import {
   ChunkMethodItem,
   EmbeddingModelItem,
@@ -95,6 +95,13 @@ export function InputForm({ onOk }: IModalProps<any>) {
     control: form.control,
     name: 'parseType',
   });
+
+  useEffect(() => {
+    console.log('parseType', parseType);
+    if (parseType === 1) {
+      form.setValue('pipeline_id', '');
+    }
+  }, [parseType, form]);
   const { navigateToAgents } = useNavigatePage();
 
   return (

@@ -25,22 +25,19 @@ export const ObjectContainer = (props: IObjContainerProps) => {
     editDivRef,
   } = useParserInit({ initialValue });
 
-  const handleEdit = useCallback(
-    (e?: any) => {
-      setContent((pre) => ({
-        ...pre,
-        value: escapeNewlines(e.target.innerText),
-      }));
-      setActiveEditIndex(1);
-    },
-    [setContent, setActiveEditIndex],
-  );
+  const handleEdit = useCallback(() => {
+    // setContent((pre) => ({
+    //   ...pre,
+    //   value: escapeNewlines(e.target.innerText),
+    // }));
+    setActiveEditIndex(1);
+  }, [setContent, setActiveEditIndex]);
 
   const handleSave = useCallback(
     (e: any) => {
       const saveData = {
         ...content,
-        value: e.target.innerText,
+        value: e.target.textContent,
       };
       onSave(saveData);
       setActiveEditIndex(undefined);
@@ -51,9 +48,9 @@ export const ObjectContainer = (props: IObjContainerProps) => {
   useEffect(() => {
     if (activeEditIndex !== undefined && editDivRef.current) {
       editDivRef.current.focus();
-      editDivRef.current.textContent = escapeNewlines(content.value);
+      editDivRef.current.textContent = content.value;
     }
-  }, [activeEditIndex, content, escapeNewlines]);
+  }, [activeEditIndex, content]);
 
   return (
     <>
@@ -90,7 +87,7 @@ export const ObjectContainer = (props: IObjContainerProps) => {
               }
             }}
           >
-            {escapeNewlines(content.value)}
+            {content.value}
           </div>
         )}
       </section>

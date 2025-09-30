@@ -75,7 +75,7 @@ export function DataFlowSelect(props: IProps) {
                 tooltip={t('dataFlowTip')}
                 className="text-sm text-text-primary whitespace-wrap "
               >
-                {t('dataFlow')}
+                {t('dataPipeline')}
               </FormLabel>
               {toDataPipeline && (
                 <div
