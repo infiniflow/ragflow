@@ -20,4 +20,6 @@ export enum PipelineResultSearchParams {
   IsReadOnly = 'is_read_only',
   AgentId = 'agent_id',
   AgentTitle = 'agent_title',
+  CreatedBy = 'created_by', // Who uploaded the file
+  DocumentExtension = 'extension',
 }

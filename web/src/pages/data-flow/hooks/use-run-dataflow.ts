@@ -13,7 +13,7 @@ export function useRunDataflow(
 ) {
   const { send } = useSendMessageBySSE(api.runCanvas);
   const { id } = useParams();
-  const { setMessageId } = useContext(LogContext);
+  const { setMessageId, setUploadedFileData } = useContext(LogContext);
 
   const { handleRun: saveGraph, loading } =
     useSaveGraphBeforeOpeningDebugDrawer(showLogSheet!);
@@ -32,7 +32,7 @@ export function useRunDataflow(
       if (res && res?.response.status === 200 && get(res, 'data.code') === 0) {
         // fetch canvas
         hideRunOrChatDrawer();
-
+        setUploadedFileData(fileResponseData.file);
         const msgId = get(res, 'data.data.message_id');
         if (msgId) {
           setMessageId(msgId);
@@ -43,7 +43,14 @@ export function useRunDataflow(
         message.error(get(res, 'data.message', ''));
       }
     },
-    [hideRunOrChatDrawer, id, saveGraph, send, setMessageId],
+    [
+      hideRunOrChatDrawer,
+      id,
+      saveGraph,
+      send,
+      setMessageId,
+      setUploadedFileData,
+    ],
   );
 
   return { run, loading: loading };

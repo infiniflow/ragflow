@@ -177,6 +177,7 @@ export default {
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
   prompt: `${api_host}/canvas/prompts`,
   cancelDataflow: (id: string) => `${api_host}/canvas/cancel/${id}`,
+  downloadFile: `${api_host}/canvas/download`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
