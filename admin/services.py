@@ -7,7 +7,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.crypt import decrypt
-from exceptions import AdminException, UserAlreadyExistsError, UserNotFoundError
+from api.common.exceptions import AdminException, UserAlreadyExistsError, UserNotFoundError
 from config import SERVICE_CONFIGS
 
 class UserMgr:
