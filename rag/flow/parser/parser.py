@@ -14,7 +14,6 @@
 #  limitations under the License.
 import io
 import json
-import logging
 import os
 import random
 from functools import partial
@@ -31,6 +30,7 @@ from api.utils import get_uuid
 from api.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
+from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
@@ -235,27 +235,21 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
         spreadsheet_parser = ExcelParser()
         if conf.get("output_format") == "html":
-            html = spreadsheet_parser.html(blob, 1000000000)
-            self.set_output("html", html)
+            htmls = spreadsheet_parser.html(blob, 1000000000)
+            self.set_output("html", htmls[0])
         elif conf.get("output_format") == "json":
             self.set_output("json", [{"text": txt} for txt in spreadsheet_parser(blob) if txt])
         elif conf.get("output_format") == "markdown":
             self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
     def _word(self, name, blob):
-        from tika import parser as word_parser
-
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
         conf = self._param.setups["word"]
         self.set_output("output_format", conf["output_format"])
-        doc_parsed = word_parser.from_buffer(blob)
-        sections = []
-        if doc_parsed.get("content"):
-            sections = doc_parsed["content"].split("\n")
-            sections = [{"text": section} for section in sections if section]
-        else:
-            logging.warning(f"tika.parser got empty content from {name}.")
-
+        docx_parser = Docx()
+        sections, tbls = docx_parser(name, binary=blob)
+        sections = [{"text": section[0], "image": section[1]} for section in sections if section]
+        sections.extend([{"text": tb, "image": None} for ((_,tb), _) in tbls])
         # json
         assert conf.get("output_format") == "json", "have to be json for doc"
         if conf.get("output_format") == "json":

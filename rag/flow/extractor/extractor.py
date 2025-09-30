@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import random
+from copy import deepcopy
 from agent.component.llm import LLMParam, LLM
 from rag.flow.base import ProcessBase, ProcessParamBase
 
@@ -40,7 +41,7 @@ class Extractor(ProcessBase, LLM):
         for k, v in inputs.items():
             args[k] = v["value"]
             if isinstance(args[k], list):
-                chunks = args[k]
+                chunks = deepcopy(args[k])
                 chunks_key = k
 
         if chunks:

@@ -122,18 +122,16 @@ export const useFetchAgentListByPage = () => {
     : [];
   const owner = filterValue.owner;
 
-  const requestParams = {
+  const requestParams: Record<string, any> = {
     keywords: debouncedSearchString,
     page_size: pagination.pageSize,
     page: pagination.current,
     canvas_category:
       canvasCategory.length === 1 ? canvasCategory[0] : undefined,
-    owner_ids: '',
   };
 
   if (Array.isArray(owner) && owner.length > 0) {
-    requestParams.owner_ids =
-      `${owner[0]}` + owner.slice(1).map((id) => `&owner_ids=${id}`);
+    requestParams.owner_ids = owner.join(',');
   }
 
   const { data, isFetching: loading } = useQuery<{

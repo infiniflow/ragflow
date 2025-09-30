@@ -12,6 +12,7 @@ import {
   ControlButton,
   Controls,
   NodeTypes,
+  OnConnectEnd,
   Position,
   ReactFlow,
   ReactFlowInstance,
@@ -36,12 +37,13 @@ import {
   useShowDrawer,
 } from '../hooks/use-show-drawer';
 import RunSheet from '../run-sheet';
+import useGraphStore from '../store';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
-import { ContextNode } from './node/context-node';
-import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { ExtractorNode } from './node/extractor-node';
 import { HierarchicalMergerNode } from './node/hierarchical-merger-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
@@ -56,7 +58,7 @@ export const nodeTypes: NodeTypes = {
   tokenizerNode: TokenizerNode,
   splitterNode: SplitterNode,
   hierarchicalMergerNode: HierarchicalMergerNode,
-  contextNode: ContextNode,
+  contextNode: ExtractorNode,
 };
 
 const edgeTypes = {
@@ -116,6 +118,7 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
   useHideFormSheetOnNodeDeletion({ hideFormDrawer });
 
   const { visible, hideModal, showModal } = useSetModalState();
+
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
 
   const isConnectedRef = useRef(false);
@@ -127,6 +130,8 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
   const preventCloseRef = useRef(false);
 
   const { setActiveDropdown, clearActiveDropdown } = useDropdownManager();
+
+  const { hasChildNode } = useGraphStore((state) => state);
 
   const onPaneClick = useCallback(() => {
     hideFormDrawer();
@@ -159,7 +164,7 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
     isConnectedRef.current = true;
   };
 
-  const OnConnectStart = (event: any, params: any) => {
+  const onConnectStart = (event: any, params: any) => {
     isConnectedRef.current = false;
 
     if (params && params.nodeId && params.handleId) {
@@ -172,7 +177,12 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
     }
   };
 
-  const OnConnectEnd = (event: MouseEvent | TouchEvent) => {
+  const onConnectEnd: OnConnectEnd = (event, connectionState) => {
+    const nodeId = connectionState.fromNode?.id;
+    // Events triggered by Handle are directly interrupted
+    if (connectionState.toNode !== null || (nodeId && hasChildNode(nodeId))) {
+      return;
+    }
     if ('clientX' in event && 'clientY' in event) {
       const { clientX, clientY } = event;
       setDropdownPosition({ x: clientX, y: clientY });
@@ -220,8 +230,8 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
           onConnect={onConnect}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          onConnectStart={OnConnectStart}
-          onConnectEnd={OnConnectEnd}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onInit={setReactFlowInstance}
@@ -268,7 +278,7 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
               isFromConnectionDrag: true,
             }}
           >
-            <InnerNextStepDropdown
+            <NextStepDropdown
               hideModal={() => {
                 hideModal();
                 clearActiveDropdown();
@@ -276,7 +286,7 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
               position={dropdownPosition}
             >
               <span></span>
-            </InnerNextStepDropdown>
+            </NextStepDropdown>
           </HandleContext.Provider>
         )}
       </AgentInstanceContext.Provider>
@@ -306,7 +316,6 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
           loading={running}
         ></RunSheet>
       )}
-      {/* {logSheetVisible && <LogSheet hideModal={hideLogSheet}></LogSheet>} */}
     </div>
   );
 }

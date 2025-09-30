@@ -27,6 +27,7 @@ type ToolBarProps = {
   label: string;
   id: string;
   showRun?: boolean;
+  showCopy?: boolean;
 } & PropsWithChildren;
 
 export function ToolBar({
@@ -35,6 +36,7 @@ export function ToolBar({
   label,
   id,
   showRun = false,
+  showCopy = true,
 }: ToolBarProps) {
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
 
@@ -66,10 +68,13 @@ export function ToolBar({
             <IconWrapper>
               <Play className="size-3.5" data-play />
             </IconWrapper>
-          )}{' '}
-          <IconWrapper onClick={handleDuplicate}>
-            <Copy className="size-3.5" />
-          </IconWrapper>
+          )}
+          {showCopy && (
+            <IconWrapper onClick={handleDuplicate}>
+              <Copy className="size-3.5" />
+            </IconWrapper>
+          )}
+
           <IconWrapper onClick={deleteNode}>
             <Trash2 className="size-3.5" />
           </IconWrapper>

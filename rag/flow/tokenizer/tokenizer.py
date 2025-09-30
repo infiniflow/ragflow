@@ -137,7 +137,7 @@ class Tokenizer(ProcessBase):
                     payload = from_upstream.markdown_result
                 elif from_upstream.output_format == "text":
                     payload = from_upstream.text_result
-                else:  # == "html"
+                else:
                     payload = from_upstream.html_result
 
                 if not payload:
