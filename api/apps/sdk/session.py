@@ -36,7 +36,8 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
-from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, get_result, server_error_response, token_required, validate_request
+from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
+    get_result, server_error_response, token_required, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
@@ -88,7 +89,8 @@ def create_agent_session(tenant_id, agent_id):
     canvas.reset()
 
     cvs.dsl = json.loads(str(canvas))
-    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
+    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id,
+            "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
@@ -279,7 +281,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
                     reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
                     if reasoning_match:
                         reasoning_part = reasoning_match.group(1)
-                        content_part = answer[reasoning_match.end() :]
+                        content_part = answer[reasoning_match.end():]
                     else:
                         reasoning_part = ""
                         content_part = answer
@@ -324,7 +326,8 @@ def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
+            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used,
+                                 "total_tokens": len(prompt) + token_used}
             if need_reference:
                 response["choices"][0]["delta"]["reference"] = chunks_format(last_ans.get("reference", []))
                 response["choices"][0]["delta"]["final_content"] = last_ans.get("answer", "")
@@ -559,7 +562,8 @@ def list_agent_session(tenant_id, agent_id):
         desc = True
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
+    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
+                                                    user_id, include_dsl)
     if not convs:
         return get_result(data=[])
     for conv in convs:
@@ -581,7 +585,8 @@ def list_agent_session(tenant_id, agent_id):
                 if message_num != 0 and messages[message_num]["role"] != "user":
                     chunk_list = []
                     # Add boundary and type checks to prevent KeyError
-                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
+                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(
+                            conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             # Ensure chunk is a dictionary before calling get method
@@ -639,13 +644,16 @@ def delete(tenant_id, chat_id):
 
     if errors:
         if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors}, message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+            return get_result(data={"success_count": success_count, "errors": errors},
+                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
         else:
             return get_error_data_result(message="; ".join(errors))
 
     if duplicate_messages:
         if success_count > 0:
-            return get_result(message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages})
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
+                data={"success_count": success_count, "errors": duplicate_messages})
         else:
             return get_error_data_result(message=";".join(duplicate_messages))
 
@@ -691,13 +699,16 @@ def delete_agent_session(tenant_id, agent_id):
 
     if errors:
         if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors}, message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+            return get_result(data={"success_count": success_count, "errors": errors},
+                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
         else:
             return get_error_data_result(message="; ".join(errors))
 
     if duplicate_messages:
         if success_count > 0:
-            return get_result(message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages})
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
+                data={"success_count": success_count, "errors": duplicate_messages})
         else:
             return get_error_data_result(message=";".join(duplicate_messages))
 
@@ -730,7 +741,9 @@ def ask_about(tenant_id):
             for ans in ask(req["question"], req["kb_ids"], uid):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
-            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps(
+                {"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
+                ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     resp = Response(stream(), mimetype="text/event-stream")
@@ -882,7 +895,9 @@ def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
-    return get_result(data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"), "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
+    return get_result(
+        data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"),
+              "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
 
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
@@ -911,7 +926,9 @@ def ask_about_embedded():
             for ans in ask(req["question"], req["kb_ids"], uid, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
-            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps(
+                {"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
+                ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     resp = Response(stream(), mimetype="text/event-stream")
@@ -978,7 +995,8 @@ def retrieval_test_embedded():
                     tenant_ids.append(tenant.tenant_id)
                     break
             else:
-                return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+                return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.",
+                                       code=settings.RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
@@ -998,11 +1016,13 @@ def retrieval_test_embedded():
             question += keyword_extraction(chat_mdl, question)
 
         labels = label_question(question, [kb])
-        ranks = settings.retrievaler.retrieval(
-            question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top, doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
+        ranks = settings.retriever.retrieval(
+            question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
+            doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
         )
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question, tenant_ids, kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(question, tenant_ids, kb_ids, embd_mdl,
+                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -1013,7 +1033,8 @@ def retrieval_test_embedded():
         return get_json_result(data=ranks)
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=settings.RetCode.DATA_ERROR)
+            return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
+                                   code=settings.RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -1082,7 +1103,8 @@ def detail_share_embedded():
             if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
-            return get_json_result(data=False, message="Has no permission for this operation.", code=settings.RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Has no permission for this operation.",
+                                   code=settings.RetCode.OPERATING_ERROR)
 
         search = SearchService.get_detail(search_id)
         if not search:

@@ -33,7 +33,8 @@ class MCPServerService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_servers(cls, tenant_id: str, id_list: list[str] | None, page_number, items_per_page, orderby, desc, keywords):
+    def get_servers(cls, tenant_id: str, id_list: list[str] | None, page_number, items_per_page, orderby, desc,
+                    keywords):
         """Retrieve all MCP servers associated with a tenant.
 
         This method fetches all MCP servers for a given tenant, ordered by creation time.

@@ -370,7 +370,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         chat_mdl.bind_tools(toolcall_session, tools)
     bind_models_ts = timer()
 
-    retriever = settings.retrievaler
+    retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
     if "doc_ids" in messages[-1]:
@@ -472,7 +472,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
-                ck = settings.kg_retrievaler.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
+                ck = settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
                                                        LLMBundle(dialog.tenant_id, LLMType.CHAT))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
@@ -658,7 +658,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
-        return settings.retrievaler.sql_retrieval(sql, format="json"), sql
+        return settings.retriever.sql_retrieval(sql, format="json"), sql
 
     tbl, sql = get_table()
     if tbl is None:
@@ -752,7 +752,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retriever = settings.retrievaler if not is_knowledge_graph else settings.kg_retrievaler
+    retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
 
     embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_list[0])
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_llm_name)
@@ -848,7 +848,7 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
             if not doc_ids:
                 doc_ids = None
 
-    ranks = settings.retrievaler.retrieval(
+    ranks = settings.retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,

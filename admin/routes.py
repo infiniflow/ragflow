@@ -1,3 +1,20 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+
 from flask import Blueprint, request
 
 from auth import login_verify
@@ -42,7 +59,7 @@ def create_user():
         res = UserMgr.create_user(username, password, role)
         if res["success"]:
             user_info = res["user_info"]
-            user_info.pop("password") # do not return password
+            user_info.pop("password")  # do not return password
             return success_response(user_info, "User created successfully")
         else:
             return error_response("create user failed")
@@ -102,6 +119,7 @@ def alter_user_activate_status(username):
     except Exception as e:
         return error_response(str(e), 500)
 
+
 @admin_bp.route('/users/<username>', methods=['GET'])
 @login_verify
 def get_user_details(username):
@@ -113,6 +131,7 @@ def get_user_details(username):
         return error_response(e.message, e.code)
     except Exception as e:
         return error_response(str(e), 500)
+
 
 @admin_bp.route('/users/<username>/datasets', methods=['GET'])
 @login_verify
