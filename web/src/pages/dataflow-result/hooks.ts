@@ -3,6 +3,7 @@ import message from '@/components/ui/message';
 import { useCreateChunk, useDeleteChunk } from '@/hooks/chunk-hooks';
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { useFetchMessageTrace } from '@/hooks/use-agent-request';
 import { IChunk } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
 import { formatSecondsToHumanReadable } from '@/utils/date';
@@ -10,7 +11,7 @@ import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { camelCase, upperFirst } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams, useSearchParams } from 'umi';
 import { ITimelineNodeObj, TimelineNodeObj } from './components/time-line';
@@ -21,11 +22,15 @@ import {
 } from './constant';
 import { IDslComponent, IPipelineFileLogDetail } from './interface';
 
-export const useFetchPipelineFileLogDetail = (props?: {
+export const useFetchPipelineFileLogDetail = ({
+  isAgent = false,
+  isEdit = true,
+  refreshCount,
+}: {
   isEdit?: boolean;
   refreshCount?: number;
+  isAgent: boolean;
 }) => {
-  const { isEdit = true, refreshCount } = props || { isEdit: true };
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const logId = searchParams.get('id') || id;
@@ -39,6 +44,7 @@ export const useFetchPipelineFileLogDetail = (props?: {
     queryKey,
     initialData: {} as IPipelineFileLogDetail,
     gcTime: 0,
+    enabled: !isAgent,
     queryFn: async () => {
       if (isEdit) {
         const { data } = await kbService.get_pipeline_detail({
@@ -287,5 +293,39 @@ export const useGetPipelineResultSearchParams = () => {
       currentQueryParameters.get(PipelineResultSearchParams.AgentId) || '',
     agentTitle:
       currentQueryParameters.get(PipelineResultSearchParams.AgentTitle) || '',
+    documentExtension:
+      currentQueryParameters.get(
+        PipelineResultSearchParams.DocumentExtension,
+      ) || '',
+    createdBy:
+      currentQueryParameters.get(PipelineResultSearchParams.CreatedBy) || '',
   };
 };
+
+export function useFetchPipelineResult({
+  agentId,
+}: Pick<ReturnType<typeof useGetPipelineResultSearchParams>, 'agentId'>) {
+  const [searchParams] = useSearchParams();
+  const messageId = searchParams.get('id');
+
+  const { data, setMessageId, setISStopFetchTrace } =
+    useFetchMessageTrace(agentId);
+
+  useEffect(() => {
+    if (messageId) {
+      setMessageId(messageId);
+      setISStopFetchTrace(true);
+    }
+  }, [agentId, messageId, setISStopFetchTrace, setMessageId]);
+
+  const pipelineResult = useMemo(() => {
+    if (Array.isArray(data)) {
+      const latest = data?.at(-1);
+      if (latest?.component_id === 'END' && Array.isArray(latest.trace)) {
+        return latest.trace.at(0);
+      }
+    }
+  }, [data]);
+
+  return { pipelineResult };
+}

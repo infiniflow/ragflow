@@ -26,7 +26,7 @@ import {
   Settings,
   Upload,
 } from 'lucide-react';
-import { ComponentPropsWithoutRef, useCallback } from 'react';
+import { ComponentPropsWithoutRef, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DataFlowCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
@@ -98,6 +98,9 @@ export default function DataFlow() {
     stopFetchTrace,
     isLogEmpty,
   } = useFetchLog(logSheetVisible);
+
+  const [uploadedFileData, setUploadedFileData] =
+    useState<Record<string, any>>();
 
   const handleRunAgent = useCallback(() => {
     if (isParsing) {
@@ -184,7 +187,9 @@ export default function DataFlow() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <LogContext.Provider value={{ messageId, setMessageId }}>
+      <LogContext.Provider
+        value={{ messageId, setMessageId, setUploadedFileData }}
+      >
         <ReactFlowProvider>
           <DropdownProvider>
             <DataFlowCanvas
@@ -211,6 +216,8 @@ export default function DataFlow() {
           isLogEmpty={isLogEmpty}
           logs={logs}
           handleCancel={handleCancel}
+          messageId={messageId}
+          uploadedFileData={uploadedFileData}
         ></LogSheet>
       )}
     </section>
