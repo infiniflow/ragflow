@@ -283,3 +283,16 @@
     transform: translateY(0);
   }
 }
+
+.hideScrollbar {
+  /* Webkit browsers (Chrome, Safari, Edge) */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Firefox */
+  scrollbar-width: none;
+
+  /* IE和Edge */
+  -ms-overflow-style: none;
+}
