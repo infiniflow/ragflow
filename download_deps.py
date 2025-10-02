@@ -6,7 +6,6 @@
 # dependencies = [
 #   "huggingface-hub",
 #   "nltk",
-#   "argparse",
 # ]
 # ///
 

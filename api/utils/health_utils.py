@@ -13,14 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-
+import os
+import requests
 from timeit import default_timer as timer
 
 from api import settings
 from api.db.db_models import DB
+from rag import settings as rag_settings
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
+from rag.utils.es_conn import ESConnection
+from rag.utils.infinity_conn import InfinityConnection
 
 
 def _ok_nok(ok: bool) -> str:
@@ -65,6 +68,96 @@ def check_storage() -> tuple[bool, dict]:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}
 
 
+def get_es_cluster_stats() -> dict:
+    doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+    if doc_engine != 'elasticsearch':
+        raise Exception("Elasticsearch is not in use.")
+    try:
+        return {
+            "alive": True,
+            "message": ESConnection().get_cluster_stats()
+        }
+    except Exception as e:
+        return {
+            "alive": False,
+            "message": f"error: {str(e)}",
+        }
+
+
+def get_infinity_status():
+    doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+    if doc_engine != 'infinity':
+        raise Exception("Infinity is not in use.")
+    try:
+        return {
+            "alive": True,
+            "message": InfinityConnection().health()
+        }
+    except Exception as e:
+        return {
+            "alive": False,
+            "message": f"error: {str(e)}",
+        }
+
+
+def get_mysql_status():
+    try:
+        cursor = DB.execute_sql("SHOW PROCESSLIST;")
+        res_rows = cursor.fetchall()
+        headers = ['id', 'user', 'host', 'db', 'command', 'time', 'state', 'info']
+        cursor.close()
+        return {
+            "alive": True,
+            "message": [dict(zip(headers, r)) for r in res_rows]
+        }
+    except Exception as e:
+        return {
+            "alive": False,
+            "message": f"error: {str(e)}",
+        }
+
+
+def check_minio_alive():
+    start_time = timer()
+    try:
+        response = requests.get(f'http://{rag_settings.MINIO["host"]}/minio/health/live')
+        if response.status_code == 200:
+            return {'alive': True, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+        else:
+            return {'alive': False, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+    except Exception as e:
+        return {
+            "alive": False,
+            "message": f"error: {str(e)}",
+        }
+
+
+def get_redis_info():
+    try:
+        return {
+            "alive": True,
+            "message": REDIS_CONN.info()
+        }
+    except Exception as e:
+        return {
+            "alive": False,
+            "message": f"error: {str(e)}",
+        }
+
+
+def check_ragflow_server_alive():
+    start_time = timer()
+    try:
+        response = requests.get(f'http://{settings.HOST_IP}:{settings.HOST_PORT}/v1/system/ping')
+        if response.status_code == 200:
+            return {'alive': True, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+        else:
+            return {'alive': False, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+    except Exception as e:
+        return {
+            "alive": False,
+            "message": f"error: {str(e)}",
+        }
 
 
 def run_health_checks() -> tuple[dict, bool]:
