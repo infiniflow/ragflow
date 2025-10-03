@@ -51,6 +51,7 @@ interface IProps
   showLoudspeaker?: boolean;
   showLog?: boolean;
   isShare?: boolean;
+  dialog?: IDialog;
 }
 
 function MessageItem({
@@ -73,6 +74,7 @@ function MessageItem({
   children,
   showLog,
   isShare,
+  dialog,
 }: IProps) {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -233,10 +235,11 @@ function MessageItem({
                   content={item.content}
                   reference={reference}
                   clickDocumentButton={clickDocumentButton}
+                  dialog={dialog}
                 ></MarkdownContent>
               )}
             </div>
-            {isAssistant && referenceDocuments.length > 0 && (
+            {isAssistant && referenceDocuments.length > 0 && dialog?.do_refer !== "0" && (
               <ReferenceDocumentList
                 list={referenceDocuments}
               ></ReferenceDocumentList>

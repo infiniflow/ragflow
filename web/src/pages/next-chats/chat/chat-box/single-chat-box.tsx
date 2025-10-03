@@ -78,6 +78,7 @@ export function SingleChatBox({ controller }: IProps) {
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage}
                 sendLoading={sendLoading}
+                dialog={currentDialog}
               ></MessageItem>
             );
           })}
