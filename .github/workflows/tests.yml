@@ -95,11 +95,11 @@ jobs:
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
           sudo docker pull ubuntu:22.04
-          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 
       - name: Build ragflow:nightly
         run: |
-          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 
       - name: Start ragflow:nightly-slim
         run: |
