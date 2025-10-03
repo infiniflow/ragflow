@@ -24,7 +24,7 @@ from flask import request
 from flask_login import current_user, login_required
 
 from agent.canvas import Canvas
-from agent.component import LLM
+from agent.component.llm import LLM
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.db.services.document_service import DocumentService
@@ -94,7 +94,7 @@ def save():
 def get(canvas_id):
     if not UserCanvasService.accessible(canvas_id, current_user.id):
         return get_data_error_result(message="canvas not found.")
-    e, c = UserCanvasService.get_by_tenant_id(canvas_id)
+    e, c = UserCanvasService.get_by_canvas_id(canvas_id)
     return get_json_result(data=c)
 
 
@@ -161,7 +161,7 @@ def reset():
 
 @manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
 def upload(canvas_id):
-    e, cvs = UserCanvasService.get_by_tenant_id(canvas_id)
+    e, cvs = UserCanvasService.get_by_canvas_id(canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
 

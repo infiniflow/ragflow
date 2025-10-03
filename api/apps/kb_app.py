@@ -23,7 +23,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
+from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters, active_required
 from api.utils import get_uuid
 from api.db import StatusEnum, FileSource
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -38,6 +38,7 @@ from rag.utils.storage_factory import STORAGE_IMPL
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
+@active_required
 @validate_request("name")
 def create():
     req = request.json
@@ -379,3 +380,19 @@ def get_meta():
                 code=settings.RetCode.AUTHENTICATION_ERROR
             )
     return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
+
+
+@manager.route("/basic_info", methods=["GET"])  # noqa: F821
+@login_required
+def get_basic_info():
+    kb_id = request.args.get("kb_id", "")
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+
+    basic_info = DocumentService.knowledgebase_basic_info(kb_id)
+
+    return get_json_result(data=basic_info)

@@ -118,7 +118,7 @@ dependencies = [
     "graspologic>=3.4.1,<4.0.0",
     "mini-racer>=0.12.4,<0.13.0",
     "pyodbc>=5.2.0,<6.0.0",
-    "pyicu>=2.13.1,<3.0.0",
+    "pyicu>=2.15.3,<3.0.0",
     "flasgger>=0.9.7.1,<0.10.0",
     "xxhash>=3.5.0,<4.0.0",
     "trio>=0.29.0",
@@ -131,6 +131,7 @@ dependencies = [
     "python-calamine>=0.4.0",
     "litellm>=1.74.15.post1",
     "flask-mail>=0.10.0",
+    "lark>=1.2.2",
 ]
 
 [project.optional-dependencies]
@@ -156,6 +157,9 @@ test = [
     "requests-toolbelt>=1.0.0",
 ]
 
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple"
+
 [tool.setuptools]
 packages = [
     'agent',
@@ -168,9 +172,6 @@ packages = [
     'rag',
     'sdk.python.ragflow_sdk',
 ]
-
-[[tool.uv.index]]
-url = "https://mirrors.aliyun.com/pypi/simple"
 
 [tool.ruff]
 line-length = 200

@@ -33,7 +33,7 @@ class PubMedParam(ToolParamBase):
         self.meta:ToolMeta = {
             "name": "pubmed_search",
             "description": """
-PubMed is an openly accessible, free database which includes primarily the MEDLINE database of references and abstracts on life sciences and biomedical topics. 
+PubMed is an openly accessible, free database which includes primarily the MEDLINE database of references and abstracts on life sciences and biomedical topics.
 In addition to MEDLINE, PubMed provides access to:
  - older references from the print version of Index Medicus, back to 1951 and earlier
  - references to some journals before they were indexed in Index Medicus and MEDLINE, for instance Science, BMJ, and Annals of Surgery
@@ -69,7 +69,7 @@ In addition to MEDLINE, PubMed provides access to:
 class PubMed(ToolBase, ABC):
     component_name = "PubMed"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")

@@ -110,3 +110,8 @@ class SearchService(CommonService):
             query = query.paginate(page_number, items_per_page)
 
         return list(query.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_tenant_id(cls, tenant_id):
+        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()

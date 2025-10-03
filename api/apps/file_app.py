@@ -21,6 +21,7 @@ import flask
 from flask import request
 from flask_login import login_required, current_user
 
+from api.common.check_team_permission import check_file_team_permission
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
@@ -178,6 +179,9 @@ def list_files():
         if not e:
             return get_data_error_result(message="Folder not found!")
 
+        if not check_file_team_permission(file, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
         files, total = FileService.get_by_pf_id(
             current_user.id, pf_id, page_number, items_per_page, orderby, desc, keywords)
 
@@ -209,6 +213,9 @@ def get_parent_folder():
         if not e:
             return get_data_error_result(message="Folder not found!")
 
+        if not check_file_team_permission(file, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
         parent_folder = FileService.get_parent_folder(file_id)
         return get_json_result(data={"parent_folder": parent_folder.to_json()})
     except Exception as e:
@@ -223,6 +230,9 @@ def get_all_parent_folders():
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(message="Folder not found!")
+
+        if not check_file_team_permission(file, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
 
         parent_folders = FileService.get_all_parent_folders(file_id)
         parent_folders_res = []
@@ -246,6 +256,8 @@ def rm():
                 return get_data_error_result(message="File or Folder not found!")
             if not file.tenant_id:
                 return get_data_error_result(message="Tenant not found!")
+            if not check_file_team_permission(file, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
             if file.source_type == FileSource.KNOWLEDGEBASE:
                 continue
 
@@ -292,6 +304,8 @@ def rename():
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
             return get_data_error_result(message="File not found!")
+        if not check_file_team_permission(file, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
         if file.type != FileType.FOLDER.value \
             and pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
                 file.name.lower()).suffix:
@@ -328,6 +342,8 @@ def get(file_id):
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(message="Document not found!")
+        if not check_file_team_permission(file, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
 
         blob = STORAGE_IMPL.get(file.parent_id, file.location)
         if not blob:
@@ -367,6 +383,8 @@ def move():
                 return get_data_error_result(message="File or Folder not found!")
             if not file.tenant_id:
                 return get_data_error_result(message="Tenant not found!")
+            if not check_file_team_permission(file, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
         fe, _ = FileService.get_by_id(parent_id)
         if not fe:
             return get_data_error_result(message="Parent Folder not found!")

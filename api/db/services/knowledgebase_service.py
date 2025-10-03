@@ -192,6 +192,41 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_kb_by_tenant_ids(cls, tenant_ids, user_id):
+        # will get all permitted kb, be cautious.
+        fields = [
+            cls.model.name,
+            cls.model.language,
+            cls.model.permission,
+            cls.model.doc_num,
+            cls.model.token_num,
+            cls.model.chunk_num,
+            cls.model.status,
+            cls.model.create_date,
+            cls.model.update_date
+        ]
+        # find team kb and owned kb
+        kbs = cls.model.select(*fields).where(
+            (cls.model.tenant_id.in_(tenant_ids) & (cls.model.permission ==TenantPermission.TEAM.value)) | (
+                cls.model.tenant_id == user_id
+            )
+        )
+        # sort by create_time asc
+        kbs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later.
+        offset, limit = 0, 50
+        res = []
+        while True:
+            kb_batch = kbs.offset(offset).limit(limit)
+            _temp = list(kb_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def get_kb_ids(cls, tenant_id):
         # Get all knowledge base IDs for a tenant
         # Args:
@@ -436,3 +471,17 @@ class KnowledgebaseService(CommonService):
             else:
                 raise e
 
+    @classmethod
+    @DB.connection_context()
+    def decrease_document_num_in_delete(cls, kb_id, doc_num_info: dict):
+        kb_row = cls.model.get_by_id(kb_id)
+        if not kb_row:
+            raise RuntimeError(f"kb_id {kb_id} does not exist")
+        update_dict = {
+            'doc_num': kb_row.doc_num - doc_num_info['doc_num'],
+            'chunk_num': kb_row.chunk_num - doc_num_info['chunk_num'],
+            'token_num': kb_row.token_num - doc_num_info['token_num'],
+            'update_time': current_timestamp(),
+            'update_date': datetime_format(datetime.now())
+        }
+        return cls.model.update(update_dict).where(cls.model.id == kb_id).execute()

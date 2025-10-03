@@ -17,9 +17,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IModalProps } from '@/interfaces/common';
+import { useGetNodeDescription, useGetNodeName } from '@/pages/data-flow/hooks';
 import { Position } from '@xyflow/react';
 import { t } from 'i18next';
-import { lowerFirst } from 'lodash';
 import {
   PropsWithChildren,
   createContext,
@@ -28,7 +28,6 @@ import {
   useEffect,
   useRef,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Operator } from '../../../constant';
 import { AgentInstanceContext, HandleContext } from '../../../context';
 import OperatorIcon from '../../../operator-icon';
@@ -53,7 +52,9 @@ function OperatorItemList({
   const handleContext = useContext(HandleContext);
   const hideModal = useContext(HideModalContext);
   const onNodeCreated = useContext(OnNodeCreatedContext);
-  const { t } = useTranslation();
+
+  const getNodeName = useGetNodeName();
+  const getNodeDescription = useGetNodeDescription();
 
   const handleClick = (operator: Operator) => {
     const contextData = handleContext || {
@@ -84,7 +85,7 @@ function OperatorItemList({
     const commonContent = (
       <div className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start">
         <OperatorIcon name={operator} />
-        {t(`flow.${lowerFirst(operator)}`)}
+        {getNodeName(operator)}
       </div>
     );
 
@@ -101,12 +102,12 @@ function OperatorItemList({
               onSelect={() => hideModal?.()}
             >
               <OperatorIcon name={operator} />
-              {t(`flow.${lowerFirst(operator)}`)}
+              {getNodeName(operator)}
             </DropdownMenuItem>
           )}
         </TooltipTrigger>
         <TooltipContent side="right">
-          <p>{t(`flow.${lowerFirst(operator)}Description`)}</p>
+          <p>{getNodeDescription(operator)}</p>
         </TooltipContent>
       </Tooltip>
     );

@@ -94,6 +94,24 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      generate: '生成',
+      raptor: 'Raptor',
+      knowledgeGraph: '知识图谱',
+      processingType: '处理类型',
+      dataPipeline: '数据管道',
+      operations: '操作',
+      status: '状态',
+      task: '任务',
+      startDate: '开始时间',
+      source: '来源',
+      fileName: '文件名',
+      datasetLogs: '数据集日志',
+      fileLogs: '文件日志',
+      overview: '概览',
+      success: '成功',
+      failed: '失败',
+      completed: '已完成',
+      processLog: '处理进度日志',
       created: '创建于',
       learnMore: '了解更多',
       general: '通用',
@@ -137,7 +155,7 @@ export default {
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
-      vectorSimilarityWeight: '相似度相似度权重',
+      vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
@@ -183,6 +201,7 @@ export default {
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
+      close: '关闭',
       rerankModel: 'Rerank模型',
       rerankPlaceholder: '请选择',
       rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。如需选用 rerank 模型，建议使用 SaaS 的 rerank 模型服务；如果你倾向使用本地部署的 rerank 模型，请务必确保你使用 docker-compose-gpu.yml 启动 RAGFlow。`,
@@ -227,6 +246,16 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      enableAutoGenerate: '是否启用自动生成',
+      teamPlaceholder: '请选择团队',
+      dataFlowPlaceholder: '请选择数据流',
+      buildItFromScratch: '去Scratch构建',
+      useRAPTORToEnhanceRetrieval: '使用 RAPTOR 提升检索效果',
+      extractKnowledgeGraph: '知识图谱提取',
+      dataFlow: '数据流',
+      parseType: '切片方法',
+      manualSetup: '手动设置',
+      builtIn: '内置',
       titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
       name: '知识库名称',
       photo: '知识库图片',
@@ -572,7 +601,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       answerTitle: '智能回答',
       multiTurn: '多轮对话优化',
       multiTurnTip:
-        '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
+        '在多轮对话时，对查询问题根据上下文进行优化。会调用大模型额外消耗 token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
       descriptionPlaceholder:
@@ -603,6 +632,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       cancel: '取消',
       chatSetting: '聊天设置',
+      avatarHidden: '隐藏头像',
+      locale: '地区',
     },
     setting: {
       profile: '概要',
@@ -658,6 +689,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       baseUrl: 'Base-Url',
       baseUrlTip:
         '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
+      tongyiBaseUrlTip:
+        '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
+      tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
       modify: '修改',
       systemModelSettings: '设置默认模型',
       chatModel: '聊天模型',
@@ -892,7 +926,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       exceptionMethod: '异常处理方法',
       maxRounds: '最大反思轮数',
       delayEfterError: '错误后延迟',
-      maxRetries: '最大重试次数',
+      maxRetries: '最大反思轮数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -1500,6 +1534,20 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     pagination: {
       total: '总共 {{total}} 条',
       page: '{{page}}条/页',
+    },
+    dataflowParser: {
+      parseSummary: '解析摘要',
+      parseSummaryTip: '解析器: deepdoc',
+      rerunFromCurrentStep: '从当前步骤重新运行',
+      rerunFromCurrentStepTip: '已修改，点击重新运行。',
+    },
+    dataflow: {
+      parser: '解析器',
+      parserDescription: '解析器',
+      chunker: '分块器',
+      chunkerDescription: '分块器',
+      tokenizer: '分词器',
+      tokenizerDescription: '分词器',
     },
   },
 };

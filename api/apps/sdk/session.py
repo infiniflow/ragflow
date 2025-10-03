@@ -38,9 +38,8 @@ from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, get_result, server_error_response, token_required, validate_request
 from rag.app.tag import label_question
-from rag.prompts import chunks_format
-from rag.prompts.prompt_template import load_prompt
-from rag.prompts.prompts import cross_languages, gen_meta_filter, keyword_extraction
+from rag.prompts.template import load_prompt
+from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
@@ -414,7 +413,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=True,
                 **req,
             ),
@@ -432,7 +431,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.get("session_id", req.get("id", "") or req.get("metadata", {}).get("id", "")),
+                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=False,
                 **req,
             )

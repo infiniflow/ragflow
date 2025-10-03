@@ -24,7 +24,7 @@ from io import BytesIO
 
 import trio
 import xxhash
-from peewee import fn
+from peewee import fn, Case
 
 from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
@@ -227,6 +227,46 @@ class DocumentService(CommonService):
             query = query.where(cls.model.type.in_(types))
 
         return int(query.scalar()) or 0
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_doc_ids_by_kb_ids(cls, kb_ids):
+        fields = [cls.model.id]
+        docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
+        docs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 100
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(limit)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_docs_by_creator_id(cls, creator_id):
+        fields = [
+            cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id
+        ]
+        docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.created_by == creator_id
+        )
+        docs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 100
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(limit)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
 
     @classmethod
     @DB.connection_context()
@@ -660,8 +700,16 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_kb_doc_count(cls, kb_id):
-        return len(cls.model.select(cls.model.id).where(
-            cls.model.kb_id == kb_id).dicts())
+        return cls.model.select().where(cls.model.kb_id == kb_id).count()
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_kb_doc_count(cls):
+        result = {}
+        rows = cls.model.select(cls.model.kb_id, fn.COUNT(cls.model.id).alias('count')).group_by(cls.model.kb_id)
+        for row in rows:
+            result[row.kb_id] = row.count
+        return result
 
     @classmethod
     @DB.connection_context()
@@ -673,6 +721,53 @@ class DocumentService(CommonService):
             pass
         return False
 
+
+    @classmethod
+    @DB.connection_context()
+    def knowledgebase_basic_info(cls, kb_id: str) -> dict[str, int]:
+        # cancelled: run == "2" but progress can vary
+        cancelled = (
+            cls.model.select(fn.COUNT(1))
+            .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))
+            .scalar()
+        )
+
+        row = (
+            cls.model.select(
+                # finished: progress == 1
+                fn.COALESCE(fn.SUM(Case(None, [(cls.model.progress == 1, 1)], 0)), 0).alias("finished"),
+
+                # failed: progress == -1
+                fn.COALESCE(fn.SUM(Case(None, [(cls.model.progress == -1, 1)], 0)), 0).alias("failed"),
+
+                # processing: 0 <= progress < 1
+                fn.COALESCE(
+                    fn.SUM(
+                        Case(
+                            None,
+                            [
+                                (((cls.model.progress == 0) | ((cls.model.progress > 0) & (cls.model.progress < 1))), 1),
+                            ],
+                            0,
+                        )
+                    ),
+                    0,
+                ).alias("processing"),
+            )
+            .where(
+                (cls.model.kb_id == kb_id)
+                & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL))
+            )
+            .dicts()
+            .get()
+        )
+
+        return {
+            "processing": int(row["processing"]),
+            "finished": int(row["finished"]),
+            "failed": int(row["failed"]),
+            "cancelled": int(cancelled),
+        }
 
 def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     chunking_config = DocumentService.get_chunking_config(doc["id"])
@@ -702,6 +797,8 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
 
 def get_queue_length(priority):
     group_info = REDIS_CONN.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+    if not group_info:
+        return 0
     return int(group_info.get("lag", 0) or 0)
 
 
@@ -847,3 +944,4 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)
 
     return [d["id"] for d, _ in files]
+

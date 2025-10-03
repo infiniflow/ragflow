@@ -23,7 +23,7 @@ import trio
 from flask import request, Response
 from flask_login import login_required, current_user
 
-from agent.component import LLM
+from agent.component.llm import LLM
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
@@ -101,7 +101,7 @@ def save():
 def get(canvas_id):
     if not UserCanvasService.accessible(canvas_id, current_user.id):
         return get_data_error_result(message="canvas not found.")
-    e, c = UserCanvasService.get_by_tenant_id(canvas_id)
+    e, c = UserCanvasService.get_by_canvas_id(canvas_id)
     return get_json_result(data=c)
 
 
@@ -198,7 +198,7 @@ def reset():
 
 @manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
 def upload(canvas_id):
-    e, cvs = UserCanvasService.get_by_tenant_id(canvas_id)
+    e, cvs = UserCanvasService.get_by_canvas_id(canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
 
@@ -332,7 +332,7 @@ def test_db_connect():
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                password=req["password"])
-        elif req["db_type"] == 'postgresql':
+        elif req["db_type"] == 'postgres':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
         elif req["db_type"] == 'mssql':
@@ -348,6 +348,22 @@ def test_db_connect():
             cursor = db.cursor()
             cursor.execute("SELECT 1")
             cursor.close()
+        elif req["db_type"] == 'IBM DB2':
+            import ibm_db
+            conn_str = (
+                f"DATABASE={req['database']};"
+                f"HOSTNAME={req['host']};"
+                f"PORT={req['port']};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            logging.info(conn_str)
+            conn = ibm_db.connect(conn_str, "", "")
+            stmt = ibm_db.exec_immediate(conn, "SELECT 1 FROM sysibm.sysdummy1")
+            ibm_db.fetch_assoc(stmt)
+            ibm_db.close(conn)
+            return get_json_result(data="Database Connection Successful!")
         else:
             return server_error_response("Unsupported database type.")
         if req["db_type"] != 'mssql':
@@ -474,7 +490,7 @@ def sessions(canvas_id):
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
 def prompts():
-    from rag.prompts.prompts import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
+    from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
     return get_json_result(data={
         "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
         "plan_generation": NEXT_STEP,

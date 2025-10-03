@@ -336,6 +336,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
             x: 0,
             y: 0,
           },
+          draggable: type === Operator.Placeholder ? false : undefined,
           data: {
             label: `${type}`,
             name: generateNodeNamesWithIncreasingIndex(

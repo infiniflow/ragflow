@@ -36,6 +36,8 @@ from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
+from flask import jsonify
+from api.utils.health_utils import run_health_checks
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
@@ -167,6 +169,17 @@ def status():
     res["task_executor_heartbeats"] = task_executor_heartbeats
 
     return get_json_result(data=res)
+
+
+@manager.route("/healthz", methods=["GET"])  # noqa: F821
+def healthz():
+    result, all_ok = run_health_checks()
+    return jsonify(result), (200 if all_ok else 500)
+
+
+@manager.route("/ping", methods=["GET"]) # noqa: F821
+def ping():
+    return "pong", 200
 
 
 @manager.route("/new_token", methods=["POST"])  # noqa: F821
