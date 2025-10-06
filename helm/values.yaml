@@ -180,8 +180,8 @@ minio:
 mysql:
   image:
     repository: mysql
-    tag: 8.0.39
-    pullPolicy: IfNotPresent
+    tag: 8-oracle
+    pullPolicy: Always
     pullSecrets: []
   storage:
     className:
