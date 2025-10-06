@@ -134,8 +134,8 @@ services:
     restart: on-failure
 
   mysql:
-    # mysql:5.7 linux/arm64 image is unavailable.
-    image: mysql:8.0.39
+    # only mysql:8.x-oracle amd64/arm64 images exist
+    image: mysql:8-oracle
     container_name: ragflow-mysql
     env_file: .env
     environment:
