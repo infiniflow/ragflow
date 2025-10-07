@@ -22,7 +22,7 @@ from graphrag.utils import chat_limiter, get_llm_cache, set_llm_cache
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.chunker.schema import ChunkerFromUpstream
 from rag.nlp import naive_merge, naive_merge_with_images, concat_img
-from rag.prompts.prompts import keyword_extraction, question_proposal, detect_table_of_contents, \
+from rag.prompts.generator import keyword_extraction, question_proposal, detect_table_of_contents, \
     table_of_contents_index, toc_transformer
 from rag.utils import num_tokens_from_string
 
