@@ -162,9 +162,9 @@ export default function DataFlow() {
             onClick={handleRunAgent}
             loading={running}
           >
-            {running || (
-              <CirclePlay className={isParsing ? 'animate-spin' : ''} />
-            )}
+            <CirclePlay
+              className={isParsing || isLogEmpty ? 'animate-spin' : ''}
+            />
 
             {isParsing || running ? t('dataflow.running') : t('flow.run')}
           </ButtonLoading>

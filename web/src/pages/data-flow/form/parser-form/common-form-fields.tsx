@@ -1,6 +1,9 @@
 import { crossLanguageOptions } from '@/components/cross-language-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
-import { LLMFormField } from '@/components/llm-setting-items/llm-form-field';
+import {
+  LLMFormField,
+  LLMFormFieldProps,
+} from '@/components/llm-setting-items/llm-form-field';
 import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
@@ -60,10 +63,14 @@ export function ParserMethodFormField({
   );
 }
 
-export function LargeModelFormField({ prefix }: CommonProps) {
+export function LargeModelFormField({
+  prefix,
+  options,
+}: CommonProps & Pick<LLMFormFieldProps, 'options'>) {
   return (
     <LLMFormField
       name={buildFieldNameWithPrefix('llm_id', prefix)}
+      options={options}
     ></LLMFormField>
   );
 }

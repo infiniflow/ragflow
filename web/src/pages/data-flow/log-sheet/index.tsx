@@ -61,24 +61,25 @@ export function LogSheet({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2.5">
             <Logs className="size-4" /> {t('flow.log')}
-            <Button
-              variant={'ghost'}
-              disabled={!isCompleted}
-              onClick={navigateToDataflowResult({
-                id: messageId, // 'log_id',
-                [PipelineResultSearchParams.AgentId]: id, // 'agent_id',
-                [PipelineResultSearchParams.DocumentId]: uploadedFileData?.id, //'doc_id',
-                [PipelineResultSearchParams.AgentTitle]: agent.title, //'title',
-                [PipelineResultSearchParams.IsReadOnly]: 'true',
-                [PipelineResultSearchParams.Type]: 'dataflow',
-                [PipelineResultSearchParams.CreatedBy]:
-                  uploadedFileData?.created_by,
-                [PipelineResultSearchParams.DocumentExtension]:
-                  uploadedFileData?.extension,
-              })}
-            >
-              {t('dataflow.viewResult')} <ArrowUpRight />
-            </Button>
+            {isCompleted && (
+              <Button
+                variant={'ghost'}
+                onClick={navigateToDataflowResult({
+                  id: messageId, // 'log_id',
+                  [PipelineResultSearchParams.AgentId]: id, // 'agent_id',
+                  [PipelineResultSearchParams.DocumentId]: uploadedFileData?.id, //'doc_id',
+                  [PipelineResultSearchParams.AgentTitle]: agent.title, //'title',
+                  [PipelineResultSearchParams.IsReadOnly]: 'true',
+                  [PipelineResultSearchParams.Type]: 'dataflow',
+                  [PipelineResultSearchParams.CreatedBy]:
+                    uploadedFileData?.created_by,
+                  [PipelineResultSearchParams.DocumentExtension]:
+                    uploadedFileData?.extension,
+                })}
+              >
+                {t('dataflow.viewResult')} <ArrowUpRight />
+              </Button>
+            )}
           </SheetTitle>
         </SheetHeader>
         <section className="max-h-[82vh] overflow-auto mt-6">

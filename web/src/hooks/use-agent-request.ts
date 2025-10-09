@@ -3,7 +3,6 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { AgentGlobals } from '@/constants/agent';
 import {
-  DSL,
   IAgentLogsRequest,
   IAgentLogsResponse,
   IFlow,
@@ -295,7 +294,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
     mutationFn: async (params: {
       id?: string;
       title?: string;
-      dsl?: DSL;
+      dsl?: Record<string, any>;
       avatar?: string;
       canvas_category?: string;
     }) => {
