@@ -1098,6 +1098,8 @@ export default {
       cleanHtml: 'HTMLをクリーン',
       cleanHtmlTip:
         '応答がHTML形式であり、主要なコンテンツのみが必要な場合は、これをオンにしてください。',
+      invalidUrl:
+        '有効なURLまたは{variable_name}または{component@variable}形式の変数プレースホルダーを含むURLである必要があります',
       reference: '参照',
       input: '入力',
       output: '出力',

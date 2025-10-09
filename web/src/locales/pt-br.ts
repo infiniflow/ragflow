@@ -1066,6 +1066,8 @@ export default {
       cleanHtml: 'Limpar HTML',
       cleanHtmlTip:
         'Se a resposta for formatada em HTML e apenas o conteúdo principal for desejado, ative esta opção.',
+      invalidUrl:
+        'Deve ser uma URL válida ou uma URL com marcadores de posição de variáveis no formato {nome_variável} ou {componente@variável}',
 
       reference: 'Referência',
       input: 'Entrada',
