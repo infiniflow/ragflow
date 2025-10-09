@@ -1,7 +1,7 @@
+import { buildOutputOptions } from '@/utils/canvas-util';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { Operator } from '../../constant';
-import { buildOutputOptions } from '../../hooks/use-get-begin-query';
 import useGraphStore from '../../store';
 
 export function useBuildSubNodeOutputOptions(nodeId?: string) {

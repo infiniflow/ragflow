@@ -9,7 +9,7 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import { Banknote, Database, FileSearch2, GitGraph } from 'lucide-react';
+import { Banknote, DatabaseZap, FileSearch2, FolderOpen } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -22,36 +22,36 @@ export function SideBar({ refreshCount }: PropType) {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
   // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchKnowledgeBaseConfiguration(refreshCount);
+  const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
     const list = [
-      // {
-      //   icon: DatabaseZap,
-      //   label: t(`knowledgeDetails.overview`),
-      //   key: Routes.DataSetOverview,
-      // },
       {
-        icon: Database,
-        label: t(`knowledgeDetails.dataset`),
+        icon: <DatabaseZap className="size-4" />,
+        label: t(`knowledgeDetails.overview`),
+        key: Routes.DataSetOverview,
+      },
+      {
+        icon: <FolderOpen className="size-4" />,
+        label: t(`knowledgeDetails.subbarFiles`),
         key: Routes.DatasetBase,
       },
       {
-        icon: FileSearch2,
+        icon: <FileSearch2 className="size-4" />,
         label: t(`knowledgeDetails.testing`),
         key: Routes.DatasetTesting,
       },
       {
-        icon: Banknote,
+        icon: <Banknote className="size-4" />,
         label: t(`knowledgeDetails.configuration`),
-        key: Routes.DatasetSetting,
+        key: Routes.DataSetSetting,
       },
     ];
     if (!isEmpty(routerData?.graph)) {
       list.push({
-        icon: GitGraph,
+        icon: <IconFontFill name="knowledgegraph" className="size-4" />,
         label: t(`knowledgeDetails.knowledgeGraph`),
         key: Routes.KnowledgeGraph,
       });
@@ -99,7 +99,7 @@ export function SideBar({ refreshCount }: PropType) {
               )}
               onClick={handleMenuClick(item.key)}
             >
-              <item.icon className="size-4" />
+              {item.icon}
               <span>{item.label}</span>
             </Button>
           );

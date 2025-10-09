@@ -95,6 +95,12 @@ def total_token_count_from_response(resp):
         except Exception:
             pass
 
+    if hasattr(resp, "usage_metadata") and hasattr(resp.usage_metadata, "total_tokens"):
+        try:
+            return resp.usage_metadata.total_tokens
+        except Exception:
+            pass
+
     if 'usage' in resp and 'total_tokens' in resp['usage']:
         try:
             return resp["usage"]["total_tokens"]

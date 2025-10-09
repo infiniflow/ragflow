@@ -30,6 +30,10 @@ function InnerButtonEdge({
   sourceHandleId,
 }: EdgeProps<Edge<{ isHovered: boolean }>>) {
   const deleteEdgeById = useGraphStore((state) => state.deleteEdgeById);
+  const highlightedPlaceholderEdgeId = useGraphStore(
+    (state) => state.highlightedPlaceholderEdgeId,
+  );
+
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -39,8 +43,17 @@ function InnerButtonEdge({
     targetPosition,
   });
   const selectedStyle = useMemo(() => {
-    return selected ? { strokeWidth: 1, stroke: 'var(--accent-primary)' } : {};
+    return selected
+      ? { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' }
+      : {};
   }, [selected]);
+
+  const placeholderHighlightStyle = useMemo(() => {
+    const isHighlighted = highlightedPlaceholderEdgeId === id;
+    return isHighlighted
+      ? { strokeWidth: 2, stroke: 'var(--accent-primary)' }
+      : {};
+  }, [highlightedPlaceholderEdgeId, id]);
 
   const onEdgeClick = () => {
     deleteEdgeById(id);
@@ -56,7 +69,7 @@ function InnerButtonEdge({
       let index = idx - 1;
       while (index >= 0) {
         if (path[index] === source) {
-          return { strokeWidth: 1, stroke: 'var(--accent-primary)' };
+          return { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' };
         }
         index--;
       }
@@ -79,7 +92,12 @@ function InnerButtonEdge({
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
-        style={{ ...style, ...selectedStyle, ...showHighlight }}
+        style={{
+          ...style,
+          ...selectedStyle,
+          ...showHighlight,
+          ...placeholderHighlightStyle,
+        }}
         className={cn('text-text-secondary')}
       />
 

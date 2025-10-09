@@ -15,10 +15,10 @@
 #
 from datetime import datetime
 
-from peewee import fn
+from peewee import fn, JOIN
 
 from api.db import StatusEnum, TenantPermission
-from api.db.db_models import DB, Document, Knowledgebase, Tenant, User, UserTenant
+from api.db.db_models import DB, Document, Knowledgebase, User, UserTenant, UserCanvas
 from api.db.services.common_service import CommonService
 from api.utils import current_timestamp, datetime_format
 
@@ -260,20 +260,29 @@ class KnowledgebaseService(CommonService):
             cls.model.token_num,
             cls.model.chunk_num,
             cls.model.parser_id,
+            cls.model.pipeline_id,
+            UserCanvas.title.alias("pipeline_name"),
+            UserCanvas.avatar.alias("pipeline_avatar"),
             cls.model.parser_config,
             cls.model.pagerank,
+            cls.model.graphrag_task_id,
+            cls.model.graphrag_task_finish_at,
+            cls.model.raptor_task_id,
+            cls.model.raptor_task_finish_at,
+            cls.model.mindmap_task_id,
+            cls.model.mindmap_task_finish_at,
             cls.model.create_time,
             cls.model.update_time
             ]
-        kbs = cls.model.select(*fields).join(Tenant, on=(
-            (Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value))).where(
+        kbs = cls.model.select(*fields)\
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
+            .where(
             (cls.model.id == kb_id),
             (cls.model.status == StatusEnum.VALID.value)
-        )
+        ).dicts()
         if not kbs:
             return
-        d = kbs[0].to_dict()
-        return d
+        return kbs[0]
 
     @classmethod
     @DB.connection_context()
