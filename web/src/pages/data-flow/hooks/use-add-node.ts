@@ -1,7 +1,6 @@
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
-import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -9,30 +8,13 @@ import {
   NodeHandleId,
   NodeMap,
   Operator,
-  initialAgentValues,
   initialBeginValues,
-  initialCategorizeValues,
-  initialChunkerValues,
-  initialCodeValues,
-  initialConcentratorValues,
-  initialCrawlerValues,
-  initialEmailValues,
-  initialExeSqlValues,
-  initialInvokeValues,
-  initialIterationStartValues,
-  initialIterationValues,
-  initialKeywordExtractValues,
-  initialMessageValues,
+  initialExtractorValues,
+  initialHierarchicalMergerValues,
   initialNoteValues,
   initialParserValues,
-  initialRelevantValues,
-  initialRetrievalValues,
-  initialRewriteQuestionValues,
-  initialStringTransformValues,
-  initialSwitchValues,
+  initialSplitterValues,
   initialTokenizerValues,
-  initialUserFillUpValues,
-  initialWaitingDialogueValues,
 } from '../constant';
 import useGraphStore from '../store';
 import {
@@ -40,61 +22,30 @@ import {
   getNodeDragHandle,
 } from '../utils';
 
-function isBottomSubAgent(type: string, position: Position) {
-  return (
-    (type === Operator.Agent && position === Position.Bottom) ||
-    type === Operator.Tool
-  );
-}
 export const useInitializeOperatorParams = () => {
   const llmId = useFetchModelId();
+  const { t } = useTranslation();
 
   const initialFormValuesMap = useMemo(() => {
     return {
       [Operator.Begin]: initialBeginValues,
-      [Operator.Retrieval]: initialRetrievalValues,
-      [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
-      [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
-      [Operator.RewriteQuestion]: {
-        ...initialRewriteQuestionValues,
-        llm_id: llmId,
-      },
-      [Operator.Message]: initialMessageValues,
-      [Operator.KeywordExtract]: {
-        ...initialKeywordExtractValues,
-        llm_id: llmId,
-      },
-      [Operator.ExeSQL]: initialExeSqlValues,
-      [Operator.Switch]: initialSwitchValues,
-      [Operator.Concentrator]: initialConcentratorValues,
       [Operator.Note]: initialNoteValues,
-      [Operator.Crawler]: initialCrawlerValues,
-      [Operator.Invoke]: initialInvokeValues,
-      [Operator.Email]: initialEmailValues,
-      [Operator.Iteration]: initialIterationValues,
-      [Operator.IterationStart]: initialIterationStartValues,
-      [Operator.Code]: initialCodeValues,
-      [Operator.WaitingDialogue]: initialWaitingDialogueValues,
-      [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
-      [Operator.Tool]: {},
-      [Operator.UserFillUp]: initialUserFillUpValues,
-      [Operator.StringTransform]: initialStringTransformValues,
       [Operator.Parser]: initialParserValues,
-      [Operator.Chunker]: initialChunkerValues,
       [Operator.Tokenizer]: initialTokenizerValues,
+      [Operator.Splitter]: initialSplitterValues,
+      [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
+      [Operator.Extractor]: {
+        ...initialExtractorValues,
+        llm_id: llmId,
+        sys_prompt: t('dataflow.prompts.system.summary'),
+        prompts: t('dataflow.prompts.user.summary'),
+      },
     };
-  }, [llmId]);
+  }, [llmId, t]);
 
   const initializeOperatorParams = useCallback(
-    (operatorName: Operator, position: Position) => {
+    (operatorName: Operator) => {
       const initialValues = initialFormValuesMap[operatorName];
-      if (isBottomSubAgent(operatorName, position)) {
-        return {
-          ...initialValues,
-          description: t('flow.descriptionMessage'),
-          user_prompt: t('flow.userPromptDefaultValue'),
-        };
-      }
 
       return initialValues;
     },
@@ -171,95 +122,17 @@ function useAddChildEdge() {
   return { addChildEdge };
 }
 
-function useAddToolNode() {
-  const { nodes, edges, addEdge, getNode, addNode } = useGraphStore(
-    (state) => state,
-  );
-
-  const addToolNode = useCallback(
-    (newNode: Node<any>, nodeId?: string): boolean => {
-      const agentNode = getNode(nodeId);
-
-      if (agentNode) {
-        const childToolNodeIds = edges
-          .filter(
-            (x) => x.source === nodeId && x.sourceHandle === NodeHandleId.Tool,
-          )
-          .map((x) => x.target);
-
-        if (
-          childToolNodeIds.length > 0 &&
-          nodes.some((x) => x.id === childToolNodeIds[0])
-        ) {
-          return false;
-        }
-
-        newNode.position = {
-          x: agentNode.position.x - 82,
-          y: agentNode.position.y + 140,
-        };
-
-        addNode(newNode);
-        if (nodeId) {
-          addEdge({
-            source: nodeId,
-            target: newNode.id,
-            sourceHandle: NodeHandleId.Tool,
-            targetHandle: NodeHandleId.End,
-          });
-        }
-        return true;
-      }
-      return false;
-    },
-    [addEdge, addNode, edges, getNode, nodes],
-  );
-
-  return { addToolNode };
-}
-
-function useResizeIterationNode() {
-  const { getNode, nodes, updateNode } = useGraphStore((state) => state);
-
-  const resizeIterationNode = useCallback(
-    (type: string, position: Position, parentId?: string) => {
-      const parentNode = getNode(parentId);
-      if (parentNode && !isBottomSubAgent(type, position)) {
-        const MoveRightDistance = 310;
-        const childNodeList = nodes.filter((x) => x.parentId === parentId);
-        const maxX = Math.max(...childNodeList.map((x) => x.position.x));
-        if (maxX + MoveRightDistance > parentNode.position.x) {
-          updateNode({
-            ...parentNode,
-            width: (parentNode.width || 0) + MoveRightDistance,
-            position: {
-              x: parentNode.position.x + MoveRightDistance / 2,
-              y: parentNode.position.y,
-            },
-          });
-        }
-      }
-    },
-    [getNode, nodes, updateNode],
-  );
-
-  return { resizeIterationNode };
-}
 type CanvasMouseEvent = Pick<
   React.MouseEvent<HTMLElement>,
   'clientX' | 'clientY'
 >;
 
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
-  const { edges, nodes, addEdge, addNode, getNode } = useGraphStore(
-    (state) => state,
-  );
+  const { nodes, addNode } = useGraphStore((state) => state);
   const getNodeName = useGetNodeName();
   const { initializeOperatorParams } = useInitializeOperatorParams();
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
   const { addChildEdge } = useAddChildEdge();
-  const { addToolNode } = useAddToolNode();
-  const { resizeIterationNode } = useResizeIterationNode();
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
@@ -277,7 +150,6 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     ) =>
       (event?: CanvasMouseEvent): string | undefined => {
         const nodeId = params.nodeId;
-        const node = getNode(nodeId);
 
         // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
         // and you don't need to subtract the reactFlowBounds.left/top anymore
@@ -308,112 +180,30 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               getNodeName(type),
               nodes,
             ),
-            form: initializeOperatorParams(type as Operator, params.position),
+            form: initializeOperatorParams(type as Operator),
           },
           sourcePosition: Position.Right,
           targetPosition: Position.Left,
           dragHandle: getNodeDragHandle(type),
         };
 
-        if (node && node.parentId) {
-          newNode.parentId = node.parentId;
-          newNode.extent = 'parent';
-          const parentNode = getNode(node.parentId);
-          if (parentNode && !isBottomSubAgent(type, params.position)) {
-            resizeIterationNode(type, params.position, node.parentId);
-          }
-        }
-
-        if (type === Operator.Iteration) {
-          newNode.width = 500;
-          newNode.height = 250;
-          const iterationStartNode: Node<any> = {
-            id: `${Operator.IterationStart}:${humanId()}`,
-            type: 'iterationStartNode',
-            position: { x: 50, y: 100 },
-            // draggable: false,
-            data: {
-              label: Operator.IterationStart,
-              name: Operator.IterationStart,
-              form: initialIterationStartValues,
-            },
-            parentId: newNode.id,
-            extent: 'parent',
-          };
-          addNode(newNode);
-          addNode(iterationStartNode);
-          if (nodeId) {
-            addEdge({
-              source: nodeId,
-              target: newNode.id,
-              sourceHandle: NodeHandleId.Start,
-              targetHandle: NodeHandleId.End,
-            });
-          }
-          return newNode.id;
-        } else if (
-          type === Operator.Agent &&
-          params.position === Position.Bottom
-        ) {
-          const agentNode = getNode(nodeId);
-          if (agentNode) {
-            // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
-            const allChildAgentNodeIds = edges
-              .filter(
-                (x) =>
-                  x.source === nodeId &&
-                  x.sourceHandle === NodeHandleId.AgentBottom,
-              )
-              .map((x) => x.target);
-
-            const xAxises = nodes
-              .filter((x) => allChildAgentNodeIds.some((y) => y === x.id))
-              .map((x) => x.position.x);
-
-            const maxX = Math.max(...xAxises);
-
-            newNode.position = {
-              x: xAxises.length > 0 ? maxX + 262 : agentNode.position.x + 82,
-              y: agentNode.position.y + 140,
-            };
-          }
-          addNode(newNode);
-          if (nodeId) {
-            addEdge({
-              source: nodeId,
-              target: newNode.id,
-              sourceHandle: NodeHandleId.AgentBottom,
-              targetHandle: NodeHandleId.AgentTop,
-            });
-          }
-          return newNode.id;
-        } else if (type === Operator.Tool) {
-          const toolNodeAdded = addToolNode(newNode, params.nodeId);
-          return toolNodeAdded ? newNode.id : undefined;
-        } else {
-          addNode(newNode);
-          addChildEdge(params.position, {
-            source: params.nodeId,
-            target: newNode.id,
-            sourceHandle: params.id,
-          });
-        }
+        addNode(newNode);
+        addChildEdge(params.position, {
+          source: params.nodeId,
+          target: newNode.id,
+          sourceHandle: params.id,
+        });
 
         return newNode.id;
       },
     [
       addChildEdge,
-      addEdge,
       addNode,
-      addToolNode,
       calculateNewlyBackChildPosition,
-      edges,
-      getNode,
       getNodeName,
       initializeOperatorParams,
       nodes,
       reactFlowInstance,
-      resizeIterationNode,
     ],
   );
 

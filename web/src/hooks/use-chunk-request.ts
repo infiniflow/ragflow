@@ -13,7 +13,9 @@ import {
 } from './logic-hooks';
 import { useGetKnowledgeSearchParams } from './route-hook';
 
-export const useFetchNextChunkList = (): ResponseGetType<{
+export const useFetchNextChunkList = (
+  enabled = true,
+): ResponseGetType<{
   data: IChunk[];
   total: number;
   documentInfo: IKnowledgeFile;
@@ -37,6 +39,7 @@ export const useFetchNextChunkList = (): ResponseGetType<{
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
     gcTime: 0,
+    enabled,
     queryFn: async () => {
       const { data } = await kbService.chunk_list({
         doc_id: documentId,

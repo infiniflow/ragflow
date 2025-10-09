@@ -25,8 +25,10 @@ export function useSelectEmbeddingModelOptions() {
   return allOptions[LlmModelType.Embedding];
 }
 
-export function useHasParsedDocument() {
-  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
+export function useHasParsedDocument(isEdit?: boolean) {
+  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration({
+    isEdit,
+  });
   return knowledgeDetails.chunk_num > 0;
 }
 
@@ -39,6 +41,16 @@ export const useFetchKnowledgeConfigurationOnMount = (
     const parser_config = {
       ...form.formState?.defaultValues?.parser_config,
       ...knowledgeDetails.parser_config,
+      raptor: {
+        ...form.formState?.defaultValues?.parser_config?.raptor,
+        ...knowledgeDetails.parser_config?.raptor,
+        use_raptor: true,
+      },
+      graphrag: {
+        ...form.formState?.defaultValues?.parser_config?.graphrag,
+        ...knowledgeDetails.parser_config?.graphrag,
+        use_graphrag: true,
+      },
     };
     const formValues = {
       ...pick({ ...knowledgeDetails, parser_config: parser_config }, [
@@ -52,7 +64,7 @@ export const useFetchKnowledgeConfigurationOnMount = (
         'pagerank',
         'avatar',
       ]),
-    };
+    } as z.infer<typeof formSchema>;
     form.reset(formValues);
   }, [form, knowledgeDetails]);
 

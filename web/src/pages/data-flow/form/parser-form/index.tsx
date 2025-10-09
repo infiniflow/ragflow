@@ -1,135 +1,202 @@
-import { FormContainer } from '@/components/form-container';
-import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { useTranslate } from '@/hooks/common-hooks';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { BlockButton, Button } from '@/components/ui/button';
+import { Form } from '@/components/ui/form';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
+import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { useHover } from 'ahooks';
+import { Trash2 } from 'lucide-react';
+import { memo, useCallback, useMemo, useRef } from 'react';
+import {
+  UseFieldArrayRemove,
+  useFieldArray,
+  useForm,
+  useFormContext,
+} from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialParserValues } from '../../constant';
+import {
+  FileType,
+  InitialOutputFormatMap,
+  initialParserValues,
+} from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
-import { GoogleCountryOptions, GoogleLanguageOptions } from '../../options';
 import { buildOutputList } from '../../utils/build-output-list';
-import { ApiKeyField } from '../components/api-key-field';
-import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { QueryVariable } from '../components/query-variable';
+import { OutputFormatFormField } from './common-form-fields';
+import { EmailFormFields } from './email-form-fields';
+import { ImageFormFields } from './image-form-fields';
+import { PdfFormFields } from './pdf-form-fields';
+import { buildFieldNameWithPrefix } from './utils';
+import { VideoFormFields } from './video-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
-export const GoogleFormPartialSchema = {
-  api_key: z.string(),
-  country: z.string(),
-  language: z.string(),
+const FileFormatOptions = buildOptions(FileType).filter(
+  (x) => x.value !== FileType.Video, // Temporarily hide the video option
+);
+
+const FileFormatWidgetMap = {
+  [FileType.PDF]: PdfFormFields,
+  [FileType.Video]: VideoFormFields,
+  [FileType.Audio]: VideoFormFields,
+  [FileType.Email]: EmailFormFields,
+  [FileType.Image]: ImageFormFields,
+};
+
+type ParserItemProps = {
+  name: string;
+  index: number;
+  fieldLength: number;
+  remove: UseFieldArrayRemove;
 };
 
 export const FormSchema = z.object({
-  ...GoogleFormPartialSchema,
-  q: z.string(),
-  start: z.number(),
-  num: z.number(),
+  setups: z.array(
+    z.object({
+      fileFormat: z.string().nullish(),
+      output_format: z.string().optional(),
+      parse_method: z.string().optional(),
+      lang: z.string().optional(),
+      fields: z.array(z.string()).optional(),
+      llm_id: z.string().optional(),
+      system_prompt: z.string().optional(),
+    }),
+  ),
 });
 
-export function GoogleFormWidgets() {
-  const form = useFormContext();
-  const { t } = useTranslate('flow');
+export type ParserFormSchemaType = z.infer<typeof FormSchema>;
+
+function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
+  const { t } = useTranslation();
+  const form = useFormContext<ParserFormSchemaType>();
+  const ref = useRef(null);
+  const isHovering = useHover(ref);
+
+  const prefix = `${name}.${index}`;
+  const fileFormat = form.getValues(`setups.${index}.fileFormat`);
+
+  const values = form.getValues();
+  const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
+
+  const filteredFileFormatOptions = useMemo(() => {
+    const otherFileFormatList = parserList
+      .filter((_, idx) => idx !== index)
+      .map((x) => x.fileFormat);
+
+    return FileFormatOptions.filter((x) => {
+      return !otherFileFormatList.includes(x.value);
+    });
+  }, [index, parserList]);
+
+  const Widget =
+    typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
+      ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
+      : () => <></>;
+
+  const handleFileTypeChange = useCallback(
+    (value: FileType) => {
+      form.setValue(
+        `setups.${index}.output_format`,
+        InitialOutputFormatMap[value],
+        { shouldDirty: true, shouldValidate: true, shouldTouch: true },
+      );
+    },
+    [form, index],
+  );
 
   return (
-    <>
-      <FormField
-        control={form.control}
-        name={`country`}
-        render={({ field }) => (
-          <FormItem className="flex-1">
-            <FormLabel>{t('country')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                {...field}
-                options={GoogleCountryOptions}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
+    <section
+      className={cn('space-y-5 py-2.5 rounded-md', {
+        'bg-state-error-5': isHovering,
+      })}
+    >
+      <div className="flex justify-between items-center">
+        <span className="text-text-primary text-sm font-medium">
+          Parser {index + 1}
+        </span>
+        {index > 0 && (
+          <Button variant={'ghost'} onClick={() => remove(index)} ref={ref}>
+            <Trash2 />
+          </Button>
         )}
-      />
-      <FormField
-        control={form.control}
-        name={`language`}
-        render={({ field }) => (
-          <FormItem className="flex-1">
-            <FormLabel>{t('language')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                {...field}
-                options={GoogleLanguageOptions}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
+      </div>
+      <RAGFlowFormItem
+        name={buildFieldNameWithPrefix(`fileFormat`, prefix)}
+        label={t('dataflow.fileFormats')}
+      >
+        {(field) => (
+          <SelectWithSearch
+            value={field.value}
+            onChange={(val) => {
+              field.onChange(val);
+              handleFileTypeChange(val as FileType);
+            }}
+            options={filteredFileFormatOptions}
+          ></SelectWithSearch>
         )}
+      </RAGFlowFormItem>
+      <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
+      <OutputFormatFormField
+        prefix={prefix}
+        fileType={fileFormat as FileType}
       />
-    </>
+      {index < fieldLength - 1 && <Separator />}
+    </section>
   );
 }
 
 const ParserForm = ({ node }: INextOperatorForm) => {
-  const { t } = useTranslate('flow');
+  const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    shouldUnregister: true,
   });
+
+  const name = 'setups';
+  const { fields, remove, append } = useFieldArray({
+    name,
+    control: form.control,
+  });
+
+  const add = useCallback(() => {
+    append({
+      fileFormat: null,
+      output_format: '',
+      parse_method: '',
+      lang: '',
+      fields: [],
+      llm_id: '',
+    });
+  }, [append]);
 
   useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
-      <FormWrapper>
-        <FormContainer>
-          <QueryVariable name="q"></QueryVariable>
-        </FormContainer>
-        <FormContainer>
-          <ApiKeyField placeholder={t('apiKeyPlaceholder')}></ApiKeyField>
-          <FormField
-            control={form.control}
-            name={`start`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flowStart')}</FormLabel>
-                <FormControl>
-                  <NumberInput {...field} className="w-full"></NumberInput>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name={`num`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flowNum')}</FormLabel>
-                <FormControl>
-                  <NumberInput {...field} className="w-full"></NumberInput>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <GoogleFormWidgets></GoogleFormWidgets>
-        </FormContainer>
-      </FormWrapper>
+      <form className="px-5">
+        {fields.map((field, index) => {
+          return (
+            <ParserItem
+              key={field.id}
+              name={name}
+              index={index}
+              fieldLength={fields.length}
+              remove={remove}
+            ></ParserItem>
+          );
+        })}
+        <BlockButton onClick={add} type="button" className="mt-2.5">
+          {t('dataflow.addParser')}
+        </BlockButton>
+      </form>
       <div className="p-5">
         <Output list={outputList}></Output>
       </div>

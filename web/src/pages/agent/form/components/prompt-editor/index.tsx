@@ -55,7 +55,7 @@ type IProps = {
   onChange?: (value?: string) => void;
   placeholder?: ReactNode;
 } & PromptContentProps &
-  Pick<VariablePickerMenuPluginProps, 'extraOptions'>;
+  Pick<VariablePickerMenuPluginProps, 'extraOptions' | 'baseOptions'>;
 
 function PromptContent({
   showToolbar = true,
@@ -126,6 +126,7 @@ export function PromptEditor({
   showToolbar,
   multiLine = true,
   extraOptions,
+  baseOptions,
 }: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
@@ -177,6 +178,7 @@ export function PromptEditor({
         <VariablePickerMenuPlugin
           value={value}
           extraOptions={extraOptions}
+          baseOptions={baseOptions}
         ></VariablePickerMenuPlugin>
         <PasteHandlerPlugin />
         <VariableOnChangePlugin

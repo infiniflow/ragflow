@@ -9,6 +9,9 @@ export function ConfigurationFormContainer({
   return <section className={cn('space-y-4', className)}>{children}</section>;
 }
 
-export function MainContainer({ children }: PropsWithChildren) {
-  return <section className="space-y-5">{children}</section>;
+export function MainContainer({
+  children,
+  className,
+}: PropsWithChildren & { className?: string }) {
+  return <section className={cn('space-y-5', className)}>{children}</section>;
 }
