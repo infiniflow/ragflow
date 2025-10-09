@@ -52,3 +52,13 @@ export enum AgentCategory {
   AgentCanvas = 'agent_canvas',
   DataflowCanvas = 'dataflow_canvas',
 }
+
+export enum DataflowOperator {
+  Begin = 'File',
+  Note = 'Note',
+  Parser = 'Parser',
+  Tokenizer = 'Tokenizer',
+  Splitter = 'Splitter',
+  HierarchicalMerger = 'HierarchicalMerger',
+  Extractor = 'Extractor',
+}
