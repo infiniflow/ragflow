@@ -3,9 +3,16 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { cn } from '@/lib/utils';
 import { CollapsibleProps } from '@radix-ui/react-collapsible';
-import { ListCollapse } from 'lucide-react';
-import { PropsWithChildren, ReactNode } from 'react';
+import {
+  PropsWithChildren,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
+import { IconFontFill } from './icon-font';
 
 type CollapseProps = Omit<CollapsibleProps, 'title'> & {
   title?: ReactNode;
@@ -16,22 +23,42 @@ export function Collapse({
   title,
   children,
   rightContent,
-  open,
+  open = true,
   defaultOpen = false,
   onOpenChange,
   disabled,
 }: CollapseProps) {
+  const [currentOpen, setCurrentOpen] = useState(open);
+
+  useEffect(() => {
+    setCurrentOpen(open);
+  }, [open]);
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      setCurrentOpen(open);
+      onOpenChange?.(open);
+    },
+    [onOpenChange],
+  );
+
   return (
     <Collapsible
       defaultOpen={defaultOpen}
-      open={open}
-      onOpenChange={onOpenChange}
+      open={currentOpen}
+      onOpenChange={handleOpenChange}
       disabled={disabled}
     >
       <CollapsibleTrigger className="w-full">
         <section className="flex justify-between items-center pb-2">
           <div className="flex items-center gap-1">
-            <ListCollapse className="size-4" /> {title}
+            <IconFontFill
+              name={`more`}
+              className={cn('size-4', {
+                'rotate-90': !currentOpen,
+              })}
+            ></IconFontFill>
+            {title}
           </div>
           <div>{rightContent}</div>
         </section>
