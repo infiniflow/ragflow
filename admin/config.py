@@ -49,6 +49,7 @@ class BaseConfig(BaseModel):
     host: str
     port: int
     service_type: str
+    detail_func_name: str
 
     def to_dict(self) -> dict[str, Any]:
         return {'id': self.id, 'name': self.name, 'host': self.host, 'port': self.port,
@@ -228,7 +229,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 host: str = v['host']
                 http_port: int = v['http_port']
                 config = RAGFlowServerConfig(id=id_count, name=name, host=host, port=http_port,
-                                             service_type="ragflow_server")
+                                             service_type="ragflow_server", detail_func_name="check_ragflow_server_alive")
                 configurations.append(config)
                 id_count += 1
             case "es":
@@ -241,7 +242,8 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 password: str = v.get('password')
                 config = ElasticsearchConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval",
                                              retrieval_type="elasticsearch",
-                                             username=username, password=password)
+                                             username=username, password=password,
+                                             detail_func_name="get_es_cluster_stats")
                 configurations.append(config)
                 id_count += 1
 
@@ -252,9 +254,8 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 host = parts[0]
                 port = int(parts[1])
                 database: str = v.get('db_name', 'default_db')
-                config = InfinityConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval",
-                                        retrieval_type="infinity",
-                                        db_name=database)
+                config = InfinityConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval", retrieval_type="infinity",
+                                        db_name=database, detail_func_name="get_infinity_status")
                 configurations.append(config)
                 id_count += 1
             case "minio":
@@ -265,9 +266,8 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 port = int(parts[1])
                 user = v.get('user')
                 password = v.get('password')
-                config = MinioConfig(id=id_count, name=name, host=host, port=port, user=user, password=password,
-                                     service_type="file_store",
-                                     store_type="minio")
+                config = MinioConfig(id=id_count, name=name, host=host, port=port, user=user, password=password, service_type="file_store",
+                                     store_type="minio", detail_func_name="check_minio_alive")
                 configurations.append(config)
                 id_count += 1
             case "redis":
@@ -279,7 +279,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 password = v.get('password')
                 db: int = v.get('db')
                 config = RedisConfig(id=id_count, name=name, host=host, port=port, password=password, database=db,
-                                     service_type="message_queue", mq_type="redis")
+                                     service_type="message_queue", mq_type="redis", detail_func_name="get_redis_info")
                 configurations.append(config)
                 id_count += 1
             case "mysql":
@@ -289,7 +289,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 username = v.get('user')
                 password = v.get('password')
                 config = MySQLConfig(id=id_count, name=name, host=host, port=port, username=username, password=password,
-                                     service_type="meta_data", meta_type="mysql")
+                                     service_type="meta_data", meta_type="mysql", detail_func_name="get_mysql_status")
                 configurations.append(config)
                 id_count += 1
             case "admin":

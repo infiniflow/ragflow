@@ -24,6 +24,7 @@ from flask import request
 from flask_login import current_user, login_required
 
 from api import settings
+from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileSource, FileType, ParserType, TaskStatus
 from api.db.db_models import File, Task
@@ -68,8 +69,10 @@ def upload():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
-    err, files = FileService.upload_document(kb, file_objs, current_user.id)
+    if not check_kb_team_permission(kb, current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
 
+    err, files = FileService.upload_document(kb, file_objs, current_user.id)
     if err:
         return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
 
@@ -94,6 +97,8 @@ def web_crawl():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
+    if check_kb_team_permission(kb, current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
 
     blob = html2pdf(url)
     if not blob:

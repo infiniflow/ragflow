@@ -98,7 +98,7 @@ Where:
 
 - `mcp-host`: The MCP server's host address.
 - `mcp-port`: The MCP server's listening port.
-- `mcp-base_url`: The address of the running RAGFlow server.
+- `mcp-base-url`: The address of the running RAGFlow server.
 - `mcp-script-path`: The file path to the MCP server’s main script.
 - `mcp-mode`: The launch mode.
   - `self-host`: (default) self-host mode.
