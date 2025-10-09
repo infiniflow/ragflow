@@ -30,6 +30,7 @@ export interface ISwitchForm {
   no: string;
 }
 
+import { AgentCategory } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 
@@ -74,6 +75,7 @@ export declare interface IFlow {
   permission: string;
   nickname: string;
   operator_permission: number;
+  canvas_category: string;
 }
 
 export interface IFlowTemplate {
@@ -264,4 +266,13 @@ export interface IAgentLogMessage {
   content: string;
   role: 'user' | 'assistant';
   id: string;
+}
+
+export interface IPipeLineListRequest {
+  page?: number;
+  page_size?: number;
+  keywords?: string;
+  orderby?: string;
+  desc?: boolean;
+  canvas_category?: AgentCategory;
 }

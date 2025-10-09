@@ -3,7 +3,12 @@ export enum LogTabs {
   DATASET_LOGS = 'datasetLogs',
 }
 
-export enum processingType {
-  knowledgeGraph = 'knowledgeGraph',
-  raptor = 'raptor',
+export enum ProcessingType {
+  knowledgeGraph = 'GraphRAG',
+  raptor = 'RAPTOR',
 }
+
+export const ProcessingTypeMap = {
+  [ProcessingType.knowledgeGraph]: 'Knowledge Graph',
+  [ProcessingType.raptor]: 'Raptor',
+};

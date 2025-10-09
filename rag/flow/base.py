@@ -18,9 +18,7 @@ import os
 import time
 from functools import partial
 from typing import Any
-
 import trio
-
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
@@ -36,9 +34,9 @@ class ProcessBase(ComponentBase):
     def __init__(self, pipeline, id, param: ProcessParamBase):
         super().__init__(pipeline, id, param)
         if hasattr(self._canvas, "callback"):
-            self.callback = partial(self._canvas.callback, self.component_name)
+            self.callback = partial(self._canvas.callback, id)
         else:
-            self.callback = partial(lambda *args, **kwargs: None, self.component_name)
+            self.callback = partial(lambda *args, **kwargs: None, id)
 
     async def invoke(self, **kwargs) -> dict[str, Any]:
         self.set_output("_created_time", time.perf_counter())

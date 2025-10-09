@@ -17,13 +17,21 @@ import { useCallback } from 'react';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
+import { useSelectFilters } from './hooks/use-selelct-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
 
 export default function Agents() {
-  const { data, pagination, setPagination, searchString, handleInputChange } =
-    useFetchAgentListByPage();
+  const {
+    data,
+    pagination,
+    setPagination,
+    searchString,
+    handleInputChange,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchAgentListByPage();
   const { navigateToAgentTemplates } = useNavigatePage();
 
   const {
@@ -50,6 +58,8 @@ export default function Agents() {
     hideFileUploadModal,
   } = useHandleImportJsonFile();
 
+  const filters = useSelectFilters();
+
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
       setPagination({ page, pageSize });
@@ -65,6 +75,9 @@ export default function Agents() {
           searchString={searchString}
           onSearchChange={handleInputChange}
           icon="agent"
+          filters={filters}
+          onChange={handleFilterSubmit}
+          value={filterValue}
         >
           <DropdownMenu>
             <DropdownMenuTrigger>
@@ -79,21 +92,21 @@ export default function Agents() {
                 onClick={showCreatingModal}
               >
                 <Clipboard />
-                Create from Blank
+                {t('flow.createFromBlank')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 justifyBetween={false}
                 onClick={navigateToAgentTemplates}
               >
                 <ClipboardPlus />
-                Create from Template
+                {t('flow.createFromTemplate')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 justifyBetween={false}
                 onClick={handleImportJson}
               >
                 <FileInput />
-                Import json file
+                {t('flow.importJsonFile')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -1,21 +1,10 @@
-import {
-  initialKeywordsSimilarityWeightValue,
-  initialSimilarityThresholdValue,
-} from '@/components/similarity-slider';
-import {
-  AgentGlobals,
-  CodeTemplateStrMap,
-  ProgrammingLanguage,
-} from '@/constants/agent';
-
+import { ParseDocumentType } from '@/components/layout-recognize-form-field';
+import { initialLlmBaseValues } from '@/constants/agent';
 import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
 } from '@/constants/chat';
-import { ModelVariableType } from '@/constants/knowledge';
-import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { t } from 'i18next';
 
 import {
   Circle,
@@ -28,6 +17,89 @@ import {
   WrapText,
 } from 'lucide-react';
 
+export enum FileType {
+  PDF = 'pdf',
+  Spreadsheet = 'spreadsheet',
+  Image = 'image',
+  Email = 'email',
+  TextMarkdown = 'text&markdown',
+  Docx = 'word',
+  PowerPoint = 'slides',
+  Video = 'video',
+  Audio = 'audio',
+}
+
+export enum PdfOutputFormat {
+  Json = 'json',
+  Markdown = 'markdown',
+}
+
+export enum SpreadsheetOutputFormat {
+  Json = 'json',
+  Html = 'html',
+}
+
+export enum ImageOutputFormat {
+  Text = 'text',
+}
+
+export enum EmailOutputFormat {
+  Json = 'json',
+  Text = 'text',
+}
+
+export enum TextMarkdownOutputFormat {
+  Text = 'text',
+}
+
+export enum DocxOutputFormat {
+  Markdown = 'markdown',
+  Json = 'json',
+}
+
+export enum PptOutputFormat {
+  Json = 'json',
+}
+
+export enum VideoOutputFormat {
+  Json = 'json',
+}
+
+export enum AudioOutputFormat {
+  Text = 'text',
+}
+
+export const OutputFormatMap = {
+  [FileType.PDF]: PdfOutputFormat,
+  [FileType.Spreadsheet]: SpreadsheetOutputFormat,
+  [FileType.Image]: ImageOutputFormat,
+  [FileType.Email]: EmailOutputFormat,
+  [FileType.TextMarkdown]: TextMarkdownOutputFormat,
+  [FileType.Docx]: DocxOutputFormat,
+  [FileType.PowerPoint]: PptOutputFormat,
+  [FileType.Video]: VideoOutputFormat,
+  [FileType.Audio]: AudioOutputFormat,
+};
+
+export const InitialOutputFormatMap = {
+  [FileType.PDF]: PdfOutputFormat.Json,
+  [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
+  [FileType.Image]: ImageOutputFormat.Text,
+  [FileType.Email]: EmailOutputFormat.Text,
+  [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
+  [FileType.Docx]: DocxOutputFormat.Json,
+  [FileType.PowerPoint]: PptOutputFormat.Json,
+  [FileType.Video]: VideoOutputFormat.Json,
+  [FileType.Audio]: AudioOutputFormat.Text,
+};
+
+export enum ContextGeneratorFieldName {
+  Summary = 'summary',
+  Keywords = 'keywords',
+  Questions = 'questions',
+  Metadata = 'metadata',
+}
+
 export enum PromptRole {
   User = 'user',
   Assistant = 'assistant',
@@ -38,34 +110,16 @@ export enum AgentDialogueMode {
   Task = 'task',
 }
 
-export const BeginId = 'begin';
+export const BeginId = 'File';
 
 export enum Operator {
-  Begin = 'Begin',
-  Retrieval = 'Retrieval',
-  Categorize = 'Categorize',
-  Message = 'Message',
-  Relevant = 'Relevant',
-  RewriteQuestion = 'RewriteQuestion',
-  KeywordExtract = 'KeywordExtract',
-  ExeSQL = 'ExeSQL',
-  Switch = 'Switch',
-  Concentrator = 'Concentrator',
+  Begin = 'File',
   Note = 'Note',
-  Crawler = 'Crawler',
-  Invoke = 'Invoke',
-  Email = 'Email',
-  Iteration = 'Iteration',
-  IterationStart = 'IterationItem',
-  Code = 'CodeExec',
-  WaitingDialogue = 'WaitingDialogue',
-  Agent = 'Agent',
-  Tool = 'Tool',
-  UserFillUp = 'UserFillUp',
-  StringTransform = 'StringTransform',
   Parser = 'Parser',
-  Chunker = 'Chunker',
   Tokenizer = 'Tokenizer',
+  Splitter = 'Splitter',
+  HierarchicalMerger = 'HierarchicalMerger',
+  Extractor = 'Extractor',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -73,20 +127,6 @@ export const SwitchLogicOperatorOptions = ['and', 'or'];
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
 );
-
-export const AgentOperatorList = [
-  Operator.Retrieval,
-  Operator.Categorize,
-  Operator.Message,
-  Operator.RewriteQuestion,
-  Operator.KeywordExtract,
-  Operator.Switch,
-  Operator.Concentrator,
-  Operator.Iteration,
-  Operator.WaitingDialogue,
-  Operator.Note,
-  Operator.Agent,
-];
 
 export const SwitchOperatorOptions = [
   { value: '=', label: 'equal', icon: 'equal' },
@@ -113,36 +153,43 @@ export const SwitchOperatorOptions = [
 
 export const SwitchElseTo = 'end_cpn_ids';
 
-const initialQueryBaseValues = {
-  query: [],
-};
+export enum TokenizerSearchMethod {
+  Embedding = 'embedding',
+  FullText = 'full_text',
+}
 
-export const initialRetrievalValues = {
-  query: AgentGlobals.SysQuery,
-  top_n: 8,
-  top_k: 1024,
-  kb_ids: [],
-  rerank_id: '',
-  empty_response: '',
-  ...initialSimilarityThresholdValue,
-  ...initialKeywordsSimilarityWeightValue,
-  use_kg: false,
-  cross_languages: [],
+export enum ImageParseMethod {
+  OCR = 'ocr',
+}
+
+export enum TokenizerFields {
+  Text = 'text',
+  Questions = 'questions',
+  Summary = 'summary',
+}
+
+export enum ParserFields {
+  From = 'from',
+  To = 'to',
+  Cc = 'cc',
+  Bcc = 'bcc',
+  Date = 'date',
+  Subject = 'subject',
+  Body = 'body',
+  Attachments = 'attachments',
+}
+
+export const initialBeginValues = {
   outputs: {
-    formalized_content: {
+    name: {
       type: 'string',
       value: '',
     },
-    json: {
-      type: 'Array<Object>',
-      value: [],
+    file: {
+      type: 'Object',
+      value: {},
     },
   },
-};
-
-export const initialBeginValues = {
-  mode: AgentDialogueMode.Conversational,
-  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const variableCheckBoxFieldMap = Object.keys(
@@ -154,215 +201,17 @@ export const variableCheckBoxFieldMap = Object.keys(
   return pre;
 }, {});
 
-const initialLlmBaseValues = {
-  ...variableCheckBoxFieldMap,
-  temperature: 0.1,
-  top_p: 0.3,
-  frequency_penalty: 0.7,
-  presence_penalty: 0.4,
-  max_tokens: 256,
-};
-
-export const initialGenerateValues = {
-  ...initialLlmBaseValues,
-  prompt: i18n.t('flow.promptText'),
-  cite: true,
-  message_history_window_size: 12,
-  parameters: [],
-};
-
-export const initialRewriteQuestionValues = {
-  ...initialLlmBaseValues,
-  language: '',
-  message_history_window_size: 6,
-};
-
-export const initialRelevantValues = {
-  ...initialLlmBaseValues,
-};
-
-export const initialCategorizeValues = {
-  ...initialLlmBaseValues,
-  query: AgentGlobals.SysQuery,
-  parameter: ModelVariableType.Precise,
-  message_history_window_size: 1,
-  items: [],
-  outputs: {
-    category_name: {
-      type: 'string',
-    },
-  },
-};
-
-export const initialMessageValues = {
-  content: [''],
-};
-
-export const initialKeywordExtractValues = {
-  ...initialLlmBaseValues,
-  top_n: 3,
-  ...initialQueryBaseValues,
-};
-
-export const initialExeSqlValues = {
-  sql: '',
-  db_type: 'mysql',
-  database: '',
-  username: '',
-  host: '',
-  port: 3306,
-  password: '',
-  max_records: 1024,
-  outputs: {
-    formalized_content: {
-      value: '',
-      type: 'string',
-    },
-    json: {
-      value: [],
-      type: 'Array<Object>',
-    },
-  },
-};
-
-export const initialSwitchValues = {
-  conditions: [
-    {
-      logical_operator: SwitchLogicOperatorOptions[0],
-      items: [
-        {
-          operator: SwitchOperatorOptions[0].value,
-        },
-      ],
-      to: [],
-    },
-  ],
-  [SwitchElseTo]: [],
-};
-
-export const initialConcentratorValues = {};
-
 export const initialNoteValues = {
   text: '',
 };
 
-export const initialCrawlerValues = {
-  extract_type: 'markdown',
-  query: '',
-};
-
-export const initialInvokeValues = {
-  url: '',
-  method: 'GET',
-  timeout: 60,
-  headers: `{
-  "Accept": "*/*",
-  "Cache-Control": "no-cache",
-  "Connection": "keep-alive"
-}`,
-  proxy: '',
-  clean_html: false,
-  variables: [],
-  outputs: {
-    result: {
-      value: '',
-      type: 'string',
-    },
-  },
-};
-
-export const initialTemplateValues = {
-  content: '',
-  parameters: [],
-};
-
-export const initialEmailValues = {
-  smtp_server: '',
-  smtp_port: 465,
-  email: '',
-  password: '',
-  sender_name: '',
-  to_email: '',
-  cc_email: '',
-  subject: '',
-  content: '',
-  outputs: {
-    success: {
-      value: true,
-      type: 'boolean',
-    },
-  },
-};
-
-export const initialIterationValues = {
-  items_ref: '',
-  outputs: {},
-};
-export const initialIterationStartValues = {
-  outputs: {
-    item: {
-      type: 'unkown',
-    },
-    index: {
-      type: 'integer',
-    },
-  },
-};
-
-export const initialCodeValues = {
-  lang: ProgrammingLanguage.Python,
-  script: CodeTemplateStrMap[ProgrammingLanguage.Python],
-  arguments: {
-    arg1: '',
-    arg2: '',
-  },
-  outputs: {},
-};
-
-export const initialWaitingDialogueValues = {};
-
-export const initialChunkerValues = { outputs: {} };
-
-export const initialTokenizerValues = {};
-
-export const initialAgentValues = {
-  ...initialLlmBaseValues,
-  description: '',
-  user_prompt: '',
-  sys_prompt: t('flow.sysPromptDefultValue'),
-  prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
-  message_history_window_size: 12,
-  max_retries: 3,
-  delay_after_error: 1,
-  visual_files_var: '',
-  max_rounds: 1,
-  exception_method: '',
-  exception_goto: [],
-  exception_default_value: '',
-  tools: [],
-  mcp: [],
-  cite: true,
-  outputs: {
-    // structured_output: {
-    //   topic: {
-    //     type: 'string',
-    //     description:
-    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-    //     enum: ['general', 'news'],
-    //     default: 'general',
-    //   },
-    // },
-    content: {
-      type: 'string',
-      value: '',
-    },
-  },
-};
-
-export const initialUserFillUpValues = {
-  enable_tips: true,
-  tips: '',
-  inputs: [],
+export const initialTokenizerValues = {
+  search_method: [
+    TokenizerSearchMethod.Embedding,
+    TokenizerSearchMethod.FullText,
+  ],
+  filename_embd_weight: 0.1,
+  fields: TokenizerFields.Text,
   outputs: {},
 };
 
@@ -380,19 +229,84 @@ export enum StringTransformDelimiter {
   Space = ' ',
 }
 
-export const initialStringTransformValues = {
-  method: StringTransformMethod.Merge,
-  split_ref: '',
-  script: '',
-  delimiters: [StringTransformDelimiter.Comma],
+export const initialParserValues = {
   outputs: {
-    result: {
-      type: 'string',
-    },
+    markdown: { type: 'string', value: '' },
+    text: { type: 'string', value: '' },
+    html: { type: 'string', value: '' },
+    json: { type: 'Array<object>', value: [] },
   },
+  setups: [
+    {
+      fileFormat: FileType.PDF,
+      output_format: PdfOutputFormat.Json,
+      parse_method: ParseDocumentType.DeepDOC,
+    },
+    {
+      fileFormat: FileType.Spreadsheet,
+      output_format: SpreadsheetOutputFormat.Html,
+    },
+    {
+      fileFormat: FileType.Image,
+      output_format: ImageOutputFormat.Text,
+      parse_method: ImageParseMethod.OCR,
+      system_prompt: '',
+    },
+    {
+      fileFormat: FileType.Email,
+      fields: Object.values(ParserFields),
+      output_format: EmailOutputFormat.Text,
+    },
+    {
+      fileFormat: FileType.TextMarkdown,
+      output_format: TextMarkdownOutputFormat.Text,
+    },
+    {
+      fileFormat: FileType.Docx,
+      output_format: DocxOutputFormat.Json,
+    },
+    {
+      fileFormat: FileType.PowerPoint,
+      output_format: PptOutputFormat.Json,
+    },
+  ],
 };
 
-export const initialParserValues = { outputs: {} };
+export const initialSplitterValues = {
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [{ value: '\n' }],
+};
+
+export enum Hierarchy {
+  H1 = '1',
+  H2 = '2',
+  H3 = '3',
+  H4 = '4',
+  H5 = '5',
+}
+
+export const initialHierarchicalMergerValues = {
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+  hierarchy: Hierarchy.H3,
+  levels: [
+    { expressions: [{ expression: '^#[^#]' }] },
+    { expressions: [{ expression: '^##[^#]' }] },
+    { expressions: [{ expression: '^###[^#]' }] },
+    { expressions: [{ expression: '^####[^#]' }] },
+  ],
+};
+
+export const initialExtractorValues = {
+  ...initialLlmBaseValues,
+  field_name: ContextGeneratorFieldName.Summary,
+  outputs: {},
+};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -411,72 +325,24 @@ export const CategorizeAnchorPointPositions = [
 
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
-export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [Operator.Relevant],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
-  [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Message]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Retrieval,
-    Operator.RewriteQuestion,
-    Operator.Categorize,
-  ],
-  [Operator.Relevant]: [Operator.Begin],
-  [Operator.RewriteQuestion]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-    Operator.Relevant,
-  ],
-  [Operator.KeywordExtract]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Relevant,
-  ],
-  [Operator.ExeSQL]: [Operator.Begin],
-  [Operator.Switch]: [Operator.Begin],
-  [Operator.Concentrator]: [Operator.Begin],
-  [Operator.Crawler]: [Operator.Begin],
-  [Operator.Note]: [],
-  [Operator.Invoke]: [Operator.Begin],
-  [Operator.Email]: [Operator.Begin],
-  [Operator.Iteration]: [Operator.Begin],
-  [Operator.IterationStart]: [Operator.Begin],
-  [Operator.Code]: [Operator.Begin],
-  [Operator.WaitingDialogue]: [Operator.Begin],
-  [Operator.Agent]: [Operator.Begin],
-  [Operator.StringTransform]: [Operator.Begin],
-  [Operator.UserFillUp]: [Operator.Begin],
-  [Operator.Tool]: [Operator.Begin],
+export const RestrictedUpstreamMap: Record<Operator, Operator[]> = {
+  [Operator.Begin]: [] as Operator[],
+  [Operator.Parser]: [Operator.Begin],
+  [Operator.Splitter]: [Operator.Begin],
+  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.Tokenizer]: [Operator.Begin],
+  [Operator.Extractor]: [Operator.Begin],
+  [Operator.Note]: [Operator.Begin],
 };
 
 export const NodeMap = {
   [Operator.Begin]: 'beginNode',
-  [Operator.Categorize]: 'categorizeNode',
-  [Operator.Retrieval]: 'retrievalNode',
-  [Operator.Message]: 'messageNode',
-  [Operator.Relevant]: 'relevantNode',
-  [Operator.RewriteQuestion]: 'rewriteNode',
-  [Operator.KeywordExtract]: 'keywordNode',
-  [Operator.ExeSQL]: 'ragNode',
-  [Operator.Switch]: 'switchNode',
-  [Operator.Concentrator]: 'logicNode',
   [Operator.Note]: 'noteNode',
-  [Operator.Crawler]: 'ragNode',
-  [Operator.Invoke]: 'ragNode',
-  [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
-  [Operator.IterationStart]: 'iterationStartNode',
-  [Operator.Code]: 'ragNode',
-  [Operator.WaitingDialogue]: 'ragNode',
-  [Operator.Agent]: 'agentNode',
-  [Operator.Tool]: 'toolNode',
-  [Operator.UserFillUp]: 'ragNode',
-  [Operator.StringTransform]: 'ragNode',
   [Operator.Parser]: 'parserNode',
-  [Operator.Chunker]: 'chunkerNode',
   [Operator.Tokenizer]: 'tokenizerNode',
+  [Operator.Splitter]: 'splitterNode',
+  [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
+  [Operator.Extractor]: 'contextNode',
 };
 
 export enum BeginQueryType {
@@ -497,16 +363,7 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.Boolean]: ToggleLeft,
 };
 
-export const NoDebugOperatorsList = [
-  Operator.Begin,
-  Operator.Concentrator,
-  Operator.Message,
-  Operator.RewriteQuestion,
-  Operator.Switch,
-  Operator.Iteration,
-  Operator.UserFillUp,
-  Operator.IterationStart,
-];
+export const NoDebugOperatorsList = [Operator.Begin];
 
 export enum NodeHandleId {
   Start = 'start',
@@ -527,3 +384,38 @@ export enum AgentExceptionMethod {
   Comment = 'comment',
   Goto = 'goto',
 }
+
+export const FileTypeSuffixMap = {
+  [FileType.PDF]: ['pdf'],
+  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
+  [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
+  [FileType.Email]: ['eml', 'msg'],
+  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
+  [FileType.Docx]: ['doc', 'docx'],
+  [FileType.PowerPoint]: ['pptx'],
+  [FileType.Video]: [],
+  [FileType.Audio]: [
+    'da',
+    'wave',
+    'wav',
+    'mp3',
+    'aac',
+    'flac',
+    'ogg',
+    'aiff',
+    'au',
+    'midi',
+    'wma',
+    'realaudio',
+    'vqf',
+    'oggvorbis',
+    'ape',
+  ],
+};
+
+export const SingleOperators = [
+  Operator.Tokenizer,
+  Operator.Splitter,
+  Operator.HierarchicalMerger,
+  Operator.Parser,
+];
