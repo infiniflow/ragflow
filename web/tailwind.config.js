@@ -28,7 +28,7 @@ module.exports = {
     },
     extend: {
       colors: {
-        border: 'var(--colors-outline-neutral-strong)',
+        border: 'var(--border-default)',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'var(--background)',
@@ -76,11 +76,23 @@ module.exports = {
         'border-default': 'var(--border-default)',
         'border-accent': 'var(--border-accent)',
         'border-button': 'var(--border-button)',
-        'accent-primary': 'var(--accent-primary)',
+        'accent-primary': {
+          DEFAULT: 'rgb(var(--accent-primary) / <alpha-value>)',
+          5: 'rgba(var(--accent-primary) / 0.05)', // 5%
+        },
         'bg-accent': 'var(--bg-accent)',
-        'state-success': 'var(--state-success)',
-        'state-warning': 'var(--state-warning)',
-        'state-error': 'var(--state-error)',
+        'state-success': {
+          DEFAULT: 'rgb(var(--state-success) / <alpha-value>)',
+          5: 'rgba(var(--state-success) / 0.05)', // 5%
+        },
+        'state-warning': {
+          DEFAULT: 'rgb(var(--state-warning) / <alpha-value>)',
+          5: 'rgba(var(--state-warning) / 0.05)', // 5%
+        },
+        'state-error': {
+          DEFAULT: 'rgb(var(--state-error) / <alpha-value>)',
+          5: 'rgba(var(--state-error) / 0.05)', // 5%
+        },
         'team-group': 'var(--team-group)',
         'team-member': 'var(--team-member)',
         'team-department': 'var(--team-department)',

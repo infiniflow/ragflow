@@ -15,7 +15,7 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
-import Generate from './generate';
+import Generate from './generate-button/generate';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';
@@ -75,7 +75,7 @@ export default function Dataset() {
           filters={filters}
           leftPanel={
             <div className="items-start">
-              <div className="pb-1">{t('knowledgeDetails.dataset')}</div>
+              <div className="pb-1">{t('knowledgeDetails.subbarFiles')}</div>
               <div className="text-text-sub-title-invert text-sm">
                 {t('knowledgeDetails.datasetDescription')}
               </div>

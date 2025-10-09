@@ -45,6 +45,18 @@ export default {
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
+  getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
+  // data pipeline log
+  fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
+  get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
+  fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
+  runGraphRag: `${api_host}/kb/run_graphrag`,
+  traceGraphRag: `${api_host}/kb/trace_graphrag`,
+  runRaptor: `${api_host}/kb/run_raptor`,
+  traceRaptor: `${api_host}/kb/trace_raptor`,
+  unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
+    `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
+  pipelineRerun: `${api_host}/canvas/rerun`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -138,7 +150,6 @@ export default {
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
-  listCanvasTeam: `${api_host}/canvas/listteam`,
   getCanvas: `${api_host}/canvas/get`,
   getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,
@@ -165,6 +176,8 @@ export default {
   fetchExternalAgentInputs: (canvasId: string) =>
     `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
   prompt: `${api_host}/canvas/prompts`,
+  cancelDataflow: (id: string) => `${api_host}/canvas/cancel/${id}`,
+  downloadFile: `${api_host}/canvas/download`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
@@ -190,4 +203,11 @@ export default {
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
+
+  // data pipeline
+  fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,
+  setDataflow: `${api_host}/dataflow/set`,
+  removeDataflow: `${api_host}/dataflow/rm`,
+  listDataflow: `${api_host}/dataflow/list`,
+  runDataflow: `${api_host}/dataflow/run`,
 };

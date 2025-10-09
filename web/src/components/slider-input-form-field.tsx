@@ -54,8 +54,7 @@ export function SliderInputFormField({
           <FormLabel
             tooltip={tooltip}
             className={cn({
-              'text-sm text-muted-foreground whitespace-break-spaces w-1/4':
-                isHorizontal,
+              'text-sm whitespace-break-spaces w-1/4': isHorizontal,
             })}
           >
             {label}

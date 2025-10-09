@@ -1,8 +1,9 @@
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { api_host } from '@/utils/api';
+import api, { api_host } from '@/utils/api';
 import { useSize } from 'ahooks';
 import { CustomTextRenderer } from 'node_modules/react-pdf/dist/esm/shared/types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useGetPipelineResultSearchParams } from '../../hooks';
 
 export const useDocumentResizeObserver = () => {
   const [containerWidth, setContainerWidth] = useState<number>();
@@ -44,12 +45,16 @@ export const useHighlightText = (searchText: string = '') => {
   return textRenderer;
 };
 
-export const useGetDocumentUrl = () => {
+export const useGetDocumentUrl = (isAgent: boolean) => {
   const { documentId } = useGetKnowledgeSearchParams();
+  const { createdBy, documentId: id } = useGetPipelineResultSearchParams();
 
   const url = useMemo(() => {
+    if (isAgent) {
+      return api.downloadFile + `?id=${id}&created_by=${createdBy}`;
+    }
     return `${api_host}/document/get/${documentId}`;
-  }, [documentId]);
+  }, [createdBy, documentId, id, isAgent]);
 
   return url;
 };

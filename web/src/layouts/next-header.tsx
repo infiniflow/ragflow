@@ -1,3 +1,4 @@
+import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,6 @@ import {
   CircleHelp,
   Cpu,
   File,
-  Github,
   House,
   Library,
   MessageSquareText,
@@ -114,15 +114,6 @@ export function Header() {
           className="size-10 mr-[12] cursor-pointer"
           onClick={handleLogoClick}
         />
-        <a
-          className="flex items-center gap-1.5 text-text-secondary"
-          target="_blank"
-          href="https://github.com/infiniflow/ragflow"
-          rel="noreferrer"
-        >
-          <Github className="size-4" />
-          {/* <span className=" text-base">21.5k stars</span> */}
-        </a>
       </div>
       <Segmented
         options={options}
@@ -130,6 +121,20 @@ export function Header() {
         onChange={handleChange}
       ></Segmented>
       <div className="flex items-center gap-5 text-text-badge">
+        <a
+          target="_blank"
+          href="https://discord.com/invite/NjYzJD3GM3"
+          rel="noreferrer"
+        >
+          <IconFontFill name="a-DiscordIconSVGVectorIcon"></IconFontFill>
+        </a>
+        <a
+          target="_blank"
+          href="https://github.com/infiniflow/ragflow"
+          rel="noreferrer"
+        >
+          <IconFontFill name="GitHub"></IconFontFill>
+        </a>
         <DropdownMenu>
           <DropdownMenuTrigger>
             <div className="flex items-center gap-1">

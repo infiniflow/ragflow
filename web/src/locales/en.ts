@@ -102,16 +102,24 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      fileSize: 'File Size',
+      fileType: 'File Type',
+      uploadedBy: 'Uploaded by',
+      notGenerated: 'Not generated',
+      generatedOn: 'Generated on',
+      subbarFiles: 'Files',
       generateKnowledgeGraph:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generate: 'Generate',
       raptor: 'Raptor',
-      knowledgeGraph: 'Knowledge Graph',
       processingType: 'Processing Type',
       dataPipeline: 'Data Pipeline',
       operations: 'Operations',
+      taskId: 'Task ID',
+      duration: 'Duration',
+      details: 'Details',
       status: 'Status',
       task: 'Task',
       startDate: 'Start Date',
@@ -123,7 +131,7 @@ export default {
       success: 'Success',
       failed: 'Failed',
       completed: 'Completed',
-      processLog: 'Process Log',
+      datasetLog: 'Dataset Log',
       created: 'Created',
       learnMore: 'Learn More',
       general: 'General',
@@ -138,12 +146,12 @@ export default {
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
-      knowledgeGraph: 'Knowledge graph',
+      knowledgeGraph: 'Knowledge Graph',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
       datasetDescription:
-        '😉 Please wait for your files to finish parsing before starting an AI-powered chat.',
+        'Please wait for your files to finish parsing before starting an AI-powered chat.',
       addFile: 'Add file',
       searchFiles: 'Search your files',
       localFiles: 'Local files',
@@ -261,13 +269,30 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      deleteGenerateModalContent: `
+        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results 
+        will remove all derived entities and relationships from this dataset. 
+        Your original files will remain intact.<p>
+        <br/>
+        Do you want to continue?
+      `,
+      extractRaptor: 'Extract Raptor',
+      extractKnowledgeGraph: 'Extract Knowledge Graph',
+      filterPlaceholder: 'please input filter',
+      fileFilterTip: '',
+      fileFilter: 'File Filter',
+      setDefaultTip: '',
+      setDefault: 'Set as Default',
+      eidtLinkDataPipeline: 'Edit Data Pipeline',
+      linkPipelineSetTip: 'Manage data pipeline linkage with this dataset',
+      default: 'Default',
+      dataPipeline: 'Data Pipeline',
+      linkDataPipeline: 'Link Data Pipeline',
       enableAutoGenerate: 'Enable Auto Generate',
       teamPlaceholder: 'Please select a team.',
-      dataFlowPlaceholder: 'Please select a data flow.',
+      dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
-      useRAPTORToEnhanceRetrieval: 'Use RAPTOR to Enhance Retrieval',
-      extractKnowledgeGraph: 'Extract Knowledge Graph',
-      dataFlow: 'Data Flow',
+      dataFlow: 'Pipeline',
       parseType: 'Parse Type',
       manualSetup: 'Manual Setup',
       builtIn: 'Built-in',
@@ -395,7 +420,7 @@ export default {
 <p>In a Tag column, <b>comma</b> is used to separate tags.</p>
 <i>Lines of texts that fail to follow the above rules will be ignored.</i>
 `,
-      useRaptor: 'Use RAPTOR to enhance retrieval',
+      useRaptor: 'RAPTOR',
       useRaptorTip:
         'Enable RAPTOR for multi-hop question-answering tasks. See https://ragflow.io/docs/dev/enable_raptor for details.',
       prompt: 'Prompt',
@@ -441,7 +466,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Add tag',
-      useGraphRag: 'Extract knowledge graph',
+      useGraphRag: 'Knowledge graph',
       useGraphRagTip:
         'Construct a knowledge graph over file chunks of the current knowledge base to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
       graphRagMethod: 'Method',
@@ -449,7 +474,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
-      community: 'Community reports generation',
+      community: 'Community reports',
       communityTip:
         'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted:
@@ -1040,7 +1065,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         {input}
   The above is the content you need to summarize.`,
       createGraph: 'Create agent',
-      createFromTemplates: 'Create from templates',
+      createFromTemplates: 'Create from template',
       retrieval: 'Retrieval',
       generate: 'Generate',
       answer: 'Interact',
@@ -1560,6 +1585,13 @@ This delimiter is used to split the input text into several text pieces echo of 
       sqlStatementTip:
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
+      release: 'Publish',
+      createFromBlank: 'Create from blank',
+      createFromTemplate: 'Create from template',
+      importJsonFile: 'Import JSON file',
+      ceateAgent: 'Agent flow',
+      createPipeline: 'Data pipeline',
+      chooseAgentType: 'Choose Agent Type',
     },
     llmTools: {
       bad_calculator: {
@@ -1583,6 +1615,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       serverType: 'Server Type',
       addMCP: 'Add MCP',
       editMCP: 'Edit MCP',
+      toolsAvailable: 'tools available',
+      mcpServers: 'MCP Servers',
+      customizeTheListOfMcpServers: 'Customize the list of MCP servers',
     },
     search: {
       searchApps: 'Search Apps',
@@ -1630,14 +1665,138 @@ This delimiter is used to split the input text into several text pieces echo of 
       parseSummaryTip: 'Parser：deepdoc',
       rerunFromCurrentStep: 'Rerun From Current Step',
       rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
+      confirmRerun: 'Confirm Rerun Process',
+      confirmRerunModalContent: `
+      <p class="text-sm text-text-disabled font-medium mb-2">
+        You are about to rerun the process starting from the <strong class="text-text-primary">{{step}}</strong> step.
+      </p>
+      <p class="text-sm mb-3 text-text-secondary">This will:</p>
+      <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
+        <li>Overwrite existing results from the current step onwards</li>
+        <li>Create a new log entry for tracking</li>
+        <li>Previous steps will remain unchanged</li>
+      </ul>`,
+      changeStepModalTitle: 'Step Switch Warning',
+      changeStepModalContent: `
+      <p>You are currently editing the results of this stage.</p> 
+      <p>If you switch to a later stage, your changes will be lost. </p> 
+      <p>To keep them, please click Rerun to re-run the current stage.</p> `,
+      changeStepModalConfirmText: 'Switch Anyway',
+      changeStepModalCancelText: 'Cancel',
+      unlinkPipelineModalTitle: 'Unlink data pipeline',
+      unlinkPipelineModalContent: `
+      <p>Once unlinked, this Dataset will no longer be connected to the current Data Pipeline.</p> 
+      <p>Files that are already being parsed  will continue until completion</p> 
+      <p>Files that are not yet parsed will no longer be processed</p> <br/>
+      <p>Are you sure you want to proceed?</p> `,
+      unlinkPipelineModalConfirmText: 'Unlink',
     },
     dataflow: {
       parser: 'Parser',
-      parserDescription: 'Parser',
-      chunker: 'Chunker',
-      chunkerDescription: 'Chunker',
+      parserDescription:
+        'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Tokenizer',
-      tokenizerDescription: 'Tokenizer',
+      tokenizerDescription:
+        'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      splitter: 'Token Splitter',
+      splitterDescription:
+        'Split text into chunks by token length with optional delimiters and overlap.',
+      hierarchicalMergerDescription:
+        'Split documents into sections by title hierarchy with regex rules for finer control.',
+      hierarchicalMerger: 'Title Splitter',
+      extractor: 'Context Generator',
+      extractorDescription:
+        'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
+      outputFormat: 'Output format',
+      lang: 'Language',
+      fileFormats: 'File formats',
+      fields: 'Fields',
+      addParser: 'Add Parser',
+      hierarchy: 'Hierarchy',
+      regularExpressions: 'Regular Expressions',
+      overlappedPercent: 'Overlapped percent',
+      searchMethod: 'Search method',
+      begin: 'File',
+      parserMethod: 'Parser method',
+      systemPrompt: 'System Prompt',
+      systemPromptPlaceholder:
+        'Enter system prompt for image analysis, if empty the system default value will be used',
+      exportJson: 'Export JSON',
+      viewResult: 'View Result',
+      running: 'Running',
+      summary: 'Augmented Context',
+      keywords: 'Keywords',
+      questions: 'Questions',
+      metadata: 'Metadata',
+      fieldName: 'Result Destination',
+      prompts: {
+        system: {
+          keywords: `Role
+You are a text analyzer.
+
+Task
+Extract the most important keywords/phrases of a given piece of text content.
+
+Requirements
+- Summarize the text content, and give the top 5 important keywords/phrases.
+- The keywords MUST be in the same language as the given piece of text content.
+- The keywords are delimited by ENGLISH COMMA.
+- Output keywords ONLY.`,
+          questions: `Role
+You are a text analyzer.
+
+Task
+Propose 3 questions about a given piece of text content.
+
+Requirements
+- Understand and summarize the text content, and propose the top 3 important questions.
+- The questions SHOULD NOT have overlapping meanings.
+- The questions SHOULD cover the main content of the text as much as possible.
+- The questions MUST be in the same language as the given piece of text content.
+- One question per line.
+- Output questions ONLY.`,
+          summary: `Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.
+
+Key Instructions:
+1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.
+2. Language: Write the summary in the same language as the source text.
+3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.
+4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.`,
+          metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
+
+Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+        },
+        user: {
+          keywords: `Text Content
+[Insert text here]`,
+          questions: `Text Content
+[Insert text here]`,
+          summary: `Text to Summarize:
+[Insert text here]`,
+          metadata: `Content: [INSERT CONTENT HERE]`,
+        },
+      },
+      cancel: 'Cancel',
+      swicthPromptMessage:
+        'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
+      tokenizerSearchMethodOptions: {
+        full_text: 'Full-text',
+        embedding: 'Embedding',
+      },
+      filenameEmbeddingWeight: 'Filename embedding weight',
+      tokenizerFieldsOptions: {
+        text: 'Text',
+        keywords: 'Keywords',
+        questions: 'Questions',
+        summary: 'Augmented Context',
+      },
+    },
+    datasetOverview: {
+      downloadTip: 'Files being downloaded from data sources. ',
+      processingTip: 'Files being processed by data flows.',
+      totalFiles: 'Total Files',
+      downloading: 'Downloading',
+      processing: 'Processing',
     },
   },
 };

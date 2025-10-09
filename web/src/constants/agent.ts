@@ -1,3 +1,6 @@
+import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
+import { ChatVariableEnabledField, variableEnabledFieldMap } from './chat';
+
 export enum ProgrammingLanguage {
   Python = 'python',
   Javascript = 'javascript',
@@ -26,3 +29,26 @@ export enum AgentGlobals {
 }
 
 export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;
+
+export const variableCheckBoxFieldMap = Object.keys(
+  variableEnabledFieldMap,
+).reduce<Record<string, boolean>>((pre, cur) => {
+  pre[cur] = setInitialChatVariableEnabledFieldValue(
+    cur as ChatVariableEnabledField,
+  );
+  return pre;
+}, {});
+
+export const initialLlmBaseValues = {
+  ...variableCheckBoxFieldMap,
+  temperature: 0.1,
+  top_p: 0.3,
+  frequency_penalty: 0.7,
+  presence_penalty: 0.4,
+  max_tokens: 256,
+};
+
+export enum AgentCategory {
+  AgentCanvas = 'agent_canvas',
+  DataflowCanvas = 'dataflow_canvas',
+}

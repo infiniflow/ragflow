@@ -25,6 +25,7 @@ type FlowTypeCardProps = {
   onChange?: (value: FlowType) => void;
 };
 function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
+  const { t } = useTranslation();
   const handleChange = useCallback(
     (value: FlowType) => () => {
       onChange?.(value);
@@ -59,7 +60,11 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
                 ) : (
                   <Route className="size-6" />
                 )}
-                <p>{val}</p>
+                <p>
+                  {t(
+                    `flow.${val === FlowType.Agent ? 'createAgent' : 'createPipeline'}`,
+                  )}
+                </p>
               </div>
               {isActive && <Check />}
             </CardContent>
@@ -106,7 +111,11 @@ export function CreateAgentForm({
         id={TagRenameId}
       >
         {shouldChooseAgent && (
-          <RAGFlowFormItem required name="type" label={t('common.type')}>
+          <RAGFlowFormItem
+            required
+            name="type"
+            label={t('flow.chooseAgentType')}
+          >
             <FlowTypeCards></FlowTypeCards>
           </RAGFlowFormItem>
         )}

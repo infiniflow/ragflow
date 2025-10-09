@@ -11,6 +11,9 @@ export const formSchema = z.object({
   avatar: z.any().nullish(),
   permission: z.string().optional(),
   parser_id: z.string(),
+  pipeline_id: z.string().optional(),
+  pipeline_name: z.string().optional(),
+  pipeline_avatar: z.string().optional(),
   embd_id: z.string(),
   parser_config: z
     .object({
@@ -71,3 +74,18 @@ export const formSchema = z.object({
   pagerank: z.number(),
   // icon: z.array(z.instanceof(File)),
 });
+
+export const pipelineFormSchema = z.object({
+  pipeline_id: z.string().optional(),
+  set_default: z.boolean().optional(),
+  file_filter: z.string().optional(),
+});
+
+// export const linkPiplineFormSchema = pipelineFormSchema.pick({
+//   pipeline_id: true,
+//   file_filter: true,
+// });
+// export const editPiplineFormSchema = pipelineFormSchema.pick({
+//   set_default: true,
+//   file_filter: true,
+// });

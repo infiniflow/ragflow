@@ -34,6 +34,7 @@ dependencies = [
     "elastic-transport==8.12.0",
     "elasticsearch==8.12.1",
     "elasticsearch-dsl==8.12.0",
+    "extract-msg>=0.39.0",
     "filelock==3.15.4",
     "flask==3.0.3",
     "flask-cors==5.0.0",

@@ -1,38 +1,156 @@
+import { TimelineNode } from '@/components/originui/timeline';
 import Spotlight from '@/components/spotlight';
-import { Spin } from '@/components/ui/spin';
+import { cn } from '@/lib/utils';
 import classNames from 'classnames';
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import FormatPreserveEditor from './components/parse-editer';
+import ChunkResultBar from './components/chunk-result-bar';
+import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
+import FormatPreserEditor from './components/parse-editer';
 import RerunButton from './components/rerun-button';
-import { useFetchParserList, useFetchPaserText } from './hooks';
-const ParserContainer = () => {
-  const { data: initialValue, rerun: onSave } = useFetchPaserText();
+import { TimelineNodeType } from './constant';
+import { useChangeChunkTextMode } from './hooks';
+import { IChunk, IDslComponent } from './interface';
+interface IProps {
+  isReadonly: boolean;
+  isChange: boolean;
+  setIsChange: (isChange: boolean) => void;
+  step?: TimelineNode;
+  data: { value: IDslComponent; key: string };
+  reRunLoading: boolean;
+  clickChunk: (chunk: IChunk) => void;
+  reRunFunc: (data: { value: IDslComponent; key: string }) => void;
+}
+const ParserContainer = (props: IProps) => {
+  const {
+    isChange,
+    setIsChange,
+    step,
+    data,
+    reRunFunc,
+    reRunLoading,
+    clickChunk,
+    isReadonly,
+  } = props;
   const { t } = useTranslation();
-  const { loading } = useFetchParserList();
+  const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
+  const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
+  const initialValue = useMemo(() => {
+    const outputs = data?.value?.obj?.params?.outputs;
+    const key = outputs?.output_format?.value;
+    if (!outputs || !key) return { key: '', type: '', value: [] };
+    const value = outputs[key]?.value;
+    const type = outputs[key]?.type;
+    console.log('outputs-->', outputs, data, key, value);
+    return {
+      key,
+      type,
+      value,
+    };
+  }, [data]);
 
   const [initialText, setInitialText] = useState(initialValue);
-  const [isChange, setIsChange] = useState(false);
-  const handleSave = (newContent: string) => {
-    console.log('保存内容:', newContent);
-    if (newContent !== initialText) {
+
+  useEffect(() => {
+    setInitialText(initialValue);
+  }, [initialValue]);
+  const handleSave = (newContent: any) => {
+    console.log('newContent-change-->', newContent, initialValue);
+    if (JSON.stringify(newContent) !== JSON.stringify(initialValue)) {
       setIsChange(true);
-      onSave(newContent);
+      setInitialText(newContent);
     } else {
       setIsChange(false);
     }
     // Here, the API is called to send newContent to the backend
   };
+
+  const handleReRunFunc = useCallback(() => {
+    const newData: { value: IDslComponent; key: string } = {
+      ...data,
+      value: {
+        ...data.value,
+        obj: {
+          ...data.value.obj,
+          params: {
+            ...(data.value?.obj?.params || {}),
+            outputs: {
+              ...(data.value?.obj?.params?.outputs || {}),
+              [initialText.key]: {
+                type: initialText.type,
+                value: initialText.value,
+              },
+            },
+          },
+        },
+      },
+    };
+    reRunFunc(newData);
+    setIsChange(false);
+  }, [data, initialText, reRunFunc, setIsChange]);
+
+  const handleRemoveChunk = useCallback(async () => {
+    if (selectedChunkIds.length > 0) {
+      initialText.value = initialText.value.filter(
+        (item: any, index: number) => !selectedChunkIds.includes(index + ''),
+      );
+      setIsChange(true);
+      setSelectedChunkIds([]);
+    }
+  }, [selectedChunkIds, initialText, setIsChange]);
+
+  const handleCheckboxClick = useCallback(
+    (id: string | number, checked: boolean) => {
+      setSelectedChunkIds((prev) => {
+        if (checked) {
+          return [...prev, id.toString()];
+        } else {
+          return prev.filter((item) => item.toString() !== id.toString());
+        }
+      });
+    },
+    [],
+  );
+
+  const selectAllChunk = useCallback(
+    (checked: boolean) => {
+      setSelectedChunkIds(
+        checked ? initialText.value.map((x, index: number) => index) : [],
+      );
+    },
+    [initialText.value],
+  );
+
+  const isChunck =
+    step?.type === TimelineNodeType.characterSplitter ||
+    step?.type === TimelineNodeType.titleSplitter;
+
+  const handleCreateChunk = useCallback(
+    (text: string) => {
+      const newText = [...initialText.value, { text: text || ' ' }];
+      setInitialText({
+        ...initialText,
+        value: newText,
+      });
+    },
+    [initialText],
+  );
+
   return (
     <>
-      {isChange && (
+      {isChange && !isReadonly && (
         <div className=" absolute top-2 right-6">
-          <RerunButton />
+          <RerunButton
+            step={step}
+            onRerun={handleReRunFunc}
+            loading={reRunLoading}
+          />
         </div>
       )}
-      <div className={classNames('flex flex-col w-3/5')}>
-        <Spin spinning={loading} className="" size="large">
-          <div className="h-[50px] flex flex-col justify-end pb-[5px]">
+      <div className={classNames('flex flex-col w-full')}>
+        {/* <Spin spinning={false} className="" size="large"> */}
+        <div className="h-[50px] flex flex-col justify-end pb-[5px]">
+          {!isChunck && (
             <div>
               <h2 className="text-[16px]">
                 {t('dataflowParser.parseSummary')}
@@ -41,16 +159,63 @@ const ParserContainer = () => {
                 {t('dataflowParser.parseSummaryTip')}
               </div>
             </div>
+          )}
+          {isChunck && (
+            <div>
+              <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
+              <div className="text-[12px] text-text-secondary italic">
+                {t('chunk.chunkResultTip')}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {isChunck && (
+          <div className="pt-[5px] pb-[5px] flex justify-between items-center">
+            {!isReadonly && (
+              <CheckboxSets
+                selectAllChunk={selectAllChunk}
+                removeChunk={handleRemoveChunk}
+                checked={selectedChunkIds.length === initialText.value.length}
+                selectedChunkIds={selectedChunkIds}
+              />
+            )}
+            <ChunkResultBar
+              isReadonly={isReadonly}
+              changeChunkTextMode={changeChunkTextMode}
+              createChunk={handleCreateChunk}
+            />
           </div>
-          <div className=" border rounded-lg p-[20px] box-border h-[calc(100vh-180px)] overflow-auto scrollbar-none">
-            <FormatPreserveEditor
+        )}
+
+        <div
+          className={cn(
+            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-none',
+            {
+              'h-[calc(100vh-240px)]': isChunck,
+              'h-[calc(100vh-180px)]': !isChunck,
+            },
+          )}
+        >
+          {initialText && (
+            <FormatPreserEditor
               initialValue={initialText}
               onSave={handleSave}
-              className="!h-[calc(100vh-220px)]"
+              isReadonly={isReadonly}
+              isChunck={isChunck}
+              textMode={textMode}
+              isDelete={
+                step?.type === TimelineNodeType.characterSplitter ||
+                step?.type === TimelineNodeType.titleSplitter
+              }
+              clickChunk={clickChunk}
+              handleCheckboxClick={handleCheckboxClick}
+              selectedChunkIds={selectedChunkIds}
             />
-            <Spotlight opcity={0.6} coverage={60} />
-          </div>
-        </Spin>
+          )}
+          <Spotlight opcity={0.6} coverage={60} />
+        </div>
+        {/* </Spin> */}
       </div>
     </>
   );

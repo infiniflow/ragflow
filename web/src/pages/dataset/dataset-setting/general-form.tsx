@@ -1,4 +1,5 @@
 import { AvatarUpload } from '@/components/avatar-upload';
+import PageRankFormField from '@/components/page-rank-form-field';
 import {
   FormControl,
   FormField,
@@ -9,6 +10,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { TagItems } from './components/tag-item';
 import { EmbeddingModelItem } from './configuration/common-item';
 import { PermissionFormField } from './permission-form-field';
 
@@ -17,14 +19,14 @@ export function GeneralForm() {
   const { t } = useTranslation();
 
   return (
-    <section className="space-y-4">
+    <>
       <FormField
         control={form.control}
         name="name"
         render={({ field }) => (
           <FormItem className="items-center space-y-0">
             <div className="flex">
-              <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
+              <FormLabel className="text-sm whitespace-nowrap w-1/4">
                 <span className="text-red-600">*</span>
                 {t('common.name')}
               </FormLabel>
@@ -45,7 +47,7 @@ export function GeneralForm() {
         render={({ field }) => (
           <FormItem className="items-center space-y-0">
             <div className="flex">
-              <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
+              <FormLabel className="text-sm  whitespace-nowrap w-1/4">
                 {t('setting.avatar')}
               </FormLabel>
               <FormControl className="w-3/4">
@@ -70,7 +72,7 @@ export function GeneralForm() {
           return (
             <FormItem className="items-center space-y-0">
               <div className="flex">
-                <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
+                <FormLabel className="text-sm  whitespace-nowrap w-1/4">
                   {t('flow.description')}
                 </FormLabel>
                 <FormControl className="w-3/4">
@@ -87,6 +89,9 @@ export function GeneralForm() {
       />
       <PermissionFormField></PermissionFormField>
       <EmbeddingModelItem></EmbeddingModelItem>
-    </section>
+      <PageRankFormField></PageRankFormField>
+
+      <TagItems></TagItems>
+    </>
   );
 }

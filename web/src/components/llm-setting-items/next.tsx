@@ -1,11 +1,9 @@
-import { LlmModelType, ModelVariableType } from '@/constants/knowledge';
+import { ModelVariableType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import { camelCase } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
-import { SelectWithSearch } from '../originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -20,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
+import { LLMFormField } from './llm-form-field';
 import { SliderInputSwitchFormField } from './slider';
 import { useHandleFreedomChange } from './use-watch-change';
 
@@ -61,11 +60,6 @@ export function LlmSettingFieldItems({
   const form = useFormContext();
   const { t } = useTranslate('chat');
 
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
-
   const getFieldWithPrefix = useCallback(
     (name: string) => {
       return prefix ? `${prefix}.${name}` : name;
@@ -82,22 +76,7 @@ export function LlmSettingFieldItems({
 
   return (
     <div className="space-y-5">
-      <FormField
-        control={form.control}
-        name={'llm_id'}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('model')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                options={options || modelOptions}
-                {...field}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <LLMFormField options={options}></LLMFormField>
       <FormField
         control={form.control}
         name={'parameter'}

@@ -33,7 +33,12 @@ export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
 export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
   return (
     <Tooltip>
-      <TooltipTrigger tabIndex={-1}>
+      <TooltipTrigger
+        tabIndex={-1}
+        onClick={(e) => {
+          e.preventDefault(); // Prevent clicking the tooltip from triggering form save
+        }}
+      >
         <Info className="size-3 ml-2" />
       </TooltipTrigger>
       <TooltipContent>
@@ -107,7 +112,7 @@ export const AntToolTip: React.FC<AntToolTipProps> = ({
       {visible && title && (
         <div
           className={cn(
-            'absolute z-50 px-2.5 py-2 text-xs text-text-primary bg-muted rounded-sm shadow-sm whitespace-wrap',
+            'absolute z-50 px-2.5 py-2 text-xs text-text-primary bg-muted rounded-sm shadow-sm whitespace-wrap w-max',
             getPlacementClasses(),
             className,
           )}

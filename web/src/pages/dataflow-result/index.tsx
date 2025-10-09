@@ -2,11 +2,21 @@ import { useFetchNextChunkList } from '@/hooks/use-chunk-request';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DocumentPreview from './components/document-preview';
-import { useGetChunkHighlights, useHandleChunkCardClick } from './hooks';
+import {
+  useFetchPipelineFileLogDetail,
+  useFetchPipelineResult,
+  useGetChunkHighlights,
+  useGetPipelineResultSearchParams,
+  useHandleChunkCardClick,
+  useRerunDataflow,
+  useTimelineDataFlow,
+} from './hooks';
 
 import DocumentHeader from './components/document-preview/document-header';
 
+import { TimelineNode } from '@/components/originui/timeline';
 import { PageHeader } from '@/components/page-header';
+import Spotlight from '@/components/spotlight';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,35 +25,58 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import {
-  QueryStringMap,
-  useNavigatePage,
-} from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { ChunkerContainer } from './chunker';
+import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal/modal';
+import { Images } from '@/constants/common';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useGetDocumentUrl } from './components/document-preview/hooks';
-import TimelineDataFlow, { TimelineNodeObj } from './components/time-line';
+import TimelineDataFlow from './components/time-line';
+import { TimelineNodeType } from './constant';
 import styles from './index.less';
+import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
 const Chunk = () => {
+  const { isReadOnly, knowledgeId, agentId, agentTitle, documentExtension } =
+    useGetPipelineResultSearchParams();
+
+  const isAgent = !!agentId;
+
+  const { pipelineResult } = useFetchPipelineResult({ agentId });
+
   const {
     data: { documentInfo },
-  } = useFetchNextChunkList();
-  const { selectedChunkId } = useHandleChunkCardClick();
-  const [activeStepId, setActiveStepId] = useState<number | string>(0);
-  const { data: dataset } = useFetchKnowledgeBaseConfiguration();
+  } = useFetchNextChunkList(!isAgent);
 
+  const { selectedChunk, handleChunkCardClick } = useHandleChunkCardClick();
+  const [activeStepId, setActiveStepId] = useState<number | string>(2);
+  const { data: dataset } = useFetchPipelineFileLogDetail({
+    isAgent,
+  });
   const { t } = useTranslation();
 
-  const { navigateToDataset, getQueryString, navigateToDatasetList } =
-    useNavigatePage();
-  const fileUrl = useGetDocumentUrl();
+  const { timelineNodes } = useTimelineDataFlow(
+    agentId ? (pipelineResult as IPipelineFileLogDetail) : dataset,
+  );
+
+  const {
+    navigateToDataset,
+    navigateToDatasetList,
+    navigateToAgents,
+    navigateToDataflow,
+  } = useNavigatePage();
+  let fileUrl = useGetDocumentUrl(isAgent);
 
   const { highlights, setWidthAndHeight } =
-    useGetChunkHighlights(selectedChunkId);
+    useGetChunkHighlights(selectedChunk);
 
   const fileType = useMemo(() => {
+    if (isAgent) {
+      return Images.some((x) => x === documentExtension)
+        ? 'visual'
+        : documentExtension;
+    }
     switch (documentInfo?.type) {
       case 'doc':
         return documentInfo?.name.split('.').pop() || 'doc';
@@ -55,29 +88,101 @@ const Chunk = () => {
         return documentInfo?.type;
     }
     return 'unknown';
-  }, [documentInfo]);
+  }, [documentExtension, documentInfo?.name, documentInfo?.type, isAgent]);
 
-  const handleStepChange = (id: number | string) => {
-    setActiveStepId(id);
+  const {
+    handleReRunFunc,
+    isChange,
+    setIsChange,
+    loading: reRunLoading,
+  } = useRerunDataflow({
+    data: dataset,
+  });
+
+  const handleStepChange = (id: number | string, step: TimelineNode) => {
+    if (isChange) {
+      Modal.show({
+        visible: true,
+        className: '!w-[560px]',
+        title: t('dataflowParser.changeStepModalTitle'),
+        children: (
+          <div
+            className="text-sm text-text-secondary"
+            dangerouslySetInnerHTML={{
+              __html: t('dataflowParser.changeStepModalContent', {
+                step: step?.title,
+              }),
+            }}
+          ></div>
+        ),
+        onVisibleChange: () => {
+          Modal.destroy();
+        },
+        footer: (
+          <div className="flex justify-end gap-2">
+            <Button variant={'outline'} onClick={() => Modal.destroy()}>
+              {t('dataflowParser.changeStepModalCancelText')}
+            </Button>
+            <Button
+              variant={'secondary'}
+              className="!bg-state-error text-text-primary"
+              onClick={() => {
+                Modal.destroy();
+                setActiveStepId(id);
+                setIsChange(false);
+              }}
+            >
+              {t('dataflowParser.changeStepModalConfirmText')}
+            </Button>
+          </div>
+        ),
+      });
+    } else {
+      setActiveStepId(id);
+    }
   };
+
+  const { type } = useGetKnowledgeSearchParams();
+
+  const currentTimeNode: TimelineNode = useMemo(() => {
+    return (
+      timelineNodes.find((node) => node.id === activeStepId) ||
+      ({} as TimelineNode)
+    );
+  }, [activeStepId, timelineNodes]);
+
   return (
     <>
       <PageHeader>
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToDatasetList}>
-                {t('knowledgeDetails.dataset')}
+              <BreadcrumbLink
+                onClick={() => {
+                  if (knowledgeId) {
+                    navigateToDatasetList();
+                  }
+                  if (agentId) {
+                    navigateToAgents();
+                  }
+                }}
+              >
+                {knowledgeId ? t('knowledgeDetails.dataset') : t('header.flow')}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbLink
-                onClick={navigateToDataset(
-                  getQueryString(QueryStringMap.id) as string,
-                )}
+                onClick={() => {
+                  if (knowledgeId) {
+                    navigateToDataset(knowledgeId)();
+                  }
+                  if (agentId) {
+                    navigateToDataflow(agentId)();
+                  }
+                }}
               >
-                {dataset.name}
+                {knowledgeId ? t('knowledgeDetails.overview') : agentTitle}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -87,12 +192,16 @@ const Chunk = () => {
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
-      <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
-        <TimelineDataFlow
-          activeFunc={handleStepChange}
-          activeId={activeStepId}
-        />
-      </div>
+      {type === 'dataflow' && (
+        <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
+          <TimelineDataFlow
+            activeFunc={handleStepChange}
+            activeId={activeStepId}
+            data={dataset}
+            timelineNodes={timelineNodes}
+          />
+        </div>
+      )}
       <div className={styles.chunkPage}>
         <div className="flex flex-none gap-8 border border-border mt-[26px] p-3 rounded-lg h-[calc(100vh-100px)]">
           <div className="w-2/5">
@@ -110,8 +219,38 @@ const Chunk = () => {
             </section>
           </div>
           <div className="h-dvh border-r -mt-3"></div>
-          {activeStepId === TimelineNodeObj.chunker.id && <ChunkerContainer />}
-          {activeStepId === TimelineNodeObj.parser.id && <ParserContainer />}
+          <div className="w-3/5 h-full">
+            {/* {currentTimeNode?.type === TimelineNodeType.splitter && (
+              <ChunkerContainer
+                isChange={isChange}
+                setIsChange={setIsChange}
+                step={currentTimeNode as TimelineNode}
+              />
+            )} */}
+            {/* {currentTimeNode?.type === TimelineNodeType.parser && ( */}
+            {(currentTimeNode?.type === TimelineNodeType.parser ||
+              currentTimeNode?.type === TimelineNodeType.characterSplitter ||
+              currentTimeNode?.type === TimelineNodeType.titleSplitter ||
+              currentTimeNode?.type === TimelineNodeType.contextGenerator) && (
+              <ParserContainer
+                isReadonly={isReadOnly}
+                isChange={isChange}
+                reRunLoading={reRunLoading}
+                setIsChange={setIsChange}
+                step={currentTimeNode as TimelineNode}
+                data={
+                  currentTimeNode.detail as {
+                    value: IDslComponent;
+                    key: string;
+                  }
+                }
+                clickChunk={handleChunkCardClick}
+                reRunFunc={handleReRunFunc}
+              />
+            )}
+            {/* )} */}
+            <Spotlight opcity={0.6} coverage={60} />
+          </div>
         </div>
       </div>
     </>

@@ -101,6 +101,8 @@ class LLM(ComponentBase):
 
     def get_input_elements(self) -> dict[str, Any]:
         res = self.get_input_elements_from_text(self._param.sys_prompt)
+        if isinstance(self._param.prompts, str):
+            self._param.prompts = [{"role": "user", "content": self._param.prompts}]
         for prompt in self._param.prompts:
             d = self.get_input_elements_from_text(prompt["content"])
             res.update(d)
@@ -111,6 +113,17 @@ class LLM(ComponentBase):
 
     def add2system_prompt(self, txt):
         self._param.sys_prompt += txt
+
+    def _sys_prompt_and_msg(self, msg, args):
+        if isinstance(self._param.prompts, str):
+            self._param.prompts = [{"role": "user", "content": self._param.prompts}]
+        for p in self._param.prompts:
+            if msg and msg[-1]["role"] == p["role"]:
+                continue
+            p = deepcopy(p)
+            p["content"] = self.string_format(p["content"], args)
+            msg.append(p)
+        return msg, self.string_format(self._param.sys_prompt, args)
 
     def _prepare_prompt_variables(self):
         if self._param.visual_files_var:
@@ -127,7 +140,6 @@ class LLM(ComponentBase):
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
-        sys_prompt = self._param.sys_prompt
         for k, o in vars.items():
             args[k] = o["value"]
             if not isinstance(args[k], str):
@@ -137,16 +149,8 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
-        for p in self._param.prompts:
-            if msg and msg[-1]["role"] == p["role"]:
-                continue
-            msg.append(deepcopy(p))
-
-        sys_prompt = self.string_format(sys_prompt, args)
+        msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
         user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)
-        for m in msg:
-            m["content"] = self.string_format(m["content"], args)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
             sys_prompt += citation_prompt(user_defined_prompt)
 

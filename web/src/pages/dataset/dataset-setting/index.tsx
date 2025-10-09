@@ -1,16 +1,29 @@
+import { IDataPipelineSelectNode } from '@/components/data-pipeline-select';
+import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
+import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
+import { Button } from '@/components/ui/button';
+import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
-import { ChunkMethodForm } from './chunk-method-form';
+import {
+  GenerateType,
+  IGenerateLogButtonProps,
+} from '../dataset/generate-button/generate';
+import LinkDataPipeline, {
+  IDataPipelineNodeProps,
+} from './components/link-data-pipeline';
+import { MainContainer } from './configuration-form-container';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
-
+import { SavingButton } from './saving-button';
 const enum DocumentType {
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
@@ -46,24 +59,84 @@ export default function DatasetSettings() {
         html4excel: false,
         topn_tags: 3,
         raptor: {
-          use_raptor: false,
+          use_raptor: true,
+          max_token: 256,
+          threshold: 0.1,
+          max_cluster: 64,
+          random_seed: 0,
+          prompt: t('knowledgeConfiguration.promptText'),
         },
         graphrag: {
-          use_graphrag: false,
+          use_graphrag: true,
           entity_types: initialEntityTypes,
           method: MethodValue.Light,
         },
       },
+      pipeline_id: '',
       pagerank: 0,
     },
   });
 
-  useFetchKnowledgeConfigurationOnMount(form);
+  const knowledgeDetails = useFetchKnowledgeConfigurationOnMount(form);
+
+  const [pipelineData, setPipelineData] = useState<IDataPipelineNodeProps>();
+  const [graphRagGenerateData, setGraphRagGenerateData] =
+    useState<IGenerateLogButtonProps>();
+  const [raptorGenerateData, setRaptorGenerateData] =
+    useState<IGenerateLogButtonProps>();
+  useEffect(() => {
+    console.log('🚀 ~ DatasetSettings ~ knowledgeDetails:', knowledgeDetails);
+    if (knowledgeDetails) {
+      const data: IDataPipelineNodeProps = {
+        id: knowledgeDetails.pipeline_id,
+        name: knowledgeDetails.pipeline_name,
+        avatar: knowledgeDetails.pipeline_avatar,
+        linked: true,
+      };
+      setPipelineData(data);
+      setGraphRagGenerateData({
+        finish_at: knowledgeDetails.mindmap_task_finish_at,
+        task_id: knowledgeDetails.mindmap_task_id,
+      } as IGenerateLogButtonProps);
+      setRaptorGenerateData({
+        finish_at: knowledgeDetails.raptor_task_finish_at,
+        task_id: knowledgeDetails.raptor_task_id,
+      } as IGenerateLogButtonProps);
+    }
+  }, [knowledgeDetails]);
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
-    console.log('🚀 ~ DatasetSettings ~ data:', data);
+    try {
+      console.log('Form validation passed, submit data', data);
+    } catch (error) {
+      console.error('An error occurred during submission:', error);
+    }
   }
+  const handleLinkOrEditSubmit = (
+    data: IDataPipelineSelectNode | undefined,
+  ) => {
+    console.log('🚀 ~ DatasetSettings ~ data:', data);
+    if (data) {
+      setPipelineData(data);
+      form.setValue('pipeline_id', data.id || '');
+      // form.setValue('pipeline_name', data.name || '');
+      // form.setValue('pipeline_avatar', data.avatar || '');
+    }
+  };
 
+  const handleDeletePipelineTask = (type: GenerateType) => {
+    if (type === GenerateType.KnowledgeGraph) {
+      setGraphRagGenerateData({
+        finish_at: '',
+        task_id: '',
+      } as IGenerateLogButtonProps);
+    } else if (type === GenerateType.Raptor) {
+      setRaptorGenerateData({
+        finish_at: '',
+        task_id: '',
+      } as IGenerateLogButtonProps);
+    }
+  };
   return (
     <section className="p-5 h-full flex flex-col">
       <TopTitle
@@ -76,9 +149,41 @@ export default function DatasetSettings() {
             onSubmit={form.handleSubmit(onSubmit)}
             className="space-y-6 flex-1"
           >
-            <div className="w-[768px]">
-              <GeneralForm></GeneralForm>
-              <ChunkMethodForm></ChunkMethodForm>
+            <div className="w-[768px] h-[calc(100vh-240px)] pr-1 overflow-y-auto scrollbar-auto">
+              <MainContainer className="text-text-secondary">
+                <GeneralForm></GeneralForm>
+                <Divider />
+
+                <GraphRagItems
+                  className="border-none p-0"
+                  data={graphRagGenerateData as IGenerateLogButtonProps}
+                  onDelete={() =>
+                    handleDeletePipelineTask(GenerateType.KnowledgeGraph)
+                  }
+                ></GraphRagItems>
+                <Divider />
+                <RaptorFormFields
+                  data={raptorGenerateData as IGenerateLogButtonProps}
+                  onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
+                ></RaptorFormFields>
+                <Divider />
+                <LinkDataPipeline
+                  data={pipelineData}
+                  handleLinkOrEditSubmit={handleLinkOrEditSubmit}
+                />
+              </MainContainer>
+            </div>
+            <div className="text-right items-center flex justify-end gap-3 w-[768px]">
+              <Button
+                type="reset"
+                className="bg-transparent text-color-white hover:bg-transparent border-gray-500 border-[1px]"
+                onClick={() => {
+                  form.reset();
+                }}
+              >
+                {t('knowledgeConfiguration.cancel')}
+              </Button>
+              <SavingButton></SavingButton>
             </div>
           </form>
         </Form>

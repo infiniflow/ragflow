@@ -38,6 +38,13 @@
                   ],
                   "output_format": "json"
                 },
+                "slides": {
+                    "parse_method": "presentation",
+                    "suffix": [
+                        "pptx"
+                    ],
+                    "output_format": "json"
+                },
                 "markdown": {
                   "suffix": [
                     "md",
@@ -82,19 +89,36 @@
                   "lang": "Chinese",
                   "llm_id": "SenseVoiceSmall",
                   "output_format": "json"
+                },
+                "email": {
+                  "suffix": [
+                    "msg"
+                  ],
+                  "fields": [
+                    "from",
+                    "to",
+                    "cc",
+                    "bcc",
+                    "date",
+                    "subject",
+                    "body",
+                    "attachments"
+                  ],
+                  "output_format": "json"
                 }
               }
           }
         },
-        "downstream": ["Chunker:0"],
+        "downstream": ["Splitter:0"],
         "upstream": ["Begin"]
     },
-    "Chunker:0": {
+    "Splitter:0": {
         "obj": {
-            "component_name": "Chunker",
+            "component_name": "Splitter",
             "params": {
-              "method": "general",
-              "auto_keywords": 5
+              "chunk_token_size": 512,
+              "delimiters": ["\n"],
+              "overlapped_percent": 0
             }
         },
         "downstream": ["Tokenizer:0"],

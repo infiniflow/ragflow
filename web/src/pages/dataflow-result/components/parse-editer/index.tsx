@@ -1,45 +1,63 @@
-import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { CheckedState } from '@radix-ui/react-checkbox';
+import { FormatPreserveEditorProps } from './interface';
+import { ArrayContainer } from './json-parser';
+import { ObjectContainer } from './object-parser';
 
-interface FormatPreserveEditorProps {
-  initialValue: string;
-  onSave: (value: string) => void;
-  className?: string;
-}
 const FormatPreserveEditor = ({
   initialValue,
   onSave,
   className,
+  isChunck,
+  handleCheckboxClick,
+  selectedChunkIds,
+  textMode,
+  clickChunk,
+  isReadonly,
 }: FormatPreserveEditorProps) => {
-  const [content, setContent] = useState(initialValue);
-  const [isEditing, setIsEditing] = useState(false);
+  console.log('initialValue', initialValue);
 
-  const handleEdit = () => setIsEditing(true);
-
-  const handleSave = () => {
-    onSave(content);
-    setIsEditing(false);
+  const escapeNewlines = (text: string) => {
+    return text.replace(/\n/g, '\\n');
+  };
+  const unescapeNewlines = (text: string) => {
+    return text.replace(/\\n/g, '\n');
+  };
+  const handleCheck = (e: CheckedState, id: string | number) => {
+    handleCheckboxClick?.(id, e === 'indeterminate' ? false : e);
   };
 
   return (
     <div className="editor-container">
-      {isEditing ? (
-        <Textarea
-          className={cn(
-            'w-full h-full bg-transparent text-text-secondary',
-            className,
-          )}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onBlur={handleSave}
-          autoSize={{ maxRows: 100 }}
-          autoFocus
+      {['json', 'chunks'].includes(initialValue.key) && (
+        <ArrayContainer
+          isReadonly={isReadonly}
+          className={className}
+          initialValue={initialValue}
+          handleCheck={handleCheck}
+          selectedChunkIds={selectedChunkIds}
+          onSave={onSave}
+          escapeNewlines={escapeNewlines}
+          unescapeNewlines={unescapeNewlines}
+          textMode={textMode}
+          isChunck={isChunck}
+          clickChunk={clickChunk}
         />
-      ) : (
-        <pre className="text-text-secondary" onClick={handleEdit}>
-          {content}
-        </pre>
+      )}
+
+      {['text', 'html'].includes(initialValue.key) && (
+        <ObjectContainer
+          isReadonly={isReadonly}
+          className={className}
+          initialValue={initialValue}
+          handleCheck={handleCheck}
+          selectedChunkIds={selectedChunkIds}
+          onSave={onSave}
+          escapeNewlines={escapeNewlines}
+          unescapeNewlines={unescapeNewlines}
+          textMode={textMode}
+          isChunck={isChunck}
+          clickChunk={clickChunk}
+        />
       )}
     </div>
   );

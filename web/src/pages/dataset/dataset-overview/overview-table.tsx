@@ -1,7 +1,6 @@
 import FileStatusBadge from '@/components/file-status-badge';
-import { FileIcon } from '@/components/icon-font';
+import { FileIcon, IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
@@ -12,12 +11,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import ProcessLogModal from '@/pages/datasets/process-log-modal';
+import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
+import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
+import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
   ColumnDef,
   ColumnFiltersState,
+  Row,
   SortingState,
   flexRender,
   getCoreRowModel,
@@ -27,62 +30,43 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
-import { ClipboardList, Eye } from 'lucide-react';
-import { Dispatch, FC, SetStateAction, useMemo, useState } from 'react';
-import { LogTabs, processingType } from './dataset-common';
-
-interface DocumentLog {
-  id: string;
-  fileName: string;
-  source: string;
-  pipeline: string;
-  startDate: string;
-  task: string;
-  status: 'Success' | 'Failed' | 'Running' | 'Pending';
-}
-
-interface FileLogsTableProps {
-  data: DocumentLog[];
-  pageCount: number;
-  pagination: {
-    current: number;
-    pageSize: number;
-    total: number;
-  };
-  setPagination: (pagination: { page: number; pageSize: number }) => void;
-  loading?: boolean;
-  active: (typeof LogTabs)[keyof typeof LogTabs];
-}
+import { ArrowUpDown, ClipboardList, Eye } from 'lucide-react';
+import { FC, useMemo, useState } from 'react';
+import { useParams } from 'umi';
+import { RunningStatus } from '../dataset/constant';
+import ProcessLogModal from '../process-log-modal';
+import { LogTabs, ProcessingType, ProcessingTypeMap } from './dataset-common';
+import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
-  setIsModalVisible: Dispatch<SetStateAction<boolean>>,
+  showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
+  kowledgeId: string,
   navigateToDataflowResult: (
-    id: string,
-    knowledgeId?: string | undefined,
+    props: NavigateToDataflowResultProps,
   ) => () => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
-  const columns: ColumnDef<DocumentLog>[] = [
-    {
-      id: 'select',
-      header: ({ table }) => (
-        <input
-          type="checkbox"
-          checked={table.getIsAllRowsSelected()}
-          onChange={table.getToggleAllRowsSelectedHandler()}
-          className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={row.getIsSelected()}
-          onChange={row.getToggleSelectedHandler()}
-          className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-    },
+  const columns: ColumnDef<IFileLogItem & DocumentLog>[] = [
+    // {
+    //   id: 'select',
+    //   header: ({ table }) => (
+    //     <input
+    //       type="checkbox"
+    //       checked={table.getIsAllRowsSelected()}
+    //       onChange={table.getToggleAllRowsSelectedHandler()}
+    //       className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //     />
+    //   ),
+    //   cell: ({ row }) => (
+    //     <input
+    //       type="checkbox"
+    //       checked={row.getIsSelected()}
+    //       onChange={row.getToggleSelectedHandler()}
+    //       className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //     />
+    //   ),
+    // },
     {
       accessorKey: 'id',
       header: 'ID',
@@ -96,10 +80,10 @@ export const getFileLogsTableColumns = (
       cell: ({ row }) => (
         <div
           className="flex items-center gap-2 text-text-primary"
-          onClick={navigateToDataflowResult(
-            row.original.id,
-            row.original.kb_id,
-          )}
+          // onClick={navigateToDataflowResult(
+          //   row.original.id,
+          //   row.original.kb_id,
+          // )}
         >
           <FileIcon name={row.original.fileName}></FileIcon>
           {row.original.fileName}
@@ -107,68 +91,97 @@ export const getFileLogsTableColumns = (
       ),
     },
     {
-      accessorKey: 'source',
+      accessorKey: 'source_from',
       header: t('source'),
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.source}</div>
+        <div className="text-text-primary">{row.original.source_from}</div>
       ),
     },
     {
-      accessorKey: 'pipeline',
+      accessorKey: 'pipeline_title',
       header: t('dataPipeline'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
           <RAGFlowAvatar
-            avatar={null}
-            name={row.original.pipeline}
+            avatar={row.original.avatar}
+            name={row.original.pipeline_title}
             className="size-4"
           />
-          {row.original.pipeline}
+          {row.original.pipeline_title}
         </div>
       ),
     },
     {
-      accessorKey: 'startDate',
-      header: t('startDate'),
+      accessorKey: 'process_begin_at',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="transparent"
+            className="border-none"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
+            {t('startDate')}
+            <ArrowUpDown />
+          </Button>
+        );
+      },
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.startDate}</div>
+        <div className="text-text-primary">
+          {formatDate(row.original.process_begin_at)}
+        </div>
       ),
     },
     {
-      accessorKey: 'task',
+      accessorKey: 'task_type',
       header: t('task'),
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.task}</div>
+        <div className="text-text-primary">{row.original.task_type}</div>
       ),
     },
     {
-      accessorKey: 'status',
+      accessorKey: 'operation_status',
       header: t('status'),
-      cell: ({ row }) => <FileStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <FileStatusBadge
+          status={row.original.operation_status as RunningStatus}
+          name={
+            RunningStatusMap[row.original.operation_status as RunningStatus]
+          }
+        />
+      ),
     },
     {
       id: 'operations',
       header: t('operations'),
       cell: ({ row }) => (
-        <div className="flex justify-start space-x-2">
+        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="sm"
             className="p-1"
             onClick={() => {
-              setIsModalVisible(true);
+              showLog(row, LogTabs.FILE_LOGS);
             }}
           >
             <Eye />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="p-1"
-            onClick={navigateToDataflowResult(row.original.id)}
-          >
-            <ClipboardList />
-          </Button>
+          {row.original.pipeline_id && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="p-1"
+              onClick={navigateToDataflowResult({
+                id: row.original.id,
+                [PipelineResultSearchParams.KnowledgeId]: kowledgeId,
+                [PipelineResultSearchParams.DocumentId]:
+                  row.original.document_id,
+                [PipelineResultSearchParams.IsReadOnly]: 'false',
+                [PipelineResultSearchParams.Type]: 'dataflow',
+              })}
+            >
+              <ClipboardList />
+            </Button>
+          )}
         </div>
       ),
     },
@@ -179,29 +192,29 @@ export const getFileLogsTableColumns = (
 
 export const getDatasetLogsTableColumns = (
   t: TFunction<'translation', string>,
-  setIsModalVisible: Dispatch<SetStateAction<boolean>>,
+  showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
-  const columns: ColumnDef<DocumentLog>[] = [
-    {
-      id: 'select',
-      header: ({ table }) => (
-        <input
-          type="checkbox"
-          checked={table.getIsAllRowsSelected()}
-          onChange={table.getToggleAllRowsSelectedHandler()}
-          className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={row.getIsSelected()}
-          onChange={row.getToggleSelectedHandler()}
-          className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-        />
-      ),
-    },
+  const columns: ColumnDef<IFileLogItem & DocumentLog>[] = [
+    // {
+    // id: 'select',
+    // header: ({ table }) => (
+    //   <input
+    //     type="checkbox"
+    //     checked={table.getIsAllRowsSelected()}
+    //     onChange={table.getToggleAllRowsSelectedHandler()}
+    //     className="rounded bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //   />
+    // ),
+    // cell: ({ row }) => (
+    //   <input
+    //     type="checkbox"
+    //     checked={row.getIsSelected()}
+    //     onChange={row.getToggleSelectedHandler()}
+    //     className="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+    //   />
+    // ),
+    // },
     {
       accessorKey: 'id',
       header: 'ID',
@@ -210,43 +223,74 @@ export const getDatasetLogsTableColumns = (
       ),
     },
     {
-      accessorKey: 'startDate',
-      header: t('startDate'),
+      accessorKey: 'process_begin_at',
+      header: ({ column }) => {
+        return (
+          <Button
+            variant="transparent"
+            className="border-none"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
+            {t('startDate')}
+            <ArrowUpDown />
+          </Button>
+        );
+      },
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.startDate}</div>
-      ),
-    },
-    {
-      accessorKey: 'processingType',
-      header: t('processingType'),
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2 text-text-primary">
-          {processingType.knowledgeGraph === row.original.processingType && (
-            <SvgIcon name={`data-flow/knowledgegraph`} width={24}></SvgIcon>
-          )}
-          {processingType.raptor === row.original.processingType && (
-            <SvgIcon name={`data-flow/raptor`} width={24}></SvgIcon>
-          )}
-          {row.original.processingType}
+        <div className="text-text-primary">
+          {formatDate(row.original.process_begin_at)}
         </div>
       ),
     },
     {
-      accessorKey: 'status',
+      accessorKey: 'task_type',
+      header: t('processingType'),
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 text-text-primary">
+          {ProcessingType.knowledgeGraph === row.original.task_type && (
+            <IconFontFill
+              name={`knowledgegraph`}
+              className="text-text-secondary"
+            ></IconFontFill>
+          )}
+          {ProcessingType.raptor === row.original.task_type && (
+            <IconFontFill
+              name={`dataflow-01`}
+              className="text-text-secondary"
+            ></IconFontFill>
+          )}
+          {ProcessingTypeMap[row.original.task_type as ProcessingType] ||
+            row.original.task_type}
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'operation_status',
       header: t('status'),
-      cell: ({ row }) => <FileStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        // <FileStatusBadge
+        //   status={row.original.status}
+        //   name={row.original.statusName}
+        // />
+        <FileStatusBadge
+          status={row.original.operation_status as RunningStatus}
+          name={
+            RunningStatusMap[row.original.operation_status as RunningStatus]
+          }
+        />
+      ),
     },
     {
       id: 'operations',
       header: t('operations'),
       cell: ({ row }) => (
-        <div className="flex justify-start space-x-2">
+        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="sm"
             className="p-1"
             onClick={() => {
-              setIsModalVisible(true);
+              showLog(row, LogTabs.DATASET_LOGS);
             }}
           >
             <Eye />
@@ -272,11 +316,35 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
+  const [logInfo, setLogInfo] = useState<IFileLogItem>();
+  const kowledgeId = useParams().id;
+  const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
+    const logDetail = {
+      taskId: row.original?.dsl?.task_id,
+      fileName: row.original.document_name,
+      source: row.original.source_from,
+      task: row.original?.task_type,
+      status: row.original.statusName,
+      startDate: formatDate(row.original.process_begin_at),
+      duration: formatSecondsToHumanReadable(
+        row.original.process_duration || 0,
+      ),
+      details: row.original.progress_msg,
+    };
+    console.log('logDetail', logDetail);
+    setLogInfo(logDetail);
+    setIsModalVisible(true);
+  };
+
   const columns = useMemo(() => {
-    console.log('columns', active);
     return active === LogTabs.FILE_LOGS
-      ? getFileLogsTableColumns(t, setIsModalVisible, navigateToDataflowResult)
-      : getDatasetLogsTableColumns(t, setIsModalVisible);
+      ? getFileLogsTableColumns(
+          t,
+          showLog,
+          kowledgeId || '',
+          navigateToDataflowResult,
+        )
+      : getDatasetLogsTableColumns(t, showLog);
   }, [active, t]);
 
   const currentPagination = useMemo(
@@ -287,8 +355,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     [pagination],
   );
 
-  const table = useReactTable({
-    data,
+  const table = useReactTable<IFileLogItem & DocumentLog>({
+    data: data || [],
     columns,
     manualPagination: true,
     getCoreRowModel: getCoreRowModel(),
@@ -308,19 +376,9 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       ? Math.ceil(pagination.total / pagination.pageSize)
       : 0,
   });
-  const taskInfo = {
-    taskId: '#9527',
-    fileName: 'PRD for DealBees 1.2 (1).text',
-    fileSize: '2.4G',
-    source: 'Github',
-    task: 'Parse',
-    state: 'Running',
-    startTime: '14/03/2025 14:53:39',
-    duration: '800',
-    details: 'PRD for DealBees 1.2 (1).text',
-  };
+
   return (
-    <div className="w-full h-[calc(100vh-350px)]">
+    <div className="w-full h-[calc(100vh-360px)]">
       <Table rootClassName="max-h-[calc(100vh-380px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
@@ -337,7 +395,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           ))}
         </TableHeader>
         <TableBody className="relative">
-          {table.getRowModel().rows.length ? (
+          {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow
                 key={row.id}
@@ -363,7 +421,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end py-4 absolute bottom-3 right-12">
+      <div className="flex items-center justify-end absolute bottom-3 right-12">
         <div className="space-x-2">
           <RAGFlowPagination
             {...{ current: pagination.current, pageSize: pagination.pageSize }}
@@ -372,11 +430,14 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           />
         </div>
       </div>
-      <ProcessLogModal
-        visible={isModalVisible}
-        onCancel={() => setIsModalVisible(false)}
-        taskInfo={taskInfo}
-      />
+      {isModalVisible && (
+        <ProcessLogModal
+          title={active === LogTabs.FILE_LOGS ? t('fileLogs') : t('datasetLog')}
+          visible={isModalVisible}
+          onCancel={() => setIsModalVisible(false)}
+          logInfo={logInfo}
+        />
+      )}
     </div>
   );
 };
