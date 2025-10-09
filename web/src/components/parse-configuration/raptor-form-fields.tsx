@@ -67,19 +67,6 @@ const RaptorFormFields = ({
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
 
-  const changeRaptor = useCallback(
-    (isUseRaptor: boolean) => {
-      if (isUseRaptor) {
-        form.setValue(MaxTokenField, 256);
-        form.setValue(ThresholdField, 0.1);
-        form.setValue(MaxCluster, 64);
-        form.setValue(RandomSeedField, 0);
-        form.setValue(Prompt, t('promptText'));
-      }
-    },
-    [form],
-  );
-
   const handleGenerate = useCallback(() => {
     form.setValue(RandomSeedField, random(10000));
   }, [form]);
@@ -90,10 +77,6 @@ const RaptorFormFields = ({
         control={form.control}
         name={UseRaptorField}
         render={({ field }) => {
-          // if (typeof field.value === 'undefined') {
-          //   // default value set
-          //   form.setValue('parser_config.raptor.use_raptor', false);
-          // }
           return (
             <FormItem
               defaultChecked={false}

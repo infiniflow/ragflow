@@ -26,7 +26,7 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name }) => {
       case RunningStatus.UNSTART:
         return `bg-[rgba(250,173,20,0.1)] text-state-warning`;
       default:
-        return 'bg-gray-500/10 text-white';
+        return 'bg-gray-500/10 text-text-secondary';
     }
   };
 
@@ -45,7 +45,7 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name }) => {
       case RunningStatus.UNSTART:
         return `bg-[rgba(250,173,20,1)] text-state-warning`;
       default:
-        return 'bg-gray-500/10 text-white';
+        return `bg-[rgba(117,120,122,1)] text-text-secondary`;
     }
   };
 

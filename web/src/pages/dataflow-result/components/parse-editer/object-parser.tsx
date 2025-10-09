@@ -48,9 +48,10 @@ export const ObjectContainer = (props: IObjContainerProps) => {
   useEffect(() => {
     if (activeEditIndex !== undefined && editDivRef.current) {
       editDivRef.current.focus();
-      editDivRef.current.textContent = content.value;
+      editDivRef.current.textContent = content.value as string;
+      editDivRef.current.style.whiteSpace = 'pre-wrap';
     }
-  }, [activeEditIndex, content]);
+  }, [activeEditIndex, content, editDivRef]);
 
   return (
     <>
