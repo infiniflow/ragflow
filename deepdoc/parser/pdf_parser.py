@@ -1274,12 +1274,16 @@ class VisionParser(RAGFlowPdfParser):
                 prompt=vision_llm_describe_prompt(page=pdf_page_num + 1),
                 callback=callback,
             )
+
             if kwargs.get("callback"):
                 kwargs["callback"](idx * 1.0 / len(self.page_images), f"Processed: {idx + 1}/{len(self.page_images)}")
 
             if text:
                 width, height = self.page_images[idx].size
-                all_docs.append((text, f"{pdf_page_num + 1} 0 {width / zoomin} 0 {height / zoomin}"))
+                all_docs.append((
+                    text,
+                    f"@@{pdf_page_num + 1}\t{0.0:.1f}\t{width / zoomin:.1f}\t{0.0:.1f}\t{height / zoomin:.1f}##"
+                ))
         return all_docs, []
 
 
