@@ -866,6 +866,19 @@ export default {
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor ingresa una nota',
       runningHintText: 'está corriendo...🕞',
+
+      invoke: 'Solicitud HTTP',
+      invokeDescription:
+        'Un componente capaz de llamar a servicios remotos, utilizando las salidas de otros componentes o constantes como entradas.',
+      url: 'Url',
+      method: 'Método',
+      timeout: 'Tiempo de espera',
+      headers: 'Encabezados',
+      cleanHtml: 'Limpiar HTML',
+      cleanHtmlTip:
+        'Si la respuesta está formateada en HTML y solo se desea el contenido principal, actívelo.',
+      invalidUrl:
+        'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
     },
     footer: {
       profile: 'Todos los derechos reservados @ React',
