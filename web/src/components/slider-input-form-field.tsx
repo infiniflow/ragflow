@@ -40,7 +40,7 @@ export function SliderInputFormField({
 }: SliderInputFormFieldProps) {
   const form = useFormContext();
 
-  const isHorizontal = useMemo(() => layout === FormLayout.Vertical, [layout]);
+  const isHorizontal = useMemo(() => layout !== FormLayout.Vertical, [layout]);
 
   return (
     <FormField
