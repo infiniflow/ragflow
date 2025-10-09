@@ -1,10 +1,14 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
-import { initialLlmBaseValues } from '@/constants/agent';
+import {
+  initialLlmBaseValues,
+  DataflowOperator as Operator,
+} from '@/constants/agent';
 import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
 } from '@/constants/chat';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
+export { DataflowOperator as Operator } from '@/constants/agent';
 
 import {
   Circle,
@@ -111,16 +115,6 @@ export enum AgentDialogueMode {
 }
 
 export const BeginId = 'File';
-
-export enum Operator {
-  Begin = 'File',
-  Note = 'Note',
-  Parser = 'Parser',
-  Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
-  Extractor = 'Extractor',
-}
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
 

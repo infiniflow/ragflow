@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { SelectWithSearch } from '../originui/select-with-search';
 import { RAGFlowFormItem } from '../ragflow-form';
 
-type LLMFormFieldProps = {
+export type LLMFormFieldProps = {
   options?: any[];
   name?: string;
 };
