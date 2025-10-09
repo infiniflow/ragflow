@@ -257,6 +257,10 @@ class Docx(DocxParser):
         return new_line, tbls
 
     def to_markdown(self, filename=None, binary=None, inline_images: bool = True):
+        """
+        This function uses mammoth, licensed under the BSD 2-Clause License.
+        """
+
         import base64
         import uuid
 
