@@ -557,8 +557,8 @@ def get(doc_id):
 @login_required
 @validate_request("doc_id")
 def change_parser():
-    req = request.json
 
+    req = request.json
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
 
@@ -582,7 +582,7 @@ def change_parser():
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     try:
-        if "pipeline_id" in req:
+        if "pipeline_id" in req and req["pipeline_id"] != "":
             if doc.pipeline_id == req["pipeline_id"]:
                 return get_json_result(data=True)
             DocumentService.update_by_id(doc.id, {"pipeline_id": req["pipeline_id"]})
