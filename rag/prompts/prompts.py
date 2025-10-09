@@ -467,6 +467,7 @@ def detect_table_of_contents(pages:list[str], chat_mdl):
             return i
     return -1
 
+
 TOC_LEVELS = load_prompt("assign_toc_levels")
 def assign_toc_levels(toc_secs, chat_mdl):
     ans = gen_json(PROMPT_JINJA_ENV.from_string(TOC_LEVELS).render(),
@@ -475,6 +476,7 @@ def assign_toc_levels(toc_secs, chat_mdl):
                    )
     
     return ans
+
 
 def gen_image_from_page(page):
     pil_img = page.to_image(resolution=300, antialias=True).original
