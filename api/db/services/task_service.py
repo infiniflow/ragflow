@@ -322,12 +322,6 @@ class TaskService(CommonService):
         """Delete task associated with a document."""
         return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
 
-    @classmethod
-    @DB.connection_context()
-    def delete_by_doc_ids(cls, doc_ids):
-        """Delete task associated with a document."""
-        return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
-
 
 def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """Create and queue document processing tasks.

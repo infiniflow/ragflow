@@ -33,8 +33,6 @@ from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.flow.pipeline import Pipeline
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging
-
-from rag.prompts import keyword_extraction, question_proposal, content_tagging
 import logging
 import os
 from datetime import datetime
