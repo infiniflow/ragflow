@@ -1,8 +1,4 @@
-import {
-  useFetchAgent,
-  useResetAgent,
-  useSetAgent,
-} from '@/hooks/use-agent-request';
+import { useFetchAgent, useSetAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
@@ -22,6 +18,7 @@ export const useSaveGraph = (showMessage: boolean = true) => {
       return setAgent({
         id,
         title: data.title,
+        canvas_category: data.canvas_category,
         dsl: buildDslData(currentNodes),
       });
     },
@@ -33,21 +30,22 @@ export const useSaveGraph = (showMessage: boolean = true) => {
 
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
-  const { resetAgent } = useResetAgent();
+  // const { resetAgent } = useResetAgent();
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
       const saveRet = await saveGraph(nextNodes);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
-        const resetRet = await resetAgent();
+        // const resetRet = await resetAgent();
         // After resetting, all previous messages will be cleared.
-        if (resetRet?.code === 0) {
-          show();
-        }
+        // if (resetRet?.code === 0) {
+        show();
+        // }
       }
+      return saveRet?.code === 0;
     },
-    [saveGraph, resetAgent, show],
+    [saveGraph, show],
   );
 
   return { handleRun, loading };

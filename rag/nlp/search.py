@@ -383,7 +383,7 @@ class Dealer:
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
         sim_np = np.array(sim)
-        filtered_count = (sim_np >= similarity_threshold).sum()    
+        filtered_count = (sim_np >= similarity_threshold).sum()
         ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
             if sim[i] < similarity_threshold:
@@ -444,12 +444,27 @@ class Dealer:
     def chunk_list(self, doc_id: str, tenant_id: str,
                    kb_ids: list[str], max_count=1024,
                    offset=0,
-                   fields=["docnm_kwd", "content_with_weight", "img_id"]):
+                   fields=["docnm_kwd", "content_with_weight", "img_id"],
+                   sort_by_position: bool = False):
         condition = {"doc_id": doc_id}
+
+        fields_set = set(fields or [])
+        if sort_by_position:
+            for need in ("page_num_int", "position_int", "top_int"):
+                if need not in fields_set:
+                    fields_set.add(need)
+        fields = list(fields_set)
+
+        orderBy = OrderByExpr()
+        if sort_by_position:
+            orderBy.asc("page_num_int")
+            orderBy.asc("position_int")
+            orderBy.asc("top_int")
+
         res = []
         bs = 128
         for p in range(offset, max_count, bs):
-            es_res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id),
+            es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, bs, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.getFields(es_res, fields)
             for id, doc in dict_chunks.items():

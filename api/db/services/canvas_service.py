@@ -126,7 +126,7 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
                           page_number, items_per_page,
-                          orderby, desc, keywords, canvas_category=CanvasCategory.Agent,
+                          orderby, desc, keywords, canvas_category=None
                           ):
         fields = [
             cls.model.id,
@@ -135,6 +135,7 @@ class UserCanvasService(CommonService):
             cls.model.dsl,
             cls.model.description,
             cls.model.permission,
+            cls.model.user_id.alias("tenant_id"),
             User.nickname,
             User.avatar.alias('tenant_avatar'),
             cls.model.update_time,
@@ -142,24 +143,26 @@ class UserCanvasService(CommonService):
         ]
         if keywords:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
-                ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
-                                                                TenantPermission.TEAM.value)) | (
-                    cls.model.user_id == user_id)),
-                (fn.LOWER(cls.model.title).contains(keywords.lower()))
+                cls.model.user_id.in_(joined_tenant_ids),
+                fn.LOWER(cls.model.title).contains(keywords.lower())
+                #(((cls.model.user_id.in_(joined_tenant_ids)) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id)),
+                #(fn.LOWER(cls.model.title).contains(keywords.lower()))
             )
         else:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
-                ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
-                                                                TenantPermission.TEAM.value)) | (
-                    cls.model.user_id == user_id))
+                cls.model.user_id.in_(joined_tenant_ids)
+                #(((cls.model.user_id.in_(joined_tenant_ids)) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id))
             )
-        agents = agents.where(cls.model.canvas_category == canvas_category)
+        if canvas_category:
+            agents = agents.where(cls.model.canvas_category == canvas_category)
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
             agents = agents.order_by(cls.model.getter_by(orderby).asc())
+
         count = agents.count()
-        agents = agents.paginate(page_number, items_per_page)
+        if page_number and items_per_page:
+            agents = agents.paginate(page_number, items_per_page)
         return list(agents.dicts()), count
 
     @classmethod
