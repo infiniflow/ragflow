@@ -1,13 +1,14 @@
+import FileStatusBadge from '@/components/file-status-badge';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { AntToolTip } from '@/components/ui/tooltip';
+import { RunningStatusMap } from '@/constants/knowledge';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { t } from 'i18next';
 import { CircleQuestionMark } from 'lucide-react';
 import { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RunningStatus, RunningStatusMap } from '../dataset/constant';
+import { RunningStatus } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
 import { useFetchFileLogList, useFetchOverviewTital } from './hook';
@@ -84,34 +85,6 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
   );
 };
 
-const filters = [
-  {
-    field: 'operation_status',
-    label: t('knowledgeDetails.status'),
-    list: Object.values(RunningStatus).map((value) => {
-      // const value = key as RunningStatus;
-      console.log(value);
-      return {
-        id: value,
-        label: RunningStatusMap[value].label,
-      };
-    }),
-  },
-  {
-    field: 'types',
-    label: t('knowledgeDetails.task'),
-    list: [
-      {
-        id: 'Parse',
-        label: 'Parse',
-      },
-      {
-        id: 'Download',
-        label: 'Download',
-      },
-    ],
-  },
-];
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
 
@@ -169,9 +142,55 @@ const FileLogsPage: FC = () => {
     setPagination,
     active,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
     setActive,
   } = useFetchFileLogList();
+
+  const filters = useMemo(() => {
+    const filterCollection: FilterCollection[] = [
+      {
+        field: 'operation_status',
+        label: t('knowledgeDetails.status'),
+        list: Object.values(RunningStatus).map((value) => {
+          // const value = key as RunningStatus;
+          console.log(value);
+          return {
+            id: value,
+            // label: RunningStatusMap[value].label,
+            label: (
+              <FileStatusBadge
+                status={value as RunningStatus}
+                name={RunningStatusMap[value as RunningStatus]}
+              />
+            ),
+          };
+        }),
+      },
+      // {
+      //   field: 'types',
+      //   label: t('knowledgeDetails.task'),
+      //   list: [
+      //     {
+      //       id: 'Parse',
+      //       label: 'Parse',
+      //     },
+      //     {
+      //       id: 'Download',
+      //       label: 'Download',
+      //     },
+      //   ],
+      // },
+    ];
+    if (active === LogTabs.FILE_LOGS) {
+      return filterCollection;
+    }
+    if (active === LogTabs.DATASET_LOGS) {
+      const list = filterCollection.filter((item, index) => index === 0);
+      return list;
+    }
+    return [];
+  }, [active, t]);
 
   const tableList = useMemo(() => {
     console.log('tableList', tableOriginData);
@@ -187,6 +206,7 @@ const FileLogsPage: FC = () => {
   }, [tableOriginData]);
 
   const changeActiveLogs = (active: (typeof LogTabs)[keyof typeof LogTabs]) => {
+    setFilterValue({});
     setActive(active);
   };
   const handlePaginationChange = (page: number, pageSize: number) => {

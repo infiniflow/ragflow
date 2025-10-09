@@ -33,7 +33,8 @@ const useFetchFileLogList = () => {
   const [searchParams] = useSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const { id } = useParams();
   const [active, setActive] = useState<(typeof LogTabs)[keyof typeof LogTabs]>(
     LogTabs.FILE_LOGS,
@@ -89,6 +90,7 @@ const useFetchFileLogList = () => {
     active,
     setActive,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
