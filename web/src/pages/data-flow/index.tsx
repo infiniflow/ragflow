@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -30,6 +31,7 @@ import { ComponentPropsWithoutRef, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DataFlowCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
+import { Operator } from './constant';
 import { LogContext } from './context';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
@@ -42,6 +44,7 @@ import {
 } from './hooks/use-save-graph';
 import { LogSheet } from './log-sheet';
 import { SettingDialog } from './setting-dialog';
+import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 
@@ -101,8 +104,14 @@ export default function DataFlow() {
 
   const [uploadedFileData, setUploadedFileData] =
     useState<Record<string, any>>();
+  const findNodeByName = useGraphStore((state) => state.findNodeByName);
 
   const handleRunAgent = useCallback(() => {
+    if (!findNodeByName(Operator.Tokenizer)) {
+      message.warning(t('dataflow.tokenizerRequired'));
+      return;
+    }
+
     if (isParsing) {
       // show log sheet
       showLogSheet();
@@ -110,7 +119,7 @@ export default function DataFlow() {
       hideLogSheet();
       handleRun();
     }
-  }, [handleRun, hideLogSheet, isParsing, showLogSheet]);
+  }, [findNodeByName, handleRun, hideLogSheet, isParsing, showLogSheet, t]);
 
   const { handleCancel } = useCancelCurrentDataflow({
     messageId,

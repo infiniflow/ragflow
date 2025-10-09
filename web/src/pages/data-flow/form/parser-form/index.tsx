@@ -36,10 +36,6 @@ import { VideoFormFields } from './video-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
-const FileFormatOptions = buildOptions(FileType).filter(
-  (x) => x.value !== FileType.Video, // Temporarily hide the video option
-);
-
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
   [FileType.Video]: VideoFormFields,
@@ -83,6 +79,14 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
   const values = form.getValues();
   const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
 
+  const FileFormatOptions = buildOptions(
+    FileType,
+    t,
+    'dataflow.fileFormatOptions',
+  ).filter(
+    (x) => x.value !== FileType.Video, // Temporarily hide the video option
+  );
+
   const filteredFileFormatOptions = useMemo(() => {
     const otherFileFormatList = parserList
       .filter((_, idx) => idx !== index)
@@ -91,7 +95,7 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
     return FileFormatOptions.filter((x) => {
       return !otherFileFormatList.includes(x.value);
     });
-  }, [index, parserList]);
+  }, [FileFormatOptions, index, parserList]);
 
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
