@@ -1359,6 +1359,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       headers: '请求头',
       cleanHtml: '清除 HTML',
       cleanHtmlTip: '如果响应是 HTML 格式且只需要主要内容，请将其打开。',
+      invalidUrl:
+        '必须是有效的 URL 或包含变量占位符的 URL，格式为 {variable_name} 或 {component@variable}',
       reference: '引用',
       input: '输入',
       output: '输出',

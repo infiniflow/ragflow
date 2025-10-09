@@ -1051,6 +1051,20 @@ export default {
       note: 'Catatan',
       noteDescription: 'Catatan',
       notePlaceholder: 'Silakan masukkan catatan',
+
+      invoke: 'Permintaan HTTP',
+      invokeDescription:
+        'Komponen yang mampu memanggil layanan remote, menggunakan output komponen lain atau konstanta sebagai input.',
+      url: 'Url',
+      method: 'Metode',
+      timeout: 'Waktu habis',
+      headers: 'Header',
+      cleanHtml: 'Bersihkan HTML',
+      cleanHtmlTip:
+        'Jika respons diformat HTML dan hanya ingin konten utama, aktifkan opsi ini.',
+      invalidUrl:
+        'Harus berupa URL yang valid atau URL dengan placeholder variabel dalam format {nama_variabel} atau {komponen@variabel}',
+
       prompt: 'Prompt',
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
