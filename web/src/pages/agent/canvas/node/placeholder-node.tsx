@@ -1,18 +1,12 @@
-import { cn } from '@/lib/utils';
 import { NodeProps, Position } from '@xyflow/react';
 import { Skeleton } from 'antd';
 import { memo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { NodeHandleId, Operator } from '../../constant';
-import OperatorIcon from '../../operator-icon';
+import { NodeHandleId } from '../../constant';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle } from './handle-icon';
-import styles from './index.less';
 import { NodeWrapper } from './node-wrapper';
 
-function InnerPlaceholderNode({ data, id, selected }: NodeProps) {
-  const { t } = useTranslation();
-
+function InnerPlaceholderNode({ id, selected }: NodeProps) {
   return (
     <NodeWrapper selected={selected}>
       <CommonHandle
@@ -25,20 +19,16 @@ function InnerPlaceholderNode({ data, id, selected }: NodeProps) {
       ></CommonHandle>
 
       <section className="flex items-center gap-2">
-        <OperatorIcon name={data.label as Operator}></OperatorIcon>
-        <div className="truncate text-center font-semibold text-sm">
-          {t(`flow.placeholder`, 'Placeholder')}
-        </div>
+        <Skeleton.Avatar
+          active
+          size={24}
+          shape="square"
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+        />
       </section>
 
-      <section
-        className={cn(styles.generateParameters, 'flex gap-2 flex-col mt-2')}
-      >
-        <Skeleton active paragraph={{ rows: 2 }} title={false} />
-        <div className="flex gap-2">
-          <Skeleton.Button active size="small" />
-          <Skeleton.Button active size="small" />
-        </div>
+      <section className={'flex gap-2 flex-col'} style={{ marginTop: 10 }}>
+        <Skeleton.Input active style={{ width: '100%', height: 30 }} />
       </section>
     </NodeWrapper>
   );
