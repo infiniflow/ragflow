@@ -85,7 +85,7 @@ class SearXNG(ToolBase, ABC):
             self.set_output("formalized_content", "")
             return ""
 
-        searxng_url = (kwargs.get("searxng_url") or getattr(self._param, "searxng_url", "") or "").strip()
+        searxng_url = (getattr(self._param, "searxng_url", "") or kwargs.get("searxng_url") or "").strip()
         # In try-run, if no URL configured, just return empty instead of raising
         if not searxng_url:
             self.set_output("formalized_content", "")
