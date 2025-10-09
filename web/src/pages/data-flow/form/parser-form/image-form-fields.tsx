@@ -11,11 +11,14 @@ import { CommonProps } from './interface';
 import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
 
-const options = buildOptions(ImageParseMethod);
-
 export function ImageFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
+  const options = buildOptions(
+    ImageParseMethod,
+    t,
+    'dataflow.imageParseMethodOptions',
+  );
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
 
   const parseMethod = useWatch({
