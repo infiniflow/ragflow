@@ -63,6 +63,18 @@ class Invoke(ComponentBase, ABC):
                 args[para["key"]] = self._canvas.get_variable_value(para["ref"])
 
         url = self._param.url.strip()
+
+        def replace_variable(match):
+            var_name = match.group(1)
+            try:
+                value = self._canvas.get_variable_value(var_name)
+                return str(value or '')
+            except Exception:
+                return ''
+
+        # {base_url} or {component_id@variable_name}
+        url = re.sub(r'\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}', replace_variable, url)
+
         if url.find("http") != 0:
             url = "http://" + url
 
