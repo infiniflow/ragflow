@@ -1,94 +1,53 @@
-import { FormContainer } from '@/components/form-container';
-import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { useTranslate } from '@/hooks/common-hooks';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SliderInputFormField } from '@/components/slider-input-form-field';
+import { Form } from '@/components/ui/form';
+import { MultiSelect } from '@/components/ui/multi-select';
+import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialChunkerValues } from '../../constant';
+import {
+  initialTokenizerValues,
+  TokenizerFields,
+  TokenizerSearchMethod,
+} from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
-import { GoogleCountryOptions, GoogleLanguageOptions } from '../../options';
 import { buildOutputList } from '../../utils/build-output-list';
-import { ApiKeyField } from '../components/api-key-field';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { QueryVariable } from '../components/query-variable';
 
-const outputList = buildOutputList(initialChunkerValues.outputs);
-
-export const GoogleFormPartialSchema = {
-  api_key: z.string(),
-  country: z.string(),
-  language: z.string(),
-};
+const outputList = buildOutputList(initialTokenizerValues.outputs);
 
 export const FormSchema = z.object({
-  ...GoogleFormPartialSchema,
-  q: z.string(),
-  start: z.number(),
-  num: z.number(),
+  search_method: z.array(z.string()).min(1),
+  filename_embd_weight: z.number(),
+  fields: z.string(),
 });
 
-export function GoogleFormWidgets() {
-  const form = useFormContext();
-  const { t } = useTranslate('flow');
-
-  return (
-    <>
-      <FormField
-        control={form.control}
-        name={`country`}
-        render={({ field }) => (
-          <FormItem className="flex-1">
-            <FormLabel>{t('country')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                {...field}
-                options={GoogleCountryOptions}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name={`language`}
-        render={({ field }) => (
-          <FormItem className="flex-1">
-            <FormLabel>{t('language')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                {...field}
-                options={GoogleLanguageOptions}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </>
-  );
-}
-
 const TokenizerForm = ({ node }: INextOperatorForm) => {
-  const { t } = useTranslate('flow');
-  const defaultValues = useFormValues(initialChunkerValues, node);
+  const { t } = useTranslation();
+  const defaultValues = useFormValues(initialTokenizerValues, node);
+
+  const SearchMethodOptions = buildOptions(
+    TokenizerSearchMethod,
+    t,
+    `dataflow.tokenizerSearchMethodOptions`,
+  );
+  const FieldsOptions = buildOptions(
+    TokenizerFields,
+    t,
+    'dataflow.tokenizerFieldsOptions',
+  );
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
 
   useWatchFormChange(node?.id, form);
@@ -96,39 +55,28 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <QueryVariable name="q"></QueryVariable>
-        </FormContainer>
-        <FormContainer>
-          <ApiKeyField placeholder={t('apiKeyPlaceholder')}></ApiKeyField>
-          <FormField
-            control={form.control}
-            name={`start`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flowStart')}</FormLabel>
-                <FormControl>
-                  <NumberInput {...field} className="w-full"></NumberInput>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name={`num`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flowNum')}</FormLabel>
-                <FormControl>
-                  <NumberInput {...field} className="w-full"></NumberInput>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <GoogleFormWidgets></GoogleFormWidgets>
-        </FormContainer>
+        <RAGFlowFormItem
+          name="search_method"
+          label={t('dataflow.searchMethod')}
+        >
+          {(field) => (
+            <MultiSelect
+              options={SearchMethodOptions}
+              onValueChange={field.onChange}
+              defaultValue={field.value}
+              variant="inverted"
+            />
+          )}
+        </RAGFlowFormItem>
+        <SliderInputFormField
+          name="filename_embd_weight"
+          label={t('dataflow.filenameEmbeddingWeight')}
+          max={0.5}
+          step={0.01}
+        ></SliderInputFormField>
+        <RAGFlowFormItem name="fields" label={t('dataflow.fields')}>
+          {(field) => <SelectWithSearch options={FieldsOptions} {...field} />}
+        </RAGFlowFormItem>
       </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>

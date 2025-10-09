@@ -143,7 +143,7 @@ const buildOperatorParams = (operatorName: string) =>
     // initializeOperatorParams(operatorName), // Final processing, for guarantee
   );
 
-const ExcludeOperators = [Operator.Note, Operator.Tool];
+const ExcludeOperators = [Operator.Note, Operator.Tool, Operator.Placeholder];
 
 export function isBottomSubAgent(edges: Edge[], nodeId?: string) {
   const edge = edges.find(

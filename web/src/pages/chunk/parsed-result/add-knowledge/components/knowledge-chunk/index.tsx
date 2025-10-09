@@ -72,7 +72,7 @@ const Chunk = () => {
     chunkUpdatingVisible,
     documentId,
   } = useUpdateChunk();
-  const { navigateToDataset, getQueryString, navigateToDatasetList } =
+  const { navigateToDataFile, getQueryString, navigateToDatasetList } =
     useNavigatePage();
   const fileUrl = useGetDocumentUrl();
   useEffect(() => {
@@ -188,7 +188,7 @@ const Chunk = () => {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbLink
-                onClick={navigateToDataset(
+                onClick={navigateToDataFile(
                   getQueryString(QueryStringMap.id) as string,
                 )}
               >

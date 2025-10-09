@@ -1,79 +1,14 @@
-import { ResponseType } from '@/interfaces/database/base';
-import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
+import { DSL, IFlow } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/flow';
 import i18n from '@/locales/config';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
-import { BeginId } from '@/pages/flow/constant';
 import flowService from '@/services/flow-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { set } from 'lodash';
 import get from 'lodash/get';
-import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
-import { v4 as uuid } from 'uuid';
-
-export const EmptyDsl = {
-  graph: {
-    nodes: [
-      {
-        id: BeginId,
-        type: 'beginNode',
-        position: {
-          x: 50,
-          y: 200,
-        },
-        data: {
-          label: 'Begin',
-          name: 'begin',
-        },
-        sourcePosition: 'left',
-        targetPosition: 'right',
-      },
-    ],
-    edges: [],
-  },
-  components: {
-    begin: {
-      obj: {
-        component_name: 'Begin',
-        params: {},
-      },
-      downstream: ['Answer:China'], // other edge target is downstream, edge source is current node id
-      upstream: [], // edge source is upstream, edge target is current node id
-    },
-  },
-  messages: [],
-  reference: [],
-  history: [],
-  path: [],
-  answer: [],
-};
-
-export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
-  const { t } = useTranslation();
-
-  const { data } = useQuery({
-    queryKey: ['fetchFlowTemplates'],
-    initialData: [],
-    queryFn: async () => {
-      const { data } = await flowService.listTemplates();
-      if (Array.isArray(data?.data)) {
-        data.data.unshift({
-          id: uuid(),
-          title: t('flow.blank'),
-          description: t('flow.createFromNothing'),
-          dsl: EmptyDsl,
-        });
-      }
-
-      return data;
-    },
-  });
-
-  return data;
-};
 
 export const useFetchFlowList = (): { data: IFlow[]; loading: boolean } => {
   const { data, isFetching: loading } = useQuery({

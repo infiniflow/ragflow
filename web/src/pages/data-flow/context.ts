@@ -48,3 +48,11 @@ export type HandleContextType = {
 export const HandleContext = createContext<HandleContextType>(
   {} as HandleContextType,
 );
+
+export type LogContextType = {
+  messageId: string;
+  setMessageId: (messageId: string) => void;
+  setUploadedFileData: (data: Record<string, any>) => void;
+};
+
+export const LogContext = createContext<LogContextType>({} as LogContextType);

@@ -45,6 +45,7 @@ const orderFactoryList = [
   LLMFactory.Xinference,
   LLMFactory.Ai302,
   LLMFactory.CometAPI,
+  LLMFactory.DeerAPI,
 ];
 
 export const sortLLmFactoryListBySpecifiedOrder = (list: IFactory[]) => {
@@ -153,8 +154,11 @@ function getCSSVariableValue(variableName: string): string {
   return value;
 }
 
-// Parse the color and convert to RGBA
-export function parseColorToRGBA(color: string): [number, number, number] {
+/**Parse the color and convert to RGB,
+ * #fff -> [255, 255, 255]
+ * var(--text-primary) -> [var(--text-primary-r), var(--text-primary-g), var(--text-primary-b)]
+ * */
+export function parseColorToRGB(color: string): [number, number, number] {
   // Handling CSS variables (e.g. var(--accent-primary))
   let colorStr = color;
   if (colorStr.startsWith('var(')) {
@@ -169,6 +173,32 @@ export function parseColorToRGBA(color: string): [number, number, number] {
       return [0, 0, 0];
     }
     colorStr = getCSSVariableValue(varName);
+  }
+
+  // Handle rgb(var(--accent-primary)) format
+  if (colorStr.startsWith('rgb(var(')) {
+    const varMatch = colorStr.match(/rgb\(var\(([^)]+)\)\)/);
+    if (!varMatch) {
+      console.error(`Invalid nested CSS variable: ${color}`);
+      return [0, 0, 0];
+    }
+    const varName = varMatch[1];
+    if (!varName) {
+      console.error(`Invalid nested CSS variable: ${colorStr}`);
+      return [0, 0, 0];
+    }
+    // Get the CSS variable value which should be in format "r, g, b"
+    const rgbValues = getCSSVariableValue(varName);
+    const rgbMatch = rgbValues.match(/^(\d+),?\s*(\d+),?\s*(\d+)$/);
+    if (rgbMatch) {
+      return [
+        parseInt(rgbMatch[1]),
+        parseInt(rgbMatch[2]),
+        parseInt(rgbMatch[3]),
+      ];
+    }
+    console.error(`Unsupported RGB CSS variable format: ${rgbValues}`);
+    return [0, 0, 0];
   }
 
   // Handles hexadecimal colors (e.g. #FF5733)
@@ -203,4 +233,15 @@ export function parseColorToRGBA(color: string): [number, number, number] {
   }
   console.error(`Unsupported colorStr format: ${colorStr}`);
   return [0, 0, 0];
+}
+
+/**
+ *
+ * @param color eg: #fff, or var(--color-text-primary)
+ * @param opcity 0~1
+ * @return rgba(r,g,b,opcity)
+ */
+export function parseColorToRGBA(color: string, opcity = 1): string {
+  const [r, g, b] = parseColorToRGB(color);
+  return `rgba(${r},${g},${b},${opcity})`;
 }

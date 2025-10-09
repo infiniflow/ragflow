@@ -100,7 +100,6 @@
     --bg-card: rgba(0, 0, 0, 0.05);
     --bg-component: #ffffff;
     --bg-input: rgba(255, 255, 255, 0);
-    --bg-accent: rgba(76, 164, 231, 0.05);
     /* Button ,Body text, Input completed text */
     --text-primary: #161618;
     --text-secondary: #75787a;
@@ -113,13 +112,15 @@
     --border-accent: #000000;
     --border-button: rgba(0, 0, 0, 0.1);
     /* Regulators, parsing, switches, variables */
-    --accent-primary: #00beb4;
+    --accent-primary: 0 190 180;
     /* Output Variables Box */
     --bg-accent: rgba(76, 164, 231, 0.05);
 
-    --state-success: #3ba05c;
-    --state-warning: #faad14;
-    --state-error: #d8494b;
+    /* --state-success: #3ba05c; */
+    --state-success: 59 160 92;
+    /* --state-warning: #767573; */
+    --state-warning: 118 117 115;
+    --state-error: 216 73 75;
 
     --team-group: #5ab77e;
     --team-member: #5c96c8;
@@ -291,8 +292,8 @@
 @layer utilities {
   .scrollbar-auto {
     /* hide scrollbar */
-    scrollbar-width: none;
-    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) var(--bg-card);
   }
 
   .scrollbar-auto::-webkit-scrollbar {

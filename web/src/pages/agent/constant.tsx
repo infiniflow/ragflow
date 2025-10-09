@@ -7,6 +7,7 @@ import {
   AgentGlobalsSysQueryWithBrace,
   CodeTemplateStrMap,
   ProgrammingLanguage,
+  initialLlmBaseValues,
 } from '@/constants/agent';
 
 export enum AgentDialogueMode {
@@ -14,13 +15,8 @@ export enum AgentDialogueMode {
   Task = 'task',
 }
 
-import {
-  ChatVariableEnabledField,
-  variableEnabledFieldMap,
-} from '@/constants/chat';
 import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
-import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 import { t } from 'i18next';
 
 // DuckDuckGo's channel options
@@ -274,24 +270,6 @@ export const initialRetrievalValues = {
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant. What can I do for you?`,
-};
-
-export const variableCheckBoxFieldMap = Object.keys(
-  variableEnabledFieldMap,
-).reduce<Record<string, boolean>>((pre, cur) => {
-  pre[cur] = setInitialChatVariableEnabledFieldValue(
-    cur as ChatVariableEnabledField,
-  );
-  return pre;
-}, {});
-
-const initialLlmBaseValues = {
-  ...variableCheckBoxFieldMap,
-  temperature: 0.1,
-  top_p: 0.3,
-  frequency_penalty: 0.7,
-  presence_penalty: 0.4,
-  max_tokens: 256,
 };
 
 export const initialGenerateValues = {
@@ -965,4 +943,6 @@ export const DROPDOWN_ADDITIONAL_OFFSET = 50;
 export const HALF_PLACEHOLDER_NODE_WIDTH = PLACEHOLDER_NODE_WIDTH / 2;
 export const HALF_PLACEHOLDER_NODE_HEIGHT =
   PLACEHOLDER_NODE_HEIGHT + DROPDOWN_SPACING + DROPDOWN_ADDITIONAL_OFFSET;
+export const DROPDOWN_HORIZONTAL_OFFSET = 28;
+export const DROPDOWN_VERTICAL_OFFSET = 74;
 export const PREVENT_CLOSE_DELAY = 300;

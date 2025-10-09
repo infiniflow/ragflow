@@ -182,8 +182,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   const { clearActiveDropdown } = useDropdownManager();
 
-  const { removePlaceholderNode, onNodeCreated, setCreatedPlaceholderRef } =
-    usePlaceholderManager(reactFlowInstance);
+  const {
+    removePlaceholderNode,
+    onNodeCreated,
+    setCreatedPlaceholderRef,
+    checkAndRemoveExistingPlaceholder,
+  } = usePlaceholderManager(reactFlowInstance);
 
   const { calculateDropdownPosition } = useDropdownPosition(reactFlowInstance);
 
@@ -204,6 +208,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     calculateDropdownPosition,
     removePlaceholderNode,
     clearActiveDropdown,
+    checkAndRemoveExistingPlaceholder,
   );
 
   const onPaneClick = useCallback(() => {

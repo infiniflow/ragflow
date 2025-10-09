@@ -33,7 +33,7 @@ from zhipuai import ZhipuAI
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate, total_token_count_from_response
+from rag.utils import num_tokens_from_string, truncate
 
 
 class Base(ABC):
@@ -52,7 +52,15 @@ class Base(ABC):
         raise NotImplementedError("Please implement encode method!")
 
     def total_token_count(self, resp):
-        return total_token_count_from_response(resp)
+        try:
+            return resp.usage.total_tokens
+        except Exception:
+            pass
+        try:
+            return resp["usage"]["total_tokens"]
+        except Exception:
+            pass
+        return 0
 
 
 class DefaultEmbedding(Base):
@@ -138,7 +146,7 @@ class OpenAIEmbed(Base):
         ress = []
         total_tokens = 0
         for i in range(0, len(texts), batch_size):
-            res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name, encoding_format="float")
+            res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
             try:
                 ress.extend([d.embedding for d in res.data])
                 total_tokens += self.total_token_count(res)
@@ -147,7 +155,7 @@ class OpenAIEmbed(Base):
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float")
+        res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float",extra_body={"drop_params": True})
         return np.array(res.data[0].embedding), self.total_token_count(res)
 
 
@@ -489,7 +497,6 @@ class MistralEmbed(Base):
     def encode_queries(self, text):
         import time
         import random
-
         retry_max = 5
         while retry_max > 0:
             try:
@@ -748,7 +755,7 @@ class SILICONFLOWEmbed(Base):
             texts_batch = texts[i : i + batch_size]
             if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
                 # limit 512, 340 is almost safe
-                texts_batch = [" " if not text.strip() else truncate(text, 340) for text in texts_batch]
+                texts_batch = [" " if not text.strip() else truncate(text, 256) for text in texts_batch]
             else:
                 texts_batch = [" " if not text.strip() else text for text in texts_batch]
 
@@ -937,7 +944,6 @@ class GiteeEmbed(SILICONFLOWEmbed):
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
 
-
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 
@@ -962,4 +968,12 @@ class CometAPIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url="https://api.cometapi.com/v1"):
         if not base_url:
             base_url = "https://api.cometapi.com/v1"
+        super().__init__(key, model_name, base_url)
+
+class DeerAPIEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "DeerAPI"
+
+    def __init__(self, key, model_name, base_url="https://api.deerapi.com/v1"):
+        if not base_url:
+            base_url = "https://api.deerapi.com/v1"
         super().__init__(key, model_name, base_url)
