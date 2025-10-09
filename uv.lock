@@ -2603,7 +2603,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.0.dev5"
+version = "0.6.0.dev6"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2620,7 +2620,7 @@ dependencies = [
     { name = "thrift" },
 ]
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/fe/a4/6079bf9790f16badc01e7b79a28c90bec407cfcaa8a2ed37e4a68120f87a/infinity_sdk-0.6.0.dev5-py3-none-any.whl", hash = "sha256:510ac408d5cd9d3d4df33c7c0877f55c5ae8a6019e465190c86d58012a319179" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/0d/2b/2f331cc7f7a76a995bbef0027b69bc1c1b3210c66fd3f66f06d65073423d/infinity_sdk-0.6.0.dev6-py3-none-any.whl", hash = "sha256:4c7038aee4f676fa091f0f4cd23aa7d48760bb2c64c5c62b96a612aa31fe6aeb" },
 ]
 
 [[package]]
@@ -5481,7 +5481,7 @@ requires-dist = [
     { name = "httpx", extras = ["socks"], specifier = "==0.27.2" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.0.dev5" },
+    { name = "infinity-sdk", specifier = "==0.6.0.dev6" },
     { name = "itsdangerous", specifier = "==2.1.2" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
@@ -6412,11 +6412,11 @@ wheels = [
 
 [[package]]
 name = "sqlglot"
-version = "11.7.1"
+version = "27.24.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/f9/df/3f9d14480946f6e3808d29f986ce8b6f6cca2a0c974dbed583366010f764/sqlglot-11.7.1.tar.gz", hash = "sha256:72624837266f3760b17ea9d20abf86835735f17d7eb7351c919b2188dc7905aa" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ba/0f/16f48ec450b4a1fc43ed9a7cb6587125045484b4d8253a63c6609d2ddfac/sqlglot-27.24.2.tar.gz", hash = "sha256:a060eeb77cf4f60d4bb86218f7c7b391097827a8ce29117d6b3199f725192bc9" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/6c/60/ddcb8f70eaad61b5e574a8adba10cc8d8c0b8e5ad87f4836c3c52767a2ad/sqlglot-11.7.1-py3-none-any.whl", hash = "sha256:1ed7f5965eb4c917821f8a324af6586432d0019628c2e067958d1470637e1398" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/9a/d0/25e7fe77eed98d5dc7326307ccc9c7025e33664c196f56bd75a12946af71/sqlglot-27.24.2-py3-none-any.whl", hash = "sha256:5bc74ed7a5dea53d07f825ca0c55f85b45175e58fba9a098222454b23a91a57f" },
 ]
 
 [[package]]
