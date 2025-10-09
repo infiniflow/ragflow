@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { Operator } from '../constant';
 import useGraphStore from '../store';
 
 /**
@@ -12,6 +13,46 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
   const userSelectedNodeRef = useRef(false);
 
   /**
+   * Check if placeholder node exists and remove it if found
+   * Ensures only one placeholder can exist on the panel
+   */
+  const checkAndRemoveExistingPlaceholder = useCallback(() => {
+    const { nodes, edges } = useGraphStore.getState();
+
+    // Find existing placeholder node
+    const existingPlaceholder = nodes.find(
+      (node) => node.data?.label === Operator.Placeholder,
+    );
+
+    if (existingPlaceholder && reactFlowInstance) {
+      // Remove edges related to placeholder
+      const edgesToRemove = edges.filter(
+        (edge) =>
+          edge.target === existingPlaceholder.id ||
+          edge.source === existingPlaceholder.id,
+      );
+
+      // Remove placeholder node
+      const nodesToRemove = [existingPlaceholder];
+
+      if (nodesToRemove.length > 0 || edgesToRemove.length > 0) {
+        reactFlowInstance.deleteElements({
+          nodes: nodesToRemove,
+          edges: edgesToRemove,
+        });
+      }
+
+      // Clear highlighted placeholder edge
+      useGraphStore.getState().setHighlightedPlaceholderEdgeId(null);
+
+      // Update ref reference
+      if (createdPlaceholderRef.current === existingPlaceholder.id) {
+        createdPlaceholderRef.current = null;
+      }
+    }
+  }, [reactFlowInstance]);
+
+  /**
    * Function to remove placeholder node
    * Called when user clicks blank area or cancels operation
    */
@@ -21,7 +62,8 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
       reactFlowInstance &&
       !userSelectedNodeRef.current
     ) {
-      const { nodes, edges } = useGraphStore.getState();
+      const { nodes, edges, setHighlightedPlaceholderEdgeId } =
+        useGraphStore.getState();
 
       // Remove edges related to placeholder
       const edgesToRemove = edges.filter(
@@ -42,6 +84,8 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
         });
       }
 
+      setHighlightedPlaceholderEdgeId(null);
+
       createdPlaceholderRef.current = null;
     }
 
@@ -57,7 +101,13 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
     (newNodeId: string) => {
       // First establish connection between new node and source, then delete placeholder
       if (createdPlaceholderRef.current && reactFlowInstance) {
-        const { nodes, edges, addEdge, updateNode } = useGraphStore.getState();
+        const {
+          nodes,
+          edges,
+          addEdge,
+          updateNode,
+          setHighlightedPlaceholderEdgeId,
+        } = useGraphStore.getState();
 
         // Find placeholder node to get its position
         const placeholderNode = nodes.find(
@@ -107,6 +157,8 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
             edges: edgesToRemove,
           });
         }
+
+        setHighlightedPlaceholderEdgeId(null);
       }
 
       // Mark that user has selected a node
@@ -135,6 +187,7 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
     onNodeCreated,
     setCreatedPlaceholderRef,
     resetUserSelectedFlag,
+    checkAndRemoveExistingPlaceholder,
     createdPlaceholderRef: createdPlaceholderRef.current,
     userSelectedNodeRef: userSelectedNodeRef.current,
   };

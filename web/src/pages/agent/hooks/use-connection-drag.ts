@@ -2,6 +2,7 @@ import { Connection, Position } from '@xyflow/react';
 import { useCallback, useRef } from 'react';
 import { useDropdownManager } from '../canvas/context';
 import { Operator, PREVENT_CLOSE_DELAY } from '../constant';
+import useGraphStore from '../store';
 import { useAddNode } from './use-add-node';
 
 interface ConnectionStartParams {
@@ -26,6 +27,7 @@ export const useConnectionDrag = (
   ) => { x: number; y: number },
   removePlaceholderNode: () => void,
   clearActiveDropdown: () => void,
+  checkAndRemoveExistingPlaceholder: () => void,
 ) => {
   // Reference for whether connection is established
   const isConnectedRef = useRef(false);
@@ -38,6 +40,7 @@ export const useConnectionDrag = (
 
   const { addCanvasNode } = useAddNode(reactFlowInstance);
   const { setActiveDropdown } = useDropdownManager();
+  const { setHighlightedPlaceholderEdgeId } = useGraphStore();
 
   /**
    * Connection start handler function
@@ -81,10 +84,17 @@ export const useConnectionDrag = (
           }
 
           if (isHandleClick) {
+            removePlaceholderNode();
+            hideModal();
+            clearActiveDropdown();
             connectionStartRef.current = null;
             mouseStartPosRef.current = null;
             return;
           }
+
+          // Check and remove existing placeholder-node before creating new one
+          checkAndRemoveExistingPlaceholder();
+
           // Create placeholder node and establish connection
           const mockEvent = { clientX, clientY };
           const contextData = {
@@ -101,9 +111,13 @@ export const useConnectionDrag = (
             contextData,
           )(mockEvent);
 
-          // Record the created placeholder node ID
           if (newNodeId) {
             setCreatedPlaceholderRef(newNodeId);
+
+            if (connectionStartRef.current) {
+              const edgeId = `xy-edge__${connectionStartRef.current.nodeId}${connectionStartRef.current.handleId}-${newNodeId}end`;
+              setHighlightedPlaceholderEdgeId(edgeId);
+            }
           }
 
           // Calculate placeholder node position and display dropdown menu
@@ -140,6 +154,11 @@ export const useConnectionDrag = (
       calculateDropdownPosition,
       setActiveDropdown,
       showModal,
+      setHighlightedPlaceholderEdgeId,
+      checkAndRemoveExistingPlaceholder,
+      removePlaceholderNode,
+      hideModal,
+      clearActiveDropdown,
     ],
   );
 
@@ -187,7 +206,13 @@ export const useConnectionDrag = (
     removePlaceholderNode();
     hideModal();
     clearActiveDropdown();
-  }, [removePlaceholderNode, hideModal, clearActiveDropdown]);
+    setHighlightedPlaceholderEdgeId(null);
+  }, [
+    removePlaceholderNode,
+    hideModal,
+    clearActiveDropdown,
+    setHighlightedPlaceholderEdgeId,
+  ]);
 
   return {
     onConnectStart,
