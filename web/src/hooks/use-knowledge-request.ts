@@ -323,7 +323,7 @@ export const useRemoveKnowledgeGraph = () => {
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
         queryClient.invalidateQueries({
-          queryKey: ['fetchKnowledgeGraph'],
+          queryKey: [KnowledgeApiAction.FetchKnowledgeGraph],
         });
       }
       return data?.code;
