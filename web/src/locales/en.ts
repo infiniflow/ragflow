@@ -1397,6 +1397,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cleanHtml: 'Clean HTML',
       cleanHtmlTip:
         'If the response is HTML formatted and only the primary content wanted, please toggle it on.',
+      invalidUrl:
+        'Must be a valid URL or URL with variable placeholders in the format {variable_name} or {component@variable}',
       reference: 'Reference',
       input: 'Input',
       output: 'Output',

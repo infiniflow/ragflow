@@ -1170,6 +1170,8 @@ export default {
       cleanHtml: 'HTML bereinigen',
       cleanHtmlTip:
         'Wenn die Antwort im HTML-Format vorliegt und nur der Hauptinhalt gewünscht wird, schalten Sie dies bitte ein.',
+      invalidUrl:
+        'Muss eine gültige URL oder eine URL mit Variablenplatzhaltern im Format {Variablenname} oder {Komponente@Variable} sein',
       reference: 'Referenz',
       input: 'Eingabe',
       output: 'Ausgabe',

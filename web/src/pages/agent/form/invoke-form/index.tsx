@@ -26,6 +26,7 @@ import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
+import { PromptEditor } from '../components/prompt-editor';
 import { FormSchema, FormSchemaType } from './schema';
 import { useEditVariableRecord } from './use-edit-variable';
 import { VariableDialog } from './variable-dialog';
@@ -98,7 +99,13 @@ function InvokeForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>{t('flow.url')}</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder="http://" />
+                  <PromptEditor
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="http://"
+                    showToolbar={false}
+                    multiLine={false}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
