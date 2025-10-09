@@ -6,9 +6,9 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { buildOptions } from '@/utils/form';
+import { upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
-import { FileType, OutputFormatMap } from '../../constant';
+import { FileType, OutputFormatMap, PdfOutputFormat } from '../../constant';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -16,7 +16,10 @@ function buildOutputOptionsFormatMap() {
   return Object.entries(OutputFormatMap).reduce<
     Record<string, SelectWithSearchFlagOptionType[]>
   >((pre, [key, value]) => {
-    pre[key] = buildOptions(value);
+    pre[key] = Object.values(value).map((v) => ({
+      label: v === PdfOutputFormat.Json ? 'JSON' : upperFirst(v),
+      value: v,
+    }));
     return pre;
   }, {});
 }

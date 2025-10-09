@@ -1531,7 +1531,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       agentDescription:
         'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
       maxRecords: 'Max records',
-      createAgent: 'Create Agent',
+      createAgent: 'Agent flow',
       stringTransform: 'Text Processing',
       userFillUp: 'Await Response',
       userFillUpDescription: `Pauses the workflow and waits for the user's message before continuing.`,
@@ -1696,6 +1696,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Tokenizer',
+      tokenizerRequired: 'Please add the Tokenizer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       splitter: 'Token Splitter',
@@ -1709,15 +1710,25 @@ This delimiter is used to split the input text into several text pieces echo of 
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       outputFormat: 'Output format',
       lang: 'Language',
-      fileFormats: 'File formats',
-      fields: 'Fields',
+      fileFormats: 'File format',
+      fileFormatOptions: {
+        pdf: 'PDF',
+        spreadsheet: 'Spreadsheet',
+        image: 'Image',
+        email: 'Email',
+        'text&markdown': 'Text & Markup',
+        word: 'Word',
+        slides: 'PPT',
+        audio: 'Audio',
+      },
+      fields: 'Field',
       addParser: 'Add Parser',
       hierarchy: 'Hierarchy',
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent',
       searchMethod: 'Search method',
       begin: 'File',
-      parserMethod: 'Parser method',
+      parserMethod: 'Parsing method',
       systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
@@ -1785,10 +1796,13 @@ Important structured information may include: names, dates, locations, events, k
       },
       filenameEmbeddingWeight: 'Filename embedding weight',
       tokenizerFieldsOptions: {
-        text: 'Text',
+        text: 'Processed Text',
         keywords: 'Keywords',
         questions: 'Questions',
         summary: 'Augmented Context',
+      },
+      imageParseMethodOptions: {
+        ocr: 'OCR',
       },
     },
     datasetOverview: {

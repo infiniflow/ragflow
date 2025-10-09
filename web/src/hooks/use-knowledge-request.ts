@@ -144,7 +144,7 @@ export const useFetchNextKnowledgeListByPage = () => {
 
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
-      // setPagination({ page: 1 }); // TODO: 这里导致重复请求
+      // setPagination({ page: 1 }); // TODO: This results in repeated requests
       handleInputChange(e);
     },
     [handleInputChange],
