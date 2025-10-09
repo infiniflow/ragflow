@@ -1153,6 +1153,8 @@ export default {
       headers: '請求頭',
       cleanHtml: '清除 HTML',
       cleanHtmlTip: '如果回應是 HTML 格式並且只需要主要內容，請將其開啟。',
+      invalidUrl:
+        '必須是有效的 URL 或包含變量佔位符的 URL，格式為 {variable_name} 或 {component@variable}',
       reference: '引用',
       input: '輸入',
       output: '輸出',

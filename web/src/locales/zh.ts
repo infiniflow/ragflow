@@ -1359,6 +1359,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       headers: '请求头',
       cleanHtml: '清除 HTML',
       cleanHtmlTip: '如果响应是 HTML 格式且只需要主要内容，请将其打开。',
+      invalidUrl:
+        '必须是有效的 URL 或包含变量占位符的 URL，格式为 {variable_name} 或 {component@variable}',
       reference: '引用',
       input: '输入',
       output: '输出',
@@ -1454,7 +1456,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       addAgent: '添加智能体',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
       maxRecords: '最大记录数',
-      createAgent: '创建智能体',
+      createAgent: '智能体流程',
       stringTransform: '文本处理',
       userFillUp: '等待输入',
       userFillUpDescription: `此组件会暂停当前的流程并等待用户发送消息，接收到消息之后再进行之后的流程。`,
@@ -1611,6 +1613,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: '分词器',
+      tokenizerRequired: '请先添加Tokenizer节点',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的向量嵌入）。',
       splitter: '分词器拆分器',

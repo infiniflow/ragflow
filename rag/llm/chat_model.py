@@ -133,6 +133,7 @@ class Base(ABC):
             "logprobs",
             "top_logprobs",
             "extra_headers",
+            "enable_thinking"
         }
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}

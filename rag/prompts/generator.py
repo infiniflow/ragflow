@@ -29,7 +29,7 @@ from rag.utils import encoder, num_tokens_from_string
 
 STOP_TOKEN="<|STOP|>"
 COMPLETE_TASK="complete_task"
-
+INPUT_UTILIZATION = 0.5
 
 def get_value(d, k1, k2):
     return d.get(k1, d.get(k2))
@@ -439,9 +439,9 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
     return []
 
 
-def gen_json(system_prompt:str, user_prompt:str, chat_mdl):
+def gen_json(system_prompt:str, user_prompt:str, chat_mdl, gen_conf = None):
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = chat_mdl.chat(msg[0]["content"], msg[1:])
+    ans = chat_mdl.chat(msg[0]["content"], msg[1:],gen_conf=gen_conf)
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
         return json_repair.loads(ans)
@@ -649,4 +649,85 @@ def toc_transformer(toc_pages, chat_mdl):
     return last_complete
 
 
+TOC_LEVELS = load_prompt("assign_toc_levels")
+def assign_toc_levels(toc_secs, chat_mdl, gen_conf = {"temperature": 0.2}):
+    print("\nBegin TOC level assignment...\n")
 
+    ans = gen_json(
+        PROMPT_JINJA_ENV.from_string(TOC_LEVELS).render(),
+        str(toc_secs),
+        chat_mdl,
+        gen_conf
+    )
+    
+    return ans
+
+
+TOC_FROM_TEXT_SYSTEM = load_prompt("toc_from_text_system")
+TOC_FROM_TEXT_USER = load_prompt("toc_from_text_user")
+# Generate TOC from text chunks with text llms
+def gen_toc_from_text(text, chat_mdl):
+    ans = gen_json(
+        PROMPT_JINJA_ENV.from_string(TOC_FROM_TEXT_SYSTEM).render(),
+        PROMPT_JINJA_ENV.from_string(TOC_FROM_TEXT_USER).render(text=text),
+        chat_mdl,
+        gen_conf={"temperature": 0.0, "top_p": 0.9, "enable_thinking": False, }
+    )
+    return ans
+
+
+def split_chunks(chunks, max_length: int):
+    """
+    Pack chunks into batches according to max_length, returning [{"id": idx, "text": chunk_text}, ...].
+    Do not split a single chunk, even if it exceeds max_length.
+    """
+
+    result = []
+    batch, batch_tokens = [], 0
+
+    for idx, chunk in enumerate(chunks):
+        t = num_tokens_from_string(chunk)
+        if batch_tokens + t > max_length:
+            result.append(batch)
+            batch, batch_tokens = [], 0
+        batch.append({"id": idx, "text": chunk})    
+        batch_tokens += t
+    if batch:
+        result.append(batch)
+    return result
+
+
+def run_toc_from_text(chunks, chat_mdl):
+    input_budget = int(chat_mdl.max_length * INPUT_UTILIZATION) - num_tokens_from_string(
+        TOC_FROM_TEXT_USER + TOC_FROM_TEXT_SYSTEM
+    )
+
+    input_budget =  2000 if input_budget > 2000 else input_budget
+    chunk_sections = split_chunks(chunks, input_budget)
+    res = []
+
+    for chunk in chunk_sections:
+        ans = gen_toc_from_text(chunk, chat_mdl)
+        res.extend(ans)
+        
+    # Filter out entries with title == -1
+    filtered = [x for x in res if x.get("title") and x.get("title") != "-1"]
+
+    print("\n\nFiltered TOC sections:\n", filtered)
+
+    # Generate initial structure (structure/title)
+    raw_structure = [{"structure": "0", "title": x.get("title", "")} for x in filtered]
+
+    # Assign hierarchy levels using LLM
+    toc_with_levels = assign_toc_levels(raw_structure, chat_mdl, {"temperature": 0.0, "top_p": 0.9, "enable_thinking": False})
+
+    # Merge structure and content (by index)
+    merged = []
+    for _ , (toc_item, src_item) in enumerate(zip(toc_with_levels, filtered)):
+        merged.append({
+            "structure": toc_item.get("structure", "0"),
+            "title": toc_item.get("title", ""),
+            "content": src_item.get("content", ""),
+        })
+
+    return merged
