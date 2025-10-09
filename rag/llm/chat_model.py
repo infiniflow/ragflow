@@ -1275,6 +1275,14 @@ class TokenPonyChat(Base):
         if not base_url:
             base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
 
+class DeerAPIChat(Base):
+    _FACTORY_NAME = "DeerAPI"
+
+    def __init__(self, key, model_name, base_url="https://api.deerapi.com/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.deerapi.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
 
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
