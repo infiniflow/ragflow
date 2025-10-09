@@ -54,7 +54,9 @@ export function Collapse({
           <div className="flex items-center gap-1">
             <IconFontFill
               name={`more`}
-              className={cn('size-4', { 'rotate-90': !currentOpen })}
+              className={cn('size-4', {
+                'rotate-90': !currentOpen,
+              })}
             ></IconFontFill>
             {title}
           </div>
