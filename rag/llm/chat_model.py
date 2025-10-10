@@ -132,7 +132,8 @@ class Base(ABC):
             "tool_choice",
             "logprobs",
             "top_logprobs",
-            "extra_headers"
+            "extra_headers",
+            "enable_thinking"
         }
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
@@ -141,22 +142,6 @@ class Base(ABC):
 
     def _chat(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
-        if self.model_name.lower().find("qwq") >= 0:
-            logging.info(f"[INFO] {self.model_name} detected as reasoning model, using _chat_streamly")
-
-            final_ans = ""
-            tol_token = 0 
-            for delta, tol in self._chat_streamly(history, gen_conf, with_reasoning=False, **kwargs):
-                if delta.startswith("<think>") or delta.endswith("</think>"):
-                    continue
-                final_ans += delta
-                tol_token = tol
-
-            if len(final_ans.strip()) == 0:
-                final_ans = "**ERROR**: Empty response from reasoning model"
-
-            return final_ans.strip(), tol_token
-        
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
@@ -1182,6 +1167,7 @@ class GoogleChat(Base):
         else:
             if "max_tokens" in gen_conf:
                 gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
+                del gen_conf["max_tokens"]
             for k in list(gen_conf.keys()):
                 if k not in ["temperature", "top_p", "max_output_tokens"]:
                     del gen_conf[k]
@@ -1189,6 +1175,7 @@ class GoogleChat(Base):
 
     def _chat(self, history, gen_conf={}, **kwargs):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        gen_conf = self._clean_conf(gen_conf)
         if "claude" in self.model_name:
             response = self.client.messages.create(
                 model=self.model_name,
@@ -1250,9 +1237,12 @@ class GoogleChat(Base):
 
             yield total_tokens
         else:
+            response = None
+            total_tokens = 0
             self.client._system_instruction = system
             if "max_tokens" in gen_conf:
                 gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
+                del gen_conf["max_tokens"]
             for k in list(gen_conf.keys()):
                 if k not in ["temperature", "top_p", "max_output_tokens"]:
                     del gen_conf[k]
@@ -1260,18 +1250,23 @@ class GoogleChat(Base):
                 if "role" in item and item["role"] == "assistant":
                     item["role"] = "model"
                 if "content" in item:
-                    item["parts"] = item.pop("content")
+                    item["parts"] = [
+                        {
+                            "text": item.pop("content"),
+                        }
+                    ]
             ans = ""
             try:
-                response = self.model.generate_content(history, generation_config=gen_conf, stream=True)
+                response = self.client.generate_content(history, generation_config=gen_conf, stream=True)
                 for resp in response:
                     ans = resp.text
+                    total_tokens += num_tokens_from_string(ans)
                     yield ans
 
             except Exception as e:
                 yield ans + "\n**ERROR**: " + str(e)
 
-            yield response._chunks[-1].usage_metadata.total_token_count
+            yield total_tokens
 
 
 class GPUStackChat(Base):
