@@ -997,7 +997,7 @@ class RAGFlowPdfParser:
                 self.__ocr(i + 1, img, chars, zoomin, id)
 
             if callback and i % 6 == 5:
-                callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+                callback((i + 1) * 0.6 / len(self.page_images), msg="")
 
         async def __img_ocr_launcher():
             def __ocr_preprocess():

@@ -404,8 +404,8 @@ class Parser(ProcessBase):
 
                 _add_content(msg, msg.get_content_type())
 
-                email_content["text"] = body_text
-                email_content["text_html"] = body_html
+                email_content["text"] = "\n".join(body_text)
+                email_content["text_html"] = "\n".join(body_html)
             # get attachment
             if "attachments" in target_fields:
                 attachments = []
