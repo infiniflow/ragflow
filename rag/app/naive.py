@@ -285,7 +285,7 @@ class Pdf(PdfParser):
         callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
-        self._text_merge()
+        self._text_merge(zoomin=zoomin)
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
 
         if separate_tables_figures:
@@ -296,6 +296,7 @@ class Pdf(PdfParser):
         else:
             tbls = self._extract_table_figure(True, zoomin, True, True)
             self._naive_vertical_merge()
+            self._final_reading_order_merge()
             self._concat_downward()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
@@ -486,6 +487,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
 
+
+        chunks = [section[0] for section in sections]
+        res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+        return res
+
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
@@ -512,7 +518,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception:
             vision_model = None
-        
+
         if vision_model:
             # Process images for each section
             section_images = []

@@ -24,6 +24,8 @@ from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
 
+import math
+from collections import defaultdict, Counter
 import numpy as np
 import pdfplumber
 import trio
@@ -36,9 +38,10 @@ from api import settings
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
-from rag.nlp import rag_tokenizer
+from rag.nlp import get_delimiters, rag_tokenizer
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.settings import PARALLEL_DEVICES
+from rag.utils import num_tokens_from_string
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -349,9 +352,76 @@ class RAGFlowPdfParser:
             self.boxes[i]["top"] += self.page_cum_height[self.boxes[i]["page_number"] - 1]
             self.boxes[i]["bottom"] += self.page_cum_height[self.boxes[i]["page_number"] - 1]
 
-    def _text_merge(self):
+    def _assign_column(self, boxes, zoomin=3):
+        if not boxes:
+            return boxes
+
+        by_page = defaultdict(list)
+        for b in boxes:
+            by_page[b["page_number"]].append(b)
+
+        page_info = {}      # pg -> dict(page_w, left_edge, cand_cols)
+        counter = Counter()
+
+        for pg, bxs in by_page.items():
+            if not bxs:
+                page_info[pg] = {"page_w": 1.0, "left_edge": 0.0, "cand": 1}
+                counter[1] += 1
+                continue
+
+            if hasattr(self, "page_images") and self.page_images and len(self.page_images) >= pg:
+                page_w = self.page_images[pg - 1].size[0] / max(1, zoomin)
+                left_edge = 0.0
+            else:
+                xs0 = [box["x0"] for box in bxs]
+                xs1 = [box["x1"] for box in bxs]
+                left_edge = float(min(xs0))
+                page_w = max(1.0, float(max(xs1) - left_edge))
+
+            widths = [max(1.0, (box["x1"] - box["x0"])) for box in bxs]
+            median_w = float(np.median(widths)) if widths else 1.0
+
+            raw_cols = int(page_w / max(1.0, median_w))
+
+            # cand = raw_cols if (raw_cols >= 2 and median_w < page_w / raw_cols * 0.8) else 1
+            cand = raw_cols
+
+            page_info[pg] = {"page_w": page_w, "left_edge": left_edge, "cand": cand}
+            counter[cand] += 1
+
+            logging.info(f"[Page {pg}] median_w={median_w:.2f}, page_w={page_w:.2f}, raw_cols={raw_cols}, cand={cand}")
+
+        global_cols = counter.most_common(1)[0][0]
+        logging.info(f"Global column_num decided by majority: {global_cols}")
+
+        for pg, bxs in by_page.items():
+            if not bxs:
+                continue
+
+            page_w = page_info[pg]["page_w"]
+            left_edge = page_info[pg]["left_edge"]
+
+            if global_cols == 1:
+                for box in bxs:
+                    box["col_id"] = 0
+                continue
+
+            for box in bxs:
+                w = box["x1"] - box["x0"]
+                if w >= 0.8 * page_w:
+                    box["col_id"] = 0
+                    continue
+                cx = 0.5 * (box["x0"] + box["x1"])
+                norm_cx = (cx - left_edge) / page_w
+                norm_cx = max(0.0, min(norm_cx, 0.999999))
+                box["col_id"] = int(min(global_cols - 1, norm_cx * global_cols))
+
+        return boxes
+
+
+    def _text_merge(self, zoomin=3):
         # merge adjusted boxes
-        bxs = self.boxes
+        bxs = self._assign_column(self.boxes, zoomin)
 
         def end_with(b, txt):
             txt = txt.strip()
@@ -367,30 +437,16 @@ class RAGFlowPdfParser:
         while i < len(bxs) - 1:
             b = bxs[i]
             b_ = bxs[i + 1]
+
+            if b["page_number"] != b_["page_number"] or b.get("col_id") != b_.get("col_id"):
+                i += 1
+                continue
+
             if b.get("layoutno", "0") != b_.get("layoutno", "1") or b.get("layout_type", "") in ["table", "figure", "equation"]:
                 i += 1
                 continue
+
             if abs(self._y_dis(b, b_)) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
-                # merge
-                bxs[i]["x1"] = b_["x1"]
-                bxs[i]["top"] = (b["top"] + b_["top"]) / 2
-                bxs[i]["bottom"] = (b["bottom"] + b_["bottom"]) / 2
-                bxs[i]["text"] += b_["text"]
-                bxs.pop(i + 1)
-                continue
-            i += 1
-            continue
-
-            dis_thr = 1
-            dis = b["x1"] - b_["x0"]
-            if b.get("layout_type", "") != "text" or b_.get("layout_type", "") != "text":
-                if end_with(b, "，") or start_with(b_, "（，"):
-                    dis_thr = -8
-                else:
-                    i += 1
-                    continue
-
-            if abs(self._y_dis(b, b_)) < self.mean_height[bxs[i]["page_number"] - 1] / 5 and dis >= dis_thr and b["x1"] < b_["x1"]:
                 # merge
                 bxs[i]["x1"] = b_["x1"]
                 bxs[i]["top"] = (b["top"] + b_["top"]) / 2
@@ -402,60 +458,195 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _naive_vertical_merge(self, zoomin=3):
-        import math
-        bxs = Recognizer.sort_Y_firstly(self.boxes, np.median(self.mean_height) / 3)
+        bxs = self._assign_column(self.boxes, zoomin)
 
-        column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
-        if not column_width or math.isnan(column_width):
-            column_width = self.mean_width[0]
-        self.column_num = int(self.page_images[0].size[0] / zoomin / column_width)
-        if column_width < self.page_images[0].size[0] / zoomin / self.column_num:
-            logging.info("Multi-column................... {} {}".format(column_width, self.page_images[0].size[0] / zoomin / self.column_num))
-            self.boxes = self.sort_X_by_page(self.boxes, column_width / self.column_num)
+        grouped = defaultdict(list)
+        for b in bxs:
+            grouped[(b["page_number"], b.get("col_id", 0))].append(b)
 
-        i = 0
-        while i + 1 < len(bxs):
-            b = bxs[i]
-            b_ = bxs[i + 1]
-            if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
-                bxs.pop(i)
+        merged_boxes = []
+        for (pg, col), bxs in grouped.items():
+            bxs = sorted(bxs, key=lambda x: (x["top"], x["x0"]))
+            if not bxs:
                 continue
-            if not b["text"].strip():
-                bxs.pop(i)
-                continue
-            concatting_feats = [
-                b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
-                len(b["text"].strip()) > 1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",
-                b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",
-            ]
-            # features for not concating
-            feats = [
-                b.get("layoutno", 0) != b_.get("layoutno", 0),
-                b["text"].strip()[-1] in "。？！?",
-                self.is_english and b["text"].strip()[-1] in ".!?",
-                b["page_number"] == b_["page_number"] and b_["top"] - b["bottom"] > self.mean_height[b["page_number"] - 1] * 1.5,
-                b["page_number"] < b_["page_number"] and abs(b["x0"] - b_["x0"]) > self.mean_width[b["page_number"] - 1] * 4,
-            ]
-            # split features
-            detach_feats = [b["x1"] < b_["x0"], b["x0"] > b_["x1"]]
-            if (any(feats) and not any(concatting_feats)) or any(detach_feats):
-                logging.debug(
-                    "{} {} {} {}".format(
-                        b["text"],
-                        b_["text"],
-                        any(feats),
-                        any(concatting_feats),
+
+            mh = self.mean_height[pg - 1] if self.mean_height else np.median([b["bottom"] - b["top"] for b in bxs]) or 10
+
+            i = 0
+            while i + 1 < len(bxs):
+                b = bxs[i]
+                b_ = bxs[i + 1]
+
+                if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
+                    bxs.pop(i)
+                    continue
+
+
+                if not b["text"].strip():
+                    bxs.pop(i)
+                    continue
+
+                if not b["text"].strip() or b.get("layoutno") != b_.get("layoutno"):
+                    i += 1
+                    continue
+
+                if b_["top"] - b["bottom"] > mh * 1.5:
+                    i += 1
+                    continue
+
+                overlap = max(0, min(b["x1"], b_["x1"]) - max(b["x0"], b_["x0"]))
+                if overlap / max(1, min(b["x1"] - b["x0"], b_["x1"] - b_["x0"])) < 0.3:
+                    i += 1
+                    continue
+
+                concatting_feats = [
+                    b["text"].strip()[-1] in ",;:'\"，、‘“；：-",
+                    len(b["text"].strip()) > 1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",
+                    b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",
+                ]
+                # features for not concating
+                feats = [
+                    b.get("layoutno", 0) != b_.get("layoutno", 0),
+                    b["text"].strip()[-1] in "。？！?",
+                    self.is_english and b["text"].strip()[-1] in ".!?",
+                    b["page_number"] == b_["page_number"] and b_["top"] - b["bottom"] > self.mean_height[b["page_number"] - 1] * 1.5,
+                    b["page_number"] < b_["page_number"] and abs(b["x0"] - b_["x0"]) > self.mean_width[b["page_number"] - 1] * 4,
+                ]
+                # split features
+                detach_feats = [b["x1"] < b_["x0"], b["x0"] > b_["x1"]]
+                if (any(feats) and not any(concatting_feats)) or any(detach_feats):
+                    logging.debug(
+                        "{} {} {} {}".format(
+                            b["text"],
+                            b_["text"],
+                            any(feats),
+                            any(concatting_feats),
+                        )
                     )
-                )
-                i += 1
+                    i += 1
+                    continue
+
+                b["text"] = (b["text"].rstrip() + " " + b_["text"].lstrip()).strip()
+                b["bottom"] = b_["bottom"]
+                b["x0"] = min(b["x0"], b_["x0"])
+                b["x1"] = max(b["x1"], b_["x1"])
+                bxs.pop(i + 1)
+
+            merged_boxes.extend(bxs)
+
+        self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
+
+    def _final_reading_order_merge(self, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, zoomin=3):
+        if not self.boxes:
+            return
+
+        self.boxes = self._assign_column(self.boxes)
+
+        grouped = defaultdict(list)
+        for b in self.boxes:
+            grouped[(b["page_number"], b.get("col_id", 0))].append(b)
+
+        merged_boxes = []
+
+        for (pg, col), bxs in sorted(grouped.items(), key=lambda k: (k[0][0], k[0][1])):
+            bxs = sorted(bxs, key=lambda x: (x["top"], x["x0"]))
+            if not bxs:
                 continue
-            # merge up and down
-            b["bottom"] = b_["bottom"]
-            b["text"] += b_["text"]
-            b["x0"] = min(b["x0"], b_["x0"])
-            b["x1"] = max(b["x1"], b_["x1"])
-            bxs.pop(i + 1)
-        self.boxes = bxs
+
+            dels = get_delimiters(delimiter)
+
+            cur_chunk = {"text": "", "token_count": 0, "positions": []}
+
+            def flush_chunk():
+                nonlocal cur_chunk
+                if not cur_chunk["text"].strip():
+                    cur_chunk = {"text": "", "token_count": 0, "positions": []}
+                    return
+
+                xs0 = [p["x0"] for p in cur_chunk["positions"]]
+                xs1 = [p["x1"] for p in cur_chunk["positions"]]
+                tops = [p["top"] for p in cur_chunk["positions"]]
+                bots = [p["bottom"] for p in cur_chunk["positions"]]
+                merged_boxes.append({
+                    "text": cur_chunk["text"].strip(),
+                    "page_number": pg,
+                    "col_id": col,
+                    "layout_type": "merged_chunk",
+                    "positions": cur_chunk["positions"],
+                    "x0": float(np.min(xs0)) if xs0 else 0,
+                    "x1": float(np.max(xs1)) if xs1 else 0,
+                    "top": float(np.min(tops)) if tops else 0,
+                    "bottom": float(np.max(bots)) if bots else 0,
+                })
+                cur_chunk = {"text": "", "token_count": 0, "positions": []}
+
+            def add_chunk_piece(t, b):
+                nonlocal cur_chunk
+                if not t.strip():
+                    return
+                tnum = num_tokens_from_string(t)
+
+                pos_tag = self._line_tag(b, zoomin)
+
+                if (
+                    cur_chunk["text"] == "" or
+                    cur_chunk["token_count"] > chunk_token_num * (100 - overlapped_percent) / 100.
+                ):
+                    if cur_chunk["text"]:
+                        flush_chunk()
+
+                    if merged_boxes and overlapped_percent > 0:
+                        overlapped = RAGFlowPdfParser.remove_tag(merged_boxes[-1]["text"])
+                        overlap_len = int(len(overlapped) * (100 - overlapped_percent) / 100.)
+                        t = overlapped[overlap_len:] + t
+
+                    if pos_tag and t.find(pos_tag) < 0:
+                        t += pos_tag
+
+                    cur_chunk["text"] = t
+                    cur_chunk["token_count"] = tnum
+                    cur_chunk["positions"].append({
+                        "page_number": b["page_number"],
+                        "col_id": b.get("col_id", 0),
+                        "layout_type": b.get("layout_type", ""),
+                        "layoutno": b.get("layoutno", ""),
+                        "x0": b["x0"],
+                        "x1": b["x1"],
+                        "top": b["top"],
+                        "bottom": b["bottom"],
+                    })
+                else:
+                    if pos_tag and cur_chunk["text"].find(pos_tag) < 0:
+                        t += pos_tag
+                    cur_chunk["text"] += " " + t
+                    cur_chunk["token_count"] += tnum
+                    cur_chunk["positions"].append({
+                        "page_number": b["page_number"],
+                        "col_id": b.get("col_id", 0),
+                        "layout_type": b.get("layout_type", ""),
+                        "layoutno": b.get("layoutno", ""),
+                        "x0": b["x0"],
+                        "x1": b["x1"],
+                        "top": b["top"],
+                        "bottom": b["bottom"],
+                    })
+
+            for b in bxs:
+                sec = b["text"].strip()
+                if not sec:
+                    continue
+                if num_tokens_from_string(sec) < chunk_token_num:
+                    add_chunk_piece(sec, b)
+                    continue
+                split_sec = re.split(r"(%s)" % dels, sec, flags=re.DOTALL)
+                for sub_sec in split_sec:
+                    if not sub_sec or re.match(f"^{dels}$", sub_sec):
+                        continue
+                    add_chunk_piece(sub_sec, b)
+
+            flush_chunk()
+
+        self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x["x0"], x["top"]))
 
     def _concat_downward(self, concat_between_pages=True):
         self.boxes = Recognizer.sort_Y_firstly(self.boxes, 0)
