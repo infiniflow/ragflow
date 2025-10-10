@@ -96,7 +96,7 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.6.0-dev5
+    tag: v0.6.0-dev7
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
