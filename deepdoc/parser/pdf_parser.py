@@ -15,17 +15,17 @@
 #
 
 import logging
+import math
 import os
 import random
 import re
 import sys
 import threading
+from collections import Counter, defaultdict
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
 
-import math
-from collections import defaultdict, Counter
 import numpy as np
 import pdfplumber
 import trio
@@ -360,7 +360,7 @@ class RAGFlowPdfParser:
         for b in boxes:
             by_page[b["page_number"]].append(b)
 
-        page_info = {}      # pg -> dict(page_w, left_edge, cand_cols)
+        page_info = {}  # pg -> dict(page_w, left_edge, cand_cols)
         counter = Counter()
 
         for pg, bxs in by_page.items():
@@ -417,7 +417,6 @@ class RAGFlowPdfParser:
                 box["col_id"] = int(min(global_cols - 1, norm_cx * global_cols))
 
         return boxes
-
 
     def _text_merge(self, zoomin=3):
         # merge adjusted boxes
@@ -480,7 +479,6 @@ class RAGFlowPdfParser:
                 if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
                     bxs.pop(i)
                     continue
-
 
                 if not b["text"].strip():
                     bxs.pop(i)
@@ -567,17 +565,19 @@ class RAGFlowPdfParser:
                 xs1 = [p["x1"] for p in cur_chunk["positions"]]
                 tops = [p["top"] for p in cur_chunk["positions"]]
                 bots = [p["bottom"] for p in cur_chunk["positions"]]
-                merged_boxes.append({
-                    "text": cur_chunk["text"].strip(),
-                    "page_number": pg,
-                    "col_id": col,
-                    "layout_type": "merged_chunk",
-                    "positions": cur_chunk["positions"],
-                    "x0": float(np.min(xs0)) if xs0 else 0,
-                    "x1": float(np.max(xs1)) if xs1 else 0,
-                    "top": float(np.min(tops)) if tops else 0,
-                    "bottom": float(np.max(bots)) if bots else 0,
-                })
+                merged_boxes.append(
+                    {
+                        "text": cur_chunk["text"].strip(),
+                        "page_number": pg,
+                        "col_id": col,
+                        "layout_type": "merged_chunk",
+                        "positions": cur_chunk["positions"],
+                        "x0": float(np.min(xs0)) if xs0 else 0,
+                        "x1": float(np.max(xs1)) if xs1 else 0,
+                        "top": float(np.min(tops)) if tops else 0,
+                        "bottom": float(np.max(bots)) if bots else 0,
+                    }
+                )
                 cur_chunk = {"text": "", "token_count": 0, "positions": []}
 
             def add_chunk_piece(t, b):
@@ -588,16 +588,13 @@ class RAGFlowPdfParser:
 
                 pos_tag = self._line_tag(b, zoomin)
 
-                if (
-                    cur_chunk["text"] == "" or
-                    cur_chunk["token_count"] > chunk_token_num * (100 - overlapped_percent) / 100.
-                ):
+                if cur_chunk["text"] == "" or cur_chunk["token_count"] > chunk_token_num * (100 - overlapped_percent) / 100.0:
                     if cur_chunk["text"]:
                         flush_chunk()
 
                     if merged_boxes and overlapped_percent > 0:
                         overlapped = RAGFlowPdfParser.remove_tag(merged_boxes[-1]["text"])
-                        overlap_len = int(len(overlapped) * (100 - overlapped_percent) / 100.)
+                        overlap_len = int(len(overlapped) * (100 - overlapped_percent) / 100.0)
                         t = overlapped[overlap_len:] + t
 
                     if pos_tag and t.find(pos_tag) < 0:
@@ -605,31 +602,35 @@ class RAGFlowPdfParser:
 
                     cur_chunk["text"] = t
                     cur_chunk["token_count"] = tnum
-                    cur_chunk["positions"].append({
-                        "page_number": b["page_number"],
-                        "col_id": b.get("col_id", 0),
-                        "layout_type": b.get("layout_type", ""),
-                        "layoutno": b.get("layoutno", ""),
-                        "x0": b["x0"],
-                        "x1": b["x1"],
-                        "top": b["top"],
-                        "bottom": b["bottom"],
-                    })
+                    cur_chunk["positions"].append(
+                        {
+                            "page_number": b["page_number"],
+                            "col_id": b.get("col_id", 0),
+                            "layout_type": b.get("layout_type", ""),
+                            "layoutno": b.get("layoutno", ""),
+                            "x0": b["x0"],
+                            "x1": b["x1"],
+                            "top": b["top"],
+                            "bottom": b["bottom"],
+                        }
+                    )
                 else:
                     if pos_tag and cur_chunk["text"].find(pos_tag) < 0:
                         t += pos_tag
                     cur_chunk["text"] += " " + t
                     cur_chunk["token_count"] += tnum
-                    cur_chunk["positions"].append({
-                        "page_number": b["page_number"],
-                        "col_id": b.get("col_id", 0),
-                        "layout_type": b.get("layout_type", ""),
-                        "layoutno": b.get("layoutno", ""),
-                        "x0": b["x0"],
-                        "x1": b["x1"],
-                        "top": b["top"],
-                        "bottom": b["bottom"],
-                    })
+                    cur_chunk["positions"].append(
+                        {
+                            "page_number": b["page_number"],
+                            "col_id": b.get("col_id", 0),
+                            "layout_type": b.get("layout_type", ""),
+                            "layoutno": b.get("layoutno", ""),
+                            "x0": b["x0"],
+                            "x1": b["x1"],
+                            "top": b["top"],
+                            "bottom": b["bottom"],
+                        }
+                    )
 
             for b in bxs:
                 sec = b["text"].strip()
@@ -1265,7 +1266,6 @@ class RAGFlowPdfParser:
 
         def insert_table_figures(tbls_or_figs, layout_type):
             def min_rectangle_distance(rect1, rect2):
-                import math
                 pn1, left1, right1, top1, bottom1 = rect1
                 pn2, left2, right2, top2, bottom2 = rect2
                 if right1 >= left2 and right2 >= left1 and bottom1 >= top2 and bottom2 >= top1:
@@ -1282,27 +1282,39 @@ class RAGFlowPdfParser:
                     dy = top1 - bottom2
                 else:
                     dy = 0
-                return math.sqrt(dx*dx + dy*dy)# + (pn2-pn1)*10000
+                return math.sqrt(dx * dx + dy * dy)  # + (pn2-pn1)*10000
 
             for (img, txt), poss in tbls_or_figs:
                 bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
-                dists = [(min_rectangle_distance((pn, left, right, top+self.page_cum_height[pn], bott+self.page_cum_height[pn]), rect),i) for i, rect in bboxes for pn, left, right, top, bott in poss]
+                dists = [
+                    (min_rectangle_distance((pn, left, right, top + self.page_cum_height[pn], bott + self.page_cum_height[pn]), rect), i) for i, rect in bboxes for pn, left, right, top, bott in poss
+                ]
                 min_i = np.argmin(dists, axis=0)[0]
                 min_i, rect = bboxes[dists[min_i][-1]]
                 if isinstance(txt, list):
                     txt = "\n".join(txt)
                 pn, left, right, top, bott = poss[0]
-                if self.boxes[min_i]["bottom"] < top+self.page_cum_height[pn]:
+                if self.boxes[min_i]["bottom"] < top + self.page_cum_height[pn]:
                     min_i += 1
-                self.boxes.insert(min_i, {
-                    "page_number": pn+1, "x0": left, "x1": right, "top": top+self.page_cum_height[pn], "bottom": bott+self.page_cum_height[pn], "layout_type": layout_type, "text": txt, "image": img,
-                    "positions": [[pn+1, int(left), int(right), int(top), int(bott)]]
-                })
+                self.boxes.insert(
+                    min_i,
+                    {
+                        "page_number": pn + 1,
+                        "x0": left,
+                        "x1": right,
+                        "top": top + self.page_cum_height[pn],
+                        "bottom": bott + self.page_cum_height[pn],
+                        "layout_type": layout_type,
+                        "text": txt,
+                        "image": img,
+                        "positions": [[pn + 1, int(left), int(right), int(top), int(bott)]],
+                    },
+                )
 
         for b in self.boxes:
             b["position_tag"] = self._line_tag(b, zoomin)
             b["image"] = self.crop(b["position_tag"], zoomin)
-            b["positions"] = [[pos[0][-1]+1, *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(b["position_tag"])]
+            b["positions"] = [[pos[0][-1] + 1, *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(b["position_tag"])]
 
         insert_table_figures(tbls, "table")
         insert_table_figures(figs, "figure")
