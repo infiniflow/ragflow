@@ -116,7 +116,8 @@ const MenuItem: React.FC<{
           />
           {t(`knowledgeDetails.${lowerFirst(type)}`)}
         </div>
-        {status === generateStatus.start && (
+        {(status === generateStatus.start ||
+          status === generateStatus.completed) && (
           <div className="text-text-secondary text-sm">
             {t(`knowledgeDetails.generate${type}`)}
           </div>
@@ -165,9 +166,12 @@ const MenuItem: React.FC<{
             )}
           </div>
         )}
-        <div className="w-full  whitespace-pre-line text-wrap rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto px-2.5 py-1">
-          {replaceText(data?.progress_msg || '')}
-        </div>
+        {status !== generateStatus.start &&
+          status !== generateStatus.completed && (
+            <div className="w-full  whitespace-pre-line text-wrap rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto px-2.5 py-1">
+              {replaceText(data?.progress_msg || '')}
+            </div>
+          )}
       </div>
     </DropdownMenuItem>
   );

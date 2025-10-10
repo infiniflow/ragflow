@@ -94,6 +94,7 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      localUpload: '本地上传',
       fileSize: '文件大小',
       fileType: '文件类型',
       uploadedBy: '创建者',
