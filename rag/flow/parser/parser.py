@@ -440,7 +440,9 @@ class Parser(ProcessBase):
             }
             # get body
             if "body" in target_fields:
-                email_content["text"] = msg.body or msg.htmlBody # usually empty. try text_html instead
+                email_content["text"] = msg.body[0] if isinstance(msg.body, list) and msg.body else msg.body
+                if not email_content["text"] and msg.htmlBody:
+                    email_content["text"] = msg.htmlBody[0] if isinstance(msg.htmlBody, list) and msg.htmlBody else msg.htmlBody
             # get attachments
             if "attachments" in target_fields:
                 attachments = []
