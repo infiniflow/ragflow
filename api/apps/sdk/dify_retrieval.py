@@ -31,6 +31,89 @@ from api.db.services.dialog_service import meta_filter, convert_conditions
 @apikey_required
 @validate_request("knowledge_id", "query")
 def retrieval(tenant_id):
+    """
+    Dify-compatible retrieval API
+    ---
+    tags:
+      - SDK
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - knowledge_id
+            - query
+          properties:
+            knowledge_id:
+              type: string
+              description: Knowledge base ID
+            query:
+              type: string
+              description: Query text
+            use_kg:
+              type: boolean
+              description: Whether to use knowledge graph
+              default: false
+            retrieval_setting:
+              type: object
+              description: Retrieval configuration
+              properties:
+                score_threshold:
+                  type: number
+                  description: Similarity threshold
+                  default: 0.0
+                top_k:
+                  type: integer
+                  description: Number of results to return
+                  default: 1024
+            metadata_condition:
+              type: object
+              description: Metadata filter condition
+              properties:
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Field name
+                      comparison_operator:
+                        type: string
+                        description: Comparison operator
+                      value:
+                        type: string
+                        description: Field value
+    responses:
+      200:
+        description: Retrieval succeeded
+        schema:
+          type: object
+          properties:
+            records:
+              type: array
+              items:
+                type: object
+                properties:
+                  content:
+                    type: string
+                    description: Content text
+                  score:
+                    type: number
+                    description: Similarity score
+                  title:
+                    type: string
+                    description: Document title
+                  metadata:
+                    type: object
+                    description: Metadata info
+      404:
+        description: Knowledge base or document not found
+    """
     req = request.json
     question = req["query"]
     kb_id = req["knowledge_id"]
