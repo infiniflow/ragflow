@@ -65,8 +65,8 @@ OAUTH_CONFIG = None
 DOC_ENGINE = None
 docStoreConn = None
 
-retrievaler = None
-kg_retrievaler = None
+retriever = None
+kg_retriever = None
 
 # user registration switch
 REGISTER_ENABLED = 1
@@ -174,7 +174,7 @@ def init_settings():
 
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, docStoreConn, retrievaler, kg_retrievaler
+    global DOC_ENGINE, docStoreConn, retriever, kg_retriever
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
     # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
     lower_case_doc_engine = DOC_ENGINE.lower()
@@ -187,10 +187,10 @@ def init_settings():
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    retrievaler = search.Dealer(docStoreConn)
+    retriever = search.Dealer(docStoreConn)
     from graphrag import search as kg_search
 
-    kg_retrievaler = kg_search.KGSearch(docStoreConn)
+    kg_retriever = kg_search.KGSearch(docStoreConn)
 
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
         global SANDBOX_HOST
