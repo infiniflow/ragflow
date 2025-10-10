@@ -44,7 +44,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 
  `LIST SERVICES;`
 
-- Lists all available services within the RAGFLow system.
+- Lists all available services within the RAGFlow system.
 
 - [Example](#example-list-services)
 
@@ -324,7 +324,7 @@ Listing all agents of user: lynn_inf@hotmail.com
 
 <span id="example-meta-commands"></span>
 
-- Show help infomation.
+- Show help information.
 
 ```
 admin> \help
