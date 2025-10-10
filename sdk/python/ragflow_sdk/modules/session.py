@@ -33,24 +33,20 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
+
     def ask(self, question="", stream=False, **kwargs):
         """
         Ask a question to the session. If stream=True, yields Message objects as they arrive (SSE streaming).
         If stream=False, returns a single Message object for the final answer.
         """
-        import logging
-
-        # Choose the correct backend endpoint based on session type
         if self.__session_type == "agent":
             res = self._ask_agent(question, stream)
         elif self.__session_type == "chat":
             res = self._ask_chat(question, stream, **kwargs)
         else:
-            logging.error(f"Unknown session type: {self.__session_type}")
             raise Exception(f"Unknown session type: {self.__session_type}")
 
         if stream:
-            # Handle server-sent events (SSE) streaming response
             for line in res.iter_lines(decode_unicode=True):
                 if not line:
                     continue  # Skip empty lines
@@ -66,7 +62,6 @@ class Session(Base):
                 try:
                     json_data = json.loads(content)
                 except json.JSONDecodeError as e:
-                    logging.warning(f"JSON decode error: {e} | content: {content}")
                     continue  # Skip lines that are not valid JSON
 
                 event = json_data.get("event")
@@ -75,11 +70,9 @@ class Session(Base):
                 elif event == "message_end":
                     return  # End of message stream
         else:
-            # Handle non-streaming (single response) mode
             try:
                 json_data = res.json()
             except ValueError:
-                logging.error(f"Invalid response: {res}")
                 raise Exception(f"Invalid response {res}")
             yield self._structure_answer(json_data["data"])
         
