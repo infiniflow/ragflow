@@ -362,16 +362,27 @@ def token_required(func):
     return decorated_function
 
 
-def get_result(code: settings.RetCode = settings.RetCode.SUCCESS, message="", data=None):
-    if code == 0:
-        if data is not None:
-            response = {"code": code, "data": data}
-        else:
-            response = {"code": code}
-    else:
-        response = {"code": code, "message": message}
-    return jsonify(response)
+def get_result(code=settings.RetCode.SUCCESS, message="", data=None, total=None):
+    """
+    Standard API response format:
+    {
+        "code": 0,
+        "data": [...],        # List or object, backward compatible
+        "total": 47,          # Optional field for pagination
+        "message": "..."      # Error or status message
+    }
+    """
+    response = {"code": code}
 
+    if code == settings.RetCode.SUCCESS:
+        if data is not None:
+            response["data"] = data
+        if total is not None:
+            response["total_datasets"] = total
+    else:
+        response["message"] = message or "Error"
+
+    return jsonify(response)
 
 def get_error_data_result(
         message="Sorry! Data missing!",

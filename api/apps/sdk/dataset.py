@@ -461,7 +461,7 @@ def list_datasets(tenant_id):
                 return get_error_permission_result(message=f"User '{tenant_id}' lacks permission for dataset '{name}'")
 
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
-        kbs = KnowledgebaseService.get_list(
+        kbs, total = KnowledgebaseService.get_list(
             [m["tenant_id"] for m in tenants],
             tenant_id,
             args["page"],
@@ -475,7 +475,7 @@ def list_datasets(tenant_id):
         response_data_list = []
         for kb in kbs:
             response_data_list.append(remap_dictionary_keys(kb))
-        return get_result(data=response_data_list)
+        return get_result(data=response_data_list, total=total)
     except OperationalError as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
