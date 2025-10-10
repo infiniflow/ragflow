@@ -165,7 +165,7 @@ class TaskService(CommonService):
         ]
         tasks = (
             cls.model.select(*fields).order_by(cls.model.from_page.asc(), cls.model.create_time.desc())
-                .where(cls.model.doc_id == doc_id)
+            .where(cls.model.doc_id == doc_id)
         )
         tasks = list(tasks.dicts())
         if not tasks:
@@ -205,18 +205,18 @@ class TaskService(CommonService):
                 cls.model.select(
                     *[Document.id, Document.kb_id, Document.location, File.parent_id]
                 )
-                    .join(Document, on=(cls.model.doc_id == Document.id))
-                    .join(
+                .join(Document, on=(cls.model.doc_id == Document.id))
+                .join(
                     File2Document,
                     on=(File2Document.document_id == Document.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                    .join(
+                .join(
                     File,
                     on=(File2Document.file_id == File.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                    .where(
+                .where(
                     Document.status == StatusEnum.VALID.value,
                     Document.run == TaskStatus.RUNNING.value,
                     ~(Document.type == FileType.VIRTUAL.value),
@@ -294,8 +294,8 @@ class TaskService(CommonService):
                 cls.model.update(progress=prog).where(
                     (cls.model.id == id) &
                     (
-                        (cls.model.progress != -1) &
-                        ((prog == -1) | (prog > cls.model.progress))
+                            (cls.model.progress != -1) &
+                            ((prog == -1) | (prog > cls.model.progress))
                     )
                 ).execute()
         else:
@@ -343,6 +343,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         - Task digests are calculated for optimization and reuse
         - Previous task chunks may be reused if available
     """
+
     def new_task():
         return {
             "id": get_uuid(),
@@ -515,7 +516,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
     task["file"] = file
 
     if not REDIS_CONN.queue_product(
-        get_svr_queue_name(priority), message=task
+            get_svr_queue_name(priority), message=task
     ):
         return False, "Can't access Redis. Please check the Redis' status."
 

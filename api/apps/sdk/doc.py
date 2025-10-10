@@ -982,7 +982,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         _ = Chunk(**final_chunk)
 
     elif settings.docStoreConn.indexExist(search.index_name(tenant_id), dataset_id):
-        sres = settings.retrievaler.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
+        sres = settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
         res["total"] = sres.total
         for id in sres.ids:
             d = {
@@ -1446,7 +1446,7 @@ def retrieval_test(tenant_id):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
-        ranks = settings.retrievaler.retrieval(
+        ranks = settings.retriever.retrieval(
             question,
             embd_mdl,
             tenant_ids,
@@ -1462,7 +1462,7 @@ def retrieval_test(tenant_id):
             rank_feature=label_question(question, kbs),
         )
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 

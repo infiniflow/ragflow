@@ -55,7 +55,7 @@ async def run_graphrag(
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
-    for d in settings.retrievaler.chunk_list(doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"], sort_by_position=True):
+    for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"], sort_by_position=True):
         chunks.append(d["content_with_weight"])
 
     with trio.fail_after(max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000):
@@ -170,7 +170,7 @@ async def run_graphrag_for_kb(
         chunks = []
         current_chunk = ""
 
-        for d in settings.retrievaler.chunk_list(
+        for d in settings.retriever.chunk_list(
             doc_id,
             tenant_id,
             [kb_id],

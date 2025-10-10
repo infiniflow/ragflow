@@ -1,4 +1,4 @@
-    #
+#
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,9 +38,9 @@ def retrieval(tenant_id):
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
-    metadata_condition = req.get("metadata_condition",{})
+    metadata_condition = req.get("metadata_condition", {})
     metas = DocumentService.get_meta_by_kbs([kb_id])
- 
+
     doc_ids = []
     try:
 
@@ -50,12 +50,12 @@ def retrieval(tenant_id):
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         print(metadata_condition)
-        print("after",convert_conditions(metadata_condition))
+        # print("after", convert_conditions(metadata_condition))
         doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition)))
-        print("doc_ids",doc_ids)
+        # print("doc_ids", doc_ids)
         if not doc_ids and metadata_condition is not None:
             doc_ids = ['-999']
-        ranks = settings.retrievaler.retrieval(
+        ranks = settings.retriever.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,
@@ -70,17 +70,17 @@ def retrieval(tenant_id):
         )
 
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question,
-                                                   [tenant_id],
-                                                   [kb_id],
-                                                   embd_mdl,
-                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(question,
+                                                 [tenant_id],
+                                                 [kb_id],
+                                                 embd_mdl,
+                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
         records = []
         for c in ranks["chunks"]:
-            e, doc = DocumentService.get_by_id( c["doc_id"])
+            e, doc = DocumentService.get_by_id(c["doc_id"])
             c.pop("vector", None)
             meta = getattr(doc, 'meta_fields', {})
             meta["doc_id"] = c["doc_id"]
@@ -100,5 +100,3 @@ def retrieval(tenant_id):
             )
         logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
-
-
