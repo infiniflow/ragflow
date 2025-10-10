@@ -1048,7 +1048,7 @@ class RAGFlowPdfParser:
 
     def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
         start = timer()
-        self.__images__(fnm, zoomin)
+        self.__images__(fnm, zoomin, callback=callback)
         if callback:
             callback(0.40, "OCR finished ({:.2f}s)".format(timer() - start))
 
