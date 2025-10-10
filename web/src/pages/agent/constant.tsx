@@ -254,6 +254,7 @@ export const initialRetrievalValues = {
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
   use_kg: false,
+  toc_enhance: false,
   cross_languages: [],
   outputs: {
     formalized_content: {
