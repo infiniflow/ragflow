@@ -370,7 +370,7 @@ def get_result(code=settings.RetCode.SUCCESS, message="", data=None, total=None)
         if data is not None:
             response["data"] = data
         if total is not None:
-            response["total"] = total
+            response["total_datasets"] = total
     else:
         response["message"] = message or "Error"
 

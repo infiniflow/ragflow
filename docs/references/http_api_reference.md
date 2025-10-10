@@ -1281,7 +1281,7 @@ Success:
                 "update_time": 1728897061948
             }
         ],
-        "total": 1
+        "total_datasets": 1
     }
 }
 ```
