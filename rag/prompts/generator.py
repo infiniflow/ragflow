@@ -443,9 +443,9 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
 
 def gen_json(system_prompt:str, user_prompt:str, chat_mdl, gen_conf = None):
     from graphrag.utils import get_llm_cache, set_llm_cache
-    #cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
-    #if cached:
-    #    return json_repair.loads(cached)
+    cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
+    if cached:
+        return json_repair.loads(cached)
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
     ans = chat_mdl.chat(msg[0]["content"], msg[1:],gen_conf=gen_conf)
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
