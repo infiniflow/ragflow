@@ -1729,13 +1729,15 @@ This delimiter is used to split the input text into several text pieces echo of 
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent',
       searchMethod: 'Search method',
+      searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
+The Tokenizer will store the content in the corresponding data structures for the selected methods.`,
       begin: 'File',
       parserMethod: 'Parsing method',
       systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
       exportJson: 'Export JSON',
-      viewResult: 'View Result',
+      viewResult: 'View result',
       running: 'Running',
       summary: 'Augmented Context',
       keywords: 'Keywords',
