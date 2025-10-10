@@ -95,8 +95,8 @@ export default function DatasetSettings() {
       };
       setPipelineData(data);
       setGraphRagGenerateData({
-        finish_at: knowledgeDetails.mindmap_task_finish_at,
-        task_id: knowledgeDetails.mindmap_task_id,
+        finish_at: knowledgeDetails.graphrag_task_finish_at,
+        task_id: knowledgeDetails.graphrag_task_id,
       } as IGenerateLogButtonProps);
       setRaptorGenerateData({
         finish_at: knowledgeDetails.raptor_task_finish_at,
