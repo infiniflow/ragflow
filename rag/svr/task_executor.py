@@ -373,7 +373,10 @@ async def build_chunks(task, progress_callback):
     if task["parser_config"].get("toc_extraction", True):
         progress_callback(msg="Start to generate table of content ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
-        docs = sorted(docs, key=lambda d:(d.get("page_num_int", 0), d.get("top_int", 0)))
+        docs = sorted(docs, key=lambda d:(
+            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
+            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
+        ))
         toc: list[dict] = await run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl, progress_callback)
         logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
         ii = 0
