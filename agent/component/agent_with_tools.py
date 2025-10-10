@@ -346,7 +346,7 @@ Respond immediately with your final comprehensive answer.
 
         return "Error occurred."
 
-    def reset(self):
+    def reset(self, temp=False):
         for k, cpn in self.tools.items():
             cpn.reset()
 
