@@ -614,7 +614,7 @@ class NvidiaCV(Base):
         response = response.json()
         return (
             response["choices"][0]["message"]["content"].strip(),
-            response["usage"]["total_tokens"],
+            total_token_count_from_response(response),
         )
 
     def _request(self, msg, gen_conf={}):
@@ -637,7 +637,7 @@ class NvidiaCV(Base):
         response = self._request(vision_prompt)
         return (
             response["choices"][0]["message"]["content"].strip(),
-            response["usage"]["total_tokens"],
+            total_token_count_from_response(response)
         )
 
     def chat(self, system, history, gen_conf, images=[], **kwargs):
@@ -645,7 +645,7 @@ class NvidiaCV(Base):
             response = self._request(self._form_history(system, history, images), gen_conf)
             return (
                 response["choices"][0]["message"]["content"].strip(),
-                response["usage"]["total_tokens"],
+                total_token_count_from_response(response)
             )
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -656,7 +656,7 @@ class NvidiaCV(Base):
             response = self._request(self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
             if "usage" in response and "total_tokens" in response["usage"]:
-                total_tokens += response["usage"]["total_tokens"]
+                total_tokens +=  total_token_count_from_response(response)
             for resp in cnt:
                 yield resp
         except Exception as e:
