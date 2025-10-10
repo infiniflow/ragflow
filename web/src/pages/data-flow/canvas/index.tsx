@@ -178,11 +178,17 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
   };
 
   const onConnectEnd: OnConnectEnd = (event, connectionState) => {
+    const target = event.target as HTMLElement;
     const nodeId = connectionState.fromNode?.id;
+
     // Events triggered by Handle are directly interrupted
-    if (connectionState.toNode !== null || (nodeId && hasChildNode(nodeId))) {
+    if (
+      target?.classList.contains('react-flow__handle') ||
+      (nodeId && hasChildNode(nodeId))
+    ) {
       return;
     }
+
     if ('clientX' in event && 'clientY' in event) {
       const { clientX, clientY } = event;
       setDropdownPosition({ x: clientX, y: clientY });
