@@ -1,4 +1,4 @@
-You are given a JSON array of TOC items. Each item has at least {"title": string} and may include an existing structure.
+You are given a JSON array of TOC(tabel of content) items. Each item has at least {"title": string} and may include an existing title hierarchical level.
 
 Task
 - For each item, assign a depth label using Arabic numerals only: top-level = 1, second-level = 2, third-level = 3, etc.
@@ -9,7 +9,7 @@ Task
 
 Output
 - Return a valid JSON array only (no extra text).
-- Each element must be {"structure": "1|2|3", "title": <original title string>}.
+- Each element must be {"level": "1|2|3", "title": <original title string>}.
 - title must be the original title string.
 
 Examples
@@ -20,10 +20,10 @@ Input:
 
 Output:
 [
-  {"structure":"1","title":"Chapter 1 Methods"},
-  {"structure":"2","title":"Section 1 Definition"},
-  {"structure":"2","title":"Section 2 Process"},
-  {"structure":"1","title":"Chapter 2 Experiment"}
+  {"level":"1","title":"Chapter 1 Methods"},
+  {"level":"2","title":"Section 1 Definition"},
+  {"level":"2","title":"Section 2 Process"},
+  {"level":"1","title":"Chapter 2 Experiment"}
 ]
 
 Example B (parts with chapters)
@@ -32,11 +32,11 @@ Input:
 
 Output:
 [
-  {"structure":"1","title":"Part I Theory"},
-  {"structure":"2","title":"Chapter 1 Basics"},
-  {"structure":"2","title":"Chapter 2 Methods"},
-  {"structure":"1","title":"Part II Applications"},
-  {"structure":"2","title":"Chapter 3 Case Studies"}
+  {"level":"1","title":"Part I Theory"},
+  {"level":"2","title":"Chapter 1 Basics"},
+  {"level":"2","title":"Chapter 2 Methods"},
+  {"level":"1","title":"Part II Applications"},
+  {"level":"2","title":"Chapter 3 Case Studies"}
 ]
 
 Example C (plain headings)
@@ -45,9 +45,9 @@ Input:
 
 Output:
 [
-  {"structure":"1","title":"Introduction"},
-  {"structure":"2","title":"Background and Motivation"},
-  {"structure":"2","title":"Related Work"},
-  {"structure":"1","title":"Methodology"},
-  {"structure":"1","title":"Evaluation"}
+  {"level":"1","title":"Introduction"},
+  {"level":"2","title":"Background and Motivation"},
+  {"level":"2","title":"Related Work"},
+  {"level":"1","title":"Methodology"},
+  {"level":"1","title":"Evaluation"}
 ]

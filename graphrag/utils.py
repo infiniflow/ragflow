@@ -92,10 +92,7 @@ def dict_has_keys_with_types(data: dict, expected_fields: list[tuple[str, type]]
 
 def get_llm_cache(llmnm, txt, history, genconf):
     hasher = xxhash.xxh64()
-    hasher.update(str(llmnm).encode("utf-8"))
-    hasher.update(str(txt).encode("utf-8"))
-    hasher.update(str(history).encode("utf-8"))
-    hasher.update(str(genconf).encode("utf-8"))
+    hasher.update((str(llmnm)+str(txt)+str(history)+str(genconf)).encode("utf-8"))
 
     k = hasher.hexdigest()
     bin = REDIS_CONN.get(k)
@@ -106,11 +103,7 @@ def get_llm_cache(llmnm, txt, history, genconf):
 
 def set_llm_cache(llmnm, txt, v, history, genconf):
     hasher = xxhash.xxh64()
-    hasher.update(str(llmnm).encode("utf-8"))
-    hasher.update(str(txt).encode("utf-8"))
-    hasher.update(str(history).encode("utf-8"))
-    hasher.update(str(genconf).encode("utf-8"))
-
+    hasher.update((str(llmnm)+str(txt)+str(history)+str(genconf)).encode("utf-8"))
     k = hasher.hexdigest()
     REDIS_CONN.set(k, v.encode("utf-8"), 24 * 3600)
 
