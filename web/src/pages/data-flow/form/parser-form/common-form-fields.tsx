@@ -9,18 +9,29 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { upperFirst } from 'lodash';
+import { upperCase, upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
-import { FileType, OutputFormatMap, PdfOutputFormat } from '../../constant';
+import {
+  FileType,
+  OutputFormatMap,
+  SpreadsheetOutputFormat,
+} from '../../constant';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
+
+const UppercaseFields = [
+  SpreadsheetOutputFormat.Html,
+  SpreadsheetOutputFormat.Json,
+];
 
 function buildOutputOptionsFormatMap() {
   return Object.entries(OutputFormatMap).reduce<
     Record<string, SelectWithSearchFlagOptionType[]>
   >((pre, [key, value]) => {
     pre[key] = Object.values(value).map((v) => ({
-      label: v === PdfOutputFormat.Json ? 'JSON' : upperFirst(v),
+      label: UppercaseFields.some((x) => x === v)
+        ? upperCase(v)
+        : upperFirst(v),
       value: v,
     }));
     return pre;

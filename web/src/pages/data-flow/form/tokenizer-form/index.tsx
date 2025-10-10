@@ -58,6 +58,7 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
         <RAGFlowFormItem
           name="search_method"
           label={t('dataflow.searchMethod')}
+          tooltip={t('dataflow.searchMethodTip')}
         >
           {(field) => (
             <MultiSelect

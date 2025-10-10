@@ -1,4 +1,7 @@
-import { SelectWithSearch } from '@/components/originui/select-with-search';
+import {
+  SelectWithSearch,
+  SelectWithSearchFlagOptionType,
+} from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
@@ -49,6 +52,7 @@ type ParserItemProps = {
   index: number;
   fieldLength: number;
   remove: UseFieldArrayRemove;
+  fileFormatOptions: SelectWithSearchFlagOptionType[];
 };
 
 export const FormSchema = z.object({
@@ -67,7 +71,13 @@ export const FormSchema = z.object({
 
 export type ParserFormSchemaType = z.infer<typeof FormSchema>;
 
-function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
+function ParserItem({
+  name,
+  index,
+  fieldLength,
+  remove,
+  fileFormatOptions,
+}: ParserItemProps) {
   const { t } = useTranslation();
   const form = useFormContext<ParserFormSchemaType>();
   const ref = useRef(null);
@@ -79,23 +89,15 @@ function ParserItem({ name, index, fieldLength, remove }: ParserItemProps) {
   const values = form.getValues();
   const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
 
-  const FileFormatOptions = buildOptions(
-    FileType,
-    t,
-    'dataflow.fileFormatOptions',
-  ).filter(
-    (x) => x.value !== FileType.Video, // Temporarily hide the video option
-  );
-
   const filteredFileFormatOptions = useMemo(() => {
     const otherFileFormatList = parserList
       .filter((_, idx) => idx !== index)
       .map((x) => x.fileFormat);
 
-    return FileFormatOptions.filter((x) => {
+    return fileFormatOptions.filter((x) => {
       return !otherFileFormatList.includes(x.value);
     });
-  }, [FileFormatOptions, index, parserList]);
+  }, [fileFormatOptions, index, parserList]);
 
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
@@ -158,6 +160,14 @@ const ParserForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
 
+  const FileFormatOptions = buildOptions(
+    FileType,
+    t,
+    'dataflow.fileFormatOptions',
+  ).filter(
+    (x) => x.value !== FileType.Video, // Temporarily hide the video option
+  );
+
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
@@ -194,12 +204,15 @@ const ParserForm = ({ node }: INextOperatorForm) => {
               index={index}
               fieldLength={fields.length}
               remove={remove}
+              fileFormatOptions={FileFormatOptions}
             ></ParserItem>
           );
         })}
-        <BlockButton onClick={add} type="button" className="mt-2.5">
-          {t('dataflow.addParser')}
-        </BlockButton>
+        {fields.length < FileFormatOptions.length && (
+          <BlockButton onClick={add} type="button" className="mt-2.5">
+            {t('dataflow.addParser')}
+          </BlockButton>
+        )}
       </form>
       <div className="p-5">
         <Output list={outputList}></Output>

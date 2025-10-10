@@ -1634,6 +1634,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       regularExpressions: '正则表达式',
       overlappedPercent: '重叠百分比',
       searchMethod: '搜索方法',
+      searchMethodTip: `决定该数据集启用的搜索方式，可选择全文、向量，或两者兼有。
+Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名嵌入权重',
       begin: '文件',
       parserMethod: '解析方法',
