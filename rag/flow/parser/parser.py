@@ -363,6 +363,7 @@ class Parser(ProcessBase):
 
         email_content = {}
         conf = self._param.setups["email"]
+        self.set_output("output_format", conf["output_format"])
         target_fields = conf["fields"]
 
         _, ext = os.path.splitext(name)
@@ -439,8 +440,7 @@ class Parser(ProcessBase):
             }
             # get body
             if "body" in target_fields:
-                email_content["text"] = msg.body  # usually empty. try text_html instead
-                email_content["text_html"] = msg.htmlBody
+                email_content["text"] = msg.body or msg.htmlBody # usually empty. try text_html instead
             # get attachments
             if "attachments" in target_fields:
                 attachments = []
