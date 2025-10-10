@@ -142,6 +142,22 @@ class Base(ABC):
 
     def _chat(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
+        if self.model_name.lower().find("qwq") >= 0:
+            logging.info(f"[INFO] {self.model_name} detected as reasoning model, using _chat_streamly")
+
+            final_ans = ""
+            tol_token = 0 
+            for delta, tol in self._chat_streamly(history, gen_conf, with_reasoning=False, **kwargs):
+                if delta.startswith("<think>") or delta.endswith("</think>"):
+                    continue
+                final_ans += delta
+                tol_token = tol
+
+            if len(final_ans.strip()) == 0:
+                final_ans = "**ERROR**: Empty response from reasoning model"
+
+            return final_ans.strip(), tol_token
+        
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
