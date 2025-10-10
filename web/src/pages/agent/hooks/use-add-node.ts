@@ -116,6 +116,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
+      [Operator.Placeholder]: {},
     };
   }, [llmId]);
 
