@@ -324,7 +324,7 @@ Listing all agents of user: lynn_inf@hotmail.com
 
 <span id="example-meta-commands"></span>
 
-- Show help infomation.
+- Show help information.
 
 ```
 admin> \help
