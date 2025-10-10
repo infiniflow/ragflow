@@ -123,7 +123,7 @@ class Graph:
     def reset(self):
         self.path = []
         for k, cpn in self.components.items():
-            self.components[k]["obj"].reset(True)
+            self.components[k]["obj"].reset()
         try:
             REDIS_CONN.delete(f"{self.task_id}-logs")
         except Exception as e:
@@ -223,7 +223,7 @@ class Canvas(Graph):
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
         for k, cpn in self.components.items():
-            self.components[k]["obj"].reset()
+            self.components[k]["obj"].reset(True)
 
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
