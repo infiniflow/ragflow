@@ -1,6 +1,5 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { IconFontFill } from '@/components/icon-font';
-import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,6 +8,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { CircleX } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
@@ -86,16 +90,29 @@ export function ParsingStatusCell({
   };
   return (
     <section className="flex gap-8 items-center">
-      <div className="w-[100px] text-ellipsis overflow-hidden flex items-center justify-between">
+      <div className="text-ellipsis w-[100px] flex items-center justify-between">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant={'transparent'} className="border-none" size={'sm'}>
-              {pipeline_id
-                ? pipeline_name || pipeline_id
-                : parser_id === 'naive'
-                  ? 'general'
-                  : parser_id}
-            </Button>
+          <DropdownMenuTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="border-none truncate max-w-32 cursor-pointer px-2 py-1 rounded-sm hover:bg-bg-card">
+                  {pipeline_id
+                    ? pipeline_name || pipeline_id
+                    : parser_id === 'naive'
+                      ? 'general'
+                      : parser_id}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  {pipeline_id
+                    ? pipeline_name || pipeline_id
+                    : parser_id === 'naive'
+                      ? 'general'
+                      : parser_id}
+                </p>
+              </TooltipContent>
+            </Tooltip>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuItem onClick={handleShowChangeParserModal}>
@@ -107,6 +124,7 @@ export function ParsingStatusCell({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
       {showParse && (
         <div className="flex items-center gap-3">
           <Separator orientation="vertical" className="h-2.5" />
