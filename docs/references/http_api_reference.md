@@ -830,7 +830,8 @@ Success:
             "update_time": 1728533243536,
             "vector_similarity_weight": 0.3
         }
-    ]
+    ],
+    "total": 1
 }
 ```
 
@@ -1280,7 +1281,7 @@ Success:
                 "update_time": 1728897061948
             }
         ],
-        "total": 1
+        "total_datasets": 1
     }
 }
 ```

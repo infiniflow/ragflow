@@ -379,6 +379,7 @@ class KnowledgebaseService(CommonService):
         #     name: Optional name filter
         # Returns:
         #     List of knowledge bases
+        #     Total count of knowledge bases
         kbs = cls.model.select()
         if id:
             kbs = kbs.where(cls.model.id == id)
@@ -390,6 +391,7 @@ class KnowledgebaseService(CommonService):
                 cls.model.tenant_id == user_id))
             & (cls.model.status == StatusEnum.VALID.value)
         )
+
         if desc:
             kbs = kbs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -397,7 +399,7 @@ class KnowledgebaseService(CommonService):
 
         kbs = kbs.paginate(page_number, items_per_page)
 
-        return list(kbs.dicts())
+        return list(kbs.dicts()), kbs.count()
 
     @classmethod
     @DB.connection_context()
