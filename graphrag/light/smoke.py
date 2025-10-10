@@ -63,7 +63,7 @@ async def main():
 
     chunks = [
         d["content_with_weight"]
-        for d in settings.retrievaler.chunk_list(
+        for d in settings.retriever.chunk_list(
             args.doc_id,
             args.tenant_id,
             [kb_id],

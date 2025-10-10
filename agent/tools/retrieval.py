@@ -121,7 +121,7 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
-            kbinfos = settings.retrievaler.retrieval(
+            kbinfos = settings.retriever.retrieval(
                 query,
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],
@@ -135,7 +135,7 @@ class Retrieval(ToolBase, ABC):
                 rank_feature=label_question(query, kbs),
             )
             if self._param.use_kg:
-                ck = settings.kg_retrievaler.retrieval(query,
+                ck = settings.kg_retriever.retrieval(query,
                                                        [kb.tenant_id for kb in kbs],
                                                        kb_ids,
                                                        embd_mdl,
@@ -146,7 +146,7 @@ class Retrieval(ToolBase, ABC):
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = settings.kg_retrievaler.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ck["content"] = ck["content_with_weight"]
                 del ck["content_with_weight"]
