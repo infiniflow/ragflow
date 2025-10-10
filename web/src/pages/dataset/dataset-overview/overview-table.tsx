@@ -94,7 +94,9 @@ export const getFileLogsTableColumns = (
       accessorKey: 'source_from',
       header: t('source'),
       cell: ({ row }) => (
-        <div className="text-text-primary">{row.original.source_from}</div>
+        <div className="text-text-primary">
+          {row.original.source_from || t('localUpload')}
+        </div>
       ),
     },
     {

@@ -94,6 +94,7 @@ export default {
       noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
+      localUpload: '本地上传',
       fileSize: '文件大小',
       fileType: '文件类型',
       uploadedBy: '创建者',
@@ -659,6 +660,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '地区',
+      tocEnhance: '目录增强',
+      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
       profile: '概要',
