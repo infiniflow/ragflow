@@ -123,7 +123,7 @@ class Graph:
     def reset(self):
         self.path = []
         for k, cpn in self.components.items():
-            self.components[k]["obj"].reset()
+            self.components[k]["obj"].reset(True)
         try:
             REDIS_CONN.delete(f"{self.task_id}-logs")
         except Exception as e:
@@ -203,7 +203,6 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
-
         for k in self.globals.keys():
             if isinstance(self.globals[k], str):
                 self.globals[k] = ""
@@ -224,7 +223,7 @@ class Canvas(Graph):
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
         for k, cpn in self.components.items():
-            self.components[k]["obj"].reset(True)
+            self.components[k]["obj"].reset()
 
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
@@ -292,7 +291,6 @@ class Canvas(Graph):
                     "thoughts": self.get_component_thoughts(self.path[i])
                 })
             _run_batch(idx, to)
-
             # post processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
@@ -393,7 +391,6 @@ class Canvas(Graph):
                 self.path = path
                 yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
                 return
-
         self.path = self.path[:idx]
         if not self.error:
             yield decorate("workflow_finished",
