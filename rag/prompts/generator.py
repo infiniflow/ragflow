@@ -21,7 +21,9 @@ from copy import deepcopy
 from typing import Tuple
 import jinja2
 import json_repair
+import trio
 from api.utils import hash_str2int
+from rag.nlp import is_chinese
 from rag.prompts.template import load_prompt
 from rag.settings import TAG_FLD
 from rag.utils import encoder, num_tokens_from_string
@@ -440,11 +442,17 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
 
 
 def gen_json(system_prompt:str, user_prompt:str, chat_mdl, gen_conf = None):
+    from graphrag.utils import get_llm_cache, set_llm_cache
+    cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
+    if cached:
+        return json_repair.loads(cached)
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
     ans = chat_mdl.chat(msg[0]["content"], msg[1:],gen_conf=gen_conf)
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
-        return json_repair.loads(ans)
+        res = json_repair.loads(ans)
+        set_llm_cache(chat_mdl.llm_name, system_prompt, ans, user_prompt, gen_conf)
+        return res
     except Exception:
         logging.exception(f"Loading json failure: {ans}")
 
@@ -651,29 +659,31 @@ def toc_transformer(toc_pages, chat_mdl):
 
 TOC_LEVELS = load_prompt("assign_toc_levels")
 def assign_toc_levels(toc_secs, chat_mdl, gen_conf = {"temperature": 0.2}):
-    print("\nBegin TOC level assignment...\n")
-
-    ans = gen_json(
+    if not toc_secs:
+        return []
+    return gen_json(
         PROMPT_JINJA_ENV.from_string(TOC_LEVELS).render(),
         str(toc_secs),
         chat_mdl,
         gen_conf
     )
-    
-    return ans
 
 
 TOC_FROM_TEXT_SYSTEM = load_prompt("toc_from_text_system")
 TOC_FROM_TEXT_USER = load_prompt("toc_from_text_user")
 # Generate TOC from text chunks with text llms
-def gen_toc_from_text(text, chat_mdl):
-    ans = gen_json(
-        PROMPT_JINJA_ENV.from_string(TOC_FROM_TEXT_SYSTEM).render(),
-        PROMPT_JINJA_ENV.from_string(TOC_FROM_TEXT_USER).render(text=text),
-        chat_mdl,
-        gen_conf={"temperature": 0.0, "top_p": 0.9, "enable_thinking": False, }
-    )
-    return ans
+async def gen_toc_from_text(txt_info: dict, chat_mdl):
+    try:
+        ans = gen_json(
+            PROMPT_JINJA_ENV.from_string(TOC_FROM_TEXT_SYSTEM).render(),
+            PROMPT_JINJA_ENV.from_string(TOC_FROM_TEXT_USER).render(text="\n".join([json.dumps(d, ensure_ascii=False) for d in txt_info["chunks"]])),
+            chat_mdl,
+            gen_conf={"temperature": 0.0, "top_p": 0.9}
+        )
+        print(ans, "::::::::::::::::::::::::::::::::::::", flush=True)
+        txt_info["toc"] = ans if ans else []
+    except Exception as e:
+        logging.exception(e)
 
 
 def split_chunks(chunks, max_length: int):
@@ -690,44 +700,91 @@ def split_chunks(chunks, max_length: int):
         if batch_tokens + t > max_length:
             result.append(batch)
             batch, batch_tokens = [], 0
-        batch.append({"id": idx, "text": chunk})    
+        batch.append({idx: chunk})
         batch_tokens += t
     if batch:
         result.append(batch)
     return result
 
 
-def run_toc_from_text(chunks, chat_mdl):
+async def run_toc_from_text(chunks, chat_mdl):
     input_budget = int(chat_mdl.max_length * INPUT_UTILIZATION) - num_tokens_from_string(
         TOC_FROM_TEXT_USER + TOC_FROM_TEXT_SYSTEM
     )
 
-    input_budget =  2000 if input_budget > 2000 else input_budget
+    input_budget =  1024 if input_budget > 1024 else input_budget
     chunk_sections = split_chunks(chunks, input_budget)
     res = []
 
-    for chunk in chunk_sections:
-        ans = gen_toc_from_text(chunk, chat_mdl)
-        res.extend(ans)
+    chunks_res = []
+    async with trio.open_nursery() as nursery:
+        for i, chunk in enumerate(chunk_sections):
+            if not chunk:
+                continue
+            chunks_res.append({"chunks": chunk})
+            nursery.start_soon(gen_toc_from_text, chunks_res[-1], chat_mdl)
+
+    for chunk in chunks_res:
+        res.extend(chunk.get("toc", []))
+
+    print(res, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
         
     # Filter out entries with title == -1
-    filtered = [x for x in res if x.get("title") and x.get("title") != "-1"]
+    filtered = []
+    for x in res:
+        if not x.get("title") or x["title"] == "-1":
+            continue
+        if is_chinese(x["title"]) and len(x["title"]) > 12:
+            continue
+        if len(x["title"].split(" ")) > 12:
+            continue
+        if re.match(r"[0-9,.()/ -]+$", x["title"]):
+            continue
+        filtered.append(x)
 
-    print("\n\nFiltered TOC sections:\n", filtered)
+    logging.info(f"\n\nFiltered TOC sections:\n{filtered}")
 
-    # Generate initial structure (structure/title)
-    raw_structure = [{"structure": "0", "title": x.get("title", "")} for x in filtered]
+    # Generate initial level (level/title)
+    raw_structure = [x.get("title", "") for x in filtered]
 
     # Assign hierarchy levels using LLM
-    toc_with_levels = assign_toc_levels(raw_structure, chat_mdl, {"temperature": 0.0, "top_p": 0.9, "enable_thinking": False})
+    toc_with_levels = assign_toc_levels(raw_structure, chat_mdl, {"temperature": 0.0, "top_p": 0.9})
 
     # Merge structure and content (by index)
     merged = []
     for _ , (toc_item, src_item) in enumerate(zip(toc_with_levels, filtered)):
         merged.append({
-            "structure": toc_item.get("structure", "0"),
+            "level": toc_item.get("level", "0"),
             "title": toc_item.get("title", ""),
-            "content": src_item.get("content", ""),
+            "chunk_id": src_item.get("chunk_id", ""),
         })
 
     return merged
+
+
+TOC_RELEVANCE_SYSTEM = load_prompt("toc_relevance_system")
+TOC_RELEVANCE_USER = load_prompt("toc_relevance_user")
+def relevant_chunks_with_toc(query: str, toc:list[dict], chat_mdl, topn: int=6):
+    import numpy as np
+    try:
+        ans = gen_json(
+            PROMPT_JINJA_ENV.from_string(TOC_RELEVANCE_SYSTEM).render(),
+            PROMPT_JINJA_ENV.from_string(TOC_RELEVANCE_USER).render(query=query, toc_json="[\n%s\n]\n"%"\n".join([json.dumps({"level": d["level"], "title":d["title"]}, ensure_ascii=False) for d in toc])),
+            chat_mdl,
+            gen_conf={"temperature": 0.0, "top_p": 0.9}
+        )
+        print(ans, "::::::::::::::::::::::::::::::::::::", flush=True)
+        id2score = {}
+        for ti, sc in zip(toc, ans):
+            if sc.get("score", -1) < 1:
+                continue
+            for id in ti.get("ids", []):
+                if id not in id2score:
+                    id2score[id] = []
+                id2score[id].append(sc["score"]/5.)
+        for id in id2score.keys():
+            id2score[id] = np.mean(id2score[id])
+        return [(id, sc) for id, sc in list(id2score.items()) if sc>=0.3][:topn]
+    except Exception as e:
+        logging.exception(e)
+    return []

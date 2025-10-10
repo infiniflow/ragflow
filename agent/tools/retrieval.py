@@ -57,6 +57,7 @@ class RetrievalParam(ToolParamBase):
         self.empty_response = ""
         self.use_kg = False
         self.cross_languages = []
+        self.toc_enhance = False
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -134,6 +135,11 @@ class Retrieval(ToolBase, ABC):
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
             )
+            if self._param.toc_enhance:
+                chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
+                cks = settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
+                if cks:
+                    kbinfos["chunks"] = cks
             if self._param.use_kg:
                 ck = settings.kg_retriever.retrieval(query,
                                                        [kb.tenant_id for kb in kbs],

@@ -51,9 +51,6 @@ from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db import ActiveEnum
 from api.db.db_models import APIToken
-from api.db.services import UserService
-from api.db.services.llm_service import LLMService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.json import CustomJSONEncoder, json_dumps
 from api.utils import get_uuid
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
@@ -239,6 +236,7 @@ def not_allowed_parameters(*params):
 def active_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
+        from api.db.services import UserService
         user_id = current_user.id
         usr = UserService.filter_by_id(user_id)
         # check is_active
@@ -544,6 +542,8 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+    from api.db.services.llm_service import LLMService
+    from api.db.services.tenant_llm_service import TenantLLMService
     """
     Verifies availability of an embedding model for a specific tenant.
 
