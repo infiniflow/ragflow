@@ -282,7 +282,7 @@ def list_tags(kb_id):
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retrievaler.all_tags(tenant["tenant_id"], [kb_id])
+        tags += settings.retriever.all_tags(tenant["tenant_id"], [kb_id])
     return get_json_result(data=tags)
 
 
@@ -301,7 +301,7 @@ def list_tags_from_kbs():
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retrievaler.all_tags(tenant["tenant_id"], kb_ids)
+        tags += settings.retriever.all_tags(tenant["tenant_id"], kb_ids)
     return get_json_result(data=tags)
 
 
@@ -362,7 +362,7 @@ def knowledge_graph(kb_id):
     obj = {"graph": {}, "mind_map": {}}
     if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
         return get_json_result(data=obj)
-    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+    sres = settings.retriever.search(req, search.index_name(kb.tenant_id), [kb_id])
     if not len(sres.ids):
         return get_json_result(data=obj)
 

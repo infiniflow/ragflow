@@ -52,6 +52,7 @@ class ParserParam(ProcessParamBase):
             ],
             "word": [
                 "json",
+                "markdown",
             ],
             "slides": [
                 "json",
@@ -247,13 +248,15 @@ class Parser(ProcessBase):
         conf = self._param.setups["word"]
         self.set_output("output_format", conf["output_format"])
         docx_parser = Docx()
-        sections, tbls = docx_parser(name, binary=blob)
-        sections = [{"text": section[0], "image": section[1]} for section in sections if section]
-        sections.extend([{"text": tb, "image": None} for ((_,tb), _) in tbls])
-        # json
-        assert conf.get("output_format") == "json", "have to be json for doc"
+
         if conf.get("output_format") == "json":
+            sections, tbls = docx_parser(name, binary=blob)
+            sections = [{"text": section[0], "image": section[1]} for section in sections if section]
+            sections.extend([{"text": tb, "image": None} for ((_,tb), _) in tbls])
             self.set_output("json", sections)
+        elif conf.get("output_format") == "markdown":
+            markdown_text = docx_parser.to_markdown(name, binary=blob)
+            self.set_output("markdown", markdown_text)
 
     def _slides(self, name, blob):
         from deepdoc.parser.ppt_parser import RAGFlowPptParser as ppt_parser
