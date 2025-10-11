@@ -102,7 +102,8 @@ dependencies = [
     "tika==2.6.0",
     "tiktoken==0.7.0",
     "umap_learn==0.5.6",
-    "vertexai==1.64.0",
+    "vertexai==1.70.0",
+    "google-genai>=1.41.0,<2.0.0",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
     "webdriver-manager==4.0.1",
@@ -113,7 +114,7 @@ dependencies = [
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
-    "google-generativeai>=0.8.1,<0.9.0",
+    "google-generativeai>=0.8.1,<0.9.0",  # Needed for cv_model and embedding_model
     "python-docx>=1.1.2,<2.0.0",
     "pypdf2>=3.0.1,<4.0.0",
     "graspologic>=3.4.1,<4.0.0",
