@@ -85,13 +85,7 @@ class PubMed(ToolBase, ABC):
                 self._retrieve_chunks(pubmedcnt.findall("PubmedArticle"),
                                       get_title=lambda child: child.find("MedlineCitation").find("Article").find("ArticleTitle").text,
                                       get_url=lambda child: "https://pubmed.ncbi.nlm.nih.gov/" + child.find("MedlineCitation").find("PMID").text,
-                                      get_content=lambda child: child.find("MedlineCitation") \
-                                                                    .find("Article") \
-                                                                    .find("Abstract") \
-                                                                    .find("AbstractText").text \
-                                                                    if child.find("MedlineCitation")\
-                                                                            .find("Article").find("Abstract")  \
-                                                                    else "No abstract available")
+                                      get_content=lambda child: self._format_pubmed_content(child),)
                 return self.output("formalized_content")
             except Exception as e:
                 last_e = e
@@ -103,6 +97,51 @@ class PubMed(ToolBase, ABC):
             return f"PubMed error: {last_e}"
 
         assert False, self.output()
+
+    def _format_pubmed_content(self, child):
+        """Extract structured reference info from PubMed XML"""
+        def safe_find(path):
+            node = child
+            for p in path.split("/"):
+                if node is None:
+                    return None
+                node = node.find(p)
+            return node.text if node is not None and node.text else None
+
+        title = safe_find("MedlineCitation/Article/ArticleTitle") or "No title"
+        abstract = safe_find("MedlineCitation/Article/Abstract/AbstractText") or "No abstract available"
+        journal = safe_find("MedlineCitation/Article/Journal/Title") or "Unknown Journal"
+        volume = safe_find("MedlineCitation/Article/Journal/JournalIssue/Volume") or "-"
+        issue = safe_find("MedlineCitation/Article/Journal/JournalIssue/Issue") or "-"
+        pages = safe_find("MedlineCitation/Article/Pagination/MedlinePgn") or "-"
+
+        # Authors
+        authors = []
+        for author in child.findall(".//AuthorList/Author"):
+            lastname = safe_find("LastName") or ""
+            forename = safe_find("ForeName") or ""
+            fullname = f"{forename} {lastname}".strip()
+            if fullname:
+                authors.append(fullname)
+        authors_str = ", ".join(authors) if authors else "Unknown Authors"
+
+        # DOI
+        doi = None
+        for eid in child.findall(".//ArticleId"):
+            if eid.attrib.get("IdType") == "doi":
+                doi = eid.text
+                break
+
+        return (
+            f"Title: {title}\n"
+            f"Authors: {authors_str}\n"
+            f"Journal: {journal}\n"
+            f"Volume: {volume}\n"
+            f"Issue: {issue}\n"
+            f"Pages: {pages}\n"
+            f"DOI: {doi or '-'}\n"
+            f"Abstract: {abstract.strip()}"
+        )
 
     def thoughts(self) -> str:
         return "Looking for scholarly papers on `{}`,” prioritising reputable sources.".format(self.get_input().get("query", "-_-!"))
