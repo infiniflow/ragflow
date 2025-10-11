@@ -1,14 +1,18 @@
-import { IDataPipelineSelectNode } from '@/components/data-pipeline-select';
+import {
+  DataFlowSelect,
+  IDataPipelineSelectNode,
+} from '@/components/data-pipeline-select';
 import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
 import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
 import { Button } from '@/components/ui/button';
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
+import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
@@ -16,10 +20,10 @@ import {
   GenerateType,
   IGenerateLogButtonProps,
 } from '../dataset/generate-button/generate';
-import LinkDataPipeline, {
-  IDataPipelineNodeProps,
-} from './components/link-data-pipeline';
+import { ChunkMethodForm } from './chunk-method-form';
+import { IDataPipelineNodeProps } from './components/link-data-pipeline';
 import { MainContainer } from './configuration-form-container';
+import { ChunkMethodItem, ParseTypeItem } from './configuration/common-item';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
@@ -44,6 +48,7 @@ const enum MethodValue {
 
 export default function DatasetSettings() {
   const { t } = useTranslation();
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -58,6 +63,7 @@ export default function DatasetSettings() {
         auto_questions: 0,
         html4excel: false,
         topn_tags: 3,
+        toc_extraction: false,
         raptor: {
           use_raptor: true,
           max_token: 256,
@@ -73,17 +79,17 @@ export default function DatasetSettings() {
         },
       },
       pipeline_id: '',
+      parseType: 1,
       pagerank: 0,
     },
   });
-
   const knowledgeDetails = useFetchKnowledgeConfigurationOnMount(form);
-
   const [pipelineData, setPipelineData] = useState<IDataPipelineNodeProps>();
   const [graphRagGenerateData, setGraphRagGenerateData] =
     useState<IGenerateLogButtonProps>();
   const [raptorGenerateData, setRaptorGenerateData] =
     useState<IGenerateLogButtonProps>();
+
   useEffect(() => {
     console.log('🚀 ~ DatasetSettings ~ knowledgeDetails:', knowledgeDetails);
     if (knowledgeDetails) {
@@ -102,8 +108,10 @@ export default function DatasetSettings() {
         finish_at: knowledgeDetails.raptor_task_finish_at,
         task_id: knowledgeDetails.raptor_task_id,
       } as IGenerateLogButtonProps);
+      form.setValue('parseType', knowledgeDetails.pipeline_id ? 2 : 1);
+      form.setValue('pipeline_id', knowledgeDetails.pipeline_id || '');
     }
-  }, [knowledgeDetails]);
+  }, [knowledgeDetails, form]);
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
     try {
@@ -137,6 +145,22 @@ export default function DatasetSettings() {
       } as IGenerateLogButtonProps);
     }
   };
+
+  const parseType = useWatch({
+    control: form.control,
+    name: 'parseType',
+    defaultValue: knowledgeDetails.pipeline_id ? 2 : 1,
+  });
+  const selectedTag = useWatch({
+    name: 'parser_id',
+    control: form.control,
+  });
+  useEffect(() => {
+    if (parseType === 1) {
+      form.setValue('pipeline_id', '');
+    }
+    console.log('parseType', parseType);
+  }, [parseType, form]);
   return (
     <section className="p-5 h-full flex flex-col">
       <TopTitle
@@ -167,10 +191,30 @@ export default function DatasetSettings() {
                   onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
                 ></RaptorFormFields>
                 <Divider />
-                <LinkDataPipeline
+                <ParseTypeItem line={1} />
+                {parseType === 1 && (
+                  <ChunkMethodItem line={1}></ChunkMethodItem>
+                )}
+                {parseType === 2 && (
+                  <DataFlowSelect
+                    isMult={false}
+                    showToDataPipeline={true}
+                    formFieldName="pipeline_id"
+                    layout={FormLayout.Horizontal}
+                  />
+                )}
+
+                <Divider />
+                {parseType === 1 && (
+                  <ChunkMethodForm
+                    selectedTag={selectedTag as DocumentParserType}
+                  />
+                )}
+
+                {/* <LinkDataPipeline
                   data={pipelineData}
                   handleLinkOrEditSubmit={handleLinkOrEditSubmit}
-                />
+                /> */}
               </MainContainer>
             </div>
             <div className="text-right items-center flex justify-end gap-3 w-[768px]">

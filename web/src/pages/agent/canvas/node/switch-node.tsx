@@ -2,10 +2,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo, useCallback } from 'react';
-import { NodeHandleId, SwitchOperatorOptions } from '../../constant';
+import { SwitchOperatorOptions } from '../../constant';
 import { LogicalOperatorIcon } from '../../form/switch-form';
 import { useGetVariableLabelByValue } from '../../hooks/use-get-begin-query';
-import { CommonHandle } from './handle';
+import { CommonHandle, LeftEndHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
@@ -66,13 +66,7 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
   return (
     <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
       <NodeWrapper selected={selected}>
-        <CommonHandle
-          type="target"
-          position={Position.Left}
-          isConnectable
-          nodeId={id}
-          id={NodeHandleId.End}
-        ></CommonHandle>
+        <LeftEndHandle></LeftEndHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="gap-2.5 flex flex-col">
           {positions.map((position, idx) => {
