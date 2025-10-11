@@ -116,7 +116,7 @@ export default {
       generate: 'Generate',
       raptor: 'Raptor',
       processingType: 'Processing Type',
-      dataPipeline: 'Data Pipeline',
+      dataPipeline: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -126,8 +126,8 @@ export default {
       startDate: 'Start Date',
       source: 'Source',
       fileName: 'File Name',
-      datasetLogs: 'Dataset Logs',
-      fileLogs: 'File Logs',
+      datasetLogs: 'Dataset',
+      fileLogs: 'File',
       overview: 'Overview',
       success: 'Success',
       failed: 'Failed',
@@ -270,6 +270,9 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      tocExtraction: 'toc toggle',
+      tocExtractionTip:
+        " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
         <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results 
         will remove all derived entities and relationships from this dataset. 
@@ -284,11 +287,11 @@ export default {
       fileFilter: 'File Filter',
       setDefaultTip: '',
       setDefault: 'Set as Default',
-      eidtLinkDataPipeline: 'Edit Data Pipeline',
-      linkPipelineSetTip: 'Manage data pipeline linkage with this dataset',
+      eidtLinkDataPipeline: 'Edit Ingestion pipeline',
+      linkPipelineSetTip: 'Manage Ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Data Pipeline',
-      linkDataPipeline: 'Link Data Pipeline',
+      dataPipeline: 'Ingestion pipeline',
+      linkDataPipeline: 'Link Ingestion pipeline',
       enableAutoGenerate: 'Enable Auto Generate',
       teamPlaceholder: 'Please select a team.',
       dataFlowPlaceholder: 'Please select a pipeline.',
@@ -1595,7 +1598,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
       ceateAgent: 'Agent flow',
-      createPipeline: 'Data pipeline',
+      createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose Agent Type',
     },
     llmTools: {
@@ -1688,9 +1691,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       <p>To keep them, please click Rerun to re-run the current stage.</p> `,
       changeStepModalConfirmText: 'Switch Anyway',
       changeStepModalCancelText: 'Cancel',
-      unlinkPipelineModalTitle: 'Unlink data pipeline',
+      unlinkPipelineModalTitle: 'Unlink Ingestion pipeline',
       unlinkPipelineModalContent: `
-      <p>Once unlinked, this Dataset will no longer be connected to the current Data Pipeline.</p> 
+      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p> 
       <p>Files that are already being parsed  will continue until completion</p> 
       <p>Files that are not yet parsed will no longer be processed</p> <br/>
       <p>Are you sure you want to proceed?</p> `,
