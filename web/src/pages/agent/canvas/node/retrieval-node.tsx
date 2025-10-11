@@ -7,8 +7,7 @@ import { get } from 'lodash';
 import { memo } from 'react';
 import { NodeHandleId } from '../../constant';
 import { useGetVariableLabelByValue } from '../../hooks/use-get-begin-query';
-import { CommonHandle } from './handle';
-import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
+import { CommonHandle, LeftEndHandle } from './handle';
 import styles from './index.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
@@ -28,22 +27,12 @@ function InnerRetrievalNode({
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
       <NodeWrapper selected={selected}>
-        <CommonHandle
-          id={NodeHandleId.End}
-          type="target"
-          position={Position.Left}
-          isConnectable={isConnectable}
-          className={styles.handle}
-          style={LeftHandleStyle}
-          nodeId={id}
-        ></CommonHandle>
+        <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           id={NodeHandleId.Start}
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
-          className={styles.handle}
-          style={RightHandleStyle}
           nodeId={id}
           isConnectableEnd={false}
         ></CommonHandle>

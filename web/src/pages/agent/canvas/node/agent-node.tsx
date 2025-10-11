@@ -7,9 +7,8 @@ import { useTranslation } from 'react-i18next';
 import { AgentExceptionMethod, NodeHandleId } from '../../constant';
 import useGraphStore from '../../store';
 import { isBottomSubAgent } from '../../utils';
-import { CommonHandle } from './handle';
-import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
-import styles from './index.less';
+import { CommonHandle, LeftEndHandle } from './handle';
+import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
@@ -40,19 +39,11 @@ function InnerAgentNode({
       <NodeWrapper selected={selected}>
         {isHeadAgent && (
           <>
-            <CommonHandle
-              type="target"
-              position={Position.Left}
-              isConnectable={isConnectable}
-              style={LeftHandleStyle}
-              nodeId={id}
-              id={NodeHandleId.End}
-            ></CommonHandle>
+            <LeftEndHandle></LeftEndHandle>
             <CommonHandle
               type="source"
               position={Position.Right}
               isConnectable={isConnectable}
-              className={styles.handle}
               style={RightHandleStyle}
               nodeId={id}
               id={NodeHandleId.Start}
@@ -61,18 +52,22 @@ function InnerAgentNode({
           </>
         )}
 
-        <Handle
-          type="target"
-          position={Position.Top}
-          isConnectable={false}
-          id={NodeHandleId.AgentTop}
-        ></Handle>
+        {isHeadAgent || (
+          <Handle
+            type="target"
+            position={Position.Top}
+            isConnectable={false}
+            id={NodeHandleId.AgentTop}
+            className="!bg-accent-primary !size-2"
+          ></Handle>
+        )}
         <Handle
           type="source"
           position={Position.Bottom}
           isConnectable={false}
           id={NodeHandleId.AgentBottom}
           style={{ left: 180 }}
+          className="!bg-accent-primary !size-2"
         ></Handle>
         <Handle
           type="source"
@@ -80,6 +75,7 @@ function InnerAgentNode({
           isConnectable={false}
           id={NodeHandleId.Tool}
           style={{ left: 20 }}
+          className="!bg-accent-primary !size-2"
         ></Handle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="flex flex-col gap-2">

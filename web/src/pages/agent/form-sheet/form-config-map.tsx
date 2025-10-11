@@ -136,9 +136,6 @@ export const FormConfigMap = {
   [Operator.SearXNG]: {
     component: SearXNGForm,
   },
-  [Operator.Concentrator]: {
-    component: () => <></>,
-  },
   [Operator.Note]: {
     component: () => <></>,
   },
