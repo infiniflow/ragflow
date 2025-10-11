@@ -776,7 +776,7 @@ def relevant_chunks_with_toc(query: str, toc:list[dict], chat_mdl, topn: int=6):
         print(ans, "::::::::::::::::::::::::::::::::::::", flush=True)
         id2score = {}
         for ti, sc in zip(toc, ans):
-            if sc.get("score", -1) < 1:
+            if not isinstance(sc, dict) or sc.get("score", -1) < 1:
                 continue
             for id in ti.get("ids", []):
                 if id not in id2score:
