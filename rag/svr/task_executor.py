@@ -377,7 +377,7 @@ async def build_chunks(task, progress_callback):
             d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
             d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
         ))
-        toc: list[dict] = await run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl)
+        toc: list[dict] = await run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl, progress_callback)
         logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
         ii = 0
         while ii < len(toc):
