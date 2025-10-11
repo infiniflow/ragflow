@@ -1395,6 +1395,8 @@ class LiteLLMBase(ABC):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
+        if self.model_name.lower().find("gemini") >= 0:
+            kwargs["thinking_config"] = {"include_thoughts": False, "thinking_budget":0}
 
         completion_args = self._construct_completion_args(history=history, stream=False, tools=False, **gen_conf)
         response = litellm.completion(
@@ -1542,6 +1544,8 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
+        if self.provider == SupportedLiteLLMProvider.Gemini:
+            completion_args.update({"thinking_config": {"include_thoughts": False, "thinking_budget":0}})
         if self.provider in FACTORY_DEFAULT_BASE_URL:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
