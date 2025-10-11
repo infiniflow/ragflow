@@ -201,6 +201,61 @@
         }
       },
       {
+        "knn_vector": {
+          "match": "*_2048_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 2048
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_4096_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 4096
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_6144_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 6144
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_8192_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 8192
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_10240_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 10240
+          }
+        }
+      },
+      {
         "binary": {
           "match": "*_bin",
           "mapping": {
