@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { FormLayout } from '@/constants/form';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -137,8 +138,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
         {parseType === 2 && (
           <DataFlowSelect
             isMult={false}
-            toDataPipeline={navigateToAgents}
+            showToDataPipeline={true}
             formFieldName="pipeline_id"
+            layout={FormLayout.Vertical}
           />
         )}
       </form>

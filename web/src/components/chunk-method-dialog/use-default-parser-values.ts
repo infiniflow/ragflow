@@ -15,6 +15,7 @@ export function useDefaultParserValues() {
       auto_keywords: 0,
       auto_questions: 0,
       html4excel: false,
+      toc_extraction: false,
       // raptor: {
       //   use_raptor: false,
       //   prompt: t('knowledgeConfiguration.promptText'),

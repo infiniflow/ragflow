@@ -20,6 +20,7 @@ import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import {
   ChunkMethodItem,
+  EnableTocToggle,
   ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -113,6 +114,7 @@ export function ChunkMethodDialog({
         auto_keywords: z.coerce.number().optional(),
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
+        toc_extraction: z.boolean().optional(),
         // raptor: z
         //   .object({
         //     use_raptor: z.boolean().optional(),
@@ -247,7 +249,7 @@ export function ChunkMethodDialog({
   }, [parseType, form]);
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="max-w-[50vw]">
+      <DialogContent className="max-w-[50vw] text-text-primary">
         <DialogHeader>
           <DialogTitle>{t('knowledgeDetails.chunkMethod')}</DialogTitle>
         </DialogHeader>
@@ -338,6 +340,7 @@ export function ChunkMethodDialog({
                   show={showAutoKeywords(selectedTag) || showExcelToHtml}
                   className="space-y-3"
                 >
+                  <EnableTocToggle />
                   {showAutoKeywords(selectedTag) && (
                     <>
                       <AutoKeywordsFormField></AutoKeywordsFormField>

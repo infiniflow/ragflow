@@ -36,7 +36,7 @@ export function SliderInputFormField({
   tooltip,
   defaultValue,
   className,
-  layout = FormLayout.Vertical,
+  layout = FormLayout.Horizontal,
 }: SliderInputFormFieldProps) {
   const form = useFormContext();
 

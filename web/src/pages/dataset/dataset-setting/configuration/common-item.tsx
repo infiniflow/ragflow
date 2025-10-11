@@ -42,7 +42,7 @@ export function ChunkMethodItem(props: IProps) {
                 'w-1/4 whitespace-pre-wrap': line === 1,
               })}
             >
-              {t('dataPipeline')}
+              {t('builtIn')}
             </FormLabel>
             <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
               <FormControl>
@@ -115,7 +115,7 @@ export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
   );
 }
 
-export function ParseTypeItem() {
+export function ParseTypeItem({ line = 2 }: { line?: number }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
@@ -125,17 +125,26 @@ export function ParseTypeItem() {
       name={'parseType'}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
-          <div className="">
+          <div
+            className={cn('flex', {
+              ' items-center': line === 1,
+              'flex-col gap-1': line === 2,
+            })}
+          >
             <FormLabel
-              tooltip={t('parseTypeTip')}
-              className="text-sm  whitespace-wrap "
+              // tooltip={t('parseTypeTip')}
+              className={cn('text-sm  whitespace-wrap ', {
+                'w-1/4': line === 1,
+              })}
             >
               {t('parseType')}
             </FormLabel>
-            <div className="text-muted-foreground">
+            <div
+              className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
+            >
               <FormControl>
                 <Radio.Group {...field}>
-                  <div className="w-3/4 flex gap-2 justify-between text-muted-foreground">
+                  <div className="w-1/2 flex gap-2 justify-between text-muted-foreground">
                     <Radio value={1}>{t('builtIn')}</Radio>
                     <Radio value={2}>{t('manualSetup')}</Radio>
                   </div>
@@ -144,7 +153,7 @@ export function ParseTypeItem() {
             </div>
           </div>
           <div className="flex pt-1">
-            <div className="w-1/4"></div>
+            <div className={line === 1 ? 'w-1/4' : ''}></div>
             <FormMessage />
           </div>
         </FormItem>
@@ -169,6 +178,42 @@ export function EnableAutoGenerateItem() {
               className="text-sm  whitespace-wrap w-1/4"
             >
               {t('enableAutoGenerate')}
+            </FormLabel>
+            <div className="text-muted-foreground w-3/4">
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
+        </FormItem>
+      )}
+    />
+  );
+}
+
+export function EnableTocToggle() {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name={'parser_config.toc_extraction'}
+      render={({ field }) => (
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('tocExtractionTip')}
+              className="text-sm  whitespace-wrap w-1/4"
+            >
+              {t('tocExtraction')}
             </FormLabel>
             <div className="text-muted-foreground w-3/4">
               <FormControl>

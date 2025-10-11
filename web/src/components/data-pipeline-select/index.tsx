@@ -1,5 +1,7 @@
 import { AgentCategory } from '@/constants/agent';
+import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentList } from '@/hooks/use-agent-request';
 import { buildSelectOptions } from '@/utils/component-util';
 import { ArrowUpRight } from 'lucide-react';
@@ -21,18 +23,27 @@ export interface IDataPipelineSelectNode {
 }
 
 interface IProps {
-  toDataPipeline?: () => void;
+  showToDataPipeline?: boolean;
   formFieldName: string;
   isMult?: boolean;
   setDataList?: (data: IDataPipelineSelectNode[]) => void;
+  layout?: FormLayout;
 }
 
 export function DataFlowSelect(props: IProps) {
-  const { toDataPipeline, formFieldName, isMult = false, setDataList } = props;
+  const {
+    showToDataPipeline,
+    formFieldName,
+    isMult = false,
+    setDataList,
+    layout = FormLayout.Vertical,
+  } = props;
+
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
+  const { navigateToAgents } = useNavigatePage();
   const toDataPipLine = () => {
-    toDataPipeline?.();
+    navigateToAgents();
   };
   const { data: dataPipelineOptions } = useFetchAgentList({
     canvas_category: AgentCategory.DataflowCanvas,
@@ -69,47 +80,92 @@ export function DataFlowSelect(props: IProps) {
       name={formFieldName}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
-          <div className="flex flex-col gap-1">
-            <div className="flex gap-2 justify-between ">
-              <FormLabel
-                tooltip={t('dataFlowTip')}
-                className="text-sm text-text-primary whitespace-wrap "
-              >
-                {t('dataPipeline')}
-              </FormLabel>
-              {toDataPipeline && (
-                <div
-                  className="text-sm flex text-text-primary cursor-pointer"
-                  onClick={toDataPipLine}
+          {layout === FormLayout.Vertical && (
+            <div className="flex flex-col gap-1">
+              <div className="flex gap-2 justify-between ">
+                <FormLabel
+                  // tooltip={t('dataFlowTip')}
+                  className="text-sm text-text-primary whitespace-wrap "
                 >
-                  {t('buildItFromScratch')}
-                  <ArrowUpRight size={14} />
-                </div>
-              )}
-            </div>
+                  {t('manualSetup')}
+                </FormLabel>
+                {showToDataPipeline && (
+                  <div
+                    className="text-sm flex text-text-primary cursor-pointer"
+                    onClick={toDataPipLine}
+                  >
+                    {t('buildItFromScratch')}
+                    <ArrowUpRight size={14} />
+                  </div>
+                )}
+              </div>
 
-            <div className="text-muted-foreground">
-              <FormControl>
-                <>
-                  {!isMult && (
-                    <SelectWithSearch
-                      {...field}
-                      placeholder={t('dataFlowPlaceholder')}
-                      options={options}
-                    />
-                  )}
-                  {isMult && (
-                    <MultiSelect
-                      {...field}
-                      onValueChange={field.onChange}
-                      placeholder={t('dataFlowPlaceholder')}
-                      options={options}
-                    />
-                  )}
-                </>
-              </FormControl>
+              <div className="text-muted-foreground">
+                <FormControl>
+                  <>
+                    {!isMult && (
+                      <SelectWithSearch
+                        {...field}
+                        placeholder={t('dataFlowPlaceholder')}
+                        options={options}
+                      />
+                    )}
+                    {isMult && (
+                      <MultiSelect
+                        {...field}
+                        onValueChange={field.onChange}
+                        placeholder={t('dataFlowPlaceholder')}
+                        options={options}
+                      />
+                    )}
+                  </>
+                </FormControl>
+              </div>
             </div>
-          </div>
+          )}
+          {layout === FormLayout.Horizontal && (
+            <div className="flex gap-1 items-center">
+              <div className="flex gap-2 justify-between w-1/4">
+                <FormLabel
+                  // tooltip={t('dataFlowTip')}
+                  className="text-sm text-text-secondary whitespace-wrap "
+                >
+                  {t('manualSetup')}
+                </FormLabel>
+              </div>
+
+              <div className="text-muted-foreground w-3/4 flex flex-col items-end">
+                {showToDataPipeline && (
+                  <div
+                    className="text-sm flex text-text-primary cursor-pointer"
+                    onClick={toDataPipLine}
+                  >
+                    {t('buildItFromScratch')}
+                    <ArrowUpRight size={14} />
+                  </div>
+                )}
+                <FormControl>
+                  <>
+                    {!isMult && (
+                      <SelectWithSearch
+                        {...field}
+                        placeholder={t('dataFlowPlaceholder')}
+                        options={options}
+                      />
+                    )}
+                    {isMult && (
+                      <MultiSelect
+                        {...field}
+                        onValueChange={field.onChange}
+                        placeholder={t('dataFlowPlaceholder')}
+                        options={options}
+                      />
+                    )}
+                  </>
+                </FormControl>
+              </div>
+            </div>
+          )}
           <div className="flex pt-1">
             <FormMessage />
           </div>
