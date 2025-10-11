@@ -296,8 +296,8 @@ class Pdf(PdfParser):
         else:
             tbls = self._extract_table_figure(True, zoomin, True, True)
             self._naive_vertical_merge()
-            self._final_reading_order_merge()
             self._concat_downward()
+            self._final_reading_order_merge()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
@@ -486,11 +486,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                           callback=callback)
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
-
-
-        chunks = [section[0] for section in sections]
-        res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
-        return res
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

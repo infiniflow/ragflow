@@ -534,120 +534,28 @@ class RAGFlowPdfParser:
 
         self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
 
-    def _final_reading_order_merge(self, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, zoomin=3):
+    def _final_reading_order_merge(self, zoomin=3):
         if not self.boxes:
             return
 
-        self.boxes = self._assign_column(self.boxes)
+        self.boxes = self._assign_column(self.boxes, zoomin=zoomin)
 
-        grouped = defaultdict(list)
+        pages = defaultdict(lambda: defaultdict(list))
         for b in self.boxes:
-            grouped[(b["page_number"], b.get("col_id", 0))].append(b)
+            pg = b["page_number"]
+            col = b.get("col_id", 0)
+            pages[pg][col].append(b)
 
-        merged_boxes = []
+        for pg in pages:
+            for col in pages[pg]:
+                pages[pg][col].sort(key=lambda x: (x["top"], x["x0"]))
 
-        for (pg, col), bxs in sorted(grouped.items(), key=lambda k: (k[0][0], k[0][1])):
-            bxs = sorted(bxs, key=lambda x: (x["top"], x["x0"]))
-            if not bxs:
-                continue
+        new_boxes = []
+        for pg in sorted(pages.keys()):
+            for col in sorted(pages[pg].keys()):
+                new_boxes.extend(pages[pg][col])
 
-            dels = get_delimiters(delimiter)
-
-            cur_chunk = {"text": "", "token_count": 0, "positions": []}
-
-            def flush_chunk():
-                nonlocal cur_chunk
-                if not cur_chunk["text"].strip():
-                    cur_chunk = {"text": "", "token_count": 0, "positions": []}
-                    return
-
-                xs0 = [p["x0"] for p in cur_chunk["positions"]]
-                xs1 = [p["x1"] for p in cur_chunk["positions"]]
-                tops = [p["top"] for p in cur_chunk["positions"]]
-                bots = [p["bottom"] for p in cur_chunk["positions"]]
-                merged_boxes.append(
-                    {
-                        "text": cur_chunk["text"].strip(),
-                        "page_number": pg,
-                        "col_id": col,
-                        "layout_type": "merged_chunk",
-                        "positions": cur_chunk["positions"],
-                        "x0": float(np.min(xs0)) if xs0 else 0,
-                        "x1": float(np.max(xs1)) if xs1 else 0,
-                        "top": float(np.min(tops)) if tops else 0,
-                        "bottom": float(np.max(bots)) if bots else 0,
-                    }
-                )
-                cur_chunk = {"text": "", "token_count": 0, "positions": []}
-
-            def add_chunk_piece(t, b):
-                nonlocal cur_chunk
-                if not t.strip():
-                    return
-                tnum = num_tokens_from_string(t)
-
-                pos_tag = self._line_tag(b, zoomin)
-
-                if cur_chunk["text"] == "" or cur_chunk["token_count"] > chunk_token_num * (100 - overlapped_percent) / 100.0:
-                    if cur_chunk["text"]:
-                        flush_chunk()
-
-                    if merged_boxes and overlapped_percent > 0:
-                        overlapped = RAGFlowPdfParser.remove_tag(merged_boxes[-1]["text"])
-                        overlap_len = int(len(overlapped) * (100 - overlapped_percent) / 100.0)
-                        t = overlapped[overlap_len:] + t
-
-                    if pos_tag and t.find(pos_tag) < 0:
-                        t += pos_tag
-
-                    cur_chunk["text"] = t
-                    cur_chunk["token_count"] = tnum
-                    cur_chunk["positions"].append(
-                        {
-                            "page_number": b["page_number"],
-                            "col_id": b.get("col_id", 0),
-                            "layout_type": b.get("layout_type", ""),
-                            "layoutno": b.get("layoutno", ""),
-                            "x0": b["x0"],
-                            "x1": b["x1"],
-                            "top": b["top"],
-                            "bottom": b["bottom"],
-                        }
-                    )
-                else:
-                    if pos_tag and cur_chunk["text"].find(pos_tag) < 0:
-                        t += pos_tag
-                    cur_chunk["text"] += " " + t
-                    cur_chunk["token_count"] += tnum
-                    cur_chunk["positions"].append(
-                        {
-                            "page_number": b["page_number"],
-                            "col_id": b.get("col_id", 0),
-                            "layout_type": b.get("layout_type", ""),
-                            "layoutno": b.get("layoutno", ""),
-                            "x0": b["x0"],
-                            "x1": b["x1"],
-                            "top": b["top"],
-                            "bottom": b["bottom"],
-                        }
-                    )
-
-            for b in bxs:
-                sec = b["text"].strip()
-                if not sec:
-                    continue
-                if num_tokens_from_string(sec) < chunk_token_num:
-                    add_chunk_piece(sec, b)
-                    continue
-                split_sec = re.split(r"(%s)" % dels, sec, flags=re.DOTALL)
-                for sub_sec in split_sec:
-                    if not sub_sec or re.match(f"^{dels}$", sub_sec):
-                        continue
-                    add_chunk_piece(sub_sec, b)
-
-            flush_chunk()
-
-        self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x["x0"], x["top"]))
+        self.boxes = new_boxes
 
     def _concat_downward(self, concat_between_pages=True):
         self.boxes = Recognizer.sort_Y_firstly(self.boxes, 0)
