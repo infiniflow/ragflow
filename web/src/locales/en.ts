@@ -126,8 +126,8 @@ export default {
       startDate: 'Start Date',
       source: 'Source',
       fileName: 'File Name',
-      datasetLogs: 'Dataset Logs',
-      fileLogs: 'File Logs',
+      datasetLogs: 'Dataset',
+      fileLogs: 'File',
       overview: 'Overview',
       success: 'Success',
       failed: 'Failed',
@@ -270,6 +270,9 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      tocExtraction: 'toc toggle',
+      tocExtractionTip:
+        " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
         <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results 
         will remove all derived entities and relationships from this dataset. 
