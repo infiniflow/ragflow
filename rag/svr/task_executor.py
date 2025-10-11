@@ -370,7 +370,7 @@ async def build_chunks(task, progress_callback):
                 nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
-    if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", True):
+    if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
         progress_callback(msg="Start to generate table of content ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
         docs = sorted(docs, key=lambda d:(
