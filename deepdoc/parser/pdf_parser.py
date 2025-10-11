@@ -38,10 +38,9 @@ from api import settings
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
-from rag.nlp import get_delimiters, rag_tokenizer
+from rag.nlp import rag_tokenizer
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.settings import PARALLEL_DEVICES
-from rag.utils import num_tokens_from_string
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
