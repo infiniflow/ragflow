@@ -90,7 +90,6 @@ export type RFState = {
   ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
-  setHighlightedPlaceholderEdgeId: (edgeId: string | null) => void;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -529,9 +528,6 @@ const useGraphStore = create<RFState>()(
             selected: nodeIds.includes(node.id),
           })),
         );
-      },
-      setHighlightedPlaceholderEdgeId: (edgeId) => {
-        set({ highlightedPlaceholderEdgeId: edgeId });
       },
     })),
     { name: 'graph', trace: true },
