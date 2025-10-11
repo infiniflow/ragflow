@@ -52,13 +52,15 @@ function InnerAgentNode({
           </>
         )}
 
-        <Handle
-          type="target"
-          position={Position.Top}
-          isConnectable={false}
-          id={NodeHandleId.AgentTop}
-          className="!bg-accent-primary !size-2"
-        ></Handle>
+        {isHeadAgent || (
+          <Handle
+            type="target"
+            position={Position.Top}
+            isConnectable={false}
+            id={NodeHandleId.AgentTop}
+            className="!bg-accent-primary !size-2"
+          ></Handle>
+        )}
         <Handle
           type="source"
           position={Position.Bottom}
