@@ -356,6 +356,9 @@ class RAGFlowPdfParser:
         if not boxes:
             return boxes
 
+        if all("col_id" in b for b in boxes):
+            return boxes
+
         by_page = defaultdict(list)
         for b in boxes:
             by_page[b["page_number"]].append(b)
