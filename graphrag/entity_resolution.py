@@ -60,7 +60,7 @@ class EntityResolution(Extractor):
         self._llm = llm_invoker
         self._resolution_prompt = ENTITY_RESOLUTION_PROMPT
         self._record_delimiter_key = "record_delimiter"
-        self._entity_index_dilimiter_key = "entity_index_delimiter"
+        self._entity_index_delimiter_key = "entity_index_delimiter"
         self._resolution_result_delimiter_key = "resolution_result_delimiter"
         self._input_text_key = "input_text"
 
@@ -77,7 +77,7 @@ class EntityResolution(Extractor):
             **prompt_variables,
             self._record_delimiter_key: prompt_variables.get(self._record_delimiter_key)
                                         or DEFAULT_RECORD_DELIMITER,
-            self._entity_index_dilimiter_key: prompt_variables.get(self._entity_index_dilimiter_key)
+            self._entity_index_delimiter_key: prompt_variables.get(self._entity_index_delimiter_key)
                                               or DEFAULT_ENTITY_INDEX_DELIMITER,
             self._resolution_result_delimiter_key: prompt_variables.get(self._resolution_result_delimiter_key)
                                                    or DEFAULT_RESOLUTION_RESULT_DELIMITER,
@@ -185,7 +185,7 @@ class EntityResolution(Extractor):
         result = self._process_results(len(candidate_resolution_i[1]), response,
                                        self.prompt_variables.get(self._record_delimiter_key,
                                                             DEFAULT_RECORD_DELIMITER),
-                                       self.prompt_variables.get(self._entity_index_dilimiter_key,
+                                       self.prompt_variables.get(self._entity_index_delimiter_key,
                                                             DEFAULT_ENTITY_INDEX_DELIMITER),
                                        self.prompt_variables.get(self._resolution_result_delimiter_key,
                                                             DEFAULT_RESOLUTION_RESULT_DELIMITER))

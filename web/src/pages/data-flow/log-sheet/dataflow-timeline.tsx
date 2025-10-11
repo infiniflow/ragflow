@@ -78,7 +78,7 @@ export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
                       <div className="flex-1 flex items-center gap-5">
                         <Progress value={progress} className="h-1 flex-1" />
                         <span className="text-accent-primary text-xs">
-                          {progress}%
+                          {progress.toFixed(2)}%
                         </span>
                       </div>
                     </section>
