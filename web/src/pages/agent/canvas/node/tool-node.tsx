@@ -49,6 +49,7 @@ function InnerToolNode({
         type="target"
         position={Position.Top}
         isConnectable={isConnectable}
+        className="!bg-accent-primary !size-2"
       ></Handle>
       <ul className="space-y-2">
         {tools.map((x) => (

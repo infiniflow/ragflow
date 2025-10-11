@@ -116,7 +116,7 @@ export default {
       generate: 'Generate',
       raptor: 'Raptor',
       processingType: 'Processing Type',
-      dataPipeline: 'Data Pipeline',
+      dataPipeline: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -284,11 +284,11 @@ export default {
       fileFilter: 'File Filter',
       setDefaultTip: '',
       setDefault: 'Set as Default',
-      eidtLinkDataPipeline: 'Edit Data Pipeline',
-      linkPipelineSetTip: 'Manage data pipeline linkage with this dataset',
+      eidtLinkDataPipeline: 'Edit Ingestion pipeline',
+      linkPipelineSetTip: 'Manage Ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Data Pipeline',
-      linkDataPipeline: 'Link Data Pipeline',
+      dataPipeline: 'Ingestion pipeline',
+      linkDataPipeline: 'Link Ingestion pipeline',
       enableAutoGenerate: 'Enable Auto Generate',
       teamPlaceholder: 'Please select a team.',
       dataFlowPlaceholder: 'Please select a pipeline.',
@@ -1595,7 +1595,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
       ceateAgent: 'Agent flow',
-      createPipeline: 'Data pipeline',
+      createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose Agent Type',
     },
     llmTools: {
@@ -1688,9 +1688,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       <p>To keep them, please click Rerun to re-run the current stage.</p> `,
       changeStepModalConfirmText: 'Switch Anyway',
       changeStepModalCancelText: 'Cancel',
-      unlinkPipelineModalTitle: 'Unlink data pipeline',
+      unlinkPipelineModalTitle: 'Unlink Ingestion pipeline',
       unlinkPipelineModalContent: `
-      <p>Once unlinked, this Dataset will no longer be connected to the current Data Pipeline.</p> 
+      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p> 
       <p>Files that are already being parsed  will continue until completion</p> 
       <p>Files that are not yet parsed will no longer be processed</p> <br/>
       <p>Are you sure you want to proceed?</p> `,
