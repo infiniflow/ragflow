@@ -126,7 +126,7 @@ class Tokenizer(ProcessBase):
                     if ck.get("summary"):
                         ck["content_ltks"] = rag_tokenizer.tokenize(str(ck["summary"]))
                         ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
-                    else:
+                    elif ck.get("text"):
                         ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                         ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
@@ -155,6 +155,8 @@ class Tokenizer(ProcessBase):
                 for i, ck in enumerate(chunks):
                     ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
                     ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
+                    if not ck.get("text"):
+                        continue
                     ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
