@@ -39,7 +39,6 @@ export type RFState = {
   selectedEdgeIds: string[];
   clickedNodeId: string; // currently selected node
   clickedToolId: string; // currently selected tool id
-  highlightedPlaceholderEdgeId: string | null;
   onNodesChange: OnNodesChange<RAGFlowNodeType>;
   onEdgesChange: OnEdgesChange;
   onEdgeMouseEnter?: EdgeMouseHandler<Edge>;
@@ -102,7 +101,6 @@ const useGraphStore = create<RFState>()(
       selectedEdgeIds: [] as string[],
       clickedNodeId: '',
       clickedToolId: '',
-      highlightedPlaceholderEdgeId: null,
       onNodesChange: (changes) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),
