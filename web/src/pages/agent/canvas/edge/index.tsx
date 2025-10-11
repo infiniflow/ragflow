@@ -102,7 +102,7 @@ function InnerButtonEdge({
           ...showHighlight,
           ...placeholderHighlightStyle,
         }}
-        className={cn('text-text-secondary')}
+        className={cn('text-text-disabled')}
       />
 
       <EdgeLabelRenderer>
