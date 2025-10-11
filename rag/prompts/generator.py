@@ -753,7 +753,6 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
     toc_with_levels = assign_toc_levels(raw_structure, chat_mdl, {"temperature": 0.0, "top_p": 0.9})
 
     # Merge structure and content (by index)
-    from collections import Counter
     prune = len(toc_with_levels) > 512
     max_lvl = sorted([t.get("level", "0") for t in toc_with_levels])[-1]
     merged = []
