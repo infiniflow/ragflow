@@ -39,7 +39,6 @@ export type RFState = {
   selectedEdgeIds: string[];
   clickedNodeId: string; // currently selected node
   clickedToolId: string; // currently selected tool id
-  highlightedPlaceholderEdgeId: string | null;
   onNodesChange: OnNodesChange<RAGFlowNodeType>;
   onEdgesChange: OnEdgesChange;
   onEdgeMouseEnter?: EdgeMouseHandler<Edge>;
@@ -90,7 +89,6 @@ export type RFState = {
   ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
-  setHighlightedPlaceholderEdgeId: (edgeId: string | null) => void;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -103,7 +101,6 @@ const useGraphStore = create<RFState>()(
       selectedEdgeIds: [] as string[],
       clickedNodeId: '',
       clickedToolId: '',
-      highlightedPlaceholderEdgeId: null,
       onNodesChange: (changes) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),
@@ -529,9 +526,6 @@ const useGraphStore = create<RFState>()(
             selected: nodeIds.includes(node.id),
           })),
         );
-      },
-      setHighlightedPlaceholderEdgeId: (edgeId) => {
-        set({ highlightedPlaceholderEdgeId: edgeId });
       },
     })),
     { name: 'graph', trace: true },

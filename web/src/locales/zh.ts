@@ -1619,12 +1619,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tokenizerRequired: '请先添加Tokenizer节点',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的向量嵌入）。',
-      splitter: '分词器拆分器',
+      splitter: '按字符分割',
       splitterDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       hierarchicalMergerDescription:
         '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
-      hierarchicalMerger: '标题拆分器',
+      hierarchicalMerger: '按标题分割',
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',

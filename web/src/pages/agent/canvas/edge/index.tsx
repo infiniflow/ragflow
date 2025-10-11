@@ -29,9 +29,8 @@ function InnerButtonEdge({
   data,
   sourceHandleId,
 }: EdgeProps<Edge<{ isHovered: boolean }>>) {
-  const deleteEdgeById = useGraphStore((state) => state.deleteEdgeById);
-  const highlightedPlaceholderEdgeId = useGraphStore(
-    (state) => state.highlightedPlaceholderEdgeId,
+  const { deleteEdgeById, getOperatorTypeFromId } = useGraphStore(
+    (state) => state,
   );
 
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -48,12 +47,16 @@ function InnerButtonEdge({
       : {};
   }, [selected]);
 
+  const isTargetPlaceholder = useMemo(() => {
+    return getOperatorTypeFromId(target) === Operator.Placeholder;
+  }, [getOperatorTypeFromId, target]);
+
   const placeholderHighlightStyle = useMemo(() => {
-    const isHighlighted = highlightedPlaceholderEdgeId === id;
+    const isHighlighted = isTargetPlaceholder;
     return isHighlighted
-      ? { strokeWidth: 2, stroke: 'var(--accent-primary)' }
+      ? { strokeWidth: 2, stroke: 'rgb(var(--accent-primary))' }
       : {};
-  }, [highlightedPlaceholderEdgeId, id]);
+  }, [isTargetPlaceholder]);
 
   const onEdgeClick = () => {
     deleteEdgeById(id);
@@ -83,9 +86,10 @@ function InnerButtonEdge({
       data?.isHovered &&
       sourceHandleId !== NodeHandleId.Tool &&
       sourceHandleId !== NodeHandleId.AgentBottom && // The connection between the agent node and the tool node does not need to display the delete button
-      !target.startsWith(Operator.Tool)
+      !target.startsWith(Operator.Tool) &&
+      !isTargetPlaceholder
     );
-  }, [data?.isHovered, sourceHandleId, target]);
+  }, [data?.isHovered, isTargetPlaceholder, sourceHandleId, target]);
 
   return (
     <>
