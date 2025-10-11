@@ -184,8 +184,6 @@ class ParserParam(ProcessParamBase):
         audio_config = self.setups.get("audio", "")
         if audio_config:
             self.check_empty(audio_config.get("llm_id"), "Audio VLM")
-            audio_language = audio_config.get("lang", "")
-            self.check_empty(audio_language, "Language")
 
         email_config = self.setups.get("email", "")
         if email_config:
@@ -348,15 +346,13 @@ class Parser(ProcessBase):
 
         conf = self._param.setups["audio"]
         self.set_output("output_format", conf["output_format"])
-
-        lang = conf["lang"]
         _, ext = os.path.splitext(name)
         with tempfile.NamedTemporaryFile(suffix=ext) as tmpf:
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
 
-            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, lang=lang)
+            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT)
             txt = seq2txt_mdl.transcription(tmp_path)
 
             self.set_output("text", txt)
