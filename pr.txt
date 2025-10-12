@@ -1,0 +1,289 @@
+# Pull Request: Migrate Google Vertex AI to google-genai SDK
+
+## Summary
+
+This PR migrates the Google Vertex AI integration from the deprecated `vertexai.generative_models` API to the new unified `google-genai` SDK, building upon PR #10477 which added ThinkingConfig support for the old API.
+
+## Problem Statement
+
+PR #10477 successfully added ThinkingConfig support to control thinking mode in Gemini models, but used the deprecated `vertexai.generative_models` API. This API has several limitations:
+
+1. **Deprecated API**: `vertexai.generative_models.GenerativeModel` is being phased out by Google
+2. **No unified interface**: Separate APIs for Vertex AI and AI Studio deployments
+3. **Dict-based configuration**: Prone to errors, no type safety
+4. **Limited message format**: Dictionary-based messages don't match modern SDK expectations
+
+Google is consolidating all Gemini/Vertex AI access through the unified `google-genai` SDK, making migration necessary.
+
+## Technical Changes
+
+### 1. Client Initialization Migration
+
+**Why this change is necessary:**
+- The old API required separate initialization (`aiplatform.init()`) and model creation (`GenerativeModel()`)
+- The new SDK uses a unified `genai.Client` object
+- Better credential handling with explicit scopes support
+
+**What changed:**
+
+**Before (old API from PR #10477):**
+```python
+import vertexai.generative_models as glm
+from google.cloud import aiplatform
+
+if access_token:
+    credits = service_account.Credentials.from_service_account_info(access_token)
+    aiplatform.init(credentials=credits, project=project_id, location=region)
+else:
+    aiplatform.init(project=project_id, location=region)
+self.client = glm.GenerativeModel(model_name=self.model_name)
+```
+
+**After (new google-genai SDK):**
+```python
+from google import genai
+
+if access_token:
+    credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+    self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+else:
+    self.client = genai.Client(vertexai=True, project=project_id, location=region)
+```
+
+**Benefits:**
+- Single client object, simpler initialization
+- `vertexai=True` flag enables Vertex AI mode in the unified SDK
+- Explicit scopes parameter for better credential control
+
+### 2. Message Format: Content/Part Objects
+
+**Why this change is necessary:**
+- The new SDK uses Pydantic validation and requires strongly-typed `Content` objects
+- Simple dictionaries cause validation errors: `Input should be a valid dictionary or object to extract fields from`
+- The SDK expects: `Content(role=..., parts=[Part(text=...)])`
+
+**What changed:**
+
+**Before (old API):**
+```python
+hist = []
+for item in history:
+    hist.append(deepcopy(item))
+    item = hist[-1]
+    if item["role"] == "assistant":
+        item["role"] = "model"
+    if "content" in item:
+        item["parts"] = [{"text": item.pop("content")}]
+
+response = self.client.generate_content(hist, generation_config=gen_conf)
+```
+
+**After (new SDK):**
+```python
+from google.genai.types import Content, Part
+
+contents = []
+for item in history:
+    if item["role"] == "system":
+        continue
+    role = "model" if item["role"] == "assistant" else item["role"]
+    content = Content(
+        role=role,
+        parts=[Part(text=item["content"])]
+    )
+    contents.append(content)
+
+response = self.client.models.generate_content(
+    model=self.model_name,
+    contents=contents,
+    config=config
+)
+```
+
+**Benefits:**
+- Passes Pydantic validation (fixes validation errors)
+- Type-safe message construction
+- Extensible for future multi-modal support (images, etc.)
+- Cleaner code without in-place mutations
+
+### 3. Configuration: GenerateContentConfig
+
+**Why this change is necessary:**
+- Old API accepted configuration as dict parameters, prone to errors
+- New SDK requires strongly-typed `GenerateContentConfig` objects
+- ThinkingConfig must be integrated into the config, not passed separately
+
+**What changed:**
+
+**Before (old API with _get_thinking_config helper):**
+```python
+thinking_config = self._get_thinking_config(gen_conf)
+gen_conf = self._clean_conf(gen_conf)
+
+if thinking_config:
+    response = self.client.generate_content(hist, generation_config=gen_conf, thinking_config=thinking_config)
+else:
+    response = self.client.generate_content(hist, generation_config=gen_conf)
+```
+
+**After (new SDK with integrated config):**
+```python
+# Set default thinking_budget=0 if not specified
+if "thinking_budget" not in gen_conf:
+    gen_conf["thinking_budget"] = 0
+
+thinking_budget = gen_conf.pop("thinking_budget", 0)
+gen_conf = self._clean_conf(gen_conf)
+
+from google.genai.types import GenerateContentConfig, ThinkingConfig
+
+config_dict = {}
+if system:
+    config_dict["system_instruction"] = system
+if "temperature" in gen_conf:
+    config_dict["temperature"] = gen_conf["temperature"]
+if "top_p" in gen_conf:
+    config_dict["top_p"] = gen_conf["top_p"]
+if "max_output_tokens" in gen_conf:
+    config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+
+# ThinkingConfig integrated into config
+config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+
+config = GenerateContentConfig(**config_dict)
+response = self.client.models.generate_content(
+    model=self.model_name,
+    contents=contents,
+    config=config
+)
+```
+
+**Benefits:**
+- Type-safe configuration (catches errors at construction time)
+- System instructions properly scoped to request, not client state
+- Single config object, simpler API calls
+- Removes the need for separate `_get_thinking_config()` helper method
+- Maintains the same default behavior: `thinking_budget=0` (disabled)
+
+### 4. Streaming API
+
+**Why this change is necessary:**
+- Old API used `generate_content(..., stream=True)` with implicit streaming
+- New SDK has explicit `generate_content_stream()` method
+- Better separation of concerns and clearer intent
+
+**What changed:**
+
+**Before:**
+```python
+response = self.client.generate_content(history, generation_config=gen_conf, stream=True)
+for resp in response:
+    ans = resp.text
+    total_tokens += num_tokens_from_string(ans)
+    yield ans
+```
+
+**After:**
+```python
+for chunk in self.client.models.generate_content_stream(
+    model=self.model_name,
+    contents=contents,
+    config=config
+):
+    text = chunk.text
+    ans = text
+    total_tokens += num_tokens_from_string(text)
+    yield ans
+```
+
+**Benefits:**
+- Explicit streaming method (clearer API design)
+- Consistent with the new SDK's conventions
+- Same functionality, better code organization
+
+### 5. Dependency Updates
+
+**Why these changes are necessary:**
+
+#### vertexai: 1.64.0 → 1.70.0
+- Required for compatibility with `google-genai` SDK
+- Includes bug fixes and API stability improvements
+- Supports features needed by the new SDK
+
+#### google-genai: Added >=1.41.0,<2.0.0
+- **New dependency**: The unified Google AI SDK
+- Version 1.41.0+ required for:
+  - Vertex AI support (`vertexai=True` parameter)
+  - ThinkingConfig support
+  - Content/Part type definitions
+- Replaces direct usage of `vertexai.generative_models`
+
+#### httpx[socks]: ==0.27.2 → >=0.28.1,<0.29.0
+- **Critical update**: `google-genai` requires `httpx>=0.28.1`
+- Old version (0.27.2) is incompatible and will cause import/runtime errors
+- Updated to satisfy the minimum version requirement while allowing patches
+- The `[socks]` extra is preserved for existing proxy functionality
+
+#### google-generativeai: Comment clarification
+- Added comment: "Needed for cv_model and embedding_model"
+- This package is **still required** for computer vision and embedding models
+- Prevents accidental removal during dependency cleanup
+
+## Code Structure Changes
+
+**Removed:**
+- `_get_thinking_config()` helper method (replaced by native SDK support)
+
+**Modified:**
+- `GoogleChat.__init__()`: Client initialization
+- `GoogleChat._chat()`: Complete reimplementation for new SDK
+- `GoogleChat.chat_streamly()`: Streaming implementation for new SDK
+
+**Preserved:**
+- External API remains unchanged (backward compatible)
+- Default behavior: `thinking_budget=0` (disabled)
+- User can still override via `gen_conf`/`llm_setting`
+- Claude models via Vertex AI unaffected (use AnthropicVertex client)
+
+## Modified Files
+
+1. **rag/llm/chat_model.py** (190 lines changed)
+   - `GoogleChat.__init__()`: Migrated to `genai.Client`
+   - `GoogleChat._chat()`: New implementation with Content/Part objects and GenerateContentConfig
+   - `GoogleChat.chat_streamly()`: Updated streaming with `generate_content_stream()`
+   - Removed `_get_thinking_config()` (superseded by SDK-native support)
+
+2. **pyproject.toml** (4 lines changed)
+   - Updated `vertexai` to 1.70.0
+   - Added `google-genai>=1.41.0,<2.0.0`
+   - Updated `httpx[socks]` to >=0.28.1,<0.29.0 (required by google-genai)
+   - Added clarifying comment for `google-generativeai`
+
+## Breaking Changes
+
+**Dependencies:** New dependencies must be installed:
+```bash
+uv sync
+# or
+pip install google-genai>=1.41.0 vertexai>=1.70.0
+```
+
+**API Compatibility:**
+- ✅ External API unchanged (how users call chat methods)
+- ✅ Default behavior preserved (`thinking_budget=0`)
+- ✅ User configuration options unchanged
+- This is purely an internal implementation migration
+
+## Relationship to PR #10477
+
+This PR builds upon and extends PR #10477:
+- **PR #10477**: Added ThinkingConfig support using the old `vertexai.generative_models` API
+- **This PR**: Migrates to the new `google-genai` SDK while preserving ThinkingConfig functionality
+
+The migration supersedes the `_get_thinking_config()` helper method with the new SDK's native ThinkingConfig support, providing the same functionality through a more modern, type-safe API.
+
+## Additional Notes
+
+- Claude models via Vertex AI continue to use the `AnthropicVertex` client and are unaffected
+- The new SDK provides a foundation for future features (multi-modal, etc.)
+- All existing user configurations and settings remain compatible
