@@ -266,6 +266,10 @@ for chunk in self.client.models.generate_content_stream(
    - Updated `ollama` to >=0.5.0 (resolves httpx conflict)
    - Added clarifying comment for `google-generativeai`
 
+3. **uv.lock** (153 lines changed)
+   - Regenerated lock file to reflect dependency updates
+   - Ensures reproducible builds with correct versions
+
 ## Breaking Changes
 
 **Dependencies:** New dependencies must be installed:
