@@ -1259,7 +1259,7 @@ class GoogleChat(Base):
         # Get token count from response
         try:
             total_tokens = response.usage_metadata.total_token_count
-        except:
+        except Exception:
             total_tokens = 0
 
         return ans, total_tokens
