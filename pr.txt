@@ -224,6 +224,12 @@ for chunk in self.client.models.generate_content_stream(
 - Updated to satisfy the minimum version requirement while allowing patches
 - The `[socks]` extra is preserved for existing proxy functionality
 
+#### ollama: ==0.2.1 → >=0.5.0
+- **Required for httpx compatibility**: `ollama 0.2.1` requires `httpx ^0.27.0` (i.e., `>=0.27.0, <0.28.0`)
+- This conflicts with `google-genai`'s requirement of `httpx>=0.28.1`
+- `ollama 0.5.0+` updated to `httpx>=0.27` (removed upper bound), resolving the conflict
+- This update is necessary to avoid dependency resolution failures
+
 #### google-generativeai: Comment clarification
 - Added comment: "Needed for cv_model and embedding_model"
 - This package is **still required** for computer vision and embedding models
@@ -253,10 +259,11 @@ for chunk in self.client.models.generate_content_stream(
    - `GoogleChat.chat_streamly()`: Updated streaming with `generate_content_stream()`
    - Removed `_get_thinking_config()` (superseded by SDK-native support)
 
-2. **pyproject.toml** (4 lines changed)
+2. **pyproject.toml** (5 lines changed)
    - Updated `vertexai` to 1.70.0
    - Added `google-genai>=1.41.0,<2.0.0`
    - Updated `httpx[socks]` to >=0.28.1,<0.29.0 (required by google-genai)
+   - Updated `ollama` to >=0.5.0 (resolves httpx conflict)
    - Added clarifying comment for `google-generativeai`
 
 ## Breaking Changes
