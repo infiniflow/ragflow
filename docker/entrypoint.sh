@@ -29,7 +29,7 @@ function usage() {
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_MCP_SERVER=0
-ENABLE_ADMIN_SERVER=1 # Default close admin server
+ENABLE_ADMIN_SERVER=0 # Default close admin server
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
