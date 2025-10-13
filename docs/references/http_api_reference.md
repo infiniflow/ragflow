@@ -1830,9 +1830,7 @@ curl --request POST \
                 "name": "author",
                 "comparison_operator": "=",
                 "value": "Toby"
-              }
-            ],
-            [
+              },
               {
                 "name": "url",
                 "comparison_operator": "not contains",
