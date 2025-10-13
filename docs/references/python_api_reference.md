@@ -698,6 +698,58 @@ print("Async bulk parsing initiated.")
 
 ---
 
+### Parse documents (with document status)
+
+```python
+DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, int]]
+```
+
+Parses documents **synchronously** in the current dataset.  
+This method wraps `async_parse_documents()` and automatically waits for all parsing tasks to complete.  
+It returns detailed parsing results, including the status and statistics for each document.  
+If interrupted by the user (e.g. `Ctrl+C`), all pending parsing jobs will be cancelled gracefully.
+
+#### Parameters
+
+##### document_ids: `list[str]`, *Required*
+
+The IDs of the documents to parse.
+
+#### Returns
+
+A list of tuples with detailed parsing results:  
+```python
+[
+  (document_id: str, status: str, chunk_count: int, token_count: int),
+  ...
+]
+```
+- **status** — Final parsing state (`success`, `failed`, `cancelled`, etc.)  
+- **chunk_count** — Number of content chunks created for the document.  
+- **token_count** — Total number of tokens processed.  
+
+---
+
+#### Example
+
+```python
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.create_dataset(name="dataset_name")
+documents = dataset.list_documents(keywords="test")
+ids = [doc.id for doc in documents]
+
+try:
+    finished = dataset.parse_documents(ids)
+    for doc_id, status, chunk_count, token_count in finished:
+        print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
+except KeyboardInterrupt:
+    print("\nParsing interrupted by user. All pending tasks have been cancelled.")
+except Exception as e:
+    print(f"Parsing failed: {e}")
+```
+
+---
+
 ### Stop parsing documents
 
 ```python

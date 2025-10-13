@@ -127,11 +127,7 @@ class DataSet(Base):
                     pending.discard(doc_id)
             if pending:
                 time.sleep(interval_sec)
-        
-        for doc_id, status, chunk_count, token_count in finished:
-            print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
-        
-        return
+        return finished
     
     def async_parse_documents(self, document_ids):
         res = self.post(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
@@ -145,9 +141,9 @@ class DataSet(Base):
             self.async_parse_documents(document_ids)
             self._get_documents_status(document_ids)
         except KeyboardInterrupt:
-            print("\nDetected KeyboardInterrupt, cancelling all pending tasks...")
             self.async_cancel_parse_documents(document_ids)
-        self._get_documents_status(document_ids)
+            
+        return self._get_documents_status(document_ids)
 
 
     def async_cancel_parse_documents(self, document_ids):
