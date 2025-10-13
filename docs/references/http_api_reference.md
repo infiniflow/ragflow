@@ -1877,7 +1877,7 @@ curl --request POST \
   The metadata condition used for filtering chunks:  
   - `"conditions"`: (*Body parameter*), `array`  
     A list of metadata filter conditions.  
-    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`, and more. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
+    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
     - `comparison_operator`: `string` - The comparison operator. Can be one of: 
       - `"contains"`
       - `"not contains"`
