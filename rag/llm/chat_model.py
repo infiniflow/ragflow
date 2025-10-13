@@ -1445,7 +1445,7 @@ class LiteLLMBase(ABC):
         if response.choices[0].finish_reason == "length":
             ans = self._length_stop(ans)
 
-        return ans, self.total_token_count(response)
+        return ans, total_token_count_from_response(response)
 
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
@@ -1479,7 +1479,7 @@ class LiteLLMBase(ABC):
                 reasoning_start = False
                 ans = delta.content
 
-            tol = self.total_token_count(resp)
+            tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(delta.content)
 
@@ -1614,7 +1614,7 @@ class LiteLLMBase(ABC):
                         timeout=self.timeout,
                     )
 
-                    tk_count += self.total_token_count(response)
+                    tk_count += total_token_count_from_response(response)
 
                     if not hasattr(response, "choices") or not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -1746,7 +1746,7 @@ class LiteLLMBase(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        tol = self.total_token_count(resp)
+                        tol = total_token_count_from_response(resp)
                         if not tol:
                             total_tokens += num_tokens_from_string(delta.content)
                         else:
@@ -1795,7 +1795,7 @@ class LiteLLMBase(ABC):
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
                         continue
-                    tol = self.total_token_count(resp)
+                    tol = total_token_count_from_response(resp)
                     if not tol:
                         total_tokens += num_tokens_from_string(delta.content)
                     else:
@@ -1828,17 +1828,6 @@ class LiteLLMBase(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
-
-    def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
 
     def _calculate_dynamic_ctx(self, history):
         """Calculate dynamic context window size"""
