@@ -131,16 +131,24 @@ function useRestrictSingleOperatorOnCanvas() {
 function AccordionOperators({
   isCustomDropdown = false,
   mousePosition,
+  nodeId,
 }: {
   isCustomDropdown?: boolean;
   mousePosition?: { x: number; y: number };
+  nodeId?: string;
 }) {
   const singleOperators = useRestrictSingleOperatorOnCanvas();
+  const { getOperatorTypeFromId } = useGraphStore((state) => state);
+
   const operators = useMemo(() => {
-    const list = [...singleOperators];
+    let list = [...singleOperators];
+    if (getOperatorTypeFromId(nodeId) === Operator.Extractor) {
+      const Splitters = [Operator.HierarchicalMerger, Operator.Splitter];
+      list = list.filter((x) => !Splitters.includes(x)); // The Context Generator node can only be followed by a Tokenizer and a Context Generator.
+    }
     list.push(Operator.Extractor);
     return list;
-  }, [singleOperators]);
+  }, [getOperatorTypeFromId, nodeId, singleOperators]);
 
   return (
     <OperatorItemList
@@ -151,16 +159,19 @@ function AccordionOperators({
   );
 }
 
+type NextStepDropdownProps = PropsWithChildren &
+  IModalProps<any> & {
+    position?: { x: number; y: number };
+    onNodeCreated?: (newNodeId: string) => void;
+    nodeId?: string;
+  };
 export function InnerNextStepDropdown({
   children,
   hideModal,
   position,
   onNodeCreated,
-}: PropsWithChildren &
-  IModalProps<any> & {
-    position?: { x: number; y: number };
-    onNodeCreated?: (newNodeId: string) => void;
-  }) {
+  nodeId,
+}: NextStepDropdownProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -200,6 +211,7 @@ export function InnerNextStepDropdown({
               <AccordionOperators
                 isCustomDropdown={true}
                 mousePosition={position}
+                nodeId={nodeId}
               ></AccordionOperators>
             </OnNodeCreatedContext.Provider>
           </HideModalContext.Provider>
@@ -224,7 +236,7 @@ export function InnerNextStepDropdown({
       >
         <DropdownMenuLabel>{t('flow.nextStep')}</DropdownMenuLabel>
         <HideModalContext.Provider value={hideModal}>
-          <AccordionOperators></AccordionOperators>
+          <AccordionOperators nodeId={nodeId}></AccordionOperators>
         </HideModalContext.Provider>
       </DropdownMenuContent>
     </DropdownMenu>

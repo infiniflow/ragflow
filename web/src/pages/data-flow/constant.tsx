@@ -299,7 +299,9 @@ export const initialHierarchicalMergerValues = {
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
   field_name: ContextGeneratorFieldName.Summary,
-  outputs: {},
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
 };
 
 export const CategorizeAnchorPointPositions = [

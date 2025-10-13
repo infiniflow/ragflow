@@ -292,6 +292,7 @@ function DataFlowCanvas({ drawerVisible, hideDrawer, showLogSheet }: IProps) {
                 clearActiveDropdown();
               }}
               position={dropdownPosition}
+              nodeId={connectionStartRef.current?.nodeId || ''}
             >
               <span></span>
             </NextStepDropdown>
