@@ -19,6 +19,7 @@ interface IProps {
   data: { value: IDslComponent; key: string };
   reRunLoading: boolean;
   clickChunk: (chunk: IChunk) => void;
+  summaryInfo: string;
   reRunFunc: (data: { value: IDslComponent; key: string }) => void;
 }
 const ParserContainer = (props: IProps) => {
@@ -31,6 +32,7 @@ const ParserContainer = (props: IProps) => {
     reRunLoading,
     clickChunk,
     isReadonly,
+    summaryInfo,
   } = props;
   const { t } = useTranslation();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
@@ -156,7 +158,8 @@ const ParserContainer = (props: IProps) => {
                 {t('dataflowParser.parseSummary')}
               </h2>
               <div className="text-[12px] text-text-secondary italic ">
-                {t('dataflowParser.parseSummaryTip')}
+                {/* {t('dataflowParser.parseSummaryTip')} */}
+                {summaryInfo}
               </div>
             </div>
           )}

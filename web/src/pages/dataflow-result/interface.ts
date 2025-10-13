@@ -30,6 +30,66 @@ export interface IDslComponent {
   obj: ComponentObject;
   upstream: Array<string>;
 }
+
+interface NodeData {
+  label: string;
+  name: string;
+  form?: {
+    outputs?: Record<
+      string,
+      {
+        type: string;
+        value: string | Array<Record<string, any>> | number;
+      }
+    >;
+    setups?: Array<Record<string, any>>;
+    chunk_token_size?: number;
+    delimiters?: Array<{
+      value: string;
+    }>;
+    overlapped_percent?: number;
+  };
+}
+
+interface EdgeData {
+  isHovered: boolean;
+}
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface Measured {
+  height: number;
+  width: number;
+}
+
+interface Node {
+  data: NodeData;
+  dragging: boolean;
+  id: string;
+  measured: Measured;
+  position: Position;
+  selected: boolean;
+  sourcePosition: string;
+  targetPosition: string;
+  type: string;
+}
+
+interface Edge {
+  data: EdgeData;
+  id: string;
+  source: string;
+  sourceHandle: string;
+  target: string;
+  targetHandle: string;
+}
+interface GraphData {
+  edges: Edge[];
+  nodes: Node[];
+}
+
 export interface IPipelineFileLogDetail {
   avatar: string;
   create_date: string;
@@ -42,6 +102,7 @@ export interface IPipelineFileLogDetail {
     components: {
       [key: string]: IDslComponent;
     };
+    graph: GraphData;
     task_id: string;
     path: Array<string>;
   };
