@@ -36,6 +36,7 @@ from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
+from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -760,18 +761,25 @@ def delete_kb_task():
     match pipeline_task_type:
         case PipelineTaskType.GRAPH_RAG:
             settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
-            kb_task_id = "graphrag_task_id"
+            kb_task_id_field = "graphrag_task_id"
+            task_id = kb.graphrag_task_id
             kb_task_finish_at = "graphrag_task_finish_at"
         case PipelineTaskType.RAPTOR:
-            kb_task_id = "raptor_task_id"
+            kb_task_id_field = "raptor_task_id"
+            task_id = kb.raptor_task_id
             kb_task_finish_at = "raptor_task_finish_at"
         case PipelineTaskType.MINDMAP:
-            kb_task_id = "mindmap_task_id"
+            kb_task_id_field = "mindmap_task_id"
+            task_id = kb.mindmap_task_id
             kb_task_finish_at = "mindmap_task_finish_at"
         case _:
             return get_error_data_result(message="Internal Error: Invalid task type")
 
-    ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id: "", kb_task_finish_at: None})
+    def cancel_task(task_id):
+        REDIS_CONN.set(f"{task_id}-cancel", "x")
+    cancel_task(task_id)
+
+    ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id_field: "", kb_task_finish_at: None})
     if not ok:
         return server_error_response(f"Internal error: cannot delete task {pipeline_task_type}")
 

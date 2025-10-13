@@ -691,7 +691,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         raptor_config["threshold"],
     )
     original_length = len(chunks)
-    chunks = await raptor(chunks, row["kb_parser_config"]["raptor"]["random_seed"], callback)
+    chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback)
     doc = {
         "doc_id": fake_doc_id,
         "kb_id": [str(row["kb_id"])],
@@ -814,8 +814,22 @@ async def do_handle_task(task):
 
         kb_parser_config = kb.parser_config
         if not kb_parser_config.get("raptor", {}).get("use_raptor", False):
-            progress_callback(prog=-1.0, msg="Internal error: Invalid RAPTOR configuration")
-            return
+            kb_parser_config.update(
+                {
+                    "raptor": {
+                        "use_raptor": True,
+                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                        "max_token": 256,
+                        "threshold": 0.1,
+                        "max_cluster": 64,
+                        "random_seed": 0,
+                    },
+                }
+            )
+            if not KnowledgebaseService.update_by_id(kb.id, {"parser_config":kb_parser_config}):
+                progress_callback(prog=-1.0, msg="Internal error: Invalid RAPTOR configuration")
+                return
+
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         # run RAPTOR
@@ -838,8 +852,25 @@ async def do_handle_task(task):
 
         kb_parser_config = kb.parser_config
         if not kb_parser_config.get("graphrag", {}).get("use_graphrag", False):
-            progress_callback(prog=-1.0, msg="Internal error: Invalid GraphRAG configuration")
-            return
+            kb_parser_config.update(
+                {
+                    "graphrag": {
+                        "use_graphrag": True,
+                        "entity_types": [
+                            "organization",
+                            "person",
+                            "geo",
+                            "event",
+                            "category",
+                        ],
+                        "method": "light",
+                    }
+                }
+            )
+            if not KnowledgebaseService.update_by_id(kb.id, {"parser_config":kb_parser_config}):
+                progress_callback(prog=-1.0, msg="Internal error: Invalid GraphRAG configuration")
+                return
+
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
