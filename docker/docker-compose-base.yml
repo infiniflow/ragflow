@@ -206,7 +206,29 @@ services:
       retries: 3
       start_period: 10s    
 
-
+  admin:
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+      - RAGFLOW_HOST=host.docker.internal
+    build:
+      context: ..
+      dockerfile: Dockerfile4Admin
+    container_name: ragflow-admin-server
+    ports:
+      - ${ADMIN_SVR_HTTP_PORT}:9381
+    volumes:
+      - ../ragflow-admin-logs:/ragflow/logs
+      - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+      - ./entrypoint_for_admin.sh:/ragflow/entrypoint_for_admin.sh
+    networks:
+      - ragflow
+    restart: on-failure
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   esdata01:
