@@ -445,10 +445,9 @@ class Parser(ProcessBase):
             if "attachments" in target_fields:
                 attachments = []
                 for t in msg.attachments:
-                    t_data = t.data
                     attachments.append({
                         "filename": t.name,
-                        "payload": t_data.decode("utf-8"),
+                        "payload": t.data.decode("utf-8"),
                     })
                 email_content["attachments"] = attachments
 
