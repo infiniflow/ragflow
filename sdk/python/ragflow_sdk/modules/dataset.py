@@ -100,12 +100,55 @@ class DataSet(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
-
+        
+    
+    def _get_documents_status(self, document_ids):
+        import time
+        terminal_states = {"DONE", "FAIL", "CANCEL"}
+        interval_sec = 1
+        pending = set(document_ids)
+        finished = []
+        while pending:
+            for doc_id in list(pending):
+                def fetch_doc(doc_id: str) -> Document | None:
+                    try:
+                        docs = self.list_documents(id=doc_id)
+                        return docs[0] if docs else None
+                    except Exception:
+                        return None
+                doc = fetch_doc(doc_id)
+                if doc is None:
+                    continue
+                if isinstance(doc.run, str) and doc.run.upper() in terminal_states:
+                    finished.append((doc_id, doc.run, doc.chunk_count, doc.token_count))
+                    pending.discard(doc_id)
+                elif float(doc.progress or 0.0) >= 1.0:
+                    finished.append((doc_id, "DONE", doc.chunk_count, doc.token_count))
+                    pending.discard(doc_id)
+            if pending:
+                time.sleep(interval_sec)
+        
+        for doc_id, status, chunk_count, token_count in finished:
+            print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
+        
+        return
+    
     def async_parse_documents(self, document_ids):
         res = self.post(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
+        
+
+    def parse_documents(self, document_ids):
+        try:
+            self.async_parse_documents(document_ids)
+            self._get_documents_status(document_ids)
+        except KeyboardInterrupt:
+            print("\nDetected KeyboardInterrupt, cancelling all pending tasks...")
+            self.async_cancel_parse_documents(document_ids)
+        self._get_documents_status(document_ids)
+
 
     def async_cancel_parse_documents(self, document_ids):
         res = self.rm(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
