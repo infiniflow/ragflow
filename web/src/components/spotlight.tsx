@@ -1,10 +1,14 @@
 import { useIsDarkTheme } from '@/components/theme-provider';
+import { parseColorToRGB } from '@/utils/common-util';
 import React from 'react';
 
 interface SpotlightProps {
   className?: string;
   opcity?: number;
   coverage?: number;
+  X?: string;
+  Y?: string;
+  color?: string;
 }
 /**
  *
@@ -16,9 +20,20 @@ const Spotlight: React.FC<SpotlightProps> = ({
   className,
   opcity = 0.5,
   coverage = 60,
+  X = '50%',
+  Y = '190%',
+  color,
 }) => {
   const isDark = useIsDarkTheme();
-  const rgb = isDark ? '255, 255, 255' : '194, 221, 243';
+  let realColor: [number, number, number] | undefined = undefined;
+  if (color) {
+    realColor = parseColorToRGB(color);
+  }
+  const rgb = realColor
+    ? realColor.join(',')
+    : isDark
+      ? '255, 255, 255'
+      : '194, 221, 243';
   return (
     <div
       className={`absolute inset-0  opacity-80 ${className} rounded-lg`}
@@ -30,7 +45,7 @@ const Spotlight: React.FC<SpotlightProps> = ({
       <div
         className="absolute inset-0"
         style={{
-          background: `radial-gradient(circle at 50% 190%, rgba(${rgb},${opcity}) 0%, rgba(${rgb},0) ${coverage}%)`,
+          background: `radial-gradient(circle at ${X} ${Y}, rgba(${rgb},${opcity}) 0%, rgba(${rgb},0) ${coverage}%)`,
           pointerEvents: 'none',
         }}
       ></div>

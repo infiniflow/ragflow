@@ -6,7 +6,7 @@ import { t } from 'i18next';
 import { useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import { ProcessingType } from '../../dataset-overview/dataset-common';
-import { GenerateType } from './generate';
+import { GenerateType, GenerateTypeMap } from './generate';
 export const generateStatus = {
   running: 'running',
   completed: 'completed',
@@ -103,9 +103,28 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
     raptorRunloading,
   };
 };
+
+export const useUnBindTask = () => {
+  const { id } = useParams();
+  const { mutateAsync: handleUnbindTask } = useMutation({
+    mutationKey: [DatasetKey.pauseGenerate],
+    mutationFn: async ({ type }: { type: ProcessingType }) => {
+      const { data } = await deletePipelineTask({ kb_id: id as string, type });
+      if (data.code === 0) {
+        message.success(t('message.operated'));
+        // queryClient.invalidateQueries({
+        //   queryKey: [type],
+        // });
+      }
+      return data;
+    },
+  });
+  return { handleUnbindTask };
+};
 export const useDatasetGenerate = () => {
   const queryClient = useQueryClient();
   const { id } = useParams();
+  const { handleUnbindTask } = useUnBindTask();
   const {
     data,
     isPending: loading,
@@ -143,8 +162,12 @@ export const useDatasetGenerate = () => {
       type: GenerateType;
     }) => {
       const { data } = await agentService.cancelDataflow(task_id);
-      if (data.code === 0) {
-        message.success(t('message.operated'));
+
+      const unbindData = await handleUnbindTask({
+        type: GenerateTypeMap[type as GenerateType],
+      });
+      if (data.code === 0 && unbindData.code === 0) {
+        // message.success(t('message.operated'));
         queryClient.invalidateQueries({
           queryKey: [type],
         });
@@ -153,22 +176,4 @@ export const useDatasetGenerate = () => {
     },
   });
   return { runGenerate: mutateAsync, pauseGenerate, data, loading };
-};
-
-export const useUnBindTask = () => {
-  const { id } = useParams();
-  const { mutateAsync: handleUnbindTask } = useMutation({
-    mutationKey: [DatasetKey.pauseGenerate],
-    mutationFn: async ({ type }: { type: ProcessingType }) => {
-      const { data } = await deletePipelineTask({ kb_id: id as string, type });
-      if (data.code === 0) {
-        message.success(t('message.operated'));
-        // queryClient.invalidateQueries({
-        //   queryKey: [type],
-        // });
-      }
-      return data;
-    },
-  });
-  return { handleUnbindTask };
 };

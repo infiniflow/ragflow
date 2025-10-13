@@ -49,6 +49,8 @@ export default {
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
     },
     login: {
+      loginTitle: '登录账户',
+      signUpTitle: '创建账户',
       login: '登录',
       signUp: '注册',
       loginDescription: '很高兴再次见到您！',
@@ -64,7 +66,8 @@ export default {
       nicknamePlaceholder: '请输入名称',
       register: '创建账户',
       continue: '继续',
-      title: '开始构建您的智能助手',
+      title: 'A leading RAG engine for LLM context',
+      start: '立即开始',
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
       review: '来自 500 多条评论',
@@ -116,7 +119,7 @@ export default {
       fileName: '文件名',
       datasetLogs: '数据集',
       fileLogs: '文件',
-      overview: '概览',
+      overview: '日志',
       success: '成功',
       failed: '失败',
       completed: '已完成',
@@ -255,7 +258,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
-      tocExtraction: '目录提取',
+      tocExtraction: '目录增强',
       tocExtractionTip:
         '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`目录增强`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
       deleteGenerateModalContent: `
@@ -1713,6 +1716,10 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       totalFiles: '文件总数',
       downloading: '正在下载',
       processing: '正在处理',
+      downloadSuccessTip: '下载成功总数',
+      downloadFailedTip: '下载失败总数',
+      processingSuccessTip: '处理成功的文件总数',
+      processingFailedTip: '处理失败的文件总数',
     },
   },
 };
