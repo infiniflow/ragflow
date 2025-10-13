@@ -2139,6 +2139,7 @@ export const ExeSQLOptions = [
   'mariadb',
   'mssql',
   'IBM DB2',
+  'trino',
 ].map((x) => ({
   label: upperFirst(x),
   value: x,
