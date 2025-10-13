@@ -43,12 +43,7 @@ export function Segmented({
     setSelectedValue(e);
   };
   return (
-    <div
-      className={cn(
-        'flex items-center rounded-3xl p-1 gap-2 bg-bg-card px-5 py-2.5',
-        className,
-      )}
-    >
+    <div className={cn('flex items-center gap-2', className)}>
       {options.map((option) => {
         const isObject = typeof option === 'object';
         const actualValue = isObject ? option.value : option;
@@ -57,9 +52,9 @@ export function Segmented({
           <div
             key={actualValue}
             className={cn(
-              'inline-flex items-center px-6 py-2 text-base font-normal rounded-3xl cursor-pointer',
+              'inline-flex items-center px-6 py-2 text-base font-normal cursor-pointer',
               {
-                'text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2':
+                'text-[#4559FF] border-b-[#4559FF] border-b-2':
                   selectedValue === actualValue,
               },
               activeClassName && selectedValue === actualValue

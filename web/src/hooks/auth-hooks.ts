@@ -1,7 +1,8 @@
 import message from '@/components/ui/message';
 import authorizationUtil from '@/utils/authorization-util';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'umi';
+import { useAutoLogin } from './auto-login-hooks';
 
 export const useOAuthCallback = () => {
   const [currentQueryParameters, setSearchParams] = useSearchParams();
@@ -45,10 +46,30 @@ export const useOAuthCallback = () => {
 export const useAuth = () => {
   const auth = useOAuthCallback();
   const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
+  const { autoLogin } = useAutoLogin();
+  const autoLoginAttempted = useRef(false);
 
   useEffect(() => {
-    setIsLogin(!!authorizationUtil.getAuthorization() || !!auth);
-  }, [auth]);
+    const checkAuth = async () => {
+      const hasAuth = !!authorizationUtil.getAuthorization() || !!auth;
+
+      if (!hasAuth && !autoLoginAttempted.current) {
+        // 尝试自动登录
+        autoLoginAttempted.current = true;
+        try {
+          const loginSuccess = await autoLogin();
+          setIsLogin(loginSuccess);
+        } catch (error) {
+          console.error('Auto login failed:', error);
+          setIsLogin(false);
+        }
+      } else {
+        setIsLogin(hasAuth);
+      }
+    };
+
+    checkAuth();
+  }, [auth, autoLogin]);
 
   return { isLogin };
 };

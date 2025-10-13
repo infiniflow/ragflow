@@ -1,41 +1,19 @@
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { LanguageList, LanguageMap, ThemeEnum } from '@/constants/common';
-import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { Routes } from '@/routes';
-import { camelCase } from 'lodash';
-import {
-  ChevronDown,
-  CircleHelp,
-  Cpu,
-  File,
-  House,
-  Library,
-  MessageSquareText,
-  Moon,
-  Search,
-  Sun,
-} from 'lucide-react';
+import { House, Library, MessageSquareText, Search } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'umi';
-import { BellButton } from './bell-button';
 
-const handleDocHelpCLick = () => {
-  window.open('https://ragflow.io/docs/dev/category/guides', 'target');
-};
+// const handleDocHelpCLick = () => {
+//   window.open('https://ragflow.io/docs/dev/category/guides', 'target');
+// };
 
 export function Header() {
   const { t } = useTranslation();
@@ -43,16 +21,16 @@ export function Header() {
   const navigate = useNavigateWithFromState();
   const { navigateToOldProfile } = useNavigatePage();
 
-  const changeLanguage = useChangeLanguage();
+  // const changeLanguage = useChangeLanguage();
   const { setTheme, theme } = useTheme();
 
   const {
     data: { language = 'English', avatar, nickname },
   } = useFetchUserInfo();
 
-  const handleItemClick = (key: string) => () => {
-    changeLanguage(key);
-  };
+  // const handleItemClick = (key: string) => () => {
+  //   changeLanguage(key);
+  // };
 
   const items = LanguageList.map((x) => ({
     key: x,
@@ -69,8 +47,8 @@ export function Header() {
       { path: Routes.Datasets, name: t('header.dataset'), icon: Library },
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('header.search'), icon: Search },
-      { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
-      { path: Routes.Files, name: t('header.fileManager'), icon: File },
+      // { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
+      // { path: Routes.Files, name: t('header.fileManager'), icon: File },
     ],
     [t],
   );
@@ -106,22 +84,22 @@ export function Header() {
   }, [navigate]);
 
   return (
-    <section className="py-5 px-10 flex justify-between items-center ">
-      <div className="flex items-center gap-4">
+    <section className="px-10 flex justify-between items-center pt-1 border-b-[1px] border-b-[#E5EAF4]">
+      {/* <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
           alt="logo"
           className="size-10 mr-[12] cursor-pointer"
           onClick={handleLogoClick}
         />
-      </div>
+      </div> */}
       <Segmented
         options={options}
         value={pathname}
         onChange={handleChange}
       ></Segmented>
       <div className="flex items-center gap-5 text-text-badge">
-        <a
+        {/* <a
           target="_blank"
           href="https://discord.com/invite/NjYzJD3GM3"
           rel="noreferrer"
@@ -134,8 +112,8 @@ export function Header() {
           rel="noreferrer"
         >
           <IconFontFill name="GitHub"></IconFontFill>
-        </a>
-        <DropdownMenu>
+        </a> */}
+        {/* <DropdownMenu>
           <DropdownMenuTrigger>
             <div className="flex items-center gap-1">
               {t(`common.${camelCase(language)}`)}
@@ -149,14 +127,14 @@ export function Header() {
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
-        </DropdownMenu>
-        <Button variant={'ghost'} onClick={handleDocHelpCLick}>
+        </DropdownMenu> */}
+        {/* <Button variant={'ghost'} onClick={handleDocHelpCLick}>
           <CircleHelp />
-        </Button>
-        <Button variant={'ghost'} onClick={onThemeClick}>
+        </Button> */}
+        {/* <Button variant={'ghost'} onClick={onThemeClick}>
           {theme === 'light' ? <Sun /> : <Moon />}
-        </Button>
-        <BellButton></BellButton>
+        </Button> */}
+        {/* <BellButton></BellButton> */}
         <div className="relative">
           <RAGFlowAvatar
             name={nickname}

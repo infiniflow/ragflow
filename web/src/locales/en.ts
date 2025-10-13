@@ -48,6 +48,7 @@ export default {
       noDataFound: 'No data found.',
       noData: 'No data',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
+      seeAll: 'See all',
       mcp: {
         namePlaceholder: 'My MCP Server',
         nameRequired:
@@ -1656,6 +1657,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       okText: 'Save',
       cancelText: 'Cancel',
       chooseDataset: 'Please select a dataset first',
+      hiHhere: 'Hi, there',
     },
     language: {
       english: 'English',

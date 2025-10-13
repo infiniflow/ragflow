@@ -2,6 +2,7 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatDate } from '@/utils/date';
 import { ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 type ApplicationCardProps = {
   app: {
@@ -47,10 +48,11 @@ export type SeeAllAppCardProps = {
 };
 
 export function SeeAllAppCard({ click }: SeeAllAppCardProps) {
+  const { t } = useTranslation();
   return (
     <Card className="w-64 min-h-[76px]" onClick={click}>
       <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
-        See All <ChevronRight className="size-4" />
+        {t('common.seeAll')} <ChevronRight className="size-4" />
       </CardContent>
     </Card>
   );

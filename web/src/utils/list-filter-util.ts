@@ -10,7 +10,7 @@ export function groupListByType<T extends Record<string, any>>(
   labelField: string,
 ) {
   const fileTypeList: FilterType[] = [];
-  list.forEach((x) => {
+  list?.forEach((x) => {
     const item = fileTypeList.find((y) => y.id === x[idField]);
     if (!item) {
       fileTypeList.push({ id: x[idField], label: x[labelField], count: 1 });
