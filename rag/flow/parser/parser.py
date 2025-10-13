@@ -184,8 +184,6 @@ class ParserParam(ProcessParamBase):
         audio_config = self.setups.get("audio", "")
         if audio_config:
             self.check_empty(audio_config.get("llm_id"), "Audio VLM")
-            audio_language = audio_config.get("lang", "")
-            self.check_empty(audio_language, "Language")
 
         email_config = self.setups.get("email", "")
         if email_config:
@@ -348,15 +346,13 @@ class Parser(ProcessBase):
 
         conf = self._param.setups["audio"]
         self.set_output("output_format", conf["output_format"])
-
-        lang = conf["lang"]
         _, ext = os.path.splitext(name)
         with tempfile.NamedTemporaryFile(suffix=ext) as tmpf:
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
 
-            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, lang=lang)
+            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT)
             txt = seq2txt_mdl.transcription(tmp_path)
 
             self.set_output("text", txt)
@@ -366,6 +362,7 @@ class Parser(ProcessBase):
 
         email_content = {}
         conf = self._param.setups["email"]
+        self.set_output("output_format", conf["output_format"])
         target_fields = conf["fields"]
 
         _, ext = os.path.splitext(name)
@@ -403,8 +400,8 @@ class Parser(ProcessBase):
 
                 _add_content(msg, msg.get_content_type())
 
-                email_content["text"] = body_text
-                email_content["text_html"] = body_html
+                email_content["text"] = "\n".join(body_text)
+                email_content["text_html"] = "\n".join(body_html)
             # get attachment
             if "attachments" in target_fields:
                 attachments = []
@@ -414,7 +411,7 @@ class Parser(ProcessBase):
                         dispositions = content_disposition.strip().split(";")
                         if dispositions[0].lower() == "attachment":
                             filename = part.get_filename()
-                            payload = part.get_payload(decode=True)
+                            payload = part.get_payload(decode=True).decode(part.get_content_charset())
                             attachments.append({
                                 "filename": filename,
                                 "payload": payload,
@@ -442,15 +439,16 @@ class Parser(ProcessBase):
             }
             # get body
             if "body" in target_fields:
-                email_content["text"] = msg.body  # usually empty. try text_html instead
-                email_content["text_html"] = msg.htmlBody
+                email_content["text"] = msg.body[0] if isinstance(msg.body, list) and msg.body else msg.body
+                if not email_content["text"] and msg.htmlBody:
+                    email_content["text"] = msg.htmlBody[0] if isinstance(msg.htmlBody, list) and msg.htmlBody else msg.htmlBody
             # get attachments
             if "attachments" in target_fields:
                 attachments = []
                 for t in msg.attachments:
                     attachments.append({
                         "filename": t.name,
-                        "payload": t.data  # binary
+                        "payload": t.data.decode("utf-8")
                     })
                 email_content["attachments"] = attachments
 

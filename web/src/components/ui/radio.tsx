@@ -1,5 +1,4 @@
 import { cn } from '@/lib/utils';
-import { Radio as LucideRadio } from 'lucide-react';
 import React, { useContext, useState } from 'react';
 
 const RadioGroupContext = React.createContext<{
@@ -57,7 +56,7 @@ function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
         onClick={handleClick}
       >
         {isChecked && (
-          <LucideRadio className="h-3 w-3 fill-primary text-primary" />
+          <div className="h-3 w-3 fill-primary text-primary bg-text-primary rounded-full" />
         )}
       </span>
       {children && <span className="text-foreground">{children}</span>}

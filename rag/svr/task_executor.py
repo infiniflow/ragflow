@@ -32,7 +32,7 @@ from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.flow.pipeline import Pipeline
-from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging
+from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text
 import logging
 import os
 from datetime import datetime
@@ -370,6 +370,38 @@ async def build_chunks(task, progress_callback):
                 nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
+    if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
+        progress_callback(msg="Start to generate table of content ...")
+        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+        docs = sorted(docs, key=lambda d:(
+            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
+            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
+        ))
+        toc: list[dict] = await run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl, progress_callback)
+        logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
+        ii = 0
+        while ii < len(toc):
+            try:
+                idx = int(toc[ii]["chunk_id"])
+                del toc[ii]["chunk_id"]
+                toc[ii]["ids"] = [docs[idx]["id"]]
+                if ii == len(toc) -1:
+                    break
+                for jj in range(idx+1, int(toc[ii+1]["chunk_id"])+1):
+                    toc[ii]["ids"].append(docs[jj]["id"])
+            except Exception as e:
+                logging.exception(e)
+            ii += 1
+
+        if toc:
+            d = copy.deepcopy(docs[-1])
+            d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
+            d["toc_kwd"] = "toc"
+            d["available_int"] = 0
+            d["page_num_int"] = 100000000
+            d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
+            docs.append(d)
+
     if task["kb_parser_config"].get("tag_kb_ids", []):
         progress_callback(msg="Start to tag for every chunk ...")
         kb_ids = task["kb_parser_config"]["tag_kb_ids"]
@@ -659,7 +691,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         raptor_config["threshold"],
     )
     original_length = len(chunks)
-    chunks = await raptor(chunks, row["kb_parser_config"]["raptor"]["random_seed"], callback)
+    chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback)
     doc = {
         "doc_id": fake_doc_id,
         "kb_id": [str(row["kb_id"])],
@@ -782,8 +814,22 @@ async def do_handle_task(task):
 
         kb_parser_config = kb.parser_config
         if not kb_parser_config.get("raptor", {}).get("use_raptor", False):
-            progress_callback(prog=-1.0, msg="Internal error: Invalid RAPTOR configuration")
-            return
+            kb_parser_config.update(
+                {
+                    "raptor": {
+                        "use_raptor": True,
+                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                        "max_token": 256,
+                        "threshold": 0.1,
+                        "max_cluster": 64,
+                        "random_seed": 0,
+                    },
+                }
+            )
+            if not KnowledgebaseService.update_by_id(kb.id, {"parser_config":kb_parser_config}):
+                progress_callback(prog=-1.0, msg="Internal error: Invalid RAPTOR configuration")
+                return
+
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         # run RAPTOR
@@ -806,8 +852,25 @@ async def do_handle_task(task):
 
         kb_parser_config = kb.parser_config
         if not kb_parser_config.get("graphrag", {}).get("use_graphrag", False):
-            progress_callback(prog=-1.0, msg="Internal error: Invalid GraphRAG configuration")
-            return
+            kb_parser_config.update(
+                {
+                    "graphrag": {
+                        "use_graphrag": True,
+                        "entity_types": [
+                            "organization",
+                            "person",
+                            "geo",
+                            "event",
+                            "category",
+                        ],
+                        "method": "light",
+                    }
+                }
+            )
+            if not KnowledgebaseService.update_by_id(kb.id, {"parser_config":kb_parser_config}):
+                progress_callback(prog=-1.0, msg="Internal error: Invalid GraphRAG configuration")
+                return
+
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()

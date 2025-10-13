@@ -25,7 +25,7 @@ class SplitterFromUpstream(BaseModel):
     file: dict | None = Field(default=None)
     chunks: list[dict[str, Any]] | None = Field(default=None)
 
-    output_format: Literal["json", "markdown", "text", "html"] | None = Field(default=None)
+    output_format: Literal["json", "markdown", "text", "html", "chunks"] | None = Field(default=None)
 
     json_result: list[dict[str, Any]] | None = Field(default=None, alias="json")
     markdown_result: str | None = Field(default=None, alias="markdown")

@@ -69,7 +69,6 @@ export enum Operator {
   AkShare = 'AkShare',
   YahooFinance = 'YahooFinance',
   Jin10 = 'Jin10',
-  Concentrator = 'Concentrator',
   TuShare = 'TuShare',
   Note = 'Note',
   Crawler = 'Crawler',
@@ -102,7 +101,6 @@ export const AgentOperatorList = [
   Operator.RewriteQuestion,
   Operator.KeywordExtract,
   Operator.Switch,
-  Operator.Concentrator,
   Operator.Iteration,
   Operator.WaitingDialogue,
   Operator.Note,
@@ -128,9 +126,6 @@ export const componentMenuList = [
   },
   {
     name: Operator.Switch,
-  },
-  {
-    name: Operator.Concentrator,
   },
   {
     name: Operator.Iteration,
@@ -254,6 +249,7 @@ export const initialRetrievalValues = {
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
   use_kg: false,
+  toc_enhance: false,
   cross_languages: [],
   outputs: {
     formalized_content: {
@@ -543,8 +539,6 @@ export const initialJin10Values = {
   ...initialQueryBaseValues,
 };
 
-export const initialConcentratorValues = {};
-
 export const initialTuShareValues = {
   token: 'xxx',
   src: 'eastmoney',
@@ -823,7 +817,6 @@ export const RestrictedUpstreamMap = {
   [Operator.AkShare]: [Operator.Begin],
   [Operator.YahooFinance]: [Operator.Begin],
   [Operator.Jin10]: [Operator.Begin],
-  [Operator.Concentrator]: [Operator.Begin],
   [Operator.TuShare]: [Operator.Begin],
   [Operator.Crawler]: [Operator.Begin],
   [Operator.Note]: [],
@@ -839,6 +832,7 @@ export const RestrictedUpstreamMap = {
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
   [Operator.Tool]: [Operator.Begin],
+  [Operator.Placeholder]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -864,7 +858,6 @@ export const NodeMap = {
   [Operator.SearXNG]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
-  [Operator.Concentrator]: 'logicNode',
   [Operator.WenCai]: 'ragNode',
   [Operator.AkShare]: 'ragNode',
   [Operator.YahooFinance]: 'ragNode',
@@ -907,7 +900,6 @@ export const BeginQueryTypeIconMap = {
 
 export const NoDebugOperatorsList = [
   Operator.Begin,
-  Operator.Concentrator,
   Operator.Message,
   Operator.RewriteQuestion,
   Operator.Switch,

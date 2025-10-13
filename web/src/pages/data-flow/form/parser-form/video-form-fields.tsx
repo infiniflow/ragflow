@@ -7,8 +7,6 @@ import {
 
 export function VideoFormFields({ prefix }: OutputFormatFormFieldProps) {
   const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
     LlmModelType.Speech2text,
   ]);
 
