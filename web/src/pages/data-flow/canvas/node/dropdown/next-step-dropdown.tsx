@@ -1,4 +1,10 @@
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -19,12 +25,13 @@ import {
   PropsWithChildren,
   createContext,
   memo,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
 } from 'react';
-import { Operator, SingleOperators } from '../../../constant';
+import { Operator } from '../../../constant';
 import { AgentInstanceContext, HandleContext } from '../../../context';
 import OperatorIcon from '../../../operator-icon';
 
@@ -116,16 +123,22 @@ function OperatorItemList({
 
 // Limit the number of operators of a certain type on the canvas to only one
 function useRestrictSingleOperatorOnCanvas() {
-  const list: Operator[] = [];
   const { findNodeByName } = useGraphStore((state) => state);
 
-  SingleOperators.forEach((operator) => {
-    if (!findNodeByName(operator)) {
-      list.push(operator);
-    }
-  });
+  const restrictSingleOperatorOnCanvas = useCallback(
+    (singleOperators: Operator[]) => {
+      const list: Operator[] = [];
+      singleOperators.forEach((operator) => {
+        if (!findNodeByName(operator)) {
+          list.push(operator);
+        }
+      });
+      return list;
+    },
+    [findNodeByName],
+  );
 
-  return list;
+  return restrictSingleOperatorOnCanvas;
 }
 
 function AccordionOperators({
@@ -137,25 +150,60 @@ function AccordionOperators({
   mousePosition?: { x: number; y: number };
   nodeId?: string;
 }) {
-  const singleOperators = useRestrictSingleOperatorOnCanvas();
+  const restrictSingleOperatorOnCanvas = useRestrictSingleOperatorOnCanvas();
   const { getOperatorTypeFromId } = useGraphStore((state) => state);
 
   const operators = useMemo(() => {
-    let list = [...singleOperators];
-    if (getOperatorTypeFromId(nodeId) === Operator.Extractor) {
-      const Splitters = [Operator.HierarchicalMerger, Operator.Splitter];
-      list = list.filter((x) => !Splitters.includes(x)); // The Context Generator node can only be followed by a Tokenizer and a Context Generator.
-    }
+    let list = [
+      ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
+    ];
     list.push(Operator.Extractor);
     return list;
-  }, [getOperatorTypeFromId, nodeId, singleOperators]);
+  }, [restrictSingleOperatorOnCanvas]);
+
+  const chunkerOperators = useMemo(() => {
+    return [
+      ...restrictSingleOperatorOnCanvas([
+        Operator.Splitter,
+        Operator.HierarchicalMerger,
+      ]),
+    ];
+  }, [restrictSingleOperatorOnCanvas]);
+
+  const showChunker = useMemo(() => {
+    return (
+      getOperatorTypeFromId(nodeId) !== Operator.Extractor &&
+      chunkerOperators.length > 0
+    );
+  }, [chunkerOperators.length, getOperatorTypeFromId, nodeId]);
 
   return (
-    <OperatorItemList
-      operators={operators}
-      isCustomDropdown={isCustomDropdown}
-      mousePosition={mousePosition}
-    ></OperatorItemList>
+    <>
+      <OperatorItemList
+        operators={operators}
+        isCustomDropdown={isCustomDropdown}
+        mousePosition={mousePosition}
+      ></OperatorItemList>
+      {showChunker && (
+        <Accordion
+          type="single"
+          collapsible
+          className="w-full px-4"
+          defaultValue="item-1"
+        >
+          <AccordionItem value="item-1">
+            <AccordionTrigger>Chunker</AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4 text-balance">
+              <OperatorItemList
+                operators={chunkerOperators}
+                isCustomDropdown={isCustomDropdown}
+                mousePosition={mousePosition}
+              ></OperatorItemList>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
+    </>
   );
 }
 
