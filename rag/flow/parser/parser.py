@@ -411,7 +411,7 @@ class Parser(ProcessBase):
                         dispositions = content_disposition.strip().split(";")
                         if dispositions[0].lower() == "attachment":
                             filename = part.get_filename()
-                            payload = part.get_payload(decode=True)
+                            payload = part.get_payload(decode=True).deocde(part.get_content_charset())
                             attachments.append({
                                 "filename": filename,
                                 "payload": payload,
@@ -445,9 +445,10 @@ class Parser(ProcessBase):
             if "attachments" in target_fields:
                 attachments = []
                 for t in msg.attachments:
+                    t_data = t.data
                     attachments.append({
                         "filename": t.name,
-                        "payload": t.data  # binary
+                        "payload": t_data.decode("utf-8"),
                     })
                 email_content["attachments"] = attachments
 
