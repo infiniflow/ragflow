@@ -144,7 +144,12 @@ export function ParseTypeItem({ line = 2 }: { line?: number }) {
             >
               <FormControl>
                 <Radio.Group {...field}>
-                  <div className="w-1/2 flex gap-2 justify-between text-muted-foreground">
+                  <div
+                    className={cn(
+                      'flex gap-2 justify-between text-muted-foreground',
+                      line === 1 ? 'w-1/2' : 'w-3/4',
+                    )}
+                  >
                     <Radio value={1}>{t('builtIn')}</Radio>
                     <Radio value={2}>{t('manualSetup')}</Radio>
                   </div>

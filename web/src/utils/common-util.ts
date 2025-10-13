@@ -220,7 +220,7 @@ export function parseColorToRGB(color: string): [number, number, number] {
 
   // Handling RGB colors (e.g., rgb(255, 87, 51))
   if (colorStr.startsWith('rgb')) {
-    const rgbMatch = colorStr.match(/rgb$$(\d+),\s*(\d+),\s*(\d+)$$/);
+    const rgbMatch = colorStr.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
     if (rgbMatch) {
       return [
         parseInt(rgbMatch[1]),
