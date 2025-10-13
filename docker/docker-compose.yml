@@ -22,9 +22,14 @@ services:
     #   - --no-transport-sse-enabled # Disable legacy SSE endpoints (/sse and /messages/)
     #   - --no-transport-streamable-http-enabled #  Disable Streamable HTTP transport (/mcp endpoint)
     #   - --no-json-response # Disable JSON response mode in Streamable HTTP transport (instead of SSE over HTTP)
+
+    # Example configration to start Admin server:
+    # command:
+    #   - --enable-adminserver
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
+      - ${ADMIN_SVR_HTTP_PORT}:9381
       - 80:80
       - 443:443
       - 5678:5678

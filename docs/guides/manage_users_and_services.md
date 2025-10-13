@@ -1,3 +1,9 @@
+---
+sidebar_position: 6
+slug: /manage_users_and_services
+---
+
+
 # Admin CLI and Admin Service
 
 
@@ -50,7 +56,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 
 `SHOW SERVICE <id>;`
 
-- Shows detailed status information for the service identified by <id>.
+- Shows detailed status information for the service identified by **id**.
 - [Example](#example-show-service)
 
 ### User Management Commands

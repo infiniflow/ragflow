@@ -191,6 +191,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 ENV PYTHONPATH=/ragflow/
 
 COPY web web
+COPY admin admin
 COPY api api
 COPY conf conf
 COPY deepdoc deepdoc
