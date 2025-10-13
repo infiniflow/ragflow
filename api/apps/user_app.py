@@ -107,7 +107,9 @@ def login():
         )
     elif user:
         response_data = user.to_json()
-        user.access_token = get_uuid()
+        # 如果用户没有access_token，则生成一个新的
+        if not user.access_token:
+            user.access_token = get_uuid()
         login_user(user)
         user.update_time = (current_timestamp(),)
         user.update_date = (datetime_format(datetime.now()),)
@@ -233,7 +235,9 @@ def oauth_callback(channel):
 
         # User exists, try to log in
         user = users[0]
-        user.access_token = get_uuid()
+        # 如果用户没有access_token，则生成一个新的
+        if not user.access_token:
+            user.access_token = get_uuid()
         if user and hasattr(user, 'is_active') and user.is_active == "0":
             return redirect("/?error=user_inactive")
 
