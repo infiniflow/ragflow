@@ -4,6 +4,7 @@ import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
@@ -53,6 +54,7 @@ const RetrievalForm = () => {
             <EmptyResponseField></EmptyResponseField>
             <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
             <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+            <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
           </FormContainer>
         </Collapse>
       </FormWrapper>

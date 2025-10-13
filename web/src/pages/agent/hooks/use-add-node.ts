@@ -18,7 +18,6 @@ import {
   initialBingValues,
   initialCategorizeValues,
   initialCodeValues,
-  initialConcentratorValues,
   initialCrawlerValues,
   initialDeepLValues,
   initialDuckValues,
@@ -100,7 +99,6 @@ export const useInitializeOperatorParams = () => {
       [Operator.AkShare]: initialAkShareValues,
       [Operator.YahooFinance]: initialYahooFinanceValues,
       [Operator.Jin10]: initialJin10Values,
-      [Operator.Concentrator]: initialConcentratorValues,
       [Operator.TuShare]: initialTuShareValues,
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
@@ -116,6 +114,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
+      [Operator.Placeholder]: {},
     };
   }, [llmId]);
 

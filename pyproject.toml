@@ -46,7 +46,7 @@ dependencies = [
     "html-text==0.6.2",
     "httpx[socks]==0.27.2",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.0.dev5",
+    "infinity-sdk==0.6.0.dev7",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
@@ -161,7 +161,7 @@ test = [
 ]
 
 [[tool.uv.index]]
-url = "https://mirrors.aliyun.com/pypi/simple"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [tool.setuptools]
 packages = [

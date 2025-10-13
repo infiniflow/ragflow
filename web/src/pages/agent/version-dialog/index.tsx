@@ -1,3 +1,5 @@
+import { AgentBackground } from '@/components/canvas/background';
+import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -22,7 +24,6 @@ import { ArrowDownToLine } from 'lucide-react';
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { nodeTypes } from '../canvas';
-import { AgentBackground } from '../components/background';
 
 export function VersionDialog({
   hideModal,
@@ -121,6 +122,7 @@ export function VersionDialog({
                         minZoom={0.1}
                       >
                         <AgentBackground></AgentBackground>
+                        <Spotlight className="z-0" opcity={0.7} coverage={70} />
                       </ReactFlow>
                     </ReactFlowProvider>
                   </section>

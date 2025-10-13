@@ -33,6 +33,8 @@ export interface IKnowledge {
   raptor_task_id?: string;
   mindmap_task_finish_at?: string;
   mindmap_task_id?: string;
+  graphrag_task_finish_at: string;
+  graphrag_task_id: string;
 }
 
 export interface IKnowledgeResult {

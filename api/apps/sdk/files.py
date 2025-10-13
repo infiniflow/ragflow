@@ -62,22 +62,22 @@ def upload(tenant_id):
           type: object
           properties:
             data:
-            type: array
-            items:
-              type: object
-              properties:
-                id:
-                  type: string
-                  description: File ID
-                name:
-                  type: string
-                  description: File name
-                size:
-                  type: integer
-                  description: File size in bytes
-                type:
-                  type: string
-                  description: File type (e.g., document, folder)
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: File ID
+                  name:
+                    type: string
+                    description: File name
+                  size:
+                    type: integer
+                    description: File size in bytes
+                  type:
+                    type: string
+                    description: File type (e.g., document, folder)
     """
     pf_id = request.form.get("parent_id")
 

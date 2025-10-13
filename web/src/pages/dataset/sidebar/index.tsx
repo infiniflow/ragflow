@@ -10,7 +10,7 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import { Banknote, DatabaseZap, FileSearch2, FolderOpen } from 'lucide-react';
+import { Banknote, FileSearch2, FolderOpen, Logs } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -30,11 +30,6 @@ export function SideBar({ refreshCount }: PropType) {
   const items = useMemo(() => {
     const list = [
       {
-        icon: <DatabaseZap className="size-4" />,
-        label: t(`knowledgeDetails.overview`),
-        key: Routes.DataSetOverview,
-      },
-      {
         icon: <FolderOpen className="size-4" />,
         label: t(`knowledgeDetails.subbarFiles`),
         key: Routes.DatasetBase,
@@ -43,6 +38,11 @@ export function SideBar({ refreshCount }: PropType) {
         icon: <FileSearch2 className="size-4" />,
         label: t(`knowledgeDetails.testing`),
         key: Routes.DatasetTesting,
+      },
+      {
+        icon: <Logs className="size-4" />,
+        label: t(`knowledgeDetails.overview`),
+        key: Routes.DataSetOverview,
       },
       {
         icon: <Banknote className="size-4" />,

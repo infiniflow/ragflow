@@ -57,6 +57,8 @@ export default {
       },
     },
     login: {
+      loginTitle: 'Sign in to Your Account',
+      signUpTitle: 'Create an Account',
       login: 'Sign in',
       signUp: 'Sign up',
       loginDescription: 'We’re so excited to see you again!',
@@ -72,7 +74,8 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'Start building your smart assistants.',
+      title: 'A leading RAG engine for LLM context',
+      start: "Let's get started",
       description:
         'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
       review: 'from 500+ reviews',
@@ -96,26 +99,27 @@ export default {
       description: 'Which knowledge bases will you use today?',
       createKnowledgeBase: 'Create Dataset',
       name: 'Name',
-      namePlaceholder: 'Please input name!',
+      namePlaceholder: 'Please input name.',
       doc: 'Docs',
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      localUpload: 'Local Upload',
       fileSize: 'File Size',
       fileType: 'File Type',
       uploadedBy: 'Uploaded by',
       notGenerated: 'Not generated',
-      generatedOn: 'Generated on',
+      generatedOn: 'Generated on ',
       subbarFiles: 'Files',
       generateKnowledgeGraph:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generate: 'Generate',
-      raptor: 'Raptor',
+      raptor: 'RAPTOR',
       processingType: 'Processing Type',
-      dataPipeline: 'Data Pipeline',
+      dataPipeline: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -125,9 +129,9 @@ export default {
       startDate: 'Start Date',
       source: 'Source',
       fileName: 'File Name',
-      datasetLogs: 'Dataset Logs',
-      fileLogs: 'File Logs',
-      overview: 'Overview',
+      datasetLogs: 'Dataset',
+      fileLogs: 'File',
+      overview: 'Logs',
       success: 'Success',
       failed: 'Failed',
       completed: 'Completed',
@@ -269,6 +273,9 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      tocExtraction: 'TOC Enhance',
+      tocExtractionTip:
+        " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
         <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results 
         will remove all derived entities and relationships from this dataset. 
@@ -283,11 +290,11 @@ export default {
       fileFilter: 'File Filter',
       setDefaultTip: '',
       setDefault: 'Set as Default',
-      eidtLinkDataPipeline: 'Edit Data Pipeline',
-      linkPipelineSetTip: 'Manage data pipeline linkage with this dataset',
+      eidtLinkDataPipeline: 'Edit Ingestion pipeline',
+      linkPipelineSetTip: 'Manage Ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Data Pipeline',
-      linkDataPipeline: 'Link Data Pipeline',
+      dataPipeline: 'Ingestion pipeline',
+      linkDataPipeline: 'Link Ingestion pipeline',
       enableAutoGenerate: 'Enable Auto Generate',
       teamPlaceholder: 'Please select a team.',
       dataFlowPlaceholder: 'Please select a pipeline.',
@@ -536,10 +543,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant. What can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',
-      knowledgeBases: 'Knowledge bases',
+      knowledgeBases: 'Datasets',
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip:
-        'Select the knowledge bases to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
+        'Select the datasets to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
       system: 'System prompt',
       systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
@@ -667,6 +674,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
+      tocEnhance: 'TOC enhance',
+      tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
       profile: 'Profile',
@@ -1592,7 +1601,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
       ceateAgent: 'Agent flow',
-      createPipeline: 'Data pipeline',
+      createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose Agent Type',
     },
     llmTools: {
@@ -1685,9 +1694,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       <p>To keep them, please click Rerun to re-run the current stage.</p> `,
       changeStepModalConfirmText: 'Switch Anyway',
       changeStepModalCancelText: 'Cancel',
-      unlinkPipelineModalTitle: 'Unlink data pipeline',
+      unlinkPipelineModalTitle: 'Unlink Ingestion pipeline',
       unlinkPipelineModalContent: `
-      <p>Once unlinked, this Dataset will no longer be connected to the current Data Pipeline.</p> 
+      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p> 
       <p>Files that are already being parsed  will continue until completion</p> 
       <p>Files that are not yet parsed will no longer be processed</p> <br/>
       <p>Are you sure you want to proceed?</p> `,
@@ -1697,17 +1706,17 @@ This delimiter is used to split the input text into several text pieces echo of 
       parser: 'Parser',
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',
-      tokenizer: 'Tokenizer',
-      tokenizerRequired: 'Please add the Tokenizer node first',
+      tokenizer: 'Indexer',
+      tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token Splitter',
+      splitter: 'Token',
       splitterDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
       hierarchicalMergerDescription:
         'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title Splitter',
-      extractor: 'Context Generator',
+      hierarchicalMerger: 'Title',
+      extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       outputFormat: 'Output format',
@@ -1729,13 +1738,15 @@ This delimiter is used to split the input text into several text pieces echo of 
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent',
       searchMethod: 'Search method',
+      searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
+The Tokenizer will store the content in the corresponding data structures for the selected methods.`,
       begin: 'File',
       parserMethod: 'Parsing method',
       systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
       exportJson: 'Export JSON',
-      viewResult: 'View Result',
+      viewResult: 'View result',
       running: 'Running',
       summary: 'Augmented Context',
       keywords: 'Keywords',
@@ -1809,9 +1820,13 @@ Important structured information may include: names, dates, locations, events, k
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',
-      processingTip: 'Files being processed by data flows.',
+      processingTip: 'Files being processed by data pipelines.',
       totalFiles: 'Total Files',
       downloading: 'Downloading',
+      downloadSuccessTip: 'Total successful downloads',
+      downloadFailedTip: 'Total failed downloads',
+      processingSuccessTip: 'Total successfully processed files',
+      processingFailedTip: 'Total failed processes',
       processing: 'Processing',
     },
   },

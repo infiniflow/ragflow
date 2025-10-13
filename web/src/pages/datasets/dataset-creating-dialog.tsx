@@ -16,7 +16,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { FormLayout } from '@/constants/form';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
@@ -102,7 +102,6 @@ export function InputForm({ onOk }: IModalProps<any>) {
       form.setValue('pipeline_id', '');
     }
   }, [parseType, form]);
-  const { navigateToAgents } = useNavigatePage();
 
   return (
     <Form {...form}>
@@ -137,8 +136,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
         {parseType === 2 && (
           <DataFlowSelect
             isMult={false}
-            toDataPipeline={navigateToAgents}
+            showToDataPipeline={true}
             formFieldName="pipeline_id"
+            layout={FormLayout.Vertical}
           />
         )}
       </form>
@@ -155,7 +155,7 @@ export function DatasetCreatingDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="sm:max-w-[425px] focus-visible:!outline-none">
+      <DialogContent className="sm:max-w-[425px] focus-visible:!outline-none flex flex-col">
         <DialogHeader>
           <DialogTitle>{t('knowledgeList.createKnowledgeBase')}</DialogTitle>
         </DialogHeader>

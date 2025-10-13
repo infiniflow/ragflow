@@ -61,7 +61,7 @@ export function DelimiterFormField() {
               <FormLabel
                 required
                 tooltip={t('knowledgeDetails.delimiterTip')}
-                className="text-sm text-muted-foreground whitespace-break-spaces w-1/4"
+                className="text-sm text-text-secondary whitespace-break-spaces w-1/4"
               >
                 {t('knowledgeDetails.delimiter')}
               </FormLabel>

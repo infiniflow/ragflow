@@ -187,7 +187,9 @@ const Chunk = () => {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{documentInfo?.name}</BreadcrumbPage>
+              <BreadcrumbPage>
+                {knowledgeId ? documentInfo?.name : t('dataflow.viewResult')}
+              </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>

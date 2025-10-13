@@ -79,7 +79,7 @@ export function LayoutRecognizeFormField({
             >
               <FormLabel
                 tooltip={t('layoutRecognizeTip')}
-                className={cn('text-sm text-muted-foreground whitespace-wrap', {
+                className={cn('text-sm text-text-secondary whitespace-wrap', {
                   ['w-1/4']: horizontal,
                 })}
               >
