@@ -107,6 +107,11 @@ const OllamaModal = ({
       { value: 'chat', label: 'chat' },
       { value: 'rerank', label: 'rerank' },
     ],
+    [LLMFactory.LMStudio]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'image2text', label: 'image2text' },
+    ],
     [LLMFactory.Xinference]: [
       { value: 'chat', label: 'chat' },
       { value: 'embedding', label: 'embedding' },
