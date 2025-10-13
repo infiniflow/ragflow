@@ -47,13 +47,13 @@ function NoteNode({ data, id, selected }: NodeProps<INoteNode>) {
 
   return (
     <NodeWrapper
-      className="p-0  w-full h-full flex flex-col"
+      className="p-0  w-full h-full flex flex-col bg-bg-component"
       selected={selected}
     >
       <NodeResizeControl minWidth={190} minHeight={128} style={controlStyle}>
         <ResizeIcon />
       </NodeResizeControl>
-      <section className="p-2 flex gap-2 bg-background-note items-center note-drag-handle rounded-t">
+      <section className="p-2 flex gap-2 items-center note-drag-handle rounded-t">
         <NotebookPen className="size-4" />
         <Form {...nameForm}>
           <form className="flex-1">
