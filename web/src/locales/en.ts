@@ -57,6 +57,8 @@ export default {
       },
     },
     login: {
+      loginTitle: 'Sign in to Your Account',
+      signUpTitle: 'Create an Account',
       login: 'Sign in',
       signUp: 'Sign up',
       loginDescription: 'We’re so excited to see you again!',
@@ -72,7 +74,8 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'Start building your smart assistants.',
+      title: 'A leading RAG engine for LLM context',
+      start: "Let's get started",
       description:
         'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
       review: 'from 500+ reviews',
@@ -114,7 +117,7 @@ export default {
       generateRaptor:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generate: 'Generate',
-      raptor: 'Raptor',
+      raptor: 'RAPTOR',
       processingType: 'Processing Type',
       dataPipeline: 'Ingestion pipeline',
       operations: 'Operations',
@@ -128,7 +131,7 @@ export default {
       fileName: 'File Name',
       datasetLogs: 'Dataset',
       fileLogs: 'File',
-      overview: 'Overview',
+      overview: 'Logs',
       success: 'Success',
       failed: 'Failed',
       completed: 'Completed',
@@ -270,7 +273,7 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
-      tocExtraction: 'toc toggle',
+      tocExtraction: 'TOC Enhance',
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
@@ -1817,9 +1820,13 @@ Important structured information may include: names, dates, locations, events, k
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',
-      processingTip: 'Files being processed by data flows.',
+      processingTip: 'Files being processed by data pipelines.',
       totalFiles: 'Total Files',
       downloading: 'Downloading',
+      downloadSuccessTip: 'Total successful downloads',
+      downloadFailedTip: 'Total failed downloads',
+      processingSuccessTip: 'Total successfully processed files',
+      processingFailedTip: 'Total failed processes',
       processing: 'Processing',
     },
   },
