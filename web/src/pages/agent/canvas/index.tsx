@@ -232,7 +232,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   ]);
 
   return (
-    <div className={styles.canvasWrapper}>
+    <div className={cn(styles.canvasWrapper, 'px-5 pb-5')}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
         style={{ position: 'absolute', top: 10, left: 0 }}
