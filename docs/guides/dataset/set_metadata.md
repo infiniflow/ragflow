@@ -21,6 +21,10 @@ Ensure that your metadata is in JSON format; otherwise, your updates will not be
 
 ![Input metadata](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/input_metadata.jpg)
 
+## Related APIs
+
+[Retrieve chunks](../../references/http_api_reference.md#retrieve-chunks)
+
 ## Frequently asked questions
 
 ### Can I set metadata for multiple documents at once?
