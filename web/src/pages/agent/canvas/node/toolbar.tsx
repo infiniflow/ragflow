@@ -66,7 +66,7 @@ export function ToolBar({
 
   return (
     <TooltipNode selected={selected}>
-      <TooltipTrigger>{children}</TooltipTrigger>
+      <TooltipTrigger className="h-full">{children}</TooltipTrigger>
 
       <TooltipContent position={Position.Top}>
         <section className="flex gap-2 items-center">
