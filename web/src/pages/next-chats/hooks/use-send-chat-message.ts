@@ -123,10 +123,6 @@ export const useSendMessage = (controller: AbortController) => {
     [getConversationIsNew, handleUploadFile, setConversation],
   );
 
-  const stopOutputMessage = useCallback(() => {
-    controller.abort();
-  }, [controller]);
-
   const sendMessage = useCallback(
     async ({
       message,
@@ -249,7 +245,6 @@ export const useSendMessage = (controller: AbortController) => {
     messageContainerRef,
     derivedMessages,
     removeMessageById,
-    stopOutputMessage,
     handleUploadFile: onUploadFile,
     isUploading,
     removeFile,
