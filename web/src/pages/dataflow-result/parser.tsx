@@ -19,6 +19,7 @@ interface IProps {
   data: { value: IDslComponent; key: string };
   reRunLoading: boolean;
   clickChunk: (chunk: IChunk) => void;
+  summaryInfo: string;
   reRunFunc: (data: { value: IDslComponent; key: string }) => void;
 }
 const ParserContainer = (props: IProps) => {
@@ -31,6 +32,7 @@ const ParserContainer = (props: IProps) => {
     reRunLoading,
     clickChunk,
     isReadonly,
+    summaryInfo,
   } = props;
   const { t } = useTranslation();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
@@ -46,6 +48,7 @@ const ParserContainer = (props: IProps) => {
       key,
       type,
       value,
+      params: data?.value?.obj?.params,
     };
   }, [data]);
 
@@ -130,7 +133,7 @@ const ParserContainer = (props: IProps) => {
       const newText = [...initialText.value, { text: text || ' ' }];
       setInitialText({
         ...initialText,
-        value: newText,
+        value: newText as any,
       });
     },
     [initialText],
@@ -156,15 +159,16 @@ const ParserContainer = (props: IProps) => {
                 {t('dataflowParser.parseSummary')}
               </h2>
               <div className="text-[12px] text-text-secondary italic ">
-                {t('dataflowParser.parseSummaryTip')}
+                {/* {t('dataflowParser.parseSummaryTip')} */}
+                {summaryInfo}
               </div>
             </div>
           )}
           {isChunck && (
             <div>
-              <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
+              <h2 className="text-[16px]">{t('dataflowParser.result')}</h2>
               <div className="text-[12px] text-text-secondary italic">
-                {t('chunk.chunkResultTip')}
+                {/* {t('chunk.chunkResultTip')} */}
               </div>
             </div>
           )}
@@ -190,7 +194,7 @@ const ParserContainer = (props: IProps) => {
 
         <div
           className={cn(
-            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-none',
+            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-auto',
             {
               'h-[calc(100vh-240px)]': isChunck,
               'h-[calc(100vh-180px)]': !isChunck,

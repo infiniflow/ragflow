@@ -218,18 +218,11 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
     const nodes: Array<ITimelineNodeObj & { id: number | string }> = [];
     console.log('time-->', data);
     const times = data?.dsl?.components;
+    const graphNodes = data?.dsl?.graph?.nodes;
     if (times) {
-      const getNode = (
-        key: string,
-        index: number,
-        type:
-          | TimelineNodeType.begin
-          | TimelineNodeType.parser
-          | TimelineNodeType.tokenizer
-          | TimelineNodeType.characterSplitter
-          | TimelineNodeType.titleSplitter,
-      ) => {
+      const getNode = (key: string, index: number, type: TimelineNodeType) => {
         const node = times[key].obj;
+        const graphNode = graphNodes?.find((item) => item.id === key);
         const name = camelCase(
           node.component_name,
         ) as keyof typeof TimelineNodeObj;
@@ -247,6 +240,7 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
         }
         const timeNode = {
           ...TimelineNodeObj[name],
+          title: graphNode?.data?.name,
           id: index,
           className: 'w-32',
           completed: false,
@@ -255,6 +249,13 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
           ),
           type: tempType,
           detail: { value: times[key], key: key },
+        } as ITimelineNodeObj & {
+          id: number | string;
+          className: string;
+          completed: boolean;
+          date: string;
+          type: TimelineNodeType;
+          detail: { value: IDslComponent; key: string };
         };
         console.log('timeNodetype-->', type);
         nodes.push(timeNode);
@@ -329,3 +330,30 @@ export function useFetchPipelineResult({
 
   return { pipelineResult };
 }
+
+export const useSummaryInfo = (
+  data: IPipelineFileLogDetail,
+  currentTimeNode: TimelineNode,
+) => {
+  const summaryInfo = useMemo(() => {
+    if (currentTimeNode.type === TimelineNodeType.parser) {
+      const setups =
+        currentTimeNode.detail?.value?.obj?.params?.setups?.[
+          data.document_suffix
+        ];
+      if (setups) {
+        const { output_format, parse_method } = setups;
+        const res = [];
+        if (parse_method) {
+          res.push(`${t('dataflow.parserMethod')}: ${parse_method}`);
+        }
+        if (output_format) {
+          res.push(`${t('dataflow.outputFormat')}: ${output_format}`);
+        }
+        return res.join(' ');
+      }
+    }
+    return '';
+  }, [data, currentTimeNode]);
+  return { summaryInfo };
+};

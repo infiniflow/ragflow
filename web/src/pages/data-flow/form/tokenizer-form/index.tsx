@@ -29,6 +29,8 @@ export const FormSchema = z.object({
   fields: z.string(),
 });
 
+export type TokenizerFormSchemaType = z.infer<typeof FormSchema>;
+
 const TokenizerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialTokenizerValues, node);
@@ -44,7 +46,7 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
     'dataflow.tokenizerFieldsOptions',
   );
 
-  const form = useForm<z.infer<typeof FormSchema>>({
+  const form = useForm<TokenizerFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
