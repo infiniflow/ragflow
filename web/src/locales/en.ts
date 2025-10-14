@@ -955,6 +955,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       marketing: 'Marketing',
       consumerApp: 'Consumer App',
       other: 'Other',
+      pipeline: 'Ingestion pipeline',
       agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
