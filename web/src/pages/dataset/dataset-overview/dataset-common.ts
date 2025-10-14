@@ -10,5 +10,5 @@ export enum ProcessingType {
 
 export const ProcessingTypeMap = {
   [ProcessingType.knowledgeGraph]: 'Knowledge Graph',
-  [ProcessingType.raptor]: 'Raptor',
+  [ProcessingType.raptor]: 'RAPTOR',
 };
