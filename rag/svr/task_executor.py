@@ -317,7 +317,7 @@ async def build_chunks(task, progress_callback):
                 d["img_id"] = ""
                 docs.append(d)
                 return
-            await image2id(d, partial(STORAGE_IMPL.put), d["id"], task["kb_id"])
+            await image2id(d, partial(STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
             docs.append(d)
         except Exception:
             logging.exception(

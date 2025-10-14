@@ -512,4 +512,4 @@ class Parser(ProcessBase):
         outs = self.output()
         async with trio.open_nursery() as nursery:
             for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
