@@ -179,7 +179,6 @@ class ServiceMgr:
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
             config_dict = config.to_dict()
-            service_detail = None
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
                 if service_detail['alive']:
