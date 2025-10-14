@@ -151,10 +151,12 @@ def get_data_error_result(code=settings.RetCode.DATA_ERROR, message="Sorry! Data
 def server_error_response(e):
     logging.exception(e)
     try:
-        if e.code == 401:
-            return get_json_result(code=401, message=repr(e))
-    except BaseException:
-        pass
+        msg = repr(e).lower()
+        if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
+            return get_json_result(code=settings.RetCode.UNAUTHORIZED, message=repr(e))
+    except Exception as ex:
+        logging.warning(f"error checking authorization: {ex}")
+
     if len(e.args) > 1:
         try:
             serialized_data = serialize_for_json(e.args[1])
