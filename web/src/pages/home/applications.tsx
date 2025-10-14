@@ -41,7 +41,7 @@ export function Applications() {
   return (
     <>
       {options.map((option) => (
-        <section className="mt-12">
+        <section className="mt-12" key={option.value}>
           <div className="flex justify-between items-center mb-5">
             <h2 className="text-2xl font-bold flex gap-2.5">
               <IconFont

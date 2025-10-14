@@ -91,6 +91,18 @@ def login():
             message=f"Email: {email} is not registered!",
         )
 
+    # 先检查用户是否已有有效的access_token，如果有则直接返回
+    users = UserService.query(email=email)
+    if users:
+        existing_user = users[0]
+        # 如果用户已有有效的access_token，直接返回
+        if existing_user.access_token and existing_user.access_token.strip():
+            if existing_user.is_active != "0":  # 确保用户未被禁用
+                response_data = existing_user.to_json()
+                login_user(existing_user)
+                msg = "Welcome back!"
+                return construct_response(data=response_data, auth=existing_user.get_id(), message=msg)
+
     password = request.json.get("password")
     try:
         password = decrypt(password)
@@ -235,6 +247,12 @@ def oauth_callback(channel):
 
         # User exists, try to log in
         user = users[0]
+        # 如果用户已有有效的access_token，直接使用
+        if user.access_token and user.access_token.strip():
+            if user.is_active != "0":  # 确保用户未被禁用
+                login_user(user)
+                return redirect(f"/?auth={user.get_id()}")
+        
         # 如果用户没有access_token，则生成一个新的
         if not user.access_token:
             user.access_token = get_uuid()
