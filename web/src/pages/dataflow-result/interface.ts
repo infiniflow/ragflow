@@ -1,6 +1,6 @@
 import { PipelineResultSearchParams } from './constant';
 
-interface ComponentParams {
+export interface ComponentParams {
   debug_inputs: Record<string, any>;
   delay_after_error: number;
   description: string;
@@ -8,6 +8,7 @@ interface ComponentParams {
   exception_goto: any;
   exception_method: any;
   inputs: Record<string, any>;
+  field_name: string;
   max_retries: number;
   message_history_window_size: number;
   outputs: {

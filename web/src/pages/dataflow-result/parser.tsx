@@ -48,6 +48,7 @@ const ParserContainer = (props: IProps) => {
       key,
       type,
       value,
+      params: data?.value?.obj?.params,
     };
   }, [data]);
 
@@ -132,7 +133,7 @@ const ParserContainer = (props: IProps) => {
       const newText = [...initialText.value, { text: text || ' ' }];
       setInitialText({
         ...initialText,
-        value: newText,
+        value: newText as any,
       });
     },
     [initialText],
@@ -165,9 +166,9 @@ const ParserContainer = (props: IProps) => {
           )}
           {isChunck && (
             <div>
-              <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
+              <h2 className="text-[16px]">{t('dataflowParser.result')}</h2>
               <div className="text-[12px] text-text-secondary italic">
-                {t('chunk.chunkResultTip')}
+                {/* {t('chunk.chunkResultTip')} */}
               </div>
             </div>
           )}
