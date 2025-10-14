@@ -87,7 +87,7 @@ class Splitter(ProcessBase):
         sections, section_images = [], []
         for o in from_upstream.json_result or []:
             sections.append((o.get("text", ""), o.get("position_tag", "")))
-            section_images.append(id2image(o.get("img_id"), partial(STORAGE_IMPL.get)))
+            section_images.append(id2image(o.get("img_id"), partial(STORAGE_IMPL.get, tenant_id=self._canvas._tenant_id)))
 
         chunks, images = naive_merge_with_images(
             sections,
@@ -106,6 +106,6 @@ class Splitter(ProcessBase):
         ]
         async with trio.open_nursery() as nursery:
             for d in cks:
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
+                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
         self.set_output("chunks",  cks)
         self.callback(1, "Done.")

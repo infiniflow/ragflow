@@ -680,8 +680,7 @@ async def gen_toc_from_text(txt_info: dict, chat_mdl, callback=None):
             chat_mdl,
             gen_conf={"temperature": 0.0, "top_p": 0.9}
         )
-        print(ans, "::::::::::::::::::::::::::::::::::::", flush=True)
-        txt_info["toc"] = ans if ans else []
+        txt_info["toc"] = ans if ans and not isinstance(ans, str) else []
         if callback:
             callback(msg="")
     except Exception as e:
@@ -728,8 +727,6 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
 
     for chunk in chunks_res:
         titles.extend(chunk.get("toc", []))
-
-    print(titles, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
         
     # Filter out entries with title == -1
     prune = len(titles) > 512
@@ -745,12 +742,16 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
         filtered.append(x)
 
     logging.info(f"\n\nFiltered TOC sections:\n{filtered}")
+    if not filtered:
+        return []
 
     # Generate initial level (level/title)
     raw_structure = [x.get("title", "") for x in filtered]
 
     # Assign hierarchy levels using LLM
     toc_with_levels = assign_toc_levels(raw_structure, chat_mdl, {"temperature": 0.0, "top_p": 0.9})
+    if not toc_with_levels:
+        return []
 
     # Merge structure and content (by index)
     prune = len(toc_with_levels) > 512
@@ -779,7 +780,6 @@ def relevant_chunks_with_toc(query: str, toc:list[dict], chat_mdl, topn: int=6):
             chat_mdl,
             gen_conf={"temperature": 0.0, "top_p": 0.9}
         )
-        print(ans, "::::::::::::::::::::::::::::::::::::", flush=True)
         id2score = {}
         for ti, sc in zip(toc, ans):
             if not isinstance(sc, dict) or sc.get("score", -1) < 1:
