@@ -53,8 +53,8 @@ It consists of a server-side Service and a command-line client (CLI), both imple
 3.  Launch the CLI client:
     ```bash
     ragflow-cli -h 0.0.0.0 -p 9381
-
-​	Enter superuser's password to login. Default password is `admin`.
+    ```
+	Enter superuser's password to login. Default password is `admin`.
 
 
 
