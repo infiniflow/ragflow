@@ -106,6 +106,14 @@ request.interceptors.response.use(
     }
     const data = response?.data;
     if (data?.code === 100) {
+      // 检查message中是否包含401 Unauthorized
+      if (data?.message && data.message.includes('401: Unauthorized')) {
+        // 清空旧的认证信息
+        authorizationUtil.removeAll();
+        // 触发自动登录刷新token
+        window.dispatchEvent(new CustomEvent('triggerAutoLogin'));
+        return response;
+      }
       message.error(data?.message);
     } else if (data?.code === 401) {
       notification.error({

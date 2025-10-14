@@ -47,6 +47,7 @@ export default {
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
+      seeAll: '查看全部',
     },
     login: {
       loginTitle: '登录账户',
@@ -74,7 +75,7 @@ export default {
     },
     header: {
       knowledgeBase: '知识库',
-      chat: '聊天',
+      chat: '知识问答',
       register: '注册',
       signin: '登录',
       home: '首页',
@@ -82,9 +83,9 @@ export default {
       logout: '登出',
       fileManager: '文件管理',
       flow: '智能体',
-      search: '搜索',
+      search: '知识搜索',
       welcome: '欢迎来到',
-      dataset: '知识库',
+      dataset: '知识库管理',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -1572,6 +1573,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       okText: '保存',
       cancelText: '返回',
       chooseDataset: '请先选择知识库',
+      hiHhere: '嗨，你好',
     },
     language: {
       english: '英语',

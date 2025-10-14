@@ -2,7 +2,6 @@ import { Input } from '@/components/originui/input';
 import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
 import { IUserInfo } from '@/interfaces/database/user-setting';
-import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,20 +27,22 @@ export default function SearchPage({
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-32">
       <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-[780px]">
-        <h1
+        {/* <h1
           className={cn(
             'text-4xl font-bold bg-gradient-to-l from-[#40EBE3] to-[#4A51FF] bg-clip-text',
           )}
         >
           RAGFlow
-        </h1>
+        </h1> */}
 
-        <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 h-[230px] border">
+        <div className="rounded-lg text-primary text-xl relative flex justify-center w-full transform scale-100 mt-8 p-6 h-[230px] border-2 border-transparent bg-gradient-to-r from-primary/3 via-transparent to-primary/3 backdrop-blur-sm shadow-2xl shadow-primary/2 overflow-hidden before:absolute before:inset-0 before:rounded-lg before:p-[2px] before:bg-gradient-to-r before:from-primary/6 before:via-primary/3 before:to-primary/6 before:-z-10 before:[mask:linear-gradient(#fff_0_0)_content-box,linear-gradient(#fff_0_0)] before:[mask-composite:xor]">
           {!isSearching && <Spotlight className="z-0" />}
           <div className="flex flex-col justify-center items-center  w-2/3">
             {!isSearching && (
               <>
-                <p className="mb-4 transition-opacity">👋 Hi there</p>
+                <p className="mb-4 transition-opacity">
+                  👋 {t('search.hiHhere')}
+                </p>
                 <p className="mb-10 transition-opacity">
                   {userInfo && (
                     <>
@@ -76,7 +77,7 @@ export default function SearchPage({
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 transform rounded-full bg-text-primary p-2 text-bg-base shadow w-12"
+                className="absolute right-2 top-1/2 -translate-y-1/2 transform rounded-full bg-primary p-2 text-bg-base shadow w-12"
                 onClick={() => {
                   if (canSearch === false) {
                     message.warning(t('search.chooseDataset'));
@@ -85,7 +86,7 @@ export default function SearchPage({
                   setIsSearching(!isSearching);
                 }}
               >
-                <Search size={22} className="m-auto" />
+                <Search size={22} className="m-auto bg-primary" />
               </button>
             </div>
           </div>

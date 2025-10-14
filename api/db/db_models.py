@@ -556,7 +556,19 @@ class User(DataBaseModel, UserMixin):
 
     def get_id(self):
         jwt = Serializer(secret_key=settings.SECRET_KEY)
-        return jwt.dumps(str(self.access_token))
+        # 如果有当前token（登录时设置），使用当前token；否则使用第一个token
+        current_token = getattr(self, '_current_token', None)
+        if current_token:
+            return jwt.dumps(str(current_token))
+        
+        # 从access_token字段中获取第一个有效token
+        if self.access_token and self.access_token.strip():
+            tokens = self.access_token.split('|')
+            first_token = next((t.strip() for t in tokens if t.strip()), None)
+            if first_token:
+                return jwt.dumps(str(first_token))
+        
+        return jwt.dumps(str(self.access_token or ''))
 
     class Meta:
         db_table = "user"

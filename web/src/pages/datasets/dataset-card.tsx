@@ -6,6 +6,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { t } from 'i18next';
 import { ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { DatasetDropdown } from './dataset-dropdown';
 import { useRenameDataset } from './use-rename-dataset';
 
@@ -18,6 +19,7 @@ export function DatasetCard({
   showDatasetRenameModal,
 }: DatasetCardProps) {
   const { navigateToDataset } = useNavigatePage();
+  const { t } = useTranslation();
 
   return (
     <HomeCard
@@ -45,7 +47,7 @@ export function SeeAllCard() {
   return (
     <Card className="w-40 flex-none h-full" onClick={navigateToDatasetList}>
       <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
-        See All <ChevronRight className="size-4" />
+        {t('common.seeAll')} <ChevronRight className="size-4" />
       </CardContent>
     </Card>
   );
