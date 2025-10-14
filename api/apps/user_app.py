@@ -91,18 +91,6 @@ def login():
             message=f"Email: {email} is not registered!",
         )
 
-    # 先检查用户是否已有有效的access_token，如果有则直接返回
-    users = UserService.query(email=email)
-    if users:
-        existing_user = users[0]
-        # 如果用户已有有效的access_token，直接返回
-        if existing_user.access_token and existing_user.access_token.strip():
-            if existing_user.is_active != "0":  # 确保用户未被禁用
-                response_data = existing_user.to_json()
-                login_user(existing_user)
-                msg = "Welcome back!"
-                return construct_response(data=response_data, auth=existing_user.get_id(), message=msg)
-
     password = request.json.get("password")
     try:
         password = decrypt(password)
@@ -119,9 +107,22 @@ def login():
         )
     elif user:
         response_data = user.to_json()
-        # 如果用户没有access_token，则生成一个新的
-        if not user.access_token:
-            user.access_token = get_uuid()
+        # 为每次登录生成新的token，支持多端同时登录
+        new_token = get_uuid()
+        
+        if not user.access_token or not user.access_token.strip():
+            # 如果没有token，直接设置新token
+            user.access_token = new_token
+        else:
+            # 如果已有token，将新token添加到现有token列表中（用|分隔）
+            existing_tokens = user.access_token.split('|')
+            # 保留所有有效token，支持无限多设备同时登录
+            existing_tokens = [t for t in existing_tokens if t.strip()]
+            existing_tokens.append(new_token)
+            user.access_token = '|'.join(existing_tokens)
+        
+        # 临时设置当前token用于get_id()
+        user._current_token = new_token
         login_user(user)
         user.update_time = (current_timestamp(),)
         user.update_date = (datetime_format(datetime.now()),)
@@ -247,20 +248,27 @@ def oauth_callback(channel):
 
         # User exists, try to log in
         user = users[0]
-        # 如果用户已有有效的access_token，直接使用
-        if user.access_token and user.access_token.strip():
-            if user.is_active != "0":  # 确保用户未被禁用
-                login_user(user)
-                return redirect(f"/?auth={user.get_id()}")
-        
-        # 如果用户没有access_token，则生成一个新的
-        if not user.access_token:
-            user.access_token = get_uuid()
         if user and hasattr(user, 'is_active') and user.is_active == "0":
             return redirect("/?error=user_inactive")
-
-        login_user(user)
+            
+        # 为每次登录生成新的token，支持多端同时登录
+        new_token = get_uuid()
+        
+        if not user.access_token or not user.access_token.strip():
+            # 如果没有token，直接设置新token
+            user.access_token = new_token
+        else:
+            # 如果已有token，将新token添加到现有token列表中（用|分隔）
+            existing_tokens = user.access_token.split('|')
+            # 保留所有有效token，支持无限多设备同时登录
+            existing_tokens = [t for t in existing_tokens if t.strip()]
+            existing_tokens.append(new_token)
+            user.access_token = '|'.join(existing_tokens)
+        
+        # 临时设置当前token用于get_id()
+        user._current_token = new_token
         user.save()
+        login_user(user)
         return redirect(f"/?auth={user.get_id()}")
     except Exception as e:
         logging.exception(e)
@@ -348,11 +356,27 @@ def github_callback():
 
     # User has already registered, try to log in
     user = users[0]
-    user.access_token = get_uuid()
     if user and hasattr(user, 'is_active') and user.is_active == "0":
         return redirect("/?error=user_inactive")
-    login_user(user)
+    
+    # 为每次登录生成新的token，支持多端同时登录
+    new_token = get_uuid()
+    
+    if not user.access_token or not user.access_token.strip():
+        # 如果没有token，直接设置新token
+        user.access_token = new_token
+    else:
+        # 如果已有token，将新token添加到现有token列表中（用|分隔）
+        existing_tokens = user.access_token.split('|')
+        # 保留所有有效token，支持无限多设备同时登录
+        existing_tokens = [t for t in existing_tokens if t.strip()]
+        existing_tokens.append(new_token)
+        user.access_token = '|'.join(existing_tokens)
+    
+    # 临时设置当前token用于get_id()
+    user._current_token = new_token
     user.save()
+    login_user(user)
     return redirect("/?auth=%s" % user.get_id())
 
 
@@ -454,9 +478,25 @@ def feishu_callback():
     user = users[0]
     if user and hasattr(user, 'is_active') and user.is_active == "0":
         return redirect("/?error=user_inactive")
-    user.access_token = get_uuid()
-    login_user(user)
+    
+    # 为每次登录生成新的token，支持多端同时登录
+    new_token = get_uuid()
+    
+    if not user.access_token or not user.access_token.strip():
+        # 如果没有token，直接设置新token
+        user.access_token = new_token
+    else:
+        # 如果已有token，将新token添加到现有token列表中（用|分隔）
+        existing_tokens = user.access_token.split('|')
+        # 保留所有有效token，支持无限多设备同时登录
+        existing_tokens = [t for t in existing_tokens if t.strip()]
+        existing_tokens.append(new_token)
+        user.access_token = '|'.join(existing_tokens)
+    
+    # 临时设置当前token用于get_id()
+    user._current_token = new_token
     user.save()
+    login_user(user)
     return redirect("/?auth=%s" % user.get_id())
 
 
@@ -503,7 +543,35 @@ def log_out():
         schema:
           type: object
     """
-    current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
+    # 获取当前请求的token
+    from flask import request
+    from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+    
+    jwt = Serializer(secret_key=settings.SECRET_KEY)
+    authorization = request.headers.get("Authorization")
+    current_token = None
+    
+    if authorization:
+        try:
+            current_token = str(jwt.loads(authorization))
+        except Exception:
+            pass
+    
+    if current_token and current_user.access_token:
+        # 从token列表中移除当前token
+        existing_tokens = current_user.access_token.split('|')
+        remaining_tokens = [t.strip() for t in existing_tokens if t.strip() and t.strip() != current_token]
+        
+        if remaining_tokens:
+            # 如果还有其他token，保留它们
+            current_user.access_token = '|'.join(remaining_tokens)
+        else:
+            # 如果没有其他token，设置为无效token
+            current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
+    else:
+        # 如果无法获取当前token，使用原来的逻辑
+        current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
+    
     current_user.save()
     logout_user()
     return get_json_result(data=True)

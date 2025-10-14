@@ -61,6 +61,40 @@ class UserService(CommonService):
                 logging.warning("UserService.query: Rejecting invalidated access_token")
                 return cls.model.select().where(cls.model.id == "INVALID_LOGOUT_TOKEN")  # Returns empty result
 
+            # 修改查询逻辑，支持多token验证
+            # 查询access_token字段包含指定token的用户（支持|分隔的多token）
+            kwargs.pop('access_token')  # 移除原始的access_token参数
+            
+            # 使用LIKE查询来匹配包含该token的记录
+            # 需要匹配三种情况：开头、中间、结尾
+            query = cls.model.select()
+            if cols:
+                query = query.select(*cols)
+            
+            # 构建WHERE条件：token在开头、中间或结尾
+            token_condition = (
+                (cls.model.access_token == access_token) |  # 完全匹配
+                (cls.model.access_token.startswith(access_token + '|')) |  # 在开头
+                (cls.model.access_token.contains('|' + access_token + '|')) |  # 在中间
+                (cls.model.access_token.endswith('|' + access_token))  # 在结尾
+            )
+            
+            # 添加其他查询条件
+            for key, value in kwargs.items():
+                if hasattr(cls.model, key):
+                    query = query.where(getattr(cls.model, key) == value)
+            
+            # 添加token条件
+            query = query.where(token_condition)
+            
+            if order_by:
+                if reverse:
+                    query = query.order_by(getattr(cls.model, order_by).desc())
+                else:
+                    query = query.order_by(getattr(cls.model, order_by))
+            
+            return query
+
         # Call parent query method for valid requests
         return super().query(cols=cols, reverse=reverse, order_by=order_by, **kwargs)
 

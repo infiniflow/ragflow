@@ -49,20 +49,40 @@ export const useAuth = () => {
   const { autoLogin } = useAutoLogin();
   const autoLoginAttempted = useRef(false);
 
+  // 执行自动登录的函数
+  const performAutoLogin = async () => {
+    autoLoginAttempted.current = true;
+    try {
+      const loginSuccess = await autoLogin();
+      setIsLogin(loginSuccess);
+      return loginSuccess;
+    } catch (error) {
+      console.error('Auto login failed:', error);
+      setIsLogin(false);
+      return false;
+    }
+  };
+
+  // 监听来自拦截器的自动登录触发事件
+  useEffect(() => {
+    const handleTriggerAutoLogin = () => {
+      autoLoginAttempted.current = false; // 重置状态，允许重新登录
+      performAutoLogin();
+    };
+
+    window.addEventListener('triggerAutoLogin', handleTriggerAutoLogin);
+    return () => {
+      window.removeEventListener('triggerAutoLogin', handleTriggerAutoLogin);
+    };
+  }, [autoLogin]);
+
   useEffect(() => {
     const checkAuth = async () => {
       const hasAuth = !!authorizationUtil.getAuthorization() || !!auth;
 
       if (!hasAuth && !autoLoginAttempted.current) {
-        // 尝试自动登录
-        autoLoginAttempted.current = true;
-        try {
-          const loginSuccess = await autoLogin();
-          setIsLogin(loginSuccess);
-        } catch (error) {
-          console.error('Auto login failed:', error);
-          setIsLogin(false);
-        }
+        // 页面初始化时的自动登录
+        await performAutoLogin();
       } else {
         setIsLogin(hasAuth);
       }

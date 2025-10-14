@@ -43,6 +43,7 @@ services:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=${HF_ENDPOINT-}
       - MACOS=${MACOS-}
+      - RAGFLOW_SECRET_KEY=ragflow_fixed_secret_key_2024_for_jwt_consistency_across_restarts_64chars
     networks:
       - ragflow
     restart: on-failure
