@@ -37,7 +37,7 @@ Released on October 15, 2025.
 ### Improvements
 
 - Redesigns RAGFlow's Login and Registration pages.
-- Upgrades RAGFlow's document engine Infinity to v0.6.0.dev7.
+- Upgrades RAGFlow's document engine Infinity to v0.6.0.
 
 ### Added models
 
