@@ -177,8 +177,18 @@ class ServiceMgr:
     def get_all_services():
         result = []
         configs = SERVICE_CONFIGS.configs
-        for config in configs:
-            result.append(config.to_dict())
+        for service_id, config in enumerate(configs):
+            config_dict = config.to_dict()
+            service_detail = None
+            try:
+                service_detail = ServiceMgr.get_service_details(service_id)
+                if service_detail['alive']:
+                    config_dict['status'] = 'Alive'
+                else:
+                    config_dict['status'] = 'Timeout'
+            except Exception:
+                config_dict['status'] = 'Timeout'
+            result.append(config_dict)
         return result
 
     @staticmethod

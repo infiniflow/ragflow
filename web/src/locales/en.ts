@@ -57,6 +57,8 @@ export default {
       },
     },
     login: {
+      loginTitle: 'Sign in to Your Account',
+      signUpTitle: 'Create an Account',
       login: 'Sign in',
       signUp: 'Sign up',
       loginDescription: 'We’re so excited to see you again!',
@@ -72,7 +74,8 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'Start building your smart assistants.',
+      title: 'A leading RAG engine for LLM context',
+      start: "Let's get started",
       description:
         'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
       review: 'from 500+ reviews',
@@ -114,7 +117,7 @@ export default {
       generateRaptor:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generate: 'Generate',
-      raptor: 'Raptor',
+      raptor: 'RAPTOR',
       processingType: 'Processing Type',
       dataPipeline: 'Ingestion pipeline',
       operations: 'Operations',
@@ -128,7 +131,7 @@ export default {
       fileName: 'File Name',
       datasetLogs: 'Dataset',
       fileLogs: 'File',
-      overview: 'Overview',
+      overview: 'Logs',
       success: 'Success',
       failed: 'Failed',
       completed: 'Completed',
@@ -270,7 +273,7 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
-      tocExtraction: 'toc toggle',
+      tocExtraction: 'TOC Enhance',
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
@@ -1669,6 +1672,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       page: '{{page}} /Page',
     },
     dataflowParser: {
+      result: 'Result',
       parseSummary: 'Parse Summary',
       parseSummaryTip: 'Parser：deepdoc',
       rerunFromCurrentStep: 'Rerun From Current Step',
@@ -1703,17 +1707,17 @@ This delimiter is used to split the input text into several text pieces echo of 
       parser: 'Parser',
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',
-      tokenizer: 'Tokenizer',
-      tokenizerRequired: 'Please add the Tokenizer node first',
+      tokenizer: 'Indexer',
+      tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token Splitter',
+      splitter: 'Token',
       splitterDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
       hierarchicalMergerDescription:
         'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title Splitter',
-      extractor: 'Context Generator',
+      hierarchicalMerger: 'Title',
+      extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       outputFormat: 'Output format',
@@ -1817,9 +1821,13 @@ Important structured information may include: names, dates, locations, events, k
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',
-      processingTip: 'Files being processed by data flows.',
+      processingTip: 'Files being processed by data pipelines.',
       totalFiles: 'Total Files',
       downloading: 'Downloading',
+      downloadSuccessTip: 'Total successful downloads',
+      downloadFailedTip: 'Total failed downloads',
+      processingSuccessTip: 'Total successfully processed files',
+      processingFailedTip: 'Total failed processes',
       processing: 'Processing',
     },
   },
