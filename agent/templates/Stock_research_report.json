@@ -1153,5 +1153,6 @@
             "history": [],
             "messages": [],
             "path": [],
-            "retrieval": []
+            "retrieval": [null]
+
         }
