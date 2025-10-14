@@ -30,7 +30,6 @@ import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { Output } from '../components/output';
-import { OutputFormatFormField } from './common-form-fields';
 import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
@@ -147,10 +146,10 @@ function ParserItem({
         )}
       </RAGFlowFormItem>
       <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
-      <OutputFormatFormField
+      {/* <OutputFormatFormField
         prefix={prefix}
         fileType={fileFormat as FileType}
-      />
+      /> */}
       {index < fieldLength - 1 && <Separator />}
     </section>
   );

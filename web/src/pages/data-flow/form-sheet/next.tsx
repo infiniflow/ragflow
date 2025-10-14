@@ -58,7 +58,13 @@ const FormSheet = ({
           <SheetTitle className="hidden"></SheetTitle>
           <section className="flex-col border-b py-2 px-5">
             <div className="flex items-center gap-2 pb-3">
-              <OperatorIcon name={operatorName}></OperatorIcon>
+              <OperatorIcon
+                name={
+                  operatorName === Operator.HierarchicalMerger
+                    ? Operator.Splitter
+                    : operatorName
+                }
+              ></OperatorIcon>
               <div className="flex items-center gap-1 flex-1">
                 <label htmlFor="">{t('flow.title')}</label>
                 {node?.id === BeginId ? (

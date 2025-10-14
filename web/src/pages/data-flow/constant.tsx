@@ -337,7 +337,7 @@ export const NodeMap = {
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
   [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'hierarchicalMergerNode',
+  [Operator.HierarchicalMerger]: 'splitterNode',
   [Operator.Extractor]: 'contextNode',
 };
 

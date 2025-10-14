@@ -45,7 +45,6 @@ import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExtractorNode } from './node/extractor-node';
-import { HierarchicalMergerNode } from './node/hierarchical-merger-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
 import { SplitterNode } from './node/splitter-node';
@@ -58,7 +57,6 @@ export const nodeTypes: NodeTypes = {
   parserNode: ParserNode,
   tokenizerNode: TokenizerNode,
   splitterNode: SplitterNode,
-  hierarchicalMergerNode: HierarchicalMergerNode,
   contextNode: ExtractorNode,
 };
 

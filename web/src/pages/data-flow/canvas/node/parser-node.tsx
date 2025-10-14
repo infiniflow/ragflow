@@ -41,7 +41,7 @@ function ParserNode({
         {data.form?.setups.map((x, idx) => (
           <LabelCard
             key={idx}
-            className="flex justify-between text-text-primary"
+            className="flex justify- flex-col text-text-primary gap-1"
           >
             <span className="text-text-secondary">Parser {idx + 1}</span>
             {t(`dataflow.fileFormatOptions.${x.fileFormat}`)}

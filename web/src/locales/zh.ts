@@ -1642,7 +1642,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       addParser: '增加解析器',
       hierarchy: '层次结构',
       regularExpressions: '正则表达式',
-      overlappedPercent: '重叠百分比',
+      overlappedPercent: '重叠百分比（%）',
       searchMethod: '搜索方法',
       searchMethodTip: `决定该数据集启用的搜索方式，可选择全文、向量，或两者兼有。
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
@@ -1710,6 +1710,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       cancel: '取消',
       filenameEmbeddingWeight: '文件名嵌入权重',
       switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
+      note: '注释',
+      noteDescription: '注释',
+      notePlaceholder: '请输入注释',
     },
     datasetOverview: {
       downloadTip: '正在从数据源下载文件。',
