@@ -19,11 +19,13 @@ It consists of a server-side Service and a command-line client (CLI), both imple
 
 1.  Before start Admin Service, please make sure RAGFlow system is already started.
 
-2.  Run the service script:
+2.  Launch from source code:
     ```bash
     python admin/admin_server.py
     ```
     The service will start and listen for incoming connections from the CLI on the configured port.
+
+Or enable admin server  
 
 ### Using the Admin CLI
 
@@ -42,12 +44,7 @@ Commands are case-insensitive and must be terminated with a semicolon (`;`).
     -   Lists all available services within the RAGFlow system.
 -   `SHOW SERVICE <id>;`
     -   Shows detailed status information for the service identified by `<id>`.
--   `STARTUP SERVICE <id>;`
-    -   Attempts to start the service identified by `<id>`.
--   `SHUTDOWN SERVICE <id>;`
-    -   Attempts to gracefully shut down the service identified by `<id>`.
--   `RESTART SERVICE <id>;`
-    -   Attempts to restart the service identified by `<id>`.
+
 
 ### User Management Commands
 
