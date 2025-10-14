@@ -1738,7 +1738,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       addParser: 'Add Parser',
       hierarchy: 'Hierarchy',
       regularExpressions: 'Regular Expressions',
-      overlappedPercent: 'Overlapped percent',
+      overlappedPercent: 'Overlapped percent (%)',
       searchMethod: 'Search method',
       searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
@@ -1750,11 +1750,11 @@ The Indexer will store the content in the corresponding data structures for the 
       exportJson: 'Export JSON',
       viewResult: 'View result',
       running: 'Running',
-      summary: 'Augmented Context',
+      summary: 'Summary',
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      fieldName: 'Result Destination',
+      fieldName: 'Result destination',
       prompts: {
         system: {
           keywords: `Role
@@ -1819,6 +1819,9 @@ Important structured information may include: names, dates, locations, events, k
       imageParseMethodOptions: {
         ocr: 'OCR',
       },
+      note: 'Note',
+      noteDescription: 'Note',
+      notePlaceholder: 'Please enter a note',
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',

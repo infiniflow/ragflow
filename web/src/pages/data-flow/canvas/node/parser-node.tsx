@@ -1,7 +1,10 @@
-import { IRagNode } from '@/interfaces/database/flow';
+import { BaseNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { NodeHandleId } from '../../constant';
+import { ParserFormSchemaType } from '../../form/parser-form';
+import { LabelCard } from './card';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
@@ -12,7 +15,8 @@ function ParserNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IRagNode>) {
+}: NodeProps<BaseNode<ParserFormSchemaType>>) {
+  const { t } = useTranslation();
   return (
     <NodeWrapper selected={selected}>
       <CommonHandle
@@ -33,6 +37,17 @@ function ParserNode({
         isConnectableEnd={false}
       ></CommonHandle>
       <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+      <section className="space-y-2">
+        {data.form?.setups.map((x, idx) => (
+          <LabelCard
+            key={idx}
+            className="flex justify- flex-col text-text-primary gap-1"
+          >
+            <span className="text-text-secondary">Parser {idx + 1}</span>
+            {t(`dataflow.fileFormatOptions.${x.fileFormat}`)}
+          </LabelCard>
+        ))}
+      </section>
     </NodeWrapper>
   );
 }

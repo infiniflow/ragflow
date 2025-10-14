@@ -26,7 +26,7 @@ export const FormSchema = z.object({
       value: z.string().optional(),
     }),
   ),
-  overlapped_percent: z.number(), // 0.0 - 0.3
+  overlapped_percent: z.number(), // 0.0 - 0.3 , 0% - 30%
 });
 
 export type SplitterFormSchemaType = z.infer<typeof FormSchema>;
@@ -58,9 +58,8 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
         ></SliderInputFormField>
         <SliderInputFormField
           name="overlapped_percent"
-          max={0.3}
+          max={30}
           min={0}
-          step={0.01}
           label={t('dataflow.overlappedPercent')}
         ></SliderInputFormField>
         <section>

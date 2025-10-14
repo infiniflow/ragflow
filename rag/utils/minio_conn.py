@@ -60,7 +60,7 @@ class RAGFlowMinio:
                                  )
         return r
 
-    def put(self, bucket, fnm, binary):
+    def put(self, bucket, fnm, binary, tenant_id=None):
         for _ in range(3):
             try:
                 if not self.conn.bucket_exists(bucket):
@@ -76,13 +76,13 @@ class RAGFlowMinio:
                 self.__open__()
                 time.sleep(1)
 
-    def rm(self, bucket, fnm):
+    def rm(self, bucket, fnm, tenant_id=None):
         try:
             self.conn.remove_object(bucket, fnm)
         except Exception:
             logging.exception(f"Fail to remove {bucket}/{fnm}:")
 
-    def get(self, bucket, filename):
+    def get(self, bucket, filename, tenant_id=None):
         for _ in range(1):
             try:
                 r = self.conn.get_object(bucket, filename)
@@ -93,7 +93,7 @@ class RAGFlowMinio:
                 time.sleep(1)
         return
 
-    def obj_exist(self, bucket, filename):
+    def obj_exist(self, bucket, filename, tenant_id=None):
         try:
             if not self.conn.bucket_exists(bucket):
                 return False
@@ -121,7 +121,7 @@ class RAGFlowMinio:
             logging.exception(f"bucket_exist {bucket} got exception")
             return False
 
-    def get_presigned_url(self, bucket, fnm, expires):
+    def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         for _ in range(10):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
