@@ -680,7 +680,6 @@ async def gen_toc_from_text(txt_info: dict, chat_mdl, callback=None):
             chat_mdl,
             gen_conf={"temperature": 0.0, "top_p": 0.9}
         )
-        print(ans, "LLLLLLLLLLLLLLLLLLLLLLLL", flush=True)
         txt_info["toc"] = ans if ans and not isinstance(ans, str) else []
         if callback:
             callback(msg="")
