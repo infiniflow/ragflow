@@ -124,7 +124,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
 
     knowledges = []
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 100))
+        cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 500))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
         cnt += draw_node("URL", ck['url'])  if "url" in ck else ""
         for k, v in docs.get(get_value(ck, "doc_id", "document_id"), {}).items():
