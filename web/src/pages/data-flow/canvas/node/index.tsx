@@ -1,6 +1,6 @@
 import { IRagNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
-import { memo, useMemo } from 'react';
+import { PropsWithChildren, memo, useMemo } from 'react';
 import { NodeHandleId, SingleOperators } from '../../constant';
 import useGraphStore from '../../store';
 import { CommonHandle } from './handle';
@@ -9,12 +9,14 @@ import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
 
+type RagNodeProps = NodeProps<IRagNode> & PropsWithChildren;
 function InnerRagNode({
   id,
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IRagNode>) {
+  children,
+}: RagNodeProps) {
   const getOperatorTypeFromId = useGraphStore(
     (state) => state.getOperatorTypeFromId,
   );
@@ -45,6 +47,7 @@ function InnerRagNode({
           isConnectableEnd={false}
         ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+        {children}
       </NodeWrapper>
     </ToolBar>
   );
