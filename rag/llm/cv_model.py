@@ -327,10 +327,82 @@ class OpenRouterCV(GptV4):
     ):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        api_key = json.loads(key).get("api_key", "")
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
+        provider_order = json.loads(key).get("provider_order", "")
+        self.extra_body = {}
+        if provider_order:
+            def _to_order_list(x):
+                if x is None:
+                    return []
+                if isinstance(x, str):
+                    return [s.strip() for s in x.split(",") if s.strip()]
+                if isinstance(x, (list, tuple)):
+                    return [str(s).strip() for s in x if str(s).strip()]
+                return []
+            provider_cfg = {}
+            provider_order = _to_order_list(provider_order)
+            provider_cfg["order"] = provider_order
+            provider_cfg["allow_fallbacks"] = False
+            self.extra_body["provider"] = provider_cfg
+        
         Base.__init__(self, **kwargs)
+
+    def describe(self, image):
+        b64 = self.image2base64(image)
+        res = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=self.prompt(b64),
+            extra_body=self.extra_body,
+        )
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+    def describe_with_prompt(self, image, prompt=None):
+        b64 = self.image2base64(image)
+        res = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=self.vision_llm_prompt(b64, prompt),
+            extra_body=self.extra_body,
+        )
+        return res.choices[0].message.content.strip(),total_token_count_from_response(res)
+    
+    def chat(self, system, history, gen_conf, images=[], **kwargs):
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=self._form_history(system, history, images),
+                extra_body=self.extra_body,
+            )
+            return response.choices[0].message.content.strip(), response.usage.total_tokens
+        except Exception as e:
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf, images=[], **kwargs):
+        ans = ""
+        tk_count = 0
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=self._form_history(system, history, images),
+                stream=True,
+                extra_body=self.extra_body,
+            )
+            for resp in response:
+                if not resp.choices[0].delta.content:
+                    continue
+                delta = resp.choices[0].delta.content
+                ans = delta
+                if resp.choices[0].finish_reason == "length":
+                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                if resp.choices[0].finish_reason == "stop":
+                    tk_count += resp.usage.total_tokens
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield tk_count
 
 
 class LocalAICV(GptV4):
