@@ -1441,7 +1441,6 @@ class LiteLLMBase(ABC):
             timeout=self.timeout,
         )
         # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
-        logging.info(response)
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
             return "", 0
         ans = response.choices[0].message.content.strip()
