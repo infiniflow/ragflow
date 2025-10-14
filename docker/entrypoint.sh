@@ -195,7 +195,7 @@ fi
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
-        "$PY" admin/admin_server.py
+        "$PY" admin/server/admin_server.py
     done &
 fi
 
