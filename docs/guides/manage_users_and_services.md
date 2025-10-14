@@ -1,3 +1,9 @@
+---
+sidebar_position: 6
+slug: /manage_users_and_services
+---
+
+
 # Admin CLI and Admin Service
 
 
@@ -6,33 +12,50 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
 
 
 
-## Starting the Admin Service
+### Starting the Admin Service
+
+#### Launching from source code
 
 1. Before start Admin Service, please make sure RAGFlow system is already started.
-2. Switch to ragflow/ directory and run the service script:
 
-```bash
-source .venv/bin/activate
-export PYTHONPATH=$(pwd)
-python admin/admin_server.py
-```
+2. Launch from source code:
 
-The service will start and listen for incoming connections from the CLI on the configured port. Default port is 9381.
+   ```bash
+   python admin/server/admin_server.py
+   ```
+
+   The service will start and listen for incoming connections from the CLI on the configured port. 
+
+#### Using docker image
+
+1. Before startup, please configure the `docker_compose.yml`  file to enable admin server:
+
+   ```bash
+   command:
+     - --enable-adminserver
+   ```
+
+2. Start the containers, the service will start and listen for incoming connections from the CLI on the configured port.
 
 
 
-## Using the Admin CLI
+### Using the Admin CLI
 
 1. Ensure the Admin Service is running.
-2. Launch the CLI client:
 
-```bash
-source .venv/bin/activate
-export PYTHONPATH=$(pwd)
-python admin/admin_client.py -h 0.0.0.0 -p 9381
-```
+2. Install ragflow-cli.
 
-Enter superuser's password to login. Default password is `admin`.
+   ```bash
+   pip install ragflow-cli
+   ```
+
+3. Launch the CLI client:
+
+   ```bash
+   ragflow-cli -h 0.0.0.0 -p 9381
+   ```
+
+	Enter superuser's password to login. Default password is `admin`.
 
 
 
@@ -50,7 +73,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 
 `SHOW SERVICE <id>;`
 
-- Shows detailed status information for the service identified by <id>.
+- Shows detailed status information for the service identified by **id**.
 - [Example](#example-show-service)
 
 ### User Management Commands
@@ -115,16 +138,16 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 admin> list services;
 command: list services;
 Listing all services
-+-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
-| extra                                                                                     | host      | id | name          | port  | service_type   |
-+-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
-| {}                                                                                        | 0.0.0.0   | 0  | ragflow_0     | 9380  | ragflow_server |
-| {'meta_type': 'mysql', 'password': 'infini_rag_flow', 'username': 'root'}                 | localhost | 1  | mysql         | 5455  | meta_data      |
-| {'password': 'infini_rag_flow', 'store_type': 'minio', 'user': 'rag_flow'}                | localhost | 2  | minio         | 9000  | file_store     |
-| {'password': 'infini_rag_flow', 'retrieval_type': 'elasticsearch', 'username': 'elastic'} | localhost | 3  | elasticsearch | 1200  | retrieval      |
-| {'db_name': 'default_db', 'retrieval_type': 'infinity'}                                   | localhost | 4  | infinity      | 23817 | retrieval      |
-| {'database': 1, 'mq_type': 'redis', 'password': 'infini_rag_flow'}                        | localhost | 5  | redis         | 6379  | message_queue  |
-+-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
+| extra                                                                                     | host      | id | name          | port  | service_type   | status  |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
+| {}                                                                                        | 0.0.0.0   | 0  | ragflow_0     | 9380  | ragflow_server | Timeout |
+| {'meta_type': 'mysql', 'password': 'infini_rag_flow', 'username': 'root'}                 | localhost | 1  | mysql         | 5455  | meta_data      | Alive   |
+| {'password': 'infini_rag_flow', 'store_type': 'minio', 'user': 'rag_flow'}                | localhost | 2  | minio         | 9000  | file_store     | Alive   |
+| {'password': 'infini_rag_flow', 'retrieval_type': 'elasticsearch', 'username': 'elastic'} | localhost | 3  | elasticsearch | 1200  | retrieval      | Alive   |
+| {'db_name': 'default_db', 'retrieval_type': 'infinity'}                                   | localhost | 4  | infinity      | 23817 | retrieval      | Timeout |
+| {'database': 1, 'mq_type': 'redis', 'password': 'infini_rag_flow'}                        | localhost | 5  | redis         | 6379  | message_queue  | Alive   |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
 
 ```
 
