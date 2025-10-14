@@ -131,6 +131,7 @@ function transformParserParams(params: ParserFormSchemaType) {
 function transformSplitterParams(params: SplitterFormSchemaType) {
   return {
     ...params,
+    overlapped_percent: Number(params.overlapped_percent) / 100,
     delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
   };
 }
