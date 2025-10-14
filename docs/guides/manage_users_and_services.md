@@ -55,12 +55,6 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
    ragflow-cli -h 0.0.0.0 -p 9381
    ```
 
-3. Launch the CLI client:
-
-   ```bash
-   ragflow-cli -h 0.0.0.0 -p 9381
-   ```
-
 	Enter superuser's password to login. Default password is `admin`.
 
 
