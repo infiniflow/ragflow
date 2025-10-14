@@ -22,6 +22,34 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
+## v0.21.0
+
+Released on October 15, 2025.
+
+### New features
+
+- Orchestratable ingestion pipeline: Supports customized data ingestion and cleansing workflows, enabling users to flexibly design their data flows or directly apply the official data flow templates on the canvas.
+- GraphRAG & RAPTOR write process optimized: Replaces the automatic incremental build process with manual batch building, significantly reducing construction overhead.
+- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template.
+- Video file parsing: Expands the system's multimodal data processing capabilities by supporting video file parsing.
+- Admin CLI: Introduces a new command-line tool for system administration, allowing users to manage and monitor RAGFlow's service status via command line.
+
+### Improvements
+
+- Redesigns RAGFlow's Login and Registration pages.
+- Upgrades RAGFlow's document engine Infinity to v0.6.0.dev7.
+
+### Added models
+
+- Tongyi Qwen 3 series
+- Claude Sonnet 4.5
+- Meituan LongCat-Flash-Thinking
+
+## New agent templates
+
+- Company Research Report Deep Dive Agent: Designed for financial institutions to help analysts quickly organize information, generate research reports, and make investment decisions.
+- Orchestratable Ingestion Pipeline Template: Allows users to apply this template on the canvas to rapidly establish standardized data ingestion and cleansing processes.
+
 ## v0.20.5
 
 Released on September 10, 2025.
