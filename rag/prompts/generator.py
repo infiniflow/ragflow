@@ -733,7 +733,7 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
     max_len = 12 if prune else 22
     filtered = []
     for x in titles:
-        if not x.get("title") or x["title"] == "-1":
+        if not isinstance(x, dict) or not x.get("title") or x["title"] == "-1":
             continue
         if len(rag_tokenizer.tokenize(x["title"]).split(" ")) > max_len:
             continue
