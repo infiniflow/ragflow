@@ -12,19 +12,17 @@ BUILD_DIR="dist"
 SOURCE_DIR="src"
 PACKAGE_DIR="ragflow_cli"
 
-mkdir release/$PROJECT_NAME/$SOURCE_DIR -p
+echo "🧹 Clean old build folder..."
+rm -rf release/
 
+echo "📁 Prepare source code..."
+mkdir release/$PROJECT_NAME/$SOURCE_DIR -p
 cp pyproject.toml release/$PROJECT_NAME/pyproject.toml
 cp README.md release/$PROJECT_NAME/README.md
 
 mkdir release/$PROJECT_NAME/$SOURCE_DIR/$PACKAGE_DIR -p
 cp admin_client.py release/$PROJECT_NAME/$SOURCE_DIR/$PACKAGE_DIR/admin_client.py
 
-echo "🧹 Clean old build file..."
-rm -rf release/$PROJECT_NAME/$BUILD_DIR/ build/ *.egg-info/
-
-
-echo "📁 Prepare source code..."
 if [ -d "release/$PROJECT_NAME/$SOURCE_DIR" ]; then
     echo "✅ source dir: release/$PROJECT_NAME/$SOURCE_DIR"
 else
