@@ -1588,6 +1588,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       page: '{{page}}条/页',
     },
     dataflowParser: {
+      result: '结果',
       parseSummary: '解析摘要',
       parseSummaryTip: '解析器: deepdoc',
       rerunFromCurrentStep: '从当前步骤重新运行',
