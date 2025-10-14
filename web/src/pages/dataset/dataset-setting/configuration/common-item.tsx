@@ -100,6 +100,7 @@ export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
                     options={embeddingModelOptions}
                     disabled={isEdit ? disabled : false}
                     placeholder={t('embeddingModelPlaceholder')}
+                    triggerClassName="!bg-bg-base"
                   />
                 </FormControl>
               </div>

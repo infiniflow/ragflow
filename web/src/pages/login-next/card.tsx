@@ -23,12 +23,12 @@ const FlipCard3D = (props: IProps) => {
         className={`relative w-full h-full transition-transform transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}
       >
         {/* Front Face */}
-        <div className="absolute inset-0 flex items-center justify-center bg-blue-500 text-white rounded-xl backface-hidden">
+        <div className="absolute inset-0 flex items-center justify-center backface-hidden">
           {children}
         </div>
 
         {/* Back Face */}
-        <div className="absolute inset-0 flex items-center justify-center bg-green-500 text-white rounded-xl backface-hidden rotate-y-180">
+        <div className="absolute inset-0 flex items-center justify-center backface-hidden rotate-y-180">
           {children}
         </div>
       </div>

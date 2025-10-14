@@ -194,7 +194,7 @@ const ParserContainer = (props: IProps) => {
 
         <div
           className={cn(
-            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-none',
+            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-auto',
             {
               'h-[calc(100vh-240px)]': isChunck,
               'h-[calc(100vh-180px)]': !isChunck,

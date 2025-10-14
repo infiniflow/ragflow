@@ -44,7 +44,7 @@ const FormatPreserveEditor = ({
         />
       )}
 
-      {['text', 'html'].includes(initialValue.key) && (
+      {['text', 'html', 'markdown'].includes(initialValue.key) && (
         <ObjectContainer
           isReadonly={isReadonly}
           className={className}

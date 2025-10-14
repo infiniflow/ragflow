@@ -109,7 +109,9 @@ export const getFileLogsTableColumns = (
             name={row.original.pipeline_title}
             className="size-4"
           />
-          {row.original.pipeline_title}
+          {row.original.pipeline_title === 'naive'
+            ? 'general'
+            : row.original.pipeline_title}
         </div>
       ),
     },
@@ -396,7 +398,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
             </TableRow>
           ))}
         </TableHeader>
-        <TableBody className="relative">
+        <TableBody className="relative min-w-[1280px] overflow-auto">
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow

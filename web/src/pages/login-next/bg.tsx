@@ -134,7 +134,7 @@ export const BgSvg = () => {
           )}
         </div>
         <div
-          className={`w-full -mt-40`}
+          className={`w-full -mt-48`}
           style={{ height: aspectRatio['middle'] + 'px' }}
         >
           {def(
@@ -144,7 +144,7 @@ export const BgSvg = () => {
           )}
         </div>
         <div
-          className={`w-full -mt-52`}
+          className={`w-full -mt-72`}
           style={{ height: aspectRatio['bottom'] + 'px' }}
         >
           {def(
