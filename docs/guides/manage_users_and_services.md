@@ -12,21 +12,21 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
 
 
 
-### Starting the Admin Service
+## Starting the Admin Service
 
-#### Launching from source code
+### Launching from source code
 
 1. Before start Admin Service, please make sure RAGFlow system is already started.
 
 2. Launch from source code:
 
    ```bash
-   python admin/admin_server.py
+   python admin/server/admin_server.py
    ```
 
    The service will start and listen for incoming connections from the CLI on the configured port. 
 
-#### Using docker image
+### Using docker image
 
 1. Before startup, please configure the `docker_compose.yml`  file to enable admin server:
 
@@ -39,7 +39,7 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
 
 
 
-### Using the Admin CLI
+## Using the Admin CLI
 
 1. Ensure the Admin Service is running.
 
@@ -55,7 +55,7 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
    ragflow-cli -h 0.0.0.0 -p 9381
    ```
 
-​	Enter superuser's password to login. Default password is `admin`.
+	Enter superuser's password to login. Default password is `admin`.
 
 
 
