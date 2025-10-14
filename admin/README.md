@@ -15,22 +15,48 @@ It consists of a server-side Service and a command-line client (CLI), both imple
 - **Admin Service**: A backend service that interfaces with the RAGFlow system to execute administrative operations and monitor its status.
 - **Admin CLI**: A command-line interface that allows users to connect to the Admin Service and issue commands for system management.
 
+
+
 ### Starting the Admin Service
 
-1.  Before start Admin Service, please make sure RAGFlow system is already started.
+#### Launching from source code
 
-2.  Run the service script:
-    ```bash
-    python admin/admin_server.py
-    ```
-    The service will start and listen for incoming connections from the CLI on the configured port.
+1. Before start Admin Service, please make sure RAGFlow system is already started.
+
+2. Launch from source code:
+
+   ```bash
+   python admin/admin_server.py
+   ```
+   The service will start and listen for incoming connections from the CLI on the configured port. 
+
+#### Using docker image
+
+1. Before startup, please configure the `docker_compose.yml`  file to enable admin server:
+
+   ```bash
+   command:
+     - --enable-adminserver
+   ```
+
+2. Start the containers, the service will start and listen for incoming connections from the CLI on the configured port.
+
+
 
 ### Using the Admin CLI
 
 1.  Ensure the Admin Service is running.
-2.  Launch the CLI client:
+2.  Install ragflow-cli.
     ```bash
-    python admin/admin_client.py -h 0.0.0.0 -p 9381
+    pip install ragflow-cli
+    ```
+3.  Launch the CLI client:
+    ```bash
+    ragflow-cli -h 0.0.0.0 -p 9381
+    ```
+	Enter superuser's password to login. Default password is `admin`.
+
+
 
 ## Supported Commands
 
@@ -42,12 +68,7 @@ Commands are case-insensitive and must be terminated with a semicolon (`;`).
     -   Lists all available services within the RAGFlow system.
 -   `SHOW SERVICE <id>;`
     -   Shows detailed status information for the service identified by `<id>`.
--   `STARTUP SERVICE <id>;`
-    -   Attempts to start the service identified by `<id>`.
--   `SHUTDOWN SERVICE <id>;`
-    -   Attempts to gracefully shut down the service identified by `<id>`.
--   `RESTART SERVICE <id>;`
-    -   Attempts to restart the service identified by `<id>`.
+
 
 ### User Management Commands
 
@@ -55,10 +76,17 @@ Commands are case-insensitive and must be terminated with a semicolon (`;`).
     -   Lists all users known to the system.
 -   `SHOW USER '<username>';`
     -   Shows details and permissions for the specified user. The username must be enclosed in single or double quotes.
+
+- `CREATE USER <username> <password>;`
+  - Create user by username and password. The username and password must be enclosed in single or double quotes.
+
 -   `DROP USER '<username>';`
     -   Removes the specified user from the system. Use with caution.
 -   `ALTER USER PASSWORD '<username>' '<new_password>';`
     -   Changes the password for the specified user.
+-   `ALTER USER ACTIVE <username> <on/off>;`
+    -   Changes the user to active or inactive.
+
 
 ### Data and Agent Commands
 
