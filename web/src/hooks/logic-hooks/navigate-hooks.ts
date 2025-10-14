@@ -24,6 +24,12 @@ export const useNavigatePage = () => {
     },
     [navigate],
   );
+  const navigateToDatasetOverview = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToDataFile = useCallback(
     (id: string) => () => {
@@ -160,6 +166,7 @@ export const useNavigatePage = () => {
   return {
     navigateToDatasetList,
     navigateToDataset,
+    navigateToDatasetOverview,
     navigateToHome,
     navigateToProfile,
     navigateToChatList,

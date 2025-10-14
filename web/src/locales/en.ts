@@ -1672,6 +1672,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       page: '{{page}} /Page',
     },
     dataflowParser: {
+      result: 'Result',
       parseSummary: 'Parse Summary',
       parseSummaryTip: 'Parser：deepdoc',
       rerunFromCurrentStep: 'Rerun From Current Step',

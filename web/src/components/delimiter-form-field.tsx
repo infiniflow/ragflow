@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import { forwardRef } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +37,7 @@ export const DelimiterInput = forwardRef<HTMLInputElement, InputProps & IProps>(
         maxLength={maxLength}
         defaultValue={defaultValue}
         ref={ref}
+        className={cn('bg-bg-base', props.className)}
         {...props}
       ></Input>
     );
