@@ -19,7 +19,9 @@ import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
+import { Output } from '../components/output';
 import { useSwitchPrompt } from './use-switch-prompt';
 
 export const FormSchema = z.object({
@@ -30,6 +32,8 @@ export const FormSchema = z.object({
 });
 
 export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
+
+const outputList = buildOutputList(initialExtractorValues.outputs);
 
 const ExtractorForm = ({ node }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialExtractorValues, node);
@@ -85,6 +89,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
             baseOptions={promptOptions}
           ></PromptEditor>
         </RAGFlowFormItem>
+        <Output list={outputList}></Output>
       </FormWrapper>
       {visible && (
         <ConfirmDeleteDialog

@@ -61,6 +61,7 @@ export function CommonHandle({
               hideModal();
               clearActiveDropdown();
             }}
+            nodeId={nodeId}
           >
             <span></span>
           </NextStepDropdown>

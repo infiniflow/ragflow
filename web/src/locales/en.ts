@@ -1707,17 +1707,17 @@ This delimiter is used to split the input text into several text pieces echo of 
       parser: 'Parser',
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',
-      tokenizer: 'Tokenizer',
-      tokenizerRequired: 'Please add the Tokenizer node first',
+      tokenizer: 'Indexer',
+      tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token Splitter',
+      splitter: 'Token',
       splitterDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
       hierarchicalMergerDescription:
         'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title Splitter',
-      extractor: 'Context Generator',
+      hierarchicalMerger: 'Title',
+      extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       outputFormat: 'Output format',
