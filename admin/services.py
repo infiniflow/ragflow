@@ -186,7 +186,7 @@ class ServiceMgr:
                     config_dict['status'] = 'Alive'
                 else:
                     config_dict['status'] = 'Timeout'
-            except Exception as e:
+            except Exception:
                 config_dict['status'] = 'Timeout'
             result.append(config_dict)
         return result
