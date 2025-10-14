@@ -37,11 +37,11 @@ function TokenizerNode({
           nodeId={id}
         ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
-        <LabelCard className="text-text-primary flex justify-between">
+        <LabelCard className="text-text-primary flex justify-between flex-col gap-1">
           <span className="text-text-secondary">
             {t('dataflow.searchMethod')}
           </span>
-          <ul>
+          <ul className="space-y-1">
             {data.form?.search_method.map((x) => (
               <li key={x}>{t(`dataflow.tokenizerSearchMethodOptions.${x}`)}</li>
             ))}
