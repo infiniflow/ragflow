@@ -80,7 +80,7 @@ A random seed. Click **+** to change the seed value.
    - Prompt: *Optional* - We recommend that you keep it as-is until you understand the mechanism behind.
    - Max token: *Optional*
    - Threshold: *Optional*
-   - Community reports: *Optional*
+   - Max cluster: *Optional*
 
 2. Navigate to the **Files** page of your dataset, click the **Generate** button on the top right corner of the page, then select **RAPTOR** from the dropdown to initiate the RAPTOR build process.
 
