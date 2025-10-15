@@ -17,7 +17,7 @@ export enum MenuItemKey {
   CustomerSupport = 'Customer Support',
   Marketing = 'Marketing',
   ConsumerApp = 'Consumer App',
-  Pipeline = 'Pipeline',
+  Pipeline = 'Ingestion Pipeline',
   Other = 'Other',
 }
 const menuItems = [
