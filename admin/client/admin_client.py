@@ -341,9 +341,9 @@ class AdminCLI(Cmd):
             row = "|"
             for col in columns:
                 value = str(item.get(col, ''))
-                if len(value) > col_widths[col]:
+                if get_string_width(value) > col_widths[col]:
                     value = value[:col_widths[col] - 3] + "..."
-                row += f" {value:<{col_widths[col]}} |"
+                row += f" {value:<{col_widths[col] - (get_string_width(value) - len(value))}} |"
             print(row)
 
         print(separator)
@@ -452,7 +452,7 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
         else:
-            print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to get all services, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_show_service(self, command):
         service_id: int = command['number']
