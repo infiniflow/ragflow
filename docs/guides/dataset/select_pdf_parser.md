@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: -4
 slug: /select_pdf_parser
 ---
 
@@ -25,7 +25,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
     - **One**
 - To use a third-party visual model for parsing PDFs, ensure you have set a default img2txt model under **Set default models** on the **Model providers** page.
 
-## Procedure
+## Quickstart
 
 1. On your dataset's **Configuration** page, select a chunking method, say **General**.
 

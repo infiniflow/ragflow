@@ -1,5 +1,5 @@
 ---
-sidebar_position: -1
+sidebar_position: -10
 slug: /configure_knowledge_base
 ---
 
@@ -58,11 +58,8 @@ You can also change a file's chunking method on the **Files** page.
 
 ![change chunking method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/change_chunking_method.jpg)
 
-:::tip NOTE
-From v0.21.0, RAGFlow supports ingestion pipeline to allow for customized
-
 <details>
-  <summary>From v0.21.0 onward, RAGFlow supports ingestion pipeline to allow for customized data ingestion and cleansing workflows.</summary>
+  <summary>From v0.21.0 onward, RAGFlow supports ingestion pipeline for customized data ingestion and cleansing workflows.</summary>
    
   To use a customized data pipeline:
 
