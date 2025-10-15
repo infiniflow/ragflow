@@ -200,12 +200,14 @@ export const useSendAgentMessage = ({
   beginParams,
   isShared,
   refetch,
+  isTaskMode: isTask,
 }: {
   url?: string;
   addEventList?: (data: IEventList, messageId: string) => void;
   beginParams?: any[];
   isShared?: boolean;
   refetch?: () => void;
+  isTaskMode?: boolean;
 }) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -217,7 +219,7 @@ export const useSendAgentMessage = ({
     return answerList[0]?.message_id;
   }, [answerList]);
 
-  const isTaskMode = useIsTaskMode();
+  const isTaskMode = useIsTaskMode(isTask);
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -230,6 +232,7 @@ export const useSendAgentMessage = ({
     addNewestOneQuestion,
     addNewestOneAnswer,
     removeAllMessages,
+    removeAllMessagesExceptFirst,
     scrollToBottom,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
@@ -321,8 +324,18 @@ export const useSendAgentMessage = ({
     stopOutputMessage();
     resetAnswerList();
     setSessionId(null);
-    removeAllMessages();
-  }, [resetAnswerList, removeAllMessages, stopOutputMessage]);
+    if (isTaskMode) {
+      removeAllMessages();
+    } else {
+      removeAllMessagesExceptFirst();
+    }
+  }, [
+    stopOutputMessage,
+    resetAnswerList,
+    isTaskMode,
+    removeAllMessages,
+    removeAllMessagesExceptFirst,
+  ]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
