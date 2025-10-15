@@ -955,7 +955,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       marketing: 'Marketing',
       consumerApp: 'Consumer App',
       other: 'Other',
-      pipeline: 'Ingestion pipeline',
+      ingestionPipeline: 'Ingestion Pipeline',
       agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
@@ -1826,7 +1826,7 @@ Important structured information may include: names, dates, locations, events, k
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',
-      processingTip: 'Files being processed by data pipelines.',
+      processingTip: 'Files being processed by Ingestion pipeline.',
       totalFiles: 'Total Files',
       downloading: 'Downloading',
       downloadSuccessTip: 'Total successful downloads',
