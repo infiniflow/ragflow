@@ -17,7 +17,7 @@
 
 from flask import Blueprint, request
 
-from admin.server.auth import login_verify
+from auth import login_verify
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr
 from api.common.exceptions import AdminException
