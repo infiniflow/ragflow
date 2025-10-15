@@ -9,7 +9,6 @@
         "zh": "这个模板可以帮助金融分析师快速整理信息——它能够自动获取公司数据、整合财务指标，并汇总研报观点。"
     },
     "canvas_type": "Recommended",
-    "canvas_category": "dataflow_canvas",
     "dsl": {
             "components": {
                 "Agent:ManyToesBrush": {
