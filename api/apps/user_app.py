@@ -48,6 +48,32 @@ from api.utils.api_utils import (
 from api.utils.crypt import decrypt
 
 
+def manage_user_tokens(user, new_token, max_tokens=20):
+    """
+    管理用户token，限制最大数量并添加新token
+    
+    Args:
+        user: 用户对象
+        new_token: 新生成的token
+        max_tokens: 最大token数量，默认20个
+    """
+    if not user.access_token or not user.access_token.strip():
+        # 如果没有token，直接设置新token
+        user.access_token = new_token
+    else:
+        # 如果已有token，将新token添加到现有token列表中（用|分隔）
+        existing_tokens = user.access_token.split('|')
+        # 保留所有有效token，但限制最大数量
+        existing_tokens = [t for t in existing_tokens if t.strip()]
+        existing_tokens.append(new_token)
+        
+        # 限制最大token数量，删除最旧的token
+        if len(existing_tokens) > max_tokens:
+            existing_tokens = existing_tokens[-max_tokens:]  # 保留最新的N个
+        
+        user.access_token = '|'.join(existing_tokens)
+
+
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
 def login():
     """
@@ -110,16 +136,8 @@ def login():
         # 为每次登录生成新的token，支持多端同时登录
         new_token = get_uuid()
         
-        if not user.access_token or not user.access_token.strip():
-            # 如果没有token，直接设置新token
-            user.access_token = new_token
-        else:
-            # 如果已有token，将新token添加到现有token列表中（用|分隔）
-            existing_tokens = user.access_token.split('|')
-            # 保留所有有效token，支持无限多设备同时登录
-            existing_tokens = [t for t in existing_tokens if t.strip()]
-            existing_tokens.append(new_token)
-            user.access_token = '|'.join(existing_tokens)
+        # 使用统一的token管理函数
+        manage_user_tokens(user, new_token)
         
         # 临时设置当前token用于get_id()
         user._current_token = new_token
@@ -254,16 +272,8 @@ def oauth_callback(channel):
         # 为每次登录生成新的token，支持多端同时登录
         new_token = get_uuid()
         
-        if not user.access_token or not user.access_token.strip():
-            # 如果没有token，直接设置新token
-            user.access_token = new_token
-        else:
-            # 如果已有token，将新token添加到现有token列表中（用|分隔）
-            existing_tokens = user.access_token.split('|')
-            # 保留所有有效token，支持无限多设备同时登录
-            existing_tokens = [t for t in existing_tokens if t.strip()]
-            existing_tokens.append(new_token)
-            user.access_token = '|'.join(existing_tokens)
+        # 使用统一的token管理函数
+        manage_user_tokens(user, new_token)
         
         # 临时设置当前token用于get_id()
         user._current_token = new_token
@@ -362,16 +372,8 @@ def github_callback():
     # 为每次登录生成新的token，支持多端同时登录
     new_token = get_uuid()
     
-    if not user.access_token or not user.access_token.strip():
-        # 如果没有token，直接设置新token
-        user.access_token = new_token
-    else:
-        # 如果已有token，将新token添加到现有token列表中（用|分隔）
-        existing_tokens = user.access_token.split('|')
-        # 保留所有有效token，支持无限多设备同时登录
-        existing_tokens = [t for t in existing_tokens if t.strip()]
-        existing_tokens.append(new_token)
-        user.access_token = '|'.join(existing_tokens)
+    # 使用统一的token管理函数
+    manage_user_tokens(user, new_token)
     
     # 临时设置当前token用于get_id()
     user._current_token = new_token
@@ -482,16 +484,8 @@ def feishu_callback():
     # 为每次登录生成新的token，支持多端同时登录
     new_token = get_uuid()
     
-    if not user.access_token or not user.access_token.strip():
-        # 如果没有token，直接设置新token
-        user.access_token = new_token
-    else:
-        # 如果已有token，将新token添加到现有token列表中（用|分隔）
-        existing_tokens = user.access_token.split('|')
-        # 保留所有有效token，支持无限多设备同时登录
-        existing_tokens = [t for t in existing_tokens if t.strip()]
-        existing_tokens.append(new_token)
-        user.access_token = '|'.join(existing_tokens)
+    # 使用统一的token管理函数
+    manage_user_tokens(user, new_token)
     
     # 临时设置当前token用于get_id()
     user._current_token = new_token
