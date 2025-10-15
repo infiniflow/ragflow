@@ -1,15 +1,14 @@
 {
     "id": 26,
     "title": {
-        "en": "Stock Research Report Workflow",
-        "zh": "股票研究报告工作流"
+        "en": "Stock Research Report Agent",
+        "zh": "股票研究报告智能体"
     },
     "description": {
         "en": "This template helps financial analysts quickly organize information — it can automatically retrieve company data, consolidate financial metrics, and integrate research report insights.",
         "zh": "这个模板可以帮助金融分析师快速整理信息——它能够自动获取公司数据、整合财务指标，并汇总研报观点。"
     },
     "canvas_type": "Recommended",
-    "canvas_category": "dataflow_canvas",
     "dsl": {
             "components": {
                 "Agent:ManyToesBrush": {
