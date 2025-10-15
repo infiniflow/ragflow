@@ -445,8 +445,8 @@ class InfinityConnection(DocStoreConnection):
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, output)
         if matchExprs:
-            res["Sum"] = res[score_column] + res[PAGERANK_FLD]
-            res = res.sort_values(by="Sum", ascending=False).reset_index(drop=True).drop(columns=["Sum"])
+            res["_score"] = res[score_column] + res[PAGERANK_FLD]
+            res = res.sort_values(by="_score", ascending=False).reset_index(drop=True)
             res = res.head(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
