@@ -53,25 +53,31 @@ Whether to enable entity resolution. You can think of this as an entity deduplic
 - (Default) Disable entity resolution.
 - Enable entity resolution. This option consumes more tokens.
 
-### Community report generation
+### Community reports
 
 In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See [here](https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/) for more information. This indicates whether to generate community reports:
 
 - Generate community reports. This option consumes more tokens.
 - (Default) Do not generate community reports.
 
-## Procedure
+## Quickstart
 
-1. On the **Configuration** page of your dataset, switch on **Extract knowledge graph** or adjust its settings as needed, and click **Save** to confirm your changes.
+1. Navigate to the **Configuration** page of your dataset and update:
+   
+   - Entity types: *Required* - Specifies the entity types in the knowledge graph to generate. You don't have to stick with the default, but you need to customize them for your documents.
+   - Method: *Optional*
+   - Entity resolution: *Optional*
+   - Community reports: *Optional*
+   *The default knowledge graph configurations for your dataset are now set.*
 
-   - *The default knowledge graph configurations for your dataset are now set and files uploaded from this point onward will automatically use these settings during parsing.*
-   - *Files parsed before this update will retain their original knowledge graph settings.*
+2. Navigate to the **Files** page of your dataset, click the **Generate** button on the top right corner of the page, then select **Knowledge graph** from the dropdown to initiate the knowledge graph generation process.
 
-2. The knowledge graph of your dataset does *not* automatically update *until* a newly uploaded file is parsed.
+   *You can click the pause button in the dropdown to halt the build process when necessary.*
 
-   _A **Knowledge graph** entry appears under **Configuration** once a knowledge graph is created._
+3. Go back to the **Configuration** page:  
+   
+   *Once a knowledge graph is generated, the **Knowledge graph** field changes from `Not generated` to `Generated at a specific timestamp`. You can delete it by clicking the recycle bin button to the right of the field.*
 
-3. Click **Knowledge graph** to view the details of the generated graph.
 4. To use the created knowledge graph, do either of the following:
    
    - In the **Chat setting** panel of your chat app, switch on the **Use knowledge graph** toggle.
@@ -79,17 +85,13 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 
 ## Frequently asked questions
 
-### Can I have different knowledge graph settings for different files in my dataset?
-
-Yes, you can. Just one graph is generated per dataset. The smaller graphs of your files will be *combined* into one big, unified graph at the end of the graph extraction process.
-
 ### Does the knowledge graph automatically update when I remove a related file?
 
-Nope. The knowledge graph does *not* automatically update *until* a newly uploaded document is parsed.
+Nope. The knowledge graph does *not* update *until* you regenerate a knowledge graph for your dataset.
 
 ### How to remove a generated knowledge graph?
 
-To remove the generated knowledge graph, delete all related files in your dataset. Although the **Knowledge graph** entry will still be visible, the graph has actually been deleted.
+On the **Configuration** page of your dataset, find the **Knoweledge graph** field and click the recycle bin button to the right of the field.
 
 ### Where is the created knowledge graph stored?
 
