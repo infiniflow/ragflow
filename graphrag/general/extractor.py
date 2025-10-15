@@ -227,7 +227,7 @@ class Extractor:
     async def _handle_entity_relation_summary(self, entity_or_relation_name: str, description: str) -> str:
         summary_max_tokens = 512
         use_description = truncate(description, summary_max_tokens)
-        description_list = (use_description.split(GRAPH_FIELD_SEP),)
+        description_list = use_description.split(GRAPH_FIELD_SEP)
         if len(description_list) <= 12:
             return use_description
         prompt_template = SUMMARIZE_DESCRIPTIONS_PROMPT
