@@ -74,12 +74,12 @@ def get_es_cluster_stats() -> dict:
         raise Exception("Elasticsearch is not in use.")
     try:
         return {
-            "alive": True,
+            "status": "alive",
             "message": ESConnection().get_cluster_stats()
         }
     except Exception as e:
         return {
-            "alive": False,
+            "status": "timeout",
             "message": f"error: {str(e)}",
         }
 
@@ -90,12 +90,12 @@ def get_infinity_status():
         raise Exception("Infinity is not in use.")
     try:
         return {
-            "alive": True,
+            "status": "alive",
             "message": InfinityConnection().health()
         }
     except Exception as e:
         return {
-            "alive": False,
+            "status": "timeout",
             "message": f"error: {str(e)}",
         }
 
@@ -107,12 +107,12 @@ def get_mysql_status():
         headers = ['id', 'user', 'host', 'db', 'command', 'time', 'state', 'info']
         cursor.close()
         return {
-            "alive": True,
+            "status": "alive",
             "message": [dict(zip(headers, r)) for r in res_rows]
         }
     except Exception as e:
         return {
-            "alive": False,
+            "status": "timeout",
             "message": f"error: {str(e)}",
         }
 
@@ -122,12 +122,12 @@ def check_minio_alive():
     try:
         response = requests.get(f'http://{rag_settings.MINIO["host"]}/minio/health/live')
         if response.status_code == 200:
-            return {'alive': True, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+            return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
         else:
-            return {'alive': False, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+            return {"status": "timeout", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
     except Exception as e:
         return {
-            "alive": False,
+            "status": "timeout",
             "message": f"error: {str(e)}",
         }
 
@@ -135,12 +135,12 @@ def check_minio_alive():
 def get_redis_info():
     try:
         return {
-            "alive": True,
+            "status": "alive",
             "message": REDIS_CONN.info()
         }
     except Exception as e:
         return {
-            "alive": False,
+            "status": "timeout",
             "message": f"error: {str(e)}",
         }
 
@@ -150,12 +150,12 @@ def check_ragflow_server_alive():
     try:
         response = requests.get(f'http://{settings.HOST_IP}:{settings.HOST_PORT}/v1/system/ping')
         if response.status_code == 200:
-            return {'alive': True, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+            return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
         else:
-            return {'alive': False, "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+            return {"status": "timeout", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
     except Exception as e:
         return {
-            "alive": False,
+            "status": "timeout",
             "message": f"error: {str(e)}",
         }
 
@@ -192,9 +192,7 @@ def run_health_checks() -> tuple[dict, bool]:
     except Exception:
         result["storage"] = "nok"
 
-
-    all_ok = (result.get("db") == "ok") and (result.get("redis") == "ok") and (result.get("doc_engine") == "ok") and (result.get("storage") == "ok")
+    all_ok = (result.get("db") == "ok") and (result.get("redis") == "ok") and (result.get("doc_engine") == "ok") and (
+                result.get("storage") == "ok")
     result["status"] = "ok" if all_ok else "nok"
     return result, all_ok
-
-

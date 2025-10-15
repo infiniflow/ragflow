@@ -181,12 +181,12 @@ class ServiceMgr:
             config_dict = config.to_dict()
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
-                if service_detail['alive']:
-                    config_dict['status'] = 'Alive'
+                if "status" in service_detail:
+                    config_dict['status'] = service_detail['status']
                 else:
-                    config_dict['status'] = 'Timeout'
+                    config_dict['status'] = 'timeout'
             except Exception:
-                config_dict['status'] = 'Timeout'
+                config_dict['status'] = 'timeout'
             result.append(config_dict)
         return result
 
@@ -206,7 +206,7 @@ class ServiceMgr:
         }
         service_info = service_config_mapping.get(service_id, {})
         if not service_info:
-            raise AdminException(f"Invalid service_id: {service_id}")
+            raise AdminException(f"invalid service_id: {service_id}")
 
         detail_func = getattr(health_utils, service_info.get('detail_func_name'))
         res = detail_func()
