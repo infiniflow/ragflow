@@ -15,13 +15,19 @@
 #
 import json
 import logging
+import string
+import secrets
+import os
 import re
 import secrets
+import time
+
 from datetime import datetime
 
 from flask import redirect, request, session
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from api import settings
 from api.apps.auth import get_auth_client
@@ -46,6 +52,18 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.crypt import decrypt
+from rag.utils.redis_conn import REDIS_CONN
+from api.apps import app, smtp_mail_server
+from api.utils.web_utils import (
+    send_email_html,
+    OTP_LENGTH,
+    OTP_TTL_SECONDS,
+    ATTEMPT_LIMIT,
+    ATTEMPT_LOCK_SECONDS,
+    RESEND_COOLDOWN_SECONDS,
+    otp_keys,
+    hash_code
+)
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -825,3 +843,177 @@ def set_tenant_info():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/forgot", methods=["POST"])  # noqa: F821
+def forgot_password_send_code():
+    """
+    Send a password reset verification code to the given email.
+    body:
+      {
+        "email": "user@example.com"
+      }
+    """
+    form = request.form.to_dict() if getattr(request, "form", None) else {}
+    req = request.get_json(silent=True) or {}
+    email = (req.get("email") or form.get("email") or "").strip().lower()
+
+    if not email:
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="email is required")
+
+    # Ensure the user exists
+    users = UserService.query(email=email)
+    if not users:
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="user_not_found")
+
+    # Cooldown check
+    k_code, k_attempts, k_last, k_lock = otp_keys(email)
+    now = int(time.time())
+    last_ts = REDIS_CONN.get(k_last)
+    if last_ts:
+        try:
+            elapsed = now - int(last_ts)
+        except Exception:
+            elapsed = RESEND_COOLDOWN_SECONDS
+        remaining = RESEND_COOLDOWN_SECONDS - elapsed
+        if remaining > 0:
+            return get_json_result(data=True, message=f"you still have to wait {remaining} seconds")
+
+    # Generate OTP: include both lowercase and uppercase at least once, avoid ambiguous chars
+    lower = ''.join(ch for ch in string.ascii_lowercase if ch not in 'l')
+    upper = ''.join(ch for ch in string.ascii_uppercase if ch not in 'OI')
+    digits = ''.join(ch for ch in string.digits if ch not in '01')
+    allowed = lower + upper + digits
+    if OTP_LENGTH >= 2:
+        picks = [secrets.choice(lower), secrets.choice(upper)]
+        picks += [secrets.choice(allowed) for _ in range(OTP_LENGTH - 2)]
+        for i in range(len(picks) - 1, 0, -1):
+            j = secrets.randbelow(i + 1)
+            picks[i], picks[j] = picks[j], picks[i]
+        code = ''.join(picks)
+    else:
+        code = ''.join(secrets.choice(allowed) for _ in range(OTP_LENGTH))
+
+    salt = os.urandom(16)
+    code_hash = hash_code(code, salt)
+
+    # Store OTP and metadata (wrapper exposes set with expiry, not pipeline)
+    REDIS_CONN.set(k_code, f"{code_hash}:{salt.hex()}", OTP_TTL_SECONDS)
+    REDIS_CONN.set(k_attempts, 0, OTP_TTL_SECONDS)
+    REDIS_CONN.set(k_last, now, OTP_TTL_SECONDS)
+    REDIS_CONN.delete(k_lock)
+
+    # Send reset OTP email directly (no short URL)
+    ttl_min = OTP_TTL_SECONDS // 60
+    if not smtp_mail_server:
+        logging.warning("SMTP mail server not initialized; skip sending email.")
+    else:
+        try:
+            send_email_html(
+                subject="Your Password Reset Code",
+                to_email=email,
+                template_key="reset_code",
+                code=code,
+                ttl_min=ttl_min,
+            )
+        except Exception:
+            logging.exception("Send reset code email failed")
+    return get_json_result(data=True, message="Verification code sent.")
+
+
+@manager.route("/forgot/verify", methods=["POST"])  # noqa: F821
+def forgot_password_verify_code():
+    """
+    Verify OTP and reset password in one step; then log the user in.
+    body:
+      {
+        "email": "user@example.com",
+        "code": "Ab3F7kP2",
+        "password": "NewP@ssw0rd",
+        "confirm_password": "NewP@ssw0rd"
+      }
+    """
+    req = request.get_json() or {}
+    email = req.get("email") or ""
+    code = req.get("code") or ""
+    raw_pwd = req.get("password") or ""
+    raw_confirm = req.get("confirm_password") or ""
+
+    # Try decrypt, else use raw
+    try:
+        new_password = decrypt(raw_pwd)
+    except Exception:
+        new_password = raw_pwd
+    try:
+        confirm_password = decrypt(raw_confirm)
+    except Exception:
+        confirm_password = raw_confirm
+
+    if not email or not code or not new_password or not confirm_password:
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="email/code/password/confirm_password is required")
+
+    users = UserService.query(email=email)
+    if not users:
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="user_not_found")
+
+
+    if new_password != confirm_password:
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="password_mismatch")
+
+    k_code, k_attempts, k_last, k_lock = otp_keys(email)
+
+    if REDIS_CONN.get(k_lock):
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="locked")
+
+    entry = REDIS_CONN.get(k_code)
+    if not entry:
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="expired_or_missing")
+
+    attempts = int(REDIS_CONN.get(k_attempts) or 0)
+    if attempts >= ATTEMPT_LIMIT:
+        REDIS_CONN.set(k_lock, 1, ATTEMPT_LOCK_SECONDS)
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="locked")
+
+    try:
+        code_hash, salt_hex = entry.split(":", 1)
+        salt = bytes.fromhex(salt_hex)
+    except Exception:
+        return get_json_result(data=False, code=settings.RetCode.SERVER_ERROR, message="server_error")
+
+    if hash_code(code, salt) != code_hash:
+        # Manually increment attempts since wrapper has no incr
+        new_attempts = attempts + 1
+        REDIS_CONN.set(k_attempts, new_attempts, OTP_TTL_SECONDS)
+        if new_attempts >= ATTEMPT_LIMIT:
+            REDIS_CONN.set(k_lock, 1, ATTEMPT_LOCK_SECONDS)
+        return get_json_result(data=False, code=settings.RetCode.OPERATING_ERROR, message="bad_code")
+
+    # success: clear OTP records
+    REDIS_CONN.delete(k_code)
+    REDIS_CONN.delete(k_attempts)
+    REDIS_CONN.delete(k_last)
+    REDIS_CONN.delete(k_lock)
+
+    user = users[0]
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return get_json_result(
+            data=False,
+            code=settings.RetCode.FORBIDDEN,
+            message="This account has been disabled, please contact the administrator!",
+        )
+
+    # Update password then log in
+    try:
+        UserService.update_by_id(user.id, {"password": generate_password_hash(new_password)})
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+    response_data = user.to_json()
+    user.access_token = get_uuid()
+    login_user(user)
+    user.update_time = (current_timestamp(),)
+    user.update_date = (datetime_format(datetime.now()),)
+    user.save()
+    msg = "Welcome back!"
+    return construct_response(data=response_data, auth=user.get_id(), message=msg)
