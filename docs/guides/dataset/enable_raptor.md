@@ -72,3 +72,22 @@ The maximum number of clusters to create. Defaults to 64, with a maximum limit o
 ### Random seed
 
 A random seed. Click **+** to change the seed value.
+
+## Quickstart
+
+1. Navigate to the **Configuration** page of your dataset and update:
+   
+   - Prompt: *Optional* - We recommend that you keep it as-is until you understand the mechanism behind.
+   - Max token: *Optional*
+   - Threshold: *Optional*
+   - Max cluster: *Optional*
+
+2. Navigate to the **Files** page of your dataset, click the **Generate** button on the top right corner of the page, then select **RAPTOR** from the dropdown to initiate the RAPTOR build process.
+
+   *You can click the pause button in the dropdown to halt the build process when necessary.*
+
+3. Go back to the **Configuration** page:  
+   
+   *The **RAPTOR** field changes from `Not generated` to `Generated at a specific timestamp` when a RAPTOR hierarchical tree structure is generated. You can delete it by clicking the recycle bin button to the right of the field.*
+
+4. Once a RAPTOR hierarchical tree structure is generated, your chat assistant and **Retrieval** agent component will use it for retrieval as a default.

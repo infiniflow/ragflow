@@ -45,7 +45,7 @@ Released on October 15, 2025.
 - Claude Sonnet 4.5
 - Meituan LongCat-Flash-Thinking
 
-## New agent templates
+### New agent templates
 
 - Company Research Report Deep Dive Agent: Designed for financial institutions to help analysts quickly organize information, generate research reports, and make investment decisions.
 - Orchestratable Ingestion Pipeline Template: Allows users to apply this template on the canvas to rapidly establish standardized data ingestion and cleansing processes.
