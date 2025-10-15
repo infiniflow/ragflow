@@ -1716,7 +1716,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
     },
     datasetOverview: {
       downloadTip: '正在从数据源下载文件。',
-      processingTip: '正在由数据流处理文件。',
+      processingTip: '正在由pipeline处理文件。',
       totalFiles: '文件总数',
       downloading: '正在下载',
       processing: '正在处理',

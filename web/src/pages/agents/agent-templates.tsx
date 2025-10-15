@@ -91,9 +91,9 @@ export default function AgentTemplates() {
       return templateList;
     }
     return templateList.filter(
-      (item, index) =>
+      (item) =>
         item.canvas_type?.toLocaleLowerCase() ===
-          selectMenuItem?.toLocaleLowerCase() || index === 0,
+        selectMenuItem?.toLocaleLowerCase(),
     );
   }, [selectMenuItem, templateList]);
 
