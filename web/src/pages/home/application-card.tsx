@@ -28,7 +28,7 @@ export function ApplicationCard({
             name={app.title || 'CN'}
           ></RAGFlowAvatar>
           <div className="flex-1">
-            <h3 className="text-sm font-normal line-clamp-1 mb-1 text-ellipsis w-[180px] overflow-hidden">
+            <h3 className="text-sm font-normal line-clamp-1 mb-1 text-ellipsis w-[160px] overflow-hidden">
               {app.title}
             </h3>
             <p className="text-xs font-normal text-text-secondary">
