@@ -353,8 +353,6 @@ class OpenRouterCV(GptV4):
             provider_cfg["order"] = provider_order
             provider_cfg["allow_fallbacks"] = False
             self.extra_body["provider"] = provider_cfg
-        
-        
 
 
 class LocalAICV(GptV4):
