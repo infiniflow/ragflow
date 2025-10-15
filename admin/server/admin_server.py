@@ -26,7 +26,7 @@ from routes import admin_bp
 from api.utils.log_utils import init_root_logger
 from api.constants import SERVICE_CONF
 from api import settings
-from config import load_configurations, SERVICE_CONFIGS
+from admin.server.config import load_configurations, SERVICE_CONFIGS
 
 stop_event = threading.Event()
 
