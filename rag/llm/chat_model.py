@@ -1165,15 +1165,13 @@ class GoogleChat(Base):
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
-            import vertexai.generative_models as glm
-            from google.cloud import aiplatform
+            from google import genai
 
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
-                aiplatform.init(credentials=credits, project=project_id, location=region)
+                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
             else:
-                aiplatform.init(project=project_id, location=region)
-            self.client = glm.GenerativeModel(model_name=self.model_name)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -1188,38 +1186,11 @@ class GoogleChat(Base):
                     del gen_conf[k]
         return gen_conf
 
-    def _get_thinking_config(self, gen_conf):
-        """Extract and create ThinkingConfig from gen_conf.
-
-        Default behavior for Vertex AI Generative Models: thinking_budget=0 (disabled)
-        unless explicitly specified by the user. This does not apply to Claude models.
-
-        Users can override by setting thinking_budget in gen_conf/llm_setting:
-        - 0: Disabled (default)
-        - 1-24576: Manual budget
-        - -1: Auto (model decides)
-        """
-        # Claude models don't support ThinkingConfig
-        if "claude" in self.model_name:
-            gen_conf.pop("thinking_budget", None)
-            return None
-
-        # For Vertex AI Generative Models, default to thinking disabled
-        thinking_budget = gen_conf.pop("thinking_budget", 0)
-
-        if thinking_budget is not None:
-            try:
-                import vertexai.generative_models as glm  # type: ignore
-                return glm.ThinkingConfig(thinking_budget=thinking_budget)
-            except Exception:
-                pass
-        return None
-
     def _chat(self, history, gen_conf={}, **kwargs):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        thinking_config = self._get_thinking_config(gen_conf)
-        gen_conf = self._clean_conf(gen_conf)
+
         if "claude" in self.model_name:
+            gen_conf = self._clean_conf(gen_conf)
             response = self.client.messages.create(
                 model=self.model_name,
                 messages=[h for h in history if h["role"] != "system"],
@@ -1235,28 +1206,63 @@ class GoogleChat(Base):
                 response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
             )
 
-        self.client._system_instruction = system
-        hist = []
+        # Gemini models with google-genai SDK
+        # Set default thinking_budget=0 if not specified
+        if "thinking_budget" not in gen_conf:
+            gen_conf["thinking_budget"] = 0
+
+        thinking_budget = gen_conf.pop("thinking_budget", 0)
+        gen_conf = self._clean_conf(gen_conf)
+
+        # Build GenerateContentConfig
+        try:
+            from google.genai.types import GenerateContentConfig, ThinkingConfig, Content, Part
+        except ImportError as e:
+            logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+            raise
+
+        config_dict = {}
+        if system:
+            config_dict["system_instruction"] = system
+        if "temperature" in gen_conf:
+            config_dict["temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            config_dict["top_p"] = gen_conf["top_p"]
+        if "max_output_tokens" in gen_conf:
+            config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+
+        # Add ThinkingConfig
+        config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+
+        config = GenerateContentConfig(**config_dict)
+
+        # Convert history to google-genai Content format
+        contents = []
         for item in history:
             if item["role"] == "system":
                 continue
-            hist.append(deepcopy(item))
-            item = hist[-1]
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "model"
-            if "content" in item:
-                item["parts"] = [
-                    {
-                        "text": item.pop("content"),
-                    }
-                ]
+            # google-genai uses 'model' instead of 'assistant'
+            role = "model" if item["role"] == "assistant" else item["role"]
+            content = Content(
+                role=role,
+                parts=[Part(text=item["content"])]
+            )
+            contents.append(content)
 
-        if thinking_config:
-            response = self.client.generate_content(hist, generation_config=gen_conf, thinking_config=thinking_config)
-        else:
-            response = self.client.generate_content(hist, generation_config=gen_conf)
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config
+        )
+
         ans = response.text
-        return ans, response.usage_metadata.total_token_count
+        # Get token count from response
+        try:
+            total_tokens = response.usage_metadata.total_token_count
+        except Exception:
+            total_tokens = 0
+
+        return ans, total_tokens
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if "claude" in self.model_name:
@@ -1283,34 +1289,59 @@ class GoogleChat(Base):
 
             yield total_tokens
         else:
-            response = None
-            total_tokens = 0
-            self.client._system_instruction = system
-            thinking_config = self._get_thinking_config(gen_conf)
-            if "max_tokens" in gen_conf:
-                gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
-                del gen_conf["max_tokens"]
-            for k in list(gen_conf.keys()):
-                if k not in ["temperature", "top_p", "max_output_tokens"]:
-                    del gen_conf[k]
-            for item in history:
-                if "role" in item and item["role"] == "assistant":
-                    item["role"] = "model"
-                if "content" in item:
-                    item["parts"] = [
-                        {
-                            "text": item.pop("content"),
-                        }
-                    ]
+            # Gemini models with google-genai SDK
             ans = ""
+            total_tokens = 0
+
+            # Set default thinking_budget=0 if not specified
+            if "thinking_budget" not in gen_conf:
+                gen_conf["thinking_budget"] = 0
+
+            thinking_budget = gen_conf.pop("thinking_budget", 0)
+            gen_conf = self._clean_conf(gen_conf)
+
+            # Build GenerateContentConfig
             try:
-                if thinking_config:
-                    response = self.client.generate_content(history, generation_config=gen_conf, thinking_config=thinking_config, stream=True)
-                else:
-                    response = self.client.generate_content(history, generation_config=gen_conf, stream=True)
-                for resp in response:
-                    ans = resp.text
-                    total_tokens += num_tokens_from_string(ans)
+                from google.genai.types import GenerateContentConfig, ThinkingConfig, Content, Part
+            except ImportError as e:
+                logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+                raise
+
+            config_dict = {}
+            if system:
+                config_dict["system_instruction"] = system
+            if "temperature" in gen_conf:
+                config_dict["temperature"] = gen_conf["temperature"]
+            if "top_p" in gen_conf:
+                config_dict["top_p"] = gen_conf["top_p"]
+            if "max_output_tokens" in gen_conf:
+                config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+
+            # Add ThinkingConfig
+            config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+
+            config = GenerateContentConfig(**config_dict)
+
+            # Convert history to google-genai Content format
+            contents = []
+            for item in history:
+                # google-genai uses 'model' instead of 'assistant'
+                role = "model" if item["role"] == "assistant" else item["role"]
+                content = Content(
+                    role=role,
+                    parts=[Part(text=item["content"])]
+                )
+                contents.append(content)
+
+            try:
+                for chunk in self.client.models.generate_content_stream(
+                    model=self.model_name,
+                    contents=contents,
+                    config=config
+                ):
+                    text = chunk.text
+                    ans = text
+                    total_tokens += num_tokens_from_string(text)
                     yield ans
 
             except Exception as e:
