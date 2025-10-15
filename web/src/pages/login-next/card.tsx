@@ -16,23 +16,35 @@ const FlipCard3D = (props: IProps) => {
       setIsFlipped(true);
     }
   }, [isLoginPage]);
-
+  const isBackfaceVisibilitySupported = () => {
+    return (
+      CSS.supports('backface-visibility', 'hidden') ||
+      CSS.supports('-webkit-backface-visibility', 'hidden') ||
+      CSS.supports('-moz-backface-visibility', 'hidden') ||
+      CSS.supports('-ms-backface-visibility', 'hidden')
+    );
+  };
   return (
-    <div className="relative w-full h-full perspective-1000">
-      <div
-        className={`relative w-full h-full transition-transform transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}
-      >
-        {/* Front Face */}
-        <div className="absolute inset-0 flex items-center justify-center bg-blue-500 text-white rounded-xl backface-hidden">
-          {children}
-        </div>
+    <>
+      {isBackfaceVisibilitySupported() && (
+        <div className="relative w-full h-full perspective-1000">
+          <div
+            className={`relative w-full h-full transition-transform transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}
+          >
+            {/* Front Face */}
+            <div className="absolute inset-0 flex items-center justify-center backface-hidden rotate-y-0">
+              {children}
+            </div>
 
-        {/* Back Face */}
-        <div className="absolute inset-0 flex items-center justify-center bg-green-500 text-white rounded-xl backface-hidden rotate-y-180">
-          {children}
+            {/* Back Face */}
+            <div className="absolute inset-0 flex items-center justify-center backface-hidden rotate-y-180">
+              {children}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+      {!isBackfaceVisibilitySupported() && <>{children}</>}
+    </>
   );
 };
 

@@ -39,7 +39,7 @@ export default function Chat() {
   const { t } = useTranslation();
   const { data: conversation } = useFetchConversation();
 
-  const { handleConversationCardClick, controller } =
+  const { handleConversationCardClick, controller, stopOutputMessage } =
     useHandleClickConversationCard();
   const { visible: settingVisible, switchVisible: switchSettingVisible } =
     useSetModalState(true);
@@ -74,6 +74,7 @@ export default function Chat() {
           controller={controller}
           removeChatBox={removeChatBox}
           addChatBox={addChatBox}
+          stopOutputMessage={stopOutputMessage}
         ></MultipleChatBox>
       </section>
     );
@@ -129,7 +130,10 @@ export default function Chat() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex-1 p-0 min-h-0">
-                <SingleChatBox controller={controller}></SingleChatBox>
+                <SingleChatBox
+                  controller={controller}
+                  stopOutputMessage={stopOutputMessage}
+                ></SingleChatBox>
               </CardContent>
             </Card>
             {settingVisible && (

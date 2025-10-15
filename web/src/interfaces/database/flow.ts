@@ -46,6 +46,7 @@ export declare interface IFlow {
 export interface IFlowTemplate {
   avatar: string;
   canvas_type: string;
+  canvas_category?: string;
   create_date: string;
   create_time: number;
   description: {
