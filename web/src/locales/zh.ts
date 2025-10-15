@@ -105,7 +105,7 @@ export default {
       generatedOn: '生成于',
       subbarFiles: '文件列表',
       generate: '生成',
-      raptor: 'Raptor',
+      raptor: 'RAPTOR',
       processingType: '处理类型',
       dataPipeline: '数据管道',
       operations: '操作',

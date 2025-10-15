@@ -115,7 +115,7 @@ export default {
       generateKnowledgeGraph:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
-        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+        'Performs recursive clustering and summarization of document chunks to build a hierarchical tree structure, enabling more context-aware retrieval across lengthy documents.',
       generate: 'Generate',
       raptor: 'RAPTOR',
       processingType: 'Processing Type',
