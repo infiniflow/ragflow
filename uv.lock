@@ -2017,7 +2017,7 @@ wheels = [
 
 [[package]]
 name = "google-cloud-aiplatform"
-version = "1.64.0"
+version = "1.70.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "docstring-parser" },
@@ -2032,9 +2032,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "shapely" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5e/e3/f86b429d000a9c25f25bcd122e4b6286aeef70a89acfd6ea088324af016c/google-cloud-aiplatform-1.64.0.tar.gz", hash = "sha256:475a612829b283eb8f783e773d37115c30db42e2e50065c8653db0c9bd18b0da", size = 6258492, upload-time = "2024-08-28T01:03:24.573Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/88/06/bc8028c03d4bedb85114c780a9f749b67ff06ce29d25dc7f1a99622f2692/google-cloud-aiplatform-1.70.0.tar.gz", hash = "sha256:e8edef6dbc7911380d0ea55c47544e799f62b891cb1a83b504ca1c09fff9884b", size = 6311624, upload-time = "2024-10-09T04:28:12.606Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7a/c5/cdf0eaeded413d5f6221f9c4f466a7714c79a1938c2f7221467d4a9b9859/google_cloud_aiplatform-1.64.0-py2.py3-none-any.whl", hash = "sha256:3a79ce2ec047868c348336624a60993464ca977fd258bcf609cc79309a8101c4", size = 5228409, upload-time = "2024-08-28T01:03:21.275Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/46/d9/280e5a9b5caf69322f64fa55f62bf447d76c5fe30e8df6e93373f22c4bd7/google_cloud_aiplatform-1.70.0-py2.py3-none-any.whl", hash = "sha256:690e6041f03d3aa85102ac3f316c958d6f43a99aefb7fb3f8938dee56d08abd9", size = 5267225, upload-time = "2024-10-09T04:28:09.271Z" },
 ]
 
 [[package]]
@@ -2127,6 +2127,25 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/eb/f3/8b84cd4e0ad111e63e30eb89453f8dd308e3ad36f42305cf8c202461cdf0/google_crc32c-1.7.1-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fa8136cc14dd27f34a3221c0f16fd42d8a40e4778273e61a3c19aedaa44daf6b", size = 28049, upload-time = "2025-03-26T14:41:44.651Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/16/1b/1693372bf423ada422f80fd88260dbfd140754adb15cbc4d7e9a68b1cb8e/google_crc32c-1.7.1-pp311-pypy311_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:85fef7fae11494e747c9fd1359a527e5970fc9603c90764843caabd3a16a0a48", size = 28241, upload-time = "2025-03-26T14:41:45.898Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fd/3c/2a19a60a473de48717b4efb19398c3f914795b64a96cf3fbe82588044f78/google_crc32c-1.7.1-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6efb97eb4369d52593ad6f75e7e10d053cf00c48983f7a973105bc70b0ac4d82", size = 28048, upload-time = "2025-03-26T14:41:46.696Z" },
+]
+
+[[package]]
+name = "google-genai"
+version = "1.43.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "google-auth" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "tenacity" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c1/75/992ca4462682949750709678b8efbc865222c9a16cf34504b69c5459606c/google_genai-1.43.0.tar.gz", hash = "sha256:84eb219d320759c5882bc2cdb4e2ac84544d00f5d12c7892c79fb03d71bfc9a4", size = 236132, upload-time = "2025-10-10T23:16:40.131Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/61/85/e90dda488d5044e6e4cd1b49e7e7f0cc7f4a2a1c8004e88a5122d42ea024/google_genai-1.43.0-py3-none-any.whl", hash = "sha256:be1d4b1acab268125d536fd81b73c38694a70cb08266759089154718924434fd", size = 236733, upload-time = "2025-10-10T23:16:38.809Z" },
 ]
 
 [[package]]
@@ -2472,18 +2491,17 @@ wheels = [
 
 [[package]]
 name = "httpx"
-version = "0.27.2"
+version = "0.28.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "certifi" },
     { name = "httpcore" },
     { name = "idna" },
-    { name = "sniffio" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/78/82/08f8c936781f67d9e6b9eeb8a0c8b4e406136ea4c3d1f89a5db71d42e0e6/httpx-0.27.2.tar.gz", hash = "sha256:f7c2be1d2f3c3c3160d441802406b206c2b76f5947b11115e6df10c6c65e66c2", size = 144189, upload-time = "2024-08-27T12:54:01.334Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406, upload-time = "2024-12-06T15:37:23.222Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/56/95/9377bcb415797e44274b51d46e3249eba641711cf3348050f76ee7b15ffc/httpx-0.27.2-py3-none-any.whl", hash = "sha256:7bb2708e112d8fdd7829cd4243970f0c223274051cb35ee80c03301ee29a3df0", size = 76395, upload-time = "2024-08-27T12:53:59.653Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad", size = 73517, upload-time = "2024-12-06T15:37:21.509Z" },
 ]
 
 [package.optional-dependencies]
@@ -3883,14 +3901,15 @@ wheels = [
 
 [[package]]
 name = "ollama"
-version = "0.2.1"
+version = "0.6.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "httpx" },
+    { name = "pydantic" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/aa/2b/bda3e59080b136e90367bebb67d5072922a912f0e0b6f49be1b4eb79c109/ollama-0.2.1.tar.gz", hash = "sha256:fa316baa9a81eac3beb4affb0a17deb3008fdd6ed05b123c26306cfbe4c349b6", size = 9918, upload-time = "2024-06-05T19:00:52.447Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d6/47/f9ee32467fe92744474a8c72e138113f3b529fc266eea76abfdec9a33f3b/ollama-0.6.0.tar.gz", hash = "sha256:da2b2d846b5944cfbcee1ca1e6ee0585f6c9d45a2fe9467cbcd096a37383da2f", size = 50811, upload-time = "2025-09-24T22:46:02.417Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7d/b7/8cc05807bfbc5b92da7fb94c525e1e56572a08eea7cdf3656e6c5dc6f9b1/ollama-0.2.1-py3-none-any.whl", hash = "sha256:b6e2414921c94f573a903d1069d682ba2fb2607070ea9e19ca4a7872f2a460ec", size = 9738, upload-time = "2024-06-05T19:00:47.437Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b5/c1/edc9f41b425ca40b26b7c104c5f6841a4537bb2552bfa6ca66e81405bb95/ollama-0.6.0-py3-none-any.whl", hash = "sha256:534511b3ccea2dff419ae06c3b58d7f217c55be7897c8ce5868dfb6b219cf7a0", size = 14130, upload-time = "2025-09-24T22:46:01.19Z" },
 ]
 
 [[package]]
@@ -5476,6 +5495,7 @@ dependencies = [
     { name = "flask-login" },
     { name = "flask-mail" },
     { name = "flask-session" },
+    { name = "google-genai" },
     { name = "google-generativeai" },
     { name = "google-search-results" },
     { name = "graspologic" },
@@ -5635,13 +5655,14 @@ requires-dist = [
     { name = "flask-login", specifier = "==0.6.3" },
     { name = "flask-mail", specifier = ">=0.10.0" },
     { name = "flask-session", specifier = "==0.8.0" },
+    { name = "google-genai", specifier = ">=1.41.0,<2.0.0" },
     { name = "google-generativeai", specifier = ">=0.8.1,<0.9.0" },
     { name = "google-search-results", specifier = "==2.4.2" },
     { name = "graspologic", specifier = ">=3.4.1,<4.0.0" },
     { name = "groq", specifier = "==0.9.0" },
     { name = "hanziconv", specifier = "==0.3.2" },
     { name = "html-text", specifier = "==0.6.2" },
-    { name = "httpx", extras = ["socks"], specifier = "==0.27.2" },
+    { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<0.29.0" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
     { name = "infinity-sdk", specifier = "==0.6.0" },
@@ -5660,7 +5681,7 @@ requires-dist = [
     { name = "mistralai", specifier = "==0.4.2" },
     { name = "nltk", specifier = "==3.9.1" },
     { name = "numpy", specifier = ">=1.26.0,<2.0.0" },
-    { name = "ollama", specifier = "==0.2.1" },
+    { name = "ollama", specifier = ">=0.5.0" },
     { name = "onnxruntime", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'", specifier = "==1.19.2" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'", specifier = "==1.19.2" },
     { name = "openai", specifier = ">=1.45.0" },
@@ -5716,7 +5737,7 @@ requires-dist = [
     { name = "trio", specifier = ">=0.29.0" },
     { name = "umap-learn", specifier = "==0.5.6" },
     { name = "valkey", specifier = "==6.0.2" },
-    { name = "vertexai", specifier = "==1.64.0" },
+    { name = "vertexai", specifier = "==1.70.0" },
     { name = "volcengine", specifier = "==1.0.194" },
     { name = "voyageai", specifier = "==0.2.3" },
     { name = "webdriver-manager", specifier = "==4.0.1" },
@@ -7217,14 +7238,14 @@ wheels = [
 
 [[package]]
 name = "vertexai"
-version = "1.64.0"
+version = "1.70.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "google-cloud-aiplatform" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0a/36/2dcb9e212bc1ccaff83c897702e74d01cac65c2a664818e9cb5577a8418e/vertexai-1.64.0.tar.gz", hash = "sha256:d8bb42b64fe294180104e9210819dce694b50b27daf64b8b7725878eac65986c", size = 9289, upload-time = "2024-08-28T01:03:34.903Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/01/17/04958e273962f420cb89573c6423f231e34a684769ef49c6fed2b12cd7b1/vertexai-1.70.0.tar.gz", hash = "sha256:3af16f63c462dfc77600773fba366a99575b9fe4303fc080bd1cf823066c66fa", size = 9294, upload-time = "2024-10-09T04:28:23.814Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f7/98/ce77d9111ffd3cd49154c44a9863b8507a0eb141058fb3fb6c04a65104c7/vertexai-1.64.0-py3-none-any.whl", hash = "sha256:967c17c09e28bc7d34ff6b2ef51a1953ded4750809bf174dd8b6c9c15017180e", size = 7274, upload-time = "2024-08-28T01:03:33.324Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4a/e4/ec11c62ba6e17457b68e089b740075c23b894e801545979c0f9d01208a81/vertexai-1.70.0-py3-none-any.whl", hash = "sha256:9e0c85013efa5cad41e37e23e9fcca7e959b409288ca22832a1b7b9ae6abc393", size = 7268, upload-time = "2024-10-09T04:28:21.864Z" },
 ]
 
 [[package]]
