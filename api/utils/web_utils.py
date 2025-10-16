@@ -227,3 +227,7 @@ def hash_code(code: str, salt: bytes) -> str:
     import hmac 
     return hmac.new(salt, (code or "").encode("utf-8"), hashlib.sha256).hexdigest()
     
+
+def captcha_key(email: str) -> str:
+    return f"captcha:{email}"
+    
