@@ -1425,6 +1425,9 @@ class LiteLLMBase(ABC):
             self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
             self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
             self.bedrock_region = json.loads(key).get("bedrock_region", "")
+        elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            self.api_key = json.loads(key).get("api_key", "")
+            self.provider_order = json.loads(key).get("provider_order", "")
 
     def _get_delay(self):
         """Calculate retry delay time"""
@@ -1469,7 +1472,6 @@ class LiteLLMBase(ABC):
             timeout=self.timeout,
         )
         # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
-
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
             return "", 0
         ans = response.choices[0].message.content.strip()
@@ -1620,6 +1622,24 @@ class LiteLLMBase(ABC):
                     "aws_region_name": self.bedrock_region,
                 }
             )
+
+        if self.provider == SupportedLiteLLMProvider.OpenRouter:
+            if self.provider_order:
+                def _to_order_list(x):
+                    if x is None:
+                        return []
+                    if isinstance(x, str):
+                        return [s.strip() for s in x.split(",") if s.strip()]
+                    if isinstance(x, (list, tuple)):
+                        return [str(s).strip() for s in x if str(s).strip()]
+                    return []
+                extra_body = {}
+                provider_cfg = {}
+                provider_order = _to_order_list(self.provider_order)
+                provider_cfg["order"] = provider_order
+                provider_cfg["allow_fallbacks"] = False
+                extra_body["provider"] = provider_cfg
+                completion_args.update({"extra_body": extra_body})
         return completion_args
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
