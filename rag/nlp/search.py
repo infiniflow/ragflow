@@ -72,7 +72,7 @@ class Dealer:
     def search(self, req, idx_names: str | list[str],
                kb_ids: list[str],
                emb_mdl=None,
-               highlight=False,
+               highlight: bool | list = False,
                rank_feature: dict | None = None
                ):
         filters = self.get_filters(req)
@@ -101,7 +101,11 @@ class Dealer:
             total = self.dataStore.getTotal(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
-            highlightFields = ["content_ltks", "title_tks"] if highlight else []
+            highlightFields = ["content_ltks", "title_tks"]
+            if not highlight:
+                highlightFields = []
+            elif isinstance(highlight, list):
+                highlightFields = highlight
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
             if emb_mdl is None:
                 matchExprs = [matchText]
