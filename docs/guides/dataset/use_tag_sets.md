@@ -42,8 +42,8 @@ A tag set is *not* involved in document indexing or retrieval. Do not specify a 
 :::
 
 1. Click **+ Create dataset** to create a dataset.
-2. Navigate to the **Configuration** page of the created dataset and choose **Tag** as the default chunking method.
-3. Navigate to the **Dataset** page and upload and parse your table file in XLSX, CSV, or TXT formats.  
+2. Navigate to the **Configuration** page of the created dataset, select **Built-in** in **Ingestion pipeline**, then choose **Tag** as the default chunking method from the **Built-in** drop-down menu.
+3. Go back to the **Files** page and upload and parse your table file in XLSX, CSV, or TXT formats.  
    _A tag cloud appears under the **Tag view** section, indicating the tag set is created:_  
    ![Image](https://github.com/user-attachments/assets/abefbcbf-c130-4abe-95e1-267b0d2a0505)
 4. Click the **Table** tab to view the tag frequency table:  
