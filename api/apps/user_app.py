@@ -16,7 +16,6 @@
 import json
 import logging
 import string
-import secrets
 import os
 import re
 import secrets
@@ -27,7 +26,6 @@ from datetime import datetime
 from flask import redirect, request, session
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from api import settings
 from api.apps.auth import get_auth_client
@@ -53,7 +51,7 @@ from api.utils.api_utils import (
 )
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
-from api.apps import app, smtp_mail_server
+from api.apps import smtp_mail_server
 from api.utils.web_utils import (
     send_email_html,
     OTP_LENGTH,
