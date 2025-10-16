@@ -447,7 +447,7 @@ def build_TOC(task, docs, progress_callback):
         d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
         d["toc_kwd"] = "toc"
         d["available_int"] = 0
-        d["page_num_int"] = 100000000
+        d["page_num_int"] = [100000000]
         d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
         return d
 
