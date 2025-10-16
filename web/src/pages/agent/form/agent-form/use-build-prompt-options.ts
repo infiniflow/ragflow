@@ -26,6 +26,7 @@ export function useBuildPromptExtraPromptOptions(
       .map(([key, value]) => ({
         label: key,
         value: wrapPromptWithTag(value, key),
+        icon: null,
       }))
       .filter((x) => {
         if (!has) {
