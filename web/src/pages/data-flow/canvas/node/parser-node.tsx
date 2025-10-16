@@ -1,3 +1,4 @@
+import { NodeCollapsible } from '@/components/collapse';
 import { BaseNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
@@ -37,17 +38,18 @@ function ParserNode({
         isConnectableEnd={false}
       ></CommonHandle>
       <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
-      <section className="space-y-2">
-        {data.form?.setups.map((x, idx) => (
+
+      <NodeCollapsible items={data.form?.setups}>
+        {(x, idx) => (
           <LabelCard
             key={idx}
-            className="flex justify- flex-col text-text-primary gap-1"
+            className="flex flex-col text-text-primary gap-1"
           >
             <span className="text-text-secondary">Parser {idx + 1}</span>
             {t(`dataflow.fileFormatOptions.${x.fileFormat}`)}
           </LabelCard>
-        ))}
-      </section>
+        )}
+      </NodeCollapsible>
     </NodeWrapper>
   );
 }
