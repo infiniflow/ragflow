@@ -530,6 +530,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 filepath=filename,
                 binary=binary,
                 callback=callback,
+                output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
                 delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
             )
             parser_config["chunk_token_num"] = 0
