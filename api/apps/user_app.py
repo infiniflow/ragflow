@@ -843,10 +843,10 @@ def set_tenant_info():
         return server_error_response(e)
         
 
-@manager.route("/forget/get-captcha", methods=["GET"])  # noqa: F821
-def forget_get_otp():
+@manager.route("/forget/captcha", methods=["GET"])  # noqa: F821
+def forget_get_captcha():
     """
-    GET /forget/get-captcha?email=<email>
+    GET /forget/captcha?email=<email>
     - Generate an image captcha and cache it in Redis under key captcha:{email} with TTL = OTP_TTL_SECONDS.
     - Returns the captcha as a PNG image.
     """
@@ -869,10 +869,10 @@ def forget_get_otp():
     return Response(img_bytes, mimetype="image/png")
 
 
-@manager.route("/forget/send-otp", methods=["POST"])  # noqa: F821
+@manager.route("/forget/otp", methods=["POST"])  # noqa: F821
 def forget_send_otp():
     """
-    POST /forget/send-otp
+    POST /forget/otp
     - Verify the image captcha stored at captcha:{email} (case-insensitive).
     - On success, generate an email OTP (A–Z with length = OTP_LENGTH), store hash + salt (and timestamp) in Redis with TTL, reset attempts and cooldown, and send the OTP via email.
     """
