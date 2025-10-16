@@ -114,7 +114,7 @@ dependencies = [
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
-    "google-generativeai>=0.8.1,<0.9.0",  # Needed for cv_model and embedding_model
+    "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "python-docx>=1.1.2,<2.0.0",
     "pypdf2>=3.0.1,<4.0.0",
     "graspologic>=3.4.1,<4.0.0",
@@ -136,6 +136,7 @@ dependencies = [
     "lark>=1.2.2",
     "mammoth>=1.11.0",
     "markdownify>=1.2.0",
+    "captcha>=0.7.1",
 ]
 
 [project.optional-dependencies]
