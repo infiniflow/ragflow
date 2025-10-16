@@ -15,7 +15,10 @@ import {
 import omit from 'lodash/omit';
 import { useEffect } from 'react';
 
-type FieldType = IAddLlmRequestBody & { vision: boolean };
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  provider_order?: string;
+};
 
 const { Option } = Select;
 
@@ -128,6 +131,10 @@ const OllamaModal = ({
       { value: 'speech2text', label: 'sequence2text' },
       { value: 'tts', label: 'tts' },
     ],
+    [LLMFactory.OpenRouter]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'image2text', label: 'image2text' },
+    ],
     Default: [
       { value: 'chat', label: 'chat' },
       { value: 'embedding', label: 'embedding' },
@@ -233,6 +240,16 @@ const OllamaModal = ({
             onKeyDown={handleKeyDown}
           />
         </Form.Item>
+        {llmFactory === LLMFactory.OpenRouter && (
+          <Form.Item<FieldType>
+            label="Provider Order"
+            name="provider_order"
+            tooltip="Comma-separated provider list, e.g. Groq,Fireworks"
+            rules={[]}
+          >
+            <Input placeholder="Groq,Fireworks" onKeyDown={handleKeyDown} />
+          </Form.Item>
+        )}
 
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>
