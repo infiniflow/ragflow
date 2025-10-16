@@ -27,6 +27,7 @@ export interface ModalProps {
   okText?: ReactNode | string;
   onOk?: () => void;
   onCancel?: () => void;
+  disabled?: boolean;
 }
 export interface ModalType extends FC<ModalProps> {
   show: typeof modalIns.show;
@@ -55,6 +56,7 @@ const Modal: ModalType = ({
   confirmLoading,
   cancelText,
   okText,
+  disabled = false,
 }) => {
   const sizeClasses = {
     small: 'max-w-md',
@@ -86,7 +88,7 @@ const Modal: ModalType = ({
   const handleChange = (open: boolean) => {
     onOpenChange?.(open);
     console.log('open', open, onOpenChange);
-    if (open) {
+    if (open && !disabled) {
       onOk?.();
     }
     if (!open) {
@@ -112,7 +114,7 @@ const Modal: ModalType = ({
           </button>
           <button
             type="button"
-            disabled={confirmLoading}
+            disabled={confirmLoading || disabled}
             onClick={() => handleOk()}
             className="px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
           >
