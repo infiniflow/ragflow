@@ -3,7 +3,6 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
-import { TagItems } from '../components/tag-item';
 import { ConfigurationFormContainer } from '../configuration-form-container';
 
 export function OneConfiguration() {
@@ -15,7 +14,7 @@ export function OneConfiguration() {
         <AutoQuestionsFormField></AutoQuestionsFormField>
       </>
 
-      <TagItems></TagItems>
+      {/* <TagItems></TagItems> */}
     </ConfigurationFormContainer>
   );
 }

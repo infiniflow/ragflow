@@ -19,7 +19,6 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchChunk } from '@/hooks/chunk-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { Trash2 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FieldValues, FormProvider, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -194,9 +193,9 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               {t('chunk.enabled')}
               <Switch checked={checked} onCheckedChange={handleCheck} />
             </div>
-            <div className="flex items-center gap-1" onClick={handleRemove}>
+            {/* <div className="flex items-center gap-1" onClick={handleRemove}>
               <Trash2 size={16} /> {t('common.delete')}
-            </div>
+            </div> */}
           </Space>
         </section>
       )}

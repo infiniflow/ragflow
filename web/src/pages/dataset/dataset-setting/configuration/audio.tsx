@@ -4,8 +4,6 @@ import {
 } from '@/components/auto-keywords-form-field';
 import { ConfigurationFormContainer } from '../configuration-form-container';
 
-import { TagItems } from '../components/tag-item';
-
 export function AudioConfiguration() {
   return (
     <ConfigurationFormContainer>
@@ -14,7 +12,7 @@ export function AudioConfiguration() {
         <AutoQuestionsFormField></AutoQuestionsFormField>
       </>
 
-      <TagItems></TagItems>
+      {/* <TagItems></TagItems> */}
     </ConfigurationFormContainer>
   );
 }
