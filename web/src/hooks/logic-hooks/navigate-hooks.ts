@@ -1,3 +1,4 @@
+import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
@@ -70,8 +71,8 @@ export const useNavigatePage = () => {
   }, [navigate]);
 
   const navigateToAgent = useCallback(
-    (id: string) => () => {
-      navigate(`${Routes.Agent}/${id}`);
+    (id: string, category?: AgentCategory) => () => {
+      navigate(`${Routes.Agent}/${id}?${AgentQuery.Category}=${category}`);
     },
     [navigate],
   );

@@ -842,6 +842,7 @@ export const NodeMap = {
   [Operator.StringTransform]: 'ragNode',
   [Operator.TavilyExtract]: 'ragNode',
   [Operator.Placeholder]: 'placeholderNode',
+  [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
   [Operator.Splitter]: 'splitterNode',

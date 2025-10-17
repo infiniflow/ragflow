@@ -53,6 +53,10 @@ export enum AgentCategory {
   DataflowCanvas = 'dataflow_canvas',
 }
 
+export enum AgentQuery {
+  Category = 'category',
+}
+
 export enum DataflowOperator {
   Begin = 'File',
   Note = 'Note',

@@ -57,18 +57,23 @@ import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { ExtractorNode } from './node/extractor-node';
+import { FileNode } from './node/file-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
+import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
+import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
+import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
 
 export const nodeTypes: NodeTypes = {
@@ -91,6 +96,11 @@ export const nodeTypes: NodeTypes = {
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
   toolNode: ToolNode,
+  fileNode: FileNode,
+  parserNode: ParserNode,
+  tokenizerNode: TokenizerNode,
+  splitterNode: SplitterNode,
+  contextNode: ExtractorNode,
 };
 
 const edgeTypes = {

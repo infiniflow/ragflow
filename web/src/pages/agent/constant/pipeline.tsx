@@ -129,10 +129,6 @@ export const initialFileValues = {
   },
 };
 
-export const initialNoteValues = {
-  text: '',
-};
-
 export const initialTokenizerValues = {
   search_method: [
     TokenizerSearchMethod.Embedding,
