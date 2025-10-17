@@ -109,7 +109,7 @@
 ## 🔎 システム構成
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/d6ac5664-c237-4200-a7c2-a4a00691b485" width="1000"/>
+<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 初期設定

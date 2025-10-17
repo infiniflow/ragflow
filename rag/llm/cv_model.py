@@ -38,6 +38,7 @@ class Base(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        self.extra_body = None
 
     def describe(self, image):
         raise NotImplementedError("Please implement encode method!")
@@ -77,7 +78,8 @@ class Base(ABC):
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=self._form_history(system, history, images)
+                messages=self._form_history(system, history, images),
+                extra_body=self.extra_body,
             )
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
@@ -90,7 +92,8 @@ class Base(ABC):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
-                stream=True
+                stream=True,
+                extra_body=self.extra_body,
             )
             for resp in response:
                 if not resp.choices[0].delta.content:
@@ -177,6 +180,7 @@ class GptV4(Base):
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.prompt(b64),
+            extra_body=self.extra_body,
         )
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
@@ -185,6 +189,7 @@ class GptV4(Base):
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.vision_llm_prompt(b64, prompt),
+            extra_body=self.extra_body,
         )
         return res.choices[0].message.content.strip(),total_token_count_from_response(res)
 
@@ -249,6 +254,17 @@ class StepFunCV(GptV4):
         self.lang = lang
         Base.__init__(self, **kwargs)
 
+class VolcEngineCV(GptV4):
+    _FACTORY_NAME = "VolcEngine"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
+        if not base_url:
+            base_url = "https://ark.cn-beijing.volces.com/api/v3"
+        ark_api_key = json.loads(key).get("ark_api_key", "")
+        self.client = OpenAI(api_key=ark_api_key, base_url=base_url)
+        self.model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+        self.lang = lang
+        Base.__init__(self, **kwargs)
 
 class LmStudioCV(GptV4):
     _FACTORY_NAME = "LM-Studio"
@@ -327,10 +343,27 @@ class OpenRouterCV(GptV4):
     ):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        api_key = json.loads(key).get("api_key", "")
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
+        provider_order = json.loads(key).get("provider_order", "")
+        self.extra_body = {}
+        if provider_order:
+            def _to_order_list(x):
+                if x is None:
+                    return []
+                if isinstance(x, str):
+                    return [s.strip() for s in x.split(",") if s.strip()]
+                if isinstance(x, (list, tuple)):
+                    return [str(s).strip() for s in x if str(s).strip()]
+                return []
+            provider_cfg = {}
+            provider_order = _to_order_list(provider_order)
+            provider_cfg["order"] = provider_order
+            provider_cfg["allow_fallbacks"] = False
+            self.extra_body["provider"] = provider_cfg
 
 
 class LocalAICV(GptV4):

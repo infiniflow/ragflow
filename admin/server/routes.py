@@ -19,7 +19,7 @@ import secrets
 from flask import Blueprint, request
 from flask_login import current_user, logout_user, login_required
 
-from admin.server.auth import login_verify, login_admin, check_admin_auth
+from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr
 from api.common.exceptions import AdminException

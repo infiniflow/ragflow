@@ -476,6 +476,16 @@ class FileService(CommonService):
 
         return err, files
 
+    @classmethod
+    @DB.connection_context()
+    def list_all_files_by_parent_id(cls, parent_id):
+        try:
+            files = cls.model.select().where((cls.model.parent_id == parent_id) & (cls.model.id != parent_id))
+            return list(files)
+        except Exception:
+            logging.exception("list_by_parent_id failed")
+            raise RuntimeError("Database error (list_by_parent_id)!")
+
     @staticmethod
     def parse_docs(file_objs, user_id):
         exe = ThreadPoolExecutor(max_workers=12)

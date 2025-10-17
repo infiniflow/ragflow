@@ -26,8 +26,8 @@ from routes import admin_bp
 from api.utils.log_utils import init_root_logger
 from api.constants import SERVICE_CONF
 from api import settings
-from admin.server.config import load_configurations, SERVICE_CONFIGS
-from admin.server.auth import init_default_admin, setup_auth
+from config import load_configurations, SERVICE_CONFIGS
+from auth import init_default_admin, setup_auth
 from flask_session import Session
 from flask_login import LoginManager
 
