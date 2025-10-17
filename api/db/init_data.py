@@ -34,13 +34,13 @@ from api.utils.file_utils import get_project_base_directory
 from api.common.base64 import encode_to_base64
 
 
-def init_superuser():
+def init_superuser(nickname="admin", email="admin@ragflow.io", password="admin", role=UserTenantRole.OWNER):
     user_info = {
         "id": uuid.uuid1().hex,
-        "password": encode_to_base64("admin"),
-        "nickname": "admin",
+        "password": encode_to_base64(password),
+        "nickname": nickname,
         "is_superuser": True,
-        "email": "admin@ragflow.io",
+        "email": email,
         "creator": "system",
         "status": "1",
     }
@@ -57,7 +57,7 @@ def init_superuser():
         "tenant_id": user_info["id"],
         "user_id": user_info["id"],
         "invited_by": user_info["id"],
-        "role": UserTenantRole.OWNER
+        "role": role
     }
 
     tenant_llm = get_init_tenant_llm(user_info["id"])
@@ -69,7 +69,7 @@ def init_superuser():
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
-        "Super user initialized. email: admin@ragflow.io, password: admin. Changing the password after login is strongly recommended.")
+        f"Super user initialized. email: {email}, password: {password}. Changing the password after login is strongly recommended.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[
