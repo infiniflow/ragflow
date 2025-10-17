@@ -116,7 +116,10 @@ const Modal: ModalType = ({
             type="button"
             disabled={confirmLoading || disabled}
             onClick={() => handleOk()}
-            className="px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+            className={cn(
+              'px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90',
+              { 'cursor-not-allowed': disabled },
+            )}
           >
             {confirmLoading && (
               <Loader className="inline-block mr-2 h-4 w-4 animate-spin" />
