@@ -166,8 +166,7 @@ class UserServiceMgr:
         return [{
             'title': r['title'],
             'permission': r['permission'],
-            'canvas_type': r['canvas_type'],
-            'canvas_category': r['canvas_category']
+            'canvas_category': r['canvas_category'].split('-')[0]
         } for r in res]
 
 
