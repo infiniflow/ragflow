@@ -21,6 +21,7 @@ import {
   IGenerateLogButtonProps,
 } from '../dataset/generate-button/generate';
 import { ChunkMethodForm } from './chunk-method-form';
+import ChunkMethodLearnMore from './chunk-method-learn-more';
 import { IDataPipelineNodeProps } from './components/link-data-pipeline';
 import { MainContainer } from './configuration-form-container';
 import { ChunkMethodItem, ParseTypeItem } from './configuration/common-item';
@@ -169,10 +170,7 @@ export default function DatasetSettings() {
       ></TopTitle>
       <div className="flex gap-14 flex-1 min-h-0">
         <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 flex-1"
-          >
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 ">
             <div className="w-[768px] h-[calc(100vh-240px)] pr-1 overflow-y-auto scrollbar-auto">
               <MainContainer className="text-text-secondary">
                 <GeneralForm></GeneralForm>
@@ -231,6 +229,9 @@ export default function DatasetSettings() {
             </div>
           </form>
         </Form>
+        <div className="flex-1">
+          {parseType === 1 && <ChunkMethodLearnMore parserId={selectedTag} />}
+        </div>
       </div>
     </section>
   );
