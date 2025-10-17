@@ -19,12 +19,16 @@ from tika import parser
 import re
 from io import BytesIO
 
+from api.db import LLMType
+from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.utils import get_text
 from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
+from deepdoc.parser.figure_parser import VisionFigureParser
+from PIL import Image
 
 
 class Pdf(PdfParser):
@@ -91,11 +95,30 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
         pdf_parser = Pdf()
         if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
+        if vision_model:
+            def is_figure_item(item):
+                return (
+                    isinstance(item[0][0], Image.Image) and
+                    isinstance(item[0][1], list)
+                )
+            figures_data = [item for item in tbls if is_figure_item(item)]
+            try:
+                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+                boosted_figures = docx_vision_parser(callback=callback)
+                tbls = [item for item in tbls if not is_figure_item(item)]
+                tbls.extend(boosted_figures)
+            except Exception as e:
+                callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
 
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
