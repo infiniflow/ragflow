@@ -289,15 +289,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                     from_page=0, to_page=10000, callback=callback)
         if vision_model:
             figures_data = vision_figure_parser_figure_data_wrapper(ti_list)
-            print(f'{figures_data=}',flush=True)
             try:
                 docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
                 boosted_figures = docx_vision_parser(callback=callback)
-                print(f'{boosted_figures=}',flush=True)
                 tbls.extend(boosted_figures)
             except Exception as e:
                 callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
-        print(f'{tbls=}',flush=True)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
