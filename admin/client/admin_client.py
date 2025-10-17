@@ -23,7 +23,6 @@ from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from typing import Dict, List, Any
 from lark import Lark, Transformer, Tree, Token
 import requests
-from requests.auth import HTTPBasicAuth
 
 GRAMMAR = r"""
 start: command
