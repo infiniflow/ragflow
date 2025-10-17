@@ -326,22 +326,30 @@ def _guess_ext(b: bytes) -> str:
         except Exception:
             pass
         return ".zip"
-    if _is_pdf(h): return ".pdf"
-    if _is_ole(h): return ".doc"
+    if _is_pdf(h): 
+        return ".pdf"
+    if _is_ole(h): 
+        return ".doc"
     return ".bin"
 
 # Try to extract the real embedded payload from OLE's Ole10Native
 def _extract_ole10native_payload(data: bytes) -> bytes:
     try:
         pos = 0
-        if len(data) < 4: return data
-        _ = int.from_bytes(data[pos:pos+4], "little"); pos += 4
-        for _ in range(3):  # filename/src/tmp (NUL-terminated ANSI)
-            z = data.index(b"\x00", pos); pos = z + 1
+        if len(data) < 4: 
+            return data
+        _ = int.from_bytes(data[pos:pos+4], "little")
         pos += 4
-        if pos + 4 > len(data): return data
-        size = int.from_bytes(data[pos:pos+4], "little"); pos += 4
-        if pos + size <= len(data): return data[pos:pos+size]
+        for _ in range(3):  # filename/src/tmp (NUL-terminated ANSI)
+            z = data.index(b"\x00", pos)
+            pos = z + 1
+        pos += 4
+        if pos + 4 > len(data): 
+            return data
+        size = int.from_bytes(data[pos:pos+4], "little")
+        pos += 4
+        if pos + size <= len(data): 
+            return data[pos:pos+size]
     except Exception:
         pass
     return data
