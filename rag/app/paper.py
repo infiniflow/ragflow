@@ -18,11 +18,14 @@ import logging
 import copy
 import re
 
+from api.db import LLMType
+from api.db.services.llm_service import LLMBundle
+from deepdoc.parser.figure_parser import VisionFigureParser
 from api.db import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
-
+from PIL import Image
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -147,6 +150,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
         if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
             paper = {
@@ -160,6 +168,23 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
+        if vision_model:
+            def is_figure_item(item):
+                return (
+                    isinstance(item[0][0], Image.Image) and
+                    isinstance(item[0][1], list)
+                )
+            tbls=paper["tables"]
+            figures_data = [item for item in tbls if is_figure_item(item)]
+            try:
+                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+                boosted_figures = docx_vision_parser(callback=callback)
+                tbls = [item for item in tbls if not is_figure_item(item)]
+                tbls.extend(boosted_figures)
+                paper["tables"] = tbls
+            except Exception as e:
+                callback(0.85, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
 
