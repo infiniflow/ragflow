@@ -15,6 +15,7 @@
 #
 
 import logging
+import os
 import re
 from functools import reduce
 from io import BytesIO
@@ -32,6 +33,7 @@ from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
+from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 
@@ -517,7 +519,22 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
+        elif layout_recognizer == "MinerU":
+            mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable)
+            if not pdf_parser.check_installation():
+                callback(-1, "MinerU not found.")
+                return res
 
+            sections, tables = pdf_parser.parse_pdf(
+                filepath=filename,
+                binary=binary,
+                callback=callback,
+                output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+                delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+            )
+            parser_config["chunk_token_num"] = 0
+            callback(0.8, "Finish parsing.")
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()
