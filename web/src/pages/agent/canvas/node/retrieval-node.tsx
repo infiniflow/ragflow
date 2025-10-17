@@ -1,3 +1,4 @@
+import { NodeCollapsible } from '@/components/collapse';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { IRetrievalNode } from '@/interfaces/database/flow';
@@ -44,8 +45,8 @@ function InnerRetrievalNode({
             [styles.nodeHeader]: knowledgeBaseIds.length > 0,
           })}
         ></NodeHeader>
-        <section className="flex flex-col gap-2">
-          {knowledgeBaseIds.map((id) => {
+        <NodeCollapsible items={knowledgeBaseIds}>
+          {(id) => {
             const item = knowledgeList.find((y) => id === y.id);
             const label = getLabel(id);
 
@@ -63,8 +64,8 @@ function InnerRetrievalNode({
                 </div>
               </div>
             );
-          })}
-        </section>
+          }}
+        </NodeCollapsible>
       </NodeWrapper>
     </ToolBar>
   );

@@ -69,6 +69,8 @@ const FormSchema = z.object({
   cite: z.boolean().optional(),
 });
 
+export type AgentFormSchemaType = z.infer<typeof FormSchema>;
+
 const outputList = buildOutputList(initialAgentValues.outputs);
 
 function AgentForm({ node }: INextOperatorForm) {
@@ -92,7 +94,7 @@ function AgentForm({ node }: INextOperatorForm) {
     return isBottomSubAgent(edges, node?.id);
   }, [edges, node?.id]);
 
-  const form = useForm<z.infer<typeof FormSchema>>({
+  const form = useForm<AgentFormSchemaType>({
     defaultValues: defaultValues,
     resolver: zodResolver(FormSchema),
   });
