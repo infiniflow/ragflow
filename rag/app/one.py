@@ -19,10 +19,14 @@ from tika import parser
 from io import BytesIO
 import re
 
+from api.db import LLMType
+from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
+from PIL import Image
 
 
 class Pdf(PdfParser):
@@ -57,13 +61,8 @@ class Pdf(PdfParser):
 
         sections = [(b["text"], self.get_position(b, zoomin))
                     for i, b in enumerate(self.boxes)]
-        for (img, rows), poss in tbls:
-            if not rows:
-                continue
-            sections.append((rows if isinstance(rows, str) else rows[0],
-                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (
-            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], None
+            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -79,18 +78,55 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
         sections, tbls = naive.Docx()(filename, binary)
+        if vision_model:
+            figures_data = vision_figure_parser_figure_data_wrapper(sections)
+            try:
+                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+                boosted_figures = docx_vision_parser(callback=callback)
+                tbls.extend(boosted_figures)
+            except Exception as e:
+                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
         sections = [s for s, _ in sections if s]
         for (_, html), _ in tbls:
             sections.append(html)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
         pdf_parser = Pdf()
         if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
-        sections, _ = pdf_parser(
+        sections, tbls = pdf_parser(
             filename if not binary else binary, to_page=to_page, callback=callback)
+        if vision_model:
+            def is_figure_item(item):
+                return (
+                    isinstance(item[0][0], Image.Image) and
+                    isinstance(item[0][1], list)
+                )
+            figures_data = [item for item in tbls if is_figure_item(item)]
+            try:
+                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+                boosted_figures = docx_vision_parser(callback=callback)
+                tbls = [item for item in tbls if not is_figure_item(item)]
+                tbls.extend(boosted_figures)
+            except Exception as e:
+                callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        for (img, rows), poss in tbls:
+            if not rows:
+                continue
+            sections.append((rows if isinstance(rows, str) else rows[0],
+                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         sections = [s for s, _ in sections if s]
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
