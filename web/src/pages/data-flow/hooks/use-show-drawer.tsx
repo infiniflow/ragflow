@@ -4,7 +4,6 @@ import get from 'lodash/get';
 import React, { useCallback, useEffect } from 'react';
 import { BeginId, Operator } from '../constant';
 import useGraphStore from '../store';
-import { useCacheChatLog } from './use-cache-chat-log';
 import { useSaveGraph } from './use-save-graph';
 
 export const useShowFormDrawer = () => {
@@ -132,26 +131,6 @@ export function useShowDrawer({
     hideFormDrawer,
     hideRunOrChatDrawer,
     showChatModal,
-  };
-}
-
-export function useShowLogSheet({
-  setCurrentMessageId,
-}: Pick<ReturnType<typeof useCacheChatLog>, 'setCurrentMessageId'>) {
-  const { visible, showModal, hideModal } = useSetModalState();
-
-  const handleShow = useCallback(
-    (messageId: string) => {
-      setCurrentMessageId(messageId);
-      showModal();
-    },
-    [setCurrentMessageId, showModal],
-  );
-
-  return {
-    logSheetVisible: visible,
-    hideLogSheet: hideModal,
-    showLogSheet: handleShow,
   };
 }
 
