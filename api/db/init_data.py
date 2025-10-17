@@ -33,8 +33,11 @@ from api import settings
 from api.utils.file_utils import get_project_base_directory
 from api.common.base64 import encode_to_base64
 
+DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
-def init_superuser(nickname="admin", email="admin@ragflow.io", password="admin", role=UserTenantRole.OWNER):
+def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_EMAIL, password=DEFAULT_SUPERUSER_PASSWORD, role=UserTenantRole.OWNER):
     user_info = {
         "id": uuid.uuid1().hex,
         "password": encode_to_base64(password),
