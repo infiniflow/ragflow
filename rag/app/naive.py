@@ -452,20 +452,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     pdf_parser = None
     section_images = None
 
-    # --- 递归处理嵌入文件 ---
-    # 只在根文件递归处理嵌入，嵌入文件不再递归（只提取一层）
     is_root = kwargs.get("is_root", True)
     embed_res = []
     if is_root:
+        # Only extract embedded files at the root call
         embeds = []
         if binary is not None:
             embeds = extract_embed_file(binary)
         else:
             raise Exception("Embedding extraction from file path is not supported.")
         
+        # Recursively chunk each embedded file and collect results
         for embed_filename, embed_bytes in embeds:
             try:
-                # 递归调用chunk，传递嵌入的文件名和二进制内容，并标记is_root=False
                 sub_res = chunk(embed_filename, binary=embed_bytes, lang=lang, callback=callback, is_root=False, **kwargs) or []
                 if isinstance(sub_res, list):
                     embed_res.extend(sub_res)

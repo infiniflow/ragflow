@@ -328,7 +328,7 @@ def _guess_ext(b: bytes) -> str:
     if _is_ole(h): return ".doc"
     return ".bin"
 
-# 尽量从 OLE 的 Ole10Native 里取出真实嵌入载荷
+# Try to extract the real embedded payload from OLE's Ole10Native
 def _extract_ole10native_payload(data: bytes) -> bytes:
     try:
         pos = 0
@@ -346,8 +346,8 @@ def _extract_ole10native_payload(data: bytes) -> bytes:
 
 def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes]]:
     """
-    只提取“第一层”嵌入，返回原始 (filename, bytes)。
-    这些 bytes 可直接用于 io.BytesIO 再交给 zipfile/f itz/olefile 等库继续解析。
+    Only extract the "first layer" of embedding, returning raw (filename, bytes).
+    These bytes can be directly used for io.BytesIO and then passed to zipfile/fitz/olefile and other libraries for further parsing.
     """
     top = bytes(target)
 
@@ -361,14 +361,14 @@ def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes
             return
         seen.add(h10)
         ext = _guess_ext(b)
-        # 如果 name_hint 没有明确扩展名，就用内容猜的扩展名
+        # If name_hint does not have a clear extension, use the extension guessed from the content
         if "." in name_hint:
             fname = name_hint.split("/")[-1]
         else:
             fname = f"{h10}{ext}"
         out.append((fname, b))
 
-    # OOXML/ZIP 容器（docx/xlsx/pptx）
+    # OOXML/ZIP container (docx/xlsx/pptx)
     if _is_zip(head):
         try:
             with zipfile.ZipFile(io.BytesIO(top), "r") as z:
@@ -386,7 +386,7 @@ def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes
             pass
         return out
 
-    # PDF 的附件
+    # PDF attachments
     if _is_pdf(head):
         try:
             doc = fitz.open(stream=top, filetype="pdf")
@@ -403,7 +403,7 @@ def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes
             pass
         return out
 
-    # 旧版 OLE（.doc/.xls/.ppt）
+    # Legacy OLE (.doc/.xls/.ppt)
     if _is_ole(head):
         try:
             with olefile.OleFileIO(io.BytesIO(top)) as ole:
