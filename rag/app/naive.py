@@ -466,8 +466,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         for embed_filename, embed_bytes in embeds:
             try:
                 sub_res = chunk(embed_filename, binary=embed_bytes, lang=lang, callback=callback, is_root=False, **kwargs) or []
-                if isinstance(sub_res, list):
-                    embed_res.extend(sub_res)
+                embed_res.extend(sub_res)
             except Exception as e:
                 if callback:
                     callback(0.05, f"Failed to chunk embed {embed_filename}: {e}")
@@ -679,7 +678,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
 
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
-    res.extend(embed_res)
+    if embed_res:
+        res.extend(embed_res)
     return res
 
 

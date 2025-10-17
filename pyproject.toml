@@ -138,7 +138,6 @@ dependencies = [
     "markdownify>=1.2.0",
     "captcha>=0.7.1",
     "fitz>=0.0.1.dev2",
-    "pymupdf>=1.26.5",
 ]
 
 [project.optional-dependencies]
