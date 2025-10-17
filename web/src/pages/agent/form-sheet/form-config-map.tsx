@@ -168,6 +168,10 @@ export const FormConfigMap = {
   [Operator.TavilyExtract]: {
     component: TavilyExtractForm,
   },
+  [Operator.Placeholder]: {
+    component: () => <></>,
+  },
+  // pipeline
   [Operator.File]: {
     component: () => <></>,
   },

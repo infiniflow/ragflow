@@ -56,7 +56,7 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
-import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExtractorNode } from './node/extractor-node';
 import { FileNode } from './node/file-node';
 import { GenerateNode } from './node/generate-node';
@@ -204,6 +204,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     getConnectionStartContext,
     shouldPreventClose,
     onMove,
+    nodeId,
   } = useConnectionDrag(
     reactFlowInstance,
     originalOnConnect,
@@ -322,7 +323,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
               }
             }
           >
-            <InnerNextStepDropdown
+            <NextStepDropdown
               hideModal={() => {
                 removePlaceholderNode();
                 hideModal();
@@ -330,9 +331,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
               }}
               position={dropdownPosition}
               onNodeCreated={onNodeCreated}
+              nodeId={nodeId}
             >
               <span></span>
-            </InnerNextStepDropdown>
+            </NextStepDropdown>
           </HandleContext.Provider>
         )}
       </AgentInstanceContext.Provider>

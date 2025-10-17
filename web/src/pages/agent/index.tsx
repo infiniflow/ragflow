@@ -202,14 +202,15 @@ export default function Agent() {
             <History />
             {t('flow.historyversion')}
           </Button>
-          <Button
-            variant={'secondary'}
-            onClick={navigateToAgentLogs(id as string)}
-          >
-            <Logs />
-            {t('flow.log')}
-          </Button>
-
+          {isPipeline || (
+            <Button
+              variant={'secondary'}
+              onClick={navigateToAgentLogs(id as string)}
+            >
+              <Logs />
+              {t('flow.log')}
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
@@ -226,15 +227,16 @@ export default function Agent() {
                 <Settings />
                 {t('flow.setting')}
               </AgentDropdownMenuItem>
-              {location.hostname !== 'demo.ragflow.io' && (
-                <>
-                  <DropdownMenuSeparator />
-                  <AgentDropdownMenuItem onClick={showEmbedModal}>
-                    <ScreenShare />
-                    {t('common.embedIntoSite')}
-                  </AgentDropdownMenuItem>
-                </>
-              )}
+              {isPipeline ||
+                (location.hostname !== 'demo.ragflow.io' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <AgentDropdownMenuItem onClick={showEmbedModal}>
+                      <ScreenShare />
+                      {t('common.embedIntoSite')}
+                    </AgentDropdownMenuItem>
+                  </>
+                ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

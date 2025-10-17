@@ -18,7 +18,13 @@ function InnerSplitterNode({
   selected,
 }: RagNodeProps) {
   return (
-    <ToolBar selected={selected} id={id} label={data.label} showCopy={false}>
+    <ToolBar
+      selected={selected}
+      id={id}
+      label={data.label}
+      showCopy={false}
+      showRun={false}
+    >
       <NodeWrapper selected={selected}>
         <CommonHandle
           id={NodeHandleId.End}

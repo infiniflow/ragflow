@@ -876,6 +876,21 @@ export const NoDebugOperatorsList = [
   Operator.Iteration,
   Operator.UserFillUp,
   Operator.IterationStart,
+  Operator.File,
+  Operator.Parser,
+  Operator.Tokenizer,
+  Operator.Splitter,
+  Operator.HierarchicalMerger,
+  Operator.Extractor,
+];
+
+export const NoCopyOperatorsList = [
+  Operator.File,
+  Operator.Parser,
+  Operator.Tokenizer,
+  Operator.Splitter,
+  Operator.HierarchicalMerger,
+  Operator.Extractor,
 ];
 
 export enum NodeHandleId {

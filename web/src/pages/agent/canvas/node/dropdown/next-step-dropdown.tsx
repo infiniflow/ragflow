@@ -1,230 +1,33 @@
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { IModalProps } from '@/interfaces/common';
-import { Operator } from '@/pages/agent/constant';
-import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
-import OperatorIcon from '@/pages/agent/operator-icon';
-import { Position } from '@xyflow/react';
+import { useIsPipeline } from '@/pages/agent/hooks/use-is-pipeline';
 import { t } from 'i18next';
-import { lowerFirst } from 'lodash';
+import { PropsWithChildren, memo, useEffect, useRef } from 'react';
 import {
-  PropsWithChildren,
-  createContext,
-  memo,
-  useContext,
-  useEffect,
-  useRef,
-} from 'react';
-import { useTranslation } from 'react-i18next';
-
-type OperatorItemProps = {
-  operators: Operator[];
-  isCustomDropdown?: boolean;
-  mousePosition?: { x: number; y: number };
-};
-
-const HideModalContext = createContext<IModalProps<any>['showModal']>(() => {});
-const OnNodeCreatedContext = createContext<
-  ((newNodeId: string) => void) | undefined
->(undefined);
-
-function OperatorItemList({
-  operators,
-  isCustomDropdown = false,
-  mousePosition,
-}: OperatorItemProps) {
-  const { addCanvasNode } = useContext(AgentInstanceContext);
-  const handleContext = useContext(HandleContext);
-  const hideModal = useContext(HideModalContext);
-  const onNodeCreated = useContext(OnNodeCreatedContext);
-  const { t } = useTranslation();
-
-  const handleClick =
-    (operator: Operator): React.MouseEventHandler<HTMLElement> =>
-    (e) => {
-      const contextData = handleContext || {
-        nodeId: '',
-        id: '',
-        type: 'source' as const,
-        position: Position.Right,
-        isFromConnectionDrag: true,
-      };
-
-      const mockEvent = mousePosition
-        ? {
-            clientX: mousePosition.x,
-            clientY: mousePosition.y,
-          }
-        : e;
-
-      const newNodeId = addCanvasNode(operator, contextData)(mockEvent);
-
-      if (onNodeCreated && newNodeId) {
-        onNodeCreated(newNodeId);
-      }
-
-      hideModal?.();
-    };
-
-  const renderOperatorItem = (operator: Operator) => {
-    const commonContent = (
-      <div className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start">
-        <OperatorIcon name={operator} />
-        {t(`flow.${lowerFirst(operator)}`)}
-      </div>
-    );
-
-    return (
-      <Tooltip key={operator}>
-        <TooltipTrigger asChild>
-          {isCustomDropdown ? (
-            <li onClick={handleClick(operator)}>{commonContent}</li>
-          ) : (
-            <DropdownMenuItem
-              key={operator}
-              className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start"
-              onClick={handleClick(operator)}
-              onSelect={() => hideModal?.()}
-            >
-              <OperatorIcon name={operator} />
-              {t(`flow.${lowerFirst(operator)}`)}
-            </DropdownMenuItem>
-          )}
-        </TooltipTrigger>
-        <TooltipContent side="right" sideOffset={24}>
-          <p>{t(`flow.${lowerFirst(operator)}Description`)}</p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
-
-  return <ul className="space-y-2">{operators.map(renderOperatorItem)}</ul>;
-}
-
-function AccordionOperators({
-  isCustomDropdown = false,
-  mousePosition,
-}: {
-  isCustomDropdown?: boolean;
-  mousePosition?: { x: number; y: number };
-}) {
-  return (
-    <Accordion
-      type="multiple"
-      className="px-2 text-text-title max-h-[45vh] overflow-auto scrollbar-none"
-      defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
-    >
-      <AccordionItem value="item-1">
-        <AccordionTrigger className="text-xl">
-          {t('flow.foundation')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[Operator.Agent, Operator.Retrieval]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-2">
-        <AccordionTrigger className="text-xl">
-          {t('flow.dialog')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[Operator.Message, Operator.UserFillUp]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-3">
-        <AccordionTrigger className="text-xl">
-          {t('flow.flow')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[
-              Operator.Switch,
-              Operator.Iteration,
-              Operator.Categorize,
-            ]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-4">
-        <AccordionTrigger className="text-xl">
-          {t('flow.dataManipulation')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[Operator.Code, Operator.StringTransform]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="item-5">
-        <AccordionTrigger className="text-xl">
-          {t('flow.tools')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
-          <OperatorItemList
-            operators={[
-              Operator.TavilySearch,
-              Operator.TavilyExtract,
-              Operator.ExeSQL,
-              Operator.Google,
-              Operator.YahooFinance,
-              Operator.Email,
-              Operator.DuckDuckGo,
-              Operator.Wikipedia,
-              Operator.GoogleScholar,
-              Operator.ArXiv,
-              Operator.PubMed,
-              Operator.GitHub,
-              Operator.Invoke,
-              Operator.WenCai,
-              Operator.SearXNG,
-            ]}
-            isCustomDropdown={isCustomDropdown}
-            mousePosition={mousePosition}
-          ></OperatorItemList>
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
-  );
-}
+  AccordionOperators,
+  PipelineAccordionOperators,
+} from './accordion-operators';
+import { HideModalContext, OnNodeCreatedContext } from './operator-item-list';
 
 export function InnerNextStepDropdown({
   children,
   hideModal,
   position,
   onNodeCreated,
+  nodeId,
 }: PropsWithChildren &
   IModalProps<any> & {
     position?: { x: number; y: number };
     onNodeCreated?: (newNodeId: string) => void;
+    nodeId?: string;
   }) {
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isPipeline = useIsPipeline();
 
   useEffect(() => {
     if (position && hideModal) {
@@ -260,10 +63,18 @@ export function InnerNextStepDropdown({
           </div>
           <HideModalContext.Provider value={hideModal}>
             <OnNodeCreatedContext.Provider value={onNodeCreated}>
-              <AccordionOperators
-                isCustomDropdown={true}
-                mousePosition={position}
-              ></AccordionOperators>
+              {isPipeline ? (
+                <PipelineAccordionOperators
+                  isCustomDropdown={true}
+                  mousePosition={position}
+                  nodeId={nodeId}
+                ></PipelineAccordionOperators>
+              ) : (
+                <AccordionOperators
+                  isCustomDropdown={true}
+                  mousePosition={position}
+                ></AccordionOperators>
+              )}
             </OnNodeCreatedContext.Provider>
           </HideModalContext.Provider>
         </div>
@@ -287,7 +98,11 @@ export function InnerNextStepDropdown({
       >
         <DropdownMenuLabel>{t('flow.nextStep')}</DropdownMenuLabel>
         <HideModalContext.Provider value={hideModal}>
-          <AccordionOperators></AccordionOperators>
+          {isPipeline ? (
+            <PipelineAccordionOperators></PipelineAccordionOperators>
+          ) : (
+            <AccordionOperators></AccordionOperators>
+          )}
         </HideModalContext.Provider>
       </DropdownMenuContent>
     </DropdownMenu>
