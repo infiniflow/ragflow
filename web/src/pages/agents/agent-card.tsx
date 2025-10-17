@@ -14,7 +14,7 @@ export type DatasetCardProps = {
 } & Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'>;
 
 export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
-  const { navigateToAgent, navigateToDataflow } = useNavigatePage();
+  const { navigateToAgent } = useNavigatePage();
 
   return (
     <HomeCard
@@ -26,9 +26,10 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
       }
       sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
       onClick={
-        data.canvas_category === AgentCategory.DataflowCanvas
-          ? navigateToDataflow(data.id)
-          : navigateToAgent(data?.id)
+        // data.canvas_category === AgentCategory.DataflowCanvas
+        //   ? navigateToDataflow(data.id)
+        //   :
+        navigateToAgent(data?.id, data.canvas_category as AgentCategory)
       }
       icon={
         data.canvas_category === AgentCategory.DataflowCanvas && (

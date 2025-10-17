@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 import { NodeHandleId } from '../../constant';
 import { HandleContext } from '../../context';
 import { useDropdownManager } from '../context';
-import { InnerNextStepDropdown } from './dropdown/next-step-dropdown';
+import { NextStepDropdown } from './dropdown/next-step-dropdown';
 
 export function CommonHandle({
   className,
@@ -50,14 +50,15 @@ export function CommonHandle({
       >
         <Plus className="size-3 pointer-events-none text-white hidden group-hover:inline-block" />
         {visible && (
-          <InnerNextStepDropdown
+          <NextStepDropdown
+            nodeId={nodeId}
             hideModal={() => {
               hideModal();
               clearActiveDropdown();
             }}
           >
             <span></span>
-          </InnerNextStepDropdown>
+          </NextStepDropdown>
         )}
       </Handle>
     </HandleContext.Provider>
