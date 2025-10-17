@@ -351,7 +351,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             "progress": 0.0,
             "from_page": 0,
             "to_page": 100000000,
-            "begin_at": datetime.now(),
+            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     parse_task_array = []
