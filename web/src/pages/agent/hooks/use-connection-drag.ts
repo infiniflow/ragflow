@@ -201,6 +201,7 @@ export const useConnectionDrag = (
   }, [removePlaceholderNode, hideModal, clearActiveDropdown]);
 
   return {
+    nodeId: connectionStartRef.current?.nodeId,
     onConnectStart,
     onConnectEnd,
     handleConnect,

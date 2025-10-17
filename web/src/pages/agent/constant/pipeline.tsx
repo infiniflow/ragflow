@@ -3,7 +3,6 @@ import {
   initialLlmBaseValues,
   DataflowOperator as Operator,
 } from '@/constants/agent';
-export { DataflowOperator as Operator } from '@/constants/agent';
 
 export enum FileType {
   PDF = 'pdf',
@@ -88,9 +87,7 @@ export enum ContextGeneratorFieldName {
   Metadata = 'metadata',
 }
 
-export const BeginId = 'File';
-
-export const SwitchElseTo = 'end_cpn_ids';
+export const FileId = 'File'; // BeginId
 
 export enum TokenizerSearchMethod {
   Embedding = 'embedding',
@@ -118,7 +115,8 @@ export enum ParserFields {
   Attachments = 'attachments',
 }
 
-export const initialBeginValues = {
+// initialBeginValues
+export const initialFileValues = {
   outputs: {
     name: {
       type: 'string',
@@ -129,10 +127,6 @@ export const initialBeginValues = {
       value: {},
     },
   },
-};
-
-export const initialNoteValues = {
-  text: '',
 };
 
 export const initialTokenizerValues = {
@@ -240,53 +234,7 @@ export const initialExtractorValues = {
   },
 };
 
-export const CategorizeAnchorPointPositions = [
-  { top: 1, right: 34 },
-  { top: 8, right: 18 },
-  { top: 15, right: 10 },
-  { top: 24, right: 4 },
-  { top: 31, right: 1 },
-  { top: 38, right: -2 },
-  { top: 62, right: -2 }, //bottom
-  { top: 71, right: 1 },
-  { top: 79, right: 6 },
-  { top: 86, right: 12 },
-  { top: 91, right: 20 },
-  { top: 98, right: 34 },
-];
-
-// key is the source of the edge, value is the target of the edge
-// no connection lines are allowed between key and value
-export const RestrictedUpstreamMap: Record<Operator, Operator[]> = {
-  [Operator.Begin]: [] as Operator[],
-  [Operator.Parser]: [Operator.Begin],
-  [Operator.Splitter]: [Operator.Begin],
-  [Operator.HierarchicalMerger]: [Operator.Begin],
-  [Operator.Tokenizer]: [Operator.Begin],
-  [Operator.Extractor]: [Operator.Begin],
-  [Operator.Note]: [Operator.Begin],
-};
-
-export const NodeMap = {
-  [Operator.Begin]: 'beginNode',
-  [Operator.Note]: 'noteNode',
-  [Operator.Parser]: 'parserNode',
-  [Operator.Tokenizer]: 'tokenizerNode',
-  [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'splitterNode',
-  [Operator.Extractor]: 'contextNode',
-};
-
 export const NoDebugOperatorsList = [Operator.Begin];
-
-export enum NodeHandleId {
-  Start = 'start',
-  End = 'end',
-  Tool = 'tool',
-  AgentTop = 'agentTop',
-  AgentBottom = 'agentBottom',
-  AgentException = 'agentException',
-}
 
 export const FileTypeSuffixMap = {
   [FileType.PDF]: ['pdf'],

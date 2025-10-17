@@ -53,6 +53,10 @@ export enum AgentCategory {
   DataflowCanvas = 'dataflow_canvas',
 }
 
+export enum AgentQuery {
+  Category = 'category',
+}
+
 export enum DataflowOperator {
   Begin = 'File',
   Note = 'Note',
@@ -61,4 +65,56 @@ export enum DataflowOperator {
   Splitter = 'Splitter',
   HierarchicalMerger = 'HierarchicalMerger',
   Extractor = 'Extractor',
+}
+
+export enum Operator {
+  Begin = 'Begin',
+  Retrieval = 'Retrieval',
+  Categorize = 'Categorize',
+  Message = 'Message',
+  Relevant = 'Relevant',
+  RewriteQuestion = 'RewriteQuestion',
+  KeywordExtract = 'KeywordExtract',
+  Baidu = 'Baidu',
+  DuckDuckGo = 'DuckDuckGo',
+  Wikipedia = 'Wikipedia',
+  PubMed = 'PubMed',
+  ArXiv = 'ArXiv',
+  Google = 'Google',
+  Bing = 'Bing',
+  GoogleScholar = 'GoogleScholar',
+  DeepL = 'DeepL',
+  GitHub = 'GitHub',
+  BaiduFanyi = 'BaiduFanyi',
+  QWeather = 'QWeather',
+  ExeSQL = 'ExeSQL',
+  Switch = 'Switch',
+  WenCai = 'WenCai',
+  AkShare = 'AkShare',
+  YahooFinance = 'YahooFinance',
+  Jin10 = 'Jin10',
+  TuShare = 'TuShare',
+  Note = 'Note',
+  Crawler = 'Crawler',
+  Invoke = 'Invoke',
+  Email = 'Email',
+  Iteration = 'Iteration',
+  IterationStart = 'IterationItem',
+  Code = 'CodeExec',
+  WaitingDialogue = 'WaitingDialogue',
+  Agent = 'Agent',
+  Tool = 'Tool',
+  TavilySearch = 'TavilySearch',
+  TavilyExtract = 'TavilyExtract',
+  UserFillUp = 'UserFillUp',
+  StringTransform = 'StringTransform',
+  SearXNG = 'SearXNG',
+  Placeholder = 'Placeholder',
+  File = 'File', // pipeline
+  Parser = 'Parser',
+  Tokenizer = 'Tokenizer',
+  Splitter = 'Splitter',
+  HierarchicalMerger = 'HierarchicalMerger',
+  Extractor = 'Extractor',
+  Generate = 'Generate',
 }
