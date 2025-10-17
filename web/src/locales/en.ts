@@ -449,7 +449,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
-      messagePlaceholder: 'Type your message here...',
+      messagePlaceholder: 'Escribe aquí tu mensaje...',
       exit: 'Exit',
       multipleModels: 'Multiple Models',
       applyModelConfigs: 'Apply model configs',

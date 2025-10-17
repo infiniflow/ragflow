@@ -5,7 +5,7 @@ services:
       - elasticsearch
     image: elasticsearch:${STACK_VERSION}
     volumes:
-      - esdata01:/usr/share/elasticsearch/data
+      - ragflow_esdata01:/usr/share/elasticsearch/data
     ports:
       - ${ES_PORT}:9200
     env_file: .env
@@ -41,7 +41,7 @@ services:
       - opensearch
     image: hub.icert.top/opensearchproject/opensearch:2.19.1
     volumes:
-      - osdata01:/usr/share/opensearch/data
+      - ragflow_osdata01:/usr/share/opensearch/data
     ports:
       - ${OS_PORT}:9201
     env_file: .env
@@ -79,7 +79,7 @@ services:
       - infinity
     image: infiniflow/infinity:v0.6.0-dev5
     volumes:
-      - infinity_data:/var/infinity
+      - ragflow_infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
     command: ["-f", "/infinity_conf.toml"]
     ports:
@@ -152,7 +152,7 @@ services:
     ports:
       - ${MYSQL_PORT}:3306
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ragflow_mysql_data:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
     networks:
       - ragflow
@@ -176,7 +176,7 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
       - TZ=${TIMEZONE}
     volumes:
-      - minio_data:/data
+      - ragflow_minio_data:/data
     networks:
       - ragflow
     restart: on-failure
@@ -195,7 +195,7 @@ services:
     ports:
       - ${REDIS_PORT}:6379
     volumes:
-      - redis_data:/data
+      - ragflow_redis_data:/data
     networks:
       - ragflow
     restart: on-failure
@@ -209,18 +209,18 @@ services:
 
 
 volumes:
-  esdata01:
-    driver: local
-  osdata01:
-    driver: local
-  infinity_data:
-    driver: local
-  mysql_data:
-    driver: local
-  minio_data:
-    driver: local
-  redis_data:
-    driver: local
+  ragflow_esdata01:
+    external: true
+  ragflow_osdata01:
+    external: true
+  ragflow_infinity_data:
+    external: true
+  ragflow_mysql_data:
+    external: true
+  ragflow_minio_data:
+    external: true
+  ragflow_redis_data:
+    external: true
 
 networks:
   ragflow:
