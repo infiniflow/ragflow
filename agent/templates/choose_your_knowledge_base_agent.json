@@ -2,9 +2,11 @@
     "id": 19,
     "title": {
 		"en": "Choose Your Knowledge Base Agent",
+		"de": "Wählen Sie Ihren Wissensdatenbank Agenten",
 		"zh": "选择知识库智能体"},
     "description": {
 		"en": "Select your desired knowledge base from the dropdown menu. The Agent will only retrieve from the selected knowledge base and use this content  to generate responses.",
+		"de": "Wählen Sie Ihre gewünschte Wissensdatenbank aus dem Dropdown-Menü. Der Agent ruft nur Informationen aus der ausgewählten Wissensdatenbank ab und verwendet diesen Inhalt zur Generierung von Antworten.",
 		"zh": "从下拉菜单中选择知识库，智能体将仅根据所选知识库内容生成回答。"},
 	"canvas_type": "Agent", 
     "dsl": {

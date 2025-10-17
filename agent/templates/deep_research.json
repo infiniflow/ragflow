@@ -3,9 +3,11 @@
     "id": 1,
     "title": {
         "en": "Deep Research",
+        "de": "Tiefgehende Recherche",
         "zh": "深度研究"},
     "description": {
         "en": "For professionals in sales, marketing, policy, or consulting, the Multi-Agent Deep Research Agent conducts structured, multi-step investigations across diverse sources and delivers consulting-style reports with clear citations.",
+        "de": "Für Fachleute in Vertrieb, Marketing, Politik oder Beratung führt der Multi-Agenten-Tiefenforschungsagent strukturierte, mehrstufige Untersuchungen über verschiedene Quellen durch und liefert Berichte im Beratungsstil mit klaren Quellenangaben.",
         "zh": "专为销售、市场、政策或咨询领域的专业人士设计，多智能体的深度研究会结合多源信息进行结构化、多步骤地回答问题，并附带有清晰的引用。"},
     "canvas_type": "Recommended",
     "dsl": {

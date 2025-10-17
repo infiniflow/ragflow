@@ -3,9 +3,11 @@
     "id": 9,
     "title": {
         "en": "Technical Docs QA",
+        "de": "Technische Dokumentation Fragen & Antworten",
         "zh": "技术文档问答"},
     "description": {
         "en": "This is a document question-and-answer system based on a knowledge base. When a user asks a question, it retrieves relevant document content to provide accurate answers.",
+        "de": "Dies ist ein dokumentenbasiertes Frage-und-Antwort-System auf Basis einer Wissensdatenbank. Wenn ein Benutzer eine Frage stellt, werden relevante Dokumenteninhalte abgerufen, um genaue Antworten zu liefern.",
         "zh": "基于知识库的文档问答系统，当用户提出问题时，会检索相关本地文档并提供准确回答。"},
     "canvas_type": "Customer Support",
     "dsl": {
