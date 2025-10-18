@@ -2,10 +2,12 @@
     "id": 23,
     "title": {
         "en": "Advanced Ingestion Pipeline",
+        "de": "Erweiterte Ingestion Pipeline",
         "zh": "编排复杂的 Ingestion Pipeline"
     },
     "description": {
         "en": "This template demonstrates how to use an LLM to generate summaries, keywords, Q&A, and metadata for each chunk to support diverse retrieval needs.",
+        "de": "Diese Vorlage demonstriert, wie ein LLM verwendet wird, um Zusammenfassungen, Schlüsselwörter, Fragen & Antworten und Metadaten für jedes Segment zu generieren, um vielfältige Abrufanforderungen zu unterstützen.",
         "zh": "此模板演示如何利用大模型为切片生成摘要、关键词、问答及元数据，以满足多样化的召回需求。"
     },
     "canvas_type": "Ingestion Pipeline",

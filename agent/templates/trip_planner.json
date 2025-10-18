@@ -3,9 +3,11 @@
     "id": 14,
     "title": {
 		"en": "Trip Planner",
+		"de": "Reiseplaner",
 		"zh": "旅行规划"},
     "description": {
 		"en": "This smart trip planner utilizes LLM technology to automatically generate customized travel itineraries, with optional tool integration for enhanced reliability.",
+		"de": "Dieser intelligente Reiseplaner nutzt LLM-Technologie zur automatischen Generierung maßgeschneiderter Reiserouten mit optionaler Tool-Integration für erhöhte Zuverlässigkeit.",
 		"zh": "智能旅行规划将利用大模型自动生成定制化的旅行行程，附带可选工具集成，以增强可靠性。"},
 	"canvas_type": "Consumer App",
     "dsl": {

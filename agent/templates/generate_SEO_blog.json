@@ -2,9 +2,11 @@
     "id": 8,
     "title": {
         "en": "Generate SEO Blog",
+        "de": "SEO Blog generieren",
         "zh": "生成SEO博客"},
     "description": {
         "en": "This is a multi-agent version of the SEO blog generation workflow. It simulates a small team of AI “writers”, where each agent plays a specialized role — just like a real editorial team.",
+        "de": "Dies ist eine Multi-Agenten-Version des Workflows zur Erstellung von SEO-Blogs. Sie simuliert ein kleines Team von KI-„Autoren“, in dem jeder Agent eine spezielle Rolle übernimmt – genau wie in einem echten Redaktionsteam.",
         "zh": "多智能体架构可根据简单的用户输入自动生成完整的SEO博客文章。模拟小型“作家”团队，其中每个智能体扮演一个专业角色——就像真正的编辑团队。"},
     "canvas_type": "Agent",
     "dsl": {
