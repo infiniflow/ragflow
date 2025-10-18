@@ -708,6 +708,18 @@ class AdminCLI(Cmd):
             desc_str = desc_tree.children[0].strip("'\"")
 
         print(f"create role name: {role_name}, description: {desc_str}")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles'
+        response = requests.post(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
+            json={'role_name': role_name}
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to create role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
+
         pass
 
     def _drop_role(self, command):

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import inspect
+import logging
 
 from typing import Dict, Any, List
 
@@ -23,7 +24,9 @@ from api.common.exceptions import AdminException
 class RoleMgr:
     @staticmethod
     def create_role(role_name: str):
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+        error_msg = f"not implement: create role: {role_name}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
     def update_role_description(role_name: str, description: str) -> Dict[str, Any]:

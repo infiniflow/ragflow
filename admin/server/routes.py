@@ -210,7 +210,7 @@ def restart_service(service_id):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/roles', methods=['POST'])
+@admin_bp.route('/roles', methods=['POST'])
 @login_verify
 def create_role():
     try:
@@ -224,7 +224,7 @@ def create_role():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/roles/<role_name>', methods=['PUT'])
+@admin_bp.route('/roles/<role_name>', methods=['PUT'])
 @login_verify
 def update_role(role_name: str):
     try:
@@ -238,7 +238,7 @@ def update_role(role_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/roles/<role_name>', methods=['DELETE'])
+@admin_bp.route('/roles/<role_name>', methods=['DELETE'])
 @login_verify
 def delete_role(role_name: str):
     try:
@@ -248,7 +248,7 @@ def delete_role(role_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/roles', methods=['GET'])
+@admin_bp.route('/roles', methods=['GET'])
 @login_verify
 def list_roles():
     try:
@@ -258,7 +258,7 @@ def list_roles():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/roles/<role_name>/permissions', methods=['GET'])
+@admin_bp.route('/roles/<role_name>/permissions', methods=['GET'])
 @login_verify
 def get_role_permissions(role_name: str):
     try:
@@ -268,7 +268,7 @@ def get_role_permissions(role_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/roles/<role_name>/permissions', methods=['POST'])
+@admin_bp.route('/roles/<role_name>/permissions', methods=['POST'])
 @login_verify
 def grant_role_permissions(role_name: str):
     try:
@@ -282,7 +282,7 @@ def grant_role_permissions(role_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/roles/<role_name>/permissions/batch', methods=['DELETE'])
+@admin_bp.route('/roles/<role_name>/permissions/batch', methods=['DELETE'])
 @login_verify
 def revoke_role_permissions(role_name: str):
     try:
@@ -296,7 +296,7 @@ def revoke_role_permissions(role_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/users/<user_name>/role', methods=['PUT'])
+@admin_bp.route('/users/<user_name>/role', methods=['PUT'])
 @login_verify
 def update_user_role(user_name: str):
     try:
@@ -310,7 +310,7 @@ def update_user_role(user_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/api/v1/users/<user_name>/permissions', methods=['GET'])
+@admin_bp.route('/users/<user_name>/permissions', methods=['GET'])
 @login_verify
 def get_user_permissions(user_name: str):
     try:
