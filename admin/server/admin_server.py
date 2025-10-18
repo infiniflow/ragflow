@@ -27,6 +27,9 @@ from api.utils.log_utils import init_root_logger
 from api.constants import SERVICE_CONF
 from api import settings
 from config import load_configurations, SERVICE_CONFIGS
+from auth import init_default_admin, setup_auth
+from flask_session import Session
+from flask_login import LoginManager
 
 stop_event = threading.Event()
 
@@ -42,7 +45,17 @@ if __name__ == '__main__':
 
     app = Flask(__name__)
     app.register_blueprint(admin_bp)
+    app.config["SESSION_PERMANENT"] = False
+    app.config["SESSION_TYPE"] = "filesystem"
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
+    )
+    Session(app)
+    login_manager = LoginManager()
+    login_manager.init_app(app)
     settings.init_settings()
+    setup_auth(login_manager)
+    init_default_admin()
     SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
 
     try:

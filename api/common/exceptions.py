@@ -36,3 +36,8 @@ class UserAlreadyExistsError(AdminException):
 class CannotDeleteAdminError(AdminException):
     def __init__(self):
         super().__init__("Cannot delete admin account", 403)
+
+
+class NotAdminError(AdminException):
+    def __init__(self, username):
+        super().__init__(f"User '{username}' is not admin", 403)

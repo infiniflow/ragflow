@@ -14,15 +14,35 @@
 #  limitations under the License.
 #
 
+import secrets
 
 from flask import Blueprint, request
+from flask_login import current_user, logout_user, login_required
 
-from auth import login_verify
+from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr
 from api.common.exceptions import AdminException
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
+
+
+@admin_bp.route('/login', methods=['POST'])
+def login():
+    if not request.json:
+        return error_response('Authorize admin failed.' ,400)
+    email = request.json.get("email", "")
+    password = request.json.get("password", "")
+    return login_admin(email, password)
+
+
+@admin_bp.route('/logout', methods=['GET'])
+@login_required
+def logout():
+    current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
+    current_user.save()
+    logout_user()
+    return success_response(True)
 
 
 @admin_bp.route('/auth', methods=['GET'])
@@ -35,7 +55,8 @@ def auth_admin():
 
 
 @admin_bp.route('/users', methods=['GET'])
-@login_verify
+@login_required
+@check_admin_auth
 def list_users():
     try:
         users = UserMgr.get_all_users()
@@ -45,7 +66,8 @@ def list_users():
 
 
 @admin_bp.route('/users', methods=['POST'])
-@login_verify
+@login_required
+@check_admin_auth
 def create_user():
     try:
         data = request.get_json()
@@ -71,7 +93,8 @@ def create_user():
 
 
 @admin_bp.route('/users/<username>', methods=['DELETE'])
-@login_verify
+@login_required
+@check_admin_auth
 def delete_user(username):
     try:
         res = UserMgr.delete_user(username)
@@ -87,7 +110,8 @@ def delete_user(username):
 
 
 @admin_bp.route('/users/<username>/password', methods=['PUT'])
-@login_verify
+@login_required
+@check_admin_auth
 def change_password(username):
     try:
         data = request.get_json()
@@ -105,7 +129,8 @@ def change_password(username):
 
 
 @admin_bp.route('/users/<username>/activate', methods=['PUT'])
-@login_verify
+@login_required
+@check_admin_auth
 def alter_user_activate_status(username):
     try:
         data = request.get_json()
@@ -121,7 +146,8 @@ def alter_user_activate_status(username):
 
 
 @admin_bp.route('/users/<username>', methods=['GET'])
-@login_verify
+@login_required
+@check_admin_auth
 def get_user_details(username):
     try:
         user_details = UserMgr.get_user_details(username)
@@ -134,7 +160,8 @@ def get_user_details(username):
 
 
 @admin_bp.route('/users/<username>/datasets', methods=['GET'])
-@login_verify
+@login_required
+@check_admin_auth
 def get_user_datasets(username):
     try:
         datasets_list = UserServiceMgr.get_user_datasets(username)
@@ -147,7 +174,8 @@ def get_user_datasets(username):
 
 
 @admin_bp.route('/users/<username>/agents', methods=['GET'])
-@login_verify
+@login_required
+@check_admin_auth
 def get_user_agents(username):
     try:
         agents_list = UserServiceMgr.get_user_agents(username)
@@ -160,7 +188,8 @@ def get_user_agents(username):
 
 
 @admin_bp.route('/services', methods=['GET'])
-@login_verify
+@login_required
+@check_admin_auth
 def get_services():
     try:
         services = ServiceMgr.get_all_services()
@@ -170,7 +199,8 @@ def get_services():
 
 
 @admin_bp.route('/service_types/<service_type>', methods=['GET'])
-@login_verify
+@login_required
+@check_admin_auth
 def get_services_by_type(service_type_str):
     try:
         services = ServiceMgr.get_services_by_type(service_type_str)
@@ -180,7 +210,8 @@ def get_services_by_type(service_type_str):
 
 
 @admin_bp.route('/services/<service_id>', methods=['GET'])
-@login_verify
+@login_required
+@check_admin_auth
 def get_service(service_id):
     try:
         services = ServiceMgr.get_service_details(service_id)
@@ -190,7 +221,8 @@ def get_service(service_id):
 
 
 @admin_bp.route('/services/<service_id>', methods=['DELETE'])
-@login_verify
+@login_required
+@check_admin_auth
 def shutdown_service(service_id):
     try:
         services = ServiceMgr.shutdown_service(service_id)
@@ -200,7 +232,8 @@ def shutdown_service(service_id):
 
 
 @admin_bp.route('/services/<service_id>', methods=['PUT'])
-@login_verify
+@login_required
+@check_admin_auth
 def restart_service(service_id):
     try:
         services = ServiceMgr.restart_service(service_id)
