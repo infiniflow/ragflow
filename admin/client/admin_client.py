@@ -16,13 +16,12 @@
 
 import argparse
 import base64
-import inspect
 from cmd import Cmd
 
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from typing import Dict, List, Any
-from lark import Lark, Transformer, Tree, Token
+from lark import Lark, Transformer, Tree
 import requests
 
 GRAMMAR = r"""

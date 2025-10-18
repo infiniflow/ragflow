@@ -13,10 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import inspect
 import logging
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from api.common.exceptions import AdminException
 
@@ -42,7 +41,7 @@ class RoleMgr:
 
     @staticmethod
     def list_roles() -> Dict[str, Any]:
-        error_msg = f"not implement: list roles"
+        error_msg = "not implement: list roles"
         logging.error(error_msg)
         raise AdminException(error_msg)
 
