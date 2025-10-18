@@ -22,6 +22,7 @@ from flask_login import current_user, logout_user, login_required
 from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr
+from roles import RoleMgr
 from api.common.exceptions import AdminException
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
@@ -238,5 +239,127 @@ def restart_service(service_id):
     try:
         services = ServiceMgr.restart_service(service_id)
         return success_response(services)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/roles', methods=['POST'])
+@login_required
+@check_admin_auth
+def create_role():
+    try:
+        data = request.get_json()
+        if not data or 'role_name' not in data:
+            return error_response("Role name is required", 400)
+        role_name: str = data['role_name']
+        description: str = data['description']
+        res = RoleMgr.create_role(role_name, description)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/roles/<role_name>', methods=['PUT'])
+@login_required
+@check_admin_auth
+def update_role(role_name: str):
+    try:
+        data = request.get_json()
+        if not data or 'description' not in data:
+            return error_response("Role description is required", 400)
+        description: str = data['description']
+        res = RoleMgr.update_role_description(role_name, description)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/roles/<role_name>', methods=['DELETE'])
+@login_required
+@check_admin_auth
+def delete_role(role_name: str):
+    try:
+        res = RoleMgr.delete_role(role_name)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/roles', methods=['GET'])
+@login_required
+@check_admin_auth
+def list_roles():
+    try:
+        res = RoleMgr.list_roles()
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/roles/<role_name>/permission', methods=['GET'])
+@login_required
+@check_admin_auth
+def get_role_permission(role_name: str):
+    try:
+        res = RoleMgr.get_role_permission(role_name)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/roles/<role_name>/permission', methods=['POST'])
+@login_required
+@check_admin_auth
+def grant_role_permission(role_name: str):
+    try:
+        data = request.get_json()
+        if not data or 'actions' not in data or 'resource' not in data:
+            return error_response("Permission is required", 400)
+        actions: list = data['actions']
+        resource: str = data['resource']
+        res = RoleMgr.grant_role_permission(role_name, actions, resource)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/roles/<role_name>/permission', methods=['DELETE'])
+@login_required
+@check_admin_auth
+def revoke_role_permission(role_name: str):
+    try:
+        data = request.get_json()
+        if not data or 'actions' not in data or 'resource' not in data:
+            return error_response("Permission is required", 400)
+        actions: list = data['actions']
+        resource: str = data['resource']
+        res = RoleMgr.revoke_role_permission(role_name, actions, resource)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/users/<user_name>/role', methods=['PUT'])
+@login_required
+@check_admin_auth
+def update_user_role(user_name: str):
+    try:
+        data = request.get_json()
+        if not data or 'role_name' not in data:
+            return error_response("Role name is required", 400)
+        role_name: str = data['role_name']
+        res = RoleMgr.update_user_role(user_name, role_name)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route('/users/<user_name>/permission', methods=['GET'])
+@login_required
+@check_admin_auth
+def get_user_permission(user_name: str):
+    try:
+        res = RoleMgr.get_user_permission(user_name)
+        return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
