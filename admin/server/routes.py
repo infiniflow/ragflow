@@ -259,39 +259,41 @@ def list_roles():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>/permissions', methods=['GET'])
+@admin_bp.route('/roles/<role_name>/permission', methods=['GET'])
 @login_verify
-def get_role_permissions(role_name: str):
+def get_role_permission(role_name: str):
     try:
-        res = RoleMgr.get_role_permissions(role_name)
+        res = RoleMgr.get_role_permission(role_name)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>/permissions', methods=['POST'])
+@admin_bp.route('/roles/<role_name>/permission', methods=['POST'])
 @login_verify
-def grant_role_permissions(role_name: str):
+def grant_role_permission(role_name: str):
     try:
         data = request.get_json()
-        if not data or 'permissions' not in data:
-            return error_response("Permissions are required", 400)
-        permissions: str = data['role_description']
-        res = RoleMgr.grant_role_permissions(role_name, permissions)
+        if not data or 'actions' not in data or 'resource' not in data:
+            return error_response("Permission is required", 400)
+        actions: list = data['actions']
+        resource: str = data['resource']
+        res = RoleMgr.grant_role_permission(role_name, actions, resource)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>/permissions/batch', methods=['DELETE'])
+@admin_bp.route('/roles/<role_name>/permission', methods=['DELETE'])
 @login_verify
-def revoke_role_permissions(role_name: str):
+def revoke_role_permission(role_name: str):
     try:
         data = request.get_json()
-        if not data or 'permissions' not in data:
-            return error_response("Permissions are required", 400)
-        permissions: str = data['role_description']
-        res = RoleMgr.revoke_role_permissions(role_name, permissions)
+        if not data or 'actions' not in data or 'resource' not in data:
+            return error_response("Permission is required", 400)
+        actions: list = data['actions']
+        resource: str = data['resource']
+        res = RoleMgr.revoke_role_permission(role_name, actions, resource)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
@@ -302,7 +304,7 @@ def revoke_role_permissions(role_name: str):
 def update_user_role(user_name: str):
     try:
         data = request.get_json()
-        if not data or 'permissions' not in data:
+        if not data or 'role_name' not in data:
             return error_response("Role name is required", 400)
         role_name: str = data['role_name']
         res = RoleMgr.update_user_role(user_name, role_name)
@@ -311,11 +313,11 @@ def update_user_role(user_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<user_name>/permissions', methods=['GET'])
+@admin_bp.route('/users/<user_name>/permission', methods=['GET'])
 @login_verify
-def get_user_permissions(user_name: str):
+def get_user_permission(user_name: str):
     try:
-        res = RoleMgr.get_user_permissions(user_name)
+        res = RoleMgr.get_user_permission(user_name)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)

@@ -47,23 +47,31 @@ class RoleMgr:
         raise AdminException(error_msg)
 
     @staticmethod
-    def get_role_permissions(role_name: str) -> Dict[str, Any]:
+    def get_role_permission(role_name: str) -> Dict[str, Any]:
         error_msg = f"not implement: show role {role_name}"
         logging.error(error_msg)
         raise AdminException(error_msg)
 
     @staticmethod
-    def grant_role_permissions(role_name: str, permissions: str) -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+    def grant_role_permission(role_name: str, actions: list, resource: str) -> Dict[str, Any]:
+        error_msg = f"not implement: grant role {role_name} actions: {actions} on {resource}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
-    def revoke_role_permissions(role_name: str, permissions: str) -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+    def revoke_role_permission(role_name: str, actions: list, resource: str) -> Dict[str, Any]:
+        error_msg = f"not implement: revoke role {role_name} actions: {actions} on {resource}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
     def update_user_role(user_name: str, role_name: str) -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+        error_msg = f"not implement: update user role: {user_name} to role {role_name}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
-    def get_user_permissions(user_name: str) -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+    def get_user_permission(user_name: str) -> Dict[str, Any]:
+        error_msg = f"not implement: get user permission: {user_name}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)

@@ -772,7 +772,7 @@ class AdminCLI(Cmd):
         role_name_tree: Tree = command['role_name']
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"show role: {role_name}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}/permissions'
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}/permission'
         response = requests.get(
             url,
             auth=HTTPBasicAuth(self.admin_account, self.admin_password)
@@ -794,7 +794,18 @@ class AdminCLI(Cmd):
             action_str: str = action_tree.children[0].strip("'\"")
             actions.append(action_str)
         print(f"grant role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission'
+        response = requests.post(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
+            json={'actions': actions, 'resource': resource_str}
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(
+                f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _revoke_permission(self, command):
         role_name_tree: Tree = command['role_name']
@@ -807,7 +818,18 @@ class AdminCLI(Cmd):
             action_str: str = action_tree.children[0].strip("'\"")
             actions.append(action_str)
         print(f"revoke role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission'
+        response = requests.delete(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
+            json={'actions': actions, 'resource': resource_str}
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(
+                f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _alter_user_role(self, command):
         role_name_tree: Tree = command['role_name']
@@ -815,13 +837,34 @@ class AdminCLI(Cmd):
         user_name_tree: Tree = command['user_name']
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"alter_user_role user_name: {user_name_str}, role_name: {role_name_str}")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/role'
+        response = requests.put(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
+            json={'role_name': role_name_str}
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(
+                f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_user_permission(self, command):
         user_name_tree: Tree = command['user_name']
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"show_user_permission user_name: {user_name_str}")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/permission'
+        response = requests.get(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password)
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(
+                f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_meta_command(self, command):
         meta_command = command['command']
