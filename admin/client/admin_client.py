@@ -909,7 +909,7 @@ def main():
 
     if 'command' in args:
         if 'password' not in args:
-            print(f"Error: password is missing")
+            print("Error: password is missing")
             return
         if cli.verify_admin(args, single_command=True):
             command: str = args['command']
