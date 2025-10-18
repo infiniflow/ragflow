@@ -24,7 +24,6 @@ from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from typing import Dict, List, Any
 from lark import Lark, Transformer, Tree, Token
 import requests
-from requests.auth import HTTPBasicAuth
 
 GRAMMAR = r"""
 start: command
@@ -293,6 +292,8 @@ class AdminCLI(Cmd):
         self.is_interactive = False
         self.admin_account = "admin@ragflow.io"
         self.admin_password: str = "admin"
+        self.session = requests.Session()
+        self.access_token: str = ""
         self.host: str = ""
         self.port: int = 0
 
@@ -350,7 +351,7 @@ class AdminCLI(Cmd):
         self.host = conn_info['host']
         self.port = conn_info['port']
         print(f"Attempt to access ip: {self.host}, port: {self.port}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/auth'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/login"
 
         try_count = 0
         while True:
@@ -360,12 +361,17 @@ class AdminCLI(Cmd):
 
             admin_passwd = input(f"password for {self.admin_account}: ").strip()
             try:
-                self.admin_password = encode_to_base64(admin_passwd)
-                response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+                self.admin_password = encrypt(admin_passwd)
+                response = self.session.post(url, json={'email': self.admin_account, 'password': self.admin_password})
                 if response.status_code == 200:
                     res_json = response.json()
                     error_code = res_json.get('code', -1)
                     if error_code == 0:
+                        self.session.headers.update({
+                            'Content-Type': 'application/json',
+                            'Authorization': response.headers['Authorization'],
+                            'User-Agent': 'RAGFlow-CLI/0.21.0'
+                        })
                         print("Authentication successful.")
                         return True
                     else:
@@ -374,7 +380,8 @@ class AdminCLI(Cmd):
                         continue
                 else:
                     print(f"Bad response，status: {response.status_code}, try again")
-            except Exception:
+            except Exception as e:
+                print(str(e))
                 print(f"Can't access {self.host}, port: {self.port}")
 
     def _print_table_simple(self, data):
@@ -549,7 +556,7 @@ class AdminCLI(Cmd):
         print("Listing all services")
 
         url = f'http://{self.host}:{self.port}/api/v1/admin/services'
-        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -561,7 +568,7 @@ class AdminCLI(Cmd):
         print(f"Showing service: {service_id}")
 
         url = f'http://{self.host}:{self.port}/api/v1/admin/services/{service_id}'
-        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             res_data = res_json['data']
@@ -592,7 +599,7 @@ class AdminCLI(Cmd):
         print("Listing all users")
 
         url = f'http://{self.host}:{self.port}/api/v1/admin/users'
-        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -600,11 +607,11 @@ class AdminCLI(Cmd):
             print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_show_user(self, command):
-        user_name_tree: Tree = command['user_name']
-        user_name: str = user_name_tree.children[0].strip("'\"")
+        username_tree: Tree = command['user_name']
+        user_name: str = username_tree.children[0].strip("'\"")
         print(f"Showing user: {user_name}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}'
-        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -612,11 +619,11 @@ class AdminCLI(Cmd):
             print(f"Fail to get user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_drop_user(self, command):
-        user_name_tree: Tree = command['user_name']
-        user_name: str = user_name_tree.children[0].strip("'\"")
+        username_tree: Tree = command['user_name']
+        user_name: str = username_tree.children[0].strip("'\"")
         print(f"Drop user: {user_name}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}'
-        response = requests.delete(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        response = self.session.delete(url)
         res_json = response.json()
         if response.status_code == 200:
             print(res_json["message"])
@@ -630,8 +637,7 @@ class AdminCLI(Cmd):
         password: str = password_tree.children[0].strip("'\"")
         print(f"Alter user: {user_name}, password: {password}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/password'
-        response = requests.put(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password),
-                                json={'new_password': encrypt(password)})
+        response = self.session.put(url, json={'new_password': encrypt(password)})
         res_json = response.json()
         if response.status_code == 200:
             print(res_json["message"])
@@ -646,9 +652,8 @@ class AdminCLI(Cmd):
         role: str = command['role']
         print(f"Create user: {user_name}, password: {password}, role: {role}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users'
-        response = requests.post(
+        response = self.session.post(
             url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
             json={'user_name': user_name, 'password': encrypt(password), 'role': role}
         )
         res_json = response.json()
@@ -665,8 +670,7 @@ class AdminCLI(Cmd):
         if activate_status.lower() in ['on', 'off']:
             print(f"Alter user {user_name} activate status, turn {activate_status.lower()}.")
             url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/activate'
-            response = requests.put(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password),
-                                    json={'activate_status': activate_status})
+            response = self.session.put(url, json={'activate_status': activate_status})
             res_json = response.json()
             if response.status_code == 200:
                 print(res_json["message"])
@@ -676,11 +680,11 @@ class AdminCLI(Cmd):
             print(f"Unknown activate status: {activate_status}.")
 
     def _handle_list_datasets(self, command):
-        user_name_tree: Tree = command['user_name']
-        user_name: str = user_name_tree.children[0].strip("'\"")
+        username_tree: Tree = command['user_name']
+        user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all datasets of user: {user_name}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/datasets'
-        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -688,11 +692,11 @@ class AdminCLI(Cmd):
             print(f"Fail to get all datasets of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_list_agents(self, command):
-        user_name_tree: Tree = command['user_name']
-        user_name: str = user_name_tree.children[0].strip("'\"")
+        username_tree: Tree = command['user_name']
+        user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all agents of user: {user_name}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/agents'
-        response = requests.get(url, auth=HTTPBasicAuth(self.admin_account, self.admin_password))
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -709,9 +713,8 @@ class AdminCLI(Cmd):
 
         print(f"create role name: {role_name}, description: {desc_str}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/roles'
-        response = requests.post(
+        response = self.session.post(
             url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
             json={'role_name': role_name, 'description': desc_str}
         )
         res_json = response.json()
@@ -725,10 +728,7 @@ class AdminCLI(Cmd):
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"drop role name: {role_name}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}'
-        response = requests.delete(
-            url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
-        )
+        response = self.session.delete(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -743,9 +743,8 @@ class AdminCLI(Cmd):
 
         print(f"alter role name: {role_name}, description: {desc_str}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}'
-        response = requests.put(
+        response = self.session.put(
             url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
             json={'description': desc_str}
         )
         res_json = response.json()
@@ -758,10 +757,7 @@ class AdminCLI(Cmd):
     def _list_roles(self, command):
         print("Listing all roles")
         url = f'http://{self.host}:{self.port}/api/v1/admin/roles'
-        response = requests.get(
-            url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password)
-        )
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -773,10 +769,7 @@ class AdminCLI(Cmd):
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"show role: {role_name}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}/permission'
-        response = requests.get(
-            url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password)
-        )
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
@@ -795,9 +788,8 @@ class AdminCLI(Cmd):
             actions.append(action_str)
         print(f"grant role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission'
-        response = requests.post(
+        response = self.session.post(
             url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
             json={'actions': actions, 'resource': resource_str}
         )
         res_json = response.json()
@@ -819,9 +811,8 @@ class AdminCLI(Cmd):
             actions.append(action_str)
         print(f"revoke role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission'
-        response = requests.delete(
+        response = self.session.delete(
             url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
             json={'actions': actions, 'resource': resource_str}
         )
         res_json = response.json()
@@ -838,9 +829,8 @@ class AdminCLI(Cmd):
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"alter_user_role user_name: {user_name_str}, role_name: {role_name_str}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/role'
-        response = requests.put(
+        response = self.session.put(
             url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
             json={'role_name': role_name_str}
         )
         res_json = response.json()
@@ -855,10 +845,7 @@ class AdminCLI(Cmd):
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"show_user_permission user_name: {user_name_str}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/permission'
-        response = requests.get(
-            url,
-            auth=HTTPBasicAuth(self.admin_account, self.admin_password)
-        )
+        response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json['data'])
