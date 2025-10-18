@@ -38,8 +38,8 @@ from api.utils.api_utils import (
     construct_response,
 )
 
-def setup_auth(login_manager):
 
+def setup_auth(login_manager):
     @login_manager.request_loader
     def load_user(web_request):
         jwt = Serializer(secret_key=settings.SECRET_KEY)
@@ -172,11 +172,18 @@ def login_verify(f):
 
         username = auth.parameters['username']
         password = auth.parameters['password']
-        if check_admin(username, password) is False:
+        try:
+            if check_admin(username, password) is False:
+                return jsonify({
+                    "code": 500,
+                    "message": "Access denied",
+                    "data": None
+                }), 200
+        except Exception as e:
+            error_msg = str(e)
             return jsonify({
-                "code": 403,
-                "message": "Access denied",
-                "data": None
+                "code": 500,
+                "message": error_msg
             }), 200
 
         return f(*args, **kwargs)
