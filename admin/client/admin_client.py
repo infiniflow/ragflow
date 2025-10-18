@@ -16,6 +16,7 @@
 
 import argparse
 import base64
+import inspect
 from cmd import Cmd
 
 from Cryptodome.PublicKey import RSA
@@ -43,6 +44,15 @@ sql_command: list_services
            | activate_user
            | list_datasets
            | list_agents
+           | create_role
+           | drop_role
+           | alter_role
+           | list_roles
+           | show_role
+           | grant_permission
+           | revoke_permission
+           | alter_user_role
+           | show_user_permission
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -71,6 +81,19 @@ PASSWORD: "PASSWORD"i
 DATASETS: "DATASETS"i
 OF: "OF"i
 AGENTS: "AGENTS"i
+ROLE: "ROLE"i
+ROLES: "ROLES"i
+DESCRIPTION: "DESCRIPTION"i
+GRANT: "GRANT"i
+REVOKE: "REVOKE"i
+ALL: "ALL"i
+PERMISSION: "PERMISSION"i
+TO: "TO"i
+FROM: "FROM"i
+FOR: "FOR"i
+RESOURCES: "RESOURCES"i
+ON: "ON"i
+SET: "SET"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -87,6 +110,19 @@ activate_user: ALTER USER ACTIVE quoted_string status ";"
 
 list_datasets: LIST DATASETS OF quoted_string ";"
 list_agents: LIST AGENTS OF quoted_string ";"
+
+create_role: CREATE ROLE identifier [DESCRIPTION quoted_string] ";"
+drop_role: DROP ROLE identifier ";"
+alter_role: ALTER ROLE identifier SET DESCRIPTION quoted_string ";"
+list_roles: LIST ROLES ";"
+show_role: SHOW ROLE identifier ";"
+
+grant_permission: GRANT action_list ON identifier TO ROLE identifier ";"
+revoke_permission: REVOKE action_list ON identifier FROM ROLE identifier ";"
+alter_user_role: ALTER USER quoted_string SET ROLE identifier ";"
+show_user_permission: SHOW USER PERMISSION quoted_string ";"
+
+action_list: identifier ("," identifier)*
 
 identifier: WORD
 quoted_string: QUOTED_STRING
@@ -162,6 +198,58 @@ class AdminTransformer(Transformer):
     def list_agents(self, items):
         user_name = items[3]
         return {"type": "list_agents", "username": user_name}
+
+    def create_role(self, items):
+        role_name = items[2]
+        if len(items) > 4:
+            description = items[4]
+            return {"type": "create_role", "role_name": role_name, "description": description}
+        else:
+            return {"type": "create_role", "role_name": role_name}
+
+    def drop_role(self, items):
+        role_name = items[2]
+        return {"type": "drop_role", "role_name": role_name}
+
+    def alter_role(self, items):
+        role_name = items[2]
+        description = items[5]
+        return {"type": "alter_role", "role_name": role_name, "description": description}
+
+    def list_roles(self, items):
+        return {"type": "list_roles"}
+
+    def show_role(self, items):
+        role_name = items[2]
+        return {"type": "show_role", "role_name": role_name}
+
+    def grant_permission(self, items):
+        action_list = items[1]
+        resource = items[3]
+        role_name = items[6]
+        return {"type": "grant_permission", "role_name": role_name, "resource": resource, "actions": action_list}
+
+    def revoke_permission(self, items):
+        action_list = items[1]
+        resource = items[3]
+        role_name = items[6]
+        return {
+            "type": "revoke_permission",
+            "role_name": role_name,
+            "resource": resource, "actions": action_list
+        }
+
+    def alter_user_role(self, items):
+        user_name = items[2]
+        role_name = items[5]
+        return {"type": "alter_user_role", "user_name": user_name, "role_name": role_name}
+
+    def show_user_permission(self, items):
+        user_name = items[3]
+        return {"type": "show_user_permission", "user_name": user_name}
+
+    def action_list(self, items):
+        return items
 
     def meta_command(self, items):
         command_name = str(items[0]).lower()
@@ -240,7 +328,7 @@ class AdminCLI(Cmd):
     def default(self, line: str) -> bool:
         return self.onecmd(line)
 
-    def parse_command(self, command_str: str) -> dict[str, str] | Tree[Token]:
+    def parse_command(self, command_str: str) -> dict[str, str]:
         if not command_str.strip():
             return {'type': 'empty'}
 
@@ -434,6 +522,24 @@ class AdminCLI(Cmd):
                 self._handle_list_datasets(command_dict)
             case 'list_agents':
                 self._handle_list_agents(command_dict)
+            case 'create_role':
+                self._create_role(command_dict)
+            case 'drop_role':
+                self._drop_role(command_dict)
+            case 'alter_role':
+                self._alter_role(command_dict)
+            case 'list_roles':
+                self._list_roles(command_dict)
+            case 'show_role':
+                self._show_role(command_dict)
+            case 'grant_permission':
+                self._grant_permission(command_dict)
+            case 'revoke_permission':
+                self._revoke_permission(command_dict)
+            case 'alter_user_role':
+                self._alter_user_role(command_dict)
+            case 'show_user_permission':
+                self._show_user_permission(command_dict)
             case 'meta':
                 self._handle_meta_command(command_dict)
             case _:
@@ -592,6 +698,82 @@ class AdminCLI(Cmd):
             self._print_table_simple(res_json['data'])
         else:
             print(f"Fail to get all agents of {username}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _create_role(self, command):
+        role_name_tree: Tree = command['role_name']
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        desc_str: str = ''
+        if 'description' in command:
+            desc_tree: Tree = command['description']
+            desc_str = desc_tree.children[0].strip("'\"")
+
+        print(f"create role name: {role_name}, description: {desc_str}")
+        pass
+
+    def _drop_role(self, command):
+        role_name_tree: Tree = command['role_name']
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        print(f"drop role name: {role_name}")
+        pass
+
+    def _alter_role(self, command):
+        role_name_tree: Tree = command['role_name']
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        desc_tree: Tree = command['description']
+        desc_str: str = desc_tree.children[0].strip("'\"")
+
+        print(f"alter role name: {role_name}, description: {desc_str}")
+        pass
+
+    def _list_roles(self, command):
+        print("Listing all roles")
+        pass
+
+    def _show_role(self, command):
+        role_name_tree: Tree = command['role_name']
+        role_name: str = role_name_tree.children[0].strip("'\"")
+        print(f"show role: {role_name}")
+        pass
+
+    def _grant_permission(self, command):
+        role_name_tree: Tree = command['role_name']
+        role_name_str: str = role_name_tree.children[0].strip("'\"")
+        resource_tree: Tree = command['resource']
+        resource_str: str = resource_tree.children[0].strip("'\"")
+        action_tree_list: list = command['actions']
+        actions: list = []
+        for action_tree in action_tree_list:
+            action_str: str = action_tree.children[0].strip("'\"")
+            actions.append(action_str)
+        print(f"grant role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
+        pass
+
+    def _revoke_permission(self, command):
+        role_name_tree: Tree = command['role_name']
+        role_name_str: str = role_name_tree.children[0].strip("'\"")
+        resource_tree: Tree = command['resource']
+        resource_str: str = resource_tree.children[0].strip("'\"")
+        action_tree_list: list = command['actions']
+        actions: list = []
+        for action_tree in action_tree_list:
+            action_str: str = action_tree.children[0].strip("'\"")
+            actions.append(action_str)
+        print(f"revoke role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
+        pass
+
+    def _alter_user_role(self, command):
+        role_name_tree: Tree = command['role_name']
+        role_name_str: str = role_name_tree.children[0].strip("'\"")
+        user_name_tree: Tree = command['user_name']
+        user_name_str: str = user_name_tree.children[0].strip("'\"")
+        print(f"alter_user_role user_name: {user_name_str}, role_name: {role_name_str}")
+        pass
+
+    def _show_user_permission(self, command):
+        user_name_tree: Tree = command['user_name']
+        user_name_str: str = user_name_tree.children[0].strip("'\"")
+        print(f"show_user_permission user_name: {user_name_str}")
+        pass
 
     def _handle_meta_command(self, command):
         meta_command = command['command']

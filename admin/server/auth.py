@@ -62,11 +62,18 @@ def login_verify(f):
         username = auth.parameters['username']
         password = auth.parameters['password']
         # TODO: to check the username and password from DB
-        if check_admin(username, password) is False:
+        try:
+            if check_admin(username, password) is False:
+                return jsonify({
+                    "code": 403,
+                    "message": "Access denied",
+                    "data": None
+                }), 200
+        except Exception as e:
+            error_msg = str(e)
             return jsonify({
-                "code": 403,
-                "message": "Access denied",
-                "data": None
+                "code": 500,
+                "message": error_msg
             }), 200
 
         return f(*args, **kwargs)
