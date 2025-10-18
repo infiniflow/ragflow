@@ -218,7 +218,8 @@ def create_role():
         if not data or 'role_name' not in data:
             return error_response("Role name is required", 400)
         role_name: str = data['role_name']
-        res = RoleMgr.create_role(role_name)
+        description: str = data['description']
+        res = RoleMgr.create_role(role_name, description)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
@@ -229,10 +230,10 @@ def create_role():
 def update_role(role_name: str):
     try:
         data = request.get_json()
-        if not data or 'role_description' not in data:
+        if not data or 'description' not in data:
             return error_response("Role description is required", 400)
-        role_description: str = data['role_description']
-        res = RoleMgr.update_role_description(role_name, role_description)
+        description: str = data['description']
+        res = RoleMgr.update_role_description(role_name, description)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)

@@ -23,26 +23,34 @@ from api.common.exceptions import AdminException
 
 class RoleMgr:
     @staticmethod
-    def create_role(role_name: str):
-        error_msg = f"not implement: create role: {role_name}"
+    def create_role(role_name: str, description: str):
+        error_msg = f"not implement: create role: {role_name}, description: {description}"
         logging.error(error_msg)
         raise AdminException(error_msg)
 
     @staticmethod
     def update_role_description(role_name: str, description: str) -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+        error_msg = f"not implement: update role: {role_name} with description: {description}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
     def delete_role(role_name: str) -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+        error_msg = f"not implement: drop role: {role_name}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
     def list_roles() -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+        error_msg = f"not implement: list roles"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
     def get_role_permissions(role_name: str) -> Dict[str, Any]:
-        raise AdminException(f"Not implement {inspect.currentframe().f_code.co_name}")
+        error_msg = f"not implement: show role {role_name}"
+        logging.error(error_msg)
+        raise AdminException(error_msg)
 
     @staticmethod
     def grant_role_permissions(role_name: str, permissions: str) -> Dict[str, Any]:

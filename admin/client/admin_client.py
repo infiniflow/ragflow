@@ -712,7 +712,7 @@ class AdminCLI(Cmd):
         response = requests.post(
             url,
             auth=HTTPBasicAuth(self.admin_account, self.admin_password),
-            json={'role_name': role_name}
+            json={'role_name': role_name, 'description': desc_str}
         )
         res_json = response.json()
         if response.status_code == 200:
@@ -720,13 +720,20 @@ class AdminCLI(Cmd):
         else:
             print(f"Fail to create role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
 
-        pass
-
     def _drop_role(self, command):
         role_name_tree: Tree = command['role_name']
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"drop role name: {role_name}")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}'
+        response = requests.delete(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to drop role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _alter_role(self, command):
         role_name_tree: Tree = command['role_name']
@@ -735,17 +742,46 @@ class AdminCLI(Cmd):
         desc_str: str = desc_tree.children[0].strip("'\"")
 
         print(f"alter role name: {role_name}, description: {desc_str}")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}'
+        response = requests.put(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password),
+            json={'description': desc_str}
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(
+                f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_roles(self, command):
         print("Listing all roles")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles'
+        response = requests.get(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password)
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_role(self, command):
         role_name_tree: Tree = command['role_name']
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"show role: {role_name}")
-        pass
+        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}/permissions'
+        response = requests.get(
+            url,
+            auth=HTTPBasicAuth(self.admin_account, self.admin_password)
+        )
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
 
     def _grant_permission(self, command):
         role_name_tree: Tree = command['role_name']
