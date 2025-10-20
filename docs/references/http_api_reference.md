@@ -1226,7 +1226,7 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-**Array[string] parameters (multiple values):**
+**A request with repeated, multi-value parameters (`Array[string]`):**
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&suffix=docx&suffix=txt&run=DONE&run=RUNNING \
