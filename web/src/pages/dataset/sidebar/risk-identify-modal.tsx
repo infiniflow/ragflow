@@ -1,4 +1,5 @@
 import { IModalProps } from '@/interfaces/common';
+import { get_risk_identify } from '@/services/knowledge-service';
 import { message, Modal, Upload } from 'antd';
 import Dragger from 'antd/es/upload/Dragger';
 import { FileSpreadsheet } from 'lucide-react';
@@ -45,13 +46,15 @@ const RiskIdentifyModal = ({
     }
     setUploading(true);
     const formData = new FormData();
-    formData.append('file', fileList[0]);
+    // 从地址栏获取知识库id
+    const url = new URL(window.location.href);
+    const pathname = url.pathname; // "/dataset/dataset/4e4eb61c822b11f080868b4ffee32926"
+    const id = pathname.split('/').pop();
+    formData.append('引用知识库ID', `${id}`);
+    formData.append('data', fileList[0]);
     try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      if (res.ok) {
+      const res = await get_risk_identify(formData);
+      if (res) {
         message.success(t('文件上传成功'));
         setFileList([]);
         setShowRiskModal(false);

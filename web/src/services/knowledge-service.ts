@@ -205,4 +205,10 @@ export const listDocument = (
 export const documentFilter = (kb_id: string) =>
   request.post(api.get_dataset_filter, { kb_id });
 
+export const get_risk_identify = (formData: FormData) => {
+  return request.post('https://n8n.service.auditdog.cn/webhook-test/ragflow', {
+    data: formData,
+  });
+};
+
 export default kbService;
