@@ -634,7 +634,8 @@ class GeminiCV(Base):
                 )
             else:
                 logging.info(f"Video size {video_size_mb:.2f}MB exceeds 20MB. Using Files API...")
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                video_suffix = Path(filename).suffix or ".mp4"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
                     tmp.write(video_bytes)
                     tmp_path = Path(tmp.name)
                 uploaded_file = client.files.upload(file=tmp_path)
