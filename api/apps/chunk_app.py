@@ -350,7 +350,8 @@ def retrieval_test():
                                float(req.get("similarity_threshold", 0.0)),
                                float(req.get("vector_similarity_weight", 0.3)),
                                top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+                               doc_ids, rerank_mdl=rerank_mdl,
+                                             highlight=req.get("highlight", False),
                                rank_feature=labels
                                )
         if use_kg:
