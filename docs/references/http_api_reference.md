@@ -1212,7 +1212,7 @@ Lists documents in a specified dataset.
 
 ##### Request examples
 
-**Basic request with pagination:**
+**A basic request with pagination:**
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents?page=1&page_size=10 \
