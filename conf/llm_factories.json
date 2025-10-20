@@ -1345,35 +1345,35 @@
                     "llm_name": "gemini-2.5-flash",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
                     "tags": "LLM,CHAT,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash-lite",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
