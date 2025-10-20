@@ -137,7 +137,6 @@ dependencies = [
     "mammoth>=1.11.0",
     "markdownify>=1.2.0",
     "captcha>=0.7.1",
-    "fitz>=0.0.1.dev2",
 ]
 
 [project.optional-dependencies]
