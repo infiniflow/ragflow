@@ -18,9 +18,8 @@ import logging
 import copy
 import re
 
-from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
-from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser_pdf_wrapper
+
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from api.db import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
