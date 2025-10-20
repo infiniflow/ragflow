@@ -27,7 +27,7 @@ from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks
 from rag.nlp import rag_tokenizer
-from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
+from deepdoc.parser import PdfParser, PlainParser, HtmlParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
 from PIL import Image
 
