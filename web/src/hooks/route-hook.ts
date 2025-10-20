@@ -29,6 +29,7 @@ export const useGetKnowledgeSearchParams = () => {
   const [currentQueryParameters] = useSearchParams();
 
   return {
+    type: currentQueryParameters.get(KnowledgeSearchParams.Type) || '',
     documentId:
       currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
     knowledgeId:

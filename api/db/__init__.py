@@ -23,6 +23,11 @@ class StatusEnum(Enum):
     INVALID = "0"
 
 
+class ActiveEnum(Enum):
+    ACTIVE = "1"
+    INACTIVE = "0"
+
+
 class UserTenantRole(StrEnum):
     OWNER = 'owner'
     ADMIN = 'admin'
@@ -111,7 +116,7 @@ class CanvasCategory(StrEnum):
     Agent = "agent_canvas"
     DataFlow = "dataflow_canvas"
 
-VALID_CAVAS_CATEGORIES = {CanvasCategory.Agent, CanvasCategory.DataFlow}
+VALID_CANVAS_CATEGORIES = {CanvasCategory.Agent, CanvasCategory.DataFlow}
 
 
 class MCPServerType(StrEnum):
@@ -120,6 +125,17 @@ class MCPServerType(StrEnum):
 
 
 VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
+
+
+class PipelineTaskType(StrEnum):
+    PARSE = "Parse"
+    DOWNLOAD = "Download"
+    RAPTOR = "RAPTOR"
+    GRAPH_RAG = "GraphRAG"
+    MINDMAP = "Mindmap"
+
+
+VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"

@@ -2133,12 +2133,17 @@ export const QWeatherTimePeriodOptions = [
   '30d',
 ];
 
-export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb', 'mssql'].map(
-  (x) => ({
-    label: upperFirst(x),
-    value: x,
-  }),
-);
+export const ExeSQLOptions = [
+  'mysql',
+  'postgres',
+  'mariadb',
+  'mssql',
+  'IBM DB2',
+  'trino',
+].map((x) => ({
+  label: upperFirst(x),
+  value: x,
+}));
 
 export const WenCaiQueryTypeOptions = [
   'stock',

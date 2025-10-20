@@ -49,7 +49,7 @@ class MessageParam(ComponentParamBase):
 class Message(ComponentBase):
     component_name = "Message"
 
-    def get_kwargs(self, script:str, kwargs:dict = {}, delimeter:str=None) -> tuple[str, dict[str, str | list | Any]]:
+    def get_kwargs(self, script:str, kwargs:dict = {}, delimiter:str=None) -> tuple[str, dict[str, str | list | Any]]:
         for k,v in self.get_input_elements_from_text(script).items():
             if k in kwargs:
                 continue
@@ -60,8 +60,8 @@ class Message(ComponentBase):
             if isinstance(v, partial):
                 for t in v():
                     ans += t
-            elif isinstance(v, list) and delimeter:
-                ans = delimeter.join([str(vv) for vv in v])
+            elif isinstance(v, list) and delimiter:
+                ans = delimiter.join([str(vv) for vv in v])
             elif not isinstance(v, str):
                 try:
                     ans = json.dumps(v, ensure_ascii=False)
@@ -127,7 +127,7 @@ class Message(ComponentBase):
         ]
         return any([re.search(p, content) for p in patt])
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         rand_cnt = random.choice(self._param.content)
         if self._param.stream and not self._is_jinjia2(rand_cnt):

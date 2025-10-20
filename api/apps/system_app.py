@@ -36,6 +36,9 @@ from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
+from flask import jsonify
+from api.utils.health_utils import run_health_checks
+
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
@@ -159,7 +162,7 @@ def status():
         task_executors = REDIS_CONN.smembers("TASKEXE")
         now = datetime.now().timestamp()
         for task_executor_id in task_executors:
-            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60*30, now)
+            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
             heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
             task_executor_heartbeats[task_executor_id] = heartbeats
     except Exception:
@@ -167,6 +170,17 @@ def status():
     res["task_executor_heartbeats"] = task_executor_heartbeats
 
     return get_json_result(data=res)
+
+
+@manager.route("/healthz", methods=["GET"])  # noqa: F821
+def healthz():
+    result, all_ok = run_health_checks()
+    return jsonify(result), (200 if all_ok else 500)
+
+
+@manager.route("/ping", methods=["GET"]) # noqa: F821
+def ping():
+    return "pong", 200
 
 
 @manager.route("/new_token", methods=["POST"])  # noqa: F821
@@ -260,7 +274,8 @@ def token_list():
         objs = [o.to_dict() for o in objs]
         for o in objs:
             if not o["beta"]:
-                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace("ragflow-", "")[:32]
+                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace(
+                    "ragflow-", "")[:32]
                 APITokenService.filter_update([APIToken.tenant_id == tenant_id, APIToken.token == o["token"]], o)
         return get_json_result(data=objs)
     except Exception as e:

@@ -19,7 +19,7 @@ from pathlib import PurePath
 from .user_service import UserService as UserService
 
 
-def split_name_counter(filename: str) -> tuple[str, int | None]:
+def _split_name_counter(filename: str) -> tuple[str, int | None]:
     """
     Splits a filename into main part and counter (if present in parentheses).
 
@@ -87,7 +87,7 @@ def duplicate_name(query_func, **kwargs) -> str:
         stem = path.stem
         suffix = path.suffix
 
-        main_part, counter = split_name_counter(stem)
+        main_part, counter = _split_name_counter(stem)
         counter = counter + 1 if counter else 1
 
         new_name = f"{main_part}({counter}){suffix}"

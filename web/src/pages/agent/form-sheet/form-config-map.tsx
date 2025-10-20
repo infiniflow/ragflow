@@ -13,25 +13,30 @@ import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
+import ExtractorForm from '../form/extractor-form';
 import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
+import HierarchicalMergerForm from '../form/hierarchical-merger-form';
 import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
+import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
 import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SearXNGForm from '../form/searxng-form';
+import SplitterForm from '../form/splitter-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TavilyExtractForm from '../form/tavily-extract-form';
 import TavilyForm from '../form/tavily-form';
+import TokenizerForm from '../form/tokenizer-form';
 import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
 import UserFillUpForm from '../form/user-fill-up-form';
@@ -136,9 +141,6 @@ export const FormConfigMap = {
   [Operator.SearXNG]: {
     component: SearXNGForm,
   },
-  [Operator.Concentrator]: {
-    component: () => <></>,
-  },
   [Operator.Note]: {
     component: () => <></>,
   },
@@ -165,5 +167,27 @@ export const FormConfigMap = {
   },
   [Operator.TavilyExtract]: {
     component: TavilyExtractForm,
+  },
+  [Operator.Placeholder]: {
+    component: () => <></>,
+  },
+  // pipeline
+  [Operator.File]: {
+    component: () => <></>,
+  },
+  [Operator.Parser]: {
+    component: ParserForm,
+  },
+  [Operator.Tokenizer]: {
+    component: TokenizerForm,
+  },
+  [Operator.Splitter]: {
+    component: SplitterForm,
+  },
+  [Operator.HierarchicalMerger]: {
+    component: HierarchicalMergerForm,
+  },
+  [Operator.Extractor]: {
+    component: ExtractorForm,
   },
 };

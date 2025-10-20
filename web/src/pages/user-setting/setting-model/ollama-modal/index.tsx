@@ -15,7 +15,10 @@ import {
 import omit from 'lodash/omit';
 import { useEffect } from 'react';
 
-type FieldType = IAddLlmRequestBody & { vision: boolean };
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  provider_order?: string;
+};
 
 const { Option } = Select;
 
@@ -37,6 +40,7 @@ const llmFactoryToUrlMap = {
     'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
   [LLMFactory.GPUStack]: 'https://docs.gpustack.ai/latest/quickstart',
   [LLMFactory.VLLM]: 'https://docs.vllm.ai/en/latest/',
+  [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 type LlmFactory = keyof typeof llmFactoryToUrlMap;
 
@@ -106,6 +110,11 @@ const OllamaModal = ({
       { value: 'chat', label: 'chat' },
       { value: 'rerank', label: 'rerank' },
     ],
+    [LLMFactory.LMStudio]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'image2text', label: 'image2text' },
+    ],
     [LLMFactory.Xinference]: [
       { value: 'chat', label: 'chat' },
       { value: 'embedding', label: 'embedding' },
@@ -121,6 +130,10 @@ const OllamaModal = ({
       { value: 'rerank', label: 'rerank' },
       { value: 'speech2text', label: 'sequence2text' },
       { value: 'tts', label: 'tts' },
+    ],
+    [LLMFactory.OpenRouter]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'image2text', label: 'image2text' },
     ],
     Default: [
       { value: 'chat', label: 'chat' },
@@ -227,6 +240,16 @@ const OllamaModal = ({
             onKeyDown={handleKeyDown}
           />
         </Form.Item>
+        {llmFactory === LLMFactory.OpenRouter && (
+          <Form.Item<FieldType>
+            label="Provider Order"
+            name="provider_order"
+            tooltip="Comma-separated provider list, e.g. Groq,Fireworks"
+            rules={[]}
+          >
+            <Input placeholder="Groq,Fireworks" onKeyDown={handleKeyDown} />
+          </Form.Item>
+        )}
 
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>

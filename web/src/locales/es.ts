@@ -340,6 +340,10 @@ export default {
       baseUrl: 'URL base',
       baseUrlTip:
         'Si tu clave API es de OpenAI, ignora esto. Cualquier otro proveedor intermedio proporcionará esta URL base junto con la clave API.',
+      tongyiBaseUrlTip:
+        'Para usuarios chinos, no es necesario rellenar o usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuarios internacionales, usar https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder:
+        '(Solo para usuarios internacionales, por favor ver consejo)',
       modify: 'Modificar',
       systemModelSettings: 'Establecer modelos predeterminados',
       chatModel: 'Modelo de chat',
@@ -862,6 +866,19 @@ export default {
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor ingresa una nota',
       runningHintText: 'está corriendo...🕞',
+
+      invoke: 'Solicitud HTTP',
+      invokeDescription:
+        'Un componente capaz de llamar a servicios remotos, utilizando las salidas de otros componentes o constantes como entradas.',
+      url: 'Url',
+      method: 'Método',
+      timeout: 'Tiempo de espera',
+      headers: 'Encabezados',
+      cleanHtml: 'Limpiar HTML',
+      cleanHtmlTip:
+        'Si la respuesta está formateada en HTML y solo se desea el contenido principal, actívelo.',
+      invalidUrl:
+        'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
     },
     footer: {
       profile: 'Todos los derechos reservados @ React',

@@ -9,7 +9,7 @@ interface IProps extends IModalProps<any> {
   data: any;
 }
 
-const MindMapDrawer = ({ data, hideModal, visible, loading }: IProps) => {
+const MindMapDrawer = ({ data, hideModal, loading }: IProps) => {
   const { t } = useTranslation();
   const percent = usePendingMindMap();
   return (

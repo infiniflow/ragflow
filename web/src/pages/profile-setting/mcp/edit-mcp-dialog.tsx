@@ -122,7 +122,11 @@ export function EditMcpDialog({
           setFieldChanged={setFieldChanged}
         ></EditMcpForm>
         <Collapse
-          title={<div>{nextTools?.length || 0} tools available</div>}
+          title={
+            <div>
+              {nextTools?.length || 0} {t('mcp.toolsAvailable')}
+            </div>
+          }
           open={collapseOpen}
           onOpenChange={setCollapseOpen}
           rightContent={

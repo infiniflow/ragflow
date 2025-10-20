@@ -72,7 +72,7 @@ class YahooFinanceParam(ToolParamBase):
 class YahooFinance(ToolBase, ABC):
     component_name = "YahooFinance"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
         if not kwargs.get("stock_code"):
             self.set_output("report", "")

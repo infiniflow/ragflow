@@ -23,8 +23,7 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from api.utils.api_utils import timeout
 from rag.app.tag import label_question
-from rag.prompts import kb_prompt
-from rag.prompts.prompts import cross_languages
+from rag.prompts.generator import cross_languages, kb_prompt
 
 
 class RetrievalParam(ToolParamBase):
@@ -58,6 +57,7 @@ class RetrievalParam(ToolParamBase):
         self.empty_response = ""
         self.use_kg = False
         self.cross_languages = []
+        self.toc_enhance = False
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -75,7 +75,7 @@ class RetrievalParam(ToolParamBase):
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("formalized_content", self._param.empty_response)
@@ -122,7 +122,7 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
-            kbinfos = settings.retrievaler.retrieval(
+            kbinfos = settings.retriever.retrieval(
                 query,
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],
@@ -135,8 +135,13 @@ class Retrieval(ToolBase, ABC):
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
             )
+            if self._param.toc_enhance:
+                chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
+                cks = settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
+                if cks:
+                    kbinfos["chunks"] = cks
             if self._param.use_kg:
-                ck = settings.kg_retrievaler.retrieval(query,
+                ck = settings.kg_retriever.retrieval(query,
                                                        [kb.tenant_id for kb in kbs],
                                                        kb_ids,
                                                        embd_mdl,
@@ -147,7 +152,7 @@ class Retrieval(ToolBase, ABC):
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = settings.kg_retrievaler.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ck["content"] = ck["content_with_weight"]
                 del ck["content_with_weight"]
@@ -163,13 +168,20 @@ class Retrieval(ToolBase, ABC):
             self.set_output("formalized_content", self._param.empty_response)
             return
 
+        # Format the chunks for JSON output (similar to how other tools do it)
+        json_output = kbinfos["chunks"].copy()
+
         self._canvas.add_reference(kbinfos["chunks"], kbinfos["doc_aggs"])
         form_cnt = "\n".join(kb_prompt(kbinfos, 200000, True))
+
+        # Set both formalized content and JSON output
         self.set_output("formalized_content", form_cnt)
+        self.set_output("json", json_output)
+
         return form_cnt
 
     def thoughts(self) -> str:
         return """
-Keywords: {} 
+Keywords: {}
 Looking for the most relevant articles.
         """.format(self.get_input().get("query", "-_-!"))

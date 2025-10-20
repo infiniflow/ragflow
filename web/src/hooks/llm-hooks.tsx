@@ -136,6 +136,7 @@ export const useSelectLlmOptionsByModelType = () => {
   };
 };
 
+// Merge different types of models from the same manufacturer under one manufacturer
 export const useComposeLlmOptionsByModelTypes = (
   modelTypes: LlmModelType[],
 ) => {
@@ -155,7 +156,12 @@ export const useComposeLlmOptionsByModelTypes = (
     options.forEach((x) => {
       const item = pre.find((y) => y.label === x.label);
       if (item) {
-        item.options.push(...x.options);
+        x.options.forEach((y) => {
+          // A model that is both an image2text and speech2text model
+          if (!item.options.some((z) => z.value === y.value)) {
+            item.options.push(y);
+          }
+        });
       } else {
         pre.push(x);
       }

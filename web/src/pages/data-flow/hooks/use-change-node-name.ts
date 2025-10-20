@@ -9,7 +9,6 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { Operator } from '../constant';
 import useGraphStore from '../store';
 import { getAgentNodeTools } from '../utils';
 
@@ -77,13 +76,10 @@ export const useHandleNodeNameChange = ({
   data: any;
 }) => {
   const [name, setName] = useState<string>('');
-  const { updateNodeName, nodes, getOperatorTypeFromId } = useGraphStore(
-    (state) => state,
-  );
+  const { updateNodeName, nodes } = useGraphStore((state) => state);
   const previousName = data?.name;
-  const isToolNode = getOperatorTypeFromId(id) === Operator.Tool;
 
-  const { handleToolNameBlur, previousToolName } = useHandleTooNodeNameChange({
+  const { previousToolName } = useHandleTooNodeNameChange({
     id,
     name,
     setName,
@@ -109,12 +105,12 @@ export const useHandleNodeNameChange = ({
   }, []);
 
   useEffect(() => {
-    setName(isToolNode ? previousToolName : previousName);
-  }, [isToolNode, previousName, previousToolName]);
+    setName(previousName);
+  }, [previousName, previousToolName]);
 
   return {
     name,
-    handleNameBlur: isToolNode ? handleToolNameBlur : handleNameBlur,
+    handleNameBlur: handleNameBlur,
     handleNameChange,
   };
 };

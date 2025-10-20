@@ -4,15 +4,12 @@ import useGraphStore from '../store';
 
 export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
   let values = useWatch({ control: form?.control });
+
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
   useEffect(() => {
-    // Manually triggered form updates are synchronized to the canvas
     if (id) {
-      values = form?.getValues() || {};
-      let nextValues: any = values;
-
-      updateNodeForm(id, nextValues);
+      updateNodeForm(id, values);
     }
-  }, [form?.formState.isDirty, id, updateNodeForm, values]);
+  }, [id, updateNodeForm, values]);
 }

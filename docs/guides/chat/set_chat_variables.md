@@ -25,13 +25,13 @@ In the **Variable** section, you add, remove, or update variables.
 
 ### `{knowledge}` - a reserved variable
 
-`{knowledge}` is the system's reserved variable, representing the chunks retrieved from the knowledge base(s) specified by **Knowledge bases** under the **Assistant settings** tab. If your chat assistant is associated with certain knowledge bases, you can keep it as is.
+`{knowledge}` is the system's reserved variable, representing the chunks retrieved from the dataset(s) specified by **Knowledge bases** under the **Assistant settings** tab. If your chat assistant is associated with certain datasets, you can keep it as is.
 
 :::info NOTE
 It currently makes no difference whether  `{knowledge}` is set as optional or mandatory, but please note this design will be updated in due course.
 :::
 
-From v0.17.0 onward, you can start an AI chat without specifying knowledge bases. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary reference and keeping the **Empty response** field empty to avoid errors.
+From v0.17.0 onward, you can start an AI chat without specifying datasets. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary reference and keeping the **Empty response** field empty to avoid errors.
 
 ### Custom variables
 
@@ -45,15 +45,15 @@ Besides `{knowledge}`, you can also define your own variables to pair with the s
 After you add or remove variables in the **Variable** section, ensure your changes are reflected in the system prompt to avoid inconsistencies or errors. Here's an example:
 
 ```
-You are an intelligent assistant. Please answer the question by summarizing chunks from the specified knowledge base(s)...
+You are an intelligent assistant. Please answer the question by summarizing chunks from the specified dataset(s)...
 
 Your answers should follow a professional and {style} style.
 
 ...
 
-Here is the knowledge base:
+Here is the dataset:
 {knowledge}
-The above is the knowledge base.
+The above is the dataset.
 ```
 
 :::tip NOTE

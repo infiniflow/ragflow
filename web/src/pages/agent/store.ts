@@ -127,8 +127,9 @@ const useGraphStore = create<RFState>()(
       },
       onConnect: (connection: Connection) => {
         const { updateFormDataOnConnect } = get();
+        const newEdges = addEdge(connection, get().edges);
         set({
-          edges: addEdge(connection, get().edges),
+          edges: newEdges,
         });
         updateFormDataOnConnect(connection);
       },

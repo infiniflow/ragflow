@@ -35,6 +35,11 @@ class APITokenService(CommonService):
             cls.model.token == token
         )
 
+    @classmethod
+    @DB.connection_context()
+    def delete_by_tenant_id(cls, tenant_id):
+        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()
+
 
 class API4ConversationService(CommonService):
     model = API4Conversation
@@ -100,3 +105,8 @@ class API4ConversationService(CommonService):
             cls.model.create_date <= to_date,
             cls.model.source == source
         ).group_by(cls.model.create_date.truncate("day")).dicts()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_dialog_ids(cls, dialog_ids):
+        return cls.model.delete().where(cls.model.dialog_id.in_(dialog_ids)).execute()

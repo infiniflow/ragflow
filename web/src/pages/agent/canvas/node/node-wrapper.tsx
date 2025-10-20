@@ -7,7 +7,7 @@ export function NodeWrapper({ children, className, selected }: IProps) {
   return (
     <section
       className={cn(
-        'bg-text-title-invert p-2.5 rounded-sm w-[200px] text-xs',
+        'bg-text-title-invert p-2.5 rounded-md w-[200px] text-xs group',
         { 'border border-accent-primary': selected },
         className,
       )}

@@ -830,7 +830,8 @@ Success:
             "update_time": 1728533243536,
             "vector_similarity_weight": 0.3
         }
-    ]
+    ],
+    "total": 1
 }
 ```
 
@@ -1280,7 +1281,7 @@ Success:
                 "update_time": 1728897061948
             }
         ],
-        "total": 1
+        "total_datasets": 1
     }
 }
 ```
@@ -1822,7 +1823,21 @@ curl --request POST \
      {
           "question": "What is advantage of ragflow?",
           "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
-          "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"]
+          "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"],
+          "metadata_condition": {
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "=",
+                "value": "Toby"
+              },
+              {
+                "name": "url",
+                "comparison_operator": "not contains",
+                "value": "amd"
+              }
+            ]
+          }
      }'
 ```
 
@@ -1856,8 +1871,26 @@ curl --request POST \
   - `false`: Disable highlighting of matched terms (default).
 - `"cross_languages"`: (*Body parameter*) `list[string]`  
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
-- `"metadata_condition"`: (*Body parameter*), `object`
-  The metadata condition for filtering chunks.
+- `"metadata_condition"`: (*Body parameter*), `object`  
+  The metadata condition used for filtering chunks:  
+  - `"conditions"`: (*Body parameter*), `array`  
+    A list of metadata filter conditions.  
+    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
+    - `comparison_operator`: `string` - The comparison operator. Can be one of: 
+      - `"contains"`
+      - `"not contains"`
+      - `"start with"`
+      - `"empty"`
+      - `"not empty"`
+      - `"="`
+      - `"≠"`
+      - `">"`
+      - `"<"`
+      - `"≥"`
+      - `"≤"`
+    - `"value"`: `string` - The value to compare.
+
+
 #### Response
 
 Success:
@@ -4102,3 +4135,77 @@ Failure:
 ```
 
 ---
+
+### System
+---
+### Check system health
+
+**GET** `/v1/system/healthz`
+
+Check the health status of RAGFlow’s dependencies (database, Redis, document engine, object storage).
+
+#### Request
+
+- Method: GET
+- URL: `/v1/system/healthz`
+- Headers:
+  - 'Content-Type: application/json'
+  (no Authorization required)
+
+##### Request example
+
+```bash
+curl --request GET
+     --url http://{address}/v1/system/healthz
+     --header 'Content-Type: application/json'
+```
+
+##### Request parameters
+
+- `address`: (*Path parameter*), string  
+  The host and port of the backend service (e.g., `localhost:7897`).
+
+---
+
+#### Responses
+
+- **200 OK** – All services healthy
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "db": "ok",
+  "redis": "ok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "ok"
+}
+```
+
+- **500 Internal Server Error** – At least one service unhealthy
+
+```http
+HTTP/1.1 500 INTERNAL SERVER ERROR
+Content-Type: application/json
+
+{
+  "db": "ok",
+  "redis": "nok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "nok",
+  "_meta": {
+    "redis": {
+      "elapsed": "5.2",
+      "error": "Lost connection!"
+    }
+  }
+}
+```
+
+Explanation:  
+- Each service is reported as "ok" or "nok".  
+- The top-level `status` reflects overall health.  
+- If any service is "nok", detailed error info appears in `_meta`.  

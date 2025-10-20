@@ -15,10 +15,10 @@
 #
 from datetime import datetime
 
-from peewee import fn
+from peewee import fn, JOIN
 
 from api.db import StatusEnum, TenantPermission
-from api.db.db_models import DB, Document, Knowledgebase, Tenant, User, UserTenant
+from api.db.db_models import DB, Document, Knowledgebase, User, UserTenant, UserCanvas
 from api.db.services.common_service import CommonService
 from api.utils import current_timestamp, datetime_format
 
@@ -192,6 +192,41 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_kb_by_tenant_ids(cls, tenant_ids, user_id):
+        # will get all permitted kb, be cautious.
+        fields = [
+            cls.model.name,
+            cls.model.language,
+            cls.model.permission,
+            cls.model.doc_num,
+            cls.model.token_num,
+            cls.model.chunk_num,
+            cls.model.status,
+            cls.model.create_date,
+            cls.model.update_date
+        ]
+        # find team kb and owned kb
+        kbs = cls.model.select(*fields).where(
+            (cls.model.tenant_id.in_(tenant_ids) & (cls.model.permission ==TenantPermission.TEAM.value)) | (
+                cls.model.tenant_id == user_id
+            )
+        )
+        # sort by create_time asc
+        kbs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later.
+        offset, limit = 0, 50
+        res = []
+        while True:
+            kb_batch = kbs.offset(offset).limit(limit)
+            _temp = list(kb_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def get_kb_ids(cls, tenant_id):
         # Get all knowledge base IDs for a tenant
         # Args:
@@ -225,20 +260,29 @@ class KnowledgebaseService(CommonService):
             cls.model.token_num,
             cls.model.chunk_num,
             cls.model.parser_id,
+            cls.model.pipeline_id,
+            UserCanvas.title.alias("pipeline_name"),
+            UserCanvas.avatar.alias("pipeline_avatar"),
             cls.model.parser_config,
             cls.model.pagerank,
+            cls.model.graphrag_task_id,
+            cls.model.graphrag_task_finish_at,
+            cls.model.raptor_task_id,
+            cls.model.raptor_task_finish_at,
+            cls.model.mindmap_task_id,
+            cls.model.mindmap_task_finish_at,
             cls.model.create_time,
             cls.model.update_time
             ]
-        kbs = cls.model.select(*fields).join(Tenant, on=(
-            (Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value))).where(
+        kbs = cls.model.select(*fields)\
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
+            .where(
             (cls.model.id == kb_id),
             (cls.model.status == StatusEnum.VALID.value)
-        )
+        ).dicts()
         if not kbs:
             return
-        d = kbs[0].to_dict()
-        return d
+        return kbs[0]
 
     @classmethod
     @DB.connection_context()
@@ -335,6 +379,7 @@ class KnowledgebaseService(CommonService):
         #     name: Optional name filter
         # Returns:
         #     List of knowledge bases
+        #     Total count of knowledge bases
         kbs = cls.model.select()
         if id:
             kbs = kbs.where(cls.model.id == id)
@@ -346,14 +391,16 @@ class KnowledgebaseService(CommonService):
                 cls.model.tenant_id == user_id))
             & (cls.model.status == StatusEnum.VALID.value)
         )
+
         if desc:
             kbs = kbs.order_by(cls.model.getter_by(orderby).desc())
         else:
             kbs = kbs.order_by(cls.model.getter_by(orderby).asc())
 
+        total = kbs.count()
         kbs = kbs.paginate(page_number, items_per_page)
 
-        return list(kbs.dicts())
+        return list(kbs.dicts()), total
 
     @classmethod
     @DB.connection_context()
@@ -436,3 +483,17 @@ class KnowledgebaseService(CommonService):
             else:
                 raise e
 
+    @classmethod
+    @DB.connection_context()
+    def decrease_document_num_in_delete(cls, kb_id, doc_num_info: dict):
+        kb_row = cls.model.get_by_id(kb_id)
+        if not kb_row:
+            raise RuntimeError(f"kb_id {kb_id} does not exist")
+        update_dict = {
+            'doc_num': kb_row.doc_num - doc_num_info['doc_num'],
+            'chunk_num': kb_row.chunk_num - doc_num_info['chunk_num'],
+            'token_num': kb_row.token_num - doc_num_info['token_num'],
+            'update_time': current_timestamp(),
+            'update_date': datetime_format(datetime.now())
+        }
+        return cls.model.update(update_dict).where(cls.model.id == kb_id).execute()

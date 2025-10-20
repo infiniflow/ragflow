@@ -1,27 +1,33 @@
 import { IRagNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
-import { memo } from 'react';
-import { NodeHandleId } from '../../constant';
-import { needsSingleStepDebugging } from '../../utils';
+import { PropsWithChildren, memo, useMemo } from 'react';
+import { NodeHandleId, SingleOperators } from '../../constant';
+import useGraphStore from '../../store';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
 
+type RagNodeProps = NodeProps<IRagNode> & PropsWithChildren;
 function InnerRagNode({
   id,
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IRagNode>) {
+  children,
+}: RagNodeProps) {
+  const getOperatorTypeFromId = useGraphStore(
+    (state) => state.getOperatorTypeFromId,
+  );
+
+  const showCopy = useMemo(() => {
+    const operatorName = getOperatorTypeFromId(id);
+    return SingleOperators.every((x) => x !== operatorName);
+  }, [getOperatorTypeFromId, id]);
+
   return (
-    <ToolBar
-      selected={selected}
-      id={id}
-      label={data.label}
-      showRun={needsSingleStepDebugging(data.label)}
-    >
+    <ToolBar selected={selected} id={id} label={data.label} showCopy={showCopy}>
       <NodeWrapper selected={selected}>
         <CommonHandle
           id={NodeHandleId.End}
@@ -41,6 +47,7 @@ function InnerRagNode({
           isConnectableEnd={false}
         ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+        {children}
       </NodeWrapper>
     </ToolBar>
   );

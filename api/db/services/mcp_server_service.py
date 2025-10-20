@@ -33,7 +33,8 @@ class MCPServerService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_servers(cls, tenant_id: str, id_list: list[str] | None, page_number, items_per_page, orderby, desc, keywords):
+    def get_servers(cls, tenant_id: str, id_list: list[str] | None, page_number, items_per_page, orderby, desc,
+                    keywords):
         """Retrieve all MCP servers associated with a tenant.
 
         This method fetches all MCP servers for a given tenant, ordered by creation time.
@@ -84,3 +85,8 @@ class MCPServerService(CommonService):
             return bool(mcp_server), mcp_server
         except Exception:
             return False, None
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_tenant_id(cls, tenant_id: str):
+        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()

@@ -59,6 +59,7 @@ export const useSendNextSharedMessage = (
     addEventList,
     beginParams: params,
     isShared: true,
+    isTaskMode,
   });
 
   const ok = useCallback(
