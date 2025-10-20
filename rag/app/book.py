@@ -22,12 +22,13 @@ from io import BytesIO
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.utils import get_text
+from rag.app import naive
 from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
-from deepdoc.parser.figure_parser import VisionFigureParser
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
 from PIL import Image
 
 
@@ -85,13 +86,27 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     sections, tbls = [], []
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        doc_parser = DocxParser()
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
+        doc_parser = naive.Docx()
         # TODO: table of contents need to be removed
         sections, tbls = doc_parser(
-            binary if binary else filename, from_page=from_page, to_page=to_page)
+            filename, binary=binary, from_page=from_page, to_page=to_page)
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
-        tbls = [((None, lns), None) for lns in tbls]
+        if vision_model:
+            figures_data = vision_figure_parser_figure_data_wrapper(sections)
+            try:
+                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+                boosted_figures = docx_vision_parser(callback=callback)
+                tbls.extend(boosted_figures)
+            except Exception as e:
+                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        # tbls = [((None, lns), None) for lns in tbls]
+        sections=[(item[0],item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], Image.Image)]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
