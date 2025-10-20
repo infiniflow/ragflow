@@ -1256,7 +1256,7 @@ curl --request GET \
 - `create_time_to`: (*Filter parameter*), `integer`
   Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
 - `suffix`: (*Filter parameter*), `array[string]`
-  Filter by file suffixes. Multiple values supported. Examples: `["pdf", "txt", "docx"]`. Defaults to all types.
+  Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
 - `run`: (*Filter parameter*), `array[string]`
   Filter by document processing status. Supports numeric, text, and mixed formats:
   - Numeric format: `["0", "1", "2", "3", "4"]`
