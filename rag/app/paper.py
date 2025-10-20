@@ -18,13 +18,11 @@ import logging
 import copy
 import re
 
-
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from api.db import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
-from PIL import Image
 
 class Pdf(PdfParser):
     def __init__(self):
