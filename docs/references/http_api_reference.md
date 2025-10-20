@@ -1260,7 +1260,7 @@ curl --request GET \
 - `run`: (*Filter parameter*), `array[string]`
   Filter by document processing status. Supports numeric, text, and mixed formats:
   - Numeric format: `["0", "1", "2", "3", "4"]`
-  - Text format: `["UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL"]`
+  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
   - Mixed format: `["UNSTART", "1", "DONE"]` (can combine both formats)
   - Status mapping:
     - `0` / `UNSTART`: Document not yet processed
