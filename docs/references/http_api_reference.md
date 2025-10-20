@@ -1272,7 +1272,7 @@ curl --request GET \
 
 ##### Usage examples
 
-**Combined filters:**
+**A request with multiple filtering parameters**
 ```bash
 curl --request GET \
      --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&run=DONE&page=1&page_size=10' \
