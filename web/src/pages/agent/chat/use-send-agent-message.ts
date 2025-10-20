@@ -101,13 +101,13 @@ export function getLatestError(eventList: IEventList) {
 
 export const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
+  const formData = get(getNode(BeginId), 'data.form', {});
 
   return useMemo(() => {
-    const formData = get(getNode(BeginId), 'data.form', {});
     if (formData?.enablePrologue) {
       return formData?.prologue;
     }
-  }, [getNode]);
+  }, [formData?.enablePrologue, formData?.prologue]);
 };
 
 export function useFindMessageReference(answerList: IEventList) {
@@ -381,9 +381,10 @@ export const useSendAgentMessage = ({
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
-    if (answerList.length > 0) {
+    const answer = content || getLatestError(answerList);
+    if (answerList.length > 0 && answer) {
       addNewestOneAnswer({
-        answer: content || getLatestError(answerList),
+        answer: answer,
         id: id,
         ...inputAnswer,
       });
