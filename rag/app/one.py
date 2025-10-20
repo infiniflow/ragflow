@@ -19,14 +19,11 @@ from tika import parser
 from io import BytesIO
 import re
 
-from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper,vision_figure_parser_pdf_wrapper
-from PIL import Image
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 
 
 class Pdf(PdfParser):
@@ -78,20 +75,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        try:
-            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception:
-            vision_model = None
         sections, tbls = naive.Docx()(filename, binary)
-        if vision_model:
-            figures_data = vision_figure_parser_figure_data_wrapper(sections)
-            try:
-                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-                boosted_figures = docx_vision_parser(callback=callback)
-                tbls.extend(boosted_figures)
-            except Exception as e:
-                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
         sections = [s for s, _ in sections if s]
         for (_, html), _ in tbls:
             sections.append(html)

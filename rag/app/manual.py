@@ -18,14 +18,12 @@ import logging
 import copy
 import re
 
-from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
 from api.db import ParserType
 from io import BytesIO
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from rag.utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, PlainParser, DocxParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper,vision_figure_parser_pdf_wrapper
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
 
@@ -261,22 +259,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
-        try:
-            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception:
-            vision_model = None
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
-        if vision_model:
-            figures_data = vision_figure_parser_figure_data_wrapper(ti_list)
-            try:
-                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-                boosted_figures = docx_vision_parser(callback=callback)
-                tbls.extend(boosted_figures)
-            except Exception as e:
-                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
