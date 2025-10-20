@@ -105,7 +105,6 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
                   )}
                 ></Checkbox>
               )}
-              {activeEditIndex}--9
               {activeEditIndex === index && (
                 <div
                   ref={editDivRef}
