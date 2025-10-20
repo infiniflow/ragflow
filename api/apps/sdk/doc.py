@@ -544,7 +544,7 @@ def list_docs(dataset_id, tenant_id):
     keywords    = q.get("keywords", "")
 
     # filters - align with OpenAPI parameter names
-    suffix               = q.getlist("suffix").strip().lower()  
+    suffix               = q.getlist("suffix") 
     run_status           = q.getlist("run")   
     create_time_from     = int(q.get("create_time_from", 0))  
     create_time_to       = int(q.get("create_time_to", 0))    
