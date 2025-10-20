@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { ChunkTextMode } from '../../constant';
 interface ChunkResultBarProps {
-  changeChunkTextMode: React.Dispatch<React.SetStateAction<string | number>>;
+  changeChunkTextMode: (mode: ChunkTextMode) => void;
   createChunk: (text: string) => void;
   isReadonly: boolean;
 }
@@ -15,7 +15,7 @@ export default ({
   isReadonly,
 }: ChunkResultBarProps) => {
   const { t } = useTranslate('chunk');
-  const [textSelectValue, setTextSelectValue] = useState<string | number>(
+  const [textSelectValue, setTextSelectValue] = useState<ChunkTextMode>(
     ChunkTextMode.Full,
   );
   const textSelectOptions = [
@@ -23,7 +23,7 @@ export default ({
     { label: t(ChunkTextMode.Ellipse), value: ChunkTextMode.Ellipse },
   ];
 
-  const changeTextSelectValue = (value: string | number) => {
+  const changeTextSelectValue = (value: ChunkTextMode) => {
     setTextSelectValue(value);
     changeChunkTextMode(value);
   };

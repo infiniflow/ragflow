@@ -12,6 +12,7 @@ import { RunningStatus } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
 import { useFetchFileLogList, useFetchOverviewTital } from './hook';
+import { DocumentLog, IFileLogItem } from './interface';
 import FileLogsTable from './overview-table';
 
 interface StatCardProps {
@@ -212,18 +213,25 @@ const FileLogsPage: FC = () => {
       return tableOriginData.logs.map((item) => {
         return {
           ...item,
-          fileName: item.document_name,
-          statusName: item.operation_status,
-        };
+          status: item.operation_status as RunningStatus,
+          statusName: RunningStatusMap[item.operation_status as RunningStatus],
+        } as unknown as IFileLogItem & DocumentLog;
       });
     }
+    return [];
   }, [tableOriginData]);
 
   const changeActiveLogs = (active: (typeof LogTabs)[keyof typeof LogTabs]) => {
     setFilterValue({});
     setActive(active);
   };
-  const handlePaginationChange = (page: number, pageSize: number) => {
+  const handlePaginationChange = ({
+    page,
+    pageSize,
+  }: {
+    page: number;
+    pageSize: number;
+  }) => {
     console.log('Pagination changed:', { page, pageSize });
     setPagination({
       ...pagination,

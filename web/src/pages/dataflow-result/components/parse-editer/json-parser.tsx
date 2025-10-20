@@ -4,6 +4,7 @@ import { isArray } from 'lodash';
 import { useCallback, useEffect, useMemo } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from '../../index.less';
+import { IChunk } from '../../interface';
 import { useParserInit } from './hook';
 import { IJsonContainerProps } from './interface';
 export const parserKeyMap = {
@@ -17,8 +18,6 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     isChunck,
     handleCheck,
     selectedChunkIds,
-    unescapeNewlines,
-    escapeNewlines,
     onSave,
     className,
     textMode,
@@ -26,13 +25,8 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     isReadonly,
   } = props;
 
-  const {
-    content,
-    setContent,
-    activeEditIndex,
-    setActiveEditIndex,
-    editDivRef,
-  } = useParserInit({ initialValue });
+  const { content, activeEditIndex, setActiveEditIndex, editDivRef } =
+    useParserInit({ initialValue });
 
   const parserKey = useMemo(() => {
     const key =
@@ -46,35 +40,39 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     (e?: any, index?: number) => {
       setActiveEditIndex(index);
     },
-    [setContent, setActiveEditIndex],
+    [setActiveEditIndex],
   );
 
   const handleSave = useCallback(
     (e: any) => {
-      const saveData = {
-        ...content,
-        value: content.value?.map((item, index) => {
-          if (index === activeEditIndex) {
-            return {
-              ...item,
-              [parserKey]: e.target.textContent || '',
-            };
-          } else {
-            return item;
-          }
-        }),
-      };
-      onSave(saveData);
+      if (Array.isArray(content.value)) {
+        const saveData = {
+          ...content,
+          value: content.value?.map((item, index) => {
+            if (index === activeEditIndex) {
+              return {
+                ...item,
+                [parserKey]: e.target.textContent || '',
+              };
+            } else {
+              return item;
+            }
+          }),
+        };
+        onSave(saveData as any);
+      }
       setActiveEditIndex(undefined);
     },
-    [content, onSave],
+    [content, onSave, activeEditIndex, parserKey, setActiveEditIndex],
   );
 
   useEffect(() => {
     if (activeEditIndex !== undefined && editDivRef.current) {
       editDivRef.current.focus();
-      editDivRef.current.textContent =
-        content.value[activeEditIndex][parserKey];
+      if (typeof content.value !== 'string') {
+        editDivRef.current.textContent =
+          content.value[activeEditIndex][parserKey];
+      }
     }
   }, [editDivRef, activeEditIndex, content, parserKey]);
 
@@ -122,7 +120,7 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
               {activeEditIndex !== index && (
                 <div
                   className={cn(
-                    'text-text-secondary overflow-auto scrollbar-auto w-full',
+                    'text-text-secondary overflow-auto scrollbar-auto w-full min-h-3',
                     {
                       [styles.contentEllipsis]:
                         textMode === ChunkTextMode.Ellipse,
@@ -130,7 +128,8 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
                   )}
                   key={index}
                   onClick={(e) => {
-                    clickChunk(item);
+                    clickChunk(item as unknown as IChunk);
+                    console.log('clickChunk', item, index);
                     if (!isReadonly) {
                       handleEdit(e, index);
                     }
