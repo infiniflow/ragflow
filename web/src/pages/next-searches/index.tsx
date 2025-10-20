@@ -5,14 +5,13 @@ import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
 import { useFetchSearchList, useRenameSearch } from './hooks';
 import { SearchCard } from './search-card';
 
 export default function SearchList() {
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('search');
-  const [isEdit, setIsEdit] = useState(false);
+  // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
     searchParams,
@@ -36,11 +35,11 @@ export default function SearchList() {
     });
   };
   const openCreateModalFun = () => {
-    setIsEdit(false);
+    // setIsEdit(false);
     showSearchRenameModal();
   };
   const handlePageChange = (page: number, pageSize: number) => {
-    setIsEdit(false);
+    // setIsEdit(false);
     setSearchListParams({ ...searchParams, page, page_size: pageSize });
   };
 

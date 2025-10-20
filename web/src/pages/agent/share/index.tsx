@@ -107,9 +107,7 @@ const ChatContainer = () => {
   const handleReset = () => {
     resetSession();
     clearEventList();
-    if (isTaskMode) {
-      showBeginParameterDialog();
-    }
+    showBeginParameterDialog();
   };
   if (!conversationId) {
     return <div>empty</div>;

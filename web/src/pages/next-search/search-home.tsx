@@ -1,11 +1,12 @@
 import { Input } from '@/components/originui/input';
+import Spotlight from '@/components/spotlight';
+import message from '@/components/ui/message';
 import { IUserInfo } from '@/interfaces/database/user-setting';
 import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import './index.less';
-import Spotlight from './spotlight';
 
 export default function SearchPage({
   isSearching,
@@ -13,12 +14,14 @@ export default function SearchPage({
   searchText,
   setSearchText,
   userInfo,
+  canSearch,
 }: {
   isSearching: boolean;
   setIsSearching: Dispatch<SetStateAction<boolean>>;
   searchText: string;
   setSearchText: Dispatch<SetStateAction<string>>;
   userInfo?: IUserInfo;
+  canSearch?: boolean;
 }) {
   // const { data: userInfo } = useFetchUserInfo();
   const { t } = useTranslation();
@@ -56,10 +59,18 @@ export default function SearchPage({
                 value={searchText}
                 onKeyUp={(e) => {
                   if (e.key === 'Enter') {
+                    if (canSearch === false) {
+                      message.warning(t('search.chooseDataset'));
+                      return;
+                    }
                     setIsSearching(!isSearching);
                   }
                 }}
                 onChange={(e) => {
+                  if (canSearch === false) {
+                    message.warning(t('search.chooseDataset'));
+                    return;
+                  }
                   setSearchText(e.target.value || '');
                 }}
               />
@@ -67,6 +78,10 @@ export default function SearchPage({
                 type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 transform rounded-full bg-text-primary p-2 text-bg-base shadow w-12"
                 onClick={() => {
+                  if (canSearch === false) {
+                    message.warning(t('search.chooseDataset'));
+                    return;
+                  }
                   setIsSearching(!isSearching);
                 }}
               >

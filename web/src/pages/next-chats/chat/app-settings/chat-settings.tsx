@@ -49,6 +49,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
         parameters: [],
         reasoning: false,
         cross_languages: [],
+        toc_enhance: false,
       },
       top_n: 8,
       similarity_threshold: 0.2,

@@ -28,9 +28,8 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
 from api.utils.api_utils import timeout
-from rag.prompts import message_fit_in
-from rag.prompts.prompts import next_step, COMPLETE_TASK, analyze_task, \
-    citation_prompt, reflect, rank_memories, kb_prompt, citation_plus, full_question
+from rag.prompts.generator import next_step, COMPLETE_TASK, analyze_task, \
+    citation_prompt, reflect, rank_memories, kb_prompt, citation_plus, full_question, message_fit_in
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 from agent.component.llm import LLMParam, LLM
 
@@ -138,7 +137,7 @@ class Agent(LLM, ToolBase):
             res.update(cpn.get_input_form())
         return res
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60)))
     def _invoke(self, **kwargs):
         if kwargs.get("user_prompt"):
             usr_pmt = ""
@@ -166,7 +165,7 @@ class Agent(LLM, ToolBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         use_tools = []
         ans = ""
-        for delta_ans, tk in self._react_with_tools_streamly(prompt, msg, use_tools):
+        for delta_ans, tk in self._react_with_tools_streamly(prompt, msg, use_tools, user_defined_prompt):
             ans += delta_ans
 
         if ans.find("**ERROR**") >= 0:
@@ -346,4 +345,12 @@ Respond immediately with your final comprehensive answer.
             logging.exception(e)
 
         return "Error occurred."
+
+    def reset(self, temp=False):
+        """
+        Reset all tools if they have a reset method. This avoids errors for tools like MCPToolCallSession.
+        """
+        for k, cpn in self.tools.items():
+            if hasattr(cpn, "reset") and callable(cpn.reset):
+                cpn.reset()
 

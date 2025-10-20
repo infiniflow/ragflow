@@ -1,4 +1,4 @@
-    #
+#
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,89 @@ from api.db.services.dialog_service import meta_filter, convert_conditions
 @apikey_required
 @validate_request("knowledge_id", "query")
 def retrieval(tenant_id):
+    """
+    Dify-compatible retrieval API
+    ---
+    tags:
+      - SDK
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - knowledge_id
+            - query
+          properties:
+            knowledge_id:
+              type: string
+              description: Knowledge base ID
+            query:
+              type: string
+              description: Query text
+            use_kg:
+              type: boolean
+              description: Whether to use knowledge graph
+              default: false
+            retrieval_setting:
+              type: object
+              description: Retrieval configuration
+              properties:
+                score_threshold:
+                  type: number
+                  description: Similarity threshold
+                  default: 0.0
+                top_k:
+                  type: integer
+                  description: Number of results to return
+                  default: 1024
+            metadata_condition:
+              type: object
+              description: Metadata filter condition
+              properties:
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Field name
+                      comparison_operator:
+                        type: string
+                        description: Comparison operator
+                      value:
+                        type: string
+                        description: Field value
+    responses:
+      200:
+        description: Retrieval succeeded
+        schema:
+          type: object
+          properties:
+            records:
+              type: array
+              items:
+                type: object
+                properties:
+                  content:
+                    type: string
+                    description: Content text
+                  score:
+                    type: number
+                    description: Similarity score
+                  title:
+                    type: string
+                    description: Document title
+                  metadata:
+                    type: object
+                    description: Metadata info
+      404:
+        description: Knowledge base or document not found
+    """
     req = request.json
     question = req["query"]
     kb_id = req["knowledge_id"]
@@ -38,9 +121,9 @@ def retrieval(tenant_id):
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
-    metadata_condition = req.get("metadata_condition",{})
+    metadata_condition = req.get("metadata_condition", {})
     metas = DocumentService.get_meta_by_kbs([kb_id])
- 
+
     doc_ids = []
     try:
 
@@ -50,12 +133,12 @@ def retrieval(tenant_id):
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         print(metadata_condition)
-        print("after",convert_conditions(metadata_condition))
+        # print("after", convert_conditions(metadata_condition))
         doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition)))
-        print("doc_ids",doc_ids)
+        # print("doc_ids", doc_ids)
         if not doc_ids and metadata_condition is not None:
             doc_ids = ['-999']
-        ranks = settings.retrievaler.retrieval(
+        ranks = settings.retriever.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,
@@ -70,17 +153,17 @@ def retrieval(tenant_id):
         )
 
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question,
-                                                   [tenant_id],
-                                                   [kb_id],
-                                                   embd_mdl,
-                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(question,
+                                                 [tenant_id],
+                                                 [kb_id],
+                                                 embd_mdl,
+                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
         records = []
         for c in ranks["chunks"]:
-            e, doc = DocumentService.get_by_id( c["doc_id"])
+            e, doc = DocumentService.get_by_id(c["doc_id"])
             c.pop("vector", None)
             meta = getattr(doc, 'meta_fields', {})
             meta["doc_id"] = c["doc_id"]
@@ -100,5 +183,3 @@ def retrieval(tenant_id):
             )
         logging.exception(e)
         return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
-
-

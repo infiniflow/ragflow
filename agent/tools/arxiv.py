@@ -61,7 +61,7 @@ class ArXivParam(ToolParamBase):
 class ArXiv(ToolBase, ABC):
     component_name = "ArXiv"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
@@ -97,6 +97,6 @@ class ArXiv(ToolBase, ABC):
 
     def thoughts(self) -> str:
         return """
-Keywords: {} 
+Keywords: {}
 Looking for the most relevant articles.
                 """.format(self.get_input().get("query", "-_-!"))

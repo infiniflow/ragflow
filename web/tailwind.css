@@ -42,10 +42,6 @@
     --colors-background-inverse-weak: rgba(17, 16, 23, 0.1);
     --colors-background-neutral-standard: white;
     --colors-background-neutral-strong: rgba(226, 223, 246, 1);
-    --colors-background-functional-solid-danger: rgba(222, 17, 53, 1);
-    --colors-background-core-strong: rgba(98, 72, 246, 1);
-    --colors-background-sentiment-solid-primary: rgba(127, 105, 255, 1);
-    --colors-background-core-standard: rgb(90, 75, 254);
 
     --button-blue-text: rgb(22, 119, 255);
 
@@ -100,7 +96,8 @@
     --bg-card: rgba(0, 0, 0, 0.05);
     --bg-component: #ffffff;
     --bg-input: rgba(255, 255, 255, 0);
-    --bg-accent: rgba(76, 164, 231, 0.05);
+    --bg-canvas: 246 246 247;
+    --bg-list: 246 246 247;
     /* Button ,Body text, Input completed text */
     --text-primary: #161618;
     --text-secondary: #75787a;
@@ -113,13 +110,15 @@
     --border-accent: #000000;
     --border-button: rgba(0, 0, 0, 0.1);
     /* Regulators, parsing, switches, variables */
-    --accent-primary: #00beb4;
+    --accent-primary: 0 190 180;
     /* Output Variables Box */
     --bg-accent: rgba(76, 164, 231, 0.05);
 
-    --state-success: #3ba05c;
-    --state-warning: #faad14;
-    --state-error: #d8494b;
+    /* --state-success: #3ba05c; */
+    --state-success: 59 160 92;
+    /* --state-warning: #767573; */
+    --state-warning: 250 173 20;
+    --state-error: 216 73 75;
 
     --team-group: #5ab77e;
     --team-member: #5c96c8;
@@ -179,26 +178,11 @@
     --background-badge: rgba(22, 22, 24, 0.5);
     --text-badge: rgba(151, 154, 171, 1);
 
-    --colors-background-core-standard: rgba(137, 126, 255, 1);
-    --colors-background-core-strong: rgba(152, 147, 255, 1);
-    --colors-background-core-weak: rgba(101, 75, 248, 1);
-    --colors-background-functional-solid-danger: rgba(255, 57, 92, 1);
-    --colors-background-functional-solid-notice: rgba(255, 208, 94, 1);
-    --colors-background-functional-solid-positive: rgba(74, 225, 145, 1);
-    --colors-background-functional-transparent-danger: rgba(234, 50, 83, 0.2);
-    --colors-background-functional-transparent-notice: rgba(248, 208, 111, 0.5);
-    --colors-background-functional-transparent-positive: rgba(
-      65,
-      203,
-      130,
-      0.5
-    );
     --colors-background-inverse-standard: rgba(230, 227, 246, 0.15);
     --colors-background-inverse-strong: rgba(255, 255, 255, 0.8);
     --colors-background-neutral-standard: rgba(11, 10, 18, 1);
     --colors-background-neutral-strong: rgba(29, 26, 44, 1);
     --colors-background-neutral-weak: rgba(17, 16, 23, 1);
-    --colors-background-sentiment-solid-primary: rgba(146, 118, 255, 1);
 
     --colors-outline-sentiment-primary: rgba(146, 118, 255, 1);
     --colors-outline-neutral-strong: rgba(255, 255, 255, 0.15);
@@ -245,6 +229,8 @@
     --bg-card: rgba(255, 255, 255, 0.05);
     --bg-component: #202025;
     --bg-input: rgba(255, 255, 255, 0.05);
+    --bg-canvas: 0 0 0;
+    --bg-list: 56 56 58;
     --text-primary: #f6f6f7;
     --text-secondary: #b2b5b7;
     --text-disabled: #75787a;
@@ -291,8 +277,8 @@
 @layer utilities {
   .scrollbar-auto {
     /* hide scrollbar */
-    scrollbar-width: none;
-    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) var(--bg-card);
   }
 
   .scrollbar-auto::-webkit-scrollbar {

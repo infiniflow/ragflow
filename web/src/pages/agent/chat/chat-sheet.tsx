@@ -9,7 +9,7 @@ export function ChatSheet({ hideModal }: IModalProps<any>) {
   return (
     <Sheet open modal={false} onOpenChange={hideModal}>
       <SheetContent
-        className={cn('top-20 p-0')}
+        className={cn('top-20 bottom-0 p-0 flex flex-col h-auto')}
         onInteractOutside={(e) => e.preventDefault()}
       >
         <SheetTitle className="hidden"></SheetTitle>

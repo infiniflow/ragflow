@@ -244,7 +244,7 @@ class ComponentParamBase(ABC):
 
                 if not value_legal:
                     raise ValueError(
-                        "Plase check runtime conf, {} = {} does not match user-parameter restriction".format(
+                        "Please check runtime conf, {} = {} does not match user-parameter restriction".format(
                             variable, value
                         )
                     )
@@ -431,7 +431,7 @@ class ComponentBase(ABC):
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         raise NotImplementedError()
 

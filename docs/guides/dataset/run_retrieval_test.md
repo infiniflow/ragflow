@@ -5,11 +5,11 @@ slug: /run_retrieval_test
 
 # Run retrieval test
 
-Conduct a retrieval test on your knowledge base to check whether the intended chunks can be retrieved.
+Conduct a retrieval test on your dataset to check whether the intended chunks can be retrieved.
 
 ---
 
-After your files are uploaded and parsed, it is recommended that you run a retrieval test before proceeding with the chat assistant configuration. Running a retrieval test is *not* an unnecessary or superfluous step at all! Just like fine-tuning a precision instrument, RAGFlow requires careful tuning to deliver optimal question answering performance. Your knowledge base settings, chat assistant configurations, and the specified large and small models can all significantly impact the final results. Running a retrieval test verifies whether the intended chunks can be recovered, allowing you to quickly identify areas for improvement or pinpoint any issue that needs addressing. For instance, when debugging your question answering system, if you know that the correct chunks can be retrieved, you can focus your efforts elsewhere. For example, in issue [#5627](https://github.com/infiniflow/ragflow/issues/5627), the problem was found to be due to the LLM's limitations.
+After your files are uploaded and parsed, it is recommended that you run a retrieval test before proceeding with the chat assistant configuration. Running a retrieval test is *not* an unnecessary or superfluous step at all! Just like fine-tuning a precision instrument, RAGFlow requires careful tuning to deliver optimal question answering performance. Your dataset settings, chat assistant configurations, and the specified large and small models can all significantly impact the final results. Running a retrieval test verifies whether the intended chunks can be recovered, allowing you to quickly identify areas for improvement or pinpoint any issue that needs addressing. For instance, when debugging your question answering system, if you know that the correct chunks can be retrieved, you can focus your efforts elsewhere. For example, in issue [#5627](https://github.com/infiniflow/ragflow/issues/5627), the problem was found to be due to the LLM's limitations.
 
 During a retrieval test, chunks created from your specified chunking method are retrieved using a hybrid search. This search combines weighted keyword similarity with either weighted vector cosine similarity or a weighted reranking score, depending on your settings:
 
@@ -29,9 +29,9 @@ In contrast, chunks created from [knowledge graph construction](./construct_know
 
 This sets the bar for retrieving chunks: chunks with similarities below the threshold will be filtered out. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.
 
-### Keyword similarity weight
+### Vector similarity weight
 
-This sets the weight of keyword similarity in the combined similarity score, whether used with vector cosine similarity or a reranking score. By default, it is set to 0.7, making the weight of the other component 0.3 (1 - 0.7).
+This sets the weight of vector similarity in the composite similarity score, whether used with vector cosine similarity or a reranking score. By default, it is set to 0.3, making the weight of the other component 0.7 (1 - 0.3).
 
 ### Rerank model
 
@@ -65,7 +65,7 @@ Using a knowledge graph in a retrieval test will significantly increase the time
 To perform a [cross-language search](../../references/glossary.mdx#cross-language-search), select one or more target languages from the dropdown menu. The system’s default chat model will then translate your query entered in the Test text field into the selected target language(s). This translation ensures accurate semantic matching across languages, allowing you to retrieve relevant results regardless of language differences.
 
 :::tip NOTE
-- When selecting target languages, please ensure that these languages are present in the knowledge base to guarantee an effective search.
+- When selecting target languages, please ensure that these languages are present in the dataset to guarantee an effective search.
 - If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
 :::
 
@@ -75,7 +75,7 @@ This field is where you put in your testing query.
 
 ## Procedure
 
-1. Navigate to the **Retrieval testing** page of your knowledge base, enter your query in **Test text**, and click **Testing** to run the test.
+1. Navigate to the **Retrieval testing** page of your dataset, enter your query in **Test text**, and click **Testing** to run the test.
 2. If the results are unsatisfactory, tune the options listed in the Configuration section and rerun the test.
 
    *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall hybrid similarity score is 28.56, calculated as 25.17 (term similarity score) x 0.7 + 36.49 (vector similarity score) x 0.3:*  

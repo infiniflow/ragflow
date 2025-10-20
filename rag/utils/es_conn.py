@@ -28,6 +28,7 @@ from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import singleton, get_float
 from api.utils.file_utils import get_project_base_directory
+from api.utils.common import convert_bytes
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
@@ -579,3 +580,52 @@ class ESConnection(DocStoreConnection):
                 break
         logger.error(f"ESConnection.sql timeout for {ATTEMPT_TIME} times!")
         return None
+
+    def get_cluster_stats(self):
+        """
+        curl -XGET "http://{es_host}/_cluster/stats" -H "kbn-xsrf: reporting" to view raw stats.
+        """
+        raw_stats = self.es.cluster.stats()
+        logger.debug(f"ESConnection.get_cluster_stats: {raw_stats}")
+        try:
+            res = {
+                'cluster_name': raw_stats['cluster_name'],
+                'status': raw_stats['status']
+            }
+            indices_status = raw_stats['indices']
+            res.update({
+                'indices': indices_status['count'],
+                'indices_shards': indices_status['shards']['total']
+            })
+            doc_info = indices_status['docs']
+            res.update({
+                'docs': doc_info['count'],
+                'docs_deleted': doc_info['deleted']
+            })
+            store_info = indices_status['store']
+            res.update({
+                'store_size': convert_bytes(store_info['size_in_bytes']),
+                'total_dataset_size': convert_bytes(store_info['total_data_set_size_in_bytes'])
+            })
+            mappings_info = indices_status['mappings']
+            res.update({
+                'mappings_fields': mappings_info['total_field_count'],
+                'mappings_deduplicated_fields': mappings_info['total_deduplicated_field_count'],
+                'mappings_deduplicated_size': convert_bytes(mappings_info['total_deduplicated_mapping_size_in_bytes'])
+            })
+            node_info = raw_stats['nodes']
+            res.update({
+                'nodes': node_info['count']['total'],
+                'nodes_version': node_info['versions'],
+                'os_mem': convert_bytes(node_info['os']['mem']['total_in_bytes']),
+                'os_mem_used': convert_bytes(node_info['os']['mem']['used_in_bytes']),
+                'os_mem_used_percent': node_info['os']['mem']['used_percent'],
+                'jvm_versions': node_info['jvm']['versions'][0]['vm_version'],
+                'jvm_heap_used': convert_bytes(node_info['jvm']['mem']['heap_used_in_bytes']),
+                'jvm_heap_max': convert_bytes(node_info['jvm']['mem']['heap_max_in_bytes'])
+            })
+            return res
+
+        except Exception as e:
+            logger.exception(f"ESConnection.get_cluster_stats: {e}")
+            return None

@@ -5,12 +5,15 @@ export interface IDocumentInfo {
   create_date: string;
   create_time: number;
   created_by: string;
+  nickname: string;
   id: string;
   kb_id: string;
   location: string;
   name: string;
   parser_config: IParserConfig;
   parser_id: string;
+  pipeline_id: string;
+  pipeline_name: string;
   process_begin_at?: string;
   process_duration: number;
   progress: number;
@@ -19,6 +22,7 @@ export interface IDocumentInfo {
   size: number;
   source_type: string;
   status: string;
+  suffix: string;
   thumbnail: string;
   token_num: number;
   type: string;

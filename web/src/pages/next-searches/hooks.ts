@@ -337,6 +337,8 @@ export const useRenameSearch = () => {
           });
           const detail = reponse.data?.data;
           console.log('detail-->', detail);
+
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id, created_by, update_time, ...searchDataTemp } = detail;
           res = await updateSearch({
             ...searchDataTemp,

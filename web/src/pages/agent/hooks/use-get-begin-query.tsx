@@ -1,19 +1,11 @@
 import { AgentGlobals } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { Edge } from '@xyflow/react';
+import { buildNodeOutputOptions } from '@/utils/canvas-util';
 import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
-import { isEmpty } from 'lodash';
 import get from 'lodash/get';
-import {
-  ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AgentDialogueMode,
   BeginId,
@@ -35,13 +27,16 @@ export function useSelectBeginNodeDataInputs() {
   );
 }
 
-export function useIsTaskMode() {
+export function useIsTaskMode(isTask?: boolean) {
   const getNode = useGraphStore((state) => state.getNode);
 
   return useMemo(() => {
+    if (typeof isTask === 'boolean') {
+      return isTask;
+    }
     const node = getNode(BeginId);
     return node?.data?.form?.mode === AgentDialogueMode.Task;
-  }, [getNode]);
+  }, [getNode, isTask]);
 }
 
 export const useGetBeginNodeDataQuery = () => {
@@ -83,72 +78,18 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
   return isBeginNodeDataQuerySafe;
 };
 
-function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
-  return nodeIds.reduce<string[]>((pre, nodeId) => {
-    const currentEdges = edges.filter((x) => x.target === nodeId);
-
-    const upstreamNodeIds: string[] = currentEdges.map((x) => x.source);
-
-    const ids = upstreamNodeIds.concat(
-      filterAllUpstreamNodeIds(edges, upstreamNodeIds),
-    );
-
-    ids.forEach((x) => {
-      if (pre.every((y) => y !== x)) {
-        pre.push(x);
-      }
-    });
-
-    return pre;
-  }, []);
-}
-
-export function buildOutputOptions(
-  outputs: Record<string, any> = {},
-  nodeId?: string,
-  parentLabel?: string | ReactNode,
-  icon?: ReactNode,
-) {
-  return Object.keys(outputs).map((x) => ({
-    label: x,
-    value: `${nodeId}@${x}`,
-    parentLabel,
-    icon,
-    type: outputs[x]?.type,
-  }));
-}
-
 export function useBuildNodeOutputOptions(nodeId?: string) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
 
-  const nodeOutputOptions = useMemo(() => {
-    if (!nodeId) {
-      return [];
-    }
-    const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
-
-    const nodeWithOutputList = nodes.filter(
-      (x) =>
-        upstreamIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
-    );
-
-    return nodeWithOutputList
-      .filter((x) => x.id !== nodeId)
-      .map((x) => ({
-        label: x.data.name,
-        value: x.id,
-        title: x.data.name,
-        options: buildOutputOptions(
-          x.data.form.outputs,
-          x.id,
-          x.data.name,
-          <OperatorIcon name={x.data.label as Operator} />,
-        ),
-      }));
+  return useMemo(() => {
+    return buildNodeOutputOptions({
+      nodes,
+      edges,
+      nodeId,
+      Icon: ({ name }) => <OperatorIcon name={name as Operator}></OperatorIcon>,
+    });
   }, [edges, nodeId, nodes]);
-
-  return nodeOutputOptions;
 }
 
 // exclude nodes with branches

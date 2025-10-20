@@ -4,6 +4,7 @@ import { getExtension } from '@/utils/document-util';
 
 type IconFontType = {
   name: string;
+
   className?: string;
 };
 
@@ -12,6 +13,23 @@ export const IconFont = ({ name, className }: IconFontType) => (
     <use xlinkHref={`#icon-${name}`} />
   </svg>
 );
+
+export function IconFontFill({
+  name,
+  className,
+  isFill = true,
+}: IconFontType & { isFill?: boolean }) {
+  return (
+    <span className={cn('size-4', className)}>
+      <svg
+        className={cn('size-4', className)}
+        style={{ fill: isFill ? 'currentColor' : '' }}
+      >
+        <use xlinkHref={`#icon-${name}`} />
+      </svg>
+    </span>
+  );
+}
 
 export function FileIcon({
   name,

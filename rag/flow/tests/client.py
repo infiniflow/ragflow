@@ -30,7 +30,7 @@ def print_logs(pipeline: Pipeline):
     while True:
         time.sleep(5)
         logs = pipeline.fetch_logs()
-        logs_str = json.dumps(logs)
+        logs_str = json.dumps(logs, ensure_ascii=False)
         if logs_str != last_logs:
             print(logs_str)
         last_logs = logs_str
