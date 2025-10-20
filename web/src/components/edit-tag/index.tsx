@@ -16,7 +16,7 @@ interface EditTagsProps {
 }
 
 const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
-  ({ value = [], onChange }: EditTagsProps, ref) => {
+  ({ value = [], onChange }: EditTagsProps) => {
     const [inputVisible, setInputVisible] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);

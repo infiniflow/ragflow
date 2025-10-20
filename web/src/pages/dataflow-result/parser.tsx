@@ -40,12 +40,17 @@ const ParserContainer = (props: IProps) => {
   const initialValue = useMemo(() => {
     const outputs = data?.value?.obj?.params?.outputs;
     const key = outputs?.output_format?.value;
-    if (!outputs || !key) return { key: '', type: '', value: [] };
-    const value = outputs[key]?.value;
-    const type = outputs[key]?.type;
+    if (!outputs || !key)
+      return {
+        key: '' as 'text' | 'html' | 'json' | 'chunks',
+        type: '',
+        value: [],
+      };
+    const value = outputs[key as keyof typeof outputs]?.value;
+    const type = outputs[key as keyof typeof outputs]?.type;
     console.log('outputs-->', outputs, data, key, value);
     return {
-      key,
+      key: key as 'text' | 'html' | 'json' | 'chunks',
       type,
       value,
       params: data?.value?.obj?.params,
@@ -95,7 +100,7 @@ const ParserContainer = (props: IProps) => {
   const handleRemoveChunk = useCallback(async () => {
     if (selectedChunkIds.length > 0) {
       initialText.value = initialText.value.filter(
-        (item: any, index: number) => !selectedChunkIds.includes(index + ''),
+        (_item: any, index: number) => !selectedChunkIds.includes(index + ''),
       );
       setIsChange(true);
       setSelectedChunkIds([]);
@@ -118,7 +123,7 @@ const ParserContainer = (props: IProps) => {
   const selectAllChunk = useCallback(
     (checked: boolean) => {
       setSelectedChunkIds(
-        checked ? initialText.value.map((x, index: number) => index) : [],
+        checked ? initialText.value.map((_x: any, index: number) => index) : [],
       );
     },
     [initialText.value],

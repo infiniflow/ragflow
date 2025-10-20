@@ -57,6 +57,6 @@ export interface IFileLogItem {
   update_time: number;
 }
 export interface IFileLogList {
-  logs: IFileLogItem[];
+  logs: Array<IFileLogItem & DocumentLog>;
   total: number;
 }

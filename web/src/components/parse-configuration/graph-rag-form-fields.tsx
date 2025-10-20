@@ -70,7 +70,7 @@ export function UseGraphRagFormField({
     <FormField
       control={form.control}
       name="parser_config.graphrag.use_graphrag"
-      render={({ field }) => (
+      render={() => (
         <FormItem defaultChecked={false} className=" items-center space-y-0 ">
           <div className="flex items-center gap-1">
             <FormLabel
