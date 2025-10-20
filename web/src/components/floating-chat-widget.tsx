@@ -1,11 +1,11 @@
+import PdfDrawer from '@/components/pdf-drawer';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
 import { useFetchFlowSSE } from '@/hooks/flow-hooks';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
-import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import i18n from '@/locales/config';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
-import PdfDrawer from '@/components/pdf-drawer';
 import React, {
   useCallback,
   useEffect,
@@ -234,7 +234,7 @@ const FloatingChatWidget = () => {
     const syntheticEvent = {
       target: { value: inputValue },
       currentTarget: { value: inputValue },
-      preventDefault: () => { },
+      preventDefault: () => {},
     } as any;
 
     handleInputChange(syntheticEvent);
@@ -311,6 +311,7 @@ const FloatingChatWidget = () => {
         className={`fixed bottom-6 right-6 z-50 transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
       >
         <button
+          type="button"
           onClick={() => {
             const newIsOpen = !isOpen;
             setIsOpen(newIsOpen);
@@ -325,8 +326,9 @@ const FloatingChatWidget = () => {
               '*',
             );
           }}
-          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
-            }`}
+          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
+            isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
+          }`}
         >
           <div
             className={`transition-transform duration-300 ${isOpen ? 'rotate-45' : 'rotate-0'}`}
@@ -352,9 +354,11 @@ const FloatingChatWidget = () => {
         className={`fixed bottom-6 right-6 z-50 transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
       >
         <button
+          type="button"
           onClick={toggleChat}
-          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
-            }`}
+          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
+            isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
+          }`}
         >
           <div
             className={`transition-transform duration-300 ${isOpen ? 'rotate-45' : 'rotate-0'}`}
@@ -431,10 +435,11 @@ const FloatingChatWidget = () => {
                   className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[280px] px-4 py-2 rounded-2xl ${message.role === MessageType.User
-                      ? 'bg-blue-600 text-white rounded-br-md'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-md'
-                      }`}
+                    className={`max-w-[280px] px-4 py-2 rounded-2xl ${
+                      message.role === MessageType.User
+                        ? 'bg-blue-600 text-white rounded-br-md'
+                        : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                    }`}
                   >
                     {message.role === MessageType.User ? (
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">
@@ -444,7 +449,13 @@ const FloatingChatWidget = () => {
                       <FloatingChatWidgetMarkdown
                         loading={false}
                         content={message.content}
-                        reference={message.reference || { doc_aggs: [], chunks: [], total: 0 }}
+                        reference={
+                          message.reference || {
+                            doc_aggs: [],
+                            chunks: [],
+                            total: 0,
+                          }
+                        }
                         clickDocumentButton={clickDocumentButton}
                       />
                     )}
@@ -486,12 +497,13 @@ const FloatingChatWidget = () => {
                     onKeyPress={handleKeyPress}
                     placeholder="Type your message..."
                     rows={1}
-                    className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                     style={{ minHeight: '44px', maxHeight: '120px' }}
                     disabled={hasError || sendLoading}
                   />
                 </div>
                 <button
+                  type="button"
                   onClick={handleSendMessage}
                   disabled={!inputValue.trim() || sendLoading}
                   className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -512,7 +524,7 @@ const FloatingChatWidget = () => {
         />
       </>
     );
-  }  // Full mode - render everything together (original behavior)
+  } // Full mode - render everything together (original behavior)
   return (
     <div
       className={`transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
@@ -520,8 +532,9 @@ const FloatingChatWidget = () => {
       {/* Chat Widget Container */}
       {isOpen && (
         <div
-          className={`fixed bottom-24 right-6 z-50 bg-blue-600 rounded-2xl transition-all duration-300 ease-out ${isMinimized ? 'h-16' : 'h-[500px]'
-            } w-[380px] overflow-hidden`}
+          className={`fixed bottom-24 right-6 z-50 bg-blue-600 rounded-2xl transition-all duration-300 ease-out ${
+            isMinimized ? 'h-16' : 'h-[500px]'
+          } w-[380px] overflow-hidden`}
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-2xl">
@@ -540,12 +553,14 @@ const FloatingChatWidget = () => {
             </div>
             <div className="flex items-center space-x-1">
               <button
+                type="button"
                 onClick={minimizeChat}
                 className="p-1.5 hover:bg-white hover:bg-opacity-20 rounded-full transition-colors"
               >
                 <Minimize2 size={16} />
               </button>
               <button
+                type="button"
                 onClick={toggleChat}
                 className="p-1.5 hover:bg-white hover:bg-opacity-20 rounded-full transition-colors"
               >
@@ -592,10 +607,11 @@ const FloatingChatWidget = () => {
                     className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[280px] px-4 py-2 rounded-2xl ${message.role === MessageType.User
-                        ? 'bg-blue-600 text-white rounded-br-md'
-                        : 'bg-gray-100 text-gray-800 rounded-bl-md'
-                        }`}
+                      className={`max-w-[280px] px-4 py-2 rounded-2xl ${
+                        message.role === MessageType.User
+                          ? 'bg-blue-600 text-white rounded-br-md'
+                          : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                      }`}
                     >
                       {message.role === MessageType.User ? (
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">
@@ -605,7 +621,13 @@ const FloatingChatWidget = () => {
                         <FloatingChatWidgetMarkdown
                           loading={false}
                           content={message.content}
-                          reference={message.reference || { doc_aggs: [], chunks: [], total: 0 }}
+                          reference={
+                            message.reference || {
+                              doc_aggs: [],
+                              chunks: [],
+                              total: 0,
+                            }
+                          }
                           clickDocumentButton={clickDocumentButton}
                         />
                       )}
@@ -650,7 +672,7 @@ const FloatingChatWidget = () => {
                       onKeyPress={handleKeyPress}
                       placeholder="Type your message..."
                       rows={1}
-                      className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                       style={{ minHeight: '44px', maxHeight: '120px' }}
                       disabled={hasError || sendLoading}
                     />
@@ -672,9 +694,11 @@ const FloatingChatWidget = () => {
       {/* Floating Button */}
       <div className="fixed bottom-6 right-6 z-50">
         <button
+          type="button"
           onClick={toggleChat}
-          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
-            }`}
+          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
+            isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
+          }`}
         >
           <div
             className={`transition-transform duration-300 ${isOpen ? 'rotate-45' : 'rotate-0'}`}

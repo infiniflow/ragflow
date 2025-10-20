@@ -3,23 +3,7 @@ import {
   initialLlmBaseValues,
   DataflowOperator as Operator,
 } from '@/constants/agent';
-import {
-  ChatVariableEnabledField,
-  variableEnabledFieldMap,
-} from '@/constants/chat';
-import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 export { DataflowOperator as Operator } from '@/constants/agent';
-
-import {
-  Circle,
-  CircleSlash2,
-  CloudUpload,
-  ListOrdered,
-  OptionIcon,
-  TextCursorInput,
-  ToggleLeft,
-  WrapText,
-} from 'lucide-react';
 
 export enum FileType {
   PDF = 'pdf',
@@ -104,46 +88,7 @@ export enum ContextGeneratorFieldName {
   Metadata = 'metadata',
 }
 
-export enum PromptRole {
-  User = 'user',
-  Assistant = 'assistant',
-}
-
-export enum AgentDialogueMode {
-  Conversational = 'conversational',
-  Task = 'task',
-}
-
 export const BeginId = 'File';
-
-export const SwitchLogicOperatorOptions = ['and', 'or'];
-
-export const CommonOperatorList = Object.values(Operator).filter(
-  (x) => x !== Operator.Note,
-);
-
-export const SwitchOperatorOptions = [
-  { value: '=', label: 'equal', icon: 'equal' },
-  { value: '≠', label: 'notEqual', icon: 'not-equals' },
-  { value: '>', label: 'gt', icon: 'Less' },
-  { value: '≥', label: 'ge', icon: 'Greater-or-equal' },
-  { value: '<', label: 'lt', icon: 'Less' },
-  { value: '≤', label: 'le', icon: 'less-or-equal' },
-  { value: 'contains', label: 'contains', icon: 'Contains' },
-  { value: 'not contains', label: 'notContains', icon: 'not-contains' },
-  { value: 'start with', label: 'startWith', icon: 'list-start' },
-  { value: 'end with', label: 'endWith', icon: 'list-end' },
-  {
-    value: 'empty',
-    label: 'empty',
-    icon: <Circle className="size-4" />,
-  },
-  {
-    value: 'not empty',
-    label: 'notEmpty',
-    icon: <CircleSlash2 className="size-4" />,
-  },
-];
 
 export const SwitchElseTo = 'end_cpn_ids';
 
@@ -185,15 +130,6 @@ export const initialBeginValues = {
     },
   },
 };
-
-export const variableCheckBoxFieldMap = Object.keys(
-  variableEnabledFieldMap,
-).reduce<Record<string, boolean>>((pre, cur) => {
-  pre[cur] = setInitialChatVariableEnabledFieldValue(
-    cur as ChatVariableEnabledField,
-  );
-  return pre;
-}, {});
 
 export const initialNoteValues = {
   text: '',
@@ -341,24 +277,6 @@ export const NodeMap = {
   [Operator.Extractor]: 'contextNode',
 };
 
-export enum BeginQueryType {
-  Line = 'line',
-  Paragraph = 'paragraph',
-  Options = 'options',
-  File = 'file',
-  Integer = 'integer',
-  Boolean = 'boolean',
-}
-
-export const BeginQueryTypeIconMap = {
-  [BeginQueryType.Line]: TextCursorInput,
-  [BeginQueryType.Paragraph]: WrapText,
-  [BeginQueryType.Options]: OptionIcon,
-  [BeginQueryType.File]: CloudUpload,
-  [BeginQueryType.Integer]: ListOrdered,
-  [BeginQueryType.Boolean]: ToggleLeft,
-};
-
 export const NoDebugOperatorsList = [Operator.Begin];
 
 export enum NodeHandleId {
@@ -368,17 +286,6 @@ export enum NodeHandleId {
   AgentTop = 'agentTop',
   AgentBottom = 'agentBottom',
   AgentException = 'agentException',
-}
-
-export enum VariableType {
-  String = 'string',
-  Array = 'array',
-  File = 'file',
-}
-
-export enum AgentExceptionMethod {
-  Comment = 'comment',
-  Goto = 'goto',
 }
 
 export const FileTypeSuffixMap = {
