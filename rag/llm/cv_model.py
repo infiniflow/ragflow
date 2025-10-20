@@ -16,6 +16,7 @@
 import base64
 import json
 import os
+import logging
 from abc import ABC
 from copy import deepcopy
 from io import BytesIO
@@ -529,6 +530,7 @@ class GeminiCV(Base):
 
         client.configure(api_key=key)
         _client = client.get_default_generative_client()
+        self.api_key=key
         self.model_name = model_name
         self.model = GenerativeModel(model_name=self.model_name)
         self.model._client = _client
@@ -571,7 +573,15 @@ class GeminiCV(Base):
                 res = self.model.generate_content(input)
                 return res.text, total_token_count_from_response(res)
 
-    def chat(self, system, history, gen_conf, images=[]):
+
+    def chat(self, system, history, gen_conf, images=[], video_bytes=None, filename=""):
+        if video_bytes:
+            try:
+                summary, summary_num_tokens = self._process_video(video_bytes, filename)
+                return summary, summary_num_tokens
+            except Exception as e:
+                return "**ERROR**: " + str(e), 0
+
         generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
         try:
             response = self.model.generate_content(
@@ -602,6 +612,48 @@ class GeminiCV(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_token_count_from_response(response)
+
+    def _process_video(self, video_bytes, filename):
+        from google import genai
+        from google.genai import types
+        import tempfile
+        from pathlib import Path
+
+        video_size_mb = len(video_bytes) / (1024 * 1024)
+        client = genai.Client(api_key=self.api_key)
+
+        tmp_path = None
+        try:
+            if video_size_mb <= 20:
+                response = client.models.generate_content(
+                    model="models/gemini-2.5-flash",
+                    contents=types.Content(parts=[
+                        types.Part(inline_data=types.Blob(data=video_bytes, mime_type="video/mp4")),
+                        types.Part(text="Please summarize the video in proper sentences.")
+                    ])
+                )
+            else:
+                logging.info(f"Video size {video_size_mb:.2f}MB exceeds 20MB. Using Files API...")
+                video_suffix = Path(filename).suffix or ".mp4"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
+                    tmp.write(video_bytes)
+                    tmp_path = Path(tmp.name)
+                uploaded_file = client.files.upload(file=tmp_path)
+
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[uploaded_file, "Please summarize this video in proper sentences."]
+                )
+
+            summary = response.text or ""
+            logging.info(f"Video summarized: {summary[:32]}...")
+            return summary, num_tokens_from_string(summary)
+        except Exception as e:
+            logging.error(f"Video processing failed: {e}")
+            raise
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
 
 class NvidiaCV(Base):
