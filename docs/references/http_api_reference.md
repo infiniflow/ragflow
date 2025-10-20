@@ -1258,7 +1258,7 @@ curl --request GET \
 - `suffix`: (*Filter parameter*), `array[string]`
   Filter by file suffixes. Multiple values supported. Examples: `["pdf", "txt", "docx"]`. Defaults to all types.
 - `run`: (*Filter parameter*), `array[string]`
-  Filter by document processing status. Supports both numeric and text formats:
+  Filter by document processing status. Supports numeric, text, and mixed formats:
   - Numeric format: `["0", "1", "2", "3", "4"]`
   - Text format: `["UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL"]`
   - Mixed format: `["UNSTART", "1", "DONE"]` (can combine both formats)
