@@ -311,7 +311,6 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   data,
   pagination,
   setPagination,
-  loading,
   active = LogTabs.FILE_LOGS,
 }) => {
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -328,13 +327,13 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       fileName: row.original.document_name,
       source: row.original.source_from,
       task: row.original?.task_type,
-      status: row.original.statusName,
+      status: row.original.status as RunningStatus,
       startDate: formatDate(row.original.process_begin_at),
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
       ),
       details: row.original.progress_msg,
-    };
+    } as unknown as IFileLogItem;
     console.log('logDetail', logDetail);
     setLogInfo(logDetail);
     setIsModalVisible(true);
