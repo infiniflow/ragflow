@@ -1219,7 +1219,7 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-**Multi-parameter combination:**
+**A multi-parameter request:**
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents?page=1&page_size=20&orderby=create_time&desc=true&keywords=report&create_time_from=1640995200 \
