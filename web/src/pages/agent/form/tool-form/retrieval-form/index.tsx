@@ -2,6 +2,7 @@ import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
@@ -51,6 +52,7 @@ const RetrievalForm = () => {
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
             <RerankFormFields></RerankFormFields>
+            <MetadataFilter></MetadataFilter>
             <EmptyResponseField></EmptyResponseField>
             <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
             <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
