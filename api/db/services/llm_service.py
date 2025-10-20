@@ -266,7 +266,7 @@ class LLMBundle(LLM4Tenant):
                 break
 
             if txt.endswith("</think>"):
-                ans = ans.rstrip("</think>")
+                ans = ans[: -len("</think>")]
 
             if not self.verbose_tool_use:
                 txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)

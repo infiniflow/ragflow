@@ -6,9 +6,13 @@ import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
   CodeTemplateStrMap,
+  Operator,
   ProgrammingLanguage,
   initialLlmBaseValues,
 } from '@/constants/agent';
+export { Operator } from '@/constants/agent';
+
+export * from './pipeline';
 
 export enum AgentDialogueMode {
   Conversational = 'conversational',
@@ -42,51 +46,6 @@ import {
 } from 'lucide-react';
 
 export const BeginId = 'begin';
-
-export enum Operator {
-  Begin = 'Begin',
-  Retrieval = 'Retrieval',
-  Categorize = 'Categorize',
-  Message = 'Message',
-  Relevant = 'Relevant',
-  RewriteQuestion = 'RewriteQuestion',
-  KeywordExtract = 'KeywordExtract',
-  Baidu = 'Baidu',
-  DuckDuckGo = 'DuckDuckGo',
-  Wikipedia = 'Wikipedia',
-  PubMed = 'PubMed',
-  ArXiv = 'ArXiv',
-  Google = 'Google',
-  Bing = 'Bing',
-  GoogleScholar = 'GoogleScholar',
-  DeepL = 'DeepL',
-  GitHub = 'GitHub',
-  BaiduFanyi = 'BaiduFanyi',
-  QWeather = 'QWeather',
-  ExeSQL = 'ExeSQL',
-  Switch = 'Switch',
-  WenCai = 'WenCai',
-  AkShare = 'AkShare',
-  YahooFinance = 'YahooFinance',
-  Jin10 = 'Jin10',
-  TuShare = 'TuShare',
-  Note = 'Note',
-  Crawler = 'Crawler',
-  Invoke = 'Invoke',
-  Email = 'Email',
-  Iteration = 'Iteration',
-  IterationStart = 'IterationItem',
-  Code = 'CodeExec',
-  WaitingDialogue = 'WaitingDialogue',
-  Agent = 'Agent',
-  Tool = 'Tool',
-  TavilySearch = 'TavilySearch',
-  TavilyExtract = 'TavilyExtract',
-  UserFillUp = 'UserFillUp',
-  StringTransform = 'StringTransform',
-  SearXNG = 'SearXNG',
-  Placeholder = 'Placeholder',
-}
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
 
@@ -833,6 +792,11 @@ export const RestrictedUpstreamMap = {
   [Operator.UserFillUp]: [Operator.Begin],
   [Operator.Tool]: [Operator.Begin],
   [Operator.Placeholder]: [Operator.Begin],
+  [Operator.Parser]: [Operator.Begin],
+  [Operator.Splitter]: [Operator.Begin],
+  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.Tokenizer]: [Operator.Begin],
+  [Operator.Extractor]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -878,6 +842,12 @@ export const NodeMap = {
   [Operator.StringTransform]: 'ragNode',
   [Operator.TavilyExtract]: 'ragNode',
   [Operator.Placeholder]: 'placeholderNode',
+  [Operator.File]: 'fileNode',
+  [Operator.Parser]: 'parserNode',
+  [Operator.Tokenizer]: 'tokenizerNode',
+  [Operator.Splitter]: 'splitterNode',
+  [Operator.HierarchicalMerger]: 'splitterNode',
+  [Operator.Extractor]: 'contextNode',
 };
 
 export enum BeginQueryType {
@@ -906,6 +876,21 @@ export const NoDebugOperatorsList = [
   Operator.Iteration,
   Operator.UserFillUp,
   Operator.IterationStart,
+  Operator.File,
+  Operator.Parser,
+  Operator.Tokenizer,
+  Operator.Splitter,
+  Operator.HierarchicalMerger,
+  Operator.Extractor,
+];
+
+export const NoCopyOperatorsList = [
+  Operator.File,
+  Operator.Parser,
+  Operator.Tokenizer,
+  Operator.Splitter,
+  Operator.HierarchicalMerger,
+  Operator.Extractor,
 ];
 
 export enum NodeHandleId {
