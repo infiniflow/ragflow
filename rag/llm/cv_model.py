@@ -622,6 +622,7 @@ class GeminiCV(Base):
         video_size_mb = len(video_bytes) / (1024 * 1024)
         client = genai.Client(api_key=self.api_key)
 
+        tmp_path = None
         try:
             if video_size_mb <= 20:
                 response = client.models.generate_content(
@@ -646,10 +647,12 @@ class GeminiCV(Base):
             summary = response.text or ""
             logging.info(f"Video summarized: {summary[:32]}...")
             return summary, num_tokens_from_string(summary)
-
         except Exception as e:
             logging.error(f"Video processing failed: {e}")
             raise
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
 
 class NvidiaCV(Base):
