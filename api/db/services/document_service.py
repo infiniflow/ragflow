@@ -79,7 +79,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, kb_id, page_number, items_per_page,
-                 orderby, desc, keywords, id, name):
+                 orderby, desc, keywords, id, name, suffix=None, run = None):
         fields = cls.get_cls_model_fields()
         docs = cls.model.select(*[*fields, UserCanvas.title]).join(File2Document, on = (File2Document.document_id == cls.model.id))\
             .join(File, on = (File.id == File2Document.file_id))\
@@ -96,6 +96,10 @@ class DocumentService(CommonService):
             docs = docs.where(
                 fn.LOWER(cls.model.name).contains(keywords.lower())
             )
+        if suffix:
+            docs = docs.where(cls.model.suffix.in_(suffix))
+        if run:
+            docs = docs.where(cls.model.run.in_(run))
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
