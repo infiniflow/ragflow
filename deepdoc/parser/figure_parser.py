@@ -41,13 +41,13 @@ def vision_figure_parser_docx_wrapper(sections,tbls,callback=None,**kwargs):
     except Exception:
         vision_model = None
     if vision_model:
-            figures_data = vision_figure_parser_figure_data_wrapper(sections)
-            try:
-                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-                boosted_figures = docx_vision_parser(callback=callback)
-                tbls.extend(boosted_figures)
-            except Exception as e:
-                callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        figures_data = vision_figure_parser_figure_data_wrapper(sections)
+        try:
+            docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+            boosted_figures = docx_vision_parser(callback=callback)
+            tbls.extend(boosted_figures)
+        except Exception as e:
+            callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
     return tbls
 
 def vision_figure_parser_pdf_wrapper(tbls,callback=None,**kwargs):
