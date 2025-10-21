@@ -32,7 +32,7 @@ from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.utils.file_utils import extract_embed_file
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
+from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser_docx_wrapper,vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
@@ -475,24 +475,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
-        try:
-            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception:
-            vision_model = None
+        
 
         # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
         _SerializedRelationships.load_from_xml = load_from_xml_v2
         sections, tables = Docx()(filename, binary)
 
-        if vision_model:
-            figures_data = vision_figure_parser_figure_data_wrapper(sections)
-            try:
-                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-                boosted_figures = docx_vision_parser(callback=callback)
-                tables.extend(boosted_figures)
-            except Exception as e:
-                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        tables=vision_figure_parser_docx_wrapper(sections=sections,tbls=tables,callback=callback,**kwargs)
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
@@ -521,25 +510,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if layout_recognizer == "DeepDOC":
             pdf_parser = Pdf()
-
-            try:
-                vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-                callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
-            except Exception:
-                vision_model = None
-
-            if vision_model:
-                sections, tables, figures = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback, separate_tables_figures=True)
-                callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
-                try:
-                    pdf_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures, **kwargs)
-                    boosted_figures = pdf_vision_parser(callback=callback)
-                    tables.extend(boosted_figures)
-                except Exception as e:
-                    callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
-                    tables.extend(figures)
-            else:
-                sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+            sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+            tables=vision_figure_parser_pdf_wrapper(tbls=tables,callback=callback,**kwargs)
 
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")

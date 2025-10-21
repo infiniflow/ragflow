@@ -20,11 +20,14 @@ import re
 from io import BytesIO
 
 from deepdoc.parser.utils import get_text
+from rag.app import naive
 from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks
 from rag.nlp import rag_tokenizer
-from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
+from deepdoc.parser import PdfParser, PlainParser, HtmlParser
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
+from PIL import Image
 
 
 class Pdf(PdfParser):
@@ -81,13 +84,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     sections, tbls = [], []
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        doc_parser = DocxParser()
+        doc_parser = naive.Docx()
         # TODO: table of contents need to be removed
         sections, tbls = doc_parser(
-            binary if binary else filename, from_page=from_page, to_page=to_page)
+            filename, binary=binary, from_page=from_page, to_page=to_page)
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
-        tbls = [((None, lns), None) for lns in tbls]
+        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
+        # tbls = [((None, lns), None) for lns in tbls]
+        sections=[(item[0],item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], Image.Image)]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -96,6 +101,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
+        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
 
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
