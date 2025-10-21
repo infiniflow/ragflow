@@ -63,7 +63,7 @@ export function MetadataFilterConditions({
               <Plus />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent>
+          <DropdownMenuContent className="max-h-[300px] !overflow-y-auto scrollbar-auto">
             {Object.keys(metadata.data).map((key, idx) => {
               return (
                 <DropdownMenuItem key={idx} onClick={add(key)}>

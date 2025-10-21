@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://demo.ragflow.io/">
-<img src="web/src/assets/logo-with-text.png" width="520" alt="Logo ragflow">
+<img src="web/src/assets/logo-with-text.svg" width="520" alt="Logo ragflow">
 </a>
 </div>
 
@@ -22,7 +22,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.5">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -80,8 +80,8 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-10-15 Dukungan untuk jalur data yang terorkestrasi.
 - 2025-08-08 Mendukung model seri GPT-5 terbaru dari OpenAI.
-- 2025-08-04 Mendukung model baru, termasuk Kimi K2 dan Grok 4.
 - 2025-08-01 Mendukung alur kerja agen dan MCP.
 - 2025-05-23 Menambahkan komponen pelaksana kode Python/JS ke Agen.
 - 2025-05-05 Mendukung kueri lintas bahasa.
@@ -129,7 +129,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 ## 🔎 Arsitektur Sistem
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/d6ac5664-c237-4200-a7c2-a4a00691b485" width="1000"/>
+<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 Mulai
@@ -181,7 +181,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.20.5-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.20.5-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.5 untuk edisi lengkap v0.20.5.
+> Perintah di bawah ini mengunduh edisi v0.21.0-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.21.0-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.0 untuk edisi lengkap v0.21.0.
 
 ```bash
 $ cd ragflow/docker
@@ -194,8 +194,8 @@ $ docker compose -f docker-compose.yml up -d
 
 | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
 | ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.20.5           | &approx;9       | :heavy_check_mark:    | Stable release           |
-| v0.20.5-slim      | &approx;2       | ❌                    | Stable release           |
+| v0.21.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+| v0.21.0-slim      | &approx;2       | ❌                    | Stable release           |
 | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
 | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 

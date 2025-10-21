@@ -19,6 +19,7 @@ interface IProps {
   data: { value: IDslComponent; key: string };
   reRunLoading: boolean;
   clickChunk: (chunk: IChunk) => void;
+  summaryInfo: string;
   reRunFunc: (data: { value: IDslComponent; key: string }) => void;
 }
 const ParserContainer = (props: IProps) => {
@@ -31,6 +32,7 @@ const ParserContainer = (props: IProps) => {
     reRunLoading,
     clickChunk,
     isReadonly,
+    summaryInfo,
   } = props;
   const { t } = useTranslation();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
@@ -38,14 +40,20 @@ const ParserContainer = (props: IProps) => {
   const initialValue = useMemo(() => {
     const outputs = data?.value?.obj?.params?.outputs;
     const key = outputs?.output_format?.value;
-    if (!outputs || !key) return { key: '', type: '', value: [] };
-    const value = outputs[key]?.value;
-    const type = outputs[key]?.type;
+    if (!outputs || !key)
+      return {
+        key: '' as 'text' | 'html' | 'json' | 'chunks',
+        type: '',
+        value: [],
+      };
+    const value = outputs[key as keyof typeof outputs]?.value;
+    const type = outputs[key as keyof typeof outputs]?.type;
     console.log('outputs-->', outputs, data, key, value);
     return {
-      key,
+      key: key as 'text' | 'html' | 'json' | 'chunks',
       type,
       value,
+      params: data?.value?.obj?.params,
     };
   }, [data]);
 
@@ -92,7 +100,7 @@ const ParserContainer = (props: IProps) => {
   const handleRemoveChunk = useCallback(async () => {
     if (selectedChunkIds.length > 0) {
       initialText.value = initialText.value.filter(
-        (item: any, index: number) => !selectedChunkIds.includes(index + ''),
+        (_item: any, index: number) => !selectedChunkIds.includes(index + ''),
       );
       setIsChange(true);
       setSelectedChunkIds([]);
@@ -115,7 +123,7 @@ const ParserContainer = (props: IProps) => {
   const selectAllChunk = useCallback(
     (checked: boolean) => {
       setSelectedChunkIds(
-        checked ? initialText.value.map((x, index: number) => index) : [],
+        checked ? initialText.value.map((_x: any, index: number) => index) : [],
       );
     },
     [initialText.value],
@@ -130,7 +138,7 @@ const ParserContainer = (props: IProps) => {
       const newText = [...initialText.value, { text: text || ' ' }];
       setInitialText({
         ...initialText,
-        value: newText,
+        value: newText as any,
       });
     },
     [initialText],
@@ -156,15 +164,16 @@ const ParserContainer = (props: IProps) => {
                 {t('dataflowParser.parseSummary')}
               </h2>
               <div className="text-[12px] text-text-secondary italic ">
-                {t('dataflowParser.parseSummaryTip')}
+                {/* {t('dataflowParser.parseSummaryTip')} */}
+                {summaryInfo}
               </div>
             </div>
           )}
           {isChunck && (
             <div>
-              <h2 className="text-[16px]">{t('chunk.chunkResult')}</h2>
+              <h2 className="text-[16px]">{t('dataflowParser.result')}</h2>
               <div className="text-[12px] text-text-secondary italic">
-                {t('chunk.chunkResultTip')}
+                {/* {t('chunk.chunkResultTip')} */}
               </div>
             </div>
           )}
@@ -190,7 +199,7 @@ const ParserContainer = (props: IProps) => {
 
         <div
           className={cn(
-            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-none',
+            ' border rounded-lg p-[20px] box-border w-[calc(100%-20px)] overflow-auto scrollbar-auto',
             {
               'h-[calc(100vh-240px)]': isChunck,
               'h-[calc(100vh-180px)]': !isChunck,

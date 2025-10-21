@@ -166,7 +166,7 @@ class HierarchicalMerger(ProcessBase):
                 img = None
                 for i in path:
                     txt += lines[i] + "\n"
-                    concat_img(img, id2image(section_images[i], partial(STORAGE_IMPL.get)))
+                    concat_img(img, id2image(section_images[i], partial(STORAGE_IMPL.get, tenant_id=self._canvas._tenant_id)))
                 cks.append(txt)
                 images.append(img)
 
@@ -180,7 +180,7 @@ class HierarchicalMerger(ProcessBase):
             ]
             async with trio.open_nursery() as nursery:
                 for d in cks:
-                    nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put), get_uuid())
+                    nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
             self.set_output("chunks", cks)
 
         self.callback(1, "Done.")

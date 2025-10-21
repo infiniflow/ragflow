@@ -14,6 +14,12 @@ const sizeClasses = {
   large: 'w-8 h-8',
 };
 
+const minSizeClasses = {
+  small: 'min-w-4 min-h-4',
+  default: 'min-w-6 min-h-6',
+  large: 'min-w-8 min-h-8',
+};
+
 export const Spin: React.FC<SpinProps> = ({
   spinning = true,
   size = 'default',
@@ -32,7 +38,12 @@ export const Spin: React.FC<SpinProps> = ({
       )}
     >
       {spinning && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-text-primary/30 ">
+        <div
+          className={cn(
+            'absolute inset-0 z-10 flex items-center justify-center bg-text-primary/30',
+            minSizeClasses[size],
+          )}
+        >
           <div
             className={cn(
               'rounded-full border-muted-foreground border-2 border-t-transparent animate-spin',

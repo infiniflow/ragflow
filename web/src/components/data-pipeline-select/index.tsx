@@ -108,6 +108,7 @@ export function DataFlowSelect(props: IProps) {
                         {...field}
                         placeholder={t('dataFlowPlaceholder')}
                         options={options}
+                        triggerClassName="!bg-bg-base"
                       />
                     )}
                     {isMult && (

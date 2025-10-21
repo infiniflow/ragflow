@@ -14,6 +14,7 @@ import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
   CategorizeAnchorPointPositions,
+  NoCopyOperatorsList,
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
@@ -158,6 +159,13 @@ export function hasSubAgentOrTool(edges: Edge[], nodeId?: string) {
       x.source === nodeId &&
       (x.sourceHandle === NodeHandleId.Tool ||
         x.sourceHandle === NodeHandleId.AgentBottom),
+  );
+  return !!edge;
+}
+
+export function hasSubAgent(edges: Edge[], nodeId?: string) {
+  const edge = edges.find(
+    (x) => x.source === nodeId && x.sourceHandle === NodeHandleId.AgentBottom,
   );
   return !!edge;
 }
@@ -396,6 +404,10 @@ export const needsSingleStepDebugging = (label: string) => {
   return !NoDebugOperatorsList.some((x) => (label as Operator) === x);
 };
 
+export function showCopyIcon(label: string) {
+  return !NoCopyOperatorsList.some((x) => (label as Operator) === x);
+}
+
 // Get the coordinates of the node relative to the Iteration node
 export function getRelativePositionToIterationNode(
   nodes: RAGFlowNodeType[],
@@ -457,7 +469,9 @@ export function convertToStringArray(
   return list.map((x) => x.value);
 }
 
-export function convertToObjectArray(list: Array<string | number | boolean>) {
+export function convertToObjectArray<T extends string | number | boolean>(
+  list: Array<T>,
+) {
   if (!Array.isArray(list)) {
     return [];
   }
@@ -481,7 +495,7 @@ export const buildCategorizeListFromObject = (
   // Categorize's to field has two data sources, with edges as the data source.
   // Changes in the edge or to field need to be synchronized to the form field.
   return Object.keys(categorizeItem)
-    .reduce<Array<ICategorizeItem>>((pre, cur) => {
+    .reduce<Array<Omit<ICategorizeItem, 'uuid'>>>((pre, cur) => {
       // synchronize edge data to the to field
 
       pre.push({

@@ -147,10 +147,12 @@ function ParserItem({
         )}
       </RAGFlowFormItem>
       <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
-      <OutputFormatFormField
-        prefix={prefix}
-        fileType={fileFormat as FileType}
-      />
+      <div className="hidden">
+        <OutputFormatFormField
+          prefix={prefix}
+          fileType={fileFormat as FileType}
+        />
+      </div>
       {index < fieldLength - 1 && <Separator />}
     </section>
   );

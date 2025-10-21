@@ -161,6 +161,7 @@ export function Header() {
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}
+            isPerson
             className="size-8 cursor-pointer"
             onClick={navigateToOldProfile}
           ></RAGFlowAvatar>

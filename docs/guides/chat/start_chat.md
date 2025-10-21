@@ -19,7 +19,7 @@ You start an AI conversation by creating an assistant.
 
    > RAGFlow offers you the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
-2. Update **Assistant settings**:
+2. Update Assistant-specific settings:
 
    - **Assistant name** is the name of your chat assistant. Each assistant corresponds to a dialogue with a unique combination of datasets, prompts, hybrid search configurations, and large model settings.
    - **Empty response**:
@@ -28,12 +28,12 @@ You start an AI conversation by creating an assistant.
    - **Show quote**: This is a key feature of RAGFlow and enabled by default. RAGFlow does not work like a black box. Instead, it clearly shows the sources of information that its responses are based on.
    - Select the corresponding datasets. You can select one or multiple datasets, but ensure that they use the same embedding model, otherwise an error would occur.
 
-3. Update **Prompt engine**:
+3. Update Prompt-specific settings:
 
    - In **System**, you fill in the prompts for your LLM, you can also leave the default prompt as-is for the beginning.
    - **Similarity threshold** sets the similarity "bar" for each chunk of text. The default is 0.2. Text chunks with lower similarity scores are filtered out of the final response.
-   - **Keyword similarity weight** is set to 0.7 by default. RAGFlow uses a hybrid score system to evaluate the relevance of different text chunks. This value sets the weight assigned to the keyword similarity component in the hybrid score.
-     - If **Rerank model** is left empty, the hybrid score system uses keyword similarity and vector similarity, and the default weight assigned to the vector similarity component is 1-0.7=0.3.
+   - **Vector similarity weight** is set to 0.3 by default. RAGFlow uses a hybrid score system to evaluate the relevance of different text chunks. This value sets the weight assigned to the vector similarity component in the hybrid score.
+     - If **Rerank model** is left empty, the hybrid score system uses keyword similarity and vector similarity, and the default weight assigned to the keyword similarity component is 1-0.3=0.7.
      - If **Rerank model** is selected, the hybrid score system uses keyword similarity and reranker score, and the default weight assigned to the reranker score is 1-0.7=0.3.
    - **Top N** determines the *maximum* number of chunks to feed to the LLM. In other words, even if more chunks are retrieved, only the top N chunks are provided as input.
    - **Multi-turn optimization** enhances user queries using existing context in a multi-round conversation. It is enabled by default. When enabled, it will consume additional LLM tokens and significantly increase the time to generate answers.
@@ -48,14 +48,14 @@ You start an AI conversation by creating an assistant.
      - If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
    - **Variable** refers to the variables (keys) to be used in the system prompt. `{knowledge}` is a reserved variable. Click **Add** to add more variables for the system prompt.
       - If you are uncertain about the logic behind **Variable**, leave it *as-is*.
-      - As of v0.20.5, if you add custom variables here, the only way you can pass in their values is to call:
+      - As of v0.21.0, if you add custom variables here, the only way you can pass in their values is to call:
          - HTTP method [Converse with chat assistant](../../references/http_api_reference.md#converse-with-chat-assistant), or
          - Python method [Converse with chat assistant](../../references/python_api_reference.md#converse-with-chat-assistant).
 
-4. Update **Model Setting**:
+4. Update Model-specific Settings:
 
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue.
-   - **Freedom**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+   - **Creavity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
    This parameter has three options:
       - **Improvise**: Produces more creative responses.
       - **Precise**: (Default) Produces more conservative responses.

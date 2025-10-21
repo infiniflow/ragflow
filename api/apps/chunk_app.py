@@ -60,7 +60,7 @@ def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = settings.retriever.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
+        sres = settings.retriever.search(query, search.index_name(tenant_id), kb_ids, highlight=["content_ltks"])
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -350,7 +350,8 @@ def retrieval_test():
                                float(req.get("similarity_threshold", 0.0)),
                                float(req.get("vector_similarity_weight", 0.3)),
                                top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+                               doc_ids, rerank_mdl=rerank_mdl,
+                                             highlight=req.get("highlight", False),
                                rank_feature=labels
                                )
         if use_kg:

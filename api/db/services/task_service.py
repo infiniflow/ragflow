@@ -351,7 +351,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             "progress": 0.0,
             "from_page": 0,
             "to_page": 100000000,
-            "begin_at": datetime.now(),
+            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     parse_task_array = []
@@ -503,7 +503,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
         to_page=100000000,
         task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
-        begin_at=datetime.now(),
+        begin_at= datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
     if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
         TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()

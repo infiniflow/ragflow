@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import math
+import os
 from collections import OrderedDict
 from dataclasses import dataclass
 
@@ -71,7 +72,7 @@ class Dealer:
     def search(self, req, idx_names: str | list[str],
                kb_ids: list[str],
                emb_mdl=None,
-               highlight=False,
+               highlight: bool | list = False,
                rank_feature: dict | None = None
                ):
         filters = self.get_filters(req)
@@ -100,7 +101,11 @@ class Dealer:
             total = self.dataStore.getTotal(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
-            highlightFields = ["content_ltks", "title_tks"] if highlight else []
+            highlightFields = ["content_ltks", "title_tks"]
+            if not highlight:
+                highlightFields = []
+            elif isinstance(highlight, list):
+                highlightFields = highlight
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
             if emb_mdl is None:
                 matchExprs = [matchText]
@@ -154,7 +159,7 @@ class Dealer:
             query_vector=q_vec,
             aggregation=aggs,
             highlight=highlight,
-            field=self.dataStore.getFields(res, src),
+            field=self.dataStore.getFields(res, src + ["_score"]),
             keywords=keywords
         )
 
@@ -354,10 +359,8 @@ class Dealer:
         if not question:
             return ranks
 
-        RERANK_LIMIT = 64
-        RERANK_LIMIT = int(RERANK_LIMIT//page_size + ((RERANK_LIMIT%page_size)/(page_size*1.) + 0.5)) * page_size if page_size>1 else 1
-        if RERANK_LIMIT < 1: ## when page_size is very large the RERANK_LIMIT will be 0.
-            RERANK_LIMIT = 1
+        # Ensure RERANK_LIMIT is multiple of page_size
+        RERANK_LIMIT = math.ceil(64/page_size) * page_size if page_size>1 else 1
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RERANK_LIMIT), "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
@@ -376,15 +379,25 @@ class Dealer:
                                                    vector_similarity_weight,
                                                    rank_feature=rank_feature)
         else:
-            sim, tsim, vsim = self.rerank(
-                sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
-                rank_feature=rank_feature)
+            lower_case_doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+            if lower_case_doc_engine == "elasticsearch":
+                # ElasticSearch doesn't normalize each way score before fusion.
+                sim, tsim, vsim = self.rerank(
+                    sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
+                    rank_feature=rank_feature)
+            else:
+                # Don't need rerank here since Infinity normalizes each way score before fusion.
+                sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                tsim = sim
+                vsim = sim
         # Already paginated in search function
-        idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+        begin = ((page % (RERANK_LIMIT//page_size)) - 1) * page_size
+        sim = sim[begin : begin + page_size]
+        sim_np = np.array(sim)
+        idx = np.argsort(sim_np * -1)
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
-        sim_np = np.array(sim)
         filtered_count = (sim_np >= similarity_threshold).sum()
         ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:

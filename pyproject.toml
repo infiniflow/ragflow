@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.20.5"
+version = "0.21.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -44,9 +44,9 @@ dependencies = [
     "groq==0.9.0",
     "hanziconv==0.3.2",
     "html-text==0.6.2",
-    "httpx[socks]==0.27.2",
+    "httpx[socks]>=0.28.1,<0.29.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.0.dev7",
+    "infinity-sdk==0.6.0",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
@@ -56,7 +56,7 @@ dependencies = [
     "mistralai==0.4.2",
     "nltk==3.9.1",
     "numpy>=1.26.0,<2.0.0",
-    "ollama==0.2.1",
+    "ollama>=0.5.0",
     "onnxruntime==1.19.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",
     "onnxruntime-gpu==1.19.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",
     "openai>=1.45.0",
@@ -102,7 +102,8 @@ dependencies = [
     "tika==2.6.0",
     "tiktoken==0.7.0",
     "umap_learn==0.5.6",
-    "vertexai==1.64.0",
+    "vertexai==1.70.0",
+    "google-genai>=1.41.0,<2.0.0",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
     "webdriver-manager==4.0.1",
@@ -113,7 +114,7 @@ dependencies = [
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
-    "google-generativeai>=0.8.1,<0.9.0",
+    "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "python-docx>=1.1.2,<2.0.0",
     "pypdf2>=3.0.1,<4.0.0",
     "graspologic>=3.4.1,<4.0.0",
@@ -135,6 +136,7 @@ dependencies = [
     "lark>=1.2.2",
     "mammoth>=1.11.0",
     "markdownify>=1.2.0",
+    "captcha>=0.7.1",
 ]
 
 [project.optional-dependencies]

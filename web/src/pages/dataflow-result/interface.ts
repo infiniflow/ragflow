@@ -1,6 +1,6 @@
 import { PipelineResultSearchParams } from './constant';
 
-interface ComponentParams {
+export interface ComponentParams {
   debug_inputs: Record<string, any>;
   delay_after_error: number;
   description: string;
@@ -8,6 +8,7 @@ interface ComponentParams {
   exception_goto: any;
   exception_method: any;
   inputs: Record<string, any>;
+  field_name: string;
   max_retries: number;
   message_history_window_size: number;
   outputs: {
@@ -30,6 +31,66 @@ export interface IDslComponent {
   obj: ComponentObject;
   upstream: Array<string>;
 }
+
+interface NodeData {
+  label: string;
+  name: string;
+  form?: {
+    outputs?: Record<
+      string,
+      {
+        type: string;
+        value: string | Array<Record<string, any>> | number;
+      }
+    >;
+    setups?: Array<Record<string, any>>;
+    chunk_token_size?: number;
+    delimiters?: Array<{
+      value: string;
+    }>;
+    overlapped_percent?: number;
+  };
+}
+
+interface EdgeData {
+  isHovered: boolean;
+}
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface Measured {
+  height: number;
+  width: number;
+}
+
+interface Node {
+  data: NodeData;
+  dragging: boolean;
+  id: string;
+  measured: Measured;
+  position: Position;
+  selected: boolean;
+  sourcePosition: string;
+  targetPosition: string;
+  type: string;
+}
+
+interface Edge {
+  data: EdgeData;
+  id: string;
+  source: string;
+  sourceHandle: string;
+  target: string;
+  targetHandle: string;
+}
+interface GraphData {
+  edges: Edge[];
+  nodes: Node[];
+}
+
 export interface IPipelineFileLogDetail {
   avatar: string;
   create_date: string;
@@ -42,6 +103,7 @@ export interface IPipelineFileLogDetail {
     components: {
       [key: string]: IDslComponent;
     };
+    graph: GraphData;
     task_id: string;
     path: Array<string>;
   };
@@ -64,8 +126,17 @@ export interface IPipelineFileLogDetail {
 }
 
 export interface IChunk {
+  available_int?: number; // Whether to enable, 0: not enabled, 1: enabled
+  chunk_id?: string;
+  content_with_weight?: string;
+  doc_id?: string;
+  doc_name?: string;
+  image_id?: string;
+  important_kwd?: string[];
+  question_kwd?: string[]; // keywords
+  tag_kwd?: string[];
   positions: number[][];
-  image_id: string;
+  tag_feas?: Record<string, number>;
   text: string;
 }
 

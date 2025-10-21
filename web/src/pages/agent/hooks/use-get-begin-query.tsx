@@ -27,13 +27,16 @@ export function useSelectBeginNodeDataInputs() {
   );
 }
 
-export function useIsTaskMode() {
+export function useIsTaskMode(isTask?: boolean) {
   const getNode = useGraphStore((state) => state.getNode);
 
   return useMemo(() => {
+    if (typeof isTask === 'boolean') {
+      return isTask;
+    }
     const node = getNode(BeginId);
     return node?.data?.form?.mode === AgentDialogueMode.Task;
-  }, [getNode]);
+  }, [getNode, isTask]);
 }
 
 export const useGetBeginNodeDataQuery = () => {

@@ -51,7 +51,7 @@ from rag.utils.redis_conn import REDIS_CONN
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
 def templates():
-    return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.query(canvas_category=CanvasCategory.Agent)])
+    return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821

@@ -44,7 +44,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.20.5 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.21.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -184,13 +184,13 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.20.5
+   $ git checkout -f v0.21.0
    ```
 
 3. Use the pre-built Docker images and start up the server:
 
    :::tip NOTE
-   The command below downloads the `v0.20.5-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.20.5-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.5` for the full edition `v0.20.5`.
+   The command below downloads the `v0.21.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.21.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.0` for the full edition `v0.21.0`.
    :::
 
    ```bash
@@ -207,8 +207,8 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 | RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.20.5`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.20.5-slim`      | &approx;2       | ❌                                        | Stable release           |
+| `v0.21.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
+| `v0.21.0-slim`      | &approx;2       | ❌                                        | Stable release           |
 | `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
 | `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
 
@@ -217,7 +217,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 ```
 
 :::danger IMPORTANT
-The embedding models included in `v0.20.5` and `nightly` are:
+The embedding models included in `v0.21.0` and `nightly` are:
 
 - BAAI/bge-large-zh-v1.5
 - maidalun1020/bce-embedding-base_v1
@@ -343,19 +343,20 @@ You can add keywords or questions to a file chunk to improve its ranking for que
 
 Conversations in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset and finished file parsing, you can go ahead and start an AI conversation.
 
-1. Click the **Chat** tab in the middle top of the mage **>** **Create an assistant** to show the **Chat Configuration** dialogue *of your next dialogue*.
+1. Click the **Chat** tab in the middle top of the page **>** **Create chat** to create a chat assistant.
+2. Click the created chat app to enter its configuration page.
    > RAGFlow offer the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
-2. Update **Assistant settings**:
+2. Update **Chat setting** on the right of the configuration page:
 
    - Name your assistant and specify your datasets.
    - **Empty response**:
      - If you wish to *confine* RAGFlow's answers to your datasets, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
      - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your datasets, leave it blank, which may give rise to hallucinations.
 
-3. Update **Prompt engine** or leave it as is for the beginning.
+3. Update **System prompt** or leave it as is for the beginning.
 
-4. Update **Model settings**.
+4. Select a chat model in the **Model** dropdown list.
 
 5. Now, let's start the show:
 

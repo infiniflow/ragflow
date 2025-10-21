@@ -77,7 +77,7 @@ services:
     container_name: ragflow-infinity
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.0-dev7
+    image: infiniflow/infinity:v0.6.0
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -207,6 +207,30 @@ services:
       start_period: 10s    
 
 
+  kibana:
+    container_name: ragflow-kibana
+    profiles:
+      - kibana
+    image: kibana:${STACK_VERSION}
+    ports:
+      - ${KIBANA_PORT-5601}:5601
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+    volumes:
+      - kibana_data:/usr/share/kibana/data
+    depends_on:
+      es01:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: on-failure
+
 
 volumes:
   esdata01:
@@ -220,6 +244,8 @@ volumes:
   minio_data:
     driver: local
   redis_data:
+    driver: local
+  kibana_data:
     driver: local
 
 networks:

@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://demo.ragflow.io/">
-<img src="web/src/assets/logo-with-text.png" width="350" alt="ragflow logo">
+<img src="web/src/assets/logo-with-text.svg" width="350" alt="ragflow logo">
 </a>
 </div>
 
@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.5">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -83,8 +83,8 @@
 
 ## 🔥 近期更新
 
+- 2025-10-15 支援可編排的資料管道。
 - 2025-08-08 支援 OpenAI 最新的 GPT-5 系列模型。
-- 2025-08-04 支援 Kimi K2 和 Grok 4 等模型.
 - 2025-08-01 支援 agentic workflow 和 MCP
 - 2025-05-23 為 Agent 新增 Python/JS 程式碼執行器元件。
 - 2025-05-05 支援跨語言查詢。
@@ -132,7 +132,7 @@
 ## 🔎 系統架構
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/d6ac5664-c237-4200-a7c2-a4a00691b485" width="1000"/>
+<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 快速開始
@@ -183,7 +183,7 @@
 > 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
 > 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
 
-   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.20.5-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.20.5-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.5` 來下載 RAGFlow 鏡像的 `v0.20.5` 完整發行版。
+   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.21.0-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.21.0-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.0` 來下載 RAGFlow 鏡像的 `v0.21.0` 完整發行版。
 
    ```bash
    $ cd ragflow/docker
@@ -196,8 +196,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.20.5           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.20.5-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.21.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.21.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 

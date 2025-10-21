@@ -2,7 +2,6 @@ import {
   AutoKeywordsFormField,
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
-import { TagItems } from '../components/tag-item';
 import { ConfigurationFormContainer } from '../configuration-form-container';
 
 export function EmailConfiguration() {
@@ -12,7 +11,7 @@ export function EmailConfiguration() {
         <AutoKeywordsFormField></AutoKeywordsFormField>
         <AutoQuestionsFormField></AutoQuestionsFormField>
       </>
-      <TagItems></TagItems>
+      {/* <TagItems></TagItems> */}
     </ConfigurationFormContainer>
   );
 }

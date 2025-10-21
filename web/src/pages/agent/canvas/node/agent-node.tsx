@@ -1,12 +1,14 @@
 import LLMLabel from '@/components/llm-select/llm-label';
 import { IAgentNode } from '@/interfaces/database/flow';
+import { cn } from '@/lib/utils';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentExceptionMethod, NodeHandleId } from '../../constant';
+import { AgentFormSchemaType } from '../../form/agent-form';
 import useGraphStore from '../../store';
-import { isBottomSubAgent } from '../../utils';
+import { hasSubAgent, isBottomSubAgent } from '../../utils';
 import { CommonHandle, LeftEndHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
@@ -18,7 +20,7 @@ function InnerAgentNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IAgentNode>) {
+}: NodeProps<IAgentNode<AgentFormSchemaType>>) {
   const edges = useGraphStore((state) => state.edges);
   const { t } = useTranslation();
 
@@ -28,6 +30,12 @@ function InnerAgentNode({
 
   const exceptionMethod = useMemo(() => {
     return get(data, 'form.exception_method');
+  }, [data]);
+
+  const hasTools = useMemo(() => {
+    const tools = get(data, 'form.tools', []);
+    const mcp = get(data, 'form.mcp', []);
+    return tools.length > 0 || mcp.length > 0;
   }, [data]);
 
   const isGotoMethod = useMemo(() => {
@@ -51,7 +59,6 @@ function InnerAgentNode({
             ></CommonHandle>
           </>
         )}
-
         {isHeadAgent || (
           <Handle
             type="target"
@@ -67,7 +74,9 @@ function InnerAgentNode({
           isConnectable={false}
           id={NodeHandleId.AgentBottom}
           style={{ left: 180 }}
-          className="!bg-accent-primary !size-2"
+          className={cn('!bg-accent-primary !size-2 invisible', {
+            visible: hasSubAgent(edges, id),
+          })}
         ></Handle>
         <Handle
           type="source"
@@ -75,7 +84,9 @@ function InnerAgentNode({
           isConnectable={false}
           id={NodeHandleId.Tool}
           style={{ left: 20 }}
-          className="!bg-accent-primary !size-2"
+          className={cn('!bg-accent-primary !size-2 invisible', {
+            visible: hasTools,
+          })}
         ></Handle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="flex flex-col gap-2">

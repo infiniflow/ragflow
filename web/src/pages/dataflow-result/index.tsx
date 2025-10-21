@@ -9,6 +9,7 @@ import {
   useGetPipelineResultSearchParams,
   useHandleChunkCardClick,
   useRerunDataflow,
+  useSummaryInfo,
   useTimelineDataFlow,
 } from './hooks';
 
@@ -61,7 +62,7 @@ const Chunk = () => {
   );
 
   const {
-    navigateToDataset,
+    navigateToDatasetOverview,
     navigateToDatasetList,
     navigateToAgents,
     navigateToDataflow,
@@ -150,7 +151,7 @@ const Chunk = () => {
       ({} as TimelineNode)
     );
   }, [activeStepId, timelineNodes]);
-
+  const { summaryInfo } = useSummaryInfo(dataset, currentTimeNode);
   return (
     <>
       <PageHeader>
@@ -175,7 +176,7 @@ const Chunk = () => {
               <BreadcrumbLink
                 onClick={() => {
                   if (knowledgeId) {
-                    navigateToDataset(knowledgeId)();
+                    navigateToDatasetOverview(knowledgeId)();
                   }
                   if (agentId) {
                     navigateToDataflow(agentId)();
@@ -220,7 +221,7 @@ const Chunk = () => {
               ></DocumentPreview>
             </section>
           </div>
-          <div className="h-dvh border-r -mt-3"></div>
+          <div className="h-[calc(100vh-100px)] border-r -mt-3"></div>
           <div className="w-3/5 h-full">
             {/* {currentTimeNode?.type === TimelineNodeType.splitter && (
               <ChunkerContainer
@@ -246,6 +247,7 @@ const Chunk = () => {
                     key: string;
                   }
                 }
+                summaryInfo={summaryInfo}
                 clickChunk={handleChunkCardClick}
                 reRunFunc={handleReRunFunc}
               />

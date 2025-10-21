@@ -16,6 +16,7 @@
 import base64
 import json
 import os
+import logging
 from abc import ABC
 from copy import deepcopy
 from io import BytesIO
@@ -38,6 +39,7 @@ class Base(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        self.extra_body = None
 
     def describe(self, image):
         raise NotImplementedError("Please implement encode method!")
@@ -77,7 +79,8 @@ class Base(ABC):
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=self._form_history(system, history, images)
+                messages=self._form_history(system, history, images),
+                extra_body=self.extra_body,
             )
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
@@ -90,7 +93,8 @@ class Base(ABC):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
-                stream=True
+                stream=True,
+                extra_body=self.extra_body,
             )
             for resp in response:
                 if not resp.choices[0].delta.content:
@@ -177,6 +181,7 @@ class GptV4(Base):
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.prompt(b64),
+            extra_body=self.extra_body,
         )
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
@@ -185,6 +190,7 @@ class GptV4(Base):
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.vision_llm_prompt(b64, prompt),
+            extra_body=self.extra_body,
         )
         return res.choices[0].message.content.strip(),total_token_count_from_response(res)
 
@@ -249,6 +255,17 @@ class StepFunCV(GptV4):
         self.lang = lang
         Base.__init__(self, **kwargs)
 
+class VolcEngineCV(GptV4):
+    _FACTORY_NAME = "VolcEngine"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
+        if not base_url:
+            base_url = "https://ark.cn-beijing.volces.com/api/v3"
+        ark_api_key = json.loads(key).get("ark_api_key", "")
+        self.client = OpenAI(api_key=ark_api_key, base_url=base_url)
+        self.model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+        self.lang = lang
+        Base.__init__(self, **kwargs)
 
 class LmStudioCV(GptV4):
     _FACTORY_NAME = "LM-Studio"
@@ -327,10 +344,27 @@ class OpenRouterCV(GptV4):
     ):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        api_key = json.loads(key).get("api_key", "")
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
+        provider_order = json.loads(key).get("provider_order", "")
+        self.extra_body = {}
+        if provider_order:
+            def _to_order_list(x):
+                if x is None:
+                    return []
+                if isinstance(x, str):
+                    return [s.strip() for s in x.split(",") if s.strip()]
+                if isinstance(x, (list, tuple)):
+                    return [str(s).strip() for s in x if str(s).strip()]
+                return []
+            provider_cfg = {}
+            provider_order = _to_order_list(provider_order)
+            provider_cfg["order"] = provider_order
+            provider_cfg["allow_fallbacks"] = False
+            self.extra_body["provider"] = provider_cfg
 
 
 class LocalAICV(GptV4):
@@ -496,6 +530,7 @@ class GeminiCV(Base):
 
         client.configure(api_key=key)
         _client = client.get_default_generative_client()
+        self.api_key=key
         self.model_name = model_name
         self.model = GenerativeModel(model_name=self.model_name)
         self.model._client = _client
@@ -538,7 +573,15 @@ class GeminiCV(Base):
                 res = self.model.generate_content(input)
                 return res.text, total_token_count_from_response(res)
 
-    def chat(self, system, history, gen_conf, images=[]):
+
+    def chat(self, system, history, gen_conf, images=[], video_bytes=None, filename=""):
+        if video_bytes:
+            try:
+                summary, summary_num_tokens = self._process_video(video_bytes, filename)
+                return summary, summary_num_tokens
+            except Exception as e:
+                return "**ERROR**: " + str(e), 0
+
         generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
         try:
             response = self.model.generate_content(
@@ -569,6 +612,48 @@ class GeminiCV(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_token_count_from_response(response)
+
+    def _process_video(self, video_bytes, filename):
+        from google import genai
+        from google.genai import types
+        import tempfile
+        from pathlib import Path
+
+        video_size_mb = len(video_bytes) / (1024 * 1024)
+        client = genai.Client(api_key=self.api_key)
+
+        tmp_path = None
+        try:
+            if video_size_mb <= 20:
+                response = client.models.generate_content(
+                    model="models/gemini-2.5-flash",
+                    contents=types.Content(parts=[
+                        types.Part(inline_data=types.Blob(data=video_bytes, mime_type="video/mp4")),
+                        types.Part(text="Please summarize the video in proper sentences.")
+                    ])
+                )
+            else:
+                logging.info(f"Video size {video_size_mb:.2f}MB exceeds 20MB. Using Files API...")
+                video_suffix = Path(filename).suffix or ".mp4"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
+                    tmp.write(video_bytes)
+                    tmp_path = Path(tmp.name)
+                uploaded_file = client.files.upload(file=tmp_path)
+
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[uploaded_file, "Please summarize this video in proper sentences."]
+                )
+
+            summary = response.text or ""
+            logging.info(f"Video summarized: {summary[:32]}...")
+            return summary, num_tokens_from_string(summary)
+        except Exception as e:
+            logging.error(f"Video processing failed: {e}")
+            raise
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
 
 class NvidiaCV(Base):

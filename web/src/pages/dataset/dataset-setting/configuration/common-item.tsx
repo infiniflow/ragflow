@@ -7,7 +7,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
@@ -46,7 +45,7 @@ export function ChunkMethodItem(props: IProps) {
             </FormLabel>
             <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
               <FormControl>
-                <RAGFlowSelect
+                <SelectWithSearch
                   {...field}
                   options={parserList}
                   placeholder={t('chunkMethodPlaceholder')}
@@ -100,6 +99,7 @@ export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
                     options={embeddingModelOptions}
                     disabled={isEdit ? disabled : false}
                     placeholder={t('embeddingModelPlaceholder')}
+                    triggerClassName="!bg-bg-base"
                   />
                 </FormControl>
               </div>

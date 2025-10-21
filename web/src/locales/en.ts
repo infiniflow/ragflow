@@ -115,7 +115,7 @@ export default {
       generateKnowledgeGraph:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
-        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+        'Performs recursive clustering and summarization of document chunks to build a hierarchical tree structure, enabling more context-aware retrieval across lengthy documents.',
       generate: 'Generate',
       raptor: 'RAPTOR',
       processingType: 'Processing Type',
@@ -300,8 +300,8 @@ export default {
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Parse Type',
-      manualSetup: 'Manual Setup',
+      parseType: 'Ingestion pipeline',
+      manualSetup: 'Choose pipeline',
       builtIn: 'Built-in',
       titleDescription:
         'Update your knowledge base configuration here, particularly the chunking method.',
@@ -477,8 +477,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       useGraphRagTip:
         'Construct a knowledge graph over file chunks of the current knowledge base to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
       graphRagMethod: 'Method',
-      graphRagMethodTip: `Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
-        General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      graphRagMethodTip: `
+      Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports',
@@ -954,6 +955,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       marketing: 'Marketing',
       consumerApp: 'Consumer App',
       other: 'Other',
+      ingestionPipeline: 'Ingestion Pipeline',
       agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
@@ -1672,6 +1674,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       page: '{{page}} /Page',
     },
     dataflowParser: {
+      result: 'Result',
       parseSummary: 'Parse Summary',
       parseSummaryTip: 'Parser：deepdoc',
       rerunFromCurrentStep: 'Rerun From Current Step',
@@ -1736,10 +1739,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       addParser: 'Add Parser',
       hierarchy: 'Hierarchy',
       regularExpressions: 'Regular Expressions',
-      overlappedPercent: 'Overlapped percent',
+      overlappedPercent: 'Overlapped percent (%)',
       searchMethod: 'Search method',
       searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
-The Tokenizer will store the content in the corresponding data structures for the selected methods.`,
+The Indexer will store the content in the corresponding data structures for the selected methods.`,
       begin: 'File',
       parserMethod: 'Parsing method',
       systemPrompt: 'System Prompt',
@@ -1748,11 +1751,11 @@ The Tokenizer will store the content in the corresponding data structures for th
       exportJson: 'Export JSON',
       viewResult: 'View result',
       running: 'Running',
-      summary: 'Augmented Context',
+      summary: 'Summary',
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      fieldName: 'Result Destination',
+      fieldName: 'Result destination',
       prompts: {
         system: {
           keywords: `Role
@@ -1817,10 +1820,13 @@ Important structured information may include: names, dates, locations, events, k
       imageParseMethodOptions: {
         ocr: 'OCR',
       },
+      note: 'Note',
+      noteDescription: 'Note',
+      notePlaceholder: 'Please enter a note',
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',
-      processingTip: 'Files being processed by data pipelines.',
+      processingTip: 'Files being processed by Ingestion pipeline.',
       totalFiles: 'Total Files',
       downloading: 'Downloading',
       downloadSuccessTip: 'Total successful downloads',

@@ -1,6 +1,6 @@
 import { CheckedState } from '@radix-ui/react-checkbox';
 import { ChunkTextMode } from '../../constant';
-import { IChunk } from '../../interface';
+import { ComponentParams, IChunk } from '../../interface';
 import { parserKeyMap } from './json-parser';
 
 export interface FormatPreserveEditorProps {
@@ -8,6 +8,7 @@ export interface FormatPreserveEditorProps {
     key: keyof typeof parserKeyMap | 'text' | 'html';
     type: string;
     value: Array<{ [key: string]: string }>;
+    params: ComponentParams;
   };
   onSave: (value: any) => void;
   className?: string;
@@ -28,6 +29,7 @@ export type IJsonContainerProps = {
     value: {
       [key: string]: string;
     }[];
+    params: ComponentParams;
   };
   isChunck?: boolean;
   handleCheck: (e: CheckedState, index: number) => void;
@@ -52,6 +54,7 @@ export type IObjContainerProps = {
     key: string;
     type: string;
     value: string;
+    params: ComponentParams;
   };
   isChunck?: boolean;
   handleCheck: (e: CheckedState, index: number) => void;
