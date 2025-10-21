@@ -1533,8 +1533,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         'Your users will see this welcome message at the beginning.',
       modeTip: 'The mode defines how the workflow is initiated.',
       mode: 'Mode',
-      conversational: 'conversational',
-      task: 'task',
+      conversational: 'Conversational',
+      task: 'Task',
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
