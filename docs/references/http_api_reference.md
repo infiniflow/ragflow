@@ -1198,23 +1198,24 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
 
 Lists documents in a specified dataset.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
-##### Request example
+##### Request examples
 
+**A basic request with pagination:**
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page=1&page_size=10 \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -1236,10 +1237,34 @@ curl --request GET \
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
-- `create_time_from`: (*Filter parameter*), `integer`
+- `create_time_from`: (*Filter parameter*), `integer`  
   Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
-- `create_time_to`: (*Filter parameter*), `integer`
+- `create_time_to`: (*Filter parameter*), `integer`  
   Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
+- `suffix`: (*Filter parameter*), `array[string]`  
+  Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
+- `run`: (*Filter parameter*), `array[string]`  
+  Filter by document processing status. Supports numeric, text, and mixed formats:  
+  - Numeric format: `["0", "1", "2", "3", "4"]`
+  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
+  - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
+  - Status mapping:
+    - `0` / `UNSTART`: Document not yet processed
+    - `1` / `RUNNING`: Document is currently being processed
+    - `2` / `CANCEL`: Document processing was cancelled
+    - `3` / `DONE`: Document processing completed successfully
+    - `4` / `FAIL`: Document processing failed  
+  Defaults to all statuses.
+
+##### Usage examples
+
+**A request with multiple filtering parameters**
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&run=DONE&page=1&page_size=10' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
 
 #### Response
 
@@ -1270,7 +1295,7 @@ Success:
                 "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
-                "run": "0",
+                "run": "UNSTART",
                 "size": 7,
                 "source_type": "local",
                 "status": "1",
