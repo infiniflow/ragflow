@@ -32,25 +32,26 @@ import {
   Settings,
   Upload,
 } from 'lucide-react';
-import { ComponentPropsWithoutRef, useCallback, useState } from 'react';
+import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { Operator } from './constant';
-import { PipelineLogContext } from './context';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
 import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import { useIsPipeline } from './hooks/use-is-pipeline';
+import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { PipelineLogSheet } from './pipeline-log-sheet';
+import PipelineRunSheet from './pipeline-run-sheet';
 import { SettingDialog } from './setting-dialog';
 import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
@@ -111,6 +112,12 @@ export default function Agent() {
   // pipeline
 
   const {
+    visible: pipelineRunSheetVisible,
+    hideModal: hidePipelineRunSheet,
+    showModal: showPipelineRunSheet,
+  } = useSetModalState();
+
+  const {
     visible: pipelineLogSheetVisible,
     showModal: showPipelineLogSheet,
     hideModal: hidePipelineLogSheet,
@@ -126,8 +133,6 @@ export default function Agent() {
     isLogEmpty,
   } = useFetchPipelineLog(pipelineLogSheetVisible);
 
-  const [uploadedFileData, setUploadedFileData] =
-    useState<Record<string, any>>();
   const findNodeByName = useGraphStore((state) => state.findNodeByName);
 
   const handleRunPipeline = useCallback(() => {
@@ -141,14 +146,15 @@ export default function Agent() {
       showPipelineLogSheet();
     } else {
       hidePipelineLogSheet();
-      handleRun();
+      // handleRun();
+      showPipelineRunSheet();
     }
   }, [
     findNodeByName,
-    handleRun,
     hidePipelineLogSheet,
     isParsing,
     showPipelineLogSheet,
+    showPipelineRunSheet,
     t,
   ]);
 
@@ -157,13 +163,19 @@ export default function Agent() {
     stopFetchTrace,
   });
 
-  const run = useCallback(() => {
+  const handleButtonRunClick = useCallback(() => {
     if (isPipeline) {
       handleRunPipeline();
     } else {
       handleRunAgent();
     }
   }, [handleRunAgent, handleRunPipeline, isPipeline]);
+
+  const {
+    run: runPipeline,
+    loading: pipelineRunning,
+    uploadedFileData,
+  } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
   return (
     <section className="h-full">
@@ -194,7 +206,7 @@ export default function Agent() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button variant={'secondary'} onClick={run}>
+          <Button variant={'secondary'} onClick={handleButtonRunClick}>
             <CirclePlay />
             {t('flow.run')}
           </Button>
@@ -241,18 +253,14 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <PipelineLogContext.Provider
-        value={{ messageId, setMessageId, setUploadedFileData }}
-      >
-        <ReactFlowProvider>
-          <DropdownProvider>
-            <AgentCanvas
-              drawerVisible={chatDrawerVisible}
-              hideDrawer={hideChatDrawer}
-            ></AgentCanvas>
-          </DropdownProvider>
-        </ReactFlowProvider>
-      </PipelineLogContext.Provider>
+      <ReactFlowProvider>
+        <DropdownProvider>
+          <AgentCanvas
+            drawerVisible={chatDrawerVisible}
+            hideDrawer={hideChatDrawer}
+          ></AgentCanvas>
+        </DropdownProvider>
+      </ReactFlowProvider>
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}
@@ -283,6 +291,13 @@ export default function Agent() {
           messageId={messageId}
           uploadedFileData={uploadedFileData}
         ></PipelineLogSheet>
+      )}
+      {pipelineRunSheetVisible && (
+        <PipelineRunSheet
+          hideModal={hidePipelineRunSheet}
+          run={runPipeline}
+          loading={pipelineRunning}
+        ></PipelineRunSheet>
       )}
     </section>
   );
