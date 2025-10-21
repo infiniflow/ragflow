@@ -2,6 +2,10 @@ import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import {
+  MetadataFilter,
+  MetadataFilterSchema,
+} from '@/components/metadata-filter';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
@@ -41,6 +45,7 @@ export const RetrievalPartialSchema = {
   cross_languages: z.array(z.string()),
   use_kg: z.boolean(),
   toc_enhance: z.boolean(),
+  ...MetadataFilterSchema,
 };
 
 export const FormSchema = z.object({
@@ -118,6 +123,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
             <RerankFormFields></RerankFormFields>
+            <MetadataFilter></MetadataFilter>
             <EmptyResponseField></EmptyResponseField>
             <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
             <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
