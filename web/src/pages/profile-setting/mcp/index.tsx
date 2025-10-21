@@ -1,4 +1,5 @@
 import { BulkOperateBar } from '@/components/bulk-operate-bar';
+import { CardContainer } from '@/components/card-container';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
@@ -60,7 +61,7 @@ export default function McpServer() {
           className="mb-2.5"
         ></BulkOperateBar>
       )}
-      <section className="flex gap-5 flex-wrap">
+      <CardContainer>
         {data.mcp_servers.map((item) => (
           <McpCard
             key={item.id}
@@ -70,8 +71,8 @@ export default function McpServer() {
             showEditModal={showEditModal}
           ></McpCard>
         ))}
-      </section>
-      <div className="mt-8 px-8">
+      </CardContainer>
+      <div className="mt-8">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
           total={pagination.total || 0}

@@ -24,7 +24,6 @@ export function HomeCard({
 }: IProps) {
   return (
     <Card
-      className="bg-bg-card  border-colors-outline-neutral-standard"
       onClick={() => {
         // navigateToSearch(data?.id);
         onClick?.();

@@ -33,7 +33,7 @@ export function McpCard({
     }
   };
   return (
-    <Card key={data.id} className="w-64">
+    <Card key={data.id}>
       <CardContent className="p-2.5 pt-2 group">
         <section className="flex justify-between pb-2">
           <h3 className="text-lg font-semibold truncate flex-1">{data.name}</h3>

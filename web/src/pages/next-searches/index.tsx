@@ -1,3 +1,4 @@
+import { CardContainer } from '@/components/card-container';
 import { IconFont } from '@/components/icon-font';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
@@ -64,7 +65,7 @@ export default function SearchList() {
         </ListFilterBar>
       </div>
       <div className="flex-1">
-        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[calc(100dvh-280px)] overflow-auto px-8">
+        <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
           {list?.data.search_apps.map((x) => {
             return (
               <SearchCard
@@ -76,7 +77,7 @@ export default function SearchList() {
               ></SearchCard>
             );
           })}
-        </div>
+        </CardContainer>
       </div>
       {list?.data.total && list?.data.total > 0 && (
         <div className="px-8 mb-4">
