@@ -30,7 +30,7 @@ Specifies the heading level to define chunk boundaries:
 - H3 (Default)
 - H4
 
-Click **+ Add** to add heading levels here or update the corresponding **Regular Expressions** field for custom heading patterns.
+Click **+ Add** to add heading levels here or update the corresponding **Regular Expressions** fields for custom heading patterns.
 
 ### Output
 
