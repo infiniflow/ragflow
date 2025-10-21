@@ -98,7 +98,7 @@ export function RegularExpressions({
       </CardHeader>
       <CardContent>
         <FormLabel required className="mb-2 text-text-secondary">
-          {t('dataflow.regularExpressions')}
+          {t('flow.regularExpressions')}
         </FormLabel>
         <section className="space-y-4">
           {fields.map((field, index) => (
@@ -158,7 +158,7 @@ const HierarchicalMergerForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <RAGFlowFormItem name={'hierarchy'} label={t('dataflow.hierarchy')}>
+        <RAGFlowFormItem name={'hierarchy'} label={t('flow.hierarchy')}>
           <SelectWithSearch options={HierarchyOptions}></SelectWithSearch>
         </RAGFlowFormItem>
         {fields.map((field, index) => (

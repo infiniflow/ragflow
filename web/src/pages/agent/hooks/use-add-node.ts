@@ -128,8 +128,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Extractor]: {
         ...initialExtractorValues,
         llm_id: llmId,
-        sys_prompt: t('dataflow.prompts.system.summary'),
-        prompts: t('dataflow.prompts.user.summary'),
+        sys_prompt: t('flow.prompts.system.summary'),
+        prompts: t('flow.prompts.user.summary'),
       },
     };
   }, [llmId]);

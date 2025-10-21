@@ -459,12 +459,10 @@ def tree_merge(bull, sections, depth):
                 return len(BULLET_PATTERN[bull])+1, text
             else:
                 return len(BULLET_PATTERN[bull])+2, text
-    
     level_set = set()
     lines = []
     for section in sections:
         level, text = get_level(bull, section)
-
         if not text.strip("\n"):
             continue
             
@@ -797,8 +795,8 @@ class Node:
     def __init__(self, level, depth=-1, texts=None):
         self.level = level
         self.depth = depth
-        self.texts = texts if texts is not None else []  # 存放内容
-        self.children = []  # 子节点
+        self.texts = texts or []
+        self.children = [] 
 
     def add_child(self, child_node):
         self.children.append(child_node)
@@ -825,35 +823,51 @@ class Node:
         return f"Node(level={self.level}, texts={self.texts}, children={len(self.children)})"
 
     def build_tree(self, lines):
-        stack = [self]  
-        for line in lines:
-            level, text = line
-            node = Node(level=level, texts=[text])
-
-            if level <= self.depth or self.depth == -1:
-                while stack and level <= stack[-1].get_level():
-                    stack.pop()
-
-                stack[-1].add_child(node)
-                stack.append(node)
-            else:
+        stack = [self]
+        for level, text in lines:
+            if self.depth != -1 and level > self.depth:
+                # Beyond target depth: merge content into the current leaf instead of creating deeper nodes
                 stack[-1].add_text(text)
-        return self  
+                continue
+
+            # Move up until we find the proper parent whose level is strictly smaller than current
+            while len(stack) > 1 and level <= stack[-1].get_level():
+                stack.pop()
+
+            node = Node(level=level, texts=[text])
+            # Attach as child of current parent and descend
+            stack[-1].add_child(node)
+            stack.append(node)
+
+        return self
 
     def get_tree(self):
         tree_list = []  
-        self._dfs(self, tree_list, 0, [])
+        self._dfs(self, tree_list, [])
         return tree_list
 
-    def _dfs(self, node, tree_list, current_depth, titles):
+    def _dfs(self, node, tree_list, titles):
+        level = node.get_level()
+        texts = node.get_texts()
+        child = node.get_children()
 
-        if node.get_texts():
-            if 0 < node.get_level() < self.depth:
-                titles.extend(node.get_texts())
-            else:
-                combined_text = ["\n".join(titles + node.get_texts())]
-                tree_list.append(combined_text)
+        if level == 0 and texts:
+            tree_list.append("\n".join(titles+texts))
 
+        # Titles within configured depth are accumulated into the current path
+        if 1 <= level <= self.depth:
+            path_titles = titles + texts
+        else:
+            path_titles = titles
 
-        for child in node.get_children():
-            self._dfs(child, tree_list, current_depth + 1, titles.copy())
+        # Body outside the depth limit becomes its own chunk under the current title path
+        if level > self.depth and texts:
+            tree_list.append("\n".join(path_titles + texts))
+
+        # A leaf title within depth emits its title path as a chunk (header-only section)
+        elif not child and (1 <= level <= self.depth):
+            tree_list.append("\n".join(path_titles))
+        
+        # Recurse into children with the updated title path
+        for c in child:
+            self._dfs(c, tree_list, path_titles)

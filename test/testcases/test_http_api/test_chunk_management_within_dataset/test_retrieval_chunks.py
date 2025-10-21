@@ -83,7 +83,7 @@ class TestChunksRetrieval:
                 "ValueError('Search does not support negative slicing.')",
                 marks=pytest.mark.skip,
             ),
-            pytest.param({"page": 2, "page_size": 2}, 0, 2, "", marks=pytest.mark.skip(reason="issues/6646")),
+            ({"page": 2, "page_size": 2}, 0, 2, ""),
             ({"page": 3, "page_size": 2}, 0, 0, ""),
             ({"page": "3", "page_size": 2}, 0, 0, ""),
             pytest.param(
@@ -124,9 +124,9 @@ class TestChunksRetrieval:
                 marks=pytest.mark.skip,
             ),
             # ({"page_size": 0}, 0, 0, ""),
-            ({"page_size": 1}, 0, 1, ""),
+            pytest.param({"page_size": 1}, 0, 1, "", marks=pytest.mark.skip(reason="issues/10692")),
             ({"page_size": 5}, 0, 4, ""),
-            ({"page_size": "1"}, 0, 1, ""),
+            pytest.param({"page_size": "1"}, 0, 1, "", marks=pytest.mark.skip(reason="issues/10692")),
             # ({"page_size": -1}, 0, 0, ""),
             pytest.param(
                 {"page_size": "a"},

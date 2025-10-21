@@ -21,7 +21,7 @@ export function useSwitchPrompt(form: UseFormReturn<ExtractorFormSchemaType>) {
 
   const setPromptValue = useCallback(
     (field: keyof ExtractorFormSchemaType, key: string, value: string) => {
-      form.setValue(field, t(`dataflow.prompts.${key}.${value}`), {
+      form.setValue(field, t(`flow.prompts.${key}.${value}`), {
         shouldDirty: true,
         shouldValidate: true,
       });
