@@ -1,5 +1,5 @@
 import { transformFile2Base64 } from '@/utils/file-util';
-import { Pencil, Upload, XIcon } from 'lucide-react';
+import { Pencil, Plus, XIcon } from 'lucide-react';
 import {
   ChangeEventHandler,
   forwardRef,
@@ -12,10 +12,14 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
-type AvatarUploadProps = { value?: string; onChange?: (value: string) => void };
+type AvatarUploadProps = {
+  value?: string;
+  onChange?: (value: string) => void;
+  tips?: string;
+};
 
 export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
-  function AvatarUpload({ value, onChange }, ref) {
+  function AvatarUpload({ value, onChange, tips }, ref) {
     const { t } = useTranslation();
     const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
 
@@ -47,9 +51,9 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
       <div className="flex justify-start items-end space-x-2">
         <div className="relative group">
           {!avatarBase64Str ? (
-            <div className="w-[64px] h-[64px] grid place-content-center border border-dashed	rounded-md">
+            <div className="w-[64px] h-[64px] grid place-content-center border border-dashed bg-bg-input	rounded-md">
               <div className="flex flex-col items-center">
-                <Upload />
+                <Plus />
                 <p>{t('common.upload')}</p>
               </div>
             </div>
@@ -86,8 +90,8 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
             ref={ref}
           />
         </div>
-        <div className="margin-1 text-muted-foreground">
-          {t('knowledgeConfiguration.photoTip')}
+        <div className="margin-1 text-text-secondary">
+          {tips ?? t('knowledgeConfiguration.photoTip')}
         </div>
       </div>
     );
