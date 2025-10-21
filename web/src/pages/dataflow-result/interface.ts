@@ -148,6 +148,6 @@ export interface NavigateToDataflowResultProps {
   [PipelineResultSearchParams.AgentTitle]?: string;
   [PipelineResultSearchParams.IsReadOnly]?: string;
   [PipelineResultSearchParams.Type]: string;
-  [PipelineResultSearchParams.CreatedBy]: string;
-  [PipelineResultSearchParams.DocumentExtension]: string;
+  [PipelineResultSearchParams.CreatedBy]?: string;
+  [PipelineResultSearchParams.DocumentExtension]?: string;
 }

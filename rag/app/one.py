@@ -23,6 +23,7 @@ from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 
 
 class Pdf(PdfParser):
@@ -57,13 +58,8 @@ class Pdf(PdfParser):
 
         sections = [(b["text"], self.get_position(b, zoomin))
                     for i, b in enumerate(self.boxes)]
-        for (img, rows), poss in tbls:
-            if not rows:
-                continue
-            sections.append((rows if isinstance(rows, str) else rows[0],
-                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (
-            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], None
+            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -80,6 +76,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = naive.Docx()(filename, binary)
+        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
         sections = [s for s, _ in sections if s]
         for (_, html), _ in tbls:
             sections.append(html)
@@ -89,8 +86,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         pdf_parser = Pdf()
         if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
-        sections, _ = pdf_parser(
+        sections, tbls = pdf_parser(
             filename if not binary else binary, to_page=to_page, callback=callback)
+        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
+        for (img, rows), poss in tbls:
+            if not rows:
+                continue
+            sections.append((rows if isinstance(rows, str) else rows[0],
+                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         sections = [s for s, _ in sections if s]
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):

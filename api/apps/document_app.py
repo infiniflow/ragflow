@@ -45,7 +45,7 @@ from api.utils.api_utils import (
 from api.utils.file_utils import filename_type, get_project_base_directory, thumbnail
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import search
+from rag.nlp import search, rag_tokenizer
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -523,6 +523,21 @@ def rename():
         if informs:
             e, file = FileService.get_by_id(informs[0].file_id)
             FileService.update_by_id(file.id, {"name": req["name"]})
+
+        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+        title_tks = rag_tokenizer.tokenize(req["name"])
+        es_body = {
+            "docnm_kwd": req["name"],
+            "title_tks": title_tks,
+            "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
+        }
+        if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            settings.docStoreConn.update(
+                {"doc_id": req["doc_id"]},
+                es_body,
+                search.index_name(tenant_id),
+                doc.kb_id,
+            )
 
         return get_json_result(data=True)
     except Exception as e:
