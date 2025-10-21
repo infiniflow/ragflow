@@ -47,7 +47,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
 
   const promptOptions = useBuildNodeOutputOptions(node?.id);
 
-  const options = buildOptions(ContextGeneratorFieldName, t, 'dataflow');
+  const options = buildOptions(ContextGeneratorFieldName, t, 'flow');
 
   const {
     handleFieldNameChange,
