@@ -83,12 +83,19 @@ export interface IFlowTemplate {
   canvas_type: string;
   create_date: string;
   create_time: number;
-  description: string;
+  canvas_category?: string;
   dsl: DSL;
   id: string;
-  title: string;
   update_date: string;
   update_time: number;
+  description: {
+    en: string;
+    zh: string;
+  };
+  title: {
+    en: string;
+    zh: string;
+  };
 }
 
 export interface IGenerateForm {

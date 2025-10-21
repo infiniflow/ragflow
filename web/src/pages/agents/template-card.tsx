@@ -1,7 +1,7 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { IFlowTemplate } from '@/interfaces/database/flow';
+import { IFlowTemplate } from '@/interfaces/database/agent';
 import i18n from '@/locales/config';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';

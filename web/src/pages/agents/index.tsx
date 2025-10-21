@@ -1,3 +1,4 @@
+import { CardContainer } from '@/components/card-container';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
@@ -113,7 +114,7 @@ export default function Agents() {
         </ListFilterBar>
       </div>
       <div className="flex-1 overflow-auto">
-        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[calc(100dvh-280px)] overflow-auto px-8">
+        <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
           {data.map((x) => {
             return (
               <AgentCard
@@ -123,7 +124,7 @@ export default function Agents() {
               ></AgentCard>
             );
           })}
-        </div>
+        </CardContainer>
       </div>
       <div className="mt-8 px-8 pb-8">
         <RAGFlowPagination
