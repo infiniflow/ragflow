@@ -246,15 +246,15 @@ def oauth_callback(channel):
         logging.exception(e)
         return redirect(f"/?error={str(e)}")
 
-        # User exists, try to log in
-        user = users[0]
-        user.access_token = get_uuid()
-        if user and hasattr(user, 'is_active') and user.is_active == "0":
-          return redirect("/?error=user_inactive")
+    # User exists, try to log in
+    user = users[0]
+    user.access_token = get_uuid()
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+      return redirect("/?error=user_inactive")
 
-        login_user(user)
-        user.save()
-        return redirect(f"/?auth={user.get_id()}")
+    login_user(user)
+    user.save()
+    return redirect(f"/?auth={user.get_id()}")
   except Exception as e:
     logging.exception(e)
     return redirect(f"/?error={str(e)}")
