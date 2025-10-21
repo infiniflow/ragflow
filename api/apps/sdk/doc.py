@@ -470,6 +470,20 @@ def list_docs(dataset_id, tenant_id):
         required: false
         default: 0
         description: Unix timestamp for filtering documents created before this time. 0 means no filter.
+      - in: query
+        name: suffix
+        type: array
+        items:
+          type: string
+        required: false
+        description: Filter by file suffix (e.g., ["pdf", "txt", "docx"]).
+      - in: query
+        name: run
+        type: array
+        items:
+          type: string
+        required: false
+        description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL").
       - in: header
         name: Authorization
         type: string
@@ -512,63 +526,62 @@ def list_docs(dataset_id, tenant_id):
                     description: Processing status.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-    id = request.args.get("id")
-    name = request.args.get("name")
+      return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
-    if id and not DocumentService.query(id=id, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {id}.")
+    q = request.args
+    document_id = q.get("id")  
+    name        = q.get("name")
+
+    if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
+        return get_error_data_result(message=f"You don't own the document {document_id}.")
     if name and not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
 
-    page = int(request.args.get("page", 1))
-    keywords = request.args.get("keywords", "")
-    page_size = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc") == "False":
-        desc = False
-    else:
-        desc = True
-    docs, tol = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, id, name)
+    page        = int(q.get("page", 1))
+    page_size   = int(q.get("page_size", 30))  
+    orderby     = q.get("orderby", "create_time")
+    desc        = str(q.get("desc", "true")).strip().lower() != "false"
+    keywords    = q.get("keywords", "")
 
-    create_time_from = int(request.args.get("create_time_from", 0))
-    create_time_to = int(request.args.get("create_time_to", 0))
+    # filters - align with OpenAPI parameter names
+    suffix               = q.getlist("suffix") 
+    run_status           = q.getlist("run")   
+    create_time_from     = int(q.get("create_time_from", 0))  
+    create_time_to       = int(q.get("create_time_to", 0))    
 
+    # map run status (accept text or numeric) - align with API parameter
+    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
+    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
+
+    docs, total = DocumentService.get_list(
+        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted
+    )
+
+    # time range filter (0 means no bound)
     if create_time_from or create_time_to:
-        filtered_docs = []
-        for doc in docs:
-            doc_create_time = doc.get("create_time", 0)
-            if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
-                filtered_docs.append(doc)
-        docs = filtered_docs
+        docs = [
+            d for d in docs
+            if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from)
+            and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)
+        ]
 
-    # rename key's name
-    renamed_doc_list = []
+    # rename keys + map run status back to text for output
     key_mapping = {
         "chunk_num": "chunk_count",
-        "kb_id": "dataset_id",
+        "kb_id": "dataset_id", 
         "token_num": "token_count",
         "parser_id": "chunk_method",
     }
-    run_mapping = {
-        "0": "UNSTART",
-        "1": "RUNNING",
-        "2": "CANCEL",
-        "3": "DONE",
-        "4": "FAIL",
-    }
-    for doc in docs:
-        renamed_doc = {}
-        for key, value in doc.items():
-            if key == "run":
-                renamed_doc["run"] = run_mapping.get(str(value))
-            new_key = key_mapping.get(key, key)
-            renamed_doc[new_key] = value
-            if key == "run":
-                renamed_doc["run"] = run_mapping.get(value)
-        renamed_doc_list.append(renamed_doc)
-    return get_result(data={"total": tol, "docs": renamed_doc_list})
+    run_status_numeric_to_text = {"0": "UNSTART", "1": "RUNNING", "2": "CANCEL", "3": "DONE", "4": "FAIL"}
 
+    output_docs = []
+    for d in docs:
+        renamed_doc = {key_mapping.get(k, k): v for k, v in d.items()}
+        if "run" in d:
+            renamed_doc["run"] = run_status_numeric_to_text.get(str(d["run"]), d["run"])
+        output_docs.append(renamed_doc)
+
+    return get_result(data={"total": total, "docs": output_docs})
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
