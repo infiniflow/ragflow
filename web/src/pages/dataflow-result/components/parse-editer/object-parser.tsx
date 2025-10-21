@@ -2,14 +2,13 @@ import { cn } from '@/lib/utils';
 import { useCallback, useEffect } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from '../../index.less';
+import { IChunk } from '../../interface';
 import { useParserInit } from './hook';
 import { IObjContainerProps } from './interface';
 export const ObjectContainer = (props: IObjContainerProps) => {
   const {
     initialValue,
     isChunck,
-    unescapeNewlines,
-    escapeNewlines,
     onSave,
     className,
     textMode,
@@ -19,7 +18,7 @@ export const ObjectContainer = (props: IObjContainerProps) => {
 
   const {
     content,
-    setContent,
+    // setContent,
     activeEditIndex,
     setActiveEditIndex,
     editDivRef,
@@ -31,7 +30,7 @@ export const ObjectContainer = (props: IObjContainerProps) => {
     //   value: escapeNewlines(e.target.innerText),
     // }));
     setActiveEditIndex(1);
-  }, [setContent, setActiveEditIndex]);
+  }, [setActiveEditIndex]);
 
   const handleSave = useCallback(
     (e: any) => {
@@ -42,7 +41,7 @@ export const ObjectContainer = (props: IObjContainerProps) => {
       onSave(saveData);
       setActiveEditIndex(undefined);
     },
-    [content, onSave],
+    [content, onSave, setActiveEditIndex],
   );
 
   useEffect(() => {
@@ -81,14 +80,14 @@ export const ObjectContainer = (props: IObjContainerProps) => {
                 [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
               },
             )}
-            onClick={(e) => {
-              clickChunk(content);
+            onClick={() => {
+              clickChunk(content as unknown as IChunk);
               if (!isReadonly) {
-                handleEdit(e);
+                handleEdit();
               }
             }}
           >
-            {content.value}
+            {content.value as string}
           </div>
         )}
       </section>
