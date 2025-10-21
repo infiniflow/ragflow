@@ -47,7 +47,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
 
   const promptOptions = useBuildNodeOutputOptions(node?.id);
 
-  const options = buildOptions(ContextGeneratorFieldName, t, 'dataflow');
+  const options = buildOptions(ContextGeneratorFieldName, t, 'flow');
 
   const {
     handleFieldNameChange,
@@ -63,7 +63,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
     <Form {...form}>
       <FormWrapper>
         <LargeModelFormField></LargeModelFormField>
-        <RAGFlowFormItem label={t('dataflow.fieldName')} name="field_name">
+        <RAGFlowFormItem label={t('flow.fieldName')} name="field_name">
           {(field) => (
             <SelectWithSearch
               onChange={(value) => {
@@ -93,7 +93,7 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
       </FormWrapper>
       {visible && (
         <ConfirmDeleteDialog
-          title={t('dataflow.switchPromptMessage')}
+          title={t('flow.switchPromptMessage')}
           open
           onOpenChange={hideModal}
           onOk={confirmSwitch}

@@ -17,7 +17,7 @@ export function ImageFormFields({ prefix }: CommonProps) {
   const options = buildOptions(
     ImageParseMethod,
     t,
-    'dataflow.imageParseMethodOptions',
+    'flow.imageParseMethodOptions',
   );
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
 
@@ -50,9 +50,9 @@ export function ImageFormFields({ prefix }: CommonProps) {
       {languageShown && (
         <RAGFlowFormItem
           name={buildFieldNameWithPrefix('system_prompt', prefix)}
-          label={t('dataflow.systemPrompt')}
+          label={t('flow.systemPrompt')}
         >
-          <Textarea placeholder={t('dataflow.systemPromptPlaceholder')} />
+          <Textarea placeholder={t('flow.systemPromptPlaceholder')} />
         </RAGFlowFormItem>
       )}
     </>

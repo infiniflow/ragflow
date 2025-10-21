@@ -38,12 +38,12 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
   const SearchMethodOptions = buildOptions(
     TokenizerSearchMethod,
     t,
-    `dataflow.tokenizerSearchMethodOptions`,
+    `flow.tokenizerSearchMethodOptions`,
   );
   const FieldsOptions = buildOptions(
     TokenizerFields,
     t,
-    'dataflow.tokenizerFieldsOptions',
+    'flow.tokenizerFieldsOptions',
   );
 
   const form = useForm<TokenizerFormSchemaType>({
@@ -59,8 +59,8 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
       <FormWrapper>
         <RAGFlowFormItem
           name="search_method"
-          label={t('dataflow.searchMethod')}
-          tooltip={t('dataflow.searchMethodTip')}
+          label={t('flow.searchMethod')}
+          tooltip={t('flow.searchMethodTip')}
         >
           {(field) => (
             <MultiSelect
@@ -73,11 +73,11 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
         </RAGFlowFormItem>
         <SliderInputFormField
           name="filename_embd_weight"
-          label={t('dataflow.filenameEmbeddingWeight')}
+          label={t('flow.filenameEmbeddingWeight')}
           max={0.5}
           step={0.01}
         ></SliderInputFormField>
-        <RAGFlowFormItem name="fields" label={t('dataflow.fields')}>
+        <RAGFlowFormItem name="fields" label={t('flow.fields')}>
           {(field) => <SelectWithSearch options={FieldsOptions} {...field} />}
         </RAGFlowFormItem>
       </FormWrapper>
