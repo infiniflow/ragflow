@@ -94,7 +94,7 @@ oauth:
   oidc:
     display_name: "Keycloak"
     client_id: "ragflow"
-    client_secret: "mUvTaNqKr4FcphN1uKkaNXFkxmqXFMRq"
+    client_secret: "elWCcFPDV20YiXhIELoyNbMt6lOZRnNB"
     issuer: "http://localhost:8080/realms/myrealm"
     scope: "openid email profile"
     redirect_uri: "http://localhost:9222/v1/user/oauth/callback/oidc"

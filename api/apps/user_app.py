@@ -113,29 +113,29 @@ def login():
   except BaseException:
     return get_json_result(data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password")
 
-    user = UserService.query_user(email, password)
+  user = UserService.query_user(email, password)
 
-    if user and hasattr(user, 'is_active') and user.is_active == "0":
-      return get_json_result(
-          data=False,
-          code=settings.RetCode.FORBIDDEN,
-          message="This account has been disabled, please contact the administrator!",
-      )
-    elif user:
-      response_data = user.to_json()
-      user.access_token = get_uuid()
-      login_user(user)
-      user.update_time = (current_timestamp(),)
-      user.update_date = (datetime_format(datetime.now()),)
-      user.save()
-      msg = "Welcome back!"
-      return construct_response(data=response_data, auth=user.get_id(), message=msg)
-    else:
-      return get_json_result(
-          data=False,
-          code=settings.RetCode.AUTHENTICATION_ERROR,
-          message="Email and password do not match!",
-      )
+  if user and hasattr(user, 'is_active') and user.is_active == "0":
+    return get_json_result(
+        data=False,
+        code=settings.RetCode.FORBIDDEN,
+        message="This account has been disabled, please contact the administrator!",
+    )
+  elif user:
+    response_data = user.to_json()
+    user.access_token = get_uuid()
+    login_user(user)
+    user.update_time = (current_timestamp(),)
+    user.update_date = (datetime_format(datetime.now()),)
+    user.save()
+    msg = "Welcome back!"
+    return construct_response(data=response_data, auth=user.get_id(), message=msg)
+  else:
+    return get_json_result(
+        data=False,
+        code=settings.RetCode.AUTHENTICATION_ERROR,
+        message="Email and password do not match!",
+    )
 
 
 @manager.route("/login/channels", methods=["GET"])  # noqa: F821
