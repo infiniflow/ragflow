@@ -48,13 +48,3 @@ export type HandleContextType = {
 export const HandleContext = createContext<HandleContextType>(
   {} as HandleContextType,
 );
-
-export type PipelineLogContextType = {
-  messageId: string;
-  setMessageId: (messageId: string) => void;
-  setUploadedFileData: (data: Record<string, any>) => void;
-};
-
-export const PipelineLogContext = createContext<PipelineLogContextType>(
-  {} as PipelineLogContextType,
-);
