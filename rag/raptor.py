@@ -114,7 +114,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                             ),
                         }
                     ],
-                    {"max_tokens": self._max_token},
+                    {"max_tokens": max(self._max_token, 512)}, # fix issue:  #10235
                 )
                 cnt = re.sub(
                     "(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)",
