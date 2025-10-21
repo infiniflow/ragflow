@@ -137,7 +137,7 @@ export default function Agent() {
 
   const handleRunPipeline = useCallback(() => {
     if (!findNodeByName(Operator.Tokenizer)) {
-      message.warning(t('dataflow.tokenizerRequired'));
+      message.warning(t('flow.tokenizerRequired'));
       return;
     }
 

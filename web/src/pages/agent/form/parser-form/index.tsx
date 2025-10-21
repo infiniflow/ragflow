@@ -133,7 +133,7 @@ function ParserItem({
       </div>
       <RAGFlowFormItem
         name={buildFieldNameWithPrefix(`fileFormat`, prefix)}
-        label={t('dataflow.fileFormats')}
+        label={t('flow.fileFormats')}
       >
         {(field) => (
           <SelectWithSearch
@@ -165,7 +165,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
   const FileFormatOptions = buildOptions(
     FileType,
     t,
-    'dataflow.fileFormatOptions',
+    'flow.fileFormatOptions',
   ).filter(
     (x) => x.value !== FileType.Video, // Temporarily hide the video option
   );
@@ -212,7 +212,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
         })}
         {fields.length < FileFormatOptions.length && (
           <BlockButton onClick={add} type="button" className="mt-2.5">
-            {t('dataflow.addParser')}
+            {t('flow.addParser')}
           </BlockButton>
         )}
       </form>

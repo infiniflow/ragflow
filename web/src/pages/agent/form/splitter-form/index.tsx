@@ -60,7 +60,7 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
           name="overlapped_percent"
           max={30}
           min={0}
-          label={t('dataflow.overlappedPercent')}
+          label={t('flow.overlappedPercent')}
         ></SliderInputFormField>
         <section>
           <span className="mb-2 inline-block">{t('flow.delimiters')}</span>

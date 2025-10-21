@@ -1511,6 +1511,93 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
       chooseAgentType: '选择智能体类型',
+      parser: '解析器',
+      parserDescription: '从文件中提取原始文本和结构以供下游处理。',
+      tokenizer: '分词器',
+      tokenizerRequired: '请先添加Tokenizer节点',
+      tokenizerDescription:
+        '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的向量嵌入）。',
+      splitter: '按字符分割',
+      splitterDescription:
+        '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
+      hierarchicalMergerDescription:
+        '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
+      hierarchicalMerger: '按标题分割',
+      extractor: '提取器',
+      extractorDescription:
+        '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
+      outputFormat: '输出格式',
+      fileFormats: '文件格式',
+      fields: '字段',
+      addParser: '增加解析器',
+      hierarchy: '层次结构',
+      regularExpressions: '正则表达式',
+      overlappedPercent: '重叠百分比（%）',
+      searchMethod: '搜索方法',
+      searchMethodTip: `决定该数据集启用的搜索方式，可选择全文、向量，或两者兼有。
+Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
+      filenameEmbdWeight: '文件名嵌入权重',
+      parserMethod: '解析方法',
+      systemPromptPlaceholder:
+        '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
+      exportJson: '导出 JSON',
+      viewResult: '查看结果',
+      running: '运行中',
+      summary: '增强上下文',
+      keywords: '关键词',
+      questions: '问题',
+      metadata: '元数据',
+      fieldName: '结果目的地',
+      prompts: {
+        system: {
+          keywords: `角色
+你是一名文本分析员。
+
+任务
+从给定的文本内容中提取最重要的关键词/短语。
+
+要求
+- 总结文本内容，并给出最重要的5个关键词/短语。
+- 关键词必须与给定的文本内容使用相同的语言。
+- 关键词之间用英文逗号分隔。
+- 仅输出关键词。`,
+          questions: `角色
+你是一名文本分析员。
+
+任务
+针对给定的文本内容提出3个问题。
+
+要求
+- 理解并总结文本内容，并提出最重要的3个问题。
+- 问题的含义不应重叠。
+- 问题应尽可能涵盖文本的主要内容。
+- 问题必须与给定的文本内容使用相同的语言。
+- 每行一个问题。
+- 仅输出问题。`,
+          summary: `扮演一个精准的摘要者。你的任务是为提供的内容创建一个简洁且忠实于原文的摘要。
+
+关键说明：
+1. 准确性：摘要必须严格基于所提供的信息。请勿引入任何未明确说明的新事实、结论或解释。
+2. 语言：摘要必须使用与原文相同的语言。
+3. 客观性：不带偏见地呈现要点，保留内容的原始意图和语气。请勿进行编辑。
+4. 简洁性：专注于最重要的思想，省略细节和多余的内容。`,
+          metadata: `从给定内容中提取重要的结构化信息。仅输出有效的 JSON 字符串，不包含任何附加文本。如果未找到重要的结构化信息，则输出一个空的 JSON 对象：{}。
+
+重要的结构化信息可能包括：姓名、日期、地点、事件、关键事实、数字数据或其他可提取实体。`,
+        },
+        user: {
+          keywords: `文本内容
+[在此处插入文本]`,
+          questions: `文本内容
+[在此处插入文本]`,
+          summary: `要总结的文本：
+[在此处插入文本]`,
+          metadata: `内容：[在此处插入内容]`,
+        },
+      },
+      cancel: '取消',
+      filenameEmbeddingWeight: '文件名嵌入权重',
+      switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1617,101 +1704,6 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       <p>尚未解析的文件将不再被处理。</p> <br/>
       <p>你确定要继续吗?</p> `,
       unlinkPipelineModalConfirmText: '解绑',
-    },
-    dataflow: {
-      parser: '解析器',
-      parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '分词器',
-      tokenizerRequired: '请先添加Tokenizer节点',
-      tokenizerDescription:
-        '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的向量嵌入）。',
-      splitter: '按字符分割',
-      splitterDescription:
-        '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
-      hierarchicalMergerDescription:
-        '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
-      hierarchicalMerger: '按标题分割',
-      extractor: '提取器',
-      extractorDescription:
-        '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
-      outputFormat: '输出格式',
-      lang: '语言',
-      fileFormats: '文件格式',
-      fields: '字段',
-      addParser: '增加解析器',
-      hierarchy: '层次结构',
-      regularExpressions: '正则表达式',
-      overlappedPercent: '重叠百分比（%）',
-      searchMethod: '搜索方法',
-      searchMethodTip: `决定该数据集启用的搜索方式，可选择全文、向量，或两者兼有。
-Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
-      filenameEmbdWeight: '文件名嵌入权重',
-      begin: '文件',
-      parserMethod: '解析方法',
-      systemPrompt: '系统提示词',
-      systemPromptPlaceholder:
-        '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
-      exportJson: '导出 JSON',
-      viewResult: '查看结果',
-      running: '运行中',
-      summary: '增强上下文',
-      keywords: '关键词',
-      questions: '问题',
-      metadata: '元数据',
-      fieldName: '结果目的地',
-      prompts: {
-        system: {
-          keywords: `角色
-你是一名文本分析员。
-
-任务
-从给定的文本内容中提取最重要的关键词/短语。
-
-要求
-- 总结文本内容，并给出最重要的5个关键词/短语。
-- 关键词必须与给定的文本内容使用相同的语言。
-- 关键词之间用英文逗号分隔。
-- 仅输出关键词。`,
-          questions: `角色
-你是一名文本分析员。
-
-任务
-针对给定的文本内容提出3个问题。
-
-要求
-- 理解并总结文本内容，并提出最重要的3个问题。
-- 问题的含义不应重叠。
-- 问题应尽可能涵盖文本的主要内容。
-- 问题必须与给定的文本内容使用相同的语言。
-- 每行一个问题。
-- 仅输出问题。`,
-          summary: `扮演一个精准的摘要者。你的任务是为提供的内容创建一个简洁且忠实于原文的摘要。
-
-关键说明：
-1. 准确性：摘要必须严格基于所提供的信息。请勿引入任何未明确说明的新事实、结论或解释。
-2. 语言：摘要必须使用与原文相同的语言。
-3. 客观性：不带偏见地呈现要点，保留内容的原始意图和语气。请勿进行编辑。
-4. 简洁性：专注于最重要的思想，省略细节和多余的内容。`,
-          metadata: `从给定内容中提取重要的结构化信息。仅输出有效的 JSON 字符串，不包含任何附加文本。如果未找到重要的结构化信息，则输出一个空的 JSON 对象：{}。
-
-重要的结构化信息可能包括：姓名、日期、地点、事件、关键事实、数字数据或其他可提取实体。`,
-        },
-        user: {
-          keywords: `文本内容
-[在此处插入文本]`,
-          questions: `文本内容
-[在此处插入文本]`,
-          summary: `要总结的文本：
-[在此处插入文本]`,
-          metadata: `内容：[在此处插入内容]`,
-        },
-      },
-      cancel: '取消',
-      filenameEmbeddingWeight: '文件名嵌入权重',
-      switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
-      note: '注释',
-      noteDescription: '注释',
-      notePlaceholder: '请输入注释',
     },
     datasetOverview: {
       downloadTip: '正在从数据源下载文件。',

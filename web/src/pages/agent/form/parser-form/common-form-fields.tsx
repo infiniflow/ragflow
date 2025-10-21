@@ -50,7 +50,7 @@ export function OutputFormatFormField({
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix(`output_format`, prefix)}
-      label={t('dataflow.outputFormat')}
+      label={t('flow.outputFormat')}
     >
       <SelectWithSearch
         options={buildOutputOptionsFormatMap()[fileType]}
@@ -69,7 +69,7 @@ export function ParserMethodFormField({
       name={buildFieldNameWithPrefix(`parse_method`, prefix)}
       horizontal={false}
       optionsWithoutLLM={optionsWithoutLLM}
-      label={t('dataflow.parserMethod')}
+      label={t('flow.parserMethod')}
     ></LayoutRecognizeFormField>
   );
 }
@@ -92,7 +92,7 @@ export function LanguageFormField({ prefix }: CommonProps) {
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix(`lang`, prefix)}
-      label={t('dataflow.lang')}
+      label={t('flow.lang')}
     >
       {(field) => (
         <SelectWithSearch

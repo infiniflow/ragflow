@@ -1605,6 +1605,119 @@ This delimiter is used to split the input text into several text pieces echo of 
       ceateAgent: 'Agent flow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose Agent Type',
+      parser: 'Parser',
+      parserDescription:
+        'Extracts raw text and structure from files for downstream processing.',
+      tokenizer: 'Indexer',
+      tokenizerRequired: 'Please add the Indexer node first',
+      tokenizerDescription:
+        'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      splitter: 'Token',
+      splitterDescription:
+        'Split text into chunks by token length with optional delimiters and overlap.',
+      hierarchicalMergerDescription:
+        'Split documents into sections by title hierarchy with regex rules for finer control.',
+      hierarchicalMerger: 'Title',
+      extractor: 'Transformer',
+      extractorDescription:
+        'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
+      outputFormat: 'Output format',
+      fileFormats: 'File format',
+      fileFormatOptions: {
+        pdf: 'PDF',
+        spreadsheet: 'Spreadsheet',
+        image: 'Image',
+        email: 'Email',
+        'text&markdown': 'Text & Markup',
+        word: 'Word',
+        slides: 'PPT',
+        audio: 'Audio',
+      },
+      fields: 'Field',
+      addParser: 'Add Parser',
+      hierarchy: 'Hierarchy',
+      regularExpressions: 'Regular Expressions',
+      overlappedPercent: 'Overlapped percent (%)',
+      searchMethod: 'Search method',
+      searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
+The Indexer will store the content in the corresponding data structures for the selected methods.`,
+      // file: 'File',
+      parserMethod: 'Parsing method',
+      // systemPrompt: 'System Prompt',
+      systemPromptPlaceholder:
+        'Enter system prompt for image analysis, if empty the system default value will be used',
+      exportJson: 'Export JSON',
+      viewResult: 'View result',
+      running: 'Running',
+      summary: 'Summary',
+      keywords: 'Keywords',
+      questions: 'Questions',
+      metadata: 'Metadata',
+      fieldName: 'Result destination',
+      prompts: {
+        system: {
+          keywords: `Role
+You are a text analyzer.
+
+Task
+Extract the most important keywords/phrases of a given piece of text content.
+
+Requirements
+- Summarize the text content, and give the top 5 important keywords/phrases.
+- The keywords MUST be in the same language as the given piece of text content.
+- The keywords are delimited by ENGLISH COMMA.
+- Output keywords ONLY.`,
+          questions: `Role
+You are a text analyzer.
+
+Task
+Propose 3 questions about a given piece of text content.
+
+Requirements
+- Understand and summarize the text content, and propose the top 3 important questions.
+- The questions SHOULD NOT have overlapping meanings.
+- The questions SHOULD cover the main content of the text as much as possible.
+- The questions MUST be in the same language as the given piece of text content.
+- One question per line.
+- Output questions ONLY.`,
+          summary: `Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.
+
+Key Instructions:
+1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.
+2. Language: Write the summary in the same language as the source text.
+3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.
+4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.`,
+          metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
+
+Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+        },
+        user: {
+          keywords: `Text Content
+[Insert text here]`,
+          questions: `Text Content
+[Insert text here]`,
+          summary: `Text to Summarize:
+[Insert text here]`,
+          metadata: `Content: [INSERT CONTENT HERE]`,
+        },
+      },
+      cancel: 'Cancel',
+      swicthPromptMessage:
+        'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
+      tokenizerSearchMethodOptions: {
+        full_text: 'Full-text',
+        embedding: 'Embedding',
+      },
+      filenameEmbeddingWeight: 'Filename embedding weight',
+      tokenizerFieldsOptions: {
+        text: 'Processed Text',
+        keywords: 'Keywords',
+        questions: 'Questions',
+        summary: 'Augmented Context',
+      },
+      imageParseMethodOptions: {
+        ocr: 'OCR',
+      },
     },
     llmTools: {
       bad_calculator: {
@@ -1704,125 +1817,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       <p>Files that are not yet parsed will no longer be processed</p> <br/>
       <p>Are you sure you want to proceed?</p> `,
       unlinkPipelineModalConfirmText: 'Unlink',
-    },
-    dataflow: {
-      parser: 'Parser',
-      parserDescription:
-        'Extracts raw text and structure from files for downstream processing.',
-      tokenizer: 'Indexer',
-      tokenizerRequired: 'Please add the Indexer node first',
-      tokenizerDescription:
-        'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token',
-      splitterDescription:
-        'Split text into chunks by token length with optional delimiters and overlap.',
-      hierarchicalMergerDescription:
-        'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title',
-      extractor: 'Transformer',
-      extractorDescription:
-        'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
-      outputFormat: 'Output format',
-      lang: 'Language',
-      fileFormats: 'File format',
-      fileFormatOptions: {
-        pdf: 'PDF',
-        spreadsheet: 'Spreadsheet',
-        image: 'Image',
-        email: 'Email',
-        'text&markdown': 'Text & Markup',
-        word: 'Word',
-        slides: 'PPT',
-        audio: 'Audio',
-      },
-      fields: 'Field',
-      addParser: 'Add Parser',
-      hierarchy: 'Hierarchy',
-      regularExpressions: 'Regular Expressions',
-      overlappedPercent: 'Overlapped percent (%)',
-      searchMethod: 'Search method',
-      searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
-The Indexer will store the content in the corresponding data structures for the selected methods.`,
-      begin: 'File',
-      parserMethod: 'Parsing method',
-      systemPrompt: 'System Prompt',
-      systemPromptPlaceholder:
-        'Enter system prompt for image analysis, if empty the system default value will be used',
-      exportJson: 'Export JSON',
-      viewResult: 'View result',
-      running: 'Running',
-      summary: 'Summary',
-      keywords: 'Keywords',
-      questions: 'Questions',
-      metadata: 'Metadata',
-      fieldName: 'Result destination',
-      prompts: {
-        system: {
-          keywords: `Role
-You are a text analyzer.
-
-Task
-Extract the most important keywords/phrases of a given piece of text content.
-
-Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
-- The keywords MUST be in the same language as the given piece of text content.
-- The keywords are delimited by ENGLISH COMMA.
-- Output keywords ONLY.`,
-          questions: `Role
-You are a text analyzer.
-
-Task
-Propose 3 questions about a given piece of text content.
-
-Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
-- The questions SHOULD NOT have overlapping meanings.
-- The questions SHOULD cover the main content of the text as much as possible.
-- The questions MUST be in the same language as the given piece of text content.
-- One question per line.
-- Output questions ONLY.`,
-          summary: `Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.
-
-Key Instructions:
-1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.
-2. Language: Write the summary in the same language as the source text.
-3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.
-4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.`,
-          metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
-
-Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
-        },
-        user: {
-          keywords: `Text Content
-[Insert text here]`,
-          questions: `Text Content
-[Insert text here]`,
-          summary: `Text to Summarize:
-[Insert text here]`,
-          metadata: `Content: [INSERT CONTENT HERE]`,
-        },
-      },
-      cancel: 'Cancel',
-      swicthPromptMessage:
-        'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
-      tokenizerSearchMethodOptions: {
-        full_text: 'Full-text',
-        embedding: 'Embedding',
-      },
-      filenameEmbeddingWeight: 'Filename embedding weight',
-      tokenizerFieldsOptions: {
-        text: 'Processed Text',
-        keywords: 'Keywords',
-        questions: 'Questions',
-        summary: 'Augmented Context',
-      },
-      imageParseMethodOptions: {
-        ocr: 'OCR',
-      },
-      note: 'Note',
-      noteDescription: 'Note',
-      notePlaceholder: 'Please enter a note',
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',

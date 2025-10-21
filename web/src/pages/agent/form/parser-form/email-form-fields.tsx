@@ -14,7 +14,7 @@ export function EmailFormFields({ prefix }: CommonProps) {
     <>
       <RAGFlowFormItem
         name={buildFieldNameWithPrefix(`fields`, prefix)}
-        label={t('dataflow.fields')}
+        label={t('flow.fields')}
       >
         {(field) => (
           <MultiSelect

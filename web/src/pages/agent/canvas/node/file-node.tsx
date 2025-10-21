@@ -36,7 +36,7 @@ function InnerFileNode({ data, id, selected }: NodeProps<IBeginNode>) {
       <section className="flex items-center  gap-2">
         <OperatorIcon name={data.label as Operator}></OperatorIcon>
         <div className="truncate text-center font-semibold text-sm">
-          {t(`dataflow.begin`)}
+          {t(`flow.begin`)}
         </div>
       </section>
       <section className={cn(styles.generateParameters, 'flex gap-2 flex-col')}>

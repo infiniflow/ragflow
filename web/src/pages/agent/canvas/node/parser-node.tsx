@@ -46,7 +46,7 @@ function ParserNode({
             className="flex flex-col text-text-primary gap-1"
           >
             <span className="text-text-secondary">Parser {idx + 1}</span>
-            {t(`dataflow.fileFormatOptions.${x.fileFormat}`)}
+            {t(`flow.fileFormatOptions.${x.fileFormat}`)}
           </LabelCard>
         )}
       </NodeCollapsible>
