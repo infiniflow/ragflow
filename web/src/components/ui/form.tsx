@@ -106,8 +106,10 @@ const FormLabel = React.forwardRef<
       htmlFor={formItemId}
       {...props}
     >
-      {required && <span className="text-destructive">*</span>}
-      {props.children}
+      <section>
+        {required && <span className="text-destructive">*</span>}
+        {props.children}
+      </section>
       {tooltip && <FormTooltip tooltip={tooltip}></FormTooltip>}
     </Label>
   );
