@@ -350,7 +350,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Tokenizer"
+                        "name": "Indexer"
                     },
                     "dragging": false,
                     "id": "Tokenizer:EightRocketsAppear",
