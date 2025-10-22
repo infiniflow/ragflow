@@ -85,8 +85,8 @@ export const getFileLogsTableColumns = (
           //   row.original.kb_id,
           // )}
         >
-          <FileIcon name={row.original.fileName}></FileIcon>
-          {row.original.fileName}
+          <FileIcon name={row.original.document_name}></FileIcon>
+          {row.original.document_name}
         </div>
       ),
     },
