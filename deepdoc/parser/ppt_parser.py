@@ -93,7 +93,7 @@ class RAGFlowPptParser:
                         "libreoffice",
                         "--headless",
                         "--convert-to", "pptx",
-                        "--outdir", tmp_dir,  # 修正outdir参数
+                        "--outdir", tmp_dir,
                         ppt_path
                     ]
                     subprocess.run(cmd, check=True, capture_output=True)
