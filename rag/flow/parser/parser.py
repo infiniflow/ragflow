@@ -222,8 +222,8 @@ class Parser(ProcessBase):
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
-                pn, x0, x1, top, bott = poss.split(" ")
-                bboxes.append({"page_number": int(pn), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
+                for pn, x0, x1, top, bott in RAGFlowPdfParser.extract_positions(poss):
+                    bboxes.append({"page_number": int(pn[0]), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
