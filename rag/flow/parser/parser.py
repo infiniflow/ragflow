@@ -228,8 +228,6 @@ class Parser(ProcessBase):
                     "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
                     "text": t,
                 }
-                print("=================================================", flush=True)
-                print(f"{box=}", flush=True)
                 bboxes.append(box)
         else:
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
