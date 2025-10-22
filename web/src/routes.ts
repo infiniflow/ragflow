@@ -30,6 +30,7 @@ export enum Routes {
   ProfilePrompt = `${ProfileSetting}${Prompt}`,
   ProfileProfile = `${ProfileSetting}${Profile}`,
   DatasetTesting = '/testing',
+  DatasetRiskIdentify = '/risk-identify',
   Chunk = '/chunk',
   ChunkResult = `${Chunk}${Chunk}`,
   Parsed = '/parsed',
@@ -264,6 +265,10 @@ const routes = [
       {
         path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetRiskIdentify}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetRiskIdentify}`,
       },
       {
         path: `${Routes.DatasetBase}${Routes.KnowledgeGraph}/:id`,

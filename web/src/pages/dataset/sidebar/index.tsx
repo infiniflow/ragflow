@@ -10,17 +10,11 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import {
-  Banknote,
-  FileSearch2,
-  FolderOpen,
-  Logs,
-  UmbrellaOff,
-} from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Banknote, FolderOpen, Logs, UmbrellaOff } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
-import RiskIdentifyModal from './risk-identify-modal';
+// remove modal-based risk identify; now a dedicated page route
 
 type PropType = {
   refreshCount?: number;
@@ -33,13 +27,9 @@ export function SideBar({ refreshCount }: PropType) {
   const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
-  const [showRiskModal, setShowRiskModal] = useState(false);
+  // no modal state for risk identify now
   const handleClick = (key: string) => {
-    if (key === 'risk-identify') {
-      setShowRiskModal(true);
-    } else {
-      handleMenuClick(key)();
-    }
+    handleMenuClick(key as any)();
   };
 
   const items = useMemo(() => {
@@ -49,11 +39,11 @@ export function SideBar({ refreshCount }: PropType) {
         label: t(`knowledgeDetails.subbarFiles`),
         key: Routes.DatasetBase,
       },
-      {
-        icon: <FileSearch2 className="size-4" />,
-        label: t(`knowledgeDetails.testing`),
-        key: Routes.DatasetTesting,
-      },
+      // {
+      //   icon: <FileSearch2 className="size-4" />,
+      //   label: t(`knowledgeDetails.testing`),
+      //   key: Routes.DatasetTesting,
+      // },
       {
         icon: <Logs className="size-4" />,
         label: t(`knowledgeDetails.overview`),
@@ -65,14 +55,9 @@ export function SideBar({ refreshCount }: PropType) {
         key: Routes.DataSetSetting,
       },
       {
-        icon: UmbrellaOff,
+        icon: <UmbrellaOff className="size-4" />,
         label: t(`knowledgeDetails.riskIdentify`),
-        key: 'risk-identify',
-      },
-      {
-        icon: UmbrellaOff,
-        label: t(`knowledgeDetails.riskIdentify`),
-        key: 'risk-identify',
+        key: Routes.DatasetRiskIdentify,
       },
     ];
     if (!isEmpty(routerData?.graph)) {
@@ -131,10 +116,7 @@ export function SideBar({ refreshCount }: PropType) {
           );
         })}
       </div>
-      <RiskIdentifyModal
-        setShowRiskModal={setShowRiskModal}
-        showRiskModal={showRiskModal}
-      />
+      {/* Risk Identify now navigates to page; no modal here */}
     </aside>
   );
 }

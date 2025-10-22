@@ -57,7 +57,10 @@ export default {
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${api_host}/canvas/rerun`,
-  get_risk_identify: '',
+  get_risk_identify: `${api_host}/kb/risk_identify`,
+  risk_retrieval: `${api_host}/kb/risk_retrieval`,
+  risk_ai_identify: `${api_host}/kb/risk_ai_identify`,
+  risk_ai_identify_batch: `${api_host}/kb/risk_ai_identify_batch`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,

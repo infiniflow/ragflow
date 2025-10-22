@@ -220,39 +220,45 @@ async def collect():
     logging.exception("collect got exception")
     return None, None
 
+  # No message fetched for now
   if not redis_msg:
     return None, None
+
+  # Extract message payload
   msg = redis_msg.get_message()
   if not msg:
     logging.error(f"collect got empty message of {redis_msg.get_msg_id()}")
     redis_msg.ack()
     return None, None
 
-    canceled = False
-    if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
-      task = msg
-      if task["task_type"] in ["graphrag", "raptor", "mindmap"] and msg.get("doc_ids", []):
-        task = TaskService.get_task(msg["id"], msg["doc_ids"])
-        task["doc_ids"] = msg["doc_ids"]
-    else:
-      task = TaskService.get_task(msg["id"])
+  # Resolve task by msg content
+  canceled = False
+  if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
+    task = msg
+    if task["task_type"] in ["graphrag", "raptor", "mindmap"] and msg.get("doc_ids", []):
+      task = TaskService.get_task(msg["id"], msg["doc_ids"])
+      task["doc_ids"] = msg["doc_ids"]
+  else:
+    task = TaskService.get_task(msg["id"])
 
-    if task:
-      canceled = has_canceled(task["id"])
-    if not task or canceled:
-      state = "is unknown" if not task else "has been cancelled"
-      FAILED_TASKS += 1
-      logging.warning(f"collect task {msg['id']} {state}")
-      redis_msg.ack()
-      return None, None
+  if task:
+    canceled = has_canceled(task["id"])
+  if not task or canceled:
+    state = "is unknown" if not task else "has been cancelled"
+    FAILED_TASKS += 1
+    logging.warning(f"collect task {msg['id']} {state}")
+    redis_msg.ack()
+    return None, None
 
-    task_type = msg.get("task_type", "")
-    task["task_type"] = task_type
-    if task_type[:8] == "dataflow":
-      task["tenant_id"] = msg["tenant_id"]
-      task["dataflow_id"] = msg["dataflow_id"]
-      task["kb_id"] = msg.get("kb_id", "")
-    return redis_msg, task
+  # Attach task_type and dataflow info
+  task_type = msg.get("task_type", "")
+  task["task_type"] = task_type
+  if task_type[:8] == "dataflow":
+    task["tenant_id"] = msg["tenant_id"]
+    task["dataflow_id"] = msg["dataflow_id"]
+    task["kb_id"] = msg.get("kb_id", "")
+
+  return redis_msg, task
 
 
 async def get_storage_binary(bucket, name):

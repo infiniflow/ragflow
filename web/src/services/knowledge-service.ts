@@ -47,6 +47,8 @@ const {
   traceGraphRag,
   runRaptor,
   traceRaptor,
+  risk_retrieval,
+  risk_ai_identify,
 } = api;
 
 const methods = {
@@ -210,6 +212,14 @@ const methods = {
     url: traceRaptor,
     method: 'get',
   },
+  risk_retrieval: {
+    url: risk_retrieval,
+    method: 'post',
+  },
+  risk_ai_identify: {
+    url: risk_ai_identify,
+    method: 'post',
+  },
   pipelineRerun: {
     url: api.pipelineRerun,
     method: 'post',
@@ -270,9 +280,22 @@ export function deletePipelineTask({
 }
 
 export const get_risk_identify = (formData: FormData) => {
-  return request.post('https://n8n.service.auditdog.cn/webhook-test/ragflow', {
+  return request.post(api.get_risk_identify, {
     data: formData,
   });
 };
 
 export default kbService;
+
+// Export batch AI identify result as Excel (blob)
+export const exportRiskAIIdentifyBatch = (
+  kb_id: string,
+  rows: any[],
+  parser_type: 'raw' | 'structured' = 'raw',
+) => {
+  return request(api.risk_ai_identify_batch, {
+    method: 'post',
+    data: { kb_id, rows, parser_type },
+    responseType: 'blob',
+  });
+};

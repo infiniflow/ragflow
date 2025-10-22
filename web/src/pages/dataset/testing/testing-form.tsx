@@ -38,12 +38,15 @@ import { useTranslation } from 'react-i18next';
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
   'loading' | 'refetch' | 'setValues'
->;
+> & {
+  externalQuestion?: string;
+};
 
 export default function TestingForm({
   loading,
   refetch,
   setValues,
+  externalQuestion,
 }: TestingFormProps) {
   const { t } = useTranslation();
 
@@ -75,6 +78,13 @@ export default function TestingForm({
     setValues(values as Required<z.infer<typeof formSchema>>);
   }, [setValues, values]);
 
+  // accept external prefilled question (e.g., from risk identify upload)
+  useEffect(() => {
+    if (externalQuestion && externalQuestion !== form.getValues('question')) {
+      form.setValue('question', externalQuestion, { shouldDirty: true });
+    }
+  }, [externalQuestion]);
+
   function onSubmit() {
     refetch();
   }
@@ -99,7 +109,12 @@ export default function TestingForm({
             <FormItem>
               <FormLabel>{t('knowledgeDetails.testText')}</FormLabel>
               <FormControl>
-                <Textarea {...field}></Textarea>
+                <Textarea
+                  {...field}
+                  autoSize={{ minRows: 8, maxRows: 24 }}
+                  className="whitespace-pre-wrap scrollbar-thin"
+                  placeholder={t('knowledgeDetails.testText') as string}
+                />
               </FormControl>
 
               <FormMessage />

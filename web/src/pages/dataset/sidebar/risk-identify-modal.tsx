@@ -9,9 +9,11 @@ import { useTranslation } from 'react-i18next';
 const RiskIdentifyModal = ({
   showRiskModal,
   setShowRiskModal,
+  onUploaded,
 }: IModalProps<any> & {
   showRiskModal: boolean;
   setShowRiskModal: (value: boolean) => void;
+  onUploaded?: (resp?: any) => void;
 }) => {
   const { t } = useTranslation();
   const [fileList, setFileList] = useState<any[]>([]);
@@ -50,7 +52,7 @@ const RiskIdentifyModal = ({
     const url = new URL(window.location.href);
     const pathname = url.pathname; // "/dataset/dataset/4e4eb61c822b11f080868b4ffee32926"
     const id = pathname.split('/').pop();
-    formData.append('引用知识库ID', `${id}`);
+    formData.append('knowledge_base_id', `${id}`);
     formData.append('data', fileList[0]);
     try {
       const res = await get_risk_identify(formData);
@@ -58,6 +60,8 @@ const RiskIdentifyModal = ({
         message.success(t('文件上传成功'));
         setFileList([]);
         setShowRiskModal(false);
+        // open retrieval modal after upload success
+        onUploaded?.(res);
       } else {
         message.error(t('文件上传失败'));
       }

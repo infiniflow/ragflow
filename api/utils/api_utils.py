@@ -263,7 +263,12 @@ def send_file_in_mem(data, filename):
     f.write(data)
     f.seek(0)
 
-    return send_file(f, as_attachment=True, attachment_filename=filename)
+    # Flask >= 2.0 uses download_name instead of attachment_filename
+    try:
+        return send_file(f, as_attachment=True, download_name=filename)
+    except TypeError:
+        # Backward compatibility with older Flask
+        return send_file(f, as_attachment=True, attachment_filename=filename)
 
 
 def get_json_result(code: settings.RetCode = settings.RetCode.SUCCESS, message="success", data=None):
