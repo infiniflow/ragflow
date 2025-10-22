@@ -228,9 +228,10 @@ async def collect():
     canceled = False
     if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
         task = msg
-        if task["task_type"] in ["graphrag", "raptor", "mindmap"] and msg.get("doc_ids", []):
+        if task["task_type"] in ["graphrag", "raptor", "mindmap"]:
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
-            task["doc_ids"] = msg["doc_ids"]
+            task["doc_id"] = msg["doc_id"]
+            task["doc_ids"] = msg.get("doc_ids", []) or []
     else:
         task = TaskService.get_task(msg["id"])
 
@@ -1052,12 +1053,12 @@ async def task_manager():
 
 async def main():
     logging.info(r"""
-    ____                      __  _                                              
+    ____                      __  _
    /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____
    / // __ \/ __ `/ _ \/ ___/ __/ / __ \/ __ \   / ___/ _ \/ ___/ | / / _ \/ ___/
- _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /    
-/___/_/ /_/\__, /\___/____/\__/_/\____/_/ /_/  /____/\___/_/    |___/\___/_/     
-          /____/        
+ _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /
+/___/_/ /_/\__, /\___/____/\__/_/\____/_/ /_/  /____/\___/_/    |___/\___/_/
+          /____/
     """)
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
     settings.init_settings()
