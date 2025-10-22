@@ -83,10 +83,10 @@ const MenuItem: React.FC<{
       className={cn(
         'border cursor-pointer p-2 rounded-md focus:bg-transparent',
         {
-          'hover:border-accent-primary hover:bg-[rgba(59,160,92,0.1)]':
+          'hover:border-accent-primary hover:bg-[rgba(59,160,92,0.1)] focus:bg-[rgba(59,160,92,0.1)]':
             status === generateStatus.start ||
             status === generateStatus.completed,
-          'hover:border-border hover:bg-[rgba(59,160,92,0)]':
+          'hover:border-border hover:bg-[rgba(59,160,92,0)] focus:bg-[rgba(59,160,92,0)]':
             status !== generateStatus.start &&
             status !== generateStatus.completed,
         },
@@ -177,7 +177,11 @@ const MenuItem: React.FC<{
   );
 };
 
-const Generate: React.FC = () => {
+type GenerateProps = {
+  disabled?: boolean;
+};
+const Generate: React.FC<GenerateProps> = (props) => {
+  const { disabled = false } = props;
   const [open, setOpen] = useState(false);
   const { graphRunData, raptorRunData } = useTraceGenerate({ open });
   const { runGenerate, pauseGenerate } = useDatasetGenerate();
@@ -189,16 +193,21 @@ const Generate: React.FC = () => {
   return (
     <div className="generate">
       <DropdownMenu open={open} onOpenChange={handleOpenChange}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant={'transparent'}
-            onClick={() => {
-              handleOpenChange(!open);
-            }}
-          >
-            <WandSparkles className="mr-2" />
-            {t('knowledgeDetails.generate')}
-          </Button>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <div className={cn({ 'cursor-not-allowed': disabled })}>
+            <Button
+              disabled={disabled}
+              variant={'transparent'}
+              onClick={() => {
+                if (!disabled) {
+                  handleOpenChange(!open);
+                }
+              }}
+            >
+              <WandSparkles className="mr-2 size-4" />
+              {t('knowledgeDetails.generate')}
+            </Button>
+          </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-[380px] p-5 flex flex-col gap-2 ">
           {Object.values(GenerateType).map((name) => {
