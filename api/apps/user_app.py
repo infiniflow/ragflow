@@ -22,7 +22,7 @@ import secrets
 import time
 from datetime import datetime
 
-from flask import redirect, request, session, Response
+from flask import redirect, request, session, make_response
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -866,7 +866,9 @@ def forget_get_captcha():
     from captcha.image import ImageCaptcha
     image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
     img_bytes = image.generate(captcha_text).read()
-    return Response(img_bytes, mimetype="image/png")
+    response = make_response(img_bytes)
+    response.headers.set("Content-Type", "image/JPEG")
+    return response
 
 
 @manager.route("/forget/otp", methods=["POST"])  # noqa: F821
