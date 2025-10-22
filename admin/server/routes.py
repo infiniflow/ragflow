@@ -32,18 +32,24 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 def login():
     if not request.json:
         return error_response('Authorize admin failed.' ,400)
-    email = request.json.get("email", "")
-    password = request.json.get("password", "")
-    return login_admin(email, password)
+    try:
+        email = request.json.get("email", "")
+        password = request.json.get("password", "")
+        return login_admin(email, password)
+    except Exception as e:
+        return error_response(str(e), 500)
 
 
 @admin_bp.route('/logout', methods=['GET'])
 @login_required
 def logout():
-    current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
-    current_user.save()
-    logout_user()
-    return success_response(True)
+    try:
+        current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
+        current_user.save()
+        logout_user()
+        return success_response(True)
+    except Exception as e:
+        return error_response(str(e), 500)
 
 
 @admin_bp.route('/auth', methods=['GET'])

@@ -1,6 +1,6 @@
 [project]
 name = "ragflow-cli"
-version = "0.21.0"
+version = "0.21.1"
 description = "Admin Service's client of [RAGFlow](https://github.com/infiniflow/ragflow). The Admin Service provides user management and system monitoring. "
 authors = [{ name = "Lynn", email = "lynn_inf@hotmail.com" }]
 license = { text = "Apache License, Version 2.0" }

@@ -348,7 +348,7 @@ Listing all agents of user: lynn_inf@hotmail.com
 +-----------------+-------------+------------+-----------------+
 | canvas_category | canvas_type | permission | title           |
 +-----------------+-------------+------------+-----------------+
-| agent_canvas    | None        | team       | research_helper |
+| agent           | None        | team       | research_helper |
 +-----------------+-------------+------------+-----------------+
 ```
 

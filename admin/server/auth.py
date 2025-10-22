@@ -32,6 +32,7 @@ from api.utils.crypt import decrypt
 from api.utils import (
     current_timestamp,
     datetime_format,
+    get_format_time,
     get_uuid,
 )
 from api.utils.api_utils import (
@@ -131,6 +132,7 @@ def login_admin(email: str, password: str):
     login_user(user)
     user.update_time = (current_timestamp(),)
     user.update_date = (datetime_format(datetime.now()),)
+    user.last_login_time = get_format_time()
     user.save()
     msg = "Welcome back!"
     return construct_response(data=resp, auth=user.get_id(), message=msg)
