@@ -116,9 +116,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
-                                "ed31364c727211f0bdb2bafe6e7908e6"
-                            ],
+                            "kb_ids": [],
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -147,9 +145,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
-                                "0f968106727311f08357bafe6e7908e6"
-                            ],
+                            "kb_ids": [],
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -178,9 +174,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
-                                "4ad1f9d0727311f0827dbafe6e7908e6"
-                            ],
+                            "kb_ids": [],
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -349,9 +343,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [
-                                    "ed31364c727211f0bdb2bafe6e7908e6"
-                                ],
+                                "kb_ids": [],
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
@@ -389,9 +381,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [
-                                    "0f968106727311f08357bafe6e7908e6"
-                                ],
+                                "kb_ids": [],
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
@@ -429,9 +419,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [
-                                    "4ad1f9d0727311f0827dbafe6e7908e6"
-                                ],
+                                "kb_ids": [],
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
