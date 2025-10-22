@@ -234,10 +234,8 @@ def thumbnail_img(filename, blob):
                     with pdfplumber.open(pdf_path) as pdf:
                         if pdf.pages:
                             buffered = BytesIO()
-                            img = None
-                            for _ in range(10):
-                                pdf.pages[0].to_image(resolution=int(72)).save(buffered)
-                                img = buffered.getvalue()
+                            pdf.pages[0].to_image(resolution=int(72)).save(buffered)
+                            img = buffered.getvalue()
                             return img
         except Exception:
             pass
