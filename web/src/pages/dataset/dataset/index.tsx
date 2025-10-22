@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
@@ -30,6 +31,7 @@ export default function Dataset() {
     onDocumentUploadOk,
     documentUploadLoading,
   } = useHandleUploadDocument();
+  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration();
 
   const {
     searchString,
@@ -62,7 +64,7 @@ export default function Dataset() {
   return (
     <>
       <div className="absolute top-4 right-5">
-        <Generate />
+        <Generate disabled={!(dataSetData.chunk_num > 0)} />
       </div>
       <section className="p-5 min-w-[880px]">
         <ListFilterBar
