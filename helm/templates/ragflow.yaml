@@ -38,6 +38,8 @@ spec:
       containers:
       - name: ragflow
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}:{{ .Values.ragflow.image.tag }}
+        args:
+          - --enable-adminserver
         {{- with .Values.ragflow.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
