@@ -100,7 +100,7 @@ export function NodeCollapsible<T extends any[]>({
     >
       {nextItems.slice(0, 3).map(children)}
       <CollapsibleContent className={nextClassName}>
-        {nextItems.slice(3).map(children)}
+        {nextItems.slice(3).map((x, idx) => children(x, idx + 3))}
       </CollapsibleContent>
       {nextItems.length > 3 && (
         <CollapsibleTrigger

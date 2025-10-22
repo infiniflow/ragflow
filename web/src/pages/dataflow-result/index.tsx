@@ -65,7 +65,7 @@ const Chunk = () => {
     navigateToDatasetOverview,
     navigateToDatasetList,
     navigateToAgents,
-    navigateToDataflow,
+    navigateToAgent,
   } = useNavigatePage();
   let fileUrl = useGetDocumentUrl(isAgent);
 
@@ -179,7 +179,7 @@ const Chunk = () => {
                     navigateToDatasetOverview(knowledgeId)();
                   }
                   if (agentId) {
-                    navigateToDataflow(agentId)();
+                    navigateToAgent(agentId)();
                   }
                 }}
               >

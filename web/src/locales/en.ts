@@ -1633,6 +1633,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         word: 'Word',
         slides: 'PPT',
         audio: 'Audio',
+        video: 'Video',
       },
       fields: 'Field',
       addParser: 'Add Parser',
