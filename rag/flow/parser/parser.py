@@ -140,7 +140,13 @@ class ParserParam(ProcessParamBase):
                 ],
                 "output_format": "json",
             },
-            "video": {},
+            "video": {
+                "suffix":[
+                    "mp4",
+                    "av"
+                ],
+                "output_format": "json",
+            },
         }
 
     def check(self):
@@ -184,6 +190,10 @@ class ParserParam(ProcessParamBase):
         audio_config = self.setups.get("audio", "")
         if audio_config:
             self.check_empty(audio_config.get("llm_id"), "Audio VLM")
+
+        video_config = self.setups.get("video", "")
+        if video_config:
+            self.check_empty(video_config.get("llm_id"), "Video VLM")
 
         email_config = self.setups.get("email", "")
         if email_config:
@@ -357,6 +367,17 @@ class Parser(ProcessBase):
 
             self.set_output("text", txt)
 
+    def _video(self, name, blob):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an video.")
+
+        conf = self._param.setups["video"]
+        self.set_output("output_format", conf["output_format"])
+
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT)
+        txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
+
+        self.set_output("text", txt)
+
     def _email(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an email.")
 
@@ -483,6 +504,7 @@ class Parser(ProcessBase):
             "word": self._word,
             "image": self._image,
             "audio": self._audio,
+            "video": self._video,
             "email": self._email,
         }
         try:
