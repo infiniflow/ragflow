@@ -223,6 +223,7 @@ const ProfilePage: FC = () => {
           title={modalTitle[editType]}
           open={isEditing}
           showfooter={false}
+          titleClassName="text-base"
           onOpenChange={(open) => {
             if (!open) {
               handleCancel();
@@ -393,7 +394,7 @@ const ProfilePage: FC = () => {
               )}
 
               <div className="w-full text-right space-x-4 !mt-11">
-                <Button type="reset" variant="secondary">
+                <Button type="reset" variant="secondary" onClick={handleCancel}>
                   {t('cancel')}
                 </Button>
                 <Button type="submit" disabled={submitLoading}>
