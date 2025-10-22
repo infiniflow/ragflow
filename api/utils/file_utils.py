@@ -211,24 +211,34 @@ def thumbnail_img(filename, blob):
         return buffered.getvalue()
 
     elif re.match(r".*\.(ppt|pptx)$", filename):
-        import aspose.pydrawing as drawing
-        import aspose.slides as slides
-
         try:
-            with slides.Presentation(BytesIO(blob)) as presentation:
-                buffered = BytesIO()
-                scale = 0.03
-                img = None
-                for _ in range(10):
-                    # https://reference.aspose.com/slides/python-net/aspose.slides/slide/get_thumbnail/#float-float
-                    presentation.slides[0].get_thumbnail(scale, scale).save(buffered, drawing.imaging.ImageFormat.png)
-                    img = buffered.getvalue()
-                    if len(img) >= 64000:
-                        scale = scale / 2.0
-                        buffered = BytesIO()
-                    else:
-                        break
-                return img
+            os.environ[
+                "LD_LIBRARY_PATH"] = "/usr/lib/libreoffice/program:" + os.environ.get(
+                "LD_LIBRARY_PATH", "")
+            with tempfile.NamedTemporaryFile(suffix='.ppt') as tmp_ppt:
+                tmp_ppt.write(blob)
+                tmp_ppt_path = tmp_ppt.name
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    cmd = [
+                        "libreoffice",
+                        "--headless",
+                        "--convert-to", "pdf",
+                        "--outdir", os.path.dirname(tmp_dir),
+                        tmp_ppt_path
+                    ]
+                    subprocess.run(cmd, check=True, capture_output=True,
+                                   text=True)
+                    pdf_name = os.path.splitext(tmp_ppt_path)[0] + '.pdf'
+                    pdf_path = os.path.join(tmp_dir, pdf_name)
+                    with pdfplumber.open(pdf_path) as pdf:
+                        if pdf.pages:
+                            buffered = BytesIO()
+                            img = None
+                            for _ in range(10):
+                                pdf.pages[0].to_image(resolution=int(72)).save(buffered)
+                                img = buffered.getvalue()
+                            return img
         except Exception:
             pass
     return None

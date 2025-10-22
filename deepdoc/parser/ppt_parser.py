@@ -17,7 +17,9 @@
 import logging
 from io import BytesIO
 from pptx import Presentation
-
+import tempfile
+import subprocess
+import os
 
 class RAGFlowPptParser:
     def __init__(self):
@@ -75,9 +77,33 @@ class RAGFlowPptParser:
             return ""
 
     def __call__(self, fnm, from_page, to_page, callback=None):
-        ppt = Presentation(fnm) if isinstance(
-            fnm, str) else Presentation(
-            BytesIO(fnm))
+        os.environ[
+            "LD_LIBRARY_PATH"] = "/usr/lib/libreoffice/program:" + os.environ.get(
+            "LD_LIBRARY_PATH", "")
+        if (isinstance(fnm, str) and fnm.lower().endswith('.ppt')) or (isinstance(fnm, bytes) and fnm[:8] == b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'):
+            with tempfile.NamedTemporaryFile(suffix='.ppt') as tmp_ppt:
+                if isinstance(fnm, bytes):
+                    tmp_ppt.write(fnm)
+                    tmp_ppt.flush()
+                    ppt_path = tmp_ppt.name
+                else:
+                    ppt_path = fnm
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    cmd = [
+                        "libreoffice",
+                        "--headless",
+                        "--convert-to", "pptx",
+                        "--outdir", tmp_dir,  # 修正outdir参数
+                        ppt_path
+                    ]
+                    subprocess.run(cmd, check=True, capture_output=True)
+                    pptx_name = os.path.splitext(os.path.basename(tmp_ppt.name))[0] + '.pptx'
+                    pptx_path = os.path.join(tmp_dir, pptx_name)
+                    ppt = Presentation(pptx_path)
+        else:
+            ppt = Presentation(fnm) if isinstance(fnm, str) else Presentation(
+                BytesIO(fnm))
+
         txts = []
         self.total_page = len(ppt.slides)
         for i, slide in enumerate(ppt.slides):
