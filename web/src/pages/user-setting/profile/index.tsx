@@ -121,7 +121,7 @@ const ProfilePage: FC = () => {
   //   };
 
   return (
-    <div className="h-full bg-bg-base text-text-secondary p-5">
+    <div className="h-full w-full bg-bg-base text-text-secondary p-5">
       {/* Header */}
       <header className="flex flex-col gap-1 justify-between items-start mb-6">
         <h1 className="text-2xl font-bold text-text-primary">{t('profile')}</h1>
@@ -223,6 +223,7 @@ const ProfilePage: FC = () => {
           title={modalTitle[editType]}
           open={isEditing}
           showfooter={false}
+          titleClassName="text-base"
           onOpenChange={(open) => {
             if (!open) {
               handleCancel();
@@ -393,7 +394,7 @@ const ProfilePage: FC = () => {
               )}
 
               <div className="w-full text-right space-x-4 !mt-11">
-                <Button type="reset" variant="secondary">
+                <Button type="reset" variant="secondary" onClick={handleCancel}>
                   {t('cancel')}
                 </Button>
                 <Button type="submit" disabled={submitLoading}>

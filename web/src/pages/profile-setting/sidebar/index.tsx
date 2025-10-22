@@ -1,10 +1,9 @@
-import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import ThemeToggle from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { ThemeEnum } from '@/constants/common';
 import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import {
@@ -12,11 +11,9 @@ import {
   Banknote,
   Box,
   FileCog,
-  LayoutGrid,
-  LogOut,
   User,
+  Users,
 } from 'lucide-react';
-import { useCallback } from 'react';
 import { useHandleMenuClick } from './hooks';
 
 const menuItems = [
@@ -24,7 +21,7 @@ const menuItems = [
     section: 'Account & collaboration',
     items: [
       { icon: User, label: 'Profile', key: Routes.Profile },
-      { icon: LayoutGrid, label: 'Team', key: Routes.Team },
+      { icon: Users, label: 'Team', key: Routes.Team },
       { icon: Banknote, label: 'Plan', key: Routes.Plan },
       { icon: Banknote, label: 'MCP', key: Routes.Mcp },
     ],
@@ -53,66 +50,62 @@ const menuItems = [
 
 export function SideBar() {
   const pathName = useSecondPathName();
-  const { handleMenuClick } = useHandleMenuClick();
-  const { setTheme } = useTheme();
-  const isDarkTheme = useIsDarkTheme();
+  const { data: userInfo } = useFetchUserInfo();
+  const { handleMenuClick, active } = useHandleMenuClick();
 
   const { logout } = useLogout();
 
-  const handleThemeChange = useCallback(
-    (checked: boolean) => {
-      setTheme(checked ? ThemeEnum.Dark : ThemeEnum.Light);
-    },
-    [setTheme],
-  );
-
   return (
-    <aside className="w-[303px] bg-background border-r flex flex-col">
+    <aside className="w-[303px] bg-bg-base flex flex-col">
+      <div className="px-6 flex gap-2 items-center">
+        <RAGFlowAvatar
+          avatar={userInfo?.avatar}
+          name={userInfo?.nickname}
+          isPerson
+        />
+        <p className="text-sm text-text-primary">{userInfo?.email}</p>
+      </div>
       <div className="flex-1 overflow-auto">
         {menuItems.map((section, idx) => (
           <div key={idx}>
-            <h2 className="p-6 text-sm font-semibold">{section.section}</h2>
+            {/* <h2 className="p-6 text-sm font-semibold">{section.section}</h2> */}
             {section.items.map((item, itemIdx) => {
-              const active = pathName === item.key;
+              const hoverKey = pathName === item.key;
               return (
-                <Button
-                  key={itemIdx}
-                  variant={active ? 'secondary' : 'ghost'}
-                  className={cn('w-full justify-start gap-2.5 p-6 relative')}
-                  onClick={handleMenuClick(item.key)}
-                >
-                  <item.icon className="w-6 h-6" />
-                  <span>{item.label}</span>
-                  {active && (
+                <div key={itemIdx} className="mx-6 my-5 ">
+                  <Button
+                    variant={hoverKey ? 'secondary' : 'ghost'}
+                    className={cn('w-full justify-start gap-2.5 p-3 relative', {
+                      'bg-bg-card text-text-primary': active === item.key,
+                      'bg-bg-base text-text-secondary': active !== item.key,
+                    })}
+                    onClick={handleMenuClick(item.key)}
+                  >
+                    <item.icon className="w-6 h-6" />
+                    <span>{item.label}</span>
+                    {/* {active && (
                     <div className="absolute right-0 w-[5px] h-[66px] bg-primary rounded-l-xl shadow-[0_0_5.94px_#7561ff,0_0_11.88px_#7561ff,0_0_41.58px_#7561ff,0_0_83.16px_#7561ff,0_0_142.56px_#7561ff,0_0_249.48px_#7561ff]" />
-                  )}
-                </Button>
+                  )} */}
+                  </Button>
+                </div>
               );
             })}
           </div>
         ))}
       </div>
 
-      <div className="p-6 mt-auto border-t">
-        <div className="flex items-center gap-2 mb-6">
-          <Switch
-            id="dark-mode"
-            onCheckedChange={handleThemeChange}
-            checked={isDarkTheme}
-          />
-          <Label htmlFor="dark-mode" className="text-sm">
-            Dark
-          </Label>
+      <div className="p-6 mt-auto ">
+        <div className="flex items-center gap-2 mb-6 justify-end">
+          <ThemeToggle />
         </div>
         <Button
           variant="outline"
-          className="w-full gap-3"
+          className="w-full gap-3 !bg-bg-base border !border-border-button !text-text-secondary"
           onClick={() => {
             logout();
           }}
         >
-          <LogOut className="w-6 h-6" />
-          Logout
+          Log Out
         </Button>
       </div>
     </aside>

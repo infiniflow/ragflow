@@ -14,7 +14,7 @@ export const useHandleMenuClick = () => {
         logout();
       } else {
         setActive(key);
-        navigate(`${Routes.ProfileSetting}${key}`);
+        navigate(`${Routes.UserSetting}${key}`);
       }
     },
     [logout, navigate],

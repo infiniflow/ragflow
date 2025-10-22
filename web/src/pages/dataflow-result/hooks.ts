@@ -345,10 +345,10 @@ export const useSummaryInfo = (
         const { output_format, parse_method } = setups;
         const res = [];
         if (parse_method) {
-          res.push(`${t('dataflow.parserMethod')}: ${parse_method}`);
+          res.push(`${t('dataflowParser.parserMethod')}: ${parse_method}`);
         }
         if (output_format) {
-          res.push(`${t('dataflow.outputFormat')}: ${output_format}`);
+          res.push(`${t('dataflowParser.outputFormat')}: ${output_format}`);
         }
         return res.join(' ');
       }

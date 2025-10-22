@@ -1792,6 +1792,8 @@ Important structured information may include: names, dates, locations, events, k
       result: 'Result',
       parseSummary: 'Parse Summary',
       parseSummaryTip: 'Parser：deepdoc',
+      parserMethod: 'Parser Method',
+      outputFormat: 'Output Format',
       rerunFromCurrentStep: 'Rerun From Current Step',
       rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
       confirmRerun: 'Confirm Rerun Process',

@@ -1,5 +1,5 @@
 import { Outlet } from 'umi';
-import SideBar from './sidebar';
+import { SideBar } from './sidebar';
 
 import { PageHeader } from '@/components/page-header';
 import {
