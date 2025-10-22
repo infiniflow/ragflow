@@ -1,13 +1,15 @@
 import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import { CardContainer } from '@/components/card-container';
+import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { pick } from 'lodash';
-import { Import, Plus } from 'lucide-react';
+import { Plus, SquareArrowOutDownLeft } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ProfileSettingWrapperCard } from '../components';
 import { EditMcpDialog } from './edit-mcp-dialog';
 import { ImportMcpDialog } from './import-mcp-dialog';
 import { McpCard } from './mcp-card';
@@ -33,27 +35,33 @@ export default function McpServer() {
   );
 
   return (
-    <section className="p-4 w-full">
-      <div className="text-text-primary text-2xl">{t('mcp.mcpServers')}</div>
-      <section className="flex items-center justify-between pb-5">
-        <div className="text-text-secondary">
-          {t('mcp.customizeTheListOfMcpServers')}
-        </div>
-        <div className="flex gap-5">
-          <SearchInput
-            className="w-40"
-            value={searchString}
-            onChange={handleInputChange}
-          ></SearchInput>
-          <Button variant={'secondary'} onClick={showImportModal}>
-            <Import /> {t('mcp.import')}
-          </Button>
-          <Button onClick={showEditModal('')}>
-            <Plus /> {t('mcp.addMCP')}
-          </Button>
-        </div>
-      </section>
-
+    <ProfileSettingWrapperCard
+      header={
+        <>
+          <div className="text-text-primary text-2xl font-semibold">
+            {t('mcp.mcpServers')}
+          </div>
+          <section className="flex items-center justify-between">
+            <div className="text-text-secondary">
+              {t('mcp.customizeTheListOfMcpServers')}
+            </div>
+            <div className="flex gap-5">
+              <SearchInput
+                className="w-40"
+                value={searchString}
+                onChange={handleInputChange}
+              ></SearchInput>
+              <Button onClick={showEditModal('')}>
+                <Plus /> {t('mcp.addMCP')}
+              </Button>
+              <Button variant={'secondary'} onClick={showImportModal}>
+                <SquareArrowOutDownLeft /> {t('mcp.import')}
+              </Button>
+            </div>
+          </section>
+        </>
+      }
+    >
       {selectedList.length > 0 && (
         <BulkOperateBar
           list={list}
@@ -93,6 +101,7 @@ export default function McpServer() {
           onOk={onImportOk}
         ></ImportMcpDialog>
       )}
-    </section>
+      <Spotlight className="z-0" opcity={0.7} coverage={70} />
+    </ProfileSettingWrapperCard>
   );
 }

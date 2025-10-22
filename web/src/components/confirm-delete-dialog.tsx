@@ -56,13 +56,13 @@ export function ConfirmDeleteDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onCancel}>
-            {t('common.cancel')}
+            {t('common.no')}
           </AlertDialogCancel>
           <AlertDialogAction
             className="bg-state-error text-text-primary"
             onClick={onOk}
           >
-            {t('common.ok')}
+            {t('common.yes')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
