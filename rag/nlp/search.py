@@ -72,9 +72,12 @@ class Dealer:
     def search(self, req, idx_names: str | list[str],
                kb_ids: list[str],
                emb_mdl=None,
-               highlight: bool | list = False,
+               highlight: bool | list | None = None,
                rank_feature: dict | None = None
                ):
+        if highlight is None:
+            highlight = False
+
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
