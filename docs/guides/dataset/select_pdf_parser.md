@@ -39,7 +39,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
   - A third-party visual model provided by a specific model provider.
 
 :::danger IMPORTANG
-MinerU PDF document parsing is available starting from v0.21.1. To use this feature, following these steps:
+MinerU PDF document parsing is available starting from v0.21.1. To use this feature, follow these steps:
 
 1. Before deploying ragflow-server, update your **docker/.env** file:  
    - Enable `HF_ENDPOINT=https://hf-mirror.com`
