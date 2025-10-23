@@ -140,7 +140,13 @@ class ParserParam(ProcessParamBase):
                 ],
                 "output_format": "json",
             },
-            "video": {},
+            "video": {
+                "suffix":[
+                    "mp4",
+                    "av"
+                ],
+                "output_format": "json",
+            },
         }
 
     def check(self):
@@ -185,6 +191,10 @@ class ParserParam(ProcessParamBase):
         if audio_config:
             self.check_empty(audio_config.get("llm_id"), "Audio VLM")
 
+        video_config = self.setups.get("video", "")
+        if video_config:
+            self.check_empty(video_config.get("llm_id"), "Video VLM")
+
         email_config = self.setups.get("email", "")
         if email_config:
             email_output_format = email_config.get("output_format", "")
@@ -212,8 +222,8 @@ class Parser(ProcessBase):
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
-                pn, x0, x1, top, bott = poss.split(" ")
-                bboxes.append({"page_number": int(pn), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
+                for pn, x0, x1, top, bott in RAGFlowPdfParser.extract_positions(poss):
+                    bboxes.append({"page_number": int(pn[0]), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
@@ -357,6 +367,17 @@ class Parser(ProcessBase):
 
             self.set_output("text", txt)
 
+    def _video(self, name, blob):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an video.")
+
+        conf = self._param.setups["video"]
+        self.set_output("output_format", conf["output_format"])
+
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT)
+        txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
+
+        self.set_output("text", txt)
+
     def _email(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an email.")
 
@@ -483,6 +504,7 @@ class Parser(ProcessBase):
             "word": self._word,
             "image": self._image,
             "audio": self._audio,
+            "video": self._video,
             "email": self._email,
         }
         try:
