@@ -166,6 +166,7 @@ const Chunk = () => {
       case 'doc':
         return documentInfo?.name.split('.').pop() || 'doc';
       case 'visual':
+        return documentInfo?.name.split('.').pop() || 'visual';
       case 'docx':
       case 'txt':
       case 'md':

@@ -8,6 +8,7 @@ import styles from './index.less';
 import PdfPreviewer, { IProps } from './pdf-preview';
 import { PptPreviewer } from './ppt-preview';
 import { TxtPreviewer } from './txt-preview';
+import { VideoPreviewer } from './video-preview';
 
 type PreviewProps = {
   fileType: string;
@@ -42,9 +43,28 @@ const Preview = ({
           <TxtPreviewer className={className} url={url} />
         </section>
       )}
-      {['visual'].indexOf(fileType) > -1 && (
+      {['jpg', 'png', 'gif', 'jpeg', 'svg', 'bmp', 'ico', 'tif'].indexOf(
+        fileType,
+      ) > -1 && (
         <section>
           <ImagePreviewer className={className} url={url} />
+        </section>
+      )}
+      {[
+        'mp4',
+        'avi',
+        'mov',
+        'mkv',
+        'wmv',
+        'flv',
+        'mpeg',
+        'mpg',
+        'asf',
+        'rm',
+        'rmvb',
+      ].indexOf(fileType) > -1 && (
+        <section>
+          <VideoPreviewer className={className} url={url} />
         </section>
       )}
       {['pptx'].indexOf(fileType) > -1 && (
