@@ -244,7 +244,7 @@ export const FileTypeSuffixMap = {
   [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
   [FileType.Docx]: ['doc', 'docx'],
   [FileType.PowerPoint]: ['pptx'],
-  [FileType.Video]: [],
+  [FileType.Video]: ['mp4', 'avi', 'mkv'],
   [FileType.Audio]: [
     'da',
     'wave',

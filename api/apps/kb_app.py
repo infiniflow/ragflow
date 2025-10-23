@@ -70,6 +70,7 @@ def create():
         e, t = TenantService.get_by_id(current_user.id)
         if not e:
             return get_data_error_result(message="Tenant not found.")
+        req["embd_id"] = t.embd_id
         req["parser_config"] = {
             "layout_recognize": "DeepDOC",
             "chunk_token_num": 512,
