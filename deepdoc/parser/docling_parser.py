@@ -160,9 +160,6 @@ class DoclingParser(RAGFlowPdfParser):
         return (pic, positions) if need_position else pic
 
     def _iter_doc_items(self, doc) -> Iterable[tuple[str, Any, Optional[_BBox]]]:
-        """
-        遍历 docling 的 items，产出 (type, payload, bbox)
-        """
         for t in getattr(doc, "texts", []):
             parent=getattr(t, "parent", "")
             ref=getattr(parent,"cref","")
@@ -285,10 +282,10 @@ class DoclingParser(RAGFlowPdfParser):
         binary: BytesIO | bytes | None = None,
         callback: Optional[Callable] = None,
         *,
-        output_dir: Optional[str] = None,  # 兼容 MinerU 接口，Docling 不强依赖
-        lang: Optional[str] = None,        # Docling OCR 语言可通过 pipeline options 配置；此处先保留占位
-        method: str = "auto",              # 兼容 MinerU 参数，无实际影响
-        delete_output: bool = True,        # 兼容 MinerU 参数，无实际影响
+        output_dir: Optional[str] = None, 
+        lang: Optional[str] = None,        
+        method: str = "auto",             
+        delete_output: bool = True,       
     ):
 
         if not self.check_installation():
