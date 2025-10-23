@@ -81,6 +81,8 @@ class ExeSQL(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("ExeSQL processing"):
+            return
 
         def convert_decimals(obj):
             from decimal import Decimal
@@ -96,6 +98,9 @@ class ExeSQL(ToolBase, ABC):
         if not sql:
             raise Exception("SQL for `ExeSQL` MUST not be empty.")
 
+        if self.check_if_canceled("ExeSQL processing"):
+            return
+
         vars = self.get_input_elements_from_text(sql)
         args = {}
         for k, o in vars.items():
@@ -107,6 +112,9 @@ class ExeSQL(ToolBase, ABC):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
         sql = self.string_format(sql, args)
+
+        if self.check_if_canceled("ExeSQL processing"):
+            return
 
         sqls = sql.split(";")
         if self._param.db_type in ["mysql", "mariadb"]:
@@ -181,6 +189,10 @@ class ExeSQL(ToolBase, ABC):
             sql_res = []
             formalized_content = []
             for single_sql in sqls:
+                if self.check_if_canceled("ExeSQL processing"):
+                    ibm_db.close(conn)
+                    return
+
                 single_sql = single_sql.replace("```", "").strip()
                 if not single_sql:
                     continue
@@ -190,6 +202,9 @@ class ExeSQL(ToolBase, ABC):
                 rows = []
                 row = ibm_db.fetch_assoc(stmt)
                 while row and len(rows) < self._param.max_records:
+                    if self.check_if_canceled("ExeSQL processing"):
+                        ibm_db.close(conn)
+                        return
                     rows.append(row)
                     row = ibm_db.fetch_assoc(stmt)
 
@@ -220,6 +235,11 @@ class ExeSQL(ToolBase, ABC):
         sql_res = []
         formalized_content = []
         for single_sql in sqls:
+            if self.check_if_canceled("ExeSQL processing"):
+                cursor.close()
+                db.close()
+                return
+
             single_sql = single_sql.replace('```','')
             if not single_sql:
                 continue
@@ -243,6 +263,9 @@ class ExeSQL(ToolBase, ABC):
 
             sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
             formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
+
+        cursor.close()
+        db.close()
 
         self.set_output("json", sql_res)
         self.set_output("formalized_content", "\n\n".join(formalized_content))

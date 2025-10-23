@@ -131,10 +131,14 @@ class CodeExec(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("CodeExec processing"):
+            return
+
         lang = kwargs.get("lang", self._param.lang)
         script = kwargs.get("script", self._param.script)
         arguments = {}
         for k, v in self._param.arguments.items():
+
             if kwargs.get(k):
                 arguments[k] = kwargs[k]
                 continue
@@ -149,15 +153,28 @@ class CodeExec(ToolBase, ABC):
     def _execute_code(self, language: str, code: str, arguments: dict):
         import requests
 
+        if self.check_if_canceled("CodeExec execution"):
+            return
+
         try:
             code_b64 = self._encode_code(code)
             code_req = CodeExecutionRequest(code_b64=code_b64, language=language, arguments=arguments).model_dump()
         except Exception as e:
+            if self.check_if_canceled("CodeExec execution"):
+                return
+
             self.set_output("_ERROR", "construct code request error: " + str(e))
 
         try:
+            if self.check_if_canceled("CodeExec execution"):
+                return "Task has been canceled"
+
             resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
             logging.info(f"http://{settings.SANDBOX_HOST}:9385/run,  code_req: {code_req}, resp.status_code {resp.status_code}:")
+
+            if self.check_if_canceled("CodeExec execution"):
+                return "Task has been canceled"
+
             if resp.status_code != 200:
                 resp.raise_for_status()
             body = resp.json()
@@ -173,16 +190,25 @@ class CodeExec(ToolBase, ABC):
                 logging.info(f"http://{settings.SANDBOX_HOST}:9385/run -> {rt}")
                 if isinstance(rt, tuple):
                     for i, (k, o) in enumerate(self._param.outputs.items()):
+                        if self.check_if_canceled("CodeExec execution"):
+                            return
+
                         if k.find("_") == 0:
                             continue
                         o["value"] = rt[i]
                 elif isinstance(rt, dict):
                     for i, (k, o) in enumerate(self._param.outputs.items()):
+                        if self.check_if_canceled("CodeExec execution"):
+                            return
+
                         if k not in rt or k.find("_") == 0:
                             continue
                         o["value"] = rt[k]
                 else:
                     for i, (k, o) in enumerate(self._param.outputs.items()):
+                        if self.check_if_canceled("CodeExec execution"):
+                            return
+
                         if k.find("_") == 0:
                             continue
                         o["value"] = rt
@@ -190,6 +216,9 @@ class CodeExec(ToolBase, ABC):
                 self.set_output("_ERROR", "There is no response from sandbox")
 
         except Exception as e:
+            if self.check_if_canceled("CodeExec execution"):
+                return
+
             self.set_output("_ERROR", "Exception executing code: " + str(e))
 
         return self.output()

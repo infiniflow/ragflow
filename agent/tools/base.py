@@ -125,6 +125,9 @@ class ToolBase(ComponentBase):
         return self._param.get_meta()
 
     def invoke(self, **kwargs):
+        if self.check_if_canceled("Tool processing"):
+            return
+
         self.set_output("_created_time", time.perf_counter())
         try:
             res = self._invoke(**kwargs)
