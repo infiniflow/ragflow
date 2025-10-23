@@ -101,13 +101,13 @@ export function getLatestError(eventList: IEventList) {
 
 export const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
+  const formData = get(getNode(BeginId), 'data.form', {});
 
   return useMemo(() => {
-    const formData = get(getNode(BeginId), 'data.form', {});
     if (formData?.enablePrologue) {
       return formData?.prologue;
     }
-  }, [getNode]);
+  }, [formData?.enablePrologue, formData?.prologue]);
 };
 
 export function useFindMessageReference(answerList: IEventList) {
@@ -194,12 +194,21 @@ export const buildRequestBody = (value: string = '') => {
   return msgBody;
 };
 
-export const useSendAgentMessage = (
-  url?: string,
-  addEventList?: (data: IEventList, messageId: string) => void,
-  beginParams?: any[],
-  isShared?: boolean,
-) => {
+export const useSendAgentMessage = ({
+  url,
+  addEventList,
+  beginParams,
+  isShared,
+  refetch,
+  isTaskMode: isTask,
+}: {
+  url?: string;
+  addEventList?: (data: IEventList, messageId: string) => void;
+  beginParams?: any[];
+  isShared?: boolean;
+  refetch?: () => void;
+  isTaskMode?: boolean;
+}) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
@@ -210,9 +219,7 @@ export const useSendAgentMessage = (
     return answerList[0]?.message_id;
   }, [answerList]);
 
-  const isTaskMode = useIsTaskMode();
-
-  // const { refetch } = useFetchAgent(); // This will cause the shared page to also send a request
+  const isTaskMode = useIsTaskMode(isTask);
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -225,6 +232,7 @@ export const useSendAgentMessage = (
     addNewestOneQuestion,
     addNewestOneAnswer,
     removeAllMessages,
+    removeAllMessagesExceptFirst,
     scrollToBottom,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
@@ -277,7 +285,7 @@ export const useSendAgentMessage = (
           setValue(message.content);
           removeLatestMessage();
         } else {
-          // refetch(); // pull the message list after sending the message successfully
+          refetch?.(); // pull the message list after sending the message successfully
         }
       } catch (error) {
         console.log('🚀 ~ useSendAgentMessage ~ error:', error);
@@ -293,6 +301,7 @@ export const useSendAgentMessage = (
       clearUploadResponseList,
       setValue,
       removeLatestMessage,
+      refetch,
     ],
   );
 
@@ -305,9 +314,9 @@ export const useSendAgentMessage = (
         role: MessageType.User,
       });
       await send({ ...body, session_id: sessionId });
-      // refetch();
+      refetch?.();
     },
-    [addNewestOneQuestion, send, sessionId],
+    [addNewestOneQuestion, refetch, send, sessionId],
   );
 
   // reset session
@@ -315,8 +324,18 @@ export const useSendAgentMessage = (
     stopOutputMessage();
     resetAnswerList();
     setSessionId(null);
-    removeAllMessages();
-  }, [resetAnswerList, removeAllMessages, stopOutputMessage]);
+    if (isTaskMode) {
+      removeAllMessages();
+    } else {
+      removeAllMessagesExceptFirst();
+    }
+  }, [
+    stopOutputMessage,
+    resetAnswerList,
+    isTaskMode,
+    removeAllMessages,
+    removeAllMessagesExceptFirst,
+  ]);
 
   const handlePressEnter = useCallback(() => {
     if (trim(value) === '') return;
@@ -362,9 +381,10 @@ export const useSendAgentMessage = (
   useEffect(() => {
     const { content, id } = findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
-    if (answerList.length > 0) {
+    const answer = content || getLatestError(answerList);
+    if (answerList.length > 0 && answer) {
       addNewestOneAnswer({
-        answer: content || getLatestError(answerList),
+        answer: answer,
         id: id,
         ...inputAnswer,
       });

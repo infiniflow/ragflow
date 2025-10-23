@@ -593,6 +593,9 @@ export default {
       baseUrl: 'base-url',
       baseUrlTip:
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
+      tongyiBaseUrlTip:
+        '中國用戶無需填寫或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。國際用戶請使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder: '（僅國際用戶，請參閱提示）',
       modify: '修改',
       systemModelSettings: '設定預設模型',
       chatModel: '聊天模型',
@@ -845,6 +848,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要採用的搜尋結果數。',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        '該組件通過您提供的 SearXNG 實例地址進行搜索。請設置 Top N 和實例 URL。',
       channel: '頻道',
       channelTip: '針對該組件的輸入進行文字搜尋或新聞搜索',
       text: '文字',
@@ -1147,6 +1153,8 @@ export default {
       headers: '請求頭',
       cleanHtml: '清除 HTML',
       cleanHtmlTip: '如果回應是 HTML 格式並且只需要主要內容，請將其開啟。',
+      invalidUrl:
+        '必須是有效的 URL 或包含變量佔位符的 URL，格式為 {variable_name} 或 {component@variable}',
       reference: '引用',
       input: '輸入',
       output: '輸出',

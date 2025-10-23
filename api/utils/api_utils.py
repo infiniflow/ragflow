@@ -39,6 +39,7 @@ from flask import (
     make_response,
     send_file,
 )
+from flask_login import current_user
 from flask import (
     request as flask_request,
 )
@@ -48,13 +49,39 @@ from werkzeug.http import HTTP_STATUS_CODES
 
 from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
+from api.db import ActiveEnum
 from api.db.db_models import APIToken
-from api.db.services.llm_service import LLMService
-from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils import CustomJSONEncoder, get_uuid, json_dumps
+from api.utils.json import CustomJSONEncoder, json_dumps
+from api.utils import get_uuid
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
+
+
+def serialize_for_json(obj):
+    """
+    Recursively serialize objects to make them JSON serializable.
+    Handles ModelMetaclass and other non-serializable objects.
+    """
+    if hasattr(obj, '__dict__'):
+        # For objects with __dict__, try to serialize their attributes
+        try:
+            return {key: serialize_for_json(value) for key, value in obj.__dict__.items()
+                    if not key.startswith('_')}
+        except (AttributeError, TypeError):
+            return str(obj)
+    elif hasattr(obj, '__name__'):
+        # For classes and metaclasses, return their name
+        return f"<{obj.__module__}.{obj.__name__}>" if hasattr(obj, '__module__') else f"<{obj.__name__}>"
+    elif isinstance(obj, (list, tuple)):
+        return [serialize_for_json(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: serialize_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+    else:
+        # Fallback: convert to string representation
+        return str(obj)
 
 
 def request(**kwargs):
@@ -77,7 +104,8 @@ def request(**kwargs):
                         settings.HTTP_APP_KEY.encode("ascii"),
                         prepped.path_url.encode("ascii"),
                         prepped.body if kwargs.get("json") else b"",
-                        urlencode(sorted(kwargs["data"].items()), quote_via=quote, safe="-._~").encode("ascii") if kwargs.get("data") and isinstance(kwargs["data"], dict) else b"",
+                        urlencode(sorted(kwargs["data"].items()), quote_via=quote, safe="-._~").encode(
+                            "ascii") if kwargs.get("data") and isinstance(kwargs["data"], dict) else b"",
                     ]
                 ),
                 "sha1",
@@ -99,7 +127,7 @@ def request(**kwargs):
 def get_exponential_backoff_interval(retries, full_jitter=False):
     """Calculate the exponential backoff wait time."""
     # Will be zero if factor equals 0
-    countdown = min(REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC * (2**retries))
+    countdown = min(REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC * (2 ** retries))
     # Full jitter according to
     # https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
     if full_jitter:
@@ -123,14 +151,21 @@ def get_data_error_result(code=settings.RetCode.DATA_ERROR, message="Sorry! Data
 def server_error_response(e):
     logging.exception(e)
     try:
-        if e.code == 401:
-            return get_json_result(code=401, message=repr(e))
-    except BaseException:
-        pass
+        msg = repr(e).lower()
+        if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
+            return get_json_result(code=settings.RetCode.UNAUTHORIZED, message=repr(e))
+    except Exception as ex:
+        logging.warning(f"error checking authorization: {ex}")
+
     if len(e.args) > 1:
-        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+        try:
+            serialized_data = serialize_for_json(e.args[1])
+            return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=serialized_data)
+        except Exception:
+            return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=None)
     if repr(e).find("index_not_found_exception") >= 0:
-        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
+        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR,
+                               message="No chunk found, please upload file and parse it.")
 
     return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
@@ -175,7 +210,8 @@ def validate_request(*args, **kwargs):
                 if no_arguments:
                     error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
                 if error_arguments:
-                    error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
+                    error_string += "required argument values: {}".format(
+                        ",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
                 return get_json_result(code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
             return func(*_args, **_kwargs)
 
@@ -190,12 +226,27 @@ def not_allowed_parameters(*params):
             input_arguments = flask_request.json or flask_request.form.to_dict()
             for param in params:
                 if param in input_arguments:
-                    return get_json_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
+                    return get_json_result(code=settings.RetCode.ARGUMENT_ERROR,
+                                           message=f"Parameter {param} isn't allowed")
             return f(*args, **kwargs)
 
         return wrapper
 
     return decorator
+
+
+def active_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        from api.db.services import UserService
+        user_id = current_user.id
+        usr = UserService.filter_by_id(user_id)
+        # check is_active
+        if not usr or not usr.is_active == ActiveEnum.ACTIVE.value:
+            return get_json_result(code=settings.RetCode.FORBIDDEN, message="User isn't active, please activate first.")
+        return f(*args, **kwargs)
+
+    return wrapper
 
 
 def is_localhost(ip):
@@ -215,7 +266,7 @@ def send_file_in_mem(data, filename):
     return send_file(f, as_attachment=True, attachment_filename=filename)
 
 
-def get_json_result(code=settings.RetCode.SUCCESS, message="success", data=None):
+def get_json_result(code: settings.RetCode = settings.RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return jsonify(response)
 
@@ -270,7 +321,7 @@ def construct_result(code=settings.RetCode.DATA_ERROR, message="data is missing"
     return jsonify(response)
 
 
-def construct_json_result(code=settings.RetCode.SUCCESS, message="success", data=None):
+def construct_json_result(code: settings.RetCode = settings.RetCode.SUCCESS, message="success", data=None):
     if data is None:
         return jsonify({"code": code, "message": message})
     else:
@@ -292,6 +343,8 @@ def construct_error_response(e):
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
+        if os.environ.get("DISABLE_SDK"):
+            return get_json_result(data=False, message="`Authorization` can't be empty")
         authorization_str = flask_request.headers.get("Authorization")
         if not authorization_str:
             return get_json_result(data=False, message="`Authorization` can't be empty")
@@ -301,27 +354,39 @@ def token_required(func):
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return get_json_result(data=False, message="Authentication error: API key is invalid!", code=settings.RetCode.AUTHENTICATION_ERROR)
+            return get_json_result(data=False, message="Authentication error: API key is invalid!",
+                                   code=settings.RetCode.AUTHENTICATION_ERROR)
         kwargs["tenant_id"] = objs[0].tenant_id
         return func(*args, **kwargs)
 
     return decorated_function
 
 
-def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
-    if code == 0:
+def get_result(code=settings.RetCode.SUCCESS, message="", data=None, total=None):
+    """
+    Standard API response format:
+    {
+        "code": 0,
+        "data": [...],        # List or object, backward compatible
+        "total": 47,          # Optional field for pagination
+        "message": "..."      # Error or status message
+    }
+    """
+    response = {"code": code}
+
+    if code == settings.RetCode.SUCCESS:
         if data is not None:
-            response = {"code": code, "data": data}
-        else:
-            response = {"code": code}
+            response["data"] = data
+        if total is not None:
+            response["total_datasets"] = total
     else:
-        response = {"code": code, "message": message}
+        response["message"] = message or "Error"
+
     return jsonify(response)
 
-
 def get_error_data_result(
-    message="Sorry! Data missing!",
-    code=settings.RetCode.DATA_ERROR,
+        message="Sorry! Data missing!",
+        code=settings.RetCode.DATA_ERROR,
 ):
     result_dict = {"code": code, "message": message}
     response = {}
@@ -356,7 +421,8 @@ def get_parser_config(chunk_method, parser_config):
 
     # Define default configurations for each chunking method
     key_mapping = {
-        "naive": {"chunk_token_num": 512, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "naive": {"chunk_token_num": 512, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC",
+                  "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "tag": None,
         "resume": None,
@@ -395,16 +461,16 @@ def get_parser_config(chunk_method, parser_config):
 
 
 def get_data_openai(
-    id=None,
-    created=None,
-    model=None,
-    prompt_tokens=0,
-    completion_tokens=0,
-    content=None,
-    finish_reason=None,
-    object="chat.completion",
-    param=None,
-    stream=False
+        id=None,
+        created=None,
+        model=None,
+        prompt_tokens=0,
+        completion_tokens=0,
+        content=None,
+        finish_reason=None,
+        object="chat.completion",
+        param=None,
+        stream=False
 ):
     total_tokens = prompt_tokens + completion_tokens
 
@@ -478,6 +544,8 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+    from api.db.services.llm_service import LLMService
+    from api.db.services.tenant_llm_service import TenantLLMService
     """
     Verifies availability of an embedding model for a specific tenant.
 
@@ -516,7 +584,9 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
         in_llm_service = bool(LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"))
 
         tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
-        is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
+        is_tenant_model = any(
+            llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for
+            llm in tenant_llms)
 
         is_builtin_model = embd_id in settings.BUILTIN_EMBEDDING_MODELS
         if not (is_builtin_model or is_tenant_model or in_llm_service):
@@ -613,6 +683,16 @@ def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
     return transformed_data
 
 
+def group_by(list_of_dict, key):
+    res = {}
+    for item in list_of_dict:
+        if item[key] in res.keys():
+            res[item[key]].append(item)
+        else:
+            res[item[key]] = [item]
+    return res
+
+
 def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, str]:
     results = {}
     tool_call_sessions = []
@@ -649,7 +729,9 @@ TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
 
 
-def timeout(seconds: float | int = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
+def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
+    if isinstance(seconds, str):
+        seconds = float(seconds)
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -735,7 +817,9 @@ async def is_strong_enough(chat_model, embedding_model):
                 _ = await trio.to_thread.run_sync(lambda: embedding_model.encode(["Are you strong enough!?"]))
         if chat_model:
             with trio.fail_after(30):
-                res = await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}], {}))
+                res = await trio.to_thread.run_sync(lambda: chat_model.chat("Nothing special.", [{"role": "user",
+                                                                                                  "content": "Are you strong enough!?"}],
+                                                                            {}))
             if res.find("**ERROR**") >= 0:
                 raise Exception(res)
 

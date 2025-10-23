@@ -1,7 +1,5 @@
-import { BeginId } from '@/pages/flow/constant';
 import { DecoratorNode, LexicalNode, NodeKey } from 'lexical';
 import { ReactNode } from 'react';
-const prefix = BeginId + '@';
 
 export class VariableNode extends DecoratorNode<ReactNode> {
   __value: string;

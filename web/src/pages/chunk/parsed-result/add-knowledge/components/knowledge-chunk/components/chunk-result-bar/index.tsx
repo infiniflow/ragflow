@@ -95,7 +95,10 @@ export default ({
         </PopoverContent>
       </Popover>
       <div className="w-[20px]"></div>
-      <Button onClick={() => createChunk()} className="bg-bg-card text-primary">
+      <Button
+        onClick={() => createChunk()}
+        className="bg-bg-card text-primary hover:bg-card"
+      >
         <Plus size={44} />
       </Button>
     </div>

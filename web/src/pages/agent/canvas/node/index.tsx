@@ -2,9 +2,9 @@ import { IRagNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
 import { NodeHandleId } from '../../constant';
-import { needsSingleStepDebugging } from '../../utils';
-import { CommonHandle } from './handle';
-import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
+import { needsSingleStepDebugging, showCopyIcon } from '../../utils';
+import { CommonHandle, LeftEndHandle } from './handle';
+import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
@@ -21,16 +21,10 @@ function InnerRagNode({
       id={id}
       label={data.label}
       showRun={needsSingleStepDebugging(data.label)}
+      showCopy={showCopyIcon(data.label)}
     >
       <NodeWrapper selected={selected}>
-        <CommonHandle
-          id={NodeHandleId.End}
-          type="target"
-          position={Position.Left}
-          isConnectable={isConnectable}
-          style={LeftHandleStyle}
-          nodeId={id}
-        ></CommonHandle>
+        <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           type="source"
           position={Position.Right}

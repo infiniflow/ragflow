@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { CircleStop, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -141,7 +142,7 @@ export function NextMessageInput({
         <Textarea
           value={value}
           onChange={onInputChange}
-          placeholder="Type your message here..."
+          placeholder={t('chat.messagePlaceholder')}
           className="field-sizing-content min-h-10 w-full resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}

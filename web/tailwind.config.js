@@ -14,12 +14,21 @@ module.exports = {
       center: true,
       padding: '2rem',
       screens: {
-        '2xl': '1400px',
+        '2xl': '1536px',
       },
+    },
+    screens: {
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1536px',
+      '3xl': '1780px',
+      '4xl': '1980px',
     },
     extend: {
       colors: {
-        border: 'var(--colors-outline-neutral-strong)',
+        border: 'var(--border-default)',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'var(--background)',
@@ -60,6 +69,12 @@ module.exports = {
         'bg-card': 'var(--bg-card)',
         'bg-component': 'var(--bg-component)',
         'bg-input': 'var(--bg-input)',
+        'bg-canvas': {
+          DEFAULT: 'rgb(var(--bg-canvas) / <alpha-value>)',
+        },
+        'bg-list': {
+          DEFAULT: 'rgb(var(--bg-list) / <alpha-value>)',
+        },
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
         'text-disabled': 'var(--text-disabled)',
@@ -67,11 +82,23 @@ module.exports = {
         'border-default': 'var(--border-default)',
         'border-accent': 'var(--border-accent)',
         'border-button': 'var(--border-button)',
-        'accent-primary': 'var(--accent-primary)',
+        'accent-primary': {
+          DEFAULT: 'rgb(var(--accent-primary) / <alpha-value>)',
+          5: 'rgba(var(--accent-primary) / 0.05)', // 5%
+        },
         'bg-accent': 'var(--bg-accent)',
-        'state-success': 'var(--state-success)',
-        'state-warning': 'var(--state-warning)',
-        'state-error': 'var(--state-error)',
+        'state-success': {
+          DEFAULT: 'rgb(var(--state-success) / <alpha-value>)',
+          5: 'rgba(var(--state-success) / 0.05)', // 5%
+        },
+        'state-warning': {
+          DEFAULT: 'rgb(var(--state-warning) / <alpha-value>)',
+          5: 'rgba(var(--state-warning) / 0.05)', // 5%
+        },
+        'state-error': {
+          DEFAULT: 'rgb(var(--state-error) / <alpha-value>)',
+          5: 'rgba(var(--state-error) / 0.05)', // 5%
+        },
         'team-group': 'var(--team-group)',
         'team-member': 'var(--team-member)',
         'team-department': 'var(--team-department)',
@@ -107,71 +134,13 @@ module.exports = {
           DEFAULT: 'var(--background-inverse-standard)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
-        backgroundInverseStandard: {
-          DEFAULT: 'var(--background-inverse-standard)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        backgroundInverseWeak: {
-          DEFAULT: 'var(--background-inverse-weak)',
-          foreground: 'var(--background-inverse-weak-foreground)',
-        },
-        backgroundCoreStandard: {
-          DEFAULT: 'var(--background-core-standard)',
-          foreground: 'var(--background-core-standard-foreground)',
-        },
         backgroundCoreWeak: {
           DEFAULT: 'var(--background-core-weak)',
           foreground: 'var(--background-core-weak-foreground)',
         },
-
         'colors-background-inverse-standard': {
           DEFAULT: 'var(--colors-background-inverse-standard)',
           foreground: 'var(--colors-background-inverse-standard-foreground)',
-        },
-
-        'color-background-brand-default': {
-          DEFAULT: 'var(--color-background-brand-default)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'color-background-positive-default': {
-          DEFAULT: 'var(--color-background-positive-default)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-core-standard': {
-          DEFAULT: 'var(--colors-background-core-standard)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-core-strong': {
-          DEFAULT: 'var(--colors-background-core-strong)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-core-weak': {
-          DEFAULT: 'var(--colors-background-core-weak)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-solid-danger': {
-          DEFAULT: 'var(--colors-background-functional-solid-danger)',
-          foreground: 'var(--colors-text-inverse-strong)',
-        },
-        'colors-background-functional-solid-notice': {
-          DEFAULT: 'var(--colors-background-functional-solid-notice)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-solid-positive': {
-          DEFAULT: 'var(--colors-background-functional-solid-positive)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-transparent-danger': {
-          DEFAULT: 'var(--colors-background-functional-transparent-danger)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-transparent-notice': {
-          DEFAULT: 'var(--colors-background-functional-transparent-notice)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-functional-transparent-positive': {
-          DEFAULT: 'var(--colors-background-functional-transparent-positive)',
-          foreground: 'var(--background-inverse-standard-foreground)',
         },
         'colors-background-inverse-standard': {
           DEFAULT: 'var(--colors-background-inverse-standard)',
@@ -191,10 +160,6 @@ module.exports = {
         },
         'colors-background-neutral-weak': {
           DEFAULT: 'var(--colors-background-neutral-weak)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-sentiment-solid-primary': {
-          DEFAULT: 'var(--colors-background-sentiment-solid-primary)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
         sidebar: {

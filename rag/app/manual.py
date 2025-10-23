@@ -23,6 +23,7 @@ from io import BytesIO
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from rag.utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, PlainParser, DocxParser
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
 
@@ -252,7 +253,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
-
+        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
         res = tokenize_table(tbls, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         return res
@@ -261,6 +262,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
+        tbls=vision_figure_parser_docx_wrapper(sections=ti_list,tbls=tbls,callback=callback,**kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)

@@ -1,6 +1,8 @@
 // src/pages/next-searches/hooks.ts
 
 import message from '@/components/ui/message';
+import { useSetModalState } from '@/hooks/common-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import searchService from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
@@ -85,7 +87,7 @@ interface SearchListResponse {
 export const useFetchSearchList = (params?: SearchListParams) => {
   const [searchParams, setSearchParams] = useState<SearchListParams>({
     page: 1,
-    page_size: 10,
+    page_size: 50,
     ...params,
   });
 
@@ -295,4 +297,75 @@ export const useUpdateSearch = () => {
   );
 
   return { data, isError, updateSearch };
+};
+
+export const useRenameSearch = () => {
+  const [search, setSearch] = useState<ISearchAppProps>({} as ISearchAppProps);
+  const { navigateToSearch } = useNavigatePage();
+  const {
+    visible: openCreateModal,
+    hideModal: hideChatRenameModal,
+    showModal: showChatRenameModal,
+  } = useSetModalState();
+  const { updateSearch } = useUpdateSearch();
+  const { createSearch } = useCreateSearch();
+  const [loading, setLoading] = useState(false);
+
+  const handleShowChatRenameModal = useCallback(
+    (record?: ISearchAppProps) => {
+      if (record) {
+        setSearch(record);
+      }
+      showChatRenameModal();
+    },
+    [showChatRenameModal],
+  );
+
+  const handleHideModal = useCallback(() => {
+    hideChatRenameModal();
+    setSearch({} as ISearchAppProps);
+  }, [hideChatRenameModal]);
+
+  const onSearchRenameOk = useCallback(
+    async (name: string, callBack?: () => void) => {
+      let res;
+      setLoading(true);
+      if (search?.id) {
+        try {
+          const reponse = await searchService.getSearchDetail({
+            search_id: search?.id,
+          });
+          const detail = reponse.data?.data;
+          console.log('detail-->', detail);
+
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id, created_by, update_time, ...searchDataTemp } = detail;
+          res = await updateSearch({
+            ...searchDataTemp,
+            name: name,
+            search_id: search?.id,
+          } as unknown as IUpdateSearchProps);
+        } catch (e) {
+          console.error('error', e);
+        }
+      } else {
+        res = await createSearch({ name: name });
+      }
+      if (res && !search?.id) {
+        navigateToSearch(res?.search_id)();
+      }
+      callBack?.();
+      setLoading(false);
+      handleHideModal();
+    },
+    [search, createSearch, handleHideModal, navigateToSearch, updateSearch],
+  );
+  return {
+    searchRenameLoading: loading,
+    initialSearchName: search?.name,
+    onSearchRenameOk,
+    openCreateModal,
+    hideSearchRenameModal: handleHideModal,
+    showSearchRenameModal: handleShowChatRenameModal,
+  };
 };

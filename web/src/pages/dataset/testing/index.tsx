@@ -25,7 +25,7 @@ export default function RetrievalTesting() {
       <section className="flex justify-between items-center">
         <TopTitle
           title={t('knowledgeDetails.retrievalTesting')}
-          description={t('knowledgeDetails.retrievalTestingDescription')}
+          description={t('knowledgeDetails.testingDescription')}
         ></TopTitle>
         {/* <Button>Save as Preset</Button> */}
       </section>
@@ -40,15 +40,18 @@ export default function RetrievalTesting() {
                 <Plus /> Add New Test
               </Button> */}
             </div>
-            <TestingForm
-              loading={loading}
-              setValues={setValues}
-              refetch={refetch}
-            ></TestingForm>
+            <div className="h-[calc(100vh-241px)] overflow-auto scrollbar-thin">
+              <TestingForm
+                loading={loading}
+                setValues={setValues}
+                refetch={refetch}
+              ></TestingForm>
+            </div>
           </div>
           <TestingResult
             data={data}
             page={page}
+            loading={loading}
             pageSize={pageSize}
             filterValue={filterValue}
             handleFilterSubmit={handleFilterSubmit}
@@ -66,6 +69,7 @@ export default function RetrievalTesting() {
             <TestingResult
               data={data}
               page={page}
+              loading={loading}
               pageSize={pageSize}
               filterValue={filterValue}
               handleFilterSubmit={handleFilterSubmit}
@@ -81,6 +85,7 @@ export default function RetrievalTesting() {
             <TestingResult
               data={data}
               page={page}
+              loading={loading}
               pageSize={pageSize}
               filterValue={filterValue}
               handleFilterSubmit={handleFilterSubmit}

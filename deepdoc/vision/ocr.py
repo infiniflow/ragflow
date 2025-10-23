@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import gc
 import logging
 import copy
 import time
@@ -84,7 +84,8 @@ def load_model(model_dir, nm, device_id: int | None = None):
     def cuda_is_available():
         try:
             import torch
-            if torch.cuda.is_available() and torch.cuda.device_count() > device_id:
+            target_id = 0 if device_id is None else device_id
+            if torch.cuda.is_available() and torch.cuda.device_count() > target_id:
                 return True
         except Exception:
             return False
@@ -100,10 +101,13 @@ def load_model(model_dir, nm, device_id: int | None = None):
     # Shrink GPU memory after execution
     run_options = ort.RunOptions()
     if cuda_is_available():
+        gpu_mem_limit_mb = int(os.environ.get("OCR_GPU_MEM_LIMIT_MB", "2048"))
+        arena_strategy = os.environ.get("OCR_ARENA_EXTEND_STRATEGY", "kNextPowerOfTwo")
+        provider_device_id = 0 if device_id is None else device_id
         cuda_provider_options = {
-            "device_id": device_id, # Use specific GPU
-            "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
-            "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
+            "device_id": provider_device_id, # Use specific GPU
+            "gpu_mem_limit": max(gpu_mem_limit_mb, 0) * 1024 * 1024,
+            "arena_extend_strategy": arena_strategy,  # gpu memory allocation strategy
         }
         sess = ort.InferenceSession(
             model_file_path,
@@ -111,8 +115,8 @@ def load_model(model_dir, nm, device_id: int | None = None):
             providers=['CUDAExecutionProvider'],
             provider_options=[cuda_provider_options]
             )
-        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:" + str(device_id))
-        logging.info(f"load_model {model_file_path} uses GPU")
+        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:" + str(provider_device_id))
+        logging.info(f"load_model {model_file_path} uses GPU (device {provider_device_id}, gpu_mem_limit={cuda_provider_options['gpu_mem_limit']}, arena_strategy={arena_strategy})")
     else:
         sess = ort.InferenceSession(
             model_file_path,
@@ -348,6 +352,13 @@ class TextRecognizer:
 
         return img
 
+    def close(self):
+        # close session and release manually
+        logging.info('Close text recognizer.')
+        if hasattr(self, "predictor"):
+            del self.predictor
+        gc.collect()
+
     def __call__(self, img_list):
         img_num = len(img_list)
         # Calculate the aspect ratio of all text bars
@@ -394,6 +405,9 @@ class TextRecognizer:
                 rec_res[indices[beg_img_no + rno]] = rec_result[rno]
 
         return rec_res, time.time() - st
+
+    def __del__(self):
+        self.close()
 
 
 class TextDetector:
@@ -479,6 +493,12 @@ class TextDetector:
         dt_boxes = np.array(dt_boxes_new)
         return dt_boxes
 
+    def close(self):
+        logging.info("Close text detector.")
+        if hasattr(self, "predictor"):
+            del self.predictor
+        gc.collect()
+
     def __call__(self, img):
         ori_im = img.copy()
         data = {'image': img}
@@ -507,6 +527,9 @@ class TextDetector:
         dt_boxes = self.filter_tag_det_res(dt_boxes, ori_im.shape)
 
         return dt_boxes, time.time() - st
+
+    def __del__(self):
+        self.close()
 
 
 class OCR:

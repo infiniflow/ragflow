@@ -34,12 +34,10 @@ jobs:
       # https://github.com/hmarr/debug-action
       #- uses: hmarr/debug-action@v2
 
-      - name: Show who triggered this workflow
+      - name: Ensure workspace ownership
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
-
-      - name: Ensure workspace ownership
-        run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
+          echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
 
       # https://github.com/actions/checkout/issues/1781
       - name: Check out code
@@ -47,6 +45,44 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Check workflow duplication
+        if: ${{ !cancelled() && !failure() && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci')) }}
+        run: |
+          if [[ ${{ github.event_name }} != 'pull_request' ]]; then
+            HEAD=$(git rev-parse HEAD)
+            # Find a PR that introduced a given commit
+            gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+            PR_NUMBER=$(gh pr list --search ${HEAD} --state merged --json number --jq .[0].number)
+            echo "HEAD=${HEAD}"
+            echo "PR_NUMBER=${PR_NUMBER}"
+            if [[ -n ${PR_NUMBER} ]]; then
+              PR_SHA_FP=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/PR_${PR_NUMBER}
+              if [[ -f ${PR_SHA_FP} ]]; then
+                read -r PR_SHA PR_RUN_ID < "${PR_SHA_FP}"
+                # Calculate the hash of the current workspace content
+                HEAD_SHA=$(git rev-parse HEAD^{tree})
+                if [[ ${HEAD_SHA} == ${PR_SHA} ]]; then
+                  echo "Cancel myself since the workspace content hash is the same with PR #${PR_NUMBER} merged. See ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${PR_RUN_ID} for details."
+                  gh run cancel ${GITHUB_RUN_ID}
+                  while true; do
+                    status=$(gh run view ${GITHUB_RUN_ID} --json status -q .status)
+                    [ "$status" = "completed" ] && break
+                    sleep 5
+                  done
+                  exit 1
+                fi
+              fi
+            fi
+          else
+            PR_NUMBER=${{ github.event.pull_request.number }}
+            PR_SHA_FP=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/PR_${PR_NUMBER}
+            # Calculate the hash of the current workspace content
+            PR_SHA=$(git rev-parse HEAD^{tree})
+            echo "PR #${PR_NUMBER} workspace content hash: ${PR_SHA}"
+            mkdir -p ${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}
+            echo "${PR_SHA} ${GITHUB_RUN_ID}" > ${PR_SHA_FP}
+          fi
 
       # https://github.com/astral-sh/ruff-action
       - name: Static check with Ruff
@@ -59,14 +95,15 @@ jobs:
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
           sudo docker pull ubuntu:22.04
-          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 
       - name: Build ragflow:nightly
         run: |
-          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 
       - name: Start ragflow:nightly-slim
         run: |
+          sudo docker compose -f docker/docker-compose.yml down --volumes --remove-orphans
           echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 

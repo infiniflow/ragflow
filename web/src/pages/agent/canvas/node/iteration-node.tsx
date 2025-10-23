@@ -7,8 +7,7 @@ import { NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 import OperatorIcon from '../../operator-icon';
-import { CommonHandle } from './handle';
-import { RightHandleStyle } from './handle-icon';
+import { CommonHandle, LeftEndHandle } from './handle';
 import styles from './index.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
@@ -24,30 +23,21 @@ export function InnerIterationNode({
   return (
     <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
       <section
-        className={cn('h-full bg-transparent rounded-b-md ', {
+        className={cn('h-full bg-transparent rounded-b-md group', {
           [styles.selectedHeader]: selected,
         })}
       >
         <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
           <ResizeIcon />
         </NodeResizeControl>
-        <CommonHandle
-          id={NodeHandleId.End}
-          type="target"
-          position={Position.Left}
-          isConnectable={isConnectable}
-          className={styles.handle}
-          nodeId={id}
-        ></CommonHandle>
+        <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           id={NodeHandleId.Start}
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
-          className={styles.handle}
           nodeId={id}
         ></CommonHandle>
-
         <NodeHeader
           id={id}
           name={data.name}
@@ -75,8 +65,6 @@ function InnerIterationStartNode({
         type="source"
         position={Position.Right}
         isConnectable={isConnectable}
-        className={styles.handle}
-        style={RightHandleStyle}
         isConnectableEnd={false}
         id={NodeHandleId.Start}
         nodeId={id}

@@ -13,12 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import logging
 import re
 import math
+import os
 from collections import OrderedDict
 from dataclasses import dataclass
 
+from rag.prompts.generator import relevant_chunks_with_toc
 from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import rmSpace, get_float
 from rag.nlp import rag_tokenizer, query
@@ -69,7 +72,7 @@ class Dealer:
     def search(self, req, idx_names: str | list[str],
                kb_ids: list[str],
                emb_mdl=None,
-               highlight=False,
+               highlight: bool | list = False,
                rank_feature: dict | None = None
                ):
         filters = self.get_filters(req)
@@ -98,7 +101,11 @@ class Dealer:
             total = self.dataStore.getTotal(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
-            highlightFields = ["content_ltks", "title_tks"] if highlight else []
+            highlightFields = ["content_ltks", "title_tks"]
+            if not highlight:
+                highlightFields = []
+            elif isinstance(highlight, list):
+                highlightFields = highlight
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
             if emb_mdl is None:
                 matchExprs = [matchText]
@@ -152,7 +159,7 @@ class Dealer:
             query_vector=q_vec,
             aggregation=aggs,
             highlight=highlight,
-            field=self.dataStore.getFields(res, src),
+            field=self.dataStore.getFields(res, src + ["_score"]),
             keywords=keywords
         )
 
@@ -352,10 +359,8 @@ class Dealer:
         if not question:
             return ranks
 
-        RERANK_LIMIT = 64
-        RERANK_LIMIT = int(RERANK_LIMIT//page_size + ((RERANK_LIMIT%page_size)/(page_size*1.) + 0.5)) * page_size if page_size>1 else 1
-        if RERANK_LIMIT < 1: ## when page_size is very large the RERANK_LIMIT will be 0.
-            RERANK_LIMIT = 1
+        # Ensure RERANK_LIMIT is multiple of page_size
+        RERANK_LIMIT = math.ceil(64/page_size) * page_size if page_size>1 else 1
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RERANK_LIMIT), "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
@@ -374,16 +379,26 @@ class Dealer:
                                                    vector_similarity_weight,
                                                    rank_feature=rank_feature)
         else:
-            sim, tsim, vsim = self.rerank(
-                sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
-                rank_feature=rank_feature)
+            lower_case_doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+            if lower_case_doc_engine == "elasticsearch":
+                # ElasticSearch doesn't normalize each way score before fusion.
+                sim, tsim, vsim = self.rerank(
+                    sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
+                    rank_feature=rank_feature)
+            else:
+                # Don't need rerank here since Infinity normalizes each way score before fusion.
+                sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                tsim = sim
+                vsim = sim
         # Already paginated in search function
-        idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+        begin = ((page % (RERANK_LIMIT//page_size)) - 1) * page_size
+        sim = sim[begin : begin + page_size]
+        sim_np = np.array(sim)
+        idx = np.argsort(sim_np * -1)
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
-        sim_np = np.array(sim)
-        filtered_count = (sim_np >= similarity_threshold).sum()    
+        filtered_count = (sim_np >= similarity_threshold).sum()
         ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
             if sim[i] < similarity_threshold:
@@ -444,12 +459,27 @@ class Dealer:
     def chunk_list(self, doc_id: str, tenant_id: str,
                    kb_ids: list[str], max_count=1024,
                    offset=0,
-                   fields=["docnm_kwd", "content_with_weight", "img_id"]):
+                   fields=["docnm_kwd", "content_with_weight", "img_id"],
+                   sort_by_position: bool = False):
         condition = {"doc_id": doc_id}
+
+        fields_set = set(fields or [])
+        if sort_by_position:
+            for need in ("page_num_int", "position_int", "top_int"):
+                if need not in fields_set:
+                    fields_set.add(need)
+        fields = list(fields_set)
+
+        orderBy = OrderByExpr()
+        if sort_by_position:
+            orderBy.asc("page_num_int")
+            orderBy.asc("position_int")
+            orderBy.asc("top_int")
+
         res = []
         bs = 128
         for p in range(offset, max_count, bs):
-            es_res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id),
+            es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, bs, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.getFields(es_res, fields)
             for id, doc in dict_chunks.items():
@@ -499,3 +529,63 @@ class Dealer:
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
         return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}
+
+    def retrieval_by_toc(self, query:str, chunks:list[dict], tenant_ids:list[str], chat_mdl, topn: int=6):
+        if not chunks:
+            return []
+        idx_nms = [index_name(tid) for tid in tenant_ids]
+        ranks, doc_id2kb_id = {}, {}
+        for ck in chunks:
+            if ck["doc_id"] not in ranks:
+                ranks[ck["doc_id"]] = 0
+            ranks[ck["doc_id"]] += ck["similarity"]
+            doc_id2kb_id[ck["doc_id"]] = ck["kb_id"]
+        doc_id = sorted(ranks.items(), key=lambda x: x[1]*-1.)[0][0]
+        kb_ids = [doc_id2kb_id[doc_id]]
+        es_res = self.dataStore.search(["content_with_weight"], [], {"doc_id": doc_id, "toc_kwd": "toc"}, [], OrderByExpr(), 0, 128, idx_nms,
+                                       kb_ids)
+        toc = []
+        dict_chunks = self.dataStore.getFields(es_res, ["content_with_weight"])
+        for _, doc in dict_chunks.items():
+            try:
+                toc.extend(json.loads(doc["content_with_weight"]))
+            except Exception as e:
+                logging.exception(e)
+        if not toc:
+            return chunks
+
+        ids = relevant_chunks_with_toc(query, toc, chat_mdl, topn*2)
+        if not ids:
+            return chunks
+        
+        vector_size = 1024
+        id2idx = {ck["chunk_id"]: i for i, ck in enumerate(chunks)}
+        for cid, sim in ids:
+            if cid in id2idx:
+                chunks[id2idx[cid]]["similarity"] += sim
+                continue
+            chunk = self.dataStore.get(cid, idx_nms, kb_ids)
+            d = {
+                "chunk_id": cid,
+                "content_ltks": chunk["content_ltks"],
+                "content_with_weight": chunk["content_with_weight"],
+                "doc_id": doc_id,
+                "docnm_kwd": chunk.get("docnm_kwd", ""),
+                "kb_id": chunk["kb_id"],
+                "important_kwd": chunk.get("important_kwd", []),
+                "image_id": chunk.get("img_id", ""),
+                "similarity": sim,
+                "vector_similarity": sim,
+                "term_similarity": sim,
+                "vector": [0.0] * vector_size,
+                "positions": chunk.get("position_int", []),
+                "doc_type_kwd": chunk.get("doc_type_kwd", "")
+            }
+            for k in chunk.keys():
+                if k[-4:] == "_vec":
+                    d["vector"] = chunk[k]
+                    vector_size = len(chunk[k])
+                    break
+            chunks.append(d)
+
+        return sorted(chunks, key=lambda x:x["similarity"]*-1)[:topn]

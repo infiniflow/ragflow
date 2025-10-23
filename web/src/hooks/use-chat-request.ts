@@ -398,10 +398,14 @@ export const useDeleteMessage = () => {
 
 type UploadParameters = Parameters<NonNullable<FileUploadProps['onUpload']>>;
 
-type X = { file: UploadParameters[0][0]; options: UploadParameters[1] };
+type X = {
+  file: UploadParameters[0][0];
+  options: UploadParameters[1];
+  conversationId?: string;
+};
 
 export function useUploadAndParseFile() {
-  const { conversationId } = useGetChatSearchParams();
+  const { conversationId: id } = useGetChatSearchParams();
   const { t } = useTranslation();
   const controller = useRef(new AbortController());
 
@@ -414,11 +418,12 @@ export function useUploadAndParseFile() {
     mutationFn: async ({
       file,
       options: { onProgress, onSuccess, onError },
+      conversationId,
     }: X) => {
       try {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('conversation_id', conversationId);
+        formData.append('conversation_id', conversationId || id);
 
         const { data } = await chatService.uploadAndParse(
           {

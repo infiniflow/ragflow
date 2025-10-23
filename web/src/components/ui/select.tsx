@@ -224,6 +224,7 @@ export const RAGFlowSelect = forwardRef<
     allowClear,
     placeholder,
     contentProps = {},
+    disabled = false,
     // defaultValue,
     triggerClassName,
     onlyShowSelectedIcon = false,
@@ -278,14 +279,19 @@ export const RAGFlowSelect = forwardRef<
   }, [onlyShowSelectedIcon, options, value]);
 
   return (
-    <Select onValueChange={handleChange} value={value} key={key}>
+    <Select
+      onValueChange={handleChange}
+      value={value}
+      key={key}
+      disabled={disabled}
+    >
       <FormControlWidget>
         <SelectTrigger
           value={value}
           onReset={handleReset}
           allowClear={allowClear}
           ref={ref}
-          className={triggerClassName}
+          className={cn('bg-bg-base', triggerClassName)}
         >
           <SelectValue placeholder={placeholder}>{label}</SelectValue>
         </SelectTrigger>

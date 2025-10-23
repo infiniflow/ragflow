@@ -13,7 +13,7 @@ module.exports = {
     'check-file/filename-naming-convention': [
       'error',
       {
-        '**/*.{jsx,tsx}': 'KEBAB_CASE',
+        '**/*.{jsx,tsx}': '[a-z0-9.-]*',
         '**/*.{js,ts}': '[a-z0-9.-]*',
       },
     ],

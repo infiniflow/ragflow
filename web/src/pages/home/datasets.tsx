@@ -22,7 +22,7 @@ export function Datasets() {
     <section>
       <h2 className="text-2xl font-bold mb-6 flex gap-2.5 items-center">
         <IconFont name="data" className="size-8"></IconFont>
-        {t('header.knowledgeBase')}
+        {t('header.dataset')}
       </h2>
       <div className="flex gap-6">
         {loading ? (
@@ -30,7 +30,7 @@ export function Datasets() {
             <CardSkeleton />
           </div>
         ) : (
-          <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 max-h-[78vh] overflow-auto">
+          <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-7 max-h-[78vh] overflow-auto">
             {kbs
               ?.slice(0, 6)
               .map((dataset) => (

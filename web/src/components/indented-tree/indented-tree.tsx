@@ -18,6 +18,7 @@ import { TreeData } from '@antv/g6/lib/types';
 import isEmpty from 'lodash/isEmpty';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
+import { useIsDarkTheme } from '../theme-provider';
 
 const rootId = 'root';
 
@@ -322,7 +323,7 @@ const IndentedTree = ({ data, show, style = {} }: IProps) => {
       node.children.forEach((child, idx) => assignIds(child, node.id, idx));
     }
   }, []);
-
+  const isDark = useIsDarkTheme();
   const render = useCallback(
     async (data: TreeData) => {
       const graph: Graph = new Graph({
@@ -335,7 +336,8 @@ const IndentedTree = ({ data, show, style = {} }: IProps) => {
             labelBackground: (datum) => datum.id === rootId,
             labelBackgroundRadius: 0,
             labelBackgroundFill: '#576286',
-            labelFill: (datum) => (datum.id === rootId ? '#fff' : '#666'),
+            labelFill: isDark ? '#fff' : '#333',
+            // labelFill: (datum) => (datum.id === rootId ? '#fff' : '#666'),
             labelText: (d) => d.style?.labelText || d.id,
             labelTextAlign: (datum) =>
               datum.id === rootId ? 'center' : 'left',

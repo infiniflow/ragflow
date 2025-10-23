@@ -1,4 +1,3 @@
-import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatDate } from '@/utils/date';
@@ -11,20 +10,25 @@ type ApplicationCardProps = {
     update_time: number;
   };
   onClick?(): void;
+  moreDropdown: React.ReactNode;
 };
 
-export function ApplicationCard({ app, onClick }: ApplicationCardProps) {
+export function ApplicationCard({
+  app,
+  onClick,
+  moreDropdown,
+}: ApplicationCardProps) {
   return (
     <Card className="w-[264px]" onClick={onClick}>
-      <CardContent className="p-2.5  group flex justify-between">
-        <div className="flex items-center gap-2.5">
+      <CardContent className="p-2.5  group flex justify-between w-full">
+        <div className="flex items-center gap-2.5 w-full">
           <RAGFlowAvatar
             className="size-14 rounded-lg"
             avatar={app.avatar}
             name={app.title || 'CN'}
           ></RAGFlowAvatar>
           <div className="flex-1">
-            <h3 className="text-sm font-normal line-clamp-1 mb-1">
+            <h3 className="text-sm font-normal line-clamp-1 mb-1 text-ellipsis w-[160px] overflow-hidden">
               {app.title}
             </h3>
             <p className="text-xs font-normal text-text-secondary">
@@ -32,8 +36,7 @@ export function ApplicationCard({ app, onClick }: ApplicationCardProps) {
             </p>
           </div>
         </div>
-
-        <MoreButton className=""></MoreButton>
+        {moreDropdown}
       </CardContent>
     </Card>
   );

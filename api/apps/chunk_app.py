@@ -33,8 +33,7 @@ from api.utils.api_utils import get_data_error_result, get_json_result, server_e
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import cross_languages, keyword_extraction
-from rag.prompts.prompts import gen_meta_filter
+from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
 from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 
@@ -61,7 +60,7 @@ def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = settings.retrievaler.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
+        sres = settings.retriever.search(query, search.index_name(tenant_id), kb_ids, highlight=["content_ltks"])
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -291,6 +290,10 @@ def retrieval_test():
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
+    if not kb_ids:
+        return get_json_result(data=False, message='Please specify dataset firstly.',
+                               code=settings.RetCode.DATA_ERROR)
+
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
@@ -343,15 +346,16 @@ def retrieval_test():
             question += keyword_extraction(chat_mdl, question)
 
         labels = label_question(question, [kb])
-        ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
+        ranks = settings.retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
                                float(req.get("similarity_threshold", 0.0)),
                                float(req.get("vector_similarity_weight", 0.3)),
                                top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+                               doc_ids, rerank_mdl=rerank_mdl,
+                                             highlight=req.get("highlight", False),
                                rank_feature=labels
                                )
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question,
+            ck = settings.kg_retriever.retrieval(question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
@@ -381,7 +385,7 @@ def knowledge_graph():
         "doc_ids": [doc_id],
         "knowledge_graph_kwd": ["graph", "mind_map"]
     }
-    sres = settings.retrievaler.search(req, search.index_name(tenant_id), kb_ids)
+    sres = settings.retriever.search(req, search.index_name(tenant_id), kb_ids)
     obj = {"graph": {}, "mind_map": {}}
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]

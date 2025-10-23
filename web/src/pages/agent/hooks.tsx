@@ -25,7 +25,6 @@ import {
   initialBingValues,
   initialCategorizeValues,
   initialCodeValues,
-  initialConcentratorValues,
   initialCrawlerValues,
   initialDeepLValues,
   initialDuckValues,
@@ -45,6 +44,7 @@ import {
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
+  initialSearXNGValues,
   initialStringTransformValues,
   initialSwitchValues,
   initialTavilyExtractValues,
@@ -113,6 +113,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Bing]: initialBingValues,
       [Operator.GoogleScholar]: initialGoogleScholarValues,
       [Operator.DeepL]: initialDeepLValues,
+      [Operator.SearXNG]: initialSearXNGValues,
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
@@ -122,7 +123,6 @@ export const useInitializeOperatorParams = () => {
       [Operator.AkShare]: initialAkShareValues,
       [Operator.YahooFinance]: initialYahooFinanceValues,
       [Operator.Jin10]: initialJin10Values,
-      [Operator.Concentrator]: initialConcentratorValues,
       [Operator.TuShare]: initialTuShareValues,
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
@@ -138,6 +138,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Tool]: {},
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
+      [Operator.Placeholder]: {},
     };
   }, [llmId]);
 

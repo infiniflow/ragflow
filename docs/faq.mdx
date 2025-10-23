@@ -30,29 +30,19 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 Each RAGFlow release is available in two editions:
 
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.20.4`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.0-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.0`
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.20.4-slim` and `v0.20.4`:  
+RAGFlow offers two Docker image editions, `v0.21.0-slim` and `v0.21.0`:  
   
-- `infiniflow/ragflow:v0.20.4-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.20.4`: The RAGFlow Docker image with embedding models including:
-  - Built-in embedding models:
-    - `BAAI/bge-large-zh-v1.5`
-    - `maidalun1020/bce-embedding-base_v1`
-  - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-    - `BAAI/bge-base-en-v1.5`
-    - `BAAI/bge-large-en-v1.5`
-    - `BAAI/bge-small-en-v1.5`
-    - `BAAI/bge-small-zh-v1.5`
-    - `jinaai/jina-embeddings-v2-base-en`
-    - `jinaai/jina-embeddings-v2-small-en`
-    - `nomic-ai/nomic-embed-text-v1.5`
-    - `sentence-transformers/all-MiniLM-L6-v2`
+- `infiniflow/ragflow:v0.21.0-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.21.0`: The RAGFlow Docker image with the following built-in embedding models:
+  - `BAAI/bge-large-zh-v1.5`
+  - `maidalun1020/bce-embedding-base_v1`
 
 ---
 
@@ -498,7 +488,7 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 
 ### Where are my uploaded files stored in RAGFlow's image?
 
-All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a dataset, it is located at `<knowledgebase_id>/filename`.
 
 ---
 
@@ -507,3 +497,16 @@ All uploaded files are stored in Minio, RAGFlow's object storage solution. For i
 You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
 
 ---
+
+### How to accelerate the question-answering speed of my chat assistant?
+
+See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
+
+---
+
+### How to accelerate the question-answering speed of my Agent?
+
+See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
+
+---
+

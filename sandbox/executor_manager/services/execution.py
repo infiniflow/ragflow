@@ -162,7 +162,7 @@ if (fs.existsSync(mainPath)) {
             elif language == SupportLanguage.NODEJS:
                 run_args.extend([])
             else:
-                assert True, "Will never reach here"
+                assert False, "Will never reach here"
             run_args.extend([runner_name, args_json])
 
             returncode, stdout, stderr = await async_run_command(

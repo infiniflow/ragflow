@@ -3,8 +3,7 @@ import { ICategorizeNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
 import { memo } from 'react';
-import { NodeHandleId } from '../../constant';
-import { CommonHandle } from './handle';
+import { CommonHandle, LeftEndHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
@@ -20,13 +19,7 @@ export function InnerCategorizeNode({
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
       <NodeWrapper selected={selected}>
-        <CommonHandle
-          type="target"
-          position={Position.Left}
-          isConnectable
-          id={NodeHandleId.End}
-          nodeId={id}
-        ></CommonHandle>
+        <LeftEndHandle></LeftEndHandle>
 
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
 
@@ -41,7 +34,6 @@ export function InnerCategorizeNode({
                   {position.name}
                 </div>
                 <CommonHandle
-                  // key={position.text}
                   id={position.uuid}
                   type="source"
                   position={Position.Right}

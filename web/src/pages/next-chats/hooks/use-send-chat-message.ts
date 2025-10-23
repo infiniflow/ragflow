@@ -1,4 +1,5 @@
-import { ChatSearchParams, MessageType } from '@/constants/chat';
+import { FileUploadProps } from '@/components/file-upload';
+import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
   useRegenerateMessage,
@@ -8,39 +9,18 @@ import {
 import {
   useFetchConversation,
   useGetChatSearchParams,
-  useUpdateConversation,
 } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { trim } from 'lodash';
-import { useCallback, useEffect, useMemo } from 'react';
-import { useParams, useSearchParams } from 'umi';
+import { useCallback, useEffect } from 'react';
+import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { IMessage } from '../chat/interface';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
+import { useSetChatRouteParams } from './use-set-chat-route';
+import { useSetConversation } from './use-set-conversation';
 import { useUploadFile } from './use-upload-file';
-
-export const useSetChatRouteParams = () => {
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
-  const newQueryParameters: URLSearchParams = useMemo(
-    () => new URLSearchParams(currentQueryParameters.toString()),
-    [currentQueryParameters],
-  );
-
-  const setConversationIsNew = useCallback(
-    (value: string) => {
-      newQueryParameters.set(ChatSearchParams.isNew, value);
-      setSearchParams(newQueryParameters);
-    },
-    [newQueryParameters, setSearchParams],
-  );
-
-  const getConversationIsNew = useCallback(() => {
-    return newQueryParameters.get(ChatSearchParams.isNew);
-  }, [newQueryParameters]);
-
-  return { setConversationIsNew, getConversationIsNew };
-};
 
 export const useSelectNextMessages = () => {
   const {
@@ -102,37 +82,6 @@ export const useSelectNextMessages = () => {
   };
 };
 
-export const useSetConversation = () => {
-  const { id: dialogId } = useParams();
-  const { updateConversation } = useUpdateConversation();
-
-  const setConversation = useCallback(
-    async (
-      message: string,
-      isNew: boolean = false,
-      conversationId?: string,
-    ) => {
-      const data = await updateConversation({
-        dialog_id: dialogId,
-        name: message,
-        is_new: isNew,
-        conversation_id: conversationId,
-        message: [
-          {
-            role: MessageType.Assistant,
-            content: message,
-          },
-        ],
-      });
-
-      return data;
-    },
-    [updateConversation, dialogId],
-  );
-
-  return { setConversation };
-};
-
 export const useSendMessage = (controller: AbortController) => {
   const { setConversation } = useSetConversation();
   const { conversationId, isNew } = useGetChatSearchParams();
@@ -158,9 +107,21 @@ export const useSendMessage = (controller: AbortController) => {
   const { setConversationIsNew, getConversationIsNew } =
     useSetChatRouteParams();
 
-  const stopOutputMessage = useCallback(() => {
-    controller.abort();
-  }, [controller]);
+  const onUploadFile: NonNullable<FileUploadProps['onUpload']> = useCallback(
+    async (files, options) => {
+      const isNew = getConversationIsNew();
+
+      if (isNew === 'true' && Array.isArray(files) && files.length) {
+        const data = await setConversation(files[0].name, true);
+        if (data.code === 0) {
+          handleUploadFile(files, options, data.data?.id);
+        }
+      } else {
+        handleUploadFile(files, options);
+      }
+    },
+    [getConversationIsNew, handleUploadFile, setConversation],
+  );
 
   const sendMessage = useCallback(
     async ({
@@ -284,8 +245,7 @@ export const useSendMessage = (controller: AbortController) => {
     messageContainerRef,
     derivedMessages,
     removeMessageById,
-    stopOutputMessage,
-    handleUploadFile,
+    handleUploadFile: onUploadFile,
     isUploading,
     removeFile,
   };

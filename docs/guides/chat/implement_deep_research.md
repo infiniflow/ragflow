@@ -15,13 +15,13 @@ From v0.17.0 onward, RAGFlow supports integrating agentic reasoning in an AI cha
 
 To activate this feature:
 
-1. Enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
+1. Enable the **Reasoning** toggle in **Chat setting**.
 
-![Image](https://github.com/user-attachments/assets/4a1968d0-0128-4371-879f-77f3a70197f5)
+![chat_reasoning](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_reasoning.jpg)
 
-2. Enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue to leverage Tavily-based web search
+2. Enter the correct Tavily API key to leverage Tavily-based web search:
 
-![Image](https://github.com/user-attachments/assets/e8787532-7e72-49ef-8951-169ae544512f)
+![chat_tavily](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_tavily.jpg)
 
 *The following is a screenshot of a conversation that integrates Deep Research:*
 

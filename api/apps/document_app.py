@@ -24,6 +24,7 @@ from flask import request
 from flask_login import current_user, login_required
 
 from api import settings
+from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileSource, FileType, ParserType, TaskStatus
 from api.db.db_models import File, Task
@@ -32,7 +33,7 @@ from api.db.services.document_service import DocumentService, doc_upload_and_par
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
+from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks, queue_dataflow
 from api.db.services.user_service import UserTenantService
 from api.utils import get_uuid
 from api.utils.api_utils import (
@@ -44,7 +45,7 @@ from api.utils.api_utils import (
 from api.utils.file_utils import filename_type, get_project_base_directory, thumbnail
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import search
+from rag.nlp import search, rag_tokenizer
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -68,8 +69,10 @@ def upload():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
-    err, files = FileService.upload_document(kb, file_objs, current_user.id)
+    if not check_kb_team_permission(kb, current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
 
+    err, files = FileService.upload_document(kb, file_objs, current_user.id)
     if err:
         return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
 
@@ -94,6 +97,8 @@ def web_crawl():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
+    if check_kb_team_permission(kb, current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
 
     blob = html2pdf(url)
     if not blob:
@@ -182,6 +187,7 @@ def create():
                 "id": get_uuid(),
                 "kb_id": kb.id,
                 "parser_id": kb.parser_id,
+                "pipeline_id": kb.pipeline_id,
                 "parser_config": kb.parser_config,
                 "created_by": current_user.id,
                 "type": FileType.VIRTUAL,
@@ -456,8 +462,7 @@ def run():
                     cancel_all_task_of(id)
                 else:
                     return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
-
-            if str(req["run"]) == TaskStatus.RUNNING.value and str(doc.run) == TaskStatus.DONE.value:
+            if all([("delete" not in req or req["delete"]), str(req["run"]) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
                 DocumentService.clear_chunk_num_when_rerun(doc.id)
 
             DocumentService.update_by_id(id, info)
@@ -480,8 +485,11 @@ def run():
                         kb_table_num_map[kb_id] = count
                         if kb_table_num_map[kb_id] <= 0:
                             KnowledgebaseService.delete_field_map(kb_id)
-                bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-                queue_tasks(doc, bucket, name, 0)
+                if doc.get("pipeline_id", ""):
+                    queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=id)
+                else:
+                    bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
+                    queue_tasks(doc, bucket, name, 0)
 
         return get_json_result(data=True)
     except Exception as e:
@@ -516,6 +524,21 @@ def rename():
             e, file = FileService.get_by_id(informs[0].file_id)
             FileService.update_by_id(file.id, {"name": req["name"]})
 
+        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+        title_tks = rag_tokenizer.tokenize(req["name"])
+        es_body = {
+            "docnm_kwd": req["name"],
+            "title_tks": title_tks,
+            "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
+        }
+        if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            settings.docStoreConn.update(
+                {"doc_id": req["doc_id"]},
+                es_body,
+                search.index_name(tenant_id),
+                doc.kb_id,
+            )
+
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -547,31 +570,22 @@ def get(doc_id):
 
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("doc_id", "parser_id")
+@validate_request("doc_id")
 def change_parser():
-    req = request.json
 
+    req = request.json
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
-    try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
+
+    e, doc = DocumentService.get_by_id(req["doc_id"])
+    if not e:
+        return get_data_error_result(message="Document not found!")
+
+    def reset_doc():
+        nonlocal doc
+        e = DocumentService.update_by_id(doc.id, {"pipeline_id": req["pipeline_id"], "parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": TaskStatus.UNSTART.value})
         if not e:
             return get_data_error_result(message="Document not found!")
-        if doc.parser_id.lower() == req["parser_id"].lower():
-            if "parser_config" in req:
-                if req["parser_config"] == doc.parser_config:
-                    return get_json_result(data=True)
-            else:
-                return get_json_result(data=True)
-
-        if (doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation"):
-            return get_data_error_result(message="Not supported yet!")
-
-        e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": TaskStatus.UNSTART.value})
-        if not e:
-            return get_data_error_result(message="Document not found!")
-        if "parser_config" in req:
-            DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(doc.id, doc.kb_id, doc.token_num * -1, doc.chunk_num * -1, doc.process_duration * -1)
             if not e:
@@ -582,6 +596,26 @@ def change_parser():
             if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
+    try:
+        if "pipeline_id" in req and req["pipeline_id"] != "":
+            if doc.pipeline_id == req["pipeline_id"]:
+                return get_json_result(data=True)
+            DocumentService.update_by_id(doc.id, {"pipeline_id": req["pipeline_id"]})
+            reset_doc()
+            return get_json_result(data=True)
+
+        if doc.parser_id.lower() == req["parser_id"].lower():
+            if "parser_config" in req:
+                if req["parser_config"] == doc.parser_config:
+                    return get_json_result(data=True)
+            else:
+                return get_json_result(data=True)
+
+        if (doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation"):
+            return get_data_error_result(message="Not supported yet!")
+        if "parser_config" in req:
+            DocumentService.update_parser_config(doc.id, req["parser_config"])
+        reset_doc()
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -683,7 +717,7 @@ def set_meta():
         meta = json.loads(req["meta"])
         if not isinstance(meta, dict):
             return get_json_result(data=False, message="Only dictionary type supported.", code=settings.RetCode.ARGUMENT_ERROR)
-        for k,v in meta.items():
+        for k, v in meta.items():
             if not isinstance(v, str) and not isinstance(v, int) and not isinstance(v, float):
                 return get_json_result(data=False, message=f"The type is not supported: {v}", code=settings.RetCode.ARGUMENT_ERROR)
     except Exception as e:

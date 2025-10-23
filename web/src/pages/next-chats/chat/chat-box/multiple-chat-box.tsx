@@ -23,6 +23,7 @@ import {
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { isEmpty, omit } from 'lodash';
 import { ListCheck, Plus, Trash2 } from 'lucide-react';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
@@ -43,6 +44,7 @@ import { useAddChatBox } from '../use-add-box';
 type MultipleChatBoxProps = {
   controller: AbortController;
   chatBoxIds: string[];
+  stopOutputMessage(): void;
 } & Pick<
   ReturnType<typeof useAddChatBox>,
   'removeChatBox' | 'addChatBox' | 'chatBoxIds'
@@ -139,7 +141,7 @@ const ChatCard = forwardRef(function ChatCard(
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Apply model configs</p>
+                <p>{t('chat.applyModelConfigs')}</p>
               </TooltipContent>
             </Tooltip>
             {!isLatestChat || chatBoxIds.length === 3 ? (
@@ -199,6 +201,7 @@ export function MultipleChatBox({
   chatBoxIds,
   removeChatBox,
   addChatBox,
+  stopOutputMessage,
 }: MultipleChatBoxProps) {
   const {
     value,
@@ -206,7 +209,6 @@ export function MultipleChatBox({
     messageRecord,
     handleInputChange,
     handlePressEnter,
-    stopOutputMessage,
     setFormRef,
     handleUploadFile,
   } = useSendMultipleChatMessage(controller, chatBoxIds);

@@ -9,6 +9,7 @@ interface IProps {
   gap?: number;
   className?: string;
   wrapperClassName?: string;
+  icon?: React.ReactNode;
 }
 
 const InnerNodeHeader = ({
@@ -16,11 +17,12 @@ const InnerNodeHeader = ({
   name,
   className,
   wrapperClassName,
+  icon,
 }: IProps) => {
   return (
-    <section className={cn(wrapperClassName, 'pb-4')}>
+    <section className={cn(wrapperClassName, 'pb-2')}>
       <div className={cn(className, 'flex gap-2.5')}>
-        <OperatorIcon name={label as Operator}></OperatorIcon>
+        {icon || <OperatorIcon name={label as Operator}></OperatorIcon>}
         <span className="truncate text-center font-semibold text-sm">
           {name}
         </span>

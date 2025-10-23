@@ -36,7 +36,7 @@ from zhipuai import ZhipuAI
 
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
-from rag.utils import num_tokens_from_string
+from rag.utils import num_tokens_from_string, total_token_count_from_response
 
 
 # Error message constants
@@ -132,7 +132,7 @@ class Base(ABC):
             "tool_choice",
             "logprobs",
             "top_logprobs",
-            "extra_headers",
+            "extra_headers"
         }
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
@@ -141,21 +141,43 @@ class Base(ABC):
 
     def _chat(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
+        if self.model_name.lower().find("qwq") >= 0:
+            logging.info(f"[INFO] {self.model_name} detected as reasoning model, using _chat_streamly")
+
+            final_ans = ""
+            tol_token = 0
+            for delta, tol in self._chat_streamly(history, gen_conf, with_reasoning=False, **kwargs):
+                if delta.startswith("<think>") or delta.endswith("</think>"):
+                    continue
+                final_ans += delta
+                tol_token = tol
+
+            if len(final_ans.strip()) == 0:
+                final_ans = "**ERROR**: Empty response from reasoning model"
+
+            return final_ans.strip(), tol_token
+
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
+
         response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
-        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+        if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             ans = self._length_stop(ans)
-        return ans, self.total_token_count(response)
+        return ans, total_token_count_from_response(response)
 
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+
+        if kwargs.get("stop") or "stop" in gen_conf:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf, stop=kwargs.get("stop"))
+        else:
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+
         for resp in response:
             if not resp.choices:
                 continue
@@ -171,7 +193,7 @@ class Base(ABC):
                 reasoning_start = False
                 ans = resp.choices[0].delta.content
 
-            tol = self.total_token_count(resp)
+            tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
 
@@ -187,21 +209,30 @@ class Base(ABC):
             return ans + LENGTH_NOTIFICATION_CN
         return ans + LENGTH_NOTIFICATION_EN
 
-    def _exceptions(self, e, attempt):
+    @property
+    def _retryable_errors(self) -> set[str]:
+        return {
+            LLMErrorCode.ERROR_RATE_LIMIT,
+            LLMErrorCode.ERROR_SERVER,
+        }
+
+    def _should_retry(self, error_code: str) -> bool:
+        return error_code in self._retryable_errors
+
+    def _exceptions(self, e, attempt) -> str | None:
         logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
         if attempt == self.max_retries:
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
-        # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
-        if not should_retry:
-            return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        if self._should_retry(error_code):
+            delay = self._get_delay()
+            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            time.sleep(delay)
+            return None
 
-        delay = self._get_delay()
-        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
-        time.sleep(delay)
+        return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
@@ -239,7 +270,7 @@ class Base(ABC):
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
@@ -252,7 +283,7 @@ class Base(ABC):
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
                     response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
-                    tk_count += self.total_token_count(response)
+                    tk_count += total_token_count_from_response(response)
                     if any([not response.choices, not response.choices[0].message]):
                         raise Exception(f"500 response structure error. Response: {response}")
 
@@ -293,7 +324,7 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     def chat(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
 
@@ -324,7 +355,7 @@ class Base(ABC):
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
@@ -370,11 +401,11 @@ class Base(ABC):
                             answer += resp.choices[0].delta.content
                             yield resp.choices[0].delta.content
 
-                        tol = self.total_token_count(resp)
+                        tol = total_token_count_from_response(resp)
                         if not tol:
                             total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                         else:
-                            total_tokens += tol
+                            total_tokens = tol
 
                         finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
                         if finish_reason == "length":
@@ -406,11 +437,11 @@ class Base(ABC):
                     if not resp.choices[0].delta.content:
                         resp.choices[0].delta.content = ""
                         continue
-                    tol = self.total_token_count(resp)
+                    tol = total_token_count_from_response(resp)
                     if not tol:
                         total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                     else:
-                        total_tokens += tol
+                        total_tokens = tol
                     answer += resp.choices[0].delta.content
                     yield resp.choices[0].delta.content
 
@@ -427,7 +458,7 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
@@ -440,17 +471,6 @@ class Base(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
-
-    def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
 
     def _calculate_dynamic_ctx(self, history):
         """Calculate dynamic context window size"""
@@ -538,6 +558,14 @@ class AzureChat(Base):
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
         self.model_name = model_name
 
+    @property
+    def _retryable_errors(self) -> set[str]:
+        return {
+            LLMErrorCode.ERROR_RATE_LIMIT,
+            LLMErrorCode.ERROR_SERVER,
+            LLMErrorCode.ERROR_QUOTA,
+        }
+
 
 class BaiChuanChat(Base):
     _FACTORY_NAME = "BaiChuan"
@@ -573,10 +601,10 @@ class BaiChuanChat(Base):
                 ans += LENGTH_NOTIFICATION_CN
             else:
                 ans += LENGTH_NOTIFICATION_EN
-        return ans, self.total_token_count(response)
+        return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -596,7 +624,7 @@ class BaiChuanChat(Base):
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
                 ans = resp.choices[0].delta.content
-                tol = self.total_token_count(resp)
+                tol = total_token_count_from_response(resp)
                 if not tol:
                     total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                 else:
@@ -626,6 +654,10 @@ class ZhipuChat(Base):
     def _clean_conf(self, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
+        gen_conf = self._clean_conf_plealty(gen_conf)
+        return gen_conf
+
+    def _clean_conf_plealty(self, gen_conf):
         if "presence_penalty" in gen_conf:
             del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf:
@@ -633,22 +665,14 @@ class ZhipuChat(Base):
         return gen_conf
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict):
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
+        gen_conf = self._clean_conf_plealty(gen_conf)
 
         return super().chat_with_tools(system, history, gen_conf)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
+        gen_conf = self._clean_conf(gen_conf)
         ans = ""
         tk_count = 0
         try:
@@ -664,9 +688,9 @@ class ZhipuChat(Base):
                         ans += LENGTH_NOTIFICATION_CN
                     else:
                         ans += LENGTH_NOTIFICATION_EN
-                    tk_count = self.total_token_count(resp)
+                    tk_count = total_token_count_from_response(resp)
                 if resp.choices[0].finish_reason == "stop":
-                    tk_count = self.total_token_count(resp)
+                    tk_count = total_token_count_from_response(resp)
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -674,11 +698,7 @@ class ZhipuChat(Base):
         yield tk_count
 
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict):
-        if "presence_penalty" in gen_conf:
-            del gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            del gen_conf["frequency_penalty"]
-
+        gen_conf = self._clean_conf_plealty(gen_conf)
         return super().chat_streamly_with_tools(system, history, gen_conf)
 
 
@@ -705,7 +725,7 @@ class LocalLLM(Base):
     def _prepare_prompt(self, system, history, gen_conf):
         from rag.svr.jina_server import Prompt
 
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         return Prompt(message=history, gen_conf=gen_conf)
 
@@ -789,10 +809,10 @@ class MiniMaxChat(Base):
                 ans += LENGTH_NOTIFICATION_CN
             else:
                 ans += LENGTH_NOTIFICATION_EN
-        return ans, self.total_token_count(response)
+        return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         for k in list(gen_conf.keys()):
             if k not in ["temperature", "top_p", "max_tokens"]:
@@ -824,7 +844,7 @@ class MiniMaxChat(Base):
                 if "choices" in resp and "delta" in resp["choices"][0]:
                     text = resp["choices"][0]["delta"]["content"]
                 ans = text
-                tol = self.total_token_count(resp)
+                tol = total_token_count_from_response(resp)
                 if not tol:
                     total_tokens += num_tokens_from_string(text)
                 else:
@@ -855,6 +875,7 @@ class MistralChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf={}, **kwargs):
+        gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
@@ -862,14 +883,12 @@ class MistralChat(Base):
                 ans += LENGTH_NOTIFICATION_CN
             else:
                 ans += LENGTH_NOTIFICATION_EN
-        return ans, self.total_token_count(response)
+        return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
+        gen_conf = self._clean_conf(gen_conf)
         ans = ""
         total_tokens = 0
         try:
@@ -890,25 +909,6 @@ class MistralChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
-
-
-## openrouter
-class OpenRouterChat(Base):
-    _FACTORY_NAME = "OpenRouter"
-
-    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1", **kwargs):
-        if not base_url:
-            base_url = "https://openrouter.ai/api/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class StepFunChat(Base):
-    _FACTORY_NAME = "StepFun"
-
-    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.stepfun.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
 
 
 class LmStudioChat(Base):
@@ -933,75 +933,12 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class PPIOChat(Base):
-    _FACTORY_NAME = "PPIO"
-
-    def __init__(self, key, model_name, base_url="https://api.ppinfra.com/v3/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.ppinfra.com/v3/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = urljoin("https://" + model_name + ".lepton.run", "api/v1")
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class PerfXCloudChat(Base):
-    _FACTORY_NAME = "PerfXCloud"
-
-    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://cloud.perfxlab.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class UpstageChat(Base):
-    _FACTORY_NAME = "Upstage"
-
-    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar", **kwargs):
-        if not base_url:
-            base_url = "https://api.upstage.ai/v1/solar"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class NovitaAIChat(Base):
-    _FACTORY_NAME = "NovitaAI"
-
-    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai", **kwargs):
-        if not base_url:
-            base_url = "https://api.novita.ai/v3/openai"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class SILICONFLOWChat(Base):
-    _FACTORY_NAME = "SILICONFLOW"
-
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class YiChat(Base):
-    _FACTORY_NAME = "01.AI"
-
-    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.lingyiwanwu.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class GiteeChat(Base):
-    _FACTORY_NAME = "GiteeAI"
-
-    def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/", **kwargs):
-        if not base_url:
-            base_url = "https://ai.gitee.com/v1/"
         super().__init__(key, model_name, base_url, **kwargs)
 
 
@@ -1089,7 +1026,7 @@ class HunyuanChat(Base):
 
         _gen_conf = {}
         _history = [{k.capitalize(): v for k, v in item.items()} for item in history]
-        if system:
+        if system and history and history[0].get("role") != "system":
             _history.insert(0, {"Role": "system", "Content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -1170,7 +1107,7 @@ class BaiduYiyanChat(Base):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         response = self.client.do(model=self.model_name, messages=[h for h in history if h["role"] != "system"], system=system, **gen_conf).body
         ans = response["result"]
-        return ans, self.total_token_count(response)
+        return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
@@ -1184,7 +1121,7 @@ class BaiduYiyanChat(Base):
             for resp in response:
                 resp = resp.body
                 ans = resp["result"]
-                total_tokens = self.total_token_count(resp)
+                total_tokens = total_token_count_from_response(resp)
 
                 yield ans
 
@@ -1225,15 +1162,13 @@ class GoogleChat(Base):
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
-            import vertexai.generative_models as glm
-            from google.cloud import aiplatform
+            from google import genai
 
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
-                aiplatform.init(credentials=credits, project=project_id, location=region)
+                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
             else:
-                aiplatform.init(project=project_id, location=region)
-            self.client = glm.GenerativeModel(model_name=self.model_name)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -1242,6 +1177,7 @@ class GoogleChat(Base):
         else:
             if "max_tokens" in gen_conf:
                 gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
+                del gen_conf["max_tokens"]
             for k in list(gen_conf.keys()):
                 if k not in ["temperature", "top_p", "max_output_tokens"]:
                     del gen_conf[k]
@@ -1249,7 +1185,9 @@ class GoogleChat(Base):
 
     def _chat(self, history, gen_conf={}, **kwargs):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+
         if "claude" in self.model_name:
+            gen_conf = self._clean_conf(gen_conf)
             response = self.client.messages.create(
                 model=self.model_name,
                 messages=[h for h in history if h["role"] != "system"],
@@ -1265,25 +1203,63 @@ class GoogleChat(Base):
                 response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
             )
 
-        self.client._system_instruction = system
-        hist = []
+        # Gemini models with google-genai SDK
+        # Set default thinking_budget=0 if not specified
+        if "thinking_budget" not in gen_conf:
+            gen_conf["thinking_budget"] = 0
+
+        thinking_budget = gen_conf.pop("thinking_budget", 0)
+        gen_conf = self._clean_conf(gen_conf)
+
+        # Build GenerateContentConfig
+        try:
+            from google.genai.types import GenerateContentConfig, ThinkingConfig, Content, Part
+        except ImportError as e:
+            logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+            raise
+
+        config_dict = {}
+        if system:
+            config_dict["system_instruction"] = system
+        if "temperature" in gen_conf:
+            config_dict["temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            config_dict["top_p"] = gen_conf["top_p"]
+        if "max_output_tokens" in gen_conf:
+            config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+
+        # Add ThinkingConfig
+        config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+
+        config = GenerateContentConfig(**config_dict)
+
+        # Convert history to google-genai Content format
+        contents = []
         for item in history:
             if item["role"] == "system":
                 continue
-            hist.append(deepcopy(item))
-            item = hist[-1]
-            if "role" in item and item["role"] == "assistant":
-                item["role"] = "model"
-            if "content" in item:
-                item["parts"] = [
-                    {
-                        "text": item.pop("content"),
-                    }
-                ]
+            # google-genai uses 'model' instead of 'assistant'
+            role = "model" if item["role"] == "assistant" else item["role"]
+            content = Content(
+                role=role,
+                parts=[Part(text=item["content"])]
+            )
+            contents.append(content)
 
-        response = self.client.generate_content(hist, generation_config=gen_conf)
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config
+        )
+
         ans = response.text
-        return ans, response.usage_metadata.total_token_count
+        # Get token count from response
+        try:
+            total_tokens = response.usage_metadata.total_token_count
+        except Exception:
+            total_tokens = 0
+
+        return ans, total_tokens
 
     def chat_streamly(self, system, history, gen_conf={}, **kwargs):
         if "claude" in self.model_name:
@@ -1310,28 +1286,65 @@ class GoogleChat(Base):
 
             yield total_tokens
         else:
-            self.client._system_instruction = system
-            if "max_tokens" in gen_conf:
-                gen_conf["max_output_tokens"] = gen_conf["max_tokens"]
-            for k in list(gen_conf.keys()):
-                if k not in ["temperature", "top_p", "max_output_tokens"]:
-                    del gen_conf[k]
-            for item in history:
-                if "role" in item and item["role"] == "assistant":
-                    item["role"] = "model"
-                if "content" in item:
-                    item["parts"] = item.pop("content")
+            # Gemini models with google-genai SDK
             ans = ""
+            total_tokens = 0
+
+            # Set default thinking_budget=0 if not specified
+            if "thinking_budget" not in gen_conf:
+                gen_conf["thinking_budget"] = 0
+
+            thinking_budget = gen_conf.pop("thinking_budget", 0)
+            gen_conf = self._clean_conf(gen_conf)
+
+            # Build GenerateContentConfig
             try:
-                response = self.model.generate_content(history, generation_config=gen_conf, stream=True)
-                for resp in response:
-                    ans = resp.text
+                from google.genai.types import GenerateContentConfig, ThinkingConfig, Content, Part
+            except ImportError as e:
+                logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+                raise
+
+            config_dict = {}
+            if system:
+                config_dict["system_instruction"] = system
+            if "temperature" in gen_conf:
+                config_dict["temperature"] = gen_conf["temperature"]
+            if "top_p" in gen_conf:
+                config_dict["top_p"] = gen_conf["top_p"]
+            if "max_output_tokens" in gen_conf:
+                config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+
+            # Add ThinkingConfig
+            config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+
+            config = GenerateContentConfig(**config_dict)
+
+            # Convert history to google-genai Content format
+            contents = []
+            for item in history:
+                # google-genai uses 'model' instead of 'assistant'
+                role = "model" if item["role"] == "assistant" else item["role"]
+                content = Content(
+                    role=role,
+                    parts=[Part(text=item["content"])]
+                )
+                contents.append(content)
+
+            try:
+                for chunk in self.client.models.generate_content_stream(
+                    model=self.model_name,
+                    contents=contents,
+                    config=config
+                ):
+                    text = chunk.text
+                    ans = text
+                    total_tokens += num_tokens_from_string(text)
                     yield ans
 
             except Exception as e:
                 yield ans + "\n**ERROR**: " + str(e)
 
-            yield response._chunks[-1].usage_metadata.total_token_count
+            yield total_tokens
 
 
 class GPUStackChat(Base):
@@ -1344,17 +1357,50 @@ class GPUStackChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class Ai302Chat(Base):
-    _FACTORY_NAME = "302.AI"
+class TokenPonyChat(Base):
+    _FACTORY_NAME = "TokenPony"
 
-    def __init__(self, key, model_name, base_url="https://api.302.ai/v1", **kwargs):
+    def __init__(self, key, model_name, base_url="https://ragflow.vip-api.tokenpony.cn/v1", **kwargs):
         if not base_url:
-            base_url = "https://api.302.ai/v1"
+            base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
+
+class DeerAPIChat(Base):
+    _FACTORY_NAME = "DeerAPI"
+
+    def __init__(self, key, model_name, base_url="https://api.deerapi.com/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.deerapi.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
 
 
 class LiteLLMBase(ABC):
-    _FACTORY_NAME = ["Tongyi-Qianwen", "Bedrock", "Moonshot", "xAI", "DeepInfra", "Groq", "Cohere", "Gemini", "DeepSeek", "NVIDIA", "TogetherAI", "Anthropic", "Ollama"]
+    _FACTORY_NAME = [
+        "Tongyi-Qianwen",
+        "Bedrock",
+        "Moonshot",
+        "xAI",
+        "DeepInfra",
+        "Groq",
+        "Cohere",
+        "Gemini",
+        "DeepSeek",
+        "NVIDIA",
+        "TogetherAI",
+        "Anthropic",
+        "Ollama",
+        "Meituan",
+        "CometAPI",
+        "SILICONFLOW",
+        "OpenRouter",
+        "StepFun",
+        "PPIO",
+        "PerfXCloud",
+        "Upstage",
+        "NovitaAI",
+        "01.AI",
+        "GiteeAI",
+        "302.AI",
+    ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LM_TIMEOUT_SECONDS", 600))
@@ -1362,7 +1408,7 @@ class LiteLLMBase(ABC):
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -1376,6 +1422,9 @@ class LiteLLMBase(ABC):
             self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
             self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
             self.bedrock_region = json.loads(key).get("bedrock_region", "")
+        elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            self.api_key = json.loads(key).get("api_key", "")
+            self.provider_order = json.loads(key).get("provider_order", "")
 
     def _get_delay(self):
         """Calculate retry delay time"""
@@ -1420,14 +1469,13 @@ class LiteLLMBase(ABC):
             timeout=self.timeout,
         )
         # response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
-
         if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             ans = self._length_stop(ans)
 
-        return ans, self.total_token_count(response)
+        return ans, total_token_count_from_response(response)
 
     def _chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
@@ -1461,7 +1509,7 @@ class LiteLLMBase(ABC):
                 reasoning_start = False
                 ans = delta.content
 
-            tol = self.total_token_count(resp)
+            tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(delta.content)
 
@@ -1479,21 +1527,30 @@ class LiteLLMBase(ABC):
             return ans + LENGTH_NOTIFICATION_CN
         return ans + LENGTH_NOTIFICATION_EN
 
-    def _exceptions(self, e, attempt):
+    @property
+    def _retryable_errors(self) -> set[str]:
+        return {
+            LLMErrorCode.ERROR_RATE_LIMIT,
+            LLMErrorCode.ERROR_SERVER,
+        }
+
+    def _should_retry(self, error_code: str) -> bool:
+        return error_code in self._retryable_errors
+
+    def _exceptions(self, e, attempt) -> str | None:
         logging.exception("OpenAI chat_with_tools")
         # Classify the error
         error_code = self._classify_error(e)
         if attempt == self.max_retries:
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
-        # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = error_code == LLMErrorCode.ERROR_RATE_LIMIT or error_code == LLMErrorCode.ERROR_SERVER
-        if not should_retry:
-            return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        if self._should_retry(error_code):
+            delay = self._get_delay()
+            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            time.sleep(delay)
+            return None
 
-        delay = self._get_delay()
-        logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
-        time.sleep(delay)
+        return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
@@ -1534,6 +1591,7 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
+            "num_retries": self.max_retries,
             **kwargs,
         }
         if stream:
@@ -1561,11 +1619,29 @@ class LiteLLMBase(ABC):
                     "aws_region_name": self.bedrock_region,
                 }
             )
+
+        if self.provider == SupportedLiteLLMProvider.OpenRouter:
+            if self.provider_order:
+                def _to_order_list(x):
+                    if x is None:
+                        return []
+                    if isinstance(x, str):
+                        return [s.strip() for s in x.split(",") if s.strip()]
+                    if isinstance(x, (list, tuple)):
+                        return [str(s).strip() for s in x if str(s).strip()]
+                    return []
+                extra_body = {}
+                provider_cfg = {}
+                provider_order = _to_order_list(self.provider_order)
+                provider_cfg["order"] = provider_order
+                provider_cfg["allow_fallbacks"] = False
+                extra_body["provider"] = provider_cfg
+                completion_args.update({"extra_body": extra_body})
         return completion_args
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         ans = ""
@@ -1586,7 +1662,7 @@ class LiteLLMBase(ABC):
                         timeout=self.timeout,
                     )
 
-                    tk_count += self.total_token_count(response)
+                    tk_count += total_token_count_from_response(response)
 
                     if not hasattr(response, "choices") or not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -1630,7 +1706,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def chat(self, system, history, gen_conf={}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
 
@@ -1662,7 +1738,7 @@ class LiteLLMBase(ABC):
     def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         total_tokens = 0
@@ -1718,7 +1794,7 @@ class LiteLLMBase(ABC):
                             answer += delta.content
                             yield delta.content
 
-                        tol = self.total_token_count(resp)
+                        tol = total_token_count_from_response(resp)
                         if not tol:
                             total_tokens += num_tokens_from_string(delta.content)
                         else:
@@ -1767,7 +1843,7 @@ class LiteLLMBase(ABC):
                     delta = resp.choices[0].delta
                     if not hasattr(delta, "content") or delta.content is None:
                         continue
-                    tol = self.total_token_count(resp)
+                    tol = total_token_count_from_response(resp)
                     if not tol:
                         total_tokens += num_tokens_from_string(delta.content)
                     else:
@@ -1787,7 +1863,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
-        if system:
+        if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
@@ -1800,17 +1876,6 @@ class LiteLLMBase(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
-
-    def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
 
     def _calculate_dynamic_ctx(self, history):
         """Calculate dynamic context window size"""

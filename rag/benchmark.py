@@ -52,7 +52,7 @@ class Benchmark:
         run = defaultdict(dict)
         query_list = list(qrels.keys())
         for query in query_list:
-            ranks = settings.retrievaler.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
+            ranks = settings.retriever.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
                                             0.0, self.vector_similarity_weight)
             if len(ranks["chunks"]) == 0:
                 print(f"deleted query: {query}")

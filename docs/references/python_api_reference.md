@@ -85,11 +85,11 @@ completion = client.chat.completions.create(
 )
 
 if stream:
-for chunk in completion:
-    print(chunk)
-    if reference and chunk.choices[0].finish_reason == "stop":
-        print(f"Reference:\n{chunk.choices[0].delta.reference}")
-        print(f"Final content:\n{chunk.choices[0].delta.final_content}")
+    for chunk in completion:
+        print(chunk)
+        if reference and chunk.choices[0].finish_reason == "stop":
+            print(f"Reference:\n{chunk.choices[0].delta.reference}")
+            print(f"Final content:\n{chunk.choices[0].delta.final_content}")
 else:
     print(completion.choices[0].message.content)
     if reference:
@@ -698,6 +698,58 @@ print("Async bulk parsing initiated.")
 
 ---
 
+### Parse documents (with document status)
+
+```python
+DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, int]]
+```
+
+*Asynchronously* parses documents in the current dataset.
+
+This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be cancelled gracefully.
+
+#### Parameters
+
+##### document_ids: `list[str]`, *Required*
+
+The IDs of the documents to parse.
+
+#### Returns
+
+A list of tuples with detailed parsing results:
+
+```python
+[
+  (document_id: str, status: str, chunk_count: int, token_count: int),
+  ...
+]
+```
+- `status`: The final parsing state (e.g., `success`, `failed`, `cancelled`).  
+- `chunk_count`: The number of content chunks created from the document.  
+- `token_count`: The total number of tokens processed.  
+
+---
+
+#### Example
+
+```python
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+dataset = rag_object.create_dataset(name="dataset_name")
+documents = dataset.list_documents(keywords="test")
+ids = [doc.id for doc in documents]
+
+try:
+    finished = dataset.parse_documents(ids)
+    for doc_id, status, chunk_count, token_count in finished:
+        print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
+except KeyboardInterrupt:
+    print("\nParsing interrupted by user. All pending tasks have been cancelled.")
+except Exception as e:
+    print(f"Parsing failed: {e}")
+```
+
+---
+
 ### Stop parsing documents
 
 ```python
@@ -921,7 +973,7 @@ chunk.update({"content":"sdfx..."})
 ### Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,highlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,cross_languages:list[str]=None,metadata_condition: dict=None) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.
@@ -971,16 +1023,13 @@ Indicates whether to enable keyword-based matching:
 - `True`: Enable keyword-based matching.
 - `False`: Disable keyword-based matching (default).
 
-##### highlight: `bool`
-
-Specifies whether to enable highlighting of matched terms in the results:
-
-- `True`: Enable highlighting of matched terms.
-- `False`: Disable highlighting of matched terms (default).
-
 ##### cross_languages:  `list[string]`  
 
 The languages that should be translated into, in order to achieve keywords retrievals in different languages.
+
+##### metadata_condition: `dict`
+
+filter condition for `meta_fields`.
 
 #### Returns
 

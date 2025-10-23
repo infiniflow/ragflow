@@ -6,6 +6,8 @@ import {
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
+import { toLower } from 'lodash';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -20,16 +22,21 @@ const Languages = [
   'Vietnamese',
 ];
 
-const options = Languages.map((x) => ({ label: x, value: x }));
+export const crossLanguageOptions = Languages.map((x) => ({
+  label: t('language.' + toLower(x)),
+  value: x,
+}));
 
 type CrossLanguageItemProps = {
   name?: string;
   vertical?: boolean;
+  label?: string;
 };
 
 export const CrossLanguageFormField = ({
   name = 'prompt_config.cross_languages',
   vertical = true,
+  label,
 }: CrossLanguageItemProps) => {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -48,11 +55,11 @@ export const CrossLanguageFormField = ({
           })}
         >
           <FormLabel tooltip={t('chat.crossLanguageTip')}>
-            {t('chat.crossLanguage')}
+            {label || t('chat.crossLanguage')}
           </FormLabel>
           <FormControl>
             <MultiSelect
-              options={options}
+              options={crossLanguageOptions}
               placeholder={t('fileManager.pleaseSelect')}
               maxCount={100}
               {...field}

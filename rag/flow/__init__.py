@@ -14,36 +14,45 @@
 #  limitations under the License.
 #
 
-import os
 import importlib
 import inspect
+import pkgutil
+from pathlib import Path
 from types import ModuleType
 from typing import Dict, Type
 
-_package_path = os.path.dirname(__file__)
 __all_classes: Dict[str, Type] = {}
 
-def _import_submodules() -> None:
-    for filename in os.listdir(_package_path): # noqa: F821
-        if filename.startswith("__") or not filename.endswith(".py") or filename.startswith("base"):
-            continue
-        module_name = filename[:-3]
+_pkg_dir = Path(__file__).resolve().parent
+_pkg_name = __name__
 
+
+def _should_skip_module(mod_name: str) -> bool:
+    leaf = mod_name.rsplit(".", 1)[-1]
+    return leaf in {"__init__"} or leaf.startswith("__") or leaf.startswith("_") or leaf.startswith("base")
+
+
+def _import_submodules() -> None:
+    for modinfo in pkgutil.walk_packages([str(_pkg_dir)], prefix=_pkg_name + "."):  # noqa: F821
+        mod_name = modinfo.name
+        if _should_skip_module(mod_name):  # noqa: F821
+            continue
         try:
-            module = importlib.import_module(f".{module_name}", package=__name__)
+            module = importlib.import_module(mod_name)
             _extract_classes_from_module(module)  # noqa: F821
         except ImportError as e:
-            print(f"Warning: Failed to import module {module_name}: {str(e)}")
+            print(f"Warning: Failed to import module {mod_name}: {e}")
+
 
 def _extract_classes_from_module(module: ModuleType) -> None:
     for name, obj in inspect.getmembers(module):
-        if (inspect.isclass(obj) and
-                obj.__module__ == module.__name__ and not name.startswith("_")):
+        if inspect.isclass(obj) and obj.__module__ == module.__name__ and not name.startswith("_"):
             __all_classes[name] = obj
             globals()[name] = obj
+
 
 _import_submodules()
 
 __all__ = list(__all_classes.keys()) + ["__all_classes"]
 
-del _package_path, _import_submodules, _extract_classes_from_module
+del _pkg_dir, _pkg_name, _import_submodules, _extract_classes_from_module

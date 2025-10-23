@@ -62,7 +62,7 @@ export default function SearchPage() {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink onClick={navigateToSearchList}>
-                Search
+                {t('header.search')}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -82,6 +82,7 @@ export default function SearchPage() {
                 searchText={searchText}
                 setSearchText={setSearchText}
                 userInfo={userInfo}
+                canSearch={!checkOpenSetting}
               />
             </div>
           )}

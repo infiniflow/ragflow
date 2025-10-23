@@ -194,6 +194,9 @@ def add_llm():
     elif factory == "Azure-OpenAI":
         api_key = apikey_json(["api_key", "api_version"])
 
+    elif factory == "OpenRouter":
+        api_key = apikey_json(["api_key", "provider_order"])
+
     llm = {
         "tenant_id": current_user.id,
         "llm_factory": factory,

@@ -5,7 +5,6 @@ import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
-import { Input } from '@/components/originui/input';
 import { Button } from '@/components/ui/button';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
 import {
@@ -16,11 +15,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import {
   MultiSelect,
   MultiSelectOptionType,
 } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
+import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
@@ -137,10 +138,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         llm_setting: {
           llm_id: search_config?.chat_id || '',
           parameter: llm_setting?.parameter,
-          temperature: llm_setting?.temperature,
-          top_p: llm_setting?.top_p,
-          frequency_penalty: llm_setting?.frequency_penalty,
-          presence_penalty: llm_setting?.presence_penalty,
+          temperature: llm_setting?.temperature || 0,
+          top_p: llm_setting?.top_p || 0,
+          frequency_penalty: llm_setting?.frequency_penalty || 0,
+          presence_penalty: llm_setting?.presence_penalty || 0,
           temperatureEnabled: llm_setting?.temperature ? true : false,
           topPEnabled: llm_setting?.top_p ? true : false,
           presencePenaltyEnabled: llm_setting?.presence_penalty ? true : false,
@@ -226,11 +227,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   });
 
   const { updateSearch } = useUpdateSearch();
+  const [formSubmitLoading, setFormSubmitLoading] = useState(false);
   const { data: systemSetting } = useFetchTenantInfo();
   const onSubmit = async (
     formData: IUpdateSearchProps & { tenant_id: string },
   ) => {
     try {
+      setFormSubmitLoading(true);
       const { search_config, ...other_formdata } = formData;
       const {
         llm_setting,
@@ -262,6 +265,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       setOpen(false);
     } catch (error) {
       console.error('Failed to update search:', error);
+    } finally {
+      setFormSubmitLoading(false);
     }
   };
   return (
@@ -392,7 +397,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               name="search_config.similarity_threshold"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Similarity Threshold</FormLabel>
+                  <FormLabel
+                    tooltip={t('knowledgeDetails.similarityThresholdTip')}
+                  >
+                    {t('knowledgeDetails.similarityThreshold')}
+                  </FormLabel>
                   <div
                     className={cn(
                       'flex items-center gap-4 justify-between',
@@ -428,9 +437,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               name="search_config.vector_similarity_weight"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>Vector
-                    Similarity Weight
+                  <FormLabel
+                    tooltip={t('knowledgeDetails.vectorSimilarityWeightTip')}
+                  >
+                    <span className="text-destructive mr-1"> *</span>
+                    {t('knowledgeDetails.vectorSimilarityWeight')}
                   </FormLabel>
                   <div
                     className={cn(
@@ -486,7 +497,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>
-                        <span className="text-destructive mr-1"> *</span>Model
+                        <span className="text-destructive mr-1"> *</span>
+                        {t('chat.model')}
                       </FormLabel>
                       <FormControl>
                         <RAGFlowSelect
@@ -494,7 +506,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                           options={rerankModelOptions}
                           triggerClassName={'bg-bg-input'}
                           // disabled={disabled}
-                          placeholder={'model'}
+                          placeholder={t('chat.model')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -523,6 +535,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         </FormControl>
                         <FormControl>
                           <Input
+                            type={'number'}
                             className="h-7 w-20 bg-bg-card"
                             max={2048}
                             min={0}
@@ -619,7 +632,14 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               >
                 {t('search.cancelText')}
               </Button>
-              <Button type="submit">{t('search.okText')}</Button>
+              <Button type="submit" disabled={formSubmitLoading}>
+                {formSubmitLoading && (
+                  <div className="size-4">
+                    <Spin size="small" />
+                  </div>
+                )}
+                {t('search.okText')}
+              </Button>
             </div>
           </form>
         </Form>
