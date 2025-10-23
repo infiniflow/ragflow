@@ -102,18 +102,20 @@ export const getFileLogsTableColumns = (
     {
       accessorKey: 'pipeline_title',
       header: t('dataPipeline'),
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2 text-text-primary">
-          <RAGFlowAvatar
-            avatar={row.original.avatar}
-            name={row.original.pipeline_title}
-            className="size-4"
-          />
-          {row.original.pipeline_title === 'naive'
-            ? 'general'
-            : row.original.pipeline_title}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const title = row.original.pipeline_title;
+        const pipelineTitle = title === 'naive' ? 'general' : title;
+        return (
+          <div className="flex items-center gap-2 text-text-primary">
+            <RAGFlowAvatar
+              avatar={row.original.avatar}
+              name={pipelineTitle}
+              className="size-4"
+            />
+            {pipelineTitle}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'process_begin_at',
