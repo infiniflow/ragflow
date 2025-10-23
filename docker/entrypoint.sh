@@ -178,6 +178,16 @@ function start_mcp_server() {
         "${MCP_JSON_RESPONSE_FLAG}" &
 }
 
+function ensure_docling() {
+  if [[ "${USE_DOCLING}" == "true" ]]; then
+    if ! python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)"; then
+      echo "[docling] not found, installing..."
+      python3 -m pip install --no-cache-dir "docling${DOCLING_VERSION:-}"
+    else
+      echo "[docling] already installed, skip."
+    fi
+  fi
+}
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -202,6 +212,8 @@ fi
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
     start_mcp_server
 fi
+
+ensure_docling
 
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
     if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
