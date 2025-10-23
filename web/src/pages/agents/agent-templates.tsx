@@ -50,7 +50,7 @@ export default function AgentTemplates() {
     [showCreatingModal],
   );
 
-  const { navigateToAgent, navigateToDataflow } = useNavigatePage();
+  const { navigateToAgent } = useNavigatePage();
 
   const handleOk = useCallback(
     async (payload: any) => {
@@ -67,7 +67,7 @@ export default function AgentTemplates() {
       if (ret?.code === 0) {
         hideCreatingModal();
         if (canvasCategory === AgentCategory.DataflowCanvas) {
-          navigateToDataflow(ret.data.id)();
+          navigateToAgent(ret.data.id, AgentCategory.DataflowCanvas)();
         } else {
           navigateToAgent(ret.data.id)();
         }
@@ -76,7 +76,6 @@ export default function AgentTemplates() {
     [
       hideCreatingModal,
       navigateToAgent,
-      navigateToDataflow,
       setAgent,
       template?.avatar,
       template?.canvas_category,
