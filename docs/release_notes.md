@@ -28,12 +28,12 @@ Released on October 23, 2025.
 
 ### New features
 
-- Experimental: Adds support for PDF document parsing using MinerU.
+- Experimental: Adds support for PDF document parsing using MinerU. See [here](./faq.mdx#how-to-use-mineru-to-parse-pdf-documents).
 
 ### Improvements
 
 - Enhances UI/UX for the dataset and personal center pages.
-- Upgrades RAGFlow's document engine, Infinity, to v0.6.1.
+- Upgrades RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity), to v0.6.1.
 
 ### Fixed issues
 
