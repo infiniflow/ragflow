@@ -35,6 +35,7 @@ from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, Mark
 from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser_docx_wrapper,vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.docling_parser import DoclingParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 
 
@@ -532,6 +533,24 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             )
             parser_config["chunk_token_num"] = 0
             callback(0.8, "Finish parsing.")
+
+        elif layout_recognizer == "Docling":
+            pdf_parser = DoclingParser()
+            if not pdf_parser.check_installation():
+                callback(-1, "Docling not found.")
+                return res
+
+            sections, tables = pdf_parser.parse_pdf(
+                filepath=filename,
+                binary=binary,
+                callback=callback,
+                output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+                delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+            )
+            parser_config["chunk_token_num"] = 0
+            res = tokenize_table(tables, doc, is_english)
+            callback(0.8, "Finish parsing.")
+        
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()
