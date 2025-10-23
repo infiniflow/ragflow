@@ -59,7 +59,6 @@ import { CategorizeNode } from './node/categorize-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExtractorNode } from './node/extractor-node';
 import { FileNode } from './node/file-node';
-import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
@@ -84,7 +83,6 @@ export const nodeTypes: NodeTypes = {
   relevantNode: RelevantNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
-  generateNode: GenerateNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
