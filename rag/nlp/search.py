@@ -388,6 +388,7 @@ class Dealer:
             else:
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                sim = [s if s is not None else 0. for s in sim]
                 tsim = sim
                 vsim = sim
         # Already paginated in search function
