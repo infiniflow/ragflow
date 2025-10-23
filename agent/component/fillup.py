@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
 class UserFillUpParam(ComponentParamBase):
-
     def __init__(self):
         super().__init__()
         self.enable_tips = True
@@ -31,10 +31,13 @@ class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("UserFillUp processing"):
+            return
+
         for k, v in kwargs.get("inputs", {}).items():
+            if self.check_if_canceled("UserFillUp processing"):
+                return
             self.set_output(k, v)
 
     def thoughts(self) -> str:
         return "Waiting for your input..."
-
-

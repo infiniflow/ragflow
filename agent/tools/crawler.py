@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import asyncio
 from crawl4ai import AsyncWebCrawler
@@ -29,7 +30,7 @@ class CrawlerParam(ToolParamBase):
         super().__init__()
         self.proxy = None
         self.extract_type = "markdown"
-    
+
     def check(self):
         self.check_valid_value(self.extract_type, "Type of content from the crawler", ['html', 'markdown', 'content'])
 
@@ -47,18 +48,24 @@ class Crawler(ToolBase, ABC):
             result = asyncio.run(self.get_web(ans))
 
             return Crawler.be_output(result)
-            
+
         except Exception as e:
             return Crawler.be_output(f"An unexpected error occurred: {str(e)}")
 
     async def get_web(self, url):
+        if self.check_if_canceled("Crawler async operation"):
+            return
+
         proxy = self._param.proxy if self._param.proxy else None
         async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
             result = await crawler.arun(
                 url=url,
                 bypass_cache=True
             )
-            
+
+            if self.check_if_canceled("Crawler async operation"):
+                return
+
             if self._param.extract_type == 'html':
                 return result.cleaned_html
             elif self._param.extract_type == 'markdown':
