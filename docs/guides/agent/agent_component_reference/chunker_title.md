@@ -34,7 +34,7 @@ Click **+ Add** to add heading levels here or update the corresponding **Regular
 
 ### Output
 
-The global variable name for the output of the **Title chunkder** component, which can be referenced by subsequent components in the ingestion pipeline.
+The global variable name for the output of the **Title chunker** component, which can be referenced by subsequent components in the ingestion pipeline.
 
 - Default: `chunks`
 - Type: `Array<Object>`
