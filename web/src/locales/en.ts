@@ -1748,6 +1748,7 @@ Important structured information may include: names, dates, locations, events, k
       cachedTools: 'cached tools',
       bulkManage: 'Bulk manage',
       exitBulkManage: 'Exit bulk manage',
+      selected: 'Selected',
     },
     search: {
       searchApps: 'Search Apps',

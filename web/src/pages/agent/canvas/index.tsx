@@ -250,6 +250,19 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       >
         <defs>
           <marker
+            fill="rgb(var(--accent-primary))"
+            id="selected-marker"
+            viewBox="0 0 40 40"
+            refX="8"
+            refY="5"
+            markerUnits="strokeWidth"
+            markerWidth="20"
+            markerHeight="20"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+          <marker
             fill="var(--text-disabled)"
             id="logo"
             viewBox="0 0 40 40"

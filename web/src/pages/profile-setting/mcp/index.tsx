@@ -102,7 +102,7 @@ export default function McpServer() {
             {t('common.selectAll')}
           </Label>
           <span className="text-text-secondary pr-10 pl-5">
-            Selected {selectedList.length}
+            {t('mcp.selected')} {selectedList.length}
           </span>
           <div className="flex gap-10 items-center">
             <Button variant={'secondary'} onClick={handleExportMcp}>
