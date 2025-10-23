@@ -1124,6 +1124,10 @@ curl --request PUT \
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
+- `"enabled"`: (*Body parameter*), `integer`  
+  Whether the document should be **available** in the knowledge base.  
+  - `1` → （available）  
+  - `0` → （unavailable）  
 
 #### Response
 
