@@ -196,9 +196,6 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate embedding and DeepDoc tasks:
-   # docker compose -f docker-compose-gpu.yml up -d
    ```
 
 ```mdx-code-block
@@ -207,10 +204,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 | RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.21.1`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.21.1-slim`      | &approx;2       | ❌                                        | Stable release           |
-| `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
-| `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
+| v0.21.1             | &approx;9       | ✔️                                        | Stable release           |
+| v0.21.1-slim        | &approx;2       | ❌                                        | Stable release           |
+| nightly             | &approx;2       | ❌                                        | _Unstable_ nightly build |
 
 ```mdx-code-block
 </APITable>
@@ -232,7 +228,7 @@ The image size shown refers to the size of the *downloaded* Docker image, which 
 4. Check the server status after having the server up and running:
 
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _The following output confirms a successful launch of the system:_
