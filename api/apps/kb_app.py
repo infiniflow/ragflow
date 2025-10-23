@@ -28,6 +28,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
+from api.db.services.risk_ai_task_service import RiskAITaskService, RiskAITaskStatus
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
@@ -44,7 +45,7 @@ from api.utils.api_utils import get_json_result, send_file_in_mem
 from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
-from rag.settings import PAGERANK_FLD
+from rag.settings import PAGERANK_FLD, get_svr_queue_name
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -1043,6 +1044,109 @@ def risk_ai_identify():
       pass
 
     return get_json_result(data={"answer": answer})
+  except Exception as e:
+    return server_error_response(e)
+
+
+@manager.route("/risk_ai_identify_task", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("kb_id", "rows")
+def risk_ai_identify_task():
+  try:
+    req = request.json
+    kb_id = req.get("kb_id", "")
+    rows = req.get("rows", [])
+    if not isinstance(rows, list) or not rows:
+      return get_json_result(data=False, message='Rows should be a non-empty list.', code=settings.RetCode.ARGUMENT_ERROR)
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+      return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
+    task_id = get_uuid()
+    params = {
+        "rows": rows,
+        "similarity_threshold": req.get("similarity_threshold", 0.6),
+        "vector_similarity_weight": req.get("vector_similarity_weight", 0.95),
+        "top_k": req.get("top_k", 1024),
+        "temperature": req.get("temperature", 0.2),
+        "parser_type": req.get("parser_type", "raw"),
+        "page": req.get("page", 1),
+        "size": req.get("size", 10),
+    }
+    RiskAITaskService.create_task(
+        id=task_id,
+        kb_id=kb_id,
+        status=RiskAITaskStatus.PENDING,
+        progress=0.0,
+        total_rows=len(rows),
+        processed_rows=0,
+        failed_rows=0,
+        params=params,
+        created_by=current_user.id,
+    )
+
+    message = {
+        "task_type": "risk_ai_identify_batch",
+        "risk_ai_task_id": task_id,
+    }
+    if not REDIS_CONN.queue_product(get_svr_queue_name(0), message):
+      RiskAITaskService.update_task(task_id, {"status": RiskAITaskStatus.FAILED, "error_msg": "Failed to enqueue task."})
+      return get_json_result(data=False, message='Failed to enqueue task.', code=settings.RetCode.SERVER_ERROR)
+
+    return get_json_result(data={"task_id": task_id})
+  except Exception as e:
+    return server_error_response(e)
+
+
+@manager.route("/risk_ai_identify_task/status", methods=["GET"])  # noqa: F821
+@login_required
+def risk_ai_identify_task_status():
+  try:
+    task_id = request.args.get("task_id")
+    if not task_id:
+      return get_json_result(data=False, message='Missing task_id', code=settings.RetCode.ARGUMENT_ERROR)
+
+    task = RiskAITaskService.get_task(task_id)
+    if not task:
+      return get_json_result(data=False, message='Task not found.', code=settings.RetCode.DATA_ERROR)
+
+    data = task.to_dict()
+    if data.get("result_location"):
+      kb_id = data.get("kb_id")
+      try:
+        base = request.host_url.rstrip('/')
+        data["download_task"] = task_id
+        data["download_url"] = f"{base}/v1/kb/risk_ai_identify_task/download?task_id={task_id}"
+      except Exception:
+        data["download_url"] = ""
+    return get_json_result(data=data)
+  except Exception as e:
+    return server_error_response(e)
+
+
+@manager.route("/risk_ai_identify_task/download", methods=["GET"])  # noqa: F821
+@login_required
+def risk_ai_identify_task_download():
+  try:
+    task_id = request.args.get("task_id")
+    if not task_id:
+      return get_json_result(data=False, message='Missing task_id', code=settings.RetCode.ARGUMENT_ERROR)
+
+    task = RiskAITaskService.get_task(task_id)
+    if not task:
+      return get_json_result(data=False, message='Task not found.', code=settings.RetCode.DATA_ERROR)
+
+    task_dict = task.to_dict()
+    result_location = task_dict.get("result_location")
+    kb_id = task_dict.get("kb_id")
+    if not result_location or not kb_id:
+      return get_json_result(data=False, message='Result not ready.', code=settings.RetCode.DATA_ERROR)
+
+    content = STORAGE_IMPL.get(kb_id, result_location)
+    if not content:
+      return get_json_result(data=False, message='File not found.', code=settings.RetCode.DATA_ERROR)
+
+    filename = result_location.split('/')[-1]
+    return send_file_in_mem(content, filename)
   except Exception as e:
     return server_error_response(e)
 

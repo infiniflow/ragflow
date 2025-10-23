@@ -1044,6 +1044,23 @@ class PipelineOperationLog(DataBaseModel):
         db_table = "pipeline_operation_log"
 
 
+class RiskAiTask(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    kb_id = CharField(max_length=32, index=True, null=False)
+    status = CharField(max_length=16, index=True, default="pending")
+    progress = FloatField(null=True, default=0.0)
+    total_rows = IntegerField(null=True, default=0)
+    processed_rows = IntegerField(null=True, default=0)
+    failed_rows = IntegerField(null=True, default=0)
+    result_location = CharField(max_length=512, null=True, default="")
+    error_msg = LongTextField(null=True)
+    params = JSONField(null=True, default=dict)
+    created_by = CharField(max_length=32, index=True, null=False)
+
+    class Meta:
+        db_table = "risk_ai_task"
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)

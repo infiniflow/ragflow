@@ -20,12 +20,15 @@ import random
 import sys
 import threading
 import time
+from io import BytesIO
 
 import json_repair
+from openpyxl import Workbook
 
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.services.risk_ai_task_service import RiskAITaskService, RiskAITaskStatus
 from api.utils.api_utils import timeout
 from api.utils.base64_image import image2id
 from api.utils.log_utils import init_root_logger, get_project_base_directory
@@ -33,6 +36,7 @@ from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.flow.pipeline import Pipeline
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text
+from rag.app.tag import label_question
 import logging
 import os
 from datetime import datetime
@@ -230,6 +234,18 @@ async def collect():
     logging.error(f"collect got empty message of {redis_msg.get_msg_id()}")
     redis_msg.ack()
     return None, None
+
+  if msg.get("task_type") == "risk_ai_identify_batch":
+    task_id = msg.get("risk_ai_task_id")
+    if not task_id:
+      logging.error("collect risk_ai_identify_batch without task_id")
+      redis_msg.ack()
+      return None, None
+    return redis_msg, {
+        "task_type": "risk_ai_identify_batch",
+        "id": task_id,
+        "risk_ai_task_id": task_id,
+    }
 
   # Resolve task by msg content
   canceled = False
@@ -970,6 +986,163 @@ async def do_handle_task(task):
       task_document_name, task_from_page, task_to_page, len(chunks), token_count, task_time_cost))
 
 
+async def process_risk_ai_task(task):
+  task_id = task.get("risk_ai_task_id")
+  record = RiskAITaskService.get_task(task_id)
+  if not record:
+    logging.warning(f"risk_ai_task {task_id} not found")
+    return
+
+  task_dict = record.to_dict()
+  params = task_dict.get("params") or {}
+  rows = params.get("rows") or []
+  total = len(rows)
+  kb_id = task_dict.get("kb_id")
+
+  RiskAITaskService.update_task(
+      task_id,
+      {
+          "status": RiskAITaskStatus.RUNNING,
+          "progress": 0.0,
+          "processed_rows": 0,
+          "failed_rows": 0,
+          "error_msg": "",
+          "result_location": "",
+      })
+
+  ok, kb = KnowledgebaseService.get_by_id(kb_id)
+  if not ok:
+    RiskAITaskService.update_task(task_id, {
+        "status": RiskAITaskStatus.FAILED,
+        "error_msg": f"Knowledgebase {kb_id} not found",
+    })
+    return
+
+  embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+  chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+
+  default_st = float(params.get("similarity_threshold", 0.6))
+  default_vw = float(params.get("vector_similarity_weight", 0.95))
+  page = int(params.get("page", 1))
+  size = int(params.get("size", 10))
+  parser_type = (params.get("parser_type") or "raw").lower()
+
+  tenant_ids = [kb.tenant_id]
+
+  workbook = Workbook()
+  ws = workbook.active
+  ws.title = "AI识别结果"
+  structured_headers = ["相关制度", "控制活动描述", "控制频率", "相关单据", "相关人员", "设计缺陷"]
+  ws.append(["循环", "主要风险点", "相应的内部控制", *structured_headers])
+
+  def clean_answer(text: str) -> str:
+    if not isinstance(text, str):
+      return str(text)
+    match = re.search(r"```(?:json|JSON)?\s*([\s\S]*?)```", text.strip())
+    return (match.group(1).strip() if match else text.strip())
+
+  processed = 0
+  failed = 0
+  errors = []
+
+  for row in rows:
+    cycle = (row.get("循环") or row.get("cycle") or "").strip()
+    risk = (row.get("主要风险点") or row.get("risk") or "").strip()
+    control = (row.get("相应的内部控制") or row.get("question") or row.get("control") or "").strip()
+    st = float(row.get("similarity_threshold", default_st))
+    vw = float(row.get("vector_similarity_weight", default_vw))
+
+    parsed_values = ["" for _ in structured_headers]
+
+    if control:
+      try:
+        ranks = settings.retriever.retrieval(
+            control,
+            embd_mdl,
+            tenant_ids,
+            [kb_id],
+            page,
+            size,
+            st,
+            vw,
+            int(params.get("top_k", 1024)),
+            row.get("doc_ids"),
+            rerank_mdl=None,
+            highlight=False,
+            rank_feature=label_question(control, [kb]),
+        )
+        txt = "\n\n".join([c.get("content_with_weight", "") for c in ranks.get("chunks", [])])
+        prompt = "\n".join([
+            "## 角色",
+            "你是一名经验丰富的内控审计专家",
+            "## 任务",
+            f"针对{cycle},为了防范{risk}，对“{control}”关键控制点进行审计。",
+            "### 任务1",
+            "根据RAG检索出的被审计单位相关内控制度:",
+            f"```{txt}```",
+            "筛选出与该循环的关键控制点相关的内控制度,包含制度名称和对应原文，输出“相关制度”，不相关的制度需要排除。",
+            "### 任务2",
+            "根据任务1识别的相关制度，整理输出“控制活动描述”，即用一句话进行专业描述，表达要客观清晰、具备可测试性，并包含控制的目的、执行人、控制内容、频率、控制方式和留痕依据等要素，但不需要逐项分点列出，只输出一条完整规范的审计用语。",
+            "### 任务3",
+            "输出“控制频率”，即每年一次、每季一次、每月一次、每周一次、每日一次、每日多次。如果制度中未明确则写“待填写”。",
+            "### 任务4",
+            "输出“相关单据”，列出控制活动中的依据或记录，如盘点表，发货单，对账单等，单据名称用书名号包裹，如：《客户信息表》。",
+            "### 任务5",
+            "输出“相关人员”，列出控制活动中涉及发起、执行、审核、审批等相关人员。",
+            "### 任务6",
+            "输出“设计缺陷”，判断是否存在内控制度设计缺陷。如果存在设计缺陷，则输出存在设计缺陷，并简要列示缺陷名称和原因。如果不存在，则输出不存在设计缺陷。",
+            "## 输出",
+            "将任务中需要输出的字段以json格式输出，包含：“相关制度”，“控制活动描述”，“控制频率”，“相关单据”，“相关人员”，“设计缺陷”,均为文本格式，不要是数组。",
+        ])
+        ans = chat_mdl.chat("", [{
+            "role": "user", "content": prompt
+        }], {"temperature": float(params.get("temperature", 0.2))})
+        cleaned = clean_answer(ans)
+        if parser_type == "structured":
+          try:
+            parsed_json = json.loads(cleaned)
+            for idx, key in enumerate(structured_headers):
+              parsed_values[idx] = str(parsed_json.get(key, "") or "")
+          except Exception:
+            parsed_values[-1] = cleaned
+        else:
+          parsed_values[-1] = cleaned
+      except Exception as err:
+        failed += 1
+        errors.append(str(err))
+    else:
+      failed += 1
+
+    ws.append([cycle, risk, control, *parsed_values])
+
+    processed += 1
+    progress = (processed / total * 100.0) if total else 100.0
+    RiskAITaskService.update_task(task_id, {
+        "processed_rows": processed,
+        "failed_rows": failed,
+        "progress": progress,
+    })
+
+  buf = BytesIO()
+  workbook.save(buf)
+  buf.seek(0)
+  location = f"risk_ai_results/{task_id}.xlsx"
+  STORAGE_IMPL.put(kb_id, location, buf.getvalue())
+
+  status = RiskAITaskStatus.SUCCESS if failed == 0 else RiskAITaskStatus.FAILED
+  err_msg = "\n".join(errors) if errors else ""
+  RiskAITaskService.update_task(
+      task_id,
+      {
+          "status": status,
+          "result_location": location,
+          "error_msg": err_msg,
+          "progress": 100.0,
+          "processed_rows": processed,
+          "failed_rows": failed,
+      })
+
+
 async def handle_task():
   global DONE_TASKS, FAILED_TASKS
   redis_msg, task = await collect()
@@ -979,11 +1152,15 @@ async def handle_task():
 
   task_type = task["task_type"]
   pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type, PipelineTaskType.PARSE) or PipelineTaskType.PARSE
+  risk_task = task_type == "risk_ai_identify_batch"
 
   try:
     logging.info(f"handle_task begin for task {json.dumps(task)}")
     CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
-    await do_handle_task(task)
+    if risk_task:
+      await process_risk_ai_task(task)
+    else:
+      await do_handle_task(task)
     DONE_TASKS += 1
     CURRENT_TASKS.pop(task["id"], None)
     logging.info(f"handle_task done for task {json.dumps(task)}")
@@ -991,21 +1168,28 @@ async def handle_task():
     FAILED_TASKS += 1
     CURRENT_TASKS.pop(task["id"], None)
     try:
-      err_msg = str(e)
-      while isinstance(e, exceptiongroup.ExceptionGroup):
-        e = e.exceptions[0]
-        err_msg += ' -- ' + str(e)
-      set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
+      if risk_task:
+        RiskAITaskService.update_task(task["id"], {"status": RiskAITaskStatus.FAILED, "error_msg": str(e)})
+      else:
+        err_msg = str(e)
+        while isinstance(e, exceptiongroup.ExceptionGroup):
+          e = e.exceptions[0]
+          err_msg += ' -- ' + str(e)
+        set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
     except Exception:
       pass
     logging.exception(f"handle_task got exception for task {json.dumps(task)}")
   finally:
-    task_document_ids = []
-    if task_type in ["graphrag", "raptor", "mindmap"]:
-      task_document_ids = task["doc_ids"]
-    if not task.get("dataflow_id", ""):
-      PipelineOperationLogService.record_pipeline_operation(
-          document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, fake_document_ids=task_document_ids)
+    if not risk_task:
+      task_document_ids = []
+      if task_type in ["graphrag", "raptor", "mindmap"]:
+        task_document_ids = task["doc_ids"]
+      if not task.get("dataflow_id", ""):
+        PipelineOperationLogService.record_pipeline_operation(
+            document_id=task["doc_id"],
+            pipeline_id="",
+            task_type=pipeline_task_type,
+            fake_document_ids=task_document_ids)
 
   redis_msg.ack()
 

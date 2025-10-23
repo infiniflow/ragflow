@@ -49,6 +49,8 @@ const {
   traceRaptor,
   risk_retrieval,
   risk_ai_identify,
+  risk_ai_identify_task,
+  risk_ai_identify_task_status,
 } = api;
 
 const methods = {
@@ -220,6 +222,14 @@ const methods = {
     url: risk_ai_identify,
     method: 'post',
   },
+  risk_ai_identify_task: {
+    url: risk_ai_identify_task,
+    method: 'post',
+  },
+  risk_ai_identify_task_status: {
+    url: risk_ai_identify_task_status,
+    method: 'get',
+  },
   pipelineRerun: {
     url: api.pipelineRerun,
     method: 'post',
@@ -288,14 +298,18 @@ export const get_risk_identify = (formData: FormData) => {
 export default kbService;
 
 // Export batch AI identify result as Excel (blob)
-export const exportRiskAIIdentifyBatch = (
+export const createRiskAITask = (
   kb_id: string,
   rows: any[],
-  parser_type: 'raw' | 'structured' = 'raw',
-) => {
-  return request(api.risk_ai_identify_batch, {
+  options?: Record<string, any>,
+) =>
+  request(api.risk_ai_identify_task, {
     method: 'post',
-    data: { kb_id, rows, parser_type },
-    responseType: 'blob',
+    data: { kb_id, rows, ...(options || {}) },
   });
-};
+
+export const getRiskAITaskStatus = (task_id: string) =>
+  request(api.risk_ai_identify_task_status, {
+    method: 'get',
+    params: { task_id },
+  });

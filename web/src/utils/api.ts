@@ -58,6 +58,8 @@ export default {
     `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${api_host}/canvas/rerun`,
   get_risk_identify: `${api_host}/kb/risk_identify`,
+  risk_ai_identify_task: `${api_host}/kb/risk_ai_identify_task`,
+  risk_ai_identify_task_status: `${api_host}/kb/risk_ai_identify_task/status`,
   risk_retrieval: `${api_host}/kb/risk_retrieval`,
   risk_ai_identify: `${api_host}/kb/risk_ai_identify`,
   risk_ai_identify_batch: `${api_host}/kb/risk_ai_identify_batch`,
