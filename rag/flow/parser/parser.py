@@ -29,6 +29,7 @@ from api.db.services.llm_service import LLMBundle
 from api.utils import get_uuid
 from api.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
+from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
@@ -155,7 +156,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -217,6 +218,27 @@ class Parser(ProcessBase):
         elif conf.get("parse_method").lower() == "plain_text":
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
+        elif conf.get("parse_method").lower() == "mineru":
+            mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable)
+            if not pdf_parser.check_installation():
+                raise RuntimeError("MinerU not found. Please install it via: pip install -U 'mineru[core]'.")
+
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+                delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+            )
+            bboxes = []
+            for t, poss in lines:
+                box = {
+                    "image": pdf_parser.crop(poss, 1),
+                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
+                    "text": t,
+                }
+                bboxes.append(box)
         else:
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
