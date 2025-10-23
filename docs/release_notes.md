@@ -32,7 +32,7 @@ Released on October 23, 2025.
 
 ### Improvements
 
-- Enhances UI/UX for the dataset and personal center page.
+- Enhances UI/UX for the dataset and personal center pages.
 - Upgrades RAGFlow's document engine, Infinity, to v0.6.1.
 
 ### Fixed issues
