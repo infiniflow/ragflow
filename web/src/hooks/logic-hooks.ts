@@ -257,25 +257,32 @@ export const useSendMessageWithSse = (
           .getReader();
 
         while (true) {
-          const x = await reader?.read();
-          if (x) {
-            const { done, value } = x;
-            if (done) {
-              resetAnswer();
-              break;
-            }
-            try {
-              const val = JSON.parse(value?.data || '');
-              const d = val?.data;
-              if (typeof d !== 'boolean') {
-                setAnswer({
-                  ...d,
-                  conversationId: body?.conversation_id,
-                  chatBoxId: body.chatBoxId,
-                });
+          try {
+            const x = await reader?.read();
+            if (x) {
+              const { done, value } = x;
+              if (done) {
+                resetAnswer();
+                break;
               }
-            } catch (e) {
-              // Swallow parse errors silently
+              try {
+                const val = JSON.parse(value?.data || '');
+                const d = val?.data;
+                if (typeof d !== 'boolean') {
+                  setAnswer({
+                    ...d,
+                    conversationId: body?.conversation_id,
+                    chatBoxId: body.chatBoxId,
+                  });
+                }
+              } catch (e) {
+                // Swallow parse errors silently
+              }
+            }
+          } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') {
+              console.log('Request was aborted by user or logic.');
+              break;
             }
           }
         }
