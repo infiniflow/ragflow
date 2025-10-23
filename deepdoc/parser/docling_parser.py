@@ -15,7 +15,6 @@
 #
 from __future__ import annotations
 
-import io
 import logging
 import re
 from dataclasses import dataclass
@@ -25,13 +24,12 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
-import numpy as np
 import pdfplumber
 from PIL import Image
 
 try:
     from docling.document_converter import DocumentConverter
-except Exception as e:
+except Exception:
     DocumentConverter = None  
 
 try:
@@ -216,12 +214,12 @@ class DoclingParser(RAGFlowPdfParser):
 
         page_img = self.page_images[idx]
         W, H = page_img.size
-        l, t, r, b = bbox
+        left, top, right, bott = bbox
 
-        x0 = float(l)
-        y0 = float(H-t)
-        x1 = float(r)
-        y1 = float(H-b)
+        x0 = float(left)
+        y0 = float(H-top)
+        x1 = float(right)
+        y1 = float(H-bott)
 
         x0, y0 = max(0.0, min(x0, W - 1)), max(0.0, min(y0, H - 1))
         x1, y1 = max(x0 + 1.0, min(x1, W)), max(y0 + 1.0, min(y1, H))
@@ -243,12 +241,12 @@ class DoclingParser(RAGFlowPdfParser):
                 pn = getattr(tab.prov[0], "page_no", None)
                 bb = getattr(tab.prov[0], "bbox", None)
                 if pn is not None and bb is not None:
-                    l = getattr(bb, "l", None)
-                    t = getattr(bb, "t", None)
-                    r = getattr(bb, "r", None)
-                    b = getattr(bb, "b", None)
-                    if None not in (l, t, r, b):
-                        img, positions = self.cropout_docling_table(int(pn), (float(l), float(t), float(r), float(b)))
+                    left = getattr(bb, "l", None)
+                    top = getattr(bb, "t", None)
+                    right = getattr(bb, "r", None)
+                    bott = getattr(bb, "b", None)
+                    if None not in (left, top, right, bott):
+                        img, positions = self.cropout_docling_table(int(pn), (float(left), float(top), float(right), float(bott)))
             html = ""
             try:
                 html = tab.export_to_html(doc=doc)
@@ -262,12 +260,12 @@ class DoclingParser(RAGFlowPdfParser):
                 pn = getattr(pic.prov[0], "page_no", None)
                 bb = getattr(pic.prov[0], "bbox", None)
                 if pn is not None and bb is not None:
-                    l = getattr(bb, "l", None)
-                    t = getattr(bb, "t", None)
-                    r = getattr(bb, "r", None)
-                    b = getattr(bb, "b", None)
-                    if None not in (l, t, r, b):
-                        img, positions = self.cropout_docling_table(int(pn), (float(l), float(t), float(r), float(b)))
+                    left = getattr(bb, "l", None)
+                    top = getattr(bb, "t", None)
+                    right = getattr(bb, "r", None)
+                    bott = getattr(bb, "b", None)
+                    if None not in (left, top, right, bott):
+                        img, positions = self.cropout_docling_table(int(pn), (float(left), float(top), float(right), float(bott)))
             captions = ""
             try:
                 captions = pic.caption_text(doc=doc)
