@@ -2987,7 +2987,7 @@
                     "tags": "LLM,CHAT,IMAGE2TEXT,32k",
                     "max_tokens": 32000,
                     "model_type": "image2text",
-                    "is_tools": true
+                    "is_tools": false
                 },
                 {
                     "llm_name": "THUDM/GLM-Z1-32B-0414",

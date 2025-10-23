@@ -49,7 +49,7 @@ export enum PptOutputFormat {
 }
 
 export enum VideoOutputFormat {
-  Json = 'json',
+  Text = 'text',
 }
 
 export enum AudioOutputFormat {
@@ -76,7 +76,7 @@ export const InitialOutputFormatMap = {
   [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
   [FileType.Docx]: DocxOutputFormat.Json,
   [FileType.PowerPoint]: PptOutputFormat.Json,
-  [FileType.Video]: VideoOutputFormat.Json,
+  [FileType.Video]: VideoOutputFormat.Text,
   [FileType.Audio]: AudioOutputFormat.Text,
 };
 
@@ -244,7 +244,7 @@ export const FileTypeSuffixMap = {
   [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
   [FileType.Docx]: ['doc', 'docx'],
   [FileType.PowerPoint]: ['pptx'],
-  [FileType.Video]: [],
+  [FileType.Video]: ['mp4', 'avi', 'mkv'],
   [FileType.Audio]: [
     'da',
     'wave',

@@ -35,14 +35,14 @@ import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
-import { VideoFormFields } from './video-form-fields';
+import { AudioFormFields, VideoFormFields } from './video-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
   [FileType.Video]: VideoFormFields,
-  [FileType.Audio]: VideoFormFields,
+  [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
 };
@@ -162,13 +162,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
 
-  const FileFormatOptions = buildOptions(
-    FileType,
-    t,
-    'flow.fileFormatOptions',
-  ).filter(
-    (x) => x.value !== FileType.Video, // Temporarily hide the video option
-  );
+  const FileFormatOptions = buildOptions(FileType, t, 'flow.fileFormatOptions');
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
