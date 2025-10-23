@@ -22,6 +22,23 @@ The embedding models included in a full edition are:
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
+## v0.21.1
+
+Released on October 23, 2025.
+
+### New features
+
+- Experimental: Adds support for PDF document parsing using MinerU.
+
+### Improvements
+
+- Enhances UI/UX for the dataset and personal center pages.
+- Upgrades RAGFlow's document engine, Infinity, to v0.6.1.
+
+### Fixed issues
+
+- An issue with video parsing.
+
 ## v0.21.0
 
 Released on October 15, 2025.
