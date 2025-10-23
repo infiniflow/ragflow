@@ -43,7 +43,7 @@ const ConditionBlock = ({
   }, []);
 
   return (
-    <Card>
+    <Card className="bg-bg-card border-transparent rounded-md">
       <CardContent className="p-0 divide-y divide-background-card">
         {items.map((x, idx) => (
           <div key={idx}>

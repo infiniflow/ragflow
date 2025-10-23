@@ -65,7 +65,14 @@ type LabelCardProps = {
 
 export function LabelCard({ children, className }: LabelCardProps) {
   return (
-    <div className={cn('bg-bg-card rounded-sm p-1', className)}>{children}</div>
+    <div
+      className={cn(
+        'bg-bg-card rounded-sm p-1 text-text-secondary text-xs',
+        className,
+      )}
+    >
+      {children}
+    </div>
   );
 }
 
