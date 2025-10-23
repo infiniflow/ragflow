@@ -169,6 +169,8 @@ def update(tenant_id, chat_id):
         if len(embd_count) > 1:
             return get_result(message='Datasets use different embedding models."', code=settings.RetCode.AUTHENTICATION_ERROR)
         req["kb_ids"] = ids
+    else:
+        req["kb_ids"] = []
     llm = req.get("llm")
     if llm:
         if "model_name" in llm:
