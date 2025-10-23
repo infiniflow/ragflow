@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import { AgentCategory } from '@/constants/agent';
 import { Images } from '@/constants/common';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
@@ -178,8 +179,8 @@ const Chunk = () => {
                   if (knowledgeId) {
                     navigateToDatasetOverview(knowledgeId)();
                   }
-                  if (agentId) {
-                    navigateToAgent(agentId)();
+                  if (isAgent) {
+                    navigateToAgent(agentId, AgentCategory.DataflowCanvas)();
                   }
                 }}
               >
