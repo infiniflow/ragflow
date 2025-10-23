@@ -259,11 +259,10 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "embedding_model",
         [
-            "BAAI/bge-large-zh-v1.5@BAAI",
-            "maidalun1020/bce-embedding-base_v1@Youdao",
+            "BAAI/bge-small-en-v1.5@Builtin",
             "embedding-3@ZHIPU-AI",
         ],
-        ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
+        ids=["builtin_baai", "tenant_zhipu"],
     )
     def test_embedding_model(self, HttpApiAuth, add_dataset_func, embedding_model):
         dataset_id = add_dataset_func
@@ -302,11 +301,11 @@ class TestDatasetUpdate:
         [
             ("empty", ""),
             ("space", " "),
-            ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
-            ("missing_model_name", "@BAAI"),
-            ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
-            ("whitespace_only_model_name", " @BAAI"),
-            ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
+            ("missing_at", "BAAI/bge-small-en-v1.5Builtin"),
+            ("missing_model_name", "@Builtin"),
+            ("missing_provider", "BAAI/bge-small-en-v1.5@"),
+            ("whitespace_only_model_name", " @Builtin"),
+            ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ "),
         ],
         ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
@@ -329,7 +328,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(HttpApiAuth)
         assert res["code"] == 0, res
-        assert res["data"][0]["embedding_model"] == "BAAI/bge-large-zh-v1.5@BAAI", res
+        assert res["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(

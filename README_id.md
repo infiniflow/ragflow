@@ -181,28 +181,28 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.21.1-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.21.1-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.1 untuk edisi lengkap v0.21.1.
+> Perintah di bawah ini mengunduh edisi v0.21.1 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.21.1, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
 
-```bash
-$ cd ragflow/docker
-# Use CPU for embedding and DeepDoc tasks:
-$ docker compose -f docker-compose.yml up -d
+   ```bash
+   $ cd ragflow/docker
+   # Use CPU for embedding and DeepDoc tasks:
+   $ docker compose -f docker-compose.yml up -d
 
-# To use GPU to accelerate embedding and DeepDoc tasks:
-# docker compose -f docker-compose-gpu.yml up -d
-```
+   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # sed -i '1i DEVICE=gpu' .env
+   # docker compose -f docker-compose.yml up -d
+   ```
 
 | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
 | ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.21.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
 | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
-| nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-| nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
 1. Periksa status server setelah server aktif dan berjalan:
 
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
@@ -256,16 +256,6 @@ Image ini berukuran sekitar 2 GB dan bergantung pada aplikasi LLM eksternal dan 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-## 🔧 Membangun Docker Image Termasuk Model Embedding
-
-Image ini berukuran sekitar 9 GB. Karena sudah termasuk model embedding, ia hanya bergantung pada aplikasi LLM eksternal.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
@@ -282,7 +272,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

@@ -62,7 +62,7 @@ $ sudo docker exec ollama ollama pull bge-m3
 
 - If RAGFlow runs in Docker, the localhost is mapped within the RAGFlow Docker container as `host.docker.internal`. If Ollama runs on the same host machine, the right URL to use for Ollama would be `http://host.docker.internal:11434/' and you should check that Ollama is accessible from inside the RAGFlow container with:
 ```bash
-$ sudo docker exec -it ragflow-server bash
+$ sudo docker exec -it docker-ragflow-cpu-1 bash
 $ curl http://host.docker.internal:11434/
 > Ollama is running
 ```

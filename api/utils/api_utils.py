@@ -588,7 +588,7 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
             llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for
             llm in tenant_llms)
 
-        is_builtin_model = embd_id in settings.BUILTIN_EMBEDDING_MODELS
+        is_builtin_model = llm_factory=='Builtin'
         if not (is_builtin_model or is_tenant_model or in_llm_service):
             return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
 

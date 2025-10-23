@@ -149,11 +149,10 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "embedding_model",
         [
-            "BAAI/bge-large-zh-v1.5@BAAI",
-            "maidalun1020/bce-embedding-base_v1@Youdao",
+            "BAAI/bge-small-en-v1.5@Builtin",
             "embedding-3@ZHIPU-AI",
         ],
-        ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
+        ids=["builtin_baai", "tenant_zhipu"],
     )
     def test_embedding_model(self, WebApiAuth, add_dataset_func, embedding_model):
         kb_id = add_dataset_func

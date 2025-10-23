@@ -17,6 +17,7 @@ import os
 import logging
 from api.utils.configs import get_base_config, decrypt_database_config
 from api.utils.file_utils import get_project_base_directory
+from api.utils.common import pip_install_torch
 
 # Server
 RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
@@ -65,6 +66,7 @@ TAG_FLD = "tag_feas"
 
 PARALLEL_DEVICES = 0
 try:
+    pip_install_torch()
     import torch.cuda
     PARALLEL_DEVICES = torch.cuda.device_count()
     logging.info(f"found {PARALLEL_DEVICES} gpus")

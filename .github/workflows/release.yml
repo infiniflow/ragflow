@@ -83,28 +83,15 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # https://github.com/marketplace/actions/build-and-push-docker-images
-      - name: Build and push full image
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
             infiniflow/ragflow:${{ env.RELEASE_TAG }}
-            infiniflow/ragflow:latest-full
+            infiniflow/ragflow:latest
           file: Dockerfile
-          platforms: linux/amd64
-
-      # https://github.com/marketplace/actions/build-and-push-docker-images
-      - name: Build and push slim image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim
-            infiniflow/ragflow:latest-slim
-          file: Dockerfile
-          build-args: LIGHTEN=1
           platforms: linux/amd64
 
       - name: Build ragflow-sdk

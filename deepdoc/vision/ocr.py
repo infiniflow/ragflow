@@ -22,6 +22,7 @@ import os
 from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
+from api.utils.common import pip_install_torch
 from rag.settings import PARALLEL_DEVICES
 from .operators import *  # noqa: F403
 from . import operators
@@ -83,6 +84,7 @@ def load_model(model_dir, nm, device_id: int | None = None):
 
     def cuda_is_available():
         try:
+            pip_install_torch()
             import torch
             target_id = 0 if device_id is None else device_id
             if torch.cuda.is_available() and torch.cuda.device_count() > target_id:

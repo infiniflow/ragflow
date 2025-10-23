@@ -34,8 +34,8 @@ from huggingface_hub import snapshot_download
 from PIL import Image
 from pypdf import PdfReader as pdf2_read
 
-from api import settings
 from api.utils.file_utils import get_project_base_directory
+from api.utils.common import pip_install_torch
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.nlp import rag_tokenizer
@@ -84,14 +84,13 @@ class RAGFlowPdfParser:
         self.tbl_det = TableStructureRecognizer()
 
         self.updown_cnt_mdl = xgb.Booster()
-        if not settings.LIGHTEN:
-            try:
-                import torch.cuda
-
-                if torch.cuda.is_available():
-                    self.updown_cnt_mdl.set_param({"device": "cuda"})
-            except Exception:
-                logging.exception("RAGFlowPdfParser __init__")
+        try:
+            pip_install_torch()
+            import torch.cuda
+            if torch.cuda.is_available():
+                self.updown_cnt_mdl.set_param({"device": "cuda"})
+        except Exception:
+            logging.exception("RAGFlowPdfParser __init__")
         try:
             model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
             self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))

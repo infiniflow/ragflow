@@ -48,7 +48,7 @@ cd ragflow/
    ```
    - full:
    ```bash
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 

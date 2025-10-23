@@ -1,6 +1,5 @@
 services:
   sandbox-executor-manager:
-    container_name: sandbox-executor-manager
     build:
       context: ./executor_manager
       dockerfile: Dockerfile

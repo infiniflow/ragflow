@@ -28,8 +28,6 @@ from api.utils.configs import decrypt_database_config, get_base_config
 from api.utils.file_utils import get_project_base_directory
 from rag.nlp import search
 
-LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
-
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
@@ -77,8 +75,6 @@ SANDBOX_ENABLED = 0
 SANDBOX_HOST = None
 STRONG_TEST_COUNT = int(os.environ.get("STRONG_TEST_COUNT", "8"))
 
-BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
-
 SMTP_CONF = None
 MAIL_SERVER = ""
 MAIL_PORT = 000
@@ -109,8 +105,7 @@ def get_or_create_secret_key():
 
 
 def init_settings():
-    global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
-    LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
+    global LLM, LLM_FACTORY, LLM_BASE_URL, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
     LLM = get_base_config("user_default_llm", {}) or {}
@@ -130,8 +125,6 @@ def init_settings():
 
     global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
     global CHAT_CFG, EMBEDDING_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
-    if not LIGHTEN:
-        EMBEDDING_MDL = BUILTIN_EMBEDDING_MODELS[0]
 
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
     API_KEY = LLM.get("api_key")
@@ -152,7 +145,7 @@ def init_settings():
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
+    EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""

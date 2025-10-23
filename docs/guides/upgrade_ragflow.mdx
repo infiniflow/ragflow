@@ -7,15 +7,15 @@ slug: /upgrade_ragflow
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Upgrade RAGFlow to `nightly-slim`/`nightly` or the latest, published release.
+Upgrade RAGFlow to `nightly` or the latest, published release.
 
 :::info NOTE
 Upgrading RAGFlow in itself will *not* remove your uploaded/historical data. However, be aware that `docker compose -f docker/docker-compose.yml down -v` will remove Docker container volumes, resulting in data loss.
 :::
 
-## Upgrade RAGFlow to `nightly-slim`/`nightly`, the most recent, tested Docker image
+## Upgrade RAGFlow to `nightly`, the most recent, tested Docker image
 
-`nightly-slim` refers to the RAGFlow Docker image *without* embedding models, while `nightly` refers to the RAGFlow Docker image with embedding models. For details on their differences, see [ragflow/docker/.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env).
+`nightly` refers to the RAGFlow Docker image without embedding models.
 
 To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker image:
 
@@ -27,27 +27,9 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 
 2. Update **ragflow/docker/.env**:
 
-<Tabs
-  defaultValue="nightly-slim"
-  values={[
-    {label: 'nightly-slim', value: 'nightly-slim'},
-    {label: 'nightly', value: 'nightly'},
-  ]}>
-  <TabItem value="nightly-slim">
-
-```bash
-RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim
-```
-
-  </TabItem>
-  <TabItem value="nightly">
-
-```bash
-RAGFLOW_IMAGE=infiniflow/ragflow:nightly
-```
-
-  </TabItem>
-</Tabs>
+   ```bash
+   RAGFLOW_IMAGE=infiniflow/ragflow:nightly
+   ```
 
 3. Update RAGFlow image and restart RAGFlow:
 
@@ -74,27 +56,9 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 
 3. Update **ragflow/docker/.env**:
 
-<Tabs
-  defaultValue="slim"
-  values={[
-    {label: 'slim', value: 'slim'},
-    {label: 'full', value: 'full'},
-  ]}>
-  <TabItem value="slim">
-
-```bash
-RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.1-slim
-```
-
-  </TabItem>
-  <TabItem value="full">
-
-```bash
-RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.1
-```
-
-  </TabItem>
-</Tabs>
+   ```bash
+   RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.1
+   ```
 
 4. Update the RAGFlow image and restart RAGFlow:
 
