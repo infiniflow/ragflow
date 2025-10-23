@@ -382,9 +382,9 @@ export const useSendAgentMessage = ({
     const { content, id } = findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
-    if (answerList.length > 0 && answer) {
+    if (answerList.length > 0) {
       addNewestOneAnswer({
-        answer: answer,
+        answer: answer ?? '',
         id: id,
         ...inputAnswer,
       });
