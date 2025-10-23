@@ -1,3 +1,4 @@
+import { CardContainer } from '@/components/card-container';
 import { IconFont } from '@/components/icon-font';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
@@ -55,12 +56,14 @@ export function Applications() {
           activeClassName="bg-text-primary border-none"
         ></Segmented>
       </div>
-      <div className="flex flex-wrap gap-4">
+      {/* <div className="flex flex-wrap gap-4"> */}
+      <CardContainer>
         {val === Routes.Agents && <Agents></Agents>}
         {val === Routes.Chats && <ChatList></ChatList>}
         {val === Routes.Searches && <SearchList></SearchList>}
         {<SeeAllAppCard click={handleNavigate}></SeeAllAppCard>}
-      </div>
+      </CardContainer>
+      {/* </div> */}
     </section>
   );
 }

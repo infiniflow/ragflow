@@ -1799,13 +1799,13 @@ Important structured information may include: names, dates, locations, events, k
       confirmRerun: 'Confirm Rerun Process',
       confirmRerunModalContent: `
       <p class="text-sm text-text-disabled font-medium mb-2">
-        You are about to rerun the process starting from the <strong class="text-text-primary">{{step}}</strong> step.
+        You are about to rerun the process starting from the <span class="text-text-secondary">{{step}}</span> step.
       </p>
-      <p class="text-sm mb-3 text-text-secondary">This will:</p>
+      <p class="text-sm mb-3 text-text-disabled">This will:</p><br />
       <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
-        <li>Overwrite existing results from the current step onwards</li>
-        <li>Create a new log entry for tracking</li>
-        <li>Previous steps will remain unchanged</li>
+        <li>• Overwrite existing results from the current step onwards</li>
+        <li>• Create a new log entry for tracking</li>
+        <li>• Previous steps will remain unchanged</li>
       </ul>`,
       changeStepModalTitle: 'Step Switch Warning',
       changeStepModalContent: `

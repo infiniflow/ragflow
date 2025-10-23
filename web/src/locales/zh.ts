@@ -1687,13 +1687,13 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       confirmRerun: '确认重新运行流程',
       confirmRerunModalContent: `
       <p class="text-sm text-text-disabled font-medium mb-2">
-        您即将从 <strong class="text-text-primary">{{step}}</strong> 步骤开始重新运行该过程
+        您即将从 <span class="text-text-secondary">{{step}}</span> 步骤开始重新运行该过程
       </p>
-      <p class="text-sm mb-3 text-text-secondary">这将:</p>
+      <p class="text-sm mb-3 text-text-disabled">这将:</p>
       <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
-        <li>从当前步骤开始覆盖现有结果</li>
-        <li>创建新的日志条目进行跟踪</li>
-        <li>之前的步骤将保持不变</li>
+        <li>• 从当前步骤开始覆盖现有结果</li>
+        <li>• 创建新的日志条目进行跟踪</li>
+        <li>• 之前的步骤将保持不变</li>
       </ul>`,
       changeStepModalTitle: '切换步骤警告',
       changeStepModalContent: `
