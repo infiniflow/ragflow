@@ -59,7 +59,7 @@ You can also change a file's chunking method on the **Files** page.
 ![change chunking method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/change_chunking_method.jpg)
 
 <details>
-  <summary>From v0.21.0 onward, RAGFlow supports ingestion pipeline for customized data ingestion and cleansing workflows.</summary>
+  <summary>From v0.21.1 onward, RAGFlow supports ingestion pipeline for customized data ingestion and cleansing workflows.</summary>
    
   To use a customized data pipeline:
 
@@ -138,7 +138,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for dataset
 
-As of RAGFlow v0.21.0, the search feature is still in a rudimentary form, supporting only dataset search by name.
+As of RAGFlow v0.21.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
 
 ![search dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 
