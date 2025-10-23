@@ -29,7 +29,7 @@ from rag.utils import clean_markdown_block
 ocr = OCR()
 
 # Gemini supported MIME types
-VIDEO_EXTS = [".mp4", ".mov", ".avi", ".flv", ".mpeg", ".mpg", ".webm", ".wmv", ".3gp", ".3gpp"]
+VIDEO_EXTS = [".mp4", ".mov", ".avi", ".flv", ".mpeg", ".mpg", ".webm", ".wmv", ".3gp", ".3gpp", ".mkv"]
 
 
 def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
