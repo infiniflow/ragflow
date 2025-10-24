@@ -65,10 +65,10 @@ const ChatContainer = () => {
         avatar={chatInfo.avatar}
         handleReset={removeAllMessagesExceptFirst}
       >
-        <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
+        <div className="flex flex-1 flex-col p-2 md:p-2.5 h-[90vh] m-2 md:m-3">
           <div
             className={
-              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6'
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-full md:w-5/6'
             }
             ref={messageContainerRef}
           >
@@ -103,8 +103,8 @@ const ChatContainer = () => {
             </div>
             <div ref={scrollRef} />
           </div>
-          <div className="flex w-full justify-center mb-8">
-            <div className="w-5/6">
+          <div className="flex w-full justify-center mb-4 md:mb-8">
+            <div className="w-full md:w-5/6">
               <NextMessageInput
                 isShared
                 value={value}

@@ -1,14 +1,23 @@
 .messageItem {
-  padding: 24px 0;
+  padding: 16px 0;
+  @media (min-width: 768px) {
+    padding: 24px 0;
+  }
   .messageItemSection {
     display: inline-block;
   }
   .messageItemSectionLeft {
-    width: 80%;
+    width: 90%;
+    @media (min-width: 768px) {
+      width: 80%;
+    }
   }
   .messageItemContent {
     display: inline-flex;
-    gap: 20px;
+    gap: 12px;
+    @media (min-width: 768px) {
+      gap: 20px;
+    }
   }
   .messageItemContentReverse {
     flex-direction: row-reverse;

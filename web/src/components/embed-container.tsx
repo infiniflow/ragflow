@@ -27,20 +27,20 @@ export function EmbedContainer({
           <span className="text-2xl font-bold">{appConf.appName}</span>
         </div>
       )}
-      <div className=" w-[80vw] border rounded-lg">
-        <div className="flex justify-between items-center border-b p-3">
-          <div className="flex gap-2 items-center">
-            <RAGFlowAvatar avatar={avatar} name={title} isPerson />
-            <div className="text-xl text-foreground">{title}</div>
+      <div className="w-full md:w-[80vw] border rounded-lg">
+        <div className="flex justify-between items-center border-b p-2 md:p-3">
+          <div className="flex gap-1 md:gap-2 items-center">
+            <RAGFlowAvatar avatar={avatar} name={title} isPerson className="h-8 w-8 md:h-10 md:w-10" />
+            <div className="text-base md:text-xl text-foreground">{title}</div>
           </div>
           <Button
             variant={'secondary'}
-            className="text-sm text-foreground cursor-pointer"
+            className="text-xs md:text-sm text-foreground cursor-pointer"
             onClick={handleReset}
           >
             <div className="flex gap-1 items-center">
-              <RefreshCcw size={14} />
-              <span className="text-lg ">Reset</span>
+              <RefreshCcw size={12} className="md:w-[14px] md:h-[14px]" />
+              <span className="text-sm md:text-lg">Reset</span>
             </div>
           </Button>
         </div>

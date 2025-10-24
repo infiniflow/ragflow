@@ -95,11 +95,11 @@ const MessageItem = ({
         >
           {visibleAvatar &&
             (item.role === MessageType.User ? (
-              <Avatar size={40} src={avatar ?? '/logo.svg'} />
+              <Avatar size={40} src={avatar ?? '/logo.svg'} className="h-8 w-8 md:h-10 md:w-10" />
             ) : avatarDialog ? (
-              <Avatar size={40} src={avatarDialog} />
+              <Avatar size={40} src={avatarDialog} className="h-8 w-8 md:h-10 md:w-10" />
             ) : (
-              <AssistantIcon />
+              <AssistantIcon className="h-8 w-8 md:h-10 md:w-10" />
             ))}
 
           <Flex vertical gap={8} flex={1}>
