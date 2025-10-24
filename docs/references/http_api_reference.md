@@ -830,7 +830,8 @@ Success:
             "update_time": 1728533243536,
             "vector_similarity_weight": 0.3
         }
-    ]
+    ],
+    "total": 1
 }
 ```
 
@@ -1197,23 +1198,24 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
 
 Lists documents in a specified dataset.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
-##### Request example
+##### Request examples
 
+**A basic request with pagination:**
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page=1&page_size=10 \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -1235,10 +1237,34 @@ curl --request GET \
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
-- `create_time_from`: (*Filter parameter*), `integer`
+- `create_time_from`: (*Filter parameter*), `integer`  
   Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
-- `create_time_to`: (*Filter parameter*), `integer`
+- `create_time_to`: (*Filter parameter*), `integer`  
   Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
+- `suffix`: (*Filter parameter*), `array[string]`  
+  Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
+- `run`: (*Filter parameter*), `array[string]`  
+  Filter by document processing status. Supports numeric, text, and mixed formats:  
+  - Numeric format: `["0", "1", "2", "3", "4"]`
+  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
+  - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
+  - Status mapping:
+    - `0` / `UNSTART`: Document not yet processed
+    - `1` / `RUNNING`: Document is currently being processed
+    - `2` / `CANCEL`: Document processing was cancelled
+    - `3` / `DONE`: Document processing completed successfully
+    - `4` / `FAIL`: Document processing failed  
+  Defaults to all statuses.
+
+##### Usage examples
+
+**A request with multiple filtering parameters**
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&run=DONE&page=1&page_size=10' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
 
 #### Response
 
@@ -1269,7 +1295,7 @@ Success:
                 "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
-                "run": "0",
+                "run": "UNSTART",
                 "size": 7,
                 "source_type": "local",
                 "status": "1",
@@ -1280,7 +1306,7 @@ Success:
                 "update_time": 1728897061948
             }
         ],
-        "total": 1
+        "total_datasets": 1
     }
 }
 ```
@@ -1822,7 +1848,21 @@ curl --request POST \
      {
           "question": "What is advantage of ragflow?",
           "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
-          "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"]
+          "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"],
+          "metadata_condition": {
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "=",
+                "value": "Toby"
+              },
+              {
+                "name": "url",
+                "comparison_operator": "not contains",
+                "value": "amd"
+              }
+            ]
+          }
      }'
 ```
 
@@ -1856,8 +1896,26 @@ curl --request POST \
   - `false`: Disable highlighting of matched terms (default).
 - `"cross_languages"`: (*Body parameter*) `list[string]`  
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
-- `"metadata_condition"`: (*Body parameter*), `object`
-  The metadata condition for filtering chunks.
+- `"metadata_condition"`: (*Body parameter*), `object`  
+  The metadata condition used for filtering chunks:  
+  - `"conditions"`: (*Body parameter*), `array`  
+    A list of metadata filter conditions.  
+    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
+    - `comparison_operator`: `string` - The comparison operator. Can be one of: 
+      - `"contains"`
+      - `"not contains"`
+      - `"start with"`
+      - `"empty"`
+      - `"not empty"`
+      - `"="`
+      - `"≠"`
+      - `">"`
+      - `"<"`
+      - `"≥"`
+      - `"≤"`
+    - `"value"`: `string` - The value to compare.
+
+
 #### Response
 
 Success:
@@ -4102,3 +4160,77 @@ Failure:
 ```
 
 ---
+
+### System
+---
+### Check system health
+
+**GET** `/v1/system/healthz`
+
+Check the health status of RAGFlow’s dependencies (database, Redis, document engine, object storage).
+
+#### Request
+
+- Method: GET
+- URL: `/v1/system/healthz`
+- Headers:
+  - 'Content-Type: application/json'
+  (no Authorization required)
+
+##### Request example
+
+```bash
+curl --request GET
+     --url http://{address}/v1/system/healthz
+     --header 'Content-Type: application/json'
+```
+
+##### Request parameters
+
+- `address`: (*Path parameter*), string  
+  The host and port of the backend service (e.g., `localhost:7897`).
+
+---
+
+#### Responses
+
+- **200 OK** – All services healthy
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "db": "ok",
+  "redis": "ok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "ok"
+}
+```
+
+- **500 Internal Server Error** – At least one service unhealthy
+
+```http
+HTTP/1.1 500 INTERNAL SERVER ERROR
+Content-Type: application/json
+
+{
+  "db": "ok",
+  "redis": "nok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "nok",
+  "_meta": {
+    "redis": {
+      "elapsed": "5.2",
+      "error": "Lost connection!"
+    }
+  }
+}
+```
+
+Explanation:  
+- Each service is reported as "ok" or "nok".  
+- The top-level `status` reflects overall health.  
+- If any service is "nok", detailed error info appears in `_meta`.  

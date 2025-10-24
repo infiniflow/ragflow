@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import logging
-import base64
 import json
 import os
 import time
@@ -32,11 +31,7 @@ from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_l
 from api.db.services.user_service import TenantService, UserTenantService
 from api import settings
 from api.utils.file_utils import get_project_base_directory
-
-
-def encode_to_base64(input_string):
-    base64_encoded = base64.b64encode(input_string.encode('utf-8'))
-    return base64_encoded.decode('utf-8')
+from api.common.base64 import encode_to_base64
 
 
 def init_superuser():
@@ -144,8 +139,9 @@ def init_llm_factory():
             except Exception:
                 pass
             break
+    doc_count = DocumentService.get_all_kb_doc_count()
     for kb_id in KnowledgebaseService.get_all_ids():
-        KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=DocumentService.get_kb_doc_count(kb_id))
+        KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=doc_count.get(kb_id, 0))
 
 
 

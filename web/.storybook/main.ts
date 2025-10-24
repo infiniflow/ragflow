@@ -3,6 +3,7 @@ import path from 'path';
 
 const config: StorybookConfig = {
   stories: ['../src/**/*.mdx', '../src/**/*.stories.@(js|jsx|mjs|ts|tsx)'],
+  staticDirs: ['../public'],
   addons: [
     '@storybook/addon-webpack5-compiler-swc',
     '@storybook/addon-docs',
@@ -13,6 +14,21 @@ const config: StorybookConfig = {
         rules: [
           {
             test: /\.css$/,
+            use: [
+              'style-loader',
+              'css-loader',
+              {
+                loader: 'postcss-loader',
+                options: {
+                  postcssOptions: {
+                    plugins: [require('tailwindcss'), require('autoprefixer')],
+                  },
+                },
+              },
+            ],
+          },
+          {
+            test: /\.less$/,
             use: [
               'style-loader',
               'css-loader',

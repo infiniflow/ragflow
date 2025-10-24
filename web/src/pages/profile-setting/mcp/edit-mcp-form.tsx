@@ -89,7 +89,7 @@ export function EditMcpForm({
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('common.name')}</FormLabel>
+              <FormLabel required>{t('common.name')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('common.mcp.namePlaceholder')}
@@ -106,7 +106,7 @@ export function EditMcpForm({
           name="url"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('mcp.url')}</FormLabel>
+              <FormLabel required>{t('mcp.url')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('common.mcp.urlPlaceholder')}
@@ -127,7 +127,7 @@ export function EditMcpForm({
           name="server_type"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('mcp.serverType')}</FormLabel>
+              <FormLabel required>{t('mcp.serverType')}</FormLabel>
               <FormControl>
                 <RAGFlowSelect
                   {...field}

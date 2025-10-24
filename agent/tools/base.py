@@ -22,7 +22,7 @@ from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
 from api.utils import hash_str2int
 from rag.llm.chat_model import ToolCallSession
-from rag.prompts.prompts import kb_prompt
+from rag.prompts.generator import kb_prompt
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession
 from timeit import default_timer as timer
 

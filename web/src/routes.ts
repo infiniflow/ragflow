@@ -1,6 +1,6 @@
 export enum Routes {
   Root = '/',
-  Login = '/login',
+  Login = '/login-next',
   Logout = '/logout',
   Home = '/home',
   Datasets = '/datasets',
@@ -18,9 +18,11 @@ export enum Routes {
   Files = '/files',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
+  Api = '/api',
   Mcp = '/mcp',
   Team = '/team',
   Plan = '/plan',
+  System = '/system',
   Model = '/model',
   Prompt = '/prompt',
   ProfileMcp = `${ProfileSetting}${Mcp}`,
@@ -30,7 +32,6 @@ export enum Routes {
   ProfilePrompt = `${ProfileSetting}${Prompt}`,
   ProfileProfile = `${ProfileSetting}${Profile}`,
   DatasetTesting = '/testing',
-  DatasetSetting = '/setting',
   Chunk = '/chunk',
   ChunkResult = `${Chunk}${Chunk}`,
   Parsed = '/parsed',
@@ -41,15 +42,19 @@ export enum Routes {
   AgentLogPage = '/agent-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
+  ChatWidget = `${Chats}/widget`,
   UserSetting = '/user-setting',
   DataFlows = '/data-flows',
   DataFlow = '/data-flow',
+  DataSetOverview = '/dataset-overview',
+  DataSetSetting = '/dataset-setting',
+  DataflowResult = '/dataflow-result',
 }
 
 const routes = [
   {
     path: '/login',
-    component: '@/pages/login',
+    component: '@/pages/login-next',
     layout: false,
   },
   {
@@ -70,6 +75,11 @@ const routes = [
   {
     path: Routes.AgentShare,
     component: `@/pages${Routes.AgentShare}`,
+    layout: false,
+  },
+  {
+    path: Routes.ChatWidget,
+    component: `@/pages${Routes.ChatWidget}`,
     layout: false,
   },
   {
@@ -124,16 +134,8 @@ const routes = [
     component: '@/pages/file-manager',
   },
   {
-    path: '/flow',
-    component: '@/pages/flow/list',
-  },
-  {
     path: Routes.AgentList,
     component: `@/pages/${Routes.Agents}`,
-  },
-  {
-    path: '/flow/:id',
-    component: '@/pages/flow',
   },
   {
     path: '/search',
@@ -262,10 +264,6 @@ const routes = [
         component: `@/pages${Routes.Dataset}`,
       },
       {
-        path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
-        component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
-      },
-      {
         path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
       },
@@ -273,7 +271,20 @@ const routes = [
         path: `${Routes.DatasetBase}${Routes.KnowledgeGraph}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.KnowledgeGraph}`,
       },
+      {
+        path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DataSetOverview}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DataSetSetting}`,
+      },
     ],
+  },
+  {
+    path: `${Routes.DataflowResult}`,
+    layout: false,
+    component: `@/pages${Routes.DataflowResult}`,
   },
   {
     path: `${Routes.ParsedResult}/chunks`,
@@ -353,7 +364,7 @@ const routes = [
       {
         path: '/user-setting/profile',
         // component: '@/pages/user-setting/setting-profile',
-        component: '@/pages/user-setting/setting-profile',
+        component: '@/pages/user-setting/profile',
       },
       {
         path: '/user-setting/locale',
@@ -372,11 +383,11 @@ const routes = [
         component: '@/pages/user-setting/setting-team',
       },
       {
-        path: '/user-setting/system',
+        path: `/user-setting${Routes.System}`,
         component: '@/pages/user-setting/setting-system',
       },
       {
-        path: '/user-setting/api',
+        path: `/user-setting${Routes.Api}`,
         component: '@/pages/user-setting/setting-api',
       },
       {

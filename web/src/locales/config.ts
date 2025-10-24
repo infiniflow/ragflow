@@ -55,7 +55,7 @@ export const translationTable = createTranslationTable(
   [
     'English',
     'Vietnamese',
-    'Rus',
+    'ru',
     'Spanish',
     'zh',
     'zh-TRADITIONAL',

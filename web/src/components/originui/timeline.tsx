@@ -1,6 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { TimelineNodeType } from '@/pages/dataflow-result/constant';
+import { parseColorToRGB } from '@/utils/common-util';
 import { Slot } from '@radix-ui/react-slot';
 import * as React from 'react';
 
@@ -197,7 +199,207 @@ function TimelineTitle({
   );
 }
 
+interface TimelineIndicatorNodeProps {
+  nodeSize?: string | number;
+  iconColor?: string;
+  lineColor?: string;
+  textColor?: string;
+  indicatorBgColor?: string;
+  indicatorBorderColor?: string;
+}
+interface TimelineNode
+  extends Omit<
+      React.HTMLAttributes<HTMLDivElement>,
+      'id' | 'title' | 'content'
+    >,
+    TimelineIndicatorNodeProps {
+  id: string | number;
+  title?: React.ReactNode;
+  content?: React.ReactNode;
+  date?: React.ReactNode;
+  icon?: React.ReactNode;
+  completed?: boolean;
+  clickable?: boolean;
+  activeStyle?: TimelineIndicatorNodeProps;
+  detail?: any;
+  type?: TimelineNodeType;
+}
+
+interface CustomTimelineProps extends React.HTMLAttributes<HTMLDivElement> {
+  nodes: TimelineNode[];
+  activeStep?: number;
+  nodeSize?: string | number;
+  onStepChange?: (step: number, id: string | number) => void;
+  orientation?: 'horizontal' | 'vertical';
+  lineStyle?: 'solid' | 'dashed';
+  lineColor?: string;
+  indicatorColor?: string;
+  defaultValue?: number;
+  activeStyle?: TimelineIndicatorNodeProps;
+}
+
+const CustomTimeline = ({
+  nodes,
+  activeStep,
+  nodeSize = 12,
+  onStepChange,
+  orientation = 'horizontal',
+  lineStyle = 'solid',
+  lineColor = 'var(--text-secondary)',
+  indicatorColor = 'rgb(var(--accent-primary))',
+  defaultValue = 1,
+  className,
+  activeStyle,
+  ...props
+}: CustomTimelineProps) => {
+  const [internalActiveStep, setInternalActiveStep] =
+    React.useState(defaultValue);
+  const _lineColor = `rgb(${parseColorToRGB(lineColor)})`;
+  const currentActiveStep = activeStep ?? internalActiveStep;
+
+  const handleStepChange = (step: number, id: string | number) => {
+    if (activeStep === undefined) {
+      setInternalActiveStep(step);
+    }
+    onStepChange?.(step, id);
+  };
+  const [r, g, b] = parseColorToRGB(indicatorColor);
+  return (
+    <Timeline
+      value={currentActiveStep}
+      onValueChange={(step) => handleStepChange(step, nodes[step - 1]?.id)}
+      orientation={orientation}
+      className={className}
+      {...props}
+    >
+      {nodes.map((node, index) => {
+        const step = index + 1;
+        const isCompleted = node.completed ?? step <= currentActiveStep;
+        const isActive = step === currentActiveStep;
+        const isClickable = node.clickable ?? true;
+        const _activeStyle = node.activeStyle ?? (activeStyle || {});
+        const _nodeSizeTemp =
+          isActive && _activeStyle?.nodeSize
+            ? _activeStyle?.nodeSize
+            : node.nodeSize ?? nodeSize;
+        const _nodeSize =
+          typeof _nodeSizeTemp === 'number'
+            ? `${_nodeSizeTemp}px`
+            : _nodeSizeTemp;
+
+        return (
+          <TimelineItem
+            key={node.id}
+            step={step}
+            className={cn(
+              node.className,
+              isClickable &&
+                'cursor-pointer hover:opacity-80 transition-opacity',
+              isCompleted && 'data-[completed]:data-completed/timeline-item',
+              isActive && 'relative z-10',
+            )}
+            onClick={() => isClickable && handleStepChange(step, node.id)}
+          >
+            <TimelineSeparator
+              className={cn(
+                'group-data-[orientation=horizontal]/timeline:-top-6 group-data-[orientation=horizontal]/timeline:h-0.1  group-data-[orientation=horizontal]/timeline:-translate-y-1/2',
+                'group-data-[orientation=vertical]/timeline:-left-6 group-data-[orientation=vertical]/timeline:w-0.1 group-data-[orientation=vertical]/timeline:-translate-x-1/2 ',
+                // `group-data-[orientation=horizontal]/timeline:w-[calc(100%-0.5rem-1rem)] group-data-[orientation=vertical]/timeline:h-[calc(100%-1rem-1rem)] group-data-[orientation=vertical]/timeline:translate-y-7 group-data-[orientation=horizontal]/timeline:translate-x-7`,
+              )}
+              style={{
+                border:
+                  lineStyle === 'dashed'
+                    ? `1px dashed ${isActive ? _activeStyle.lineColor || _lineColor : _lineColor}`
+                    : lineStyle === 'solid'
+                      ? `1px solid ${isActive ? _activeStyle.lineColor || _lineColor : _lineColor}`
+                      : 'none',
+                backgroundColor: 'transparent',
+                width:
+                  orientation === 'horizontal'
+                    ? `calc(100% - ${_nodeSize} - 2px - 0.1rem)`
+                    : '1px',
+                height:
+                  orientation === 'vertical'
+                    ? `calc(100% - ${_nodeSize} - 2px - 0.1rem)`
+                    : '1px',
+                transform: `translate(${
+                  orientation === 'horizontal' ? `${_nodeSize}` : '0'
+                }, ${orientation === 'vertical' ? `${_nodeSize}` : '0'})`,
+              }}
+            />
+
+            <TimelineIndicator
+              className={cn(
+                'flex items-center justify-center p-1',
+                isCompleted && 'bg-primary border-primary',
+                !isCompleted && 'border-text-secondary bg-bg-base',
+              )}
+              style={{
+                width: _nodeSize,
+                height: _nodeSize,
+                borderColor: isActive
+                  ? _activeStyle.indicatorBorderColor || indicatorColor
+                  : isCompleted
+                    ? indicatorColor
+                    : '',
+                // backgroundColor: isActive
+                //   ? _activeStyle.indicatorBgColor || indicatorColor
+                //   : isCompleted
+                //     ? indicatorColor
+                //     : '',
+                backgroundColor: isActive
+                  ? _activeStyle.indicatorBgColor ||
+                    `rgba(${r}, ${g}, ${b}, 0.1)`
+                  : isCompleted
+                    ? `rgba(${r}, ${g}, ${b}, 0.1)`
+                    : '',
+              }}
+            >
+              {node.icon && (
+                <div
+                  className={cn(
+                    'text-current',
+                    `w-[${_nodeSize}] h-[${_nodeSize}]`,
+                    isActive &&
+                      `text-primary w-[${_activeStyle.nodeSize || _nodeSize}] h-[${_activeStyle.nodeSize || _nodeSize}]`,
+                  )}
+                  style={{
+                    color: isActive ? _activeStyle.iconColor : undefined,
+                  }}
+                >
+                  {node.icon}
+                </div>
+              )}
+            </TimelineIndicator>
+
+            <TimelineHeader className="transform -translate-x-[40%] text-center">
+              <TimelineTitle
+                className={cn(
+                  'text-sm font-medium -ml-1',
+                  isActive && _activeStyle.textColor
+                    ? `text-${_activeStyle.textColor}`
+                    : '',
+                )}
+                style={{
+                  color: isActive ? _activeStyle.textColor : undefined,
+                }}
+              >
+                {node.title}
+              </TimelineTitle>
+              {node.date && <TimelineDate>{node.date}</TimelineDate>}
+            </TimelineHeader>
+            {node.content && <TimelineContent>{node.content}</TimelineContent>}
+          </TimelineItem>
+        );
+      })}
+    </Timeline>
+  );
+};
+
+CustomTimeline.displayName = 'CustomTimeline';
+
 export {
+  CustomTimeline,
   Timeline,
   TimelineContent,
   TimelineDate,
@@ -206,4 +408,5 @@ export {
   TimelineItem,
   TimelineSeparator,
   TimelineTitle,
+  type TimelineNode,
 };

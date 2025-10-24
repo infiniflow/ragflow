@@ -11,7 +11,7 @@ Invite or remove team members.
 
 By default, each RAGFlow user is assigned a single team named after their name. RAGFlow allows you to invite RAGFlow users to your team. Your team members can help you:
 
-- Upload documents to your shared datasets (knowledge bases).
+- Upload documents to your shared datasets.
 - Parse documents in your shared datasets.
 - Use your shared Agents.
 
@@ -23,7 +23,7 @@ By default, each RAGFlow user is assigned a single team named after their name. 
 ## Prerequisites
 
 1. Ensure that the invited team member is a RAGFlow user and that the Email address used is associated with a RAGFlow user account.
-2. To allow your team members to view and update your knowledge base, ensure that you set **Permissions** on its **Configuration** page from **Only me** to **Team**.
+2. To allow your team members to view and update your dataset, ensure that you set **Permissions** on its **Configuration** page from **Only me** to **Team**.
 
 ## Invite team members
 

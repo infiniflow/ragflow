@@ -522,6 +522,10 @@ export default {
       baseUrl: 'URL de base',
       baseUrlTip:
         "Si votre clé API provient d'OpenAI, ignorez ceci. Tout autre fournisseur intermédiaire fournira cette URL de base avec la clé API.",
+      tongyiBaseUrlTip:
+        'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://dashscope.aliyuncs.com/compatible-mode/v1. Pour les utilisateurs internationaux, utilisez https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder:
+        "(Utilisateurs internationaux uniquement, veuillez consulter l'astuce)",
       modify: 'Modifier',
       systemModelSettings: 'Définir les modèles par défaut',
       chatModel: 'Modèle de chat',
@@ -783,7 +787,7 @@ export default {
         'Un composant qui recherche sur duckduckgo.com, vous permettant de spécifier le nombre de résultats avec TopN. Il complète les bases de connaissances existantes.',
       searXNG: 'SearXNG',
       searXNGDescription:
-        'Un composant qui effectue des recherches via la URL de l\'instance de SearXNG que vous fournissez. Spécifiez TopN et l\'URL de l\'instance.',
+        "Un composant qui effectue des recherches via la URL de l'instance de SearXNG que vous fournissez. Spécifiez TopN et l'URL de l'instance.",
       channel: 'Canal',
       channelTip:
         "Effectuer une recherche de texte ou d'actualités sur l'entrée du composant",
@@ -1092,6 +1096,8 @@ export default {
       cleanHtml: 'Nettoyer le HTML',
       cleanHtmlTip:
         'Si la réponse est au format HTML et que seul le contenu principal est souhaité, activez cette option.',
+      invalidUrl:
+        'Doit être une URL valide ou une URL avec des espaces réservés de variables au format {nom_variable} ou {composant@variable}',
       reference: 'Référence',
       input: 'Entrée',
       output: 'Sortie',

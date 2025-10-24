@@ -29,7 +29,10 @@ function InnerButtonEdge({
   data,
   sourceHandleId,
 }: EdgeProps<Edge<{ isHovered: boolean }>>) {
-  const deleteEdgeById = useGraphStore((state) => state.deleteEdgeById);
+  const { deleteEdgeById, getOperatorTypeFromId } = useGraphStore(
+    (state) => state,
+  );
+
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -39,8 +42,21 @@ function InnerButtonEdge({
     targetPosition,
   });
   const selectedStyle = useMemo(() => {
-    return selected ? { strokeWidth: 1, stroke: 'var(--accent-primary)' } : {};
+    return selected
+      ? { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' }
+      : {};
   }, [selected]);
+
+  const isTargetPlaceholder = useMemo(() => {
+    return getOperatorTypeFromId(target) === Operator.Placeholder;
+  }, [getOperatorTypeFromId, target]);
+
+  const placeholderHighlightStyle = useMemo(() => {
+    const isHighlighted = isTargetPlaceholder;
+    return isHighlighted
+      ? { strokeWidth: 2, stroke: 'rgb(var(--accent-primary))' }
+      : {};
+  }, [isTargetPlaceholder]);
 
   const onEdgeClick = () => {
     deleteEdgeById(id);
@@ -56,7 +72,7 @@ function InnerButtonEdge({
       let index = idx - 1;
       while (index >= 0) {
         if (path[index] === source) {
-          return { strokeWidth: 1, stroke: 'var(--accent-primary)' };
+          return { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' };
         }
         index--;
       }
@@ -70,17 +86,23 @@ function InnerButtonEdge({
       data?.isHovered &&
       sourceHandleId !== NodeHandleId.Tool &&
       sourceHandleId !== NodeHandleId.AgentBottom && // The connection between the agent node and the tool node does not need to display the delete button
-      !target.startsWith(Operator.Tool)
+      !target.startsWith(Operator.Tool) &&
+      !isTargetPlaceholder
     );
-  }, [data?.isHovered, sourceHandleId, target]);
+  }, [data?.isHovered, isTargetPlaceholder, sourceHandleId, target]);
 
   return (
     <>
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
-        style={{ ...style, ...selectedStyle, ...showHighlight }}
-        className={cn('text-text-secondary')}
+        style={{
+          ...style,
+          ...selectedStyle,
+          ...showHighlight,
+          ...placeholderHighlightStyle,
+        }}
+        className={cn('text-text-disabled')}
       />
 
       <EdgeLabelRenderer>
@@ -98,7 +120,7 @@ function InnerButtonEdge({
         >
           <button
             className={cn(
-              'size-3.5 border border-state-error text-state-error rounded-full leading-none',
+              'size-3.5 border border-state-error text-state-error rounded-full leading-none bg-bg-canvas outline outline-bg-canvas',
               'invisible',
               { visible },
             )}

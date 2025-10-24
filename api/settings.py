@@ -24,11 +24,9 @@ import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.opensearch_conn
 from api.constants import RAG_FLOW_SERVICE_NAME
-from api.utils import decrypt_database_config, get_base_config
+from api.utils.configs import decrypt_database_config, get_base_config
 from api.utils.file_utils import get_project_base_directory
 from rag.nlp import search
-
-LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
 
 LLM = None
 LLM_FACTORY = None
@@ -65,8 +63,8 @@ OAUTH_CONFIG = None
 DOC_ENGINE = None
 docStoreConn = None
 
-retrievaler = None
-kg_retrievaler = None
+retriever = None
+kg_retriever = None
 
 # user registration switch
 REGISTER_ENABLED = 1
@@ -76,8 +74,6 @@ REGISTER_ENABLED = 1
 SANDBOX_ENABLED = 0
 SANDBOX_HOST = None
 STRONG_TEST_COUNT = int(os.environ.get("STRONG_TEST_COUNT", "8"))
-
-BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
 
 SMTP_CONF = None
 MAIL_SERVER = ""
@@ -109,8 +105,7 @@ def get_or_create_secret_key():
 
 
 def init_settings():
-    global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
-    LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
+    global LLM, LLM_FACTORY, LLM_BASE_URL, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
     LLM = get_base_config("user_default_llm", {}) or {}
@@ -130,8 +125,6 @@ def init_settings():
 
     global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
     global CHAT_CFG, EMBEDDING_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
-    if not LIGHTEN:
-        EMBEDDING_MDL = BUILTIN_EMBEDDING_MODELS[0]
 
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
     API_KEY = LLM.get("api_key")
@@ -152,7 +145,7 @@ def init_settings():
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
+    EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
@@ -174,7 +167,7 @@ def init_settings():
 
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, docStoreConn, retrievaler, kg_retrievaler
+    global DOC_ENGINE, docStoreConn, retriever, kg_retriever
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
     # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
     lower_case_doc_engine = DOC_ENGINE.lower()
@@ -187,10 +180,10 @@ def init_settings():
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    retrievaler = search.Dealer(docStoreConn)
+    retriever = search.Dealer(docStoreConn)
     from graphrag import search as kg_search
 
-    kg_retrievaler = kg_search.KGSearch(docStoreConn)
+    kg_retriever = kg_search.KGSearch(docStoreConn)
 
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
         global SANDBOX_HOST

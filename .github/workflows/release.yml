@@ -25,7 +25,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.MY_GITHUB_TOKEN }}  # Use the secret as an environment variable
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
           fetch-depth: 0
           fetch-tags: true
 
@@ -69,7 +69,7 @@ jobs:
         # https://github.com/actions/upload-release-asset has been replaced by https://github.com/softprops/action-gh-release
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.MY_GITHUB_TOKEN }}  # Use the secret as an environment variable
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
           prerelease: ${{ env.PRERELEASE }}
           tag_name: ${{ env.RELEASE_TAG }}
           # The body field does not support environment variable substitution directly.
@@ -83,24 +83,15 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # https://github.com/marketplace/actions/build-and-push-docker-images
-      - name: Build and push full image
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}
+          tags: |
+            infiniflow/ragflow:${{ env.RELEASE_TAG }}
+            infiniflow/ragflow:latest
           file: Dockerfile
-          platforms: linux/amd64
-
-      # https://github.com/marketplace/actions/build-and-push-docker-images
-      - name: Build and push slim image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim
-          file: Dockerfile
-          build-args: LIGHTEN=1
           platforms: linux/amd64
 
       - name: Build ragflow-sdk
@@ -114,5 +105,19 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: sdk/python/dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
+
+      - name: Build ragflow-cli
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd admin/client && \
+          uv build
+
+      - name: Publish client package distributions to PyPI
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: admin/client/dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
           verbose: true

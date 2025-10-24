@@ -30,7 +30,16 @@ export const useGetNodeName = () => {
   const { t } = useTranslation();
 
   return (type: string) => {
-    const name = t(`flow.${lowerFirst(type)}`);
+    const name = t(`dataflow.${lowerFirst(type)}`);
+    return name;
+  };
+};
+
+export const useGetNodeDescription = () => {
+  const { t } = useTranslation();
+
+  return (type: string) => {
+    const name = t(`dataflow.${lowerFirst(type)}Description`);
     return name;
   };
 };

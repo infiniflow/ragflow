@@ -14,6 +14,9 @@ export interface IKnowledge {
   name: string;
   parser_config: ParserConfig;
   parser_id: string;
+  pipeline_id: string;
+  pipeline_name: string;
+  pipeline_avatar: string;
   permission: string;
   similarity_threshold: number;
   status: string;
@@ -26,6 +29,12 @@ export interface IKnowledge {
   nickname: string;
   operator_permission: number;
   size: number;
+  raptor_task_finish_at?: string;
+  raptor_task_id?: string;
+  mindmap_task_finish_at?: string;
+  mindmap_task_id?: string;
+  graphrag_task_finish_at: string;
+  graphrag_task_id: string;
 }
 
 export interface IKnowledgeResult {

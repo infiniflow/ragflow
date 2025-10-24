@@ -59,21 +59,6 @@ def get_init_tenant_llm(user_id):
                 }
             )
 
-    if settings.LIGHTEN != 1:
-        for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
-            mdlnm, fid = TenantLLMService.split_model_name_and_factory(buildin_embedding_model)
-            tenant_llm.append(
-                {
-                    "tenant_id": user_id,
-                    "llm_factory": fid,
-                    "llm_name": mdlnm,
-                    "model_type": "embedding",
-                    "api_key": "",
-                    "api_base": "",
-                    "max_tokens": 1024 if buildin_embedding_model == "BAAI/bge-large-zh-v1.5@BAAI" else 512,
-                }
-            )
-
     unique = {}
     for item in tenant_llm:
         key = (item["tenant_id"], item["llm_factory"], item["llm_name"])
@@ -205,32 +190,31 @@ class LLMBundle(LLM4Tenant):
             return txt
 
         return txt[last_think_end + len("</think>") :]
-    
+
     @staticmethod
     def _clean_param(chat_partial, **kwargs):
         func = chat_partial.func
         sig = inspect.signature(func)
-        keyword_args = []
         support_var_args = False
-        for param in sig.parameters.values():
-            if param.kind == inspect.Parameter.VAR_KEYWORD or param.kind == inspect.Parameter.VAR_POSITIONAL:
-                support_var_args = True
-            elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-                keyword_args.append(param.name)
+        allowed_params = set()
 
-        use_kwargs = kwargs
-        if not support_var_args:
-            use_kwargs = {k: v for k, v in kwargs.items() if k in keyword_args}
-        return use_kwargs
-        
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                support_var_args = True
+            elif param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+                allowed_params.add(param.name)
+        if support_var_args:
+            return kwargs
+        else:
+            return {k: v for k, v in kwargs.items() if k in allowed_params}
     def chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs) -> str:
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat", model=self.llm_name, input={"system": system, "history": history})
 
-        chat_partial = partial(self.mdl.chat, system, history, gen_conf)
+        chat_partial = partial(self.mdl.chat, system, history, gen_conf, **kwargs)
         if self.is_tools and self.mdl.is_tools:
-            chat_partial = partial(self.mdl.chat_with_tools, system, history, gen_conf)
-            
+            chat_partial = partial(self.mdl.chat_with_tools, system, history, gen_conf, **kwargs)
+
         use_kwargs = self._clean_param(chat_partial, **kwargs)
         txt, used_tokens = chat_partial(**use_kwargs)
         txt = self._remove_reasoning_content(txt)
@@ -266,7 +250,7 @@ class LLMBundle(LLM4Tenant):
                 break
 
             if txt.endswith("</think>"):
-                ans = ans.rstrip("</think>")
+                ans = ans[: -len("</think>")]
 
             if not self.verbose_tool_use:
                 txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)

@@ -4,6 +4,7 @@ import {
   IFetchKnowledgeListRequestBody,
   IFetchKnowledgeListRequestParams,
 } from '@/interfaces/request/knowledge';
+import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
@@ -39,6 +40,13 @@ const {
   setMeta,
   getMeta,
   retrievalTestShare,
+  getKnowledgeBasicInfo,
+  fetchDataPipelineLog,
+  fetchPipelineDatasetLogs,
+  runGraphRag,
+  traceGraphRag,
+  runRaptor,
+  traceRaptor,
 } = api;
 
 const methods = {
@@ -169,6 +177,43 @@ const methods = {
     url: retrievalTestShare,
     method: 'post',
   },
+  getKnowledgeBasicInfo: {
+    url: getKnowledgeBasicInfo,
+    method: 'get',
+  },
+  fetchDataPipelineLog: {
+    url: fetchDataPipelineLog,
+    method: 'post',
+  },
+  fetchPipelineDatasetLogs: {
+    url: fetchPipelineDatasetLogs,
+    method: 'post',
+  },
+  get_pipeline_detail: {
+    url: api.get_pipeline_detail,
+    method: 'get',
+  },
+
+  runGraphRag: {
+    url: runGraphRag,
+    method: 'post',
+  },
+  traceGraphRag: {
+    url: traceGraphRag,
+    method: 'get',
+  },
+  runRaptor: {
+    url: runRaptor,
+    method: 'post',
+  },
+  traceRaptor: {
+    url: traceRaptor,
+    method: 'get',
+  },
+  pipelineRerun: {
+    url: api.pipelineRerun,
+    method: 'post',
+  },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
@@ -204,5 +249,24 @@ export const listDocument = (
 
 export const documentFilter = (kb_id: string) =>
   request.post(api.get_dataset_filter, { kb_id });
+
+export const listDataPipelineLogDocument = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchDocumentListRequestBody,
+) => request.post(api.fetchDataPipelineLog, { data: body || {}, params });
+export const listPipelineDatasetLogs = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchDocumentListRequestBody,
+) => request.post(api.fetchPipelineDatasetLogs, { data: body || {}, params });
+
+export function deletePipelineTask({
+  kb_id,
+  type,
+}: {
+  kb_id: string;
+  type: ProcessingType;
+}) {
+  return request.delete(api.unbindPipelineTask({ kb_id, type }));
+}
 
 export default kbService;

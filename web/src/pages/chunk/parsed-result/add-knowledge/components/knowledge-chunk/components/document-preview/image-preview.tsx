@@ -2,7 +2,7 @@ import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
 import classNames from 'classnames';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface ImagePreviewerProps {
   className?: string;
@@ -17,7 +17,7 @@ export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const fetchImage = async () => {
+  const fetchImage = useCallback(async () => {
     setIsLoading(true);
     const res = await request(url, {
       method: 'GET',
@@ -30,12 +30,13 @@ export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
     const objectUrl = URL.createObjectURL(res.data);
     setImageSrc(objectUrl);
     setIsLoading(false);
-  };
+  }, [url]);
+
   useEffect(() => {
     if (url) {
       fetchImage();
     }
-  }, [url]);
+  }, [url, fetchImage]);
 
   useEffect(() => {
     return () => {

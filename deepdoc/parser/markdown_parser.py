@@ -17,7 +17,6 @@
 
 import re
 
-import mistune
 from markdown import markdown
 
 
@@ -117,8 +116,6 @@ class MarkdownElementExtractor:
     def __init__(self, markdown_content):
         self.markdown_content = markdown_content
         self.lines = markdown_content.split("\n")
-        self.ast_parser = mistune.create_markdown(renderer="ast")
-        self.ast_nodes = self.ast_parser(markdown_content)
 
     def extract_elements(self):
         """Extract individual elements (headers, code blocks, lists, etc.)"""

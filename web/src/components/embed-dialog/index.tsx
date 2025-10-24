@@ -15,6 +15,8 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { SharedFrom } from '@/constants/chat';
 import {
@@ -32,6 +34,8 @@ import { z } from 'zod';
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
   locale: z.string(),
+  embedType: z.enum(['fullscreen', 'widget']),
+  enableStreaming: z.boolean(),
 });
 
 type IProps = IModalProps<any> & {
@@ -55,6 +59,8 @@ function EmbedDialog({
     defaultValues: {
       visibleAvatar: false,
       locale: '',
+      embedType: 'fullscreen' as const,
+      enableStreaming: false,
     },
   });
 
@@ -68,20 +74,60 @@ function EmbedDialog({
   }, []);
 
   const generateIframeSrc = useCallback(() => {
-    const { visibleAvatar, locale } = values;
-    let src = `${location.origin}${from === SharedFrom.Agent ? Routes.AgentShare : Routes.ChatShare}?shared_id=${token}&from=${from}&auth=${beta}`;
+    const { visibleAvatar, locale, embedType, enableStreaming } = values;
+    const baseRoute =
+      embedType === 'widget'
+        ? Routes.ChatWidget
+        : from === SharedFrom.Agent
+          ? Routes.AgentShare
+          : Routes.ChatShare;
+    let src = `${location.origin}${baseRoute}?shared_id=${token}&from=${from}&auth=${beta}`;
     if (visibleAvatar) {
       src += '&visible_avatar=1';
     }
     if (locale) {
       src += `&locale=${locale}`;
     }
+    if (enableStreaming) {
+      src += '&streaming=true';
+    }
     return src;
   }, [beta, from, token, values]);
 
   const text = useMemo(() => {
     const iframeSrc = generateIframeSrc();
-    return `
+    const { embedType } = values;
+
+    if (embedType === 'widget') {
+      const { enableStreaming } = values;
+      const streamingParam = enableStreaming
+        ? '&streaming=true'
+        : '&streaming=false';
+      return `
+  ~~~ html
+  <iframe src="${iframeSrc}&mode=master${streamingParam}"
+    style="position:fixed;bottom:0;right:0;width:100px;height:100px;border:none;background:transparent;z-index:9999"
+    frameborder="0" allow="microphone;camera"></iframe>
+  <script>
+  window.addEventListener('message',e=>{
+    if(e.origin!=='${location.origin.replace(/:\d+/, ':9222')}')return;
+    if(e.data.type==='CREATE_CHAT_WINDOW'){
+      if(document.getElementById('chat-win'))return;
+      const i=document.createElement('iframe');
+      i.id='chat-win';i.src=e.data.src;
+      i.style.cssText='position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
+      i.frameBorder='0';i.allow='microphone;camera';
+      document.body.appendChild(i);
+    }else if(e.data.type==='TOGGLE_CHAT'){
+      const w=document.getElementById('chat-win');
+      if(w)w.style.display=e.data.isOpen?'block':'none';
+    }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
+  });
+  </script>
+~~~
+  `;
+    } else {
+      return `
   ~~~ html
   <iframe
   src="${iframeSrc}"
@@ -91,7 +137,8 @@ function EmbedDialog({
 </iframe>
 ~~~
   `;
-  }, [generateIframeSrc]);
+    }
+  }, [generateIframeSrc, values]);
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -104,6 +151,36 @@ function EmbedDialog({
         <section className="w-full overflow-auto space-y-5 text-sm text-text-secondary">
           <Form {...form}>
             <form className="space-y-5">
+              <FormField
+                control={form.control}
+                name="embedType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Embed Type</FormLabel>
+                    <FormControl>
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        className="flex flex-col space-y-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="fullscreen" id="fullscreen" />
+                          <Label htmlFor="fullscreen" className="text-sm">
+                            Fullscreen Chat (Traditional iframe)
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="widget" id="widget" />
+                          <Label htmlFor="widget" className="text-sm">
+                            Floating Widget (Intercom-style)
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="visibleAvatar"
@@ -120,6 +197,24 @@ function EmbedDialog({
                   </FormItem>
                 )}
               />
+              {values.embedType === 'widget' && (
+                <FormField
+                  control={form.control}
+                  name="enableStreaming"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Enable Streaming Responses</FormLabel>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        ></Switch>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="locale"
@@ -138,9 +233,11 @@ function EmbedDialog({
               />
             </form>
           </Form>
-          <div>
-            <span>Embed code</span>
-            <HightLightMarkdown>{text}</HightLightMarkdown>
+          <div className="max-h-[350px] overflow-auto">
+            <span>{t('embedCode', { keyPrefix: 'search' })}</span>
+            <div className="max-h-full overflow-y-auto">
+              <HightLightMarkdown>{text}</HightLightMarkdown>
+            </div>
           </div>
           <div className=" font-medium mt-4 mb-1">
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}

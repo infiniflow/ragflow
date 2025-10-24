@@ -44,6 +44,7 @@ import { useAddChatBox } from '../use-add-box';
 type MultipleChatBoxProps = {
   controller: AbortController;
   chatBoxIds: string[];
+  stopOutputMessage(): void;
 } & Pick<
   ReturnType<typeof useAddChatBox>,
   'removeChatBox' | 'addChatBox' | 'chatBoxIds'
@@ -200,6 +201,7 @@ export function MultipleChatBox({
   chatBoxIds,
   removeChatBox,
   addChatBox,
+  stopOutputMessage,
 }: MultipleChatBoxProps) {
   const {
     value,
@@ -207,7 +209,6 @@ export function MultipleChatBox({
     messageRecord,
     handleInputChange,
     handlePressEnter,
-    stopOutputMessage,
     setFormRef,
     handleUploadFile,
   } = useSendMultipleChatMessage(controller, chatBoxIds);

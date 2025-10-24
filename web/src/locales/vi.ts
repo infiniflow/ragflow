@@ -1128,6 +1128,8 @@ export default {
       cleanHtml: 'Làm sạch HTML',
       cleanHtmlTip:
         'Nếu phản hồi được định dạng HTML và chỉ muốn nội dung chính, hãy bật nó lên.',
+      invalidUrl:
+        'Phải là URL hợp lệ hoặc URL có chứa các biến theo định dạng {ten_bien} hoặc {thanh_phan@bien}',
       reference: 'Tham khảo',
       input: 'Đầu vào',
       output: 'Đầu ra',

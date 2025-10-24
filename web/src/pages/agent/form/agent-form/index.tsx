@@ -57,13 +57,6 @@ const FormSchema = z.object({
   //   )
   //   .optional(),
   message_history_window_size: z.coerce.number(),
-  tools: z
-    .array(
-      z.object({
-        component_name: z.string(),
-      }),
-    )
-    .optional(),
   ...LlmSettingSchema,
   max_retries: z.coerce.number(),
   delay_after_error: z.coerce.number().optional(),
@@ -75,6 +68,8 @@ const FormSchema = z.object({
   ...LargeModelFilterFormSchema,
   cite: z.boolean().optional(),
 });
+
+export type AgentFormSchemaType = z.infer<typeof FormSchema>;
 
 const outputList = buildOutputList(initialAgentValues.outputs);
 
@@ -99,7 +94,7 @@ function AgentForm({ node }: INextOperatorForm) {
     return isBottomSubAgent(edges, node?.id);
   }, [edges, node?.id]);
 
-  const form = useForm<z.infer<typeof FormSchema>>({
+  const form = useForm<AgentFormSchemaType>({
     defaultValues: defaultValues,
     resolver: zodResolver(FormSchema),
   });
@@ -152,7 +147,7 @@ function AgentForm({ node }: INextOperatorForm) {
                   <PromptEditor
                     {...field}
                     placeholder={t('flow.messagePlaceholder')}
-                    showToolbar={false}
+                    showToolbar={true}
                     extraOptions={extraOptions}
                   ></PromptEditor>
                 </FormControl>
@@ -173,7 +168,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     <section>
                       <PromptEditor
                         {...field}
-                        showToolbar={false}
+                        showToolbar={true}
                       ></PromptEditor>
                     </section>
                   </FormControl>

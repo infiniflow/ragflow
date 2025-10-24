@@ -1,9 +1,11 @@
 import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
 import {
+  Blocks,
+  File,
   FileChartColumnIncreasing,
-  Grid3x3,
-  HousePlus,
+  FileStack,
+  Heading,
   ListMinus,
 } from 'lucide-react';
 import { Operator } from './constant';
@@ -14,26 +16,16 @@ interface IProps {
 }
 
 export const OperatorIconMap = {
-  [Operator.Retrieval]: 'KR',
-  [Operator.Begin]: 'house-plus',
-  [Operator.Categorize]: 'a-QuestionClassification',
-  [Operator.Message]: 'reply',
-  [Operator.Iteration]: 'loop',
-  [Operator.Switch]: 'condition',
-  [Operator.Code]: 'code-set',
-  [Operator.Agent]: 'agent-ai',
-  [Operator.UserFillUp]: 'await',
-  [Operator.StringTransform]: 'a-textprocessing',
   [Operator.Note]: 'notebook-pen',
-  [Operator.ExeSQL]: 'executesql-0',
-  [Operator.Invoke]: 'httprequest-0',
-  [Operator.Email]: 'sendemail-0',
 };
 
 export const SVGIconMap = {
+  [Operator.Begin]: File,
   [Operator.Parser]: FileChartColumnIncreasing,
-  [Operator.Chunker]: Grid3x3,
   [Operator.Tokenizer]: ListMinus,
+  [Operator.Splitter]: Blocks,
+  [Operator.HierarchicalMerger]: Heading,
+  [Operator.Extractor]: FileStack,
 };
 
 const Empty = () => {
@@ -52,7 +44,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
           className,
         )}
       >
-        <HousePlus className="rounded size-3" />
+        <File className="rounded size-3" />
       </div>
     );
   }
@@ -60,7 +52,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   return typeof Icon === 'string' ? (
     <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
   ) : (
-    <SvgIcon className="size-5"></SvgIcon>
+    <SvgIcon className={cn('size-5', className)}></SvgIcon>
   );
 };
 
