@@ -1,7 +1,7 @@
 apiVersion: v2
 name: ragflow-azimuth
 description: A self-service Retrieval-Augmented Generation (RAG) environment for working with Large Language Models.
-icon: https://raw.githubusercontent.com/infiniflow/ragflow/refs/heads/main/web/src/assets/logo-with-text.png
+icon: https://raw.githubusercontent.com/infiniflow/ragflow/refs/tags/v0.19.1/web/src/assets/logo-with-text.png
 
 # A chart can be either an 'application' or a 'library' chart.
 #
