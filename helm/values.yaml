@@ -77,7 +77,7 @@ env:
   # A user registration switch:
   # - Enable registration: 1
   # - Disable registration: 0
-  REGISTER_ENABLED: 11
+  REGISTER_ENABLED: 1
 
 ragflow:
   image:
