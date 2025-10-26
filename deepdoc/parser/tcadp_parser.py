@@ -14,8 +14,6 @@
 #  limitations under the License.
 #
 import base64
-import hashlib
-import hmac
 import json
 import logging
 import os
@@ -23,223 +21,90 @@ import shutil
 import tempfile
 import time
 import traceback
+import types
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import requests
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+from tencentcloud.lkeap.v20240522 import lkeap_client, models
 
 from api.utils.configs import get_base_config
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
 
 class TencentCloudAPIClient:
-    """Tencent Cloud API client without SDK dependency"""
+    """Tencent Cloud API client using official SDK"""
 
     def __init__(self, secret_id, secret_key, region):
         self.secret_id = secret_id
         self.secret_key = secret_key
         self.region = region
-        self.endpoint = "lkeap.tencentcloudapi.com"
-        self.service = "lkeap"
-        self.version = "2024-05-22"
-        self.algorithm = "TC3-HMAC-SHA256"
+        
+        # Create credentials
+        self.cred = credential.Credential(secret_id, secret_key)
+        
+        # Instantiate an http option, optional, can be skipped if no special requirements
+        self.httpProfile = HttpProfile()
+        self.httpProfile.endpoint = "lkeap.tencentcloudapi.com"
 
-    def _get_signature(self, method, uri, query_string, headers, payload, timestamp):
-        """Generate Tencent Cloud API signature"""
-
-        # 1. Create canonical request - according to Tencent Cloud official specification, only include content-type and host
-        canonical_headers = f"content-type:{headers['Content-Type']}\nhost:{headers['Host']}"
-        signed_headers = "content-type;host"
-        hashed_request_payload = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-        canonical_request = f"{method}\n{uri}\n{query_string}\n{canonical_headers}\n\n{signed_headers}\n{hashed_request_payload}"
-
-        # 2. Create string to sign
-        date = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d")
-        credential_scope = f"{date}/{self.service}/tc3_request"
-
-        string_to_sign = f"{self.algorithm}\n{timestamp}\n{credential_scope}\n{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
-
-        # 3. Calculate signature - fully implemented according to Tencent Cloud official TC3-HMAC-SHA256 algorithm
-        def _hmac_sha256(key, msg):
-            """HMAC-SHA256 calculation"""
-            return hmac.new(key, msg.encode("utf-8"), hashlib.sha256)
-
-        def _get_signature_key(key, date, service):
-            """Get signature key - fully implemented according to Tencent Cloud official algorithm"""
-            k_date = _hmac_sha256(("TC3" + key).encode("utf-8"), date)
-            k_service = _hmac_sha256(k_date.digest(), service)
-            k_signing = _hmac_sha256(k_service.digest(), "tc3_request")
-            return k_signing.digest()
-
-        signing_key = _get_signature_key(self.secret_key, date, self.service)
-        signature = _hmac_sha256(signing_key, string_to_sign).hexdigest()
-
-        # 4. Build Authorization header
-        authorization = f"{self.algorithm} Credential={self.secret_id}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
-
-        return authorization, timestamp
+        # Instantiate a client option, optional, can be skipped if no special requirements
+        self.clientProfile = ClientProfile()
+        self.clientProfile.httpProfile = self.httpProfile
+        
+        # Instantiate the client object for the product to be requested, clientProfile is optional
+        self.client = lkeap_client.LkeapClient(self.cred, region, self.clientProfile)
 
     def reconstruct_document_sse(self, file_type, file_url=None, file_base64=None, file_start_page=1, file_end_page=1000, config=None):
-        """Call document parsing API"""
-        # Build request parameters
-        params = {"FileType": file_type, "FileStartPageNumber": file_start_page, "FileEndPageNumber": file_end_page}
-        
-        # According to Tencent Cloud API documentation, either FileUrl or FileBase64 must be provided, if both are provided, only FileUrl is used
-        if file_url:
-            params["FileUrl"] = file_url
-            logging.info(f"[TCADP] Using file URL: {file_url}")
-        elif file_base64:
-            params["FileBase64"] = file_base64
-            logging.info(f"[TCADP] Using Base64 data, length: {len(file_base64)} characters")
-        else:
-            raise ValueError("Must provide either FileUrl or FileBase64 parameter")
-
-        if config:
-            params["Config"] = config
-
-        # Build request
-        method = "POST"
-        uri = "/"
-        query_string = ""
-        payload = json.dumps(params)
-
-        # Generate timestamp
-        timestamp = int(time.time())
-
-        # Build request headers
-        headers = {
-            "Content-Type": "application/json",
-            "Host": self.endpoint,
-            "X-TC-Action": "ReconstructDocumentSSE",
-            "X-TC-Version": self.version,
-            "X-TC-Region": self.region,
-            "X-TC-Timestamp": str(timestamp),
-            "X-TC-RequestClient": "SDK_PYTHON_3.0.1000",
-        }
-
-        # Generate signature
-        authorization, _ = self._get_signature(method, uri, query_string, headers, payload, timestamp)
-        headers["Authorization"] = authorization
-
-        # Send request
-        url = f"https://{self.endpoint}{uri}"
-        
-        logging.info(f"[TCADP] Sending request to: {url}")
-
+        """Call document parsing API using official SDK"""
         try:
-            # Try non-streaming request first to avoid response content consumption issues
-            response = requests.post(url, headers=headers, data=payload, timeout=300)
-            logging.info(f"[TCADP] Response status code: {response.status_code}")
+            # Instantiate a request object, each interface corresponds to a request object
+            req = models.ReconstructDocumentSSERequest()
             
-            if response.status_code != 200:
-                logging.error(f"[TCADP] HTTP error: {response.status_code}")
-                logging.error(f"[TCADP] Response content: {response.text}")
-                return None
-                
-            response.raise_for_status()
-
-            # Check response content type
-            content_type = response.headers.get('content-type', '').lower()
-            # Get response content
-            response_text = response.text
-
-            # First check if it's an error response
-            try:
-                result = json.loads(response_text)
-                if "Response" in result and "Error" in result["Response"]:
-                    error_info = result["Response"]["Error"]
-                    error_code = error_info.get("Code", "Unknown")
-                    error_message = error_info.get("Message", "Unknown error")
-                    logging.error(f"[TCADP] API returned error: {error_code} - {error_message}")
-                    
-                    # Provide specific error handling suggestions
-                    if error_code == "UnsupportedRegion":
-                        logging.error("[TCADP] Unsupported region error, please check region configuration")
-
-                    return None
-            except json.JSONDecodeError:
-                pass
+            # Build request parameters
+            params = {
+                "FileType": file_type,
+                "FileStartPageNumber": file_start_page,
+                "FileEndPageNumber": file_end_page,
+            }
             
-            # Check if it's SSE format
-            if 'text/event-stream' in content_type or 'data:' in response_text:
-                logging.info("[TCADP] Detected SSE format response, using SSE processing")
-                # Create mock streaming response object
-                
-                class MockResponse:
-                    def __init__(self, text):
-                        self.text = text
-                        self.headers = response.headers
-                        self._text = text
-                    
-                    def iter_lines(self, decode_unicode=True):
-                        for line in self._text.split('\n'):
-                            yield line
-                
-                mock_response = MockResponse(response_text)
-                result = self._handle_sse_response(mock_response)
+            # According to Tencent Cloud API documentation, either FileUrl or FileBase64 parameter must be provided, if both are provided only FileUrl will be used
+            if file_url:
+                params["FileUrl"] = file_url
+                logging.info(f"[TCADP] Using file URL: {file_url}")
+            elif file_base64:
+                params["FileBase64"] = file_base64
+                logging.info(f"[TCADP] Using Base64 data, length: {len(file_base64)} characters")
             else:
-                logging.info("[TCADP] Detected JSON format response, parsing directly")
-                try:
-                    result = json.loads(response_text)
-                    logging.info(f"[TCADP] JSON parsing successful: {result}")
-                except json.JSONDecodeError as e:
-                    logging.error(f"[TCADP] JSON parsing failed: {e}")
-                    return None
+                raise ValueError("Must provide either FileUrl or FileBase64 parameter")
+
+            if config:
+                params["Config"] = config
+
+            req.from_json_string(json.dumps(params))
+
+            # The returned resp is an instance of ReconstructDocumentSSEResponse, corresponding to the request object
+            resp = self.client.ReconstructDocumentSSE(req)
+            parser_result = {}
             
-            if not result:
-                logging.error("[TCADP] All response processing methods failed")
-            return result
-
-        except requests.exceptions.Timeout as e:
-            logging.error(f"[TCADP] Request timeout: {e}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logging.error(f"[TCADP] Request failed: {e}")
-            if hasattr(e, "response") and e.response is not None:
-                logging.error(f"[TCADP] Error response status code: {e.response.status_code}")
-                logging.error(f"[TCADP] Error response content: {e.response.text}")
-            return None
-        except Exception as e:
-            logging.error(f"[TCADP] Unknown error: {e}")
-            return None
-
-    def _handle_sse_response(self, response):
-        """Handle SSE streaming response"""
-        parser_result = {}
-        line_count = 0
-        data_count = 0
-        all_lines = []
-
-        logging.info("[TCADP] Starting to process SSE streaming response")
-
-        try:
-            # Process SSE streaming response
-            for line in response.iter_lines(decode_unicode=True):
-                line_count += 1
-                all_lines.append(line)
-                
-                if line.strip():
-
-                    # Parse SSE data
-                    if line.startswith("data:"):
-                        data_count += 1
-                        data_str = line[5:]  # Remove 'data:' prefix
-
+            # Output json format string response
+            if isinstance(resp, types.GeneratorType):  # Streaming response
+                logging.info("[TCADP] Detected streaming response")
+                for event in resp:
+                    logging.info(f"[TCADP] Received event: {event}")
+                    if event.get('data'):
                         try:
-                            data_dict = json.loads(data_str)
-
-                            # Print progress information
-                            if data_dict.get("ResponseType") == "PROGRESS":
-                                progress = data_dict.get("Progress", "0")
-                                logging.info(f"[TCADP] Progress: {progress}%")
-
-                            # Save final result
-                            if data_dict.get("Progress") == "100":
+                            data_dict = json.loads(event['data'])
+                            logging.info(f"[TCADP] Parsed data: {data_dict}")
+                            
+                            if data_dict.get('Progress') == "100":
                                 parser_result = data_dict
                                 logging.info("[TCADP] Document parsing completed!")
                                 logging.info(f"[TCADP] Task ID: {data_dict.get('TaskId')}")
@@ -253,7 +118,7 @@ class TencentCloudAPIClient:
                                     for page in failed_pages:
                                         logging.warning(f"[TCADP]   Page number: {page.get('PageNumber')}, Error: {page.get('ErrorMsg')}")
                                 
-                                # Check if there's a download link
+                                # Check if there is a download link
                                 download_url = data_dict.get("DocumentRecognizeResultUrl")
                                 if download_url:
                                     logging.info(f"[TCADP] Got download link: {download_url}")
@@ -261,56 +126,39 @@ class TencentCloudAPIClient:
                                     logging.warning("[TCADP] No download link obtained")
                                 
                                 break  # Found final result, exit loop
-
+                            else:
+                                # Print progress information
+                                progress = data_dict.get("Progress", "0")
+                                logging.info(f"[TCADP] Progress: {progress}%")
                         except json.JSONDecodeError as e:
                             logging.error(f"[TCADP] Failed to parse JSON data: {e}")
-                            logging.error(f"[TCADP] Raw data: {data_str}")
+                            logging.error(f"[TCADP] Raw data: {event.get('data')}")
                             continue
                     else:
-                        # Handle non-data lines (such as event types, comments, etc.)
-                        logging.info(f"[TCADP] Non-data line: {line}")
-                        
-                        # Try to parse JSON directly (might be non-SSE format response)
-                        if line.strip().startswith('{') and line.strip().endswith('}'):
-                            try:
-                                data_dict = json.loads(line.strip())
-                                logging.info(f"[TCADP] Direct JSON parsing successful: {data_dict}")
-                                
-                                # Check if it's an error response
-                                if "Response" in data_dict and "Error" in data_dict["Response"]:
-                                    error_info = data_dict["Response"]["Error"]
-                                    error_code = error_info.get("Code", "Unknown")
-                                    error_message = error_info.get("Message", "Unknown error")
-                                    logging.error(f"[TCADP] API returned error: {error_code} - {error_message}")
-                                    # For error responses, don't set parser_result, let upper layer handle
-                                    break
-                                
-                                # Check if it's a valid response
-                                if "TaskId" in data_dict or "DocumentRecognizeResultUrl" in data_dict:
-                                    parser_result = data_dict
-                                    logging.info("[TCADP] Found valid response data")
-                                    break
-                                    
-                            except json.JSONDecodeError:
-                                pass
+                        logging.info(f"[TCADP] Event without data: {event}")
+            else:  # Non-streaming response
+                logging.info("[TCADP] Detected non-streaming response")
+                if hasattr(resp, 'data') and resp.data:
+                    try:
+                        data_dict = json.loads(resp.data)
+                        parser_result = data_dict
+                        logging.info(f"[TCADP] JSON parsing successful: {parser_result}")
+                    except json.JSONDecodeError as e:
+                        logging.error(f"[TCADP] JSON parsing failed: {e}")
+                        return None
+                else:
+                    logging.error("[TCADP] No data in response")
+                    return None
 
-            logging.info(f"[TCADP] SSE processing completed: total lines={line_count}, data lines={data_count}")
-            
-            # Print all received lines for debugging
-            logging.info(f"[TCADP] All received lines: {all_lines}")
-            
-            if not parser_result:
-                logging.warning("[TCADP] No parsing result obtained, response format may be incorrect or parsing incomplete")
-                # Try to return the last valid data dictionary
-                if data_count > 0:
-                    logging.warning("[TCADP] Attempting to use last data as result")
-                    # Logic can be added here to save the last valid data
+            return parser_result
 
+        except TencentCloudSDKException as err:
+            logging.error(f"[TCADP] Tencent Cloud SDK error: {err}")
+            return None
         except Exception as e:
-            logging.error(f"[TCADP] Error occurred while processing SSE response: {e}")
+            logging.error(f"[TCADP] Unknown error: {e}")
             logging.error(f"[TCADP] Error stack trace: {traceback.format_exc()}")
-
-        return parser_result
+            return None
 
     def download_result_file(self, download_url, output_dir):
         """Download parsing result file"""
@@ -327,7 +175,7 @@ class TencentCloudAPIClient:
 
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"adp_result_{timestamp}.zip"
+            filename = f"tcadp_result_{timestamp}.zip"
             file_path = os.path.join(output_dir, filename)
 
             # Save file
@@ -356,6 +204,8 @@ class TCADPParser(RAGFlowPdfParser):
                 self.secret_id = secret_id or tcadp_parser.get("secret_id")
                 self.secret_key = secret_key or tcadp_parser.get("secret_key")
                 self.region = region or tcadp_parser.get("region", "ap-guangzhou")
+                self.table_result_type = tcadp_parser.get("table_result_type", "1")
+                self.markdown_image_response_type = tcadp_parser.get("markdown_image_response_type", "1")
                 self.logger.info("[TCADP] Configuration read from service_conf.yaml")
             else:
                 self.logger.error("[TCADP] Please configure tcadp_config in service_conf.yaml first")
@@ -494,11 +344,10 @@ class TCADPParser(RAGFlowPdfParser):
         *,
         output_dir: Optional[str] = None,
         file_type: str = "PDF",
-        file_start_page: int = 1,
-        file_end_page: int = 1000,
-        config: Optional[dict] = None,
-        delete_output: bool = True,
-        max_retries: int = 1,
+        file_start_page: Optional[int] = 1,
+        file_end_page: Optional[int] = 1000,
+        delete_output: Optional[bool] = True,
+        max_retries: Optional[int] = 1,
     ) -> tuple:
         """Parse PDF document"""
 
@@ -545,7 +394,12 @@ class TCADPParser(RAGFlowPdfParser):
                         if callback:
                             callback(0.3 + attempt * 0.1, f"[TCADP] Retry attempt {attempt + 1}")
                         time.sleep(2 ** attempt)  # Exponential backoff
-                    
+
+                    config = {
+                        "TableResultType": self.table_result_type,
+                        "MarkdownImageResponseType": self.markdown_image_response_type
+                    }
+
                     result = client.reconstruct_document_sse(
                         file_type=file_type, 
                         file_base64=file_base64, 

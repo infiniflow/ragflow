@@ -545,11 +545,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 binary=binary,
                 callback=callback,
                 output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
-                file_type=os.environ.get("TCADP_FILE_TYPE", "PDF"),
-                file_start_page=int(os.environ.get("TCADP_START_PAGE", 1)),
-                file_end_page=int(os.environ.get("TCADP_END_PAGE", 1000)),
-                config={"TableResultType": os.environ.get("TCADP_TABLE_RESULT_TYPE", "1")},
-                delete_output=bool(int(os.environ.get("TCADP_DELETE_OUTPUT", 1))),
+                file_type="PDF"
             )
             parser_config["chunk_token_num"] = 0
             callback(0.8, "Finish parsing.")

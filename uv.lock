@@ -5913,7 +5913,7 @@ requires-dist = [
     { name = "strenum", specifier = "==0.4.15" },
     { name = "tabulate", specifier = "==0.9.0" },
     { name = "tavily-python", specifier = "==0.5.1" },
-    { name = "tencentcloud-sdk-python", specifier = "==3.0.1215" },
+    { name = "tencentcloud-sdk-python", specifier = "==3.0.1478" },
     { name = "tika", specifier = "==2.6.0" },
     { name = "tiktoken", specifier = "==0.7.0" },
     { name = "torch", marker = "extra == 'full'", specifier = ">=2.5.0,<3.0.0" },
