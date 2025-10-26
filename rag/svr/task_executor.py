@@ -29,6 +29,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.utils.api_utils import timeout
 from api.utils.base64_image import image2id
 from api.utils.log_utils import init_root_logger, get_project_base_directory
+from api.utils.configs import show_configs
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.flow.pipeline import Pipeline
@@ -228,9 +229,10 @@ async def collect():
     canceled = False
     if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
         task = msg
-        if task["task_type"] in ["graphrag", "raptor", "mindmap"] and msg.get("doc_ids", []):
+        if task["task_type"] in ["graphrag", "raptor", "mindmap"]:
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
-            task["doc_ids"] = msg["doc_ids"]
+            task["doc_id"] = msg["doc_id"]
+            task["doc_ids"] = msg.get("doc_ids", []) or []
     else:
         task = TaskService.get_task(msg["id"])
 
@@ -474,7 +476,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     tk_count = 0
     if len(tts) == len(cnts):
         vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(tts[0: 1]))
-        tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
+        tts = np.concatenate([vts[0] for _ in range(len(tts))], axis=0)
         tk_count += c
 
     @timeout(60)
@@ -1052,15 +1054,18 @@ async def task_manager():
 
 async def main():
     logging.info(r"""
-    ____                      __  _                                              
+    ____                      __  _
    /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____
    / // __ \/ __ `/ _ \/ ___/ __/ / __ \/ __ \   / ___/ _ \/ ___/ | / / _ \/ ___/
- _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /    
-/___/_/ /_/\__, /\___/____/\__/_/\____/_/ /_/  /____/\___/_/    |___/\___/_/     
-          /____/        
+ _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /
+/___/_/ /_/\__, /\___/____/\__/_/\____/_/ /_/  /____/\___/_/    |___/\___/_/
+          /____/
     """)
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    show_configs()
     settings.init_settings()
+    from api.settings import EMBEDDING_CFG
+    logging.info(f'api.settings.EMBEDDING_CFG: {EMBEDDING_CFG}')
     print_rag_settings()
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)

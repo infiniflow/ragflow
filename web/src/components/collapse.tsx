@@ -51,8 +51,8 @@ export function Collapse({
       onOpenChange={handleOpenChange}
       disabled={disabled}
     >
-      <CollapsibleTrigger className="w-full">
-        <section className="flex justify-between items-center pb-2">
+      <CollapsibleTrigger className={'w-full'}>
+        <section className="flex justify-between items-center">
           <div className="flex items-center gap-1">
             <IconFontFill
               name={`more`}
@@ -60,12 +60,18 @@ export function Collapse({
                 'rotate-90': !currentOpen,
               })}
             ></IconFontFill>
-            {title}
+            <div
+              className={cn('text-text-secondary', {
+                'text-text-primary': open,
+              })}
+            >
+              {title}
+            </div>
           </div>
           <div>{rightContent}</div>
         </section>
       </CollapsibleTrigger>
-      <CollapsibleContent>{children}</CollapsibleContent>
+      <CollapsibleContent className="pt-2">{children}</CollapsibleContent>
     </Collapsible>
   );
 }
@@ -94,7 +100,7 @@ export function NodeCollapsible<T extends any[]>({
     >
       {nextItems.slice(0, 3).map(children)}
       <CollapsibleContent className={nextClassName}>
-        {nextItems.slice(3).map(children)}
+        {nextItems.slice(3).map((x, idx) => children(x, idx + 3))}
       </CollapsibleContent>
       {nextItems.length > 3 && (
         <CollapsibleTrigger

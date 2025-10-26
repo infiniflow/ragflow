@@ -22,7 +22,7 @@
         <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Última%20Relese" alt="Última Versão">
@@ -180,28 +180,28 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 > Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
 > Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
 
-    > O comando abaixo baixa a edição `v0.21.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.21.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.0` para a edição completa `v0.21.0`.
+    > O comando abaixo baixa a edição `v0.21.1` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.21.1`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor.
 
-    ```bash
-    $ cd ragflow/docker
-    # Use CPU for embedding and DeepDoc tasks:
-    $ docker compose -f docker-compose.yml up -d
+   ```bash
+   $ cd ragflow/docker
+   # Use CPU for embedding and DeepDoc tasks:
+   $ docker compose -f docker-compose.yml up -d
 
-    # To use GPU to accelerate embedding and DeepDoc tasks:
-    # docker compose -f docker-compose-gpu.yml up -d
-    ```
+   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # sed -i '1i DEVICE=gpu' .env
+   # docker compose -f docker-compose.yml up -d
+   ```
 
-    | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
-    | --------------------- | ---------------------- | ------------------------------- | ------------------------ |
-    | v0.21.0               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
-    | v0.21.0-slim          | ~2                     | ❌                              | Lançamento estável       |
-    | nightly               | ~9                     | :heavy_check_mark:              | _Instável_ build noturno |
-    | nightly-slim          | ~2                     | ❌                               | _Instável_ build noturno |
+    | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                    |
+    | --------------------- | ---------------------- | ------------------------------- | --------------------------- |
+    | v0.21.1               | &approx;9              | ✔️                              | Lançamento estável          |
+    | v0.21.1-slim          | &approx;2              | ❌                              | Lançamento estável          |
+    | nightly               | &approx;2              | ❌                              | Construção noturna instável |
 
 4.  Verifique o status do servidor após tê-lo iniciado:
 
     ```bash
-    $ docker logs -f ragflow-server
+    $ docker logs -f docker-ragflow-cpu-1
     ```
 
     _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
@@ -274,16 +274,6 @@ Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-## 🔧 Criar uma imagem Docker incluindo modelos de incorporação
-
-Esta imagem tem cerca de 9 GB de tamanho. Como inclui modelos de incorporação, depende apenas de serviços externos de LLM.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
@@ -300,7 +290,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 --all-extras # instala os módulos Python dependentes do RAGFlow
+   uv sync --python 3.10 # instala os módulos Python dependentes do RAGFlow
    uv run download_deps.py
    pre-commit install
    ```

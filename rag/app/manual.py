@@ -262,7 +262,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
-        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
+        tbls=vision_figure_parser_docx_wrapper(sections=ti_list,tbls=tbls,callback=callback,**kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)

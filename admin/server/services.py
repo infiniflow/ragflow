@@ -36,8 +36,13 @@ class UserMgr:
         users = UserService.get_all_users()
         result = []
         for user in users:
-            result.append({'email': user.email, 'nickname': user.nickname, 'create_date': user.create_date,
-                           'is_active': user.is_active})
+            result.append({
+                'email': user.email,
+                'nickname': user.nickname,
+                'create_date': user.create_date,
+                'is_active': user.is_active,
+                'is_superuser': user.is_superuser,
+            })
         return result
 
     @staticmethod
@@ -50,7 +55,6 @@ class UserMgr:
                 'email': user.email,
                 'language': user.language,
                 'last_login_time': user.last_login_time,
-                'is_authenticated': user.is_authenticated,
                 'is_active': user.is_active,
                 'is_anonymous': user.is_anonymous,
                 'login_channel': user.login_channel,
@@ -166,7 +170,7 @@ class UserServiceMgr:
         return [{
             'title': r['title'],
             'permission': r['permission'],
-            'canvas_category': r['canvas_category'].split('-')[0]
+            'canvas_category': r['canvas_category'].split('_')[0]
         } for r in res]
 
 

@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -187,7 +187,7 @@ releases! 🌟
 > All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
 > If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
 
-   > The command below downloads the `v0.21.0-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.21.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.0` for the full edition `v0.21.0`.
+   > The command below downloads the `v0.21.1-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.21.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
 
    ```bash
    $ cd ragflow/docker
@@ -195,20 +195,23 @@ releases! 🌟
    $ docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate embedding and DeepDoc tasks:
-   # docker compose -f docker-compose-gpu.yml up -d
+   # sed -i '1i DEVICE=gpu' .env
+   # docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    |-------------------|-----------------|-----------------------|--------------------------|
-   | v0.21.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.21.0-slim      | &approx;2       | ❌                   | Stable release            |
-   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                   | _Unstable_ nightly build  |
+   | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+   | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+
+
+   > Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 4. Check the server status after having the server up and running:
 
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _The following output confirms a successful launch of the system:_
@@ -289,16 +292,6 @@ This image is approximately 2 GB in size and relies on external LLM and embeddin
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-## 🔧 Build a Docker image including embedding models
-
-This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
@@ -315,7 +308,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

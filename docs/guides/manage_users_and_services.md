@@ -46,7 +46,7 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.21.0
+   pip install ragflow-cli==0.21.1
    ```
 
 3. Launch the CLI client:
@@ -348,7 +348,7 @@ Listing all agents of user: lynn_inf@hotmail.com
 +-----------------+-------------+------------+-----------------+
 | canvas_category | canvas_type | permission | title           |
 +-----------------+-------------+------------+-----------------+
-| agent_canvas    | None        | team       | research_helper |
+| agent           | None        | team       | research_helper |
 +-----------------+-------------+------------+-----------------+
 ```
 

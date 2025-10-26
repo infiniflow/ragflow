@@ -18,6 +18,7 @@ export const enum ParseDocumentType {
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
   MinerU = 'MinerU',
+  Docling = 'Docling',
   TCADPParser = 'tcadp_parser',
 }
 
@@ -44,6 +45,7 @@ export function LayoutRecognizeFormField({
           ParseDocumentType.DeepDOC,
           ParseDocumentType.PlainText,
           ParseDocumentType.MinerU,
+          ParseDocumentType.Docling,
           ParseDocumentType.TCADPParser,
         ].map((x) => ({
           label: x === ParseDocumentType.PlainText ? t(camelCase(x)) : x,
