@@ -221,6 +221,12 @@ function transformParserParams(params: ParserFormSchemaType) {
             parse_method: cur.parse_method,
           };
           break;
+        case FileType.PowerPoint:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          break;
         case FileType.Image:
           filteredSetup = {
             ...filteredSetup,

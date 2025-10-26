@@ -193,6 +193,7 @@ export const initialParserValues = {
     {
       fileFormat: FileType.PowerPoint,
       output_format: PptOutputFormat.Json,
+      parse_method: ParseDocumentType.DeepDOC,
     },
   ],
 };
@@ -244,7 +245,7 @@ export const FileTypeSuffixMap = {
   [FileType.Email]: ['eml', 'msg'],
   [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
   [FileType.Docx]: ['doc', 'docx'],
-  [FileType.PowerPoint]: ['pptx'],
+  [FileType.PowerPoint]: ['pptx', 'ppt'],
   [FileType.Video]: ['mp4', 'avi', 'mkv'],
   [FileType.Audio]: [
     'da',
