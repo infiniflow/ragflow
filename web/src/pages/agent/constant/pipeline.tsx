@@ -169,6 +169,7 @@ export const initialParserValues = {
     {
       fileFormat: FileType.Spreadsheet,
       output_format: SpreadsheetOutputFormat.Html,
+      parse_method: ParseDocumentType.DeepDOC,
     },
     {
       fileFormat: FileType.Image,

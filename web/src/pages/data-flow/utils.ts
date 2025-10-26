@@ -95,6 +95,12 @@ function transformParserParams(params: ParserFormSchemaType) {
             lang: cur.lang,
           };
           break;
+        case FileType.Spreadsheet:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          break;
         case FileType.Image:
           filteredSetup = {
             ...filteredSetup,

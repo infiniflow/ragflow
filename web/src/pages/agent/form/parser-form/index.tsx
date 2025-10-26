@@ -34,6 +34,7 @@ import { OutputFormatFormField } from './common-form-fields';
 import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
+import { SpreadsheetFormFields } from './spreadsheet-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 
@@ -41,6 +42,7 @@ const outputList = buildOutputList(initialParserValues.outputs);
 
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
+  [FileType.Spreadsheet]: SpreadsheetFormFields,
   [FileType.Video]: VideoFormFields,
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
