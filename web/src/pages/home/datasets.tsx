@@ -1,6 +1,6 @@
 import { CardSineLineContainer } from '@/components/card-singleline-container';
-import { IconFont } from '@/components/icon-font';
 import { RenameDialog } from '@/components/rename-dialog';
+import { HomeIcon } from '@/components/svg-icon';
 import { CardSkeleton } from '@/components/ui/skeleton';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +22,8 @@ export function Datasets() {
   return (
     <section>
       <h2 className="text-2xl font-bold mb-6 flex gap-2.5 items-center">
-        <IconFont name="data" className="size-8"></IconFont>
+        {/* <IconFont name="data" className="size-8"></IconFont> */}
+        <HomeIcon name="datasets" width={'32'} />
         {t('header.dataset')}
       </h2>
       <div className="flex gap-6">

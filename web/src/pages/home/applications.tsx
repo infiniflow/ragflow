@@ -1,5 +1,5 @@
 import { CardSineLineContainer } from '@/components/card-singleline-container';
-import { IconFont } from '@/components/icon-font';
+import { HomeIcon } from '@/components/svg-icon';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
 import { useCallback, useMemo, useState } from 'react';
@@ -11,9 +11,9 @@ import { ChatList } from './chat-list';
 import { SearchList } from './search-list';
 
 const IconMap = {
-  [Routes.Chats]: 'chat',
-  [Routes.Searches]: 'search',
-  [Routes.Agents]: 'agent',
+  [Routes.Chats]: 'chats',
+  [Routes.Searches]: 'searches',
+  [Routes.Agents]: 'agents',
 };
 
 export function Applications() {
@@ -42,10 +42,14 @@ export function Applications() {
     <section className="mt-12">
       <div className="flex justify-between items-center mb-5">
         <h2 className="text-2xl font-bold flex gap-2.5">
-          <IconFont
+          {/* <IconFont
             name={IconMap[val as keyof typeof IconMap]}
             className="size-8"
-          ></IconFont>
+          ></IconFont> */}
+          <HomeIcon
+            name={`${IconMap[val as keyof typeof IconMap]}`}
+            width={'32'}
+          />
           {options.find((x) => x.value === val)?.label}
         </h2>
         <Segmented
