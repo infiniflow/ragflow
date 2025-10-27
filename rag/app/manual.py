@@ -91,6 +91,8 @@ class Docx(DocxParser):
             elif related_part.blob is not None:
                 image = Image.open(BytesIO(related_part.blob))
                 return image
+            else:
+                return None
         except Exception as e:
             return None
 
