@@ -93,7 +93,9 @@ function InnerButtonEdge({
   }, [data?.isHovered, isTargetPlaceholder, sourceHandleId, target]);
 
   const activeMarkerEnd =
-    selected || !isEmpty(showHighlight) ? 'url(#selected-marker)' : markerEnd;
+    selected || !isEmpty(showHighlight) || isTargetPlaceholder
+      ? 'url(#selected-marker)'
+      : markerEnd;
 
   return (
     <>
