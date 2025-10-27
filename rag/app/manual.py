@@ -80,12 +80,21 @@ class Docx(DocxParser):
         img = paragraph._element.xpath('.//pic:pic')
         if not img:
             return None
-        img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')[0]
-        related_part = document.part.related_parts[embed]
-        image = related_part.image
-        image = Image.open(BytesIO(image.blob))
-        return image
+        try:
+            img = img[0]
+            embed = img.xpath('.//a:blip/@r:embed')[0]
+            related_part = document.part.related_parts[embed]
+            image = related_part.image
+            if image is not None:
+                image = Image.open(BytesIO(image.blob))
+                return image
+            elif related_part.blob is not None:
+                image = Image.open(BytesIO(related_part.blob))
+                return image
+            else:
+                return None
+        except Exception:
+            return None
 
     def concat_img(self, img1, img2):
         if img1 and not img2:
