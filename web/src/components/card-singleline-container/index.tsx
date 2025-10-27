@@ -15,7 +15,6 @@ export function CardSineLineContainer({
       if (Array.isArray(child)) {
         child.forEach(traverse);
       } else if (isValidElement(child) && child.props.children) {
-        // 对于包含子元素的组件，我们不展开它们，而是直接添加
         result.push(child);
       } else {
         result.push(child);
