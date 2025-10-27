@@ -198,6 +198,8 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
     | v0.21.1-slim          | &approx;2              | ❌                              | Lançamento estável          |
     | nightly               | &approx;2              | ❌                              | Construção noturna instável |
 
+    > Observação: A partir da `v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
+
 4.  Verifique o status do servidor após tê-lo iniciado:
 
     ```bash

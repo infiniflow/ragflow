@@ -178,6 +178,8 @@
    | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
+   > 참고: `v0.22.0`부터는 slim 에디션만 배포하며 이미지 태그에 **-slim** 접미사를 더 이상 붙이지 않습니다.
+
 1. 서버가 시작된 후 서버 상태를 확인하세요:
 
    ```bash
