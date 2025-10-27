@@ -158,7 +158,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp_parser"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -241,7 +241,7 @@ class Parser(ProcessBase):
                     "text": t,
                 }
                 bboxes.append(box)
-        elif conf.get("parse_method").lower() == "TCADP Parser":
+        elif conf.get("parse_method").lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             tcadp_parser = TCADPParser()
             sections, _ = tcadp_parser.parse_pdf(

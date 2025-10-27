@@ -553,7 +553,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback(0.8, "Finish parsing.")
 
 
-        elif layout_recognizer == "tcadp_parser":
+        elif layout_recognizer == "TCADP Parser":
             tcadp_parser = TCADPParser()
             if not tcadp_parser.check_installation():
                 callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
