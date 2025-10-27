@@ -49,7 +49,7 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   decorate(): ReactNode {
     let content: ReactNode = (
-      <div className="text-blue-600">{this.__label}</div>
+      <div className="text-accent-primary">{this.__label}</div>
     );
     if (this.__parentLabel) {
       content = (
@@ -62,7 +62,7 @@ export class VariableNode extends DecoratorNode<ReactNode> {
       );
     }
     return (
-      <div className="bg-gray-200 dark:bg-gray-400 text-sm inline-flex items-center rounded-md px-2 py-1">
+      <div className="bg-accent-primary-5 text-sm inline-flex items-center rounded-md px-2 py-1">
         {content}
       </div>
     );

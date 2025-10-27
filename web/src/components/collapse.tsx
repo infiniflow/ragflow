@@ -74,7 +74,7 @@ export function Collapse({
           <div>{rightContent}</div>
         </section>
       </CollapsibleTrigger>
-      <CollapsibleContent className="pt-2">{children}</CollapsibleContent>
+      <CollapsibleContent className="pt-5">{children}</CollapsibleContent>
     </Collapsible>
   );
 }

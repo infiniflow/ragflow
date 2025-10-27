@@ -70,7 +70,7 @@ export function LargeModelFormField({
                       <DropdownMenu>
                         <DropdownMenuTrigger>
                           <Button variant={'ghost'}>
-                            <Funnel />
+                            <Funnel className="text-text-disabled" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>

@@ -140,7 +140,7 @@ export const SelectWithSearch = forwardRef<
             ref={ref}
             disabled={disabled}
             className={cn(
-              'bg-background hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
+              '!bg-bg-input hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
               triggerClassName,
             )}
           >

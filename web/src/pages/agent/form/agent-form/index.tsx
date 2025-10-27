@@ -1,5 +1,4 @@
 import { Collapse } from '@/components/collapse';
-import { FormContainer } from '@/components/form-container';
 import {
   LargeModelFilterFormSchema,
   LargeModelFormField,
@@ -15,6 +14,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
@@ -124,66 +124,53 @@ function AgentForm({ node }: INextOperatorForm) {
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
-          {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
-            <QueryVariable
-              name="visual_files_var"
-              label="Visual Input File"
-              type={VariableType.File}
-            ></QueryVariable>
+        {isSubAgent && <DescriptionField></DescriptionField>}
+        <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
+        {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
+          <QueryVariable
+            name="visual_files_var"
+            label="Visual Input File"
+            type={VariableType.File}
+          ></QueryVariable>
+        )}
+        <FormField
+          control={form.control}
+          name={`sys_prompt`}
+          render={({ field }) => (
+            <FormItem className="flex-1">
+              <FormLabel>{t('flow.systemPrompt')}</FormLabel>
+              <FormControl>
+                <PromptEditor
+                  {...field}
+                  placeholder={t('flow.messagePlaceholder')}
+                  showToolbar={true}
+                  extraOptions={extraOptions}
+                ></PromptEditor>
+              </FormControl>
+            </FormItem>
           )}
-        </FormContainer>
-
-        <FormContainer>
+        />
+        {isSubAgent || (
           <FormField
             control={form.control}
-            name={`sys_prompt`}
+            name={`prompts`}
             render={({ field }) => (
               <FormItem className="flex-1">
-                <FormLabel>{t('flow.systemPrompt')}</FormLabel>
+                <FormLabel>{t('flow.userPrompt')}</FormLabel>
                 <FormControl>
-                  <PromptEditor
-                    {...field}
-                    placeholder={t('flow.messagePlaceholder')}
-                    showToolbar={true}
-                    extraOptions={extraOptions}
-                  ></PromptEditor>
+                  <section>
+                    <PromptEditor {...field} showToolbar={true}></PromptEditor>
+                  </section>
                 </FormControl>
               </FormItem>
             )}
           />
-        </FormContainer>
-        {isSubAgent || (
-          <FormContainer>
-            {/* <DynamicPrompt></DynamicPrompt> */}
-            <FormField
-              control={form.control}
-              name={`prompts`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>{t('flow.userPrompt')}</FormLabel>
-                  <FormControl>
-                    <section>
-                      <PromptEditor
-                        {...field}
-                        showToolbar={true}
-                      ></PromptEditor>
-                    </section>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </FormContainer>
         )}
-
-        <FormContainer>
-          <AgentTools></AgentTools>
-          <Agents node={node}></Agents>
-        </FormContainer>
+        <Separator></Separator>
+        <AgentTools></AgentTools>
+        <Agents node={node}></Agents>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
-          <FormContainer>
+          <section className="space-y-5">
             <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
             <FormField
               control={form.control}
@@ -270,7 +257,7 @@ function AgentForm({ node }: INextOperatorForm) {
                 )}
               />
             )}
-          </FormContainer>
+          </section>
         </Collapse>
         <Output list={outputList}></Output>
       </FormWrapper>

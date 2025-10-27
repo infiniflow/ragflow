@@ -91,13 +91,13 @@ function VariablePickerMenuItem({
       id={'typeahead-item-' + index}
     >
       <div>
-        <span className="text text-slate-500">{option.title}</span>
+        <span className="text text-text-secondary">{option.title}</span>
         <ul className="pl-2 py-1">
           {option.options.map((x) => (
             <li
               key={x.value}
               onClick={() => selectOptionAndCleanUp(x)}
-              className="hover:bg-slate-300 p-1"
+              className="hover:bg-bg-card p-1 text-text-primary rounded-sm"
             >
               {x.label}
             </li>
@@ -335,8 +335,8 @@ export default function VariablePickerMenuPlugin({
         const nextOptions = buildNextOptions();
         return anchorElementRef.current && nextOptions.length
           ? ReactDOM.createPortal(
-              <div className="typeahead-popover w-[200px] p-2">
-                <ul className="overflow-y-auto !scrollbar-thin overflow-x-hidden">
+              <div className="typeahead-popover w-[200px] p-2 bg-bg-base">
+                <ul className="scroll-auto overflow-x-hidden">
                   {nextOptions.map((option, i: number) => (
                     <VariablePickerMenuItem
                       index={i}

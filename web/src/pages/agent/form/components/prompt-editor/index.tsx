@@ -89,7 +89,7 @@ function PromptContent({
 
   return (
     <section
-      className={cn('border rounded-sm ', { 'border-blue-400': !isBlur })}
+      className={cn('border rounded-sm ', { 'border-accent-primary': !isBlur })}
     >
       {showToolbar && (
         <div className="border-b px-2 py-2 justify-end flex">
@@ -107,7 +107,7 @@ function PromptContent({
       )}
       <ContentEditable
         className={cn(
-          'relative px-2 py-1 focus-visible:outline-none max-h-[50vh] overflow-auto',
+          'relative px-2 py-1 focus-visible:outline-none max-h-[50vh] overflow-auto text-sm',
           {
             'min-h-40': multiLine,
           },
@@ -163,7 +163,7 @@ export function PromptEditor({
           placeholder={
             <div
               className={cn(
-                'absolute top-1 left-2 text-text-secondary pointer-events-none',
+                'absolute top-1 left-2 text-text-disabled pointer-events-none',
                 {
                   'truncate w-[90%]': !multiLine,
                   'translate-y-10': multiLine,
