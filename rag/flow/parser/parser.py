@@ -241,7 +241,7 @@ class Parser(ProcessBase):
                     "text": t,
                 }
                 bboxes.append(box)
-        elif conf.get("parse_method").lower() == "tcadp_parser":
+        elif conf.get("parse_method").lower() == "TCADP Parser":
             # ADP is a document parsing tool using Tencent Cloud API
             tcadp_parser = TCADPParser()
             sections, _ = tcadp_parser.parse_pdf(
