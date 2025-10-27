@@ -178,6 +178,8 @@
    | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
+   > 注意：`v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
+
 1. サーバーを立ち上げた後、サーバーの状態を確認する:
 
    ```bash
