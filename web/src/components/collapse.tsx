@@ -5,7 +5,12 @@ import {
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { CollapsibleProps } from '@radix-ui/react-collapsible';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  ListChevronsDownUp,
+  ListChevronsUpDown,
+} from 'lucide-react';
 import * as React from 'react';
 import {
   PropsWithChildren,
@@ -14,7 +19,6 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { IconFontFill } from './icon-font';
 
 type CollapseProps = Omit<CollapsibleProps, 'title'> & {
   title?: ReactNode;
@@ -54,12 +58,11 @@ export function Collapse({
       <CollapsibleTrigger className={'w-full'}>
         <section className="flex justify-between items-center">
           <div className="flex items-center gap-1">
-            <IconFontFill
-              name={`more`}
-              className={cn('size-4', {
-                'rotate-90': !currentOpen,
-              })}
-            ></IconFontFill>
+            {currentOpen ? (
+              <ListChevronsUpDown className="size-4" />
+            ) : (
+              <ListChevronsDownUp className="size-4 text-text-secondary" />
+            )}
             <div
               className={cn('text-text-secondary', {
                 'text-text-primary': open,
