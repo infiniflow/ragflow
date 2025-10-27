@@ -40,7 +40,7 @@ class Session(Base):
         If stream=False, returns a single Message object for the final answer.
         """
         if self.__session_type == "agent":
-            res = self._ask_agent(question, stream)
+            res = self._ask_agent(question, stream, **kwargs)
         elif self.__session_type == "chat":
             res = self._ask_chat(question, stream, **kwargs)
         else:
@@ -97,9 +97,11 @@ class Session(Base):
                         json_data, stream=stream)
         return res
 
-    def _ask_agent(self, question: str, stream: bool):
+    def _ask_agent(self, question: str, stream: bool, **kwargs):
+        json_data = {"question": question, "stream": stream, "session_id": self.id}
+        json_data.update(kwargs)
         res = self.post(f"/agents/{self.agent_id}/completions",
-                        {"question": question, "stream": stream, "session_id": self.id}, stream=stream)
+                        json_data, stream=stream)
         return res
 
     def update(self, update_message):
