@@ -1,10 +1,11 @@
 import { useDeleteMcpServer } from '@/hooks/use-mcp-request';
+import { IMcpServer } from '@/interfaces/database/mcp';
 import { Trash2, Upload } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useExportMcp } from './use-export-mcp';
 
-export function useBulkOperateMCP() {
+export function useBulkOperateMCP(mcpList: IMcpServer[]) {
   const { t } = useTranslation();
   const [selectedList, setSelectedList] = useState<Array<string>>([]);
   const { deleteMcpServer } = useDeleteMcpServer();
@@ -19,6 +20,13 @@ export function useBulkOperateMCP() {
       return checked ? [...list, id] : list.filter((item) => item !== id);
     });
   }, []);
+
+  const handleSelectAll = useCallback(
+    (checked: boolean) => {
+      setSelectedList(() => (checked ? mcpList.map((item) => item.id) : []));
+    },
+    [mcpList],
+  );
 
   const list = [
     {
@@ -35,7 +43,14 @@ export function useBulkOperateMCP() {
     },
   ];
 
-  return { list, selectedList, handleSelectChange };
+  return {
+    list,
+    selectedList,
+    handleSelectChange,
+    handleDelete,
+    handleExportMcp: handleExportMcpJson(selectedList),
+    handleSelectAll,
+  };
 }
 
 export type UseBulkOperateMCPReturnType = ReturnType<typeof useBulkOperateMCP>;

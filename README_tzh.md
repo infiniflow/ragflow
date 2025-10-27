@@ -83,6 +83,7 @@
 
 ## 🔥 近期更新
 
+- 2025-10-23 支援 MinerU 和 Docling 作為文件解析方法。
 - 2025-10-15 支援可編排的資料管道。
 - 2025-08-08 支援 OpenAI 最新的 GPT-5 系列模型。
 - 2025-08-01 支援 agentic workflow 和 MCP
@@ -200,6 +201,8 @@
    | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
    | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+
+   > 注意：自 `v0.22.0` 起，我們僅發佈 slim 版本，並且不再在映像標籤後附加 **-slim** 後綴。
 
    > [!TIP]
    > 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。

@@ -1,13 +1,22 @@
-import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import { CardContainer } from '@/components/card-container';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { pick } from 'lodash';
-import { Plus, SquareArrowOutDownLeft } from 'lucide-react';
-import { useCallback } from 'react';
+import {
+  Download,
+  LayoutList,
+  ListChecks,
+  Plus,
+  Trash2,
+  Upload,
+} from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ProfileSettingWrapperCard } from '../components';
 import { EditMcpDialog } from './edit-mcp-dialog';
@@ -22,10 +31,18 @@ export default function McpServer() {
     useListMcpServer();
   const { editVisible, showEditModal, hideEditModal, handleOk, id, loading } =
     useEditMcp();
-  const { list, selectedList, handleSelectChange } = useBulkOperateMCP();
+  const {
+    selectedList,
+    handleSelectChange,
+    handleDelete,
+    handleExportMcp,
+    handleSelectAll,
+  } = useBulkOperateMCP(data.mcp_servers);
   const { t } = useTranslation();
   const { importVisible, showImportModal, hideImportModal, onImportOk } =
     useImportMcp();
+
+  const [isSelectionMode, setSelectionMode] = useState(false);
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -33,6 +50,10 @@ export default function McpServer() {
     },
     [setPagination],
   );
+
+  const switchSelectionMode = useCallback(() => {
+    setSelectionMode((prev) => !prev);
+  }, []);
 
   return (
     <ProfileSettingWrapperCard
@@ -51,23 +72,51 @@ export default function McpServer() {
                 value={searchString}
                 onChange={handleInputChange}
               ></SearchInput>
-              <Button onClick={showEditModal('')}>
-                <Plus /> {t('mcp.addMCP')}
+              <Button variant={'secondary'} onClick={switchSelectionMode}>
+                {isSelectionMode ? (
+                  <ListChecks className="size-3.5" />
+                ) : (
+                  <LayoutList className="size-3.5" />
+                )}
+                {t(`mcp.${isSelectionMode ? 'exitBulkManage' : 'bulkManage'}`)}
               </Button>
-              <Button variant={'secondary'} onClick={showImportModal}>
-                <SquareArrowOutDownLeft /> {t('mcp.import')}
+              <Button variant={'secondary'} onClick={showEditModal('')}>
+                <Plus className="size-3.5" /> {t('mcp.addMCP')}
+              </Button>
+              <Button onClick={showImportModal}>
+                <Download className="size-3.5" />
+                {t('mcp.import')}
               </Button>
             </div>
           </section>
         </>
       }
     >
-      {selectedList.length > 0 && (
-        <BulkOperateBar
-          list={list}
-          count={selectedList.length}
-          className="mb-2.5"
-        ></BulkOperateBar>
+      {isSelectionMode && (
+        <section className="pb-5 flex items-center">
+          <Checkbox id="all" onCheckedChange={handleSelectAll} />
+          <Label
+            className="pl-2 text-text-primary cursor-pointer"
+            htmlFor="all"
+          >
+            {t('common.selectAll')}
+          </Label>
+          <span className="text-text-secondary pr-10 pl-5">
+            {t('mcp.selected')} {selectedList.length}
+          </span>
+          <div className="flex gap-10 items-center">
+            <Button variant={'secondary'} onClick={handleExportMcp}>
+              <Upload className="size-3.5"></Upload>
+              {t('mcp.export')}
+            </Button>
+            <ConfirmDeleteDialog onOk={handleDelete}>
+              <Button variant={'danger'}>
+                <Trash2 className="size-3.5 cursor-pointer" />
+                {t('common.delete')}
+              </Button>
+            </ConfirmDeleteDialog>
+          </div>
+        </section>
       )}
       <CardContainer>
         {data.mcp_servers.map((item) => (
@@ -77,6 +126,7 @@ export default function McpServer() {
             selectedList={selectedList}
             handleSelectChange={handleSelectChange}
             showEditModal={showEditModal}
+            isSelectionMode={isSelectionMode}
           ></McpCard>
         ))}
       </CardContainer>
@@ -101,7 +151,7 @@ export default function McpServer() {
           onOk={onImportOk}
         ></ImportMcpDialog>
       )}
-      <Spotlight className="z-0" opcity={0.7} coverage={70} />
+      <Spotlight />
     </ProfileSettingWrapperCard>
   );
 }

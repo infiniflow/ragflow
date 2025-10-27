@@ -3,7 +3,7 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
-      selectAll: 'Select All',
+      selectAll: 'Select all',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Ok',
@@ -352,7 +352,7 @@ export default {
       manual: `<p>Only <b>PDF</b> is supported.</p><p>
       We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
       </p>`,
-      naive: `<p>Supported file formats are <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      naive: `<p>Supported file formats are <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>This method chunks files using a 'naive' method: </p>
       <p>
       <li>Use vision detection model to split the texts into smaller segments.</li>
@@ -710,7 +710,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       timezone: 'Time zone',
       timezoneMessage: 'Please input your timezone!',
       timezonePlaceholder: 'select your timezone',
-      email: 'Email address',
+      email: 'Email',
       emailDescription: 'Once registered, E-mail cannot be changed.',
       currentPassword: 'Current password',
       currentPasswordMessage: 'Please input your password!',
@@ -865,9 +865,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       apiVersion: 'API-Version',
       apiVersionMessage: 'Please input API version',
       add: 'Add',
-      updateDate: 'Update Date',
-      role: 'Role',
-      invite: 'Invite',
+      updateDate: 'Date',
+      role: 'State',
+      invite: 'Invite Member',
       agree: 'Accept',
       refuse: 'Decline',
       teamMembers: 'Team Members',
@@ -1631,7 +1631,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         email: 'Email',
         'text&markdown': 'Text & Markup',
         word: 'Word',
-        slides: 'PPT',
+        slides: 'PPTX',
         audio: 'Audio',
         video: 'Video',
       },
@@ -1747,6 +1747,9 @@ Important structured information may include: names, dates, locations, events, k
       mcpServers: 'MCP Servers',
       customizeTheListOfMcpServers: 'Customize the list of MCP servers',
       cachedTools: 'cached tools',
+      bulkManage: 'Bulk manage',
+      exitBulkManage: 'Exit bulk manage',
+      selected: 'Selected',
     },
     search: {
       searchApps: 'Search Apps',
@@ -1800,13 +1803,13 @@ Important structured information may include: names, dates, locations, events, k
       confirmRerun: 'Confirm Rerun Process',
       confirmRerunModalContent: `
       <p class="text-sm text-text-disabled font-medium mb-2">
-        You are about to rerun the process starting from the <strong class="text-text-primary">{{step}}</strong> step.
+        You are about to rerun the process starting from the <span class="text-text-secondary">{{step}}</span> step.
       </p>
-      <p class="text-sm mb-3 text-text-secondary">This will:</p>
+      <p class="text-sm mb-3 text-text-disabled">This will:</p><br />
       <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
-        <li>Overwrite existing results from the current step onwards</li>
-        <li>Create a new log entry for tracking</li>
-        <li>Previous steps will remain unchanged</li>
+        <li>• Overwrite existing results from the current step onwards</li>
+        <li>• Create a new log entry for tracking</li>
+        <li>• Previous steps will remain unchanged</li>
       </ul>`,
       changeStepModalTitle: 'Step Switch Warning',
       changeStepModalContent: `

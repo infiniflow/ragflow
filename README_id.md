@@ -80,6 +80,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-10-23 Mendukung MinerU & Docling sebagai metode penguraian dokumen.
 - 2025-10-15 Dukungan untuk jalur data yang terorkestrasi.
 - 2025-08-08 Mendukung model seri GPT-5 terbaru dari OpenAI.
 - 2025-08-01 Mendukung alur kerja agen dan MCP.
@@ -198,6 +199,8 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
 | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
 | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+
+> Catatan: Mulai dari `v0.22.0`, kami hanya menyediakan edisi slim dan tidak lagi menambahkan akhiran **-slim** pada tag image.
 
 1. Periksa status server setelah server aktif dan berjalan:
 
