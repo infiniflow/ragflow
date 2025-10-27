@@ -6,6 +6,7 @@ import {
 } from '@/hooks/user-setting-hooks';
 import { useTranslation } from 'react-i18next';
 
+import Spotlight from '@/components/spotlight';
 import { SearchInput } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { UserPlus } from 'lucide-react';
@@ -29,9 +30,10 @@ const UserSettingTeam = () => {
   } = useAddUser();
 
   return (
-    <div className="w-full flex flex-col gap-4 p-4">
+    <div className="w-full flex flex-col gap-4 p-4 relative">
+      <Spotlight />
       <Card className="bg-transparent border-none px-0">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 px-0">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 px-0 pt-1">
           <CardTitle className="text-2xl font-medium">
             {userInfo?.nickname} {t('setting.workspace')}
           </CardTitle>
