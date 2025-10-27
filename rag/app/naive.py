@@ -36,6 +36,7 @@ from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 
 
@@ -550,7 +551,23 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
-        
+
+
+        elif layout_recognizer == "TCADP Parser":
+            tcadp_parser = TCADPParser()
+            if not tcadp_parser.check_installation():
+                callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
+                return res
+
+            sections, tables = tcadp_parser.parse_pdf(
+                filepath=filename,
+                binary=binary,
+                callback=callback,
+                output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
+                file_type="PDF"
+            )
+            parser_config["chunk_token_num"] = 0
+            callback(0.8, "Finish parsing.")
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()
