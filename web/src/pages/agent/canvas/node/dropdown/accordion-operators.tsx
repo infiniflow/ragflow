@@ -6,9 +6,17 @@ import {
 } from '@/components/ui/accordion';
 import { Operator } from '@/constants/agent';
 import useGraphStore from '@/pages/agent/store';
-import { useCallback, useMemo } from 'react';
+import { PropsWithChildren, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { OperatorItemList } from './operator-item-list';
+
+function OperatorAccordionTrigger({ children }: PropsWithChildren) {
+  return (
+    <AccordionTrigger className="text-xs text-text-secondary hover:no-underline items-center">
+      <span className="h-4 translate-y-1"> {children}</span>
+    </AccordionTrigger>
+  );
+}
 
 export function AccordionOperators({
   isCustomDropdown = false,
@@ -26,10 +34,10 @@ export function AccordionOperators({
       defaultValue={['item-1', 'item-2', 'item-3', 'item-4', 'item-5']}
     >
       <AccordionItem value="item-1">
-        <AccordionTrigger className="text-xl">
+        <OperatorAccordionTrigger>
           {t('flow.foundation')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
+        </OperatorAccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 text-text-primary">
           <OperatorItemList
             operators={[Operator.Agent, Operator.Retrieval]}
             isCustomDropdown={isCustomDropdown}
@@ -38,10 +46,8 @@ export function AccordionOperators({
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-2">
-        <AccordionTrigger className="text-xl">
-          {t('flow.dialog')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
+        <OperatorAccordionTrigger>{t('flow.dialog')}</OperatorAccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 text-text-primary">
           <OperatorItemList
             operators={[Operator.Message, Operator.UserFillUp]}
             isCustomDropdown={isCustomDropdown}
@@ -50,10 +56,8 @@ export function AccordionOperators({
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-3">
-        <AccordionTrigger className="text-xl">
-          {t('flow.flow')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
+        <OperatorAccordionTrigger>{t('flow.flow')}</OperatorAccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 text-text-primary">
           <OperatorItemList
             operators={[
               Operator.Switch,
@@ -66,10 +70,10 @@ export function AccordionOperators({
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-4">
-        <AccordionTrigger className="text-xl">
+        <OperatorAccordionTrigger>
           {t('flow.dataManipulation')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
+        </OperatorAccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 text-text-primary">
           <OperatorItemList
             operators={[Operator.Code, Operator.StringTransform]}
             isCustomDropdown={isCustomDropdown}
@@ -78,10 +82,8 @@ export function AccordionOperators({
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-5">
-        <AccordionTrigger className="text-xl">
-          {t('flow.tools')}
-        </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4 text-balance">
+        <OperatorAccordionTrigger>{t('flow.tools')}</OperatorAccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 text-text-primary">
           <OperatorItemList
             operators={[
               Operator.TavilySearch,
@@ -180,8 +182,10 @@ export function PipelineAccordionOperators({
           defaultValue="item-1"
         >
           <AccordionItem value="item-1">
-            <AccordionTrigger>Chunker</AccordionTrigger>
-            <AccordionContent className="flex flex-col gap-4 text-balance">
+            <AccordionTrigger className="translate-y-2 hover:no-underline text-text-primary font-normal">
+              Chunker
+            </AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-4">
               <OperatorItemList
                 operators={chunkerOperators}
                 isCustomDropdown={isCustomDropdown}

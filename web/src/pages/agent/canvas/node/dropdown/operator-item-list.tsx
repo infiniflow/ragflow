@@ -96,5 +96,9 @@ export function OperatorItemList({
     );
   };
 
-  return <ul className="space-y-2">{operators.map(renderOperatorItem)}</ul>;
+  return (
+    <ul className="space-y-2 text-text-primary font-normal">
+      {operators.map(renderOperatorItem)}
+    </ul>
+  );
 }
