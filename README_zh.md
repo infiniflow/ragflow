@@ -83,6 +83,7 @@
 
 ## 🔥 近期更新
 
+- 2025-10-23 支持 MinerU 和 Docling 作为文档解析方法。
 - 2025-10-15 支持可编排的数据管道。
 - 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
 - 2025-08-01 支持 agentic workflow 和 MCP。
@@ -200,6 +201,8 @@
    | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
    | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+
+   > 注意：从 `v0.22.0` 开始，我们只发布 slim 版本，并且不再在镜像标签后附加 **-slim** 后缀。
 
    > [!TIP]
    > 如果你遇到 Docker 镜像拉不下来的问题，可以在 **docker/.env** 文件内根据变量 `RAGFLOW_IMAGE` 的注释提示选择华为云或者阿里云的相应镜像。
