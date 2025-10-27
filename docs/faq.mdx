@@ -536,5 +536,16 @@ uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
 4. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown, which supports PDF parsing, and slect **MinerU** in **PDF parser**.
 5. If you use a custom ingestion pipeline instead, you must also complete the first three steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
 
+---
 
+### How to specify the settings of MinerU?
 
+Set `MINERU_EXECUTABLE` to the path of the MinerU executable. (Default: mineru)
+
+Set `MINERU_DELETE_OUTPUT=0` to keep MinerU's output. (Default: 1, which deletes temporary output)
+
+Set `MINERU_OUTPUT_DIR` to specify the output directory. (Uses a temporary directory if unset)
+
+Set `MINERU_BACKEND="pipeline"` to choose the backend. (Options: pipeline | vlm-transformers, default is pipeline)
+
+Other environment variables listed [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description) are supported automatically by MinerU.

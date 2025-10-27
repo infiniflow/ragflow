@@ -80,7 +80,8 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
-- 10-15-2025 Suporte para pipelines de dados orquestrados.
+- 23-10-2025 Suporta MinerU e Docling como métodos de análise de documentos.
+- 15-10-2025 Suporte para pipelines de dados orquestrados.
 - 08-08-2025 Suporta a mais recente série GPT-5 da OpenAI.
 - 01-08-2025 Suporta fluxo de trabalho agente e MCP.
 - 23-05-2025 Adicione o componente executor de código Python/JS ao Agente.
@@ -197,6 +198,8 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
     | v0.21.1               | &approx;9              | ✔️                              | Lançamento estável          |
     | v0.21.1-slim          | &approx;2              | ❌                              | Lançamento estável          |
     | nightly               | &approx;2              | ❌                              | Construção noturna instável |
+
+    > Observação: A partir da `v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
 
 4.  Verifique o status do servidor após tê-lo iniciado:
 

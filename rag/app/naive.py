@@ -36,6 +36,7 @@ from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 
 
@@ -438,7 +439,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Successive text will be sliced into pieces using 'delimiter'.
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
-    
+
 
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
@@ -462,7 +463,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             embeds = extract_embed_file(binary)
         else:
             raise Exception("Embedding extraction from file path is not supported.")
-        
+
         # Recursively chunk each embedded file and collect results
         for embed_filename, embed_bytes in embeds:
             try:
@@ -476,7 +477,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
-        
+
 
         # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
         _SerializedRelationships.load_from_xml = load_from_xml_v2
@@ -529,6 +530,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 binary=binary,
                 callback=callback,
                 output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+                backend=os.environ.get("MINERU_BACKEND", "pipeline"),
                 delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
             )
             parser_config["chunk_token_num"] = 0
@@ -550,7 +552,22 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
-        
+
+        elif layout_recognizer == "TCADP Parser":
+            tcadp_parser = TCADPParser()
+            if not tcadp_parser.check_installation():
+                callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
+                return res
+
+            sections, tables = tcadp_parser.parse_pdf(
+                filepath=filename,
+                binary=binary,
+                callback=callback,
+                output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
+                file_type="PDF"
+            )
+            parser_config["chunk_token_num"] = 0
+            callback(0.8, "Finish parsing.")
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()
