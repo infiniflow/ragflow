@@ -32,7 +32,6 @@ export default function Dataset() {
     onDocumentUploadOk,
     documentUploadLoading,
   } = useHandleUploadDocument();
-  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration();
 
   const {
     searchString,
