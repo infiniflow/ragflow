@@ -19,7 +19,7 @@ export const enum ParseDocumentType {
   PlainText = 'Plain Text',
   MinerU = 'MinerU',
   Docling = 'Docling',
-  TCADPParser = 'tcadp_parser',
+  TCADPParser = 'TCADP Parser',
 }
 
 export function LayoutRecognizeFormField({
