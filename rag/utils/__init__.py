@@ -34,11 +34,6 @@ def singleton(cls, *args, **kw):
     return _singleton
 
 
-def rmSpace(txt):
-    txt = re.sub(r"([^a-z0-9.,\)>]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
-    return re.sub(r"([^ ]) +([^a-z0-9.,\(<])", r"\1\2", txt, flags=re.IGNORECASE)
-
-
 def findMaxDt(fnm):
     m = "1970-01-01 00:00:00"
     try:
@@ -113,13 +108,13 @@ def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     return encoder.decode(encoder.encode(string)[:max_len])
 
-  
+
 def clean_markdown_block(text):
     text = re.sub(r'^\s*```markdown\s*\n?', '', text)
     text = re.sub(r'\n?\s*```\s*$', '', text)
     return text.strip()
 
-  
+
 def get_float(v):
     if v is None:
         return float('-inf')

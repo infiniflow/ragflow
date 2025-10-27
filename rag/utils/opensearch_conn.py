@@ -484,7 +484,7 @@ class OSConnection(DocStoreConnection):
                 if not isinstance(v, str):
                     m[n] = str(m[n])
                 # if n.find("tks") > 0:
-                #     m[n] = rmSpace(m[n])
+                #     m[n] = remove_redundant_spaces(m[n])
 
             if m:
                 res_fields[d["id"]] = m
