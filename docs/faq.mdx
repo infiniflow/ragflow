@@ -538,14 +538,13 @@ uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
 
 ---
 
-### How to specify the settings of MinerU?
+### How to configure MinerU-specific settings?
 
-Set `MINERU_EXECUTABLE` to the path of the MinerU executable. (Default: mineru)
+1. Set `MINERU_EXECUTABLE` (default: `mineru`) to the path of the MinerU executable.
+2. Set `MINERU_DELETE_OUTPUT` to `0` to keep MinerU's output. (Default: `1`, which deletes temporary output)
+3. Set `MINERU_OUTPUT_DIR` to specify the output directory for MinerU.
+4. Set `MINERU_BACKEND` to `"pipeline"`. (Options: `"pipeline"` (default) | `"vlm-transformers"`)
 
-Set `MINERU_DELETE_OUTPUT=0` to keep MinerU's output. (Default: 1, which deletes temporary output)
-
-Set `MINERU_OUTPUT_DIR` to specify the output directory. (Uses a temporary directory if unset)
-
-Set `MINERU_BACKEND="pipeline"` to choose the backend. (Options: pipeline | vlm-transformers, default is pipeline)
-
-Other environment variables listed [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description) are supported automatically by MinerU.
+:::tip NOTE
+For information about other environment variables natively supported by MinerU, see [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
+:::
