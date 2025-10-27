@@ -30,7 +30,7 @@ from docx import Document
 from PIL import Image
 from markdown import markdown
 
-from rag.utils import get_float
+from common.float_utils import get_float
 
 
 class Excel(ExcelParser):

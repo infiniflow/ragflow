@@ -71,11 +71,3 @@ def truncate(string: str, max_len: int) -> str:
     return encoder.decode(encoder.encode(string)[:max_len])
 
 
-def get_float(v):
-    if v is None:
-        return float('-inf')
-    try:
-        return float(v)
-    except Exception:
-        return float('-inf')
-
