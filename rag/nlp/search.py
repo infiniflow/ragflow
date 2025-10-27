@@ -395,7 +395,9 @@ class Dealer:
                 tsim = sim
                 vsim = sim
         # Already paginated in search function
-        begin = ((page % (RERANK_LIMIT//page_size)) - 1) * page_size
+        max_pages = RERANK_LIMIT // page_size
+        page_index = (page % max_pages) - 1
+        begin = max(page_index * page_size, 0)
         sim = sim[begin : begin + page_size]
         sim_np = np.array(sim)
         idx = np.argsort(sim_np * -1)
