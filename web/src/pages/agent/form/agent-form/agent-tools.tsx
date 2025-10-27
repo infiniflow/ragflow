@@ -15,6 +15,7 @@ import {
   useContext,
   useMemo,
 } from 'react';
+import { LabelCard } from '../../canvas/node/card';
 import { Operator } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
@@ -34,15 +35,9 @@ export function ToolCard({
 }: PropsWithChildren & React.HTMLAttributes<HTMLLIElement>) {
   const element = useMemo(() => {
     return (
-      <li
-        {...props}
-        className={cn(
-          'flex bg-bg-card p-1 rounded-sm justify-between',
-          className,
-        )}
-      >
+      <LabelCard {...props} className={cn('flex justify-between', className)}>
         {children}
-      </li>
+      </LabelCard>
     );
   }, [children, className, props]);
 

@@ -24,6 +24,7 @@ const buttonVariants = cva(
         icon: 'bg-colors-background-inverse-standard text-foreground hover:bg-colors-background-inverse-standard/80',
         dashed: 'border border-dashed border-input hover:bg-accent',
         transparent: 'bg-transparent hover:bg-accent border',
+        danger: 'bg-transparent border border-state-error text-state-error',
       },
       size: {
         default: 'h-8 px-2.5 py-1.5 ',

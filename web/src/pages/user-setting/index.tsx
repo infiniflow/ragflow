@@ -41,7 +41,7 @@ const UserSetting = () => {
         className={cn(styles.settingWrapper, 'overflow-auto flex flex-1 pt-4')}
       >
         <SideBar></SideBar>
-        <div className={cn(styles.outletWrapper, 'flex flex-1 px-8')}>
+        <div className={cn(styles.outletWrapper, 'flex flex-1')}>
           <Outlet></Outlet>
         </div>
       </div>

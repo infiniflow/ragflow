@@ -1,4 +1,3 @@
-import { MoreButton } from '@/components/more-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { IMcpServer } from '@/interfaces/database/mcp';
@@ -6,12 +5,13 @@ import { formatDate } from '@/utils/date';
 import { isPlainObject } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { McpDropdown } from './mcp-dropdown';
+import { McpOperation } from './mcp-operation';
 import { UseBulkOperateMCPReturnType } from './use-bulk-operate-mcp';
 import { UseEditMcpReturnType } from './use-edit-mcp';
 
 export type DatasetCardProps = {
   data: IMcpServer;
+  isSelectionMode: boolean;
 } & Pick<UseBulkOperateMCPReturnType, 'handleSelectChange' | 'selectedList'> &
   Pick<UseEditMcpReturnType, 'showEditModal'>;
 
@@ -20,6 +20,7 @@ export function McpCard({
   selectedList,
   handleSelectChange,
   showEditModal,
+  isSelectionMode,
 }: DatasetCardProps) {
   const { t } = useTranslation();
   const toolLength = useMemo(() => {
@@ -34,6 +35,7 @@ export function McpCard({
       handleSelectChange(data.id, checked);
     }
   };
+
   return (
     <Card key={data.id}>
       <CardContent className="p-2.5 pt-2 group">
@@ -42,16 +44,20 @@ export function McpCard({
             {data.name}
           </h3>
           <div className="space-x-4">
-            <McpDropdown mcpId={data.id} showEditModal={showEditModal}>
-              <MoreButton></MoreButton>
-            </McpDropdown>
-            <Checkbox
-              checked={selectedList.includes(data.id)}
-              onCheckedChange={onCheckedChange}
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-            />
+            {isSelectionMode ? (
+              <Checkbox
+                checked={selectedList.includes(data.id)}
+                onCheckedChange={onCheckedChange}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              />
+            ) : (
+              <McpOperation
+                mcpId={data.id}
+                showEditModal={showEditModal}
+              ></McpOperation>
+            )}
           </div>
         </section>
         <div className="flex justify-between items-end text-xs text-text-secondary">

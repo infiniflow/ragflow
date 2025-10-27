@@ -78,10 +78,7 @@ const buildComponentDownstreamOrUpstream = (
 
 const removeUselessDataInTheOperator = curry(
   (operatorName: string, params: Record<string, unknown>) => {
-    if (
-      operatorName === Operator.Generate ||
-      operatorName === Operator.Categorize
-    ) {
+    if (operatorName === Operator.Categorize) {
       return removeUselessFieldsFromValues(params, '');
     }
     return params;

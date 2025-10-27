@@ -1,8 +1,7 @@
-import LLMLabel from '@/components/llm-select/llm-label';
 import { IRagNode } from '@/interfaces/database/agent';
 import { NodeProps } from '@xyflow/react';
 import { get } from 'lodash';
-import { LabelCard } from './card';
+import { LLMLabelCard } from './card';
 import { RagNode } from './index';
 
 export function ExtractorNode({ ...props }: NodeProps<IRagNode>) {
@@ -10,9 +9,7 @@ export function ExtractorNode({ ...props }: NodeProps<IRagNode>) {
 
   return (
     <RagNode {...props}>
-      <LabelCard>
-        <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
-      </LabelCard>
+      <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>
     </RagNode>
   );
 }

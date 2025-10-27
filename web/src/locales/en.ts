@@ -3,7 +3,7 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
-      selectAll: 'Select All',
+      selectAll: 'Select all',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Ok',
@@ -1747,6 +1747,9 @@ Important structured information may include: names, dates, locations, events, k
       mcpServers: 'MCP Servers',
       customizeTheListOfMcpServers: 'Customize the list of MCP servers',
       cachedTools: 'cached tools',
+      bulkManage: 'Bulk manage',
+      exitBulkManage: 'Exit bulk manage',
+      selected: 'Selected',
     },
     search: {
       searchApps: 'Search Apps',

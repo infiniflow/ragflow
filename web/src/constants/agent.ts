@@ -116,5 +116,4 @@ export enum Operator {
   Splitter = 'Splitter',
   HierarchicalMerger = 'HierarchicalMerger',
   Extractor = 'Extractor',
-  Generate = 'Generate',
 }

@@ -12,7 +12,6 @@ export const BaseNode = forwardRef<
       'relative rounded bg-card text-card-foreground',
       className,
       selected ? 'border-muted-foreground shadow-lg' : '',
-      'hover:ring-1',
     )}
     tabIndex={0}
     {...props}

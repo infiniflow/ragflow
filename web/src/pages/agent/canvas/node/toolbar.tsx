@@ -3,6 +3,7 @@ import {
   TooltipNode,
   TooltipTrigger,
 } from '@/components/xyflow/tooltip-node';
+import { cn } from '@/lib/utils';
 import { Position } from '@xyflow/react';
 import { Copy, Play, Trash2 } from 'lucide-react';
 import {
@@ -15,9 +16,19 @@ import { Operator } from '../../constant';
 import { useDuplicateNode } from '../../hooks';
 import useGraphStore from '../../store';
 
-function IconWrapper({ children, ...props }: HTMLAttributes<HTMLDivElement>) {
+function IconWrapper({
+  children,
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className="p-1.5 bg-text-title rounded-sm cursor-pointer" {...props}>
+    <div
+      className={cn(
+        'p-1.5 bg-bg-component border border-border-button rounded-sm cursor-pointer hover:text-text-primary',
+        className,
+      )}
+      {...props}
+    >
       {children}
     </div>
   );
@@ -71,7 +82,7 @@ export function ToolBar({
       <TooltipTrigger className="h-full">{children}</TooltipTrigger>
 
       <TooltipContent position={Position.Top}>
-        <section className="flex gap-2 items-center">
+        <section className="flex gap-2 items-center text-text-secondary">
           {showRun && (
             <IconWrapper>
               <Play className="size-3.5" data-play />
@@ -82,7 +93,10 @@ export function ToolBar({
               <Copy className="size-3.5" />
             </IconWrapper>
           )}
-          <IconWrapper onClick={deleteNode}>
+          <IconWrapper
+            onClick={deleteNode}
+            className="hover:text-state-error hover:border-state-error"
+          >
             <Trash2 className="size-3.5" />
           </IconWrapper>
         </section>

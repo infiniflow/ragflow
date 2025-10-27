@@ -46,6 +46,18 @@ export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
   );
 };
 
+export function RAGFlowTooltip({
+  children,
+  tooltip,
+}: React.PropsWithChildren & { tooltip: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger>{children}</TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export interface AntToolTipProps {
   title: React.ReactNode;
   children: React.ReactNode;
