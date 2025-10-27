@@ -311,7 +311,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         >
           <AgentBackground></AgentBackground>
           <Spotlight className="z-0" opcity={0.7} coverage={70} />
-          <Controls position={'bottom-center'} orientation="horizontal">
+          <Controls
+            position={'bottom-center'}
+            orientation="horizontal"
+            className="bg-bg-base px-4 py-2 h-auto w-auto [&>button]:bg-transparent [&>button]:border-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:p-0 [&>button]:size-4 gap-2.5 rounded-md"
+          >
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>
