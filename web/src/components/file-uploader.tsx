@@ -12,7 +12,6 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useControllableState } from '@/hooks/use-controllable-state';
 import { cn, formatBytes } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
@@ -53,11 +52,13 @@ function FilePreview({ file }: FilePreviewProps) {
 function FileCard({ file, progress, onRemove }: FileCardProps) {
   return (
     <div className="relative flex items-center gap-2.5">
-      <div className="flex flex-1 gap-2.5">
-        {isFileWithPreview(file) ? <FilePreview file={file} /> : null}
-        <div className="flex w-full flex-col gap-2">
+      <div className="flex flex-1 gap-2.5 overflow-hidden">
+        <div className="w-8">
+          {isFileWithPreview(file) ? <FilePreview file={file} /> : null}
+        </div>
+        <div className="flex flex-col flex-1 gap-2 overflow-hidden">
           <div className="flex flex-col gap-px">
-            <p className="line-clamp-1 text-sm font-medium text-foreground/80">
+            <p className="line-clamp-1 text-sm font-medium text-foreground/80 text-ellipsis">
               {file.name}
             </p>
             <p className="text-xs text-muted-foreground">
@@ -319,8 +320,8 @@ export function FileUploader(props: FileUploaderProps) {
         )}
       </Dropzone>
       {files?.length ? (
-        <ScrollArea className="h-fit w-full px-3">
-          <div className="flex max-h-48 flex-col gap-4">
+        <div className="h-fit w-full px-3">
+          <div className="flex max-h-48 flex-col gap-4 overflow-auto scrollbar-auto">
             {files?.map((file, index) => (
               <FileCard
                 key={index}
@@ -330,7 +331,7 @@ export function FileUploader(props: FileUploaderProps) {
               />
             ))}
           </div>
-        </ScrollArea>
+        </div>
       ) : null}
     </div>
   );
