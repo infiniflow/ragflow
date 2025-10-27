@@ -14,7 +14,7 @@ export function ProfileSettingWrapperCard({
   children,
 }: ProfileSettingWrapperCardProps) {
   return (
-    <Card className="w-full mb-5 border-border-button bg-transparent">
+    <Card className="w-full border-border-button bg-transparent relative">
       <CardHeader className="border-b border-border-button p-5">
         {header}
       </CardHeader>

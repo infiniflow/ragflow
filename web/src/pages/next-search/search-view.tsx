@@ -91,7 +91,6 @@ export default function SearchingView({
         >
           RAGFlow
         </h1>
-
         <div
           className={cn(
             ' rounded-lg text-primary text-xl sticky flex flex-col justify-center w-2/3 max-w-[780px] transform scale-100 ml-16 ',
@@ -117,14 +116,14 @@ export default function SearchingView({
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 transform flex items-center gap-1">
                 <X
-                  className="text-text-secondary cursor-pointer"
+                  className="text-text-secondary cursor-pointer opacity-80"
                   size={14}
                   onClick={() => {
                     setSearchtext('');
                     handleClickRelatedQuestion('');
                   }}
                 />
-                <span className="text-text-secondary ml-4">|</span>
+                <span className="text-text-secondary opacity-20 ml-4">|</span>
                 <button
                   type="button"
                   className="rounded-full bg-text-primary p-1 text-bg-base shadow w-12 h-8 ml-4"
@@ -170,11 +169,13 @@ export default function SearchingView({
                     </div>
                   )
                 )}
-                <div className="w-full border-b border-border-default/80 my-6"></div>
+                {answer.answer && !sendingLoading && (
+                  <div className="w-full border-b border-border-default/80 my-6"></div>
+                )}
               </>
             )}
             {/* retrieval documents */}
-            {!isSearchStrEmpty && (
+            {!isSearchStrEmpty && !sendingLoading && (
               <>
                 <div className=" mt-3 w-44 ">
                   <RetrievalDocuments
@@ -183,7 +184,7 @@ export default function SearchingView({
                     onTesting={handleTestChunk}
                   ></RetrievalDocuments>
                 </div>
-                <div className="w-full border-b border-border-default/80 my-6"></div>
+                {/* <div className="w-full border-b border-border-default/80 my-6"></div> */}
               </>
             )}
             <div className="mt-3 ">
@@ -218,7 +219,7 @@ export default function SearchingView({
                             </Popover>
                           </div>
                           <div
-                            className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit"
+                            className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
                             onClick={() =>
                               clickDocumentButton(chunk.doc_id, chunk as any)
                             }
@@ -237,26 +238,30 @@ export default function SearchingView({
               )}
               {relatedQuestions?.length > 0 &&
                 searchData.search_config.related_search && (
-                  <div className="mt-14 w-full overflow-hidden opacity-100 max-h-96">
-                    <p className="text-text-primary mb-2 text-xl">
-                      {t('search.relatedSearch')}
-                    </p>
-                    <div className="mt-2 flex flex-wrap justify-start gap-2">
-                      {relatedQuestions?.map((x, idx) => (
-                        <Button
-                          key={idx}
-                          variant="transparent"
-                          className="bg-bg-card text-text-secondary"
-                          onClick={handleClickRelatedQuestion(
-                            x,
-                            searchData.search_config.summary,
-                          )}
-                        >
-                          {x}
-                        </Button>
-                      ))}
+                  <>
+                    <div className="w-full border-b border-border-default/80 mt-6"></div>
+
+                    <div className="mt-6 w-full overflow-hidden opacity-100 max-h-96">
+                      <p className="text-text-primary mb-2 text-xl">
+                        {t('search.relatedSearch')}
+                      </p>
+                      <div className="mt-2 flex flex-wrap justify-start gap-2">
+                        {relatedQuestions?.map((x, idx) => (
+                          <Button
+                            key={idx}
+                            variant="transparent"
+                            className="bg-bg-card text-text-secondary"
+                            onClick={handleClickRelatedQuestion(
+                              x,
+                              searchData.search_config.summary,
+                            )}
+                          >
+                            {x}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
             </div>
           </div>
@@ -272,7 +277,6 @@ export default function SearchingView({
             </div>
           )}
         </div>
-
         {mindMapVisible && (
           <div className="flex-1 h-[88dvh] z-30 ml-32 mt-5">
             <MindMapDrawer

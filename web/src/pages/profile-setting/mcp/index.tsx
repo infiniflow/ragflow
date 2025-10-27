@@ -151,7 +151,7 @@ export default function McpServer() {
           onOk={onImportOk}
         ></ImportMcpDialog>
       )}
-      <Spotlight className="z-0" opcity={0.7} coverage={70} />
+      <Spotlight />
     </ProfileSettingWrapperCard>
   );
 }

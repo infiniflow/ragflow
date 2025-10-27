@@ -1,3 +1,4 @@
+import { CardSineLineContainer } from '@/components/card-singleline-container';
 import { IconFont } from '@/components/icon-font';
 import { RenameDialog } from '@/components/rename-dialog';
 import { CardSkeleton } from '@/components/ui/skeleton';
@@ -30,7 +31,8 @@ export function Datasets() {
             <CardSkeleton />
           </div>
         ) : (
-          <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-7 max-h-[78vh] overflow-auto">
+          // <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-7 max-h-[78vh] overflow-auto">
+          <CardSineLineContainer>
             {kbs
               ?.slice(0, 6)
               .map((dataset) => (
@@ -43,7 +45,8 @@ export function Datasets() {
             <div className="min-h-24">
               <SeeAllCard></SeeAllCard>
             </div>
-          </div>
+          </CardSineLineContainer>
+          // </div>
         )}
       </div>
       {datasetRenameVisible && (

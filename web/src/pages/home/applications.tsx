@@ -1,3 +1,4 @@
+import { CardSineLineContainer } from '@/components/card-singleline-container';
 import { IconFont } from '@/components/icon-font';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
@@ -34,7 +35,7 @@ export function Applications() {
   );
 
   const handleChange = (path: SegmentedValue) => {
-    setVal(path as string);
+    setVal(path as Routes);
   };
 
   return (
@@ -51,16 +52,19 @@ export function Applications() {
           options={options}
           value={val}
           onChange={handleChange}
-          className="bg-bg-card border border-border-button rounded-full"
-          activeClassName="bg-text-primary border-none"
+          buttonSize="xl"
+          // className="bg-bg-card border border-border-button rounded-lg"
+          // activeClassName="bg-text-primary border-none rounded-lg"
         ></Segmented>
       </div>
-      <div className="flex flex-wrap gap-4">
+      {/* <div className="flex flex-wrap gap-4"> */}
+      <CardSineLineContainer>
         {val === Routes.Agents && <Agents></Agents>}
         {val === Routes.Chats && <ChatList></ChatList>}
         {val === Routes.Searches && <SearchList></SearchList>}
         {<SeeAllAppCard click={handleNavigate}></SeeAllAppCard>}
-      </div>
+      </CardSineLineContainer>
+      {/* </div> */}
     </section>
   );
 }

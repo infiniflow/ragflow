@@ -1,6 +1,18 @@
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
-import { Form, Input, Modal } from 'antd';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import * as z from 'zod';
 
 const AddingUserModal = ({
   visible,
@@ -8,42 +20,54 @@ const AddingUserModal = ({
   loading,
   onOk,
 }: IModalProps<string>) => {
-  const [form] = Form.useForm();
   const { t } = useTranslation();
 
-  type FieldType = {
-    email?: string;
-  };
+  const formSchema = z.object({
+    email: z
+      .string()
+      .email()
+      .min(1, { message: t('common.required') }),
+  });
 
-  const handleOk = async () => {
-    const ret = await form.validateFields();
+  type FormData = z.infer<typeof formSchema>;
 
-    return onOk?.(ret.email);
+  const form = useForm<FormData>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: '',
+    },
+  });
+
+  const handleOk = async (data: FormData) => {
+    return onOk?.(data.email);
   };
 
   return (
     <Modal
       title={t('setting.add')}
-      open={visible}
-      onOk={handleOk}
-      onCancel={hideModal}
-      okButtonProps={{ loading }}
+      open={visible || false}
+      onOpenChange={(open) => !open && hideModal?.()}
+      onOk={form.handleSubmit(handleOk)}
       confirmLoading={loading}
+      okText={t('common.ok')}
+      cancelText={t('common.cancel')}
     >
-      <Form
-        name="basic"
-        labelCol={{ span: 6 }}
-        wrapperCol={{ span: 18 }}
-        autoComplete="off"
-        form={form}
-      >
-        <Form.Item<FieldType>
-          label={t('setting.email')}
-          name="email"
-          rules={[{ required: true }]}
-        >
-          <Input />
-        </Form.Item>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(handleOk)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel required>{t('setting.email')}</FormLabel>
+                <FormControl>
+                  <Input placeholder={t('setting.email')} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </form>
       </Form>
     </Modal>
   );
