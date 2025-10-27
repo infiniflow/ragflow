@@ -72,12 +72,6 @@ def truncate(string: str, max_len: int) -> str:
     return encoder.decode(encoder.encode(string)[:max_len])
 
 
-def clean_markdown_block(text):
-    text = re.sub(r'^\s*```markdown\s*\n?', '', text)
-    text = re.sub(r'\n?\s*```\s*$', '', text)
-    return text.strip()
-
-
 def get_float(v):
     if v is None:
         return float('-inf')
