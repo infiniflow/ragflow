@@ -47,7 +47,7 @@ By default, a combination of weighted keyword similarity and weighted vector cos
 As a starter, you can skip this step to stay with the default retrieval method.
 
 :::caution WARNING
-Using a rerank model will *significantly* increase the system's response time. If you must use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with **docker-compose-gpu.yml**.
+Using a rerank model will *significantly* increase the system's response time.
 :::
 
 ### 5. Enable cross-language search
@@ -140,6 +140,5 @@ The global variable name for the output of the **Retrieval** component, which ca
 
 Go through the checklist below for best performance:
 
-- Leave the **Rerank model** field empty.
-- If you must use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with **docker-compose-gpu.yml**.
+- Leave the **Rerank model** field empty to disable rerank.
 - Disable **Use knowledge graph**.

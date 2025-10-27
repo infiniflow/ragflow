@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -183,7 +183,7 @@
 > 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
 > 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
 
-   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.21.0-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.21.0-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.0` 來下載 RAGFlow 鏡像的 `v0.21.0` 完整發行版。
+   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.21.1`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.21.1` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。
 
    ```bash
    $ cd ragflow/docker
@@ -191,15 +191,15 @@
    $ docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate embedding and DeepDoc tasks:
-   # docker compose -f docker-compose-gpu.yml up -d
+   # sed -i '1i DEVICE=gpu' .env
+   # docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.21.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.21.0-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
+   | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+   | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
    > [!TIP]
    > 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。
@@ -210,7 +210,7 @@
 4. 伺服器啟動成功後再次確認伺服器狀態：
 
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _出現以下介面提示說明伺服器啟動成功：_
@@ -286,17 +286,7 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --platform linux/amd64 --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-## 🔧 原始碼編譯 Docker 映像（包含 embedding 模型）
-
-本 Docker 大小約 9 GB 左右。由於已包含 embedding 模型，所以只需依賴外部的大模型服務即可。
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 以原始碼啟動服務
@@ -313,7 +303,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

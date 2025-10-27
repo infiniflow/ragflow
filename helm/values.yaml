@@ -37,7 +37,7 @@ env:
   REDIS_PASSWORD: infini_rag_flow_helm
 
   # The local time zone.
-  TIMEZONE: "Asia/Shanghai"
+  TZ: "Asia/Shanghai"
 
   # Uncomment the following line if you have limited access to huggingface.co:
   # HF_ENDPOINT: https://hf-mirror.com
@@ -56,7 +56,7 @@ env:
 ragflow:
   image:
     repository: infiniflow/ragflow
-    tag: v0.21.0-slim
+    tag: v0.21.1-slim
     pullPolicy: IfNotPresent
     pullSecrets: []
   # Optional service configuration overrides

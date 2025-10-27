@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -160,7 +160,7 @@
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-   > 以下のコマンドは、RAGFlow Docker イメージの v0.21.0-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.21.0-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.21.0 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.0 と設定します。
+   > 以下のコマンドは、RAGFlow Docker イメージの v0.21.1 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.21.1 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
 
    ```bash
    $ cd ragflow/docker
@@ -168,20 +168,20 @@
    $ docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate embedding and DeepDoc tasks:
-   # docker compose -f docker-compose-gpu.yml up -d
+   # sed -i '1i DEVICE=gpu' .env
+   # docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.21.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.21.0-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
+   | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+   | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
 1. サーバーを立ち上げた後、サーバーの状態を確認する:
 
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _以下の出力は、システムが正常に起動したことを確認するものです:_
@@ -251,16 +251,6 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-## 🔧 ソースコードをコンパイルした Docker イメージ（埋め込みモデルを含む）
-
-この Docker のサイズは約 9GB で、埋め込みモデルを含むため、外部の大モデルサービスのみが必要です。
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
@@ -277,7 +267,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

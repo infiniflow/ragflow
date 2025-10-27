@@ -30,19 +30,23 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 Each RAGFlow release is available in two editions:
 
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.0-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.0`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1`
+
+Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.21.0-slim` and `v0.21.0`:  
+RAGFlow offers two Docker image editions, `v0.21.1-slim` and `v0.21.1`:  
   
-- `infiniflow/ragflow:v0.21.0-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.21.0`: The RAGFlow Docker image with the following built-in embedding models:
+- `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with the following built-in embedding models:
   - `BAAI/bge-large-zh-v1.5`
   - `maidalun1020/bce-embedding-base_v1`
+
+Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 ---
 
@@ -220,7 +224,7 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
-You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f ragflow-server`.
+You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f docker-ragflow-cpu-1`.
 
 *The server is successfully initialized, if your system displays the following:*
 
@@ -256,7 +260,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 1. Check the log of your RAGFlow server to see if it is running properly:
 
    ```bash
-   docker logs -f ragflow-server
+   docker logs -f docker-ragflow-cpu-1
    ```
 
 2. Check if the **task_executor.py** process exists.
@@ -310,7 +314,7 @@ tail -f ragflow/docker/ragflow-logs/*.log
    *The following is an example result:*
 
    ```bash
-   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
+   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   docker-ragflow-cpu-1
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
@@ -509,4 +513,28 @@ See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
 See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
 
 ---
+
+### How to use MinerU to parse PDF documents?
+
+MinerU PDF document parsing is available starting from v0.21.1. To use this feature, follow these steps:
+
+1. Before deploying ragflow-server, update your **docker/.env** file:  
+   - Enable `HF_ENDPOINT=https://hf-mirror.com`
+   - Add a MinerU entry: `MINERU_EXECUTABLE=/ragflow/uv_tools/.venv/bin/mineru`
+
+2. Start the ragflow-server and run the following commands inside the container:  
+
+```bash
+mkdir uv_tools
+cd uv_tools
+uv venv .venv
+source .venv/bin/activate
+uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
+```
+
+3. Restart the ragflow-server.
+4. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown, which supports PDF parsing, and slect **MinerU** in **PDF parser**.
+5. If you use a custom ingestion pipeline instead, you must also complete the first three steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
+
+
 
