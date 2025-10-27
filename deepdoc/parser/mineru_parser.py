@@ -45,6 +45,9 @@ class MinerUContentType(StrEnum):
     TABLE = "table"
     TEXT = "text"
     EQUATION = "equation"
+    CODE = "code"
+    LIST = "list"
+    DISCARDED = "discarded"
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -80,8 +83,10 @@ class MinerUParser(RAGFlowPdfParser):
             logging.error(f"[MinerU] Unexpected error during installation check: {e}")
         return False
 
-    def _run_mineru(self, input_path: Path, output_dir: Path, method: str = "auto", lang: Optional[str] = None):
+    def _run_mineru(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None):
         cmd = [str(self.mineru_path), "-p", str(input_path), "-o", str(output_dir), "-m", method]
+        if backend:
+            cmd.extend(["-b", backend])
         if lang:
             cmd.extend(["-l", lang])
 
@@ -231,8 +236,10 @@ class MinerUParser(RAGFlowPdfParser):
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
         return poss
 
-    def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto") -> list[dict[str, Any]]:
+    def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
         subdir = output_dir / file_stem / method
+        if backend.startswith("vlm-"):
+            subdir = output_dir / file_stem / "vlm"
         json_file = subdir / f"{file_stem}_content_list.json"
 
         if not json_file.exists():
@@ -259,6 +266,12 @@ class MinerUParser(RAGFlowPdfParser):
                     section = "".join(output["image_caption"]) + "\n" + "".join(output["image_footnote"])
                 case MinerUContentType.EQUATION:
                     section = output["text"]
+                case MinerUContentType.CODE:
+                    section = output["code_body"] + "\n".join(output.get("code_caption", []))
+                case MinerUContentType.LIST:
+                    section = "\n".join(output.get("list_items", []))
+                case MinerUContentType.DISCARDED:
+                    pass
 
             if section:
                 sections.append((section, self._line_tag(output)))
@@ -274,6 +287,7 @@ class MinerUParser(RAGFlowPdfParser):
         callback: Optional[Callable] = None,
         *,
         output_dir: Optional[str] = None,
+        backend: str = "pipeline",
         lang: Optional[str] = None,
         method: str = "auto",
         delete_output: bool = True,
@@ -313,8 +327,8 @@ class MinerUParser(RAGFlowPdfParser):
         self.__images__(pdf, zoomin=1)
 
         try:
-            self._run_mineru(pdf, out_dir, method=method, lang=lang)
-            outputs = self._read_output(out_dir, pdf.stem, method=method)
+            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang)
+            outputs = self._read_output(out_dir, pdf.stem, method=method, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")

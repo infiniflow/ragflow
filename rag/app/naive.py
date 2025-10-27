@@ -439,7 +439,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Successive text will be sliced into pieces using 'delimiter'.
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
-    
+
 
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
@@ -463,7 +463,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             embeds = extract_embed_file(binary)
         else:
             raise Exception("Embedding extraction from file path is not supported.")
-        
+
         # Recursively chunk each embedded file and collect results
         for embed_filename, embed_bytes in embeds:
             try:
@@ -477,7 +477,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
-        
+
 
         # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
         _SerializedRelationships.load_from_xml = load_from_xml_v2
@@ -530,6 +530,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 binary=binary,
                 callback=callback,
                 output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+                backend=os.environ.get("MINERU_BACKEND", "pipeline"),
                 delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
             )
             parser_config["chunk_token_num"] = 0
@@ -551,7 +552,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
-
 
         elif layout_recognizer == "TCADP Parser":
             tcadp_parser = TCADPParser()
