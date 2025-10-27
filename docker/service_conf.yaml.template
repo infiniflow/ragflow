@@ -138,3 +138,9 @@ user_default_llm:
 #     - "RAGFlow" # display name
 #     - "" # sender email address
 #   mail_frontend_url: "https://your-frontend.example.com"
+# tcadp_config:
+#   secret_id: '${TENCENT_SECRET_ID}'
+#   secret_key: '${TENCENT_SECRET_KEY}'
+#   region: '${TENCENT_REGION}'
+#   table_result_type: '1'
+#   markdown_image_response_type: '1'

@@ -20,7 +20,8 @@ export function PdfFormFields({ prefix }: CommonProps) {
     return (
       !isEmpty(parseMethod) &&
       parseMethod !== ParseDocumentType.DeepDOC &&
-      parseMethod !== ParseDocumentType.PlainText
+      parseMethod !== ParseDocumentType.PlainText &&
+      parseMethod !== ParseDocumentType.TCADPParser
     );
   }, [parseMethod]);
 

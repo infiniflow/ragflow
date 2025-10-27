@@ -5450,7 +5450,7 @@ requires-dist = [
     { name = "strenum", specifier = "==0.4.15" },
     { name = "tabulate", specifier = "==0.9.0" },
     { name = "tavily-python", specifier = "==0.5.1" },
-    { name = "tencentcloud-sdk-python", specifier = "==3.0.1215" },
+    { name = "tencentcloud-sdk-python", specifier = "==3.0.1478" },
     { name = "tika", specifier = "==2.6.0" },
     { name = "tiktoken", specifier = "==0.7.0" },
     { name = "trio", specifier = ">=0.29.0" },
@@ -6508,14 +6508,14 @@ wheels = [
 
 [[package]]
 name = "tencentcloud-sdk-python"
-version = "3.0.1215"
+version = "3.0.1478"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "requests" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fd/4c/7a320c65d605e817bedd1205c77a612be7d4dde621182cc7c00e334207ce/tencentcloud-sdk-python-3.0.1215.tar.gz", hash = "sha256:24441e69d418301d50be0279cb148a747fc272b836e41d18e213750093f490c6", size = 9566281, upload-time = "2024-08-19T20:24:26.541Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3a/47/05163b257f6c0e60aed4272d48bdb816567ab3c805d3e8770430f0cc1be2/tencentcloud-sdk-python-3.0.1478.tar.gz", hash = "sha256:89996462d53a672946aa32d01673a4818ebcd8bc72b024f35ebe96cebe2df179", size = 12297889, upload_time = "2025-10-20T20:54:40.603Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/55/08/98090d1a139e8995053ed22e099b43aa4dea8cffe056f8f0bc5178aeecbd/tencentcloud_sdk_python-3.0.1215-py2.py3-none-any.whl", hash = "sha256:899ced749baf74846f1eabf452f74aa0e48d1965f0ca7828a8b73b446f76f5f2", size = 10265517, upload-time = "2024-08-19T20:24:19.52Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c5/db/daa85799b9af2aa50539b27eeb0d6a2a0ac35465f62683107847830dbe4d/tencentcloud_sdk_python-3.0.1478-py2.py3-none-any.whl", hash = "sha256:10ddee1c1348f49e2b54af606f978d4cb17fca656639e8d99b6527e6e4793833", size = 12984723, upload_time = "2025-10-20T20:54:27.767Z" },
 ]
 
 [[package]]
