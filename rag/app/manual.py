@@ -93,7 +93,7 @@ class Docx(DocxParser):
                 return image
             else:
                 return None
-        except Exception as e:
+        except:
             return None
 
     def concat_img(self, img1, img2):
