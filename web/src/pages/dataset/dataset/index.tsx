@@ -14,6 +14,7 @@ import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { Upload } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
 import Generate from './generate-button/generate';
@@ -43,6 +44,14 @@ export default function Dataset() {
     handleFilterSubmit,
     loading,
   } = useFetchDocumentList();
+
+  const refreshCount = useMemo(() => {
+    return documents.findIndex((doc) => doc.run === '1') + documents.length;
+  }, [documents]);
+
+  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration({
+    refreshCount,
+  });
   const { filters, onOpenChange } = useSelectDatasetFilters();
 
   const {

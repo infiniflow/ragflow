@@ -9,8 +9,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.0-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.0`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1`
 :::
 
 :::danger IMPORTANT
@@ -21,6 +21,23 @@ The embedding models included in a full edition are:
 
 These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
+
+## v0.21.1
+
+Released on October 23, 2025.
+
+### New features
+
+- Experimental: Adds support for PDF document parsing using MinerU. See [here](./faq.mdx#how-to-use-mineru-to-parse-pdf-documents).
+
+### Improvements
+
+- Enhances UI/UX for the dataset and personal center pages.
+- Upgrades RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity), to v0.6.1.
+
+### Fixed issues
+
+- An issue with video parsing.
 
 ## v0.21.0
 

@@ -35,7 +35,7 @@ docker compose -f docker/docker-compose.yml up -d
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
 :::danger IMPORTANT
-We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve them.
 :::
 
 ## Docker environment variables
@@ -99,8 +99,8 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.21.0-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.21.0`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `maidalun1020/bce-embedding-base_v1`
@@ -109,18 +109,23 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 :::tip NOTE  
 If you cannot download the RAGFlow Docker image, try the following mirrors.  
 
-- For the `nightly-slim` edition:  
-  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly-slim` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly-slim`.
 - For the `nightly` edition:  
   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 :::
 
+### Embedding service
+
+- `TEI_MODEL`  
+  The embedding model which text-embeddings-inference serves. Allowed values are one of `Qwen/Qwen3-Embedding-0.6B`(default), `BAAI/bge-m3`, and `BAAI/bge-small-en-v1.5`.
+
+- `TEI_PORT`  
+  The port used to expose the text-embeddings-inference service to the host machine, allowing **external** access to the text-embeddings-inference service running inside the Docker container. Defaults to `6380`.
+
 ### Timezone
 
-- `TIMEZONE`  
-  The local time zone. Defaults to `'Asia/Shanghai'`.
+- `TZ`  
+  The local time zone. Defaults to `Asia/Shanghai`.
 
 ### Hugging Face mirror site
 

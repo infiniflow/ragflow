@@ -3,7 +3,7 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
-      selectAll: 'Select All',
+      selectAll: 'Select all',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
       ok: 'Ok',
@@ -430,7 +430,7 @@ export default {
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'Enable RAPTOR for multi-hop question-answering tasks. See https://ragflow.io/docs/dev/enable_raptor for details.',
+        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/dev/enable_raptor for details.',
       prompt: 'Prompt',
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
@@ -1633,6 +1633,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',
+        video: 'Video',
       },
       fields: 'Field',
       addParser: 'Add Parser',
@@ -1746,6 +1747,9 @@ Important structured information may include: names, dates, locations, events, k
       mcpServers: 'MCP Servers',
       customizeTheListOfMcpServers: 'Customize the list of MCP servers',
       cachedTools: 'cached tools',
+      bulkManage: 'Bulk manage',
+      exitBulkManage: 'Exit bulk manage',
+      selected: 'Selected',
     },
     search: {
       searchApps: 'Search Apps',

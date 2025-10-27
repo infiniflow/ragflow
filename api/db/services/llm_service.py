@@ -59,21 +59,6 @@ def get_init_tenant_llm(user_id):
                 }
             )
 
-    if settings.LIGHTEN != 1:
-        for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
-            mdlnm, fid = TenantLLMService.split_model_name_and_factory(buildin_embedding_model)
-            tenant_llm.append(
-                {
-                    "tenant_id": user_id,
-                    "llm_factory": fid,
-                    "llm_name": mdlnm,
-                    "model_type": "embedding",
-                    "api_key": "",
-                    "api_base": "",
-                    "max_tokens": 1024 if buildin_embedding_model == "BAAI/bge-large-zh-v1.5@BAAI" else 512,
-                }
-            )
-
     unique = {}
     for item in tenant_llm:
         key = (item["tenant_id"], item["llm_factory"], item["llm_name"])

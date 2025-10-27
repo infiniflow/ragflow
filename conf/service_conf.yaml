@@ -32,6 +32,11 @@ redis:
   db: 1
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+user_default_llm:
+  default_models:
+    embedding_model:
+      api_key: 'xxx'
+      base_url: 'http://localhost:6380'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
@@ -77,7 +82,8 @@ redis:
 #       api_key: 'xxxx'
 #       base_url: 'https://api.xx.com'
 #     embedding_model:
-#       name: 'bge-m3'
+#       api_key: 'xxx'
+#       base_url: 'http://localhost:6380'
 #     rerank_model: 'bge-reranker-v2'
 #     asr_model:
 #       model: 'whisper-large-v3' # alias of name

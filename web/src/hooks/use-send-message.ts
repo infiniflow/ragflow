@@ -126,29 +126,36 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
           .getReader();
 
         while (true) {
-          const x = await reader?.read();
-          if (x) {
-            const { done, value } = x;
-            if (done) {
-              console.info('done');
-              resetAnswerList();
-              break;
-            }
-            try {
-              const val = JSON.parse(value?.data || '');
-
-              console.info('data:', val);
-              if (val.code === 500) {
-                message.error(val.message);
+          try {
+            const x = await reader?.read();
+            if (x) {
+              const { done, value } = x;
+              if (done) {
+                console.info('done');
+                resetAnswerList();
+                break;
               }
+              try {
+                const val = JSON.parse(value?.data || '');
 
-              setAnswerList((list) => {
-                const nextList = [...list];
-                nextList.push(val);
-                return nextList;
-              });
-            } catch (e) {
-              console.warn(e);
+                console.info('data:', val);
+                if (val.code === 500) {
+                  message.error(val.message);
+                }
+
+                setAnswerList((list) => {
+                  const nextList = [...list];
+                  nextList.push(val);
+                  return nextList;
+                });
+              } catch (e) {
+                console.warn(e);
+              }
+            }
+          } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') {
+              console.log('Request was aborted by user or logic.');
+              break;
             }
           }
         }
