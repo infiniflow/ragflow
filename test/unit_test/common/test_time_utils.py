@@ -412,8 +412,6 @@ class TestDatetimeFormat:
         original_dt = datetime.datetime(2024, 1, 1, 12, 30, 45, 123456)
         original_microsecond = original_dt.microsecond
 
-        result = datetime_format(original_dt)
-
         # Original should remain unchanged
         assert original_dt.microsecond == original_microsecond
         assert original_dt.microsecond == 123456
