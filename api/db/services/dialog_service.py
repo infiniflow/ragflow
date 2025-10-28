@@ -41,8 +41,9 @@ from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
     gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
-from rag.utils import num_tokens_from_string, rmSpace
+from rag.utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
+from common.string_utils import remove_redundant_spaces
 
 
 class DialogService(CommonService):
@@ -706,7 +707,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
     line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
 
-    rows = ["|" + "|".join([rmSpace(str(r[i])) for i in column_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
+    rows = ["|" + "|".join([remove_redundant_spaces(str(r[i])) for i in column_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
     rows = [r for r in rows if re.sub(r"[ |]+", "", r)]
     if quota:
         rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
