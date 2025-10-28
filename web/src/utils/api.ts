@@ -210,4 +210,47 @@ export default {
   removeDataflow: `${api_host}/dataflow/rm`,
   listDataflow: `${api_host}/dataflow/list`,
   runDataflow: `${api_host}/dataflow/run`,
+
+  // admin
+  adminLogin: `${ExternalApi}${api_host}/admin/login`,
+  adminLogout: `${ExternalApi}${api_host}/admin/logout`,
+  adminListUsers: `${ExternalApi}${api_host}/admin/users`,
+  adminCreateUser: `${ExternalApi}${api_host}/admin/users`,
+  adminGetUserDetails: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}`,
+  adminUpdateUserStatus: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/activate`,
+  adminUpdateUserPassword: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/password`,
+  adminDeleteUser: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}`,
+  adminListUserDatasets: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/datasets`,
+  adminListUserAgents: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/agents`,
+
+  adminListServices: `${ExternalApi}${api_host}/admin/services`,
+  adminShowServiceDetails: (serviceId: string) =>
+    `${ExternalApi}${api_host}/admin/services/${serviceId}`,
+
+  adminListRoles: `${ExternalApi}${api_host}/admin/roles`,
+  adminListRolesWithPermission: `${ExternalApi}${api_host}/admin/roles_with_permission`,
+  adminGetRolePermissions: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permissions`,
+  adminAssignRolePermissions: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permissions`,
+  adminRevokeRolePermissions: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permissions/batch`,
+  adminCreateRole: `${ExternalApi}${api_host}/admin/roles`,
+  adminDeleteRole: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}`,
+  adminUpdateRoleDescription: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}`,
+
+  adminUpdateUserRole: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/role`,
+  adminGetUserPermissions: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/permissions`,
+
+  adminListResources: `${ExternalApi}${api_host}/admin/roles/resources`,
 };
