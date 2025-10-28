@@ -10,7 +10,7 @@ on:
       - '*.md'
       - '*.mdx'
   pull_request:
-    types: [ opened, synchronize, reopened, labeled ]
+    types: [ labeled, synchronize, reopened ]
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -94,8 +94,10 @@ jobs:
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
+          RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}
+          echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> $GITHUB_ENV
           sudo docker pull ubuntu:22.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t ${RAGFLOW_IMAGE} .
           if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             export HTTP_API_TEST_LEVEL=p3
           else
@@ -151,7 +153,7 @@ jobs:
 
           echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
           echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
-          echo -e "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> $GITHUB_ENV
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
@@ -225,3 +227,4 @@ jobs:
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v
+          sudo docker rmi -f ${RAGFLOW_IMAGE}
