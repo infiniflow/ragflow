@@ -130,6 +130,7 @@ jobs:
           SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
 
           # Persist computed ports into docker/.env so docker-compose uses the correct host bindings
+          echo "" >> docker/.env
           echo -e "ES_PORT=${ES_PORT}" >> docker/.env
           echo -e "OS_PORT=${OS_PORT}" >> docker/.env
           echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
