@@ -33,7 +33,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import queue_tasks, TaskService
 from api.db.services.user_service import UserTenantService
 from api import settings
-from api.utils import get_uuid, current_timestamp, datetime_format
+from api.utils import get_uuid
 from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request, \
     generate_confirmation_token
 
@@ -41,6 +41,7 @@ from api.utils.file_utils import filename_type, thumbnail
 from rag.app.tag import label_question
 from rag.prompts.generator import keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
+from common.time_utils import current_timestamp, datetime_format
 
 from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas

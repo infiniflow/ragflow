@@ -20,7 +20,7 @@ from peewee import fn, JOIN
 from api.db import StatusEnum, TenantPermission
 from api.db.db_models import DB, Document, Knowledgebase, User, UserTenant, UserCanvas
 from api.db.services.common_service import CommonService
-from api.utils import current_timestamp, datetime_format
+from common.time_utils import current_timestamp, datetime_format
 
 
 class KnowledgebaseService(CommonService):
