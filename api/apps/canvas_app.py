@@ -179,6 +179,7 @@ def run():
     resp.headers.add_header("Connection", "keep-alive")
     resp.headers.add_header("X-Accel-Buffering", "no")
     resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    resp.call_on_close(lambda: canvas.cancel_task())
     return resp
 
 
