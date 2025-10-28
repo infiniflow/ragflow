@@ -66,12 +66,10 @@ export function ToolPopover({ children }: PropsWithChildren) {
       <PopoverContent className="w-80 p-4">
         <Tabs defaultValue={ToolType.Common}>
           <TabsList>
-            <TabsTrigger value={ToolType.Common} className="bg-bg-card">
+            <TabsTrigger value={ToolType.Common}>
               {t('flow.builtIn')}
             </TabsTrigger>
-            <TabsTrigger value={ToolType.MCP} className="bg-bg-card">
-              MCP
-            </TabsTrigger>
+            <TabsTrigger value={ToolType.MCP}>MCP</TabsTrigger>
           </TabsList>
           <TabsContent value={ToolType.Common}>
             <ToolCommand
