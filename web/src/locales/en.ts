@@ -191,7 +191,7 @@ export default {
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
-      testingLabel: 'Testing',
+      testingLabel: 'Run',
       similarity: 'Hybrid similarity',
       termSimilarity: 'Term similarity',
       vectorSimilarity: 'Vector similarity',

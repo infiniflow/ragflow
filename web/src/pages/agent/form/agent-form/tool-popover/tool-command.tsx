@@ -1,5 +1,4 @@
-import { CheckIcon } from 'lucide-react';
-
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Command,
   CommandEmpty,
@@ -9,7 +8,6 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
-import { cn } from '@/lib/utils';
 import { Operator } from '@/pages/agent/constant';
 import OperatorIcon from '@/pages/agent/operator-icon';
 import { t } from 'i18next';
@@ -68,16 +66,7 @@ function ToolCommandItem({
 }: ToolCommandItemProps & PropsWithChildren) {
   return (
     <CommandItem className="cursor-pointer" onSelect={() => toggleOption(id)}>
-      <div
-        className={cn(
-          'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-          isSelected
-            ? 'bg-primary text-primary-foreground'
-            : 'opacity-50 [&_svg]:invisible',
-        )}
-      >
-        <CheckIcon className="h-4 w-4" />
-      </div>
+      <Checkbox checked={isSelected} />
       {children}
     </CommandItem>
   );

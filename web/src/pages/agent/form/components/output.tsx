@@ -19,7 +19,7 @@ export function transferOutputs(outputs: Record<string, any>) {
 export function Output({ list }: OutputProps) {
   return (
     <section className="space-y-2">
-      <div>{t('flow.output')}</div>
+      <div className="text-sm">{t('flow.output')}</div>
       <ul>
         {list.map((x, idx) => (
           <li
