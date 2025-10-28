@@ -1363,6 +1363,8 @@ class TokenPonyChat(Base):
     def __init__(self, key, model_name, base_url="https://ragflow.vip-api.tokenpony.cn/v1", **kwargs):
         if not base_url:
             base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
 
 class DeerAPIChat(Base):
     _FACTORY_NAME = "DeerAPI"

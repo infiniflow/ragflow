@@ -40,7 +40,7 @@ export default function ChatList() {
       <div className="px-8 pt-8">
         <ListFilterBar
           title={t('chat.chatApps')}
-          icon="chat"
+          icon="chats"
           onSearchChange={handleInputChange}
           searchString={searchString}
         >
