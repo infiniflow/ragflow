@@ -108,29 +108,6 @@ def get_format_time() -> datetime.datetime:
     return datetime_format(datetime.datetime.now())
 
 
-def str2date(date_time: str):
-    return datetime.datetime.strptime(date_time, '%Y-%m-%d')
-
-
-def elapsed2time(elapsed):
-    """
-    Convert elapsed milliseconds to HH:MM:SS format.
-
-    Args:
-        elapsed: Elapsed time in milliseconds
-
-    Returns:
-        str: Time string in 'HH:MM:SS' format
-
-    Example:
-        >>> elapsed2time(3661000)
-        '01:01:01'
-    """
-    seconds = elapsed / 1000
-    minuter, second = divmod(seconds, 60)
-    hour, minuter = divmod(minuter, 60)
-    return '%02d:%02d:%02d' % (hour, minuter, second)
-
 def delta_seconds(date_string: str):
     """
     Calculate seconds elapsed from a given date string to now.
