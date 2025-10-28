@@ -116,7 +116,6 @@ def create():
 @validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 def update():
-    logging.info("////////////////////////////////////////////////")
     req = request.json
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Dataset name must be string.")
