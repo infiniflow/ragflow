@@ -26,6 +26,8 @@ export const formSchema = z
         auto_keywords: z.number().optional(),
         auto_questions: z.number().optional(),
         html4excel: z.boolean(),
+        include_formulas: z.boolean().optional(),
+        use_table_mode: z.boolean().optional(),
         tag_kb_ids: z.array(z.string()).nullish(),
         topn_tags: z.number().optional(),
         toc_extraction: z.boolean().optional(),

@@ -4,6 +4,8 @@ import {
 } from '@/components/auto-keywords-form-field';
 import { DelimiterFormField } from '@/components/delimiter-form-field';
 import { ExcelToHtmlFormField } from '@/components/excel-to-html-form-field';
+import { IncludeFormulasFormField } from '@/components/include-formulas-form-field';
+import { UseTableModeFormField } from '@/components/use-table-mode-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '@/components/max-token-number-from-field';
 import {
@@ -25,6 +27,8 @@ export function NaiveConfiguration() {
         <AutoKeywordsFormField></AutoKeywordsFormField>
         <AutoQuestionsFormField></AutoQuestionsFormField>
         <ExcelToHtmlFormField></ExcelToHtmlFormField>
+        <IncludeFormulasFormField></IncludeFormulasFormField>
+        <UseTableModeFormField></UseTableModeFormField>
         {/* <TagItems></TagItems> */}
       </ConfigurationFormContainer>
     </MainContainer>

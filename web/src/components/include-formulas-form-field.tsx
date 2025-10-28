@@ -9,40 +9,34 @@ import {
 } from './ui/form';
 import { Switch } from './ui/switch';
 
-export function ExcelToHtmlFormField() {
+export function IncludeFormulasFormField() {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
 
   return (
     <FormField
       control={form.control}
-      name="parser_config.html4excel"
+      name="parser_config.include_formulas"
       render={({ field }) => {
         if (typeof field.value === 'undefined') {
           // default value set
-          form.setValue('parser_config.html4excel', false);
+          form.setValue('parser_config.include_formulas', false);
         }
 
         return (
           <FormItem defaultChecked={false} className=" items-center space-y-0 ">
             <div className="flex items-center gap-1">
               <FormLabel
-                tooltip={t('html4excelTip')}
+                tooltip={t('includeFormulasTip')}
                 className="text-sm text-text-secondary whitespace-break-spaces w-1/4"
               >
-                {t('html4excel')}
+                {t('includeFormulas')}
               </FormLabel>
               <div className="w-3/4">
                 <FormControl>
                   <Switch
                     checked={field.value}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked);
-                      // Disable use_table_mode when html4excel is enabled
-                      if (checked) {
-                        form.setValue('parser_config.use_table_mode', false);
-                      }
-                    }}
+                    onCheckedChange={field.onChange}
                   ></Switch>
                 </FormControl>
               </div>

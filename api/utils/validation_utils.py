@@ -347,6 +347,7 @@ class ParserConfig(Base):
     graphrag: Annotated[GraphragConfig, Field(default_factory=lambda: GraphragConfig(use_graphrag=False))]
     html4excel: Annotated[bool, Field(default=False)]
     include_formulas: Annotated[bool, Field(default=False)]
+    use_table_mode: Annotated[bool, Field(default=False)]
     layout_recognize: Annotated[str, Field(default="DeepDOC")]
     raptor: Annotated[RaptorConfig, Field(default_factory=lambda: RaptorConfig(use_raptor=False))]
     tag_kb_ids: Annotated[list[str], Field(default_factory=list)]
