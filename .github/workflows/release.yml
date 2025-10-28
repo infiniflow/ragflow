@@ -75,14 +75,6 @@ jobs:
           # The body field does not support environment variable substitution directly.
           body_path: release_body.md
 
-      - name: Build and push image
-        run: |
-          echo ${{ secrets.DOCKERHUB_TOKEN }} | sudo docker login --username infiniflow --password-stdin
-          sudo docker build --build-arg NEED_MIRROR=1 -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
-          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
-          sudo docker push infiniflow/ragflow:latest
-
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -94,3 +86,11 @@ jobs:
         run: |
           cd admin/client && uv build
           twine upload admin/client/dist/* -u __token__ -p ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Build and push image
+        run: |
+          echo ${{ secrets.DOCKERHUB_TOKEN }} | sudo docker login --username infiniflow --password-stdin
+          sudo docker build --build-arg NEED_MIRROR=1 -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
+          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
+          sudo docker push infiniflow/ragflow:latest
