@@ -35,7 +35,7 @@ from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
 from rag.settings import PAGERANK_FLD
-from rag.utils import rmSpace
+from common.string_utils import remove_redundant_spaces
 
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
@@ -65,7 +65,7 @@ def list_chunk():
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_with_weight": rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[
+                "content_with_weight": remove_redundant_spaces(sres.highlight[id]) if question and id in sres.highlight else sres.field[
                     id].get(
                     "content_with_weight", ""),
                 "doc_id": sres.field[id]["doc_id"],

@@ -41,8 +41,8 @@ from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
-from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
+from common.string_utils import remove_redundant_spaces
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
@@ -1000,7 +1000,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         for id in sres.ids:
             d = {
                 "id": id,
-                "content": (rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[id].get("content_with_weight", "")),
+                "content": (remove_redundant_spaces(sres.highlight[id]) if question and id in sres.highlight else sres.field[id].get("content_with_weight", "")),
                 "document_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_keywords": sres.field[id].get("important_kwd", []),
