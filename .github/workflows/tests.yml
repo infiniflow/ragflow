@@ -10,7 +10,7 @@ on:
       - '*.md'
       - '*.mdx'
   pull_request:
-    types: [ opened, synchronize, reopened, labeled ]
+    types: [ labeled, synchronize, reopened ]
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -29,7 +29,7 @@ jobs:
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
-    runs-on: [ "self-hosted", "debug" ]
+    runs-on: [ "self-hosted", "ragflow-test" ]
     steps:
       # https://github.com/hmarr/debug-action
       #- uses: hmarr/debug-action@v2
@@ -94,8 +94,10 @@ jobs:
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
+          RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}
+          echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> $GITHUB_ENV
           sudo docker pull ubuntu:22.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t ${RAGFLOW_IMAGE} .
           if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             export HTTP_API_TEST_LEVEL=p3
           else
@@ -106,16 +108,60 @@ jobs:
 
       - name: Start ragflow:nightly
         run: |
-          echo -e "\nCOMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
-          echo -e "\nTEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
-          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          # Determine runner number (default to 1 if not found)
+          RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
+          RUNNER_NUM=${RUNNER_NUM:-1}
+
+          # Compute port numbers using bash arithmetic
+          ES_PORT=$((1200 + RUNNER_NUM * 10))
+          OS_PORT=$((1201 + RUNNER_NUM * 10))
+          INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
+          INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
+          INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
+          MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
+          MINIO_PORT=$((9000 + RUNNER_NUM * 10))
+          MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
+          REDIS_PORT=$((6379 + RUNNER_NUM * 10))
+          TEI_PORT=$((6380 + RUNNER_NUM * 10))
+          KIBANA_PORT=$((6601 + RUNNER_NUM * 10))
+          SVR_HTTP_PORT=$((9380 + RUNNER_NUM * 10))
+          ADMIN_SVR_HTTP_PORT=$((9381 + RUNNER_NUM * 10))
+          SVR_MCP_PORT=$((9382 + RUNNER_NUM * 10))
+          SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + RUNNER_NUM * 10))
+          SVR_WEB_HTTP_PORT=$((80 + RUNNER_NUM * 10))
+          SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
+
+          # Persist computed ports into docker/.env so docker-compose uses the correct host bindings
+          echo "" >> docker/.env
+          echo -e "ES_PORT=${ES_PORT}" >> docker/.env
+          echo -e "OS_PORT=${OS_PORT}" >> docker/.env
+          echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
+          echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> docker/.env
+          echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> docker/.env
+          echo -e "MYSQL_PORT=${MYSQL_PORT}" >> docker/.env
+          echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
+          echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
+          echo -e "REDIS_PORT=${REDIS_PORT}" >> docker/.env
+          echo -e "TEI_PORT=${TEI_PORT}" >> docker/.env
+          echo -e "KIBANA_PORT=${KIBANA_PORT}" >> docker/.env
+          echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> docker/.env
+          echo -e "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> docker/.env
+          echo -e "SVR_MCP_PORT=${SVR_MCP_PORT}" >> docker/.env
+          echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> docker/.env
+          echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> docker/.env
+          echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> docker/.env
+
+          echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
+          echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
+          echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
+          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> $GITHUB_ENV
+
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
           uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python
 
       - name: Run sdk tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -125,7 +171,6 @@ jobs:
       - name: Run frontend api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -135,7 +180,6 @@ jobs:
       - name: Run http api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -155,7 +199,6 @@ jobs:
       - name: Run sdk tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -165,7 +208,6 @@ jobs:
       - name: Run frontend api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -175,7 +217,6 @@ jobs:
       - name: Run http api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -186,3 +227,4 @@ jobs:
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v
+          sudo docker rmi -f ${RAGFLOW_IMAGE}
