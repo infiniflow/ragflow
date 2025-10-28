@@ -123,7 +123,12 @@ class RAGFlowExcelParser:
 
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
-            rows = list(ws.rows)
+            try:
+                rows = list(ws.rows)
+            except Exception as e:
+                logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                continue
+
             if not rows:
                 continue
 
@@ -170,7 +175,11 @@ class RAGFlowExcelParser:
         res = []
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
-            rows = list(ws.rows)
+            try:
+                rows = list(ws.rows)
+            except Exception as e:
+                logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                continue
             if not rows:
                 continue
             ti = list(rows[0])
@@ -193,9 +202,14 @@ class RAGFlowExcelParser:
         if fnm.split(".")[-1].lower().find("xls") >= 0:
             wb = RAGFlowExcelParser._load_excel_to_workbook(BytesIO(binary))
             total = 0
+            
             for sheetname in wb.sheetnames:
-                ws = wb[sheetname]
-                total += len(list(ws.rows))
+               try:
+                   ws = wb[sheetname]
+                   total += len(list(ws.rows))
+               except Exception as e:
+                   logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                   continue
             return total
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:
