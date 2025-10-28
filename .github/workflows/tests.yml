@@ -152,7 +152,7 @@ jobs:
           echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
           echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
           echo -e "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
-          echo "SVR_URL=http://host.docker.internal:${SVR_HTTP_PORT}" >> $GITHUB_ENV
+          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> $GITHUB_ENV
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
           uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python
@@ -160,7 +160,7 @@ jobs:
       - name: Run sdk tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${SVR_URL} > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -169,7 +169,7 @@ jobs:
       - name: Run frontend api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${SVR_URL} > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -178,7 +178,7 @@ jobs:
       - name: Run http api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${SVR_URL} > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -197,7 +197,7 @@ jobs:
       - name: Run sdk tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${SVR_URL} > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -206,7 +206,7 @@ jobs:
       - name: Run frontend api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${SVR_URL} > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -215,7 +215,7 @@ jobs:
       - name: Run http api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${SVR_URL} > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
