@@ -278,8 +278,8 @@ export default {
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
-        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results 
-        will remove all derived entities and relationships from this dataset. 
+        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results
+        will remove all derived entities and relationships from this dataset.
         Your original files will remain intact.<p>
         <br/>
         Do you want to continue?
@@ -1813,15 +1813,15 @@ Important structured information may include: names, dates, locations, events, k
       </ul>`,
       changeStepModalTitle: 'Step Switch Warning',
       changeStepModalContent: `
-      <p>You are currently editing the results of this stage.</p> 
-      <p>If you switch to a later stage, your changes will be lost. </p> 
+      <p>You are currently editing the results of this stage.</p>
+      <p>If you switch to a later stage, your changes will be lost. </p>
       <p>To keep them, please click Rerun to re-run the current stage.</p> `,
       changeStepModalConfirmText: 'Switch Anyway',
       changeStepModalCancelText: 'Cancel',
       unlinkPipelineModalTitle: 'Unlink Ingestion pipeline',
       unlinkPipelineModalContent: `
-      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p> 
-      <p>Files that are already being parsed  will continue until completion</p> 
+      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p>
+      <p>Files that are already being parsed  will continue until completion</p>
       <p>Files that are not yet parsed will no longer be processed</p> <br/>
       <p>Are you sure you want to proceed?</p> `,
       unlinkPipelineModalConfirmText: 'Unlink',
@@ -1836,6 +1836,126 @@ Important structured information may include: names, dates, locations, events, k
       processingSuccessTip: 'Total successfully processed files',
       processingFailedTip: 'Total failed processes',
       processing: 'Processing',
+    },
+    admin: {
+      loginTitle: 'RAGFlow ADMIN',
+      title: 'RAGFlow admin',
+      confirm: 'Confirm',
+      close: 'Close',
+      yes: 'Yes',
+      no: 'No',
+      delete: 'Delete',
+      cancel: 'Cancel',
+      reset: 'Reset',
+      import: 'Import',
+      description: 'Description',
+      noDescription: 'No description',
+
+      resourceType: {
+        dataset: 'Dataset',
+        chat: 'Chat',
+        agent: 'Agent',
+        search: 'Search',
+        file: 'File',
+        team: 'Team',
+        memory: 'Memory',
+      },
+
+      permissionType: {
+        enable: 'Enable',
+        read: 'Read',
+        write: 'Write',
+        share: 'Share',
+      },
+
+      serviceStatus: 'Service status',
+      userManagement: 'User management',
+      registrationWhitelist: 'Registration whitelist',
+      roles: 'Roles',
+      monitoring: 'Monitoring',
+
+      active: 'Active',
+      inactive: 'Inactive',
+      enable: 'Enable',
+      disable: 'Disable',
+      all: 'All',
+      actions: 'Actions',
+      newUser: 'New User',
+      email: 'Email',
+      name: 'Name',
+      nickname: 'Nickname',
+      status: 'Status',
+      id: 'ID',
+      serviceType: 'Service type',
+      host: 'Host',
+      port: 'Port',
+
+      role: 'Role',
+      user: 'User',
+      superuser: 'Superuser',
+
+      createTime: 'Create time',
+      lastLoginTime: 'Last login time',
+      lastUpdateTime: 'Last update time',
+
+      isAnonymous: 'Is Anonymous',
+
+      deleteUser: 'Delete user',
+      deleteUserConfirmation: 'Are you sure you want to delete this user?',
+
+      createNewUser: 'Create new user',
+      changePassword: 'Change password',
+      newPassword: 'New password',
+      confirmNewPassword: 'Confirm new password',
+      password: 'Password',
+      confirmPassword: 'Confirm password',
+
+      invalidEmail: 'Please input a valid email address!',
+      passwordRequired: 'Please input your password!',
+      passwordMinLength: 'Password must be more than 8 characters.',
+      confirmPasswordRequired: 'Please confirm your password!',
+      confirmPasswordDoNotMatch: 'The password that you entered do not match!',
+
+      read: 'Read',
+      write: 'Write',
+      share: 'Share',
+      create: 'Create',
+
+      extraInfo: 'Extra information',
+      serviceDetail: `Service {{name}} detail`,
+
+      whitelistManagement: 'Whitelist management',
+      exportAsExcel: 'Export Excel',
+      importFromExcel: 'Import Excel',
+      createEmail: 'Create email',
+      deleteEmail: 'Delete email',
+      editEmail: 'Edit email',
+      deleteWhitelistEmailConfirmation:
+        'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
+
+      importWhitelist: 'Import whitelist (excel)',
+      importSelectExcelFile: 'Excel file (.xlsx)',
+      importOverwriteExistingEmails: 'Overwrite existing emails',
+      importInvalidExcelFile: 'Please select a valid Excel file',
+      importFileRequired: 'Please select a file to import',
+      importFileTips:
+        'File must contain a single header column named <code>email</code>.',
+
+      chunkNum: 'Chunks',
+      docNum: 'Documents',
+      tokenNum: 'Tokens used',
+      language: 'Language',
+      createDate: 'Create date',
+      updateDate: 'Update date',
+      permission: 'Permission',
+
+      agentTitle: 'Agent title',
+      canvasCategory: 'Canvas category',
+
+      newRole: 'New Role',
+      addNewRole: 'Add new role',
+      roleName: 'Role name',
+      resources: 'Resources',
     },
   },
 };
