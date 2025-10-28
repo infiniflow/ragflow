@@ -5,6 +5,7 @@ import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
+import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
 import {
@@ -392,86 +393,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               )}
             />
             <MetadataFilter prefix="search_config."></MetadataFilter>
-            <FormField
-              control={formMethods.control}
-              name="search_config.similarity_threshold"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel
-                    tooltip={t('knowledgeDetails.similarityThresholdTip')}
-                  >
-                    {t('knowledgeDetails.similarityThreshold')}
-                  </FormLabel>
-                  <div
-                    className={cn(
-                      'flex items-center gap-4 justify-between',
-                      className,
-                    )}
-                  >
-                    <FormControl>
-                      <SingleFormSlider
-                        {...field}
-                        max={1}
-                        min={0}
-                        step={0.01}
-                      ></SingleFormSlider>
-                    </FormControl>
-                    <FormControl>
-                      <Input
-                        type={'number'}
-                        className="h-7 w-20 bg-bg-card"
-                        max={1}
-                        min={0}
-                        step={0.01}
-                        {...field}
-                      ></Input>
-                    </FormControl>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {/* Keyword Similarity Weight */}
-            <FormField
-              control={formMethods.control}
-              name="search_config.vector_similarity_weight"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel
-                    tooltip={t('knowledgeDetails.vectorSimilarityWeightTip')}
-                  >
-                    <span className="text-destructive mr-1"> *</span>
-                    {t('knowledgeDetails.vectorSimilarityWeight')}
-                  </FormLabel>
-                  <div
-                    className={cn(
-                      'flex items-center gap-4 justify-between',
-                      className,
-                    )}
-                  >
-                    <FormControl>
-                      <SingleFormSlider
-                        {...field}
-                        max={1}
-                        min={0}
-                        step={0.01}
-                      ></SingleFormSlider>
-                    </FormControl>
-                    <FormControl>
-                      <Input
-                        type={'number'}
-                        className="h-7 w-20 bg-bg-card"
-                        max={1}
-                        min={0}
-                        step={0.01}
-                        {...field}
-                      ></Input>
-                    </FormControl>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <SimilaritySliderFormField
+              isTooltipShown
+              similarityName="search_config.similarity_threshold"
+              vectorSimilarityWeightName="search_config.vector_similarity_weight"
+            ></SimilaritySliderFormField>
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}

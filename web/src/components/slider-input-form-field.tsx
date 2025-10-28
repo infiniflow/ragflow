@@ -79,7 +79,10 @@ export function SliderInputFormField({
             </FormControl>
             <FormControl>
               <NumberInput
-                className="h-7 w-20"
+                className={cn(
+                  'h-6 w-10 p-0 text-center bg-bg-input border border-border-default text-text-secondary',
+                  '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+                )}
                 max={max}
                 min={min}
                 step={step}

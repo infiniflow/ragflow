@@ -24,14 +24,13 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { trim } from 'lodash';
-import { CirclePlay } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -97,7 +96,7 @@ export default function TestingForm({
           name="question"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('knowledgeDetails.testText')}</FormLabel>
+              {/* <FormLabel>{t('knowledgeDetails.testText')}</FormLabel> */}
               <FormControl>
                 <Textarea {...field}></Textarea>
               </FormControl>
@@ -112,8 +111,9 @@ export default function TestingForm({
             disabled={!!!trim(question)}
             loading={loading}
           >
-            {!loading && <CirclePlay />}
+            {/* {!loading && <CirclePlay />} */}
             {t('knowledgeDetails.testingLabel')}
+            <Send />
           </ButtonLoading>
         </div>
       </form>

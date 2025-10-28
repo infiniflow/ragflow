@@ -177,7 +177,7 @@ export default {
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
-      testingLabel: '测试',
+      testingLabel: '运行',
       similarity: '混合相似度',
       termSimilarity: '关键词相似度',
       vectorSimilarity: '向量相似度',
