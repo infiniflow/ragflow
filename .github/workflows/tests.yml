@@ -130,27 +130,27 @@ jobs:
           SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
 
           # Persist computed ports into docker/.env so docker-compose uses the correct host bindings
-          echo -e "\nES_PORT=${ES_PORT}" >> docker/.env
-          echo -e "\nOS_PORT=${OS_PORT}" >> docker/.env
-          echo -e "\nINFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
-          echo -e "\nINFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> docker/.env
-          echo -e "\nINFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> docker/.env
-          echo -e "\nMYSQL_PORT=${MYSQL_PORT}" >> docker/.env
-          echo -e "\nMINIO_PORT=${MINIO_PORT}" >> docker/.env
-          echo -e "\nMINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
-          echo -e "\nREDIS_PORT=${REDIS_PORT}" >> docker/.env
-          echo -e "\nTEI_PORT=${TEI_PORT}" >> docker/.env
-          echo -e "\nKIBANA_PORT=${KIBANA_PORT}" >> docker/.env
-          echo -e "\nSVR_HTTP_PORT=${SVR_HTTP_PORT}" >> docker/.env
-          echo -e "\nADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> docker/.env
-          echo -e "\nSVR_MCP_PORT=${SVR_MCP_PORT}" >> docker/.env
-          echo -e "\nSANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> docker/.env
-          echo -e "\nSVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> docker/.env
-          echo -e "\nSVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> docker/.env
+          echo -e "ES_PORT=${ES_PORT}" >> docker/.env
+          echo -e "OS_PORT=${OS_PORT}" >> docker/.env
+          echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> docker/.env
+          echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> docker/.env
+          echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> docker/.env
+          echo -e "MYSQL_PORT=${MYSQL_PORT}" >> docker/.env
+          echo -e "MINIO_PORT=${MINIO_PORT}" >> docker/.env
+          echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> docker/.env
+          echo -e "REDIS_PORT=${REDIS_PORT}" >> docker/.env
+          echo -e "TEI_PORT=${TEI_PORT}" >> docker/.env
+          echo -e "KIBANA_PORT=${KIBANA_PORT}" >> docker/.env
+          echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> docker/.env
+          echo -e "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> docker/.env
+          echo -e "SVR_MCP_PORT=${SVR_MCP_PORT}" >> docker/.env
+          echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> docker/.env
+          echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> docker/.env
+          echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> docker/.env
 
-          echo -e "\nCOMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
-          echo -e "\nTEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
-          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
+          echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
+          echo -e "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
           uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python
@@ -158,7 +158,7 @@ jobs:
       - name: Run sdk tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
+          export HOST_ADDRESS=http://localhost:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -168,7 +168,7 @@ jobs:
       - name: Run frontend api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
+          export HOST_ADDRESS=http://localhost:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -178,7 +178,7 @@ jobs:
       - name: Run http api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
+          export HOST_ADDRESS=http://localhost:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -198,7 +198,7 @@ jobs:
       - name: Run sdk tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
+          export HOST_ADDRESS=http://localhost:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -208,7 +208,7 @@ jobs:
       - name: Run frontend api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
+          export HOST_ADDRESS=http://localhost:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
@@ -218,7 +218,7 @@ jobs:
       - name: Run http api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          export HOST_ADDRESS=http://host.docker.internal:9380
+          export HOST_ADDRESS=http://localhost:9380
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
