@@ -227,8 +227,8 @@
             "llm": [
                 {
                     "llm_name": "qwen3-8b",
-                    "tags": "LLM,CHAT,131k",
-                    "max_tokens": 131000,
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -241,15 +241,15 @@
                 },
                 {
                     "llm_name": "qwen3-32b",
-                    "tags": "LLM,CHAT,131k",
-                    "max_tokens": 131000,
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "kimi-k2-instruct",
-                    "tags": "LLM,CHAT,128K",
-                    "max_tokens": 128000,
+                    "llm_name": "kimi-k2-instruct-0905",
+                    "tags": "LLM,CHAT,256K",
+                    "max_tokens": 256000,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -278,6 +278,48 @@
                     "llm_name": "deepseek-v3.1",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "hunyuan-a13b-instruct",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-next-80b-a3b-instruct",
+                    "tags": "LLM,CHAT,1024k",
+                    "max_tokens": 1024000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3.2-exp",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3.1-terminus",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-235b-a22b-instruct",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-30b-a3b-instruct",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
                     "model_type": "chat",
                     "is_tools": true
                 }
