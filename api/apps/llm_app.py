@@ -264,7 +264,7 @@ def add_llm():
         try:
             image_data = test_image
             m, tc = mdl.describe(image_data)
-            if not m and not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
