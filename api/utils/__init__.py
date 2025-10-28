@@ -14,11 +14,9 @@
 #  limitations under the License.
 #
 import base64
-import datetime
 import hashlib
 import os
 import socket
-import time
 import uuid
 import requests
 
