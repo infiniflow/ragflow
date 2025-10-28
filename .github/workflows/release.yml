@@ -78,10 +78,10 @@ jobs:
       - name: Build and push image
         run: |
           echo ${{ secrets.DOCKERHUB_TOKEN }} | sudo docker login --username infiniflow --password-stdin
-          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
-          sudo docker build -t infiniflow/ragflow:latest -f Dockerfile .
-          sudo docker push infiniflow/infinity:${RELEASE_TAG}
-          sudo docker push infiniflow/infinity:latest
+          sudo docker build --build-arg NEED_MIRROR=1 -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
+          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
+          sudo docker push infiniflow/ragflow:latest
 
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
