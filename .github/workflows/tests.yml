@@ -29,7 +29,7 @@ jobs:
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
-    runs-on: [ "self-hosted", "debug" ]
+    runs-on: [ "self-hosted", "ragflow-test" ]
     steps:
       # https://github.com/hmarr/debug-action
       #- uses: hmarr/debug-action@v2
