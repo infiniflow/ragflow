@@ -21,7 +21,7 @@ export function Datasets() {
 
   return (
     <section>
-      <h2 className="text-2xl font-bold mb-6 flex gap-2.5 items-center">
+      <h2 className="text-2xl font-semibold mb-6 flex gap-2.5 items-center">
         {/* <IconFont name="data" className="size-8"></IconFont> */}
         <HomeIcon name="datasets" width={'32'} />
         {t('header.dataset')}

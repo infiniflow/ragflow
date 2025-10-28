@@ -41,7 +41,7 @@ export function Applications() {
   return (
     <section className="mt-12">
       <div className="flex justify-between items-center mb-5">
-        <h2 className="text-2xl font-bold flex gap-2.5">
+        <h2 className="text-2xl font-semibold flex gap-2.5">
           {/* <IconFont
             name={IconMap[val as keyof typeof IconMap]}
             className="size-8"
