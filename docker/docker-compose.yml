@@ -29,13 +29,11 @@ services:
     # command:
     #   - --enable-adminserver
     ports:
+      - ${SVR_WEB_HTTP_PORT}:80
+      - ${SVR_WEB_HTTPS_PORT}:443
       - ${SVR_HTTP_PORT}:9380
       - ${ADMIN_SVR_HTTP_PORT}:9381
-      - 80:80
-      - 443:443
-      - 5678:5678
-      - 5679:5679
-      - 9382:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
+      - ${SVR_MCP_PORT}:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
     volumes:
       - ./ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
@@ -80,13 +78,11 @@ services:
     # command:
     #   - --enable-adminserver
     ports:
+      - ${SVR_WEB_HTTP_PORT}:80
+      - ${SVR_WEB_HTTPS_PORT}:443
       - ${SVR_HTTP_PORT}:9380
       - ${ADMIN_SVR_HTTP_PORT}:9381
-      - 80:80
-      - 443:443
-      - 5678:5678
-      - 5679:5679
-      - 9382:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
+      - ${SVR_MCP_PORT}:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
     volumes:
       - ./ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
