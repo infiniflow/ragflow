@@ -10,7 +10,7 @@ on:
       - '*.md'
       - '*.mdx'
   pull_request:
-    types: [ opened, synchronize, reopened, labeled ]
+    types: [ labeled, synchronize, reopened ]
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -94,7 +94,8 @@ jobs:
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          echo -e "RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}" >> $GITHUB_ENV
+          RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}
+          echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> $GITHUB_ENV
           sudo docker pull ubuntu:22.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t ${RAGFLOW_IMAGE} .
           if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
