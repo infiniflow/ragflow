@@ -615,6 +615,7 @@ export const initialAgentValues = {
       type: 'string',
       value: '',
     },
+    structured: {},
   },
 };
 

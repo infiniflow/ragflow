@@ -1,4 +1,4 @@
-// https://github.com/lovasoa/jsonjoy-builder
+// https://github.com/lovasoa/jsonjoy-builder v0.1.0
 // exports for public API
 
 import JsonSchemaEditor, {
