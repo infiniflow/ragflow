@@ -126,6 +126,7 @@ function AdminUserManagement() {
   const { data: roleList } = useQuery({
     queryKey: ['admin/listRoles'],
     queryFn: async () => (await listRoles()).data.data.roles,
+    enabled: IS_ENTERPRISE,
   });
 
   const { data: usersList, isPending } = useQuery({
