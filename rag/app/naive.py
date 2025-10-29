@@ -520,7 +520,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         elif layout_recognizer == "MinerU":
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable)
+            mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
             if not pdf_parser.check_installation():
                 callback(-1, "MinerU not found.")
                 return res
