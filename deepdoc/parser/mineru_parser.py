@@ -297,9 +297,14 @@ class MinerUParser(RAGFlowPdfParser):
         temp_pdf = None
         created_tmp_dir = False
 
+        # remove spaces, or mineru crash, and _read_output fail too
+        file_path = Path(filepath)
+        pdf_file_name = file_path.stem.replace(" ", "") + ".pdf"
+        pdf_file_path_valid = os.path.join(file_path.parent, pdf_file_name)
+
         if binary:
             temp_dir = Path(tempfile.mkdtemp(prefix="mineru_bin_pdf_"))
-            temp_pdf = temp_dir / Path(filepath).name
+            temp_pdf = temp_dir / pdf_file_name
             with open(temp_pdf, "wb") as f:
                 f.write(binary)
             pdf = temp_pdf
@@ -307,7 +312,10 @@ class MinerUParser(RAGFlowPdfParser):
             if callback:
                 callback(0.15, f"[MinerU] Received binary PDF -> {temp_pdf}")
         else:
-            pdf = Path(filepath)
+            if pdf_file_path_valid != filepath:
+                self.logger.info(f"[MinerU] Remove all space in file name: {pdf_file_path_valid}")
+                shutil.move(filepath, pdf_file_path_valid)
+            pdf = Path(pdf_file_path_valid)
             if not pdf.exists():
                 if callback:
                     callback(-1, f"[MinerU] PDF not found: {pdf}")
