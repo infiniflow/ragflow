@@ -368,7 +368,7 @@ def my_llms():
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_app():
-    self_deployed = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
+    self_deployed = ["FastEmbed", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = []
     model_type = request.args.get("model_type")
     try:
