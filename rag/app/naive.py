@@ -30,7 +30,7 @@ from tika import parser
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from api.utils.file_utils import extract_embed_file
+from api.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_doc, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser_docx_wrapper,vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
@@ -439,6 +439,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Successive text will be sliced into pieces using 'delimiter'.
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
+    urls = set()
+    url_res = []
 
 
     is_english = lang.lower() == "english"  # is_english(cks)
@@ -477,7 +479,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
-
+        if kwargs.get("fetch_url", True):
+            urls = extract_links_from_docx(binary)
+            print(f"\n\n {urls} \n\n ")
+            for index, url in enumerate(urls):
+                print(url)
+                print("\n\n")
+                html_bytes, metadata = extract_html(url)
+                print(html_bytes)
+                print("\n\n")
+                if not html_bytes:
+                    print("\n\nNot html bytes \n\n")
+                    continue
+                sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, fetch_url=False, **kwargs) or []
+                url_res.extend(sub_url_res)
 
         # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
         _SerializedRelationships.load_from_xml = load_from_xml_v2
@@ -497,15 +512,21 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if kwargs.get("section_only", False):
             chunks.extend(embed_res)
+            chunks.extend(url_res)
             return chunks
 
         res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
+        res.extend(url_res)
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+
+        if kwargs.get("fetch_url", True):
+            urls = extract_links_from_pdf(binary)
+
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
         callback(0.1, "Start to parse.")
@@ -644,6 +665,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         if doc_parsed.get('content', None) is not None:
@@ -685,9 +707,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
 
+    if urls and kwargs.get("fetch_url", True):
+        for index, url in enumerate(urls):
+            html_bytes, metadata = extract_html(url)   
+            if not html_bytes:
+                continue
+            sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, fetch_url=False, **kwargs) or []
+            url_res.extend(sub_url_res)
+        
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
+    
     if embed_res:
         res.extend(embed_res)
+    if url_res:
+        res.extend(url_res)
     return res
 
 
