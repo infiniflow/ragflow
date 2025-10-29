@@ -1720,6 +1720,9 @@ Important structured information may include: names, dates, locations, events, k
       imageParseMethodOptions: {
         ocr: 'OCR',
       },
+      structuredOutput: {
+        configuration: 'Configuration',
+      },
     },
     llmTools: {
       bad_calculator: {
