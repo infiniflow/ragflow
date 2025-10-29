@@ -1,4 +1,8 @@
-import { JSONSchema, SchemaVisualEditor } from '@/components/jsonjoy-builder';
+import {
+  JSONSchema,
+  JsonSchemaVisualizer,
+  SchemaVisualEditor,
+} from '@/components/jsonjoy-builder';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -26,12 +30,17 @@ export function StructuredOutputDialog({
 
   return (
     <Dialog onOpenChange={hideModal} open>
-      <DialogContent className="md:max-w-[1200px]">
+      <DialogContent className="md:max-w-[1200px] h-[50vh]">
         <DialogHeader>
           <DialogTitle> {t('flow.structuredOutput.configuration')}</DialogTitle>
         </DialogHeader>
-        <section>
-          <SchemaVisualEditor schema={schema} onChange={setSchema} />
+        <section className="flex">
+          <div className="flex-1">
+            <SchemaVisualEditor schema={schema} onChange={setSchema} />
+          </div>
+          <div className="flex-1">
+            <JsonSchemaVisualizer schema={schema} onChange={setSchema} />
+          </div>
         </section>
         <DialogFooter>
           <DialogClose asChild>
