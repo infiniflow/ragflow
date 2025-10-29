@@ -51,7 +51,7 @@ from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db import ActiveEnum
 from api.db.db_models import APIToken
-from api.utils.json import CustomJSONEncoder, json_dumps
+from api.utils.json_encode import CustomJSONEncoder, json_dumps
 from api.utils import get_uuid
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
