@@ -1,3 +1,4 @@
+import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Slider } from 'antd';
 import { z } from 'zod';
@@ -46,6 +47,7 @@ export function TopNFormField({ max = 30 }: SimilaritySliderFormFieldProps) {
       label={t('topN')}
       max={max}
       tooltip={t('topNTip')}
+      layout={FormLayout.Vertical}
     ></SliderInputFormField>
   );
 }
