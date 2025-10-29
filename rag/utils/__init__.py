@@ -63,6 +63,12 @@ def total_token_count_from_response(resp):
             return resp["usage"]["total_tokens"]
         except Exception:
             pass
+
+    if 'usage' in resp and 'input_tokens' in resp['usage'] and 'output_tokens' in resp['usage']:
+        try:
+            return resp["usage"]["input_tokens"] + resp["usage"]["output_tokens"]
+        except Exception:
+            pass
     return 0
 
 
