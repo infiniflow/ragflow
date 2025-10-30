@@ -83,12 +83,10 @@ class LLMBundle(LLM4Tenant):
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode", model=self.llm_name, input={"texts": texts})        
     
         safe_texts = []
-        max_tokens = getattr(self.mdl, "max_tokens", 2048)
-
         for text in texts:
             token_size = num_tokens_from_string(text)
-            if token_size > max_tokens:
-                target_len = int(max_tokens * 0.95)
+            if token_size > self.max_length:
+                target_len = int(self.max_length * 0.95)
                 safe_texts.append(text[:target_len])
             else:
                 safe_texts.append(text)

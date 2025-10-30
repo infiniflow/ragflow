@@ -215,8 +215,7 @@ def add_llm():
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
-            base_url=llm["api_base"],
-            max_tokens=llm["max_tokens"])   
+            base_url=llm["api_base"])   
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0:
