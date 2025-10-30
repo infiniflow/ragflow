@@ -364,7 +364,7 @@ function AdminUserManagement() {
 
   return (
     <>
-      <Card className="h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+      <Card className="!shadow-none h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.userManagement')}</CardTitle>

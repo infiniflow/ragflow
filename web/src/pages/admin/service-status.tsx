@@ -97,17 +97,13 @@ function AdminServiceStatus() {
   const [itemToMakeAction, setItemToMakeAction] =
     useState<AdminService.ListServicesItem | null>(null);
 
-  const { data: servicesList, isPending } = useQuery({
+  const { data: servicesList } = useQuery({
     queryKey: ['admin/listServices'],
     queryFn: async () => (await listServices()).data.data,
     retry: false,
   });
 
-  const {
-    data: serviceDetails,
-    isPending: isServiceDetailsPending,
-    error: serviceDetailsError,
-  } = useQuery({
+  const { data: serviceDetails, error: serviceDetailsError } = useQuery({
     queryKey: ['admin/serviceDetails', itemToMakeAction?.id],
     queryFn: async () =>
       (await showServiceDetails(itemToMakeAction?.id!)).data.data,
@@ -225,7 +221,7 @@ function AdminServiceStatus() {
 
   return (
     <>
-      <Card className="h-full border border-border-button bg-transparent rounded-xl">
+      <Card className="!shadow-none h-full border border-border-button bg-transparent rounded-xl">
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.serviceStatus')}</CardTitle>

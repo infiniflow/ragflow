@@ -149,7 +149,7 @@ function AdminRoles() {
 
   return (
     <>
-      <Card className="w-full h-full border border-border-button bg-transparent rounded-xl">
+      <Card className="!shadow-none w-full h-full border border-border-button bg-transparent rounded-xl">
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.roles')}</CardTitle>
@@ -168,7 +168,7 @@ function AdminRoles() {
               roleList.map((role) => (
                 <Card
                   key={role.id}
-                  className="group border border-border-default bg-transparent hover:bg-bg-card transition-color duration-150"
+                  className="group border border-border-default bg-transparent dark:hover:bg-bg-card transition-color duration-150"
                 >
                   <CardHeader className="space-y-0 flex flex-row gap-4 items-center border-b border-border-button">
                     <div className="space-y-1.5 w-0 flex-1">
@@ -221,7 +221,7 @@ function AdminRoles() {
                           <TabsTrigger
                             key={resourceName}
                             value={resourceName}
-                            className="border-border-button dark:data-[state=active]:bg-bg-input"
+                            className="text-text-secondary !border-border-button data-[state=active]:bg-bg-card data-[state=active]:text-text-primary"
                           >
                             {t(
                               `admin.resourceType.${resourceName.toLowerCase()}`,
@@ -236,7 +236,7 @@ function AdminRoles() {
 
                         return (
                           <TabsContent key={resourceName} value={resourceName}>
-                            <Card className="border-0">
+                            <Card className="border-0 bg-bg-card !shadow-none">
                               <CardContent className="p-6 flex gap-8">
                                 {PERMISSION_TYPES.map((permissionType) => (
                                   <Label
@@ -343,7 +343,7 @@ function AdminRoles() {
                 evt.preventDefault();
                 updateRoleDescriptionMutation.mutate({
                   name: roleToMakeAction!?.role_name,
-                  description: roleDescription,
+                  description: roleDescription.trim(),
                 });
               }}
             >
@@ -374,12 +374,6 @@ function AdminRoles() {
               type="submit"
               form={editRoleDescriptionFormId}
               className="px-4 h-10"
-              onClick={() =>
-                updateRoleDescriptionMutation.mutate({
-                  name: roleToMakeAction!?.role_name,
-                  description: roleDescription,
-                })
-              }
             >
               {t('admin.confirm')}
             </LoadingButton>

@@ -110,7 +110,7 @@ export const CreateRoleForm = ({
                 <TabsTrigger
                   key={resourceType}
                   value={resourceType}
-                  className="text-text-secondary border-border-button dark:data-[state=active]:bg-bg-input"
+                  className="text-text-secondary !border-border-button data-[state=active]:bg-bg-card data-[state=active]:text-text-primary"
                 >
                   {t(`admin.resourceType.${resourceType.toLowerCase()}`)}
                 </TabsTrigger>
@@ -123,7 +123,7 @@ export const CreateRoleForm = ({
                 value={resourceType}
                 className="space-y-4"
               >
-                <Card className="border-0 bg-bg-card">
+                <Card className="border-0 bg-bg-card !shadow-none">
                   <CardContent className="p-6">
                     <div className="grid grid-cols-4 gap-4">
                       {PERMISSION_TYPES.map((permissionType) => (
