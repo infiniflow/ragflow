@@ -34,7 +34,7 @@ export function StructuredOutputDialog({
         <DialogHeader>
           <DialogTitle> {t('flow.structuredOutput.configuration')}</DialogTitle>
         </DialogHeader>
-        <section className="flex">
+        <section className="flex overflow-auto">
           <div className="flex-1">
             <SchemaVisualEditor schema={schema} onChange={setSchema} />
           </div>

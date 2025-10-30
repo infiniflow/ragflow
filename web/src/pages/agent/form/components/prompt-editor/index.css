@@ -28,10 +28,10 @@
   cursor: pointer;
   line-height: 16px;
   font-size: 15px;
-  display: flex;
+  /* display: flex;
   align-content: center;
   flex-direction: row;
-  flex-shrink: 0;
+  flex-shrink: 0; */
   border: 0;
 }
 
