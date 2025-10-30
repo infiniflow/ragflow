@@ -387,45 +387,7 @@ def rm():
         if not DocumentService.accessible4deletion(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
 
-    root_folder = FileService.get_root_folder(current_user.id)
-    pf_id = root_folder["id"]
-    FileService.init_knowledgebase_docs(pf_id, current_user.id)
-    errors = ""
-    kb_table_num_map = {}
-    for doc_id in doc_ids:
-        try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
-                return get_data_error_result(message="Document not found!")
-            tenant_id = DocumentService.get_tenant_id(doc_id)
-            if not tenant_id:
-                return get_data_error_result(message="Tenant not found!")
-
-            b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-
-            TaskService.filter_delete([Task.doc_id == doc_id])
-            if not DocumentService.remove_document(doc, tenant_id):
-                return get_data_error_result(message="Database error (Document removal)!")
-
-            f2d = File2DocumentService.get_by_document_id(doc_id)
-            deleted_file_count = 0
-            if f2d:
-                deleted_file_count = FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
-            File2DocumentService.delete_by_document_id(doc_id)
-            if deleted_file_count > 0:
-                STORAGE_IMPL.rm(b, n)
-
-            doc_parser = doc.parser_id
-            if doc_parser == ParserType.TABLE:
-                kb_id = doc.kb_id
-                if kb_id not in kb_table_num_map:
-                    counts = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
-                    kb_table_num_map[kb_id] = counts
-                kb_table_num_map[kb_id] -= 1
-                if kb_table_num_map[kb_id] <= 0:
-                    KnowledgebaseService.delete_field_map(kb_id)
-        except Exception as e:
-            errors += str(e)
+    errors = FileService.delete_docs(doc_ids, current_user.id)
 
     if errors:
         return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
@@ -473,23 +435,7 @@ def run():
 
             if str(req["run"]) == TaskStatus.RUNNING.value:
                 doc = doc.to_dict()
-                doc["tenant_id"] = tenant_id
-
-                doc_parser = doc.get("parser_id", ParserType.NAIVE)
-                if doc_parser == ParserType.TABLE:
-                    kb_id = doc.get("kb_id")
-                    if not kb_id:
-                        continue
-                    if kb_id not in kb_table_num_map:
-                        count = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
-                        kb_table_num_map[kb_id] = count
-                        if kb_table_num_map[kb_id] <= 0:
-                            KnowledgebaseService.delete_field_map(kb_id)
-                if doc.get("pipeline_id", ""):
-                    queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=id)
-                else:
-                    bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-                    queue_tasks(doc, bucket, name, 0)
+                DocumentService.run(tenant_id, doc, kb_table_num_map)
 
         return get_json_result(data=True)
     except Exception as e:

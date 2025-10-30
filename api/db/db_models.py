@@ -1049,12 +1049,12 @@ class Connector(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=128, null=False, help_text="Search name", index=False)
     source = CharField(max_length=128, null=False, help_text="Data source", index=True)
-    input_type = CharField(max_length=128, null=False, help_text="Search name", index=True)
-    connector_specific_config = JSONField(null=False, default={})
+    input_type = CharField(max_length=128, null=False, help_text="poll/event/..", index=True)
+    config = JSONField(null=False, default={})
     refresh_freq = IntegerField(default=0, index=False)
     prune_freq = IntegerField(default=0, index=False)
     indexing_start = DateTimeField(null=True, index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    status = CharField(max_length=16, null=True, help_text="schedule", default="schedule", index=True)
 
     def __str__(self):
         return self.name
@@ -1063,25 +1063,33 @@ class Connector(DataBaseModel):
         db_table = "connector"
 
 
-class IndexAttempt(DataBaseModel):
+class Connector2Kb(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    connector_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "connector2kb"
+
+
+class SyncLogs(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     connector_id = CharField(max_length=32, index=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
     status = CharField(max_length=128, null=False, help_text="Processing status", index=True)
     from_beginning = CharField(max_length=1, null=True, help_text="", default="0", index=False)
     new_docs_indexed = IntegerField(default=0, index=False)
     total_docs_indexed = IntegerField(default=0, index=False)
     docs_removed_from_index = IntegerField(default=0, index=False)
-    error_msg = TextField(null=True, help_text="process message", default="")
+    error_msg = TextField(null=False, help_text="process message", default="")
     error_count = IntegerField(default=0, index=False)
     full_exception_trace = TextField(null=True, help_text="process message", default="")
     time_started = DateTimeField(null=True, index=True)
-    time_updated = DateTimeField(null=True, index=True)
     poll_range_start = DateTimeField(null=True, index=True)
     poll_range_end = DateTimeField(null=True, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
 
     class Meta:
-        db_table = "index_attempt"
+        db_table = "sync_logs"
 
 
 def migrate_db():
