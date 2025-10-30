@@ -128,6 +128,12 @@ const {
   adminUpdateUserRole,
 
   adminListResources,
+
+  adminListWhitelist,
+  adminCreateWhitelistEntry,
+  adminUpdateWhitelistEntry,
+  adminDeleteWhitelistEntry,
+  adminImportWhitelist,
 } = api;
 
 type ResponseData<D = {}> = {
@@ -271,6 +277,15 @@ export namespace AdminService {
   export type ResourceType = {
     resource_types: string[];
   };
+
+  export type ListWhitelistItem = {
+    id: number;
+    email: string;
+    create_date: string;
+    createt_time: number;
+    update_date: string;
+    update_time: number;
+  };
 }
 
 export const login = (params: { email: string; password: string }) =>
@@ -363,15 +378,29 @@ export const getUserPermissions = (username: string) =>
 export const listResources = () =>
   request.get<ResponseData<AdminService.ResourceType>>(adminListResources);
 
-export const whitelistImportFromExcel = (file: File) => {
+export const listWhitelist = () =>
+  request.get<
+    ResponseData<{
+      total: number;
+      white_list: AdminService.ListWhitelistItem[];
+    }>
+  >(adminListWhitelist);
+
+export const createWhitelistEntry = (email: string) =>
+  request.post<ResponseData<never>>(adminCreateWhitelistEntry, { email });
+
+export const updateWhitelistEntry = (id: number, email: string) =>
+  request.put<ResponseData<never>>(adminUpdateWhitelistEntry(id), { email });
+
+export const deleteWhitelistEntry = (email: string) =>
+  request.delete<ResponseData<never>>(adminDeleteWhitelistEntry(email));
+
+export const importWhitelistFromExcel = (file: File) => {
   const fd = new FormData();
 
   fd.append('file', file);
 
-  return request.post<ResponseData<never>>(
-    '/api/v1/admin/whitelist/import',
-    fd,
-  );
+  return request.post<ResponseData<never>>(adminImportWhitelist, fd);
 };
 
 export default {

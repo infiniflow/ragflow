@@ -100,6 +100,7 @@ function AdminServiceStatus() {
   const { data: servicesList, isPending } = useQuery({
     queryKey: ['admin/listServices'],
     queryFn: async () => (await listServices()).data.data,
+    retry: false,
   });
 
   const {
@@ -112,7 +113,6 @@ function AdminServiceStatus() {
       (await showServiceDetails(itemToMakeAction?.id!)).data.data,
     enabled: !!(itemToMakeAction && detailModalOpen),
     retry: false,
-    refetchInterval: Infinity,
   });
 
   const columnDefs = useMemo(
