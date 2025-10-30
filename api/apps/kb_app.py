@@ -805,7 +805,8 @@ def check_embedding():
         return None
 
     def _as_float_vec(v):
-        if v is None: return []
+        if v is None:
+            return []
         if isinstance(v, str):
             return [float(x) for x in v.split("\t") if x != ""]
         if isinstance(v, (list, tuple, np.ndarray)):
