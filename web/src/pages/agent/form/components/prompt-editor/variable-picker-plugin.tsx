@@ -31,20 +31,15 @@ import * as ReactDOM from 'react-dom';
 import { $createVariableNode } from './variable-node';
 
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
-import { Operator } from '@/constants/agent';
-import { cn } from '@/lib/utils';
-import { AgentStructuredOutputField } from '@/pages/agent/constant';
+  useFilterStructuredOutputByValue,
+  useFindAgentStructuredOutputLabel,
+  useShowSecondaryMenu,
+} from '@/pages/agent/hooks/use-build-structured-output';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
-import useGraphStore from '@/pages/agent/store';
-import { get, isPlainObject } from 'lodash';
 import { PromptIdentity } from '../../agent-form/use-build-prompt-options';
+import { StructuredOutputSecondaryMenu } from '../structured-output-secondary-menu';
 import { ProgrammaticTag } from './constant';
 import './index.css';
-import { filterAgentStructuredOutput } from './utils';
 class VariableInnerOption extends MenuOption {
   label: string;
   value: string;
@@ -82,10 +77,6 @@ class VariableOption extends MenuOption {
   }
 }
 
-function getNodeId(value: string) {
-  return value.split('@').at(0);
-}
-
 function VariablePickerMenuItem({
   index,
   option,
@@ -97,58 +88,9 @@ function VariablePickerMenuItem({
     option: VariableOption | VariableInnerOption,
   ) => void;
 }) {
-  const { getOperatorTypeFromId, getNode, clickedNodeId } = useGraphStore(
-    (state) => state,
-  );
+  const filterStructuredOutput = useFilterStructuredOutputByValue();
 
-  const showSecondaryMenu = useCallback(
-    (value: string, outputLabel: string) => {
-      const nodeId = getNodeId(value);
-      return (
-        getOperatorTypeFromId(nodeId) === Operator.Agent &&
-        outputLabel === AgentStructuredOutputField
-      );
-    },
-    [getOperatorTypeFromId],
-  );
-
-  const renderAgentStructuredOutput = useCallback(
-    (values: any, option: VariableInnerOption) => {
-      if (isPlainObject(values) && 'properties' in values) {
-        return (
-          <ul className="border-l">
-            {Object.entries(values.properties).map(([key, value]) => {
-              const nextOption = new VariableInnerOption(
-                option.label + `.${key}`,
-                option.value + `.${key}`,
-                option.parentLabel,
-                option.icon,
-              );
-
-              const dataType = get(value, 'type');
-
-              return (
-                <li key={key} className="pl-1">
-                  <div
-                    onClick={() => selectOptionAndCleanUp(nextOption)}
-                    className="hover:bg-bg-card p-1 text-text-primary rounded-sm flex justify-between"
-                  >
-                    {key}
-                    <span className="text-text-secondary">{dataType}</span>
-                  </div>
-                  {dataType === 'object' &&
-                    renderAgentStructuredOutput(value, nextOption)}
-                </li>
-              );
-            })}
-          </ul>
-        );
-      }
-
-      return <div></div>;
-    },
-    [selectOptionAndCleanUp],
-  );
+  const showSecondaryMenu = useShowSecondaryMenu();
 
   return (
     <li
@@ -165,39 +107,20 @@ function VariablePickerMenuItem({
             const shouldShowSecondary = showSecondaryMenu(x.value, x.label);
 
             if (shouldShowSecondary) {
-              const node = getNode(getNodeId(x.value));
-              const structuredOutput = get(
-                node,
-                `data.form.outputs.${AgentStructuredOutputField}`,
-              );
-
-              const filteredStructuredOutput = filterAgentStructuredOutput(
-                structuredOutput,
-                getOperatorTypeFromId(clickedNodeId),
-              );
+              const filteredStructuredOutput = filterStructuredOutput(x.value);
 
               return (
-                <HoverCard key={x.value} openDelay={100} closeDelay={100}>
-                  <HoverCardTrigger asChild>
-                    <li className="hover:bg-bg-card p-1 text-text-primary rounded-sm">
-                      {x.label}
-                    </li>
-                  </HoverCardTrigger>
-                  <HoverCardContent
-                    side="left"
-                    align="start"
-                    className={cn(
-                      'min-w-[140px]  border border-border rounded-md shadow-lg p-0',
-                    )}
-                  >
-                    <section className="p-2">
-                      <div className="p-1">
-                        {x.parentLabel} structured output:
-                      </div>
-                      {renderAgentStructuredOutput(filteredStructuredOutput, x)}
-                    </section>
-                  </HoverCardContent>
-                </HoverCard>
+                <StructuredOutputSecondaryMenu
+                  key={x.value}
+                  data={x}
+                  click={(y) =>
+                    selectOptionAndCleanUp({
+                      ...x,
+                      ...y,
+                    } as VariableInnerOption)
+                  }
+                  filteredStructuredOutput={filteredStructuredOutput}
+                ></StructuredOutputSecondaryMenu>
               );
             }
 
@@ -239,9 +162,8 @@ export default function VariablePickerMenuPlugin({
   baseOptions,
 }: VariablePickerMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
-  const getOperatorTypeFromId = useGraphStore(
-    (state) => state.getOperatorTypeFromId,
-  );
+
+  const findAgentStructuredOutputLabel = useFindAgentStructuredOutputLabel();
 
   // const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
   //   minLength: 0,
@@ -313,27 +235,17 @@ export default function VariablePickerMenuPlugin({
       }, []);
 
       // agent structured output
-      const fields = value.split('@');
-      if (
-        getOperatorTypeFromId(fields.at(0)) === Operator.Agent &&
-        fields.at(1)?.startsWith(AgentStructuredOutputField)
-      ) {
-        // is agent structured output
-        const agentOption = children.find((x) => value.includes(x.value));
-        const jsonSchemaFields = fields
-          .at(1)
-          ?.slice(AgentStructuredOutputField.length);
-
-        return {
-          ...agentOption,
-          label: (agentOption?.label ?? '') + jsonSchemaFields,
-          value: value,
-        };
+      const agentStructuredOutput = findAgentStructuredOutputLabel(
+        value,
+        children,
+      );
+      if (agentStructuredOutput) {
+        return agentStructuredOutput;
       }
 
       return children.find((x) => x.value === value);
     },
-    [getOperatorTypeFromId, options],
+    [findAgentStructuredOutputLabel, options],
   );
 
   const onSelectOption = useCallback(

@@ -617,7 +617,10 @@ export const initialAgentValues = {
       type: 'string',
       value: '',
     },
-    [AgentStructuredOutputField]: {},
+    [AgentStructuredOutputField]: {
+      type: 'Object Array String Number Boolean',
+      value: '',
+    },
   },
 };
 

@@ -1529,7 +1529,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       outputFormat: '输出格式',
-      fileFormats: '文件格式',
+      fileFormats: '文件类型',
       fields: '字段',
       addParser: '增加解析器',
       hierarchy: '层次结构',

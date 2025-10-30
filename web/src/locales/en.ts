@@ -1623,7 +1623,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       outputFormat: 'Output format',
-      fileFormats: 'File format',
+      fileFormats: 'File type',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: 'Spreadsheet',
@@ -1644,7 +1644,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
-      parserMethod: 'Parsing method',
+      parserMethod: 'PDF parser',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
