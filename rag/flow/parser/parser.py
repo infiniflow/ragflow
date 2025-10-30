@@ -431,7 +431,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["video"]
         self.set_output("output_format", conf["output_format"])
 
-        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT)
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
         txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
 
         self.set_output("text", txt)
