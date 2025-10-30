@@ -30,7 +30,6 @@ from typing import Any, Callable, Optional
 import requests
 import os
 import zipfile
-from requests.exceptions import RequestException
 
 import numpy as np
 import pdfplumber
