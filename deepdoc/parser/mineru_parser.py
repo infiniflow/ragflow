@@ -192,7 +192,7 @@ class MinerUParser(RAGFlowPdfParser):
                 files=files,
                 data=data,
                 headers=headers,
-                timeout=120
+                timeout=1800
             )
 
             response.raise_for_status()
