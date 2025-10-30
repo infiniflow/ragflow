@@ -117,11 +117,24 @@ class MarkdownElementExtractor:
         self.markdown_content = markdown_content
         self.lines = markdown_content.split("\n")
 
-    def extract_elements(self):
+    def get_delimiters(self,delimiters):
+        toks = re.findall(r"`([^`]+)`", delimiters)
+        toks = sorted(set(toks), key=lambda x: -len(x))
+        return "|".join(re.escape(t) for t in toks if t)
+    
+    def extract_elements(self,delimiter=None):
         """Extract individual elements (headers, code blocks, lists, etc.)"""
         sections = []
 
         i = 0
+        dels=""
+        if delimiter:
+            dels = self.get_delimiters(delimiter)
+        if len(dels) > 0:
+            text = "\n".join(self.lines)
+            parts = re.split(dels, text)
+            sections = [p.strip() for p in parts if p and p.strip()]
+            return sections
         while i < len(self.lines):
             line = self.lines[i]
 
