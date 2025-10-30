@@ -595,7 +595,14 @@ function AdminUserManagement() {
 
       {/* Change Password Modal */}
       <Dialog open={passwordModalOpen} onOpenChange={setPasswordModalOpen}>
-        <DialogContent className="p-0 border-border-button">
+        <DialogContent
+          className="p-0 border-border-button"
+          onAnimationEnd={() => {
+            if (!passwordModalOpen) {
+              changePasswordForm.form.reset();
+            }
+          }}
+        >
           <DialogHeader className="p-6 border-b border-border-button">
             <DialogTitle>{t('admin.changePassword')}</DialogTitle>
           </DialogHeader>
