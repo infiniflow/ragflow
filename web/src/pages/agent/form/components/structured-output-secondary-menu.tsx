@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/hover-card';
 import { cn } from '@/lib/utils';
 import { get, isPlainObject } from 'lodash';
+import { ChevronRight } from 'lucide-react';
 import { PropsWithChildren, ReactNode, useCallback } from 'react';
 
 type DataItem = { label: ReactNode; value: string; parentLabel?: ReactNode };
@@ -59,8 +60,8 @@ export function StructuredOutputSecondaryMenu({
   return (
     <HoverCard key={data.value} openDelay={100} closeDelay={100}>
       <HoverCardTrigger asChild>
-        <li className="hover:bg-bg-card p-1 text-text-primary rounded-sm">
-          {data.label}
+        <li className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center">
+          {data.label} <ChevronRight className="size-3.5 text-text-secondary" />
         </li>
       </HoverCardTrigger>
       <HoverCardContent

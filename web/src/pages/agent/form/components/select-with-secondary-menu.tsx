@@ -16,10 +16,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { ChevronDown, X } from 'lucide-react';
+import { get } from 'lodash';
+import { ChevronDownIcon, XIcon } from 'lucide-react';
 import * as React from 'react';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   useFilterStructuredOutputByValue,
   useFindAgentStructuredOutputLabel,
@@ -35,6 +38,7 @@ type Item = {
 type Option = {
   label: string;
   value: string;
+  parentLabel?: string;
   children?: Item[];
 };
 
@@ -54,8 +58,9 @@ export function GroupedSelectWithSecondaryMenu({
   options,
   value,
   onChange,
-  placeholder = 'Select an option...',
+  placeholder,
 }: GroupedSelectWithSecondaryMenuProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
 
   const showSecondaryMenu = useShowSecondaryMenu();
@@ -64,14 +69,12 @@ export function GroupedSelectWithSecondaryMenu({
 
   // Find the label of the selected item
   const flattenedOptions = options.flatMap((g) => g.options);
-  let selectedLabel =
-    flattenedOptions
-      .flatMap((o) => [o, ...(o.children || [])])
-      .find((o) => o.value === value)?.label || '';
+  let selectedItem = flattenedOptions
+    .flatMap((o) => [o, ...(o.children || [])])
+    .find((o) => o.value === value);
 
-  if (!selectedLabel && value) {
-    selectedLabel =
-      findAgentStructuredOutputLabel(value, flattenedOptions)?.label ?? '';
+  if (!selectedItem && value) {
+    selectedItem = findAgentStructuredOutputLabel(value, flattenedOptions);
   }
 
   // Handle clear click
@@ -97,25 +100,45 @@ export function GroupedSelectWithSecondaryMenu({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            'w-full justify-between text-sm font-normal',
+            '!bg-bg-input hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
             !value && 'text-muted-foreground',
           )}
         >
-          <span className="truncate">{selectedLabel || placeholder}</span>
-          <div className="flex items-center gap-1">
+          {value ? (
+            <div className="truncate flex items-center gap-1">
+              <span>{get(selectedItem, 'parentLabel')}</span>
+              <span className="text-text-disabled">/</span>
+              <span className="text-accent-primary">{selectedItem?.label}</span>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">
+              {placeholder || t('common.selectPlaceholder')}
+            </span>
+          )}
+          <div className="flex items-center justify-between">
             {value && (
-              <X
-                className="h-4 w-4 text-muted-foreground hover:text-foreground cursor-pointer"
-                onClick={handleClear}
-              />
+              <>
+                <XIcon
+                  className="h-4 mx-2 cursor-pointer text-muted-foreground"
+                  onClick={handleClear}
+                />
+                <Separator
+                  orientation="vertical"
+                  className="flex min-h-6 h-full"
+                />
+              </>
             )}
-            <ChevronDown className="h-4 w-4 opacity-50" />
+            <ChevronDownIcon
+              size={16}
+              className="text-muted-foreground/80 shrink-0 ml-2"
+              aria-hidden="true"
+            />
           </div>
         </Button>
       </PopoverTrigger>
 
       <PopoverContent className="p-0" align="start">
-        <Command>
+        <Command value={value}>
           <CommandInput placeholder="Search..." />
           <CommandList className="overflow-visible">
             {options.map((group, idx) => (
@@ -166,7 +189,7 @@ export function GroupedSelectWithSecondaryMenu({
                           <div
                             key={child.value}
                             className={cn(
-                              'cursor-pointer rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground',
+                              'cursor-pointer rounded-sm px-2 py-1.5 text-sm hover:bg-bg-card hover:text-accent-foreground',
                               value === child.value &&
                                 'bg-accent text-accent-foreground',
                             )}
@@ -187,10 +210,6 @@ export function GroupedSelectWithSecondaryMenu({
                         onChange?.(option.value);
                         setOpen(false);
                       }}
-                      className={cn(
-                        value === option.value &&
-                          'bg-accent text-accent-foreground',
-                      )}
                     >
                       {option.label}
                     </CommandItem>
