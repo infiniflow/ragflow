@@ -1531,7 +1531,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       outputFormat: '输出格式',
-      fileFormats: '文件格式',
+      fileFormats: '文件类型',
       fields: '字段',
       addParser: '增加解析器',
       hierarchy: '层次结构',
@@ -1602,6 +1602,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       cancel: '取消',
       filenameEmbeddingWeight: '文件名嵌入权重',
       switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
+      structuredOutput: {
+        configuration: '配置',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',

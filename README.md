@@ -43,7 +43,9 @@
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
-#
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+</div>
 
 <div align="center">
 <a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
@@ -175,22 +177,21 @@ releases! 🌟
    > ```bash
    > vm.max_map_count=262144
    > ```
-
+   >
 2. Clone the repo:
 
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
-
 3. Start up the server using the pre-built Docker images:
 
 > [!CAUTION]
 > All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
 > If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
 
-   > The command below downloads the `v0.21.1-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.21.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
+> The command below downloads the `v0.21.1-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.21.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
 
-   ```bash
+```bash
    $ cd ragflow/docker
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
@@ -198,16 +199,15 @@ releases! 🌟
    # To use GPU to accelerate embedding and DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
-   ```
+```
 
-   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   |-------------------|-----------------|-----------------------|--------------------------|
-   | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
-   | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
+| ----------------- | --------------- | --------------------- | -------------------------- |
+| v0.21.1           | &approx;9       | ✔️                  | Stable release             |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release             |
+| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-
-   > Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
+> Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 4. Check the server status after having the server up and running:
 
@@ -230,14 +230,17 @@ releases! 🌟
 
    > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
    > error because, at that moment, your RAGFlow may not be fully initialized.
-
+   >
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
+
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
    > HTTP serving port `80` can be omitted when using the default configurations.
+   >
 6. In [service_conf.yaml.template](./docker/service_conf.yaml.template), select the desired LLM factory in `user_default_llm` and update
    the `API_KEY` field with the corresponding API key.
 
    > See [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) for more information.
+   >
 
    _The show is on!_
 
@@ -276,7 +279,6 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 > `-v` will delete the docker container volumes, and the existing data will be cleared.
 
 2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
-
 3. Start the containers:
 
    ```bash
@@ -303,7 +305,6 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    pipx install uv pre-commit
    ```
-
 2. Clone the source code and install Python dependencies:
 
    ```bash
@@ -313,7 +314,6 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    uv run download_deps.py
    pre-commit install
    ```
-
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
    ```bash
@@ -325,13 +325,11 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
-
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
 
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
-
 5. If your operating system does not have jemalloc, please install it as follows:
 
    ```bash
@@ -344,7 +342,6 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    # macOS
    sudo brew install jemalloc
    ```
-
 6. Launch backend service:
 
    ```bash
@@ -352,14 +349,12 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
-
 7. Install frontend dependencies:
 
    ```bash
    cd web
    npm install
    ```
-
 8. Launch frontend service:
 
    ```bash
@@ -369,13 +364,11 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _The following output confirms a successful launch of the system:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
 9. Stop RAGFlow front-end and back-end service after development is complete:
 
    ```bash
    pkill -f "ragflow_server.py|task_executor.py"
    ```
-
 
 ## 📚 Documentation
 

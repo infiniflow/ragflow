@@ -526,7 +526,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=prompt[0]["content"][0]["text"],
+                prompt=prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -797,8 +797,7 @@ class NvidiaCV(Base):
         try:
             response = self._request(self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
-            if "usage" in response and "total_tokens" in response["usage"]:
-                total_tokens +=  total_token_count_from_response(response)
+            total_tokens +=  total_token_count_from_response(response)
             for resp in cnt:
                 yield resp
         except Exception as e:
@@ -847,7 +846,7 @@ class AnthropicCV(Base):
         prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
 
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=prompt)
-        return response["content"][0]["text"].strip(), response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
+        return response["content"][0]["text"].strip(), total_token_count_from_response(response)
 
     def _clean_conf(self, gen_conf):
         if "presence_penalty" in gen_conf:
@@ -874,7 +873,7 @@ class AnthropicCV(Base):
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return (
                 ans,
-                response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
+                total_token_count_from_response(response),
             )
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0

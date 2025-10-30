@@ -2,10 +2,12 @@
     "id": 22,
     "title": {
         "en": "Ecommerce Customer Service Workflow",
+        "de": "Ecommerce Kundenservice Workflow",
         "zh": "电子商务客户服务工作流程"
     },
     "description": {
         "en": "This template helps e-commerce platforms address complex customer needs, such as comparing product features, providing usage support, and coordinating home installation services.",
+        "de": "Diese Vorlage hilft E-Commerce-Plattformen, komplexe Kundenbedürfnisse zu erfüllen, wie z.B. den Vergleich von Produktmerkmalen, die Bereitstellung von Nutzungsunterstützung und die Koordination von Hausinstallationsdiensten.",
         "zh": "该模板可帮助电子商务平台解决复杂的客户需求，例如比较产品功能、提供使用支持和协调家庭安装服务。"
     },
     "canvas_type": "Customer Support",

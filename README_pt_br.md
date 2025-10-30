@@ -43,7 +43,13 @@
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
-#
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+</div>
+
+<div align="center">
+<a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</div>
 
 <details open>
 <summary><b>📕 Índice</b></summary>
@@ -148,42 +154,41 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ### 🚀 Iniciar o servidor
 
-1.  Certifique-se de que `vm.max_map_count` >= 262144:
+1. Certifique-se de que `vm.max_map_count` >= 262144:
 
-    > Para verificar o valor de `vm.max_map_count`:
-    >
-    > ```bash
-    > $ sysctl vm.max_map_count
-    > ```
-    >
-    > Se necessário, redefina `vm.max_map_count` para um valor de pelo menos 262144:
-    >
-    > ```bash
-    > # Neste caso, defina para 262144:
-    > $ sudo sysctl -w vm.max_map_count=262144
-    > ```
-    >
-    > Essa mudança será resetada após a reinicialização do sistema. Para garantir que a alteração permaneça permanente, adicione ou atualize o valor de `vm.max_map_count` em **/etc/sysctl.conf**:
-    >
-    > ```bash
-    > vm.max_map_count=262144
-    > ```
+   > Para verificar o valor de `vm.max_map_count`:
+   >
+   > ```bash
+   > $ sysctl vm.max_map_count
+   > ```
+   >
+   > Se necessário, redefina `vm.max_map_count` para um valor de pelo menos 262144:
+   >
+   > ```bash
+   > # Neste caso, defina para 262144:
+   > $ sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > Essa mudança será resetada após a reinicialização do sistema. Para garantir que a alteração permaneça permanente, adicione ou atualize o valor de `vm.max_map_count` em **/etc/sysctl.conf**:
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
+   >
+2. Clone o repositório:
 
-2.  Clone o repositório:
-
-    ```bash
-    $ git clone https://github.com/infiniflow/ragflow.git
-    ```
-
-3.  Inicie o servidor usando as imagens Docker pré-compiladas:
+   ```bash
+   $ git clone https://github.com/infiniflow/ragflow.git
+   ```
+3. Inicie o servidor usando as imagens Docker pré-compiladas:
 
 > [!CAUTION]
 > Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
 > Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
 
-    > O comando abaixo baixa a edição `v0.21.1` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.21.1`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor.
+    > O comando abaixo baixa a edição`v0.21.1` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.21.1`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor.
 
-   ```bash
+```bash
    $ cd ragflow/docker
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
@@ -191,43 +196,44 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
    # To use GPU to accelerate embedding and DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
+```
+
+| Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                      |
+| --------------------- | ---------------------- | --------------------------------- | ------------------------------ |
+| v0.21.1               | &approx;9              | ✔️                              | Lançamento estável           |
+| v0.21.1-slim          | &approx;2              | ❌                                | Lançamento estável           |
+| nightly               | &approx;2              | ❌                                | Construção noturna instável |
+
+    > Observação: A partir da`v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
+
+4. Verifique o status do servidor após tê-lo iniciado:
+
+   ```bash
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
-    | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                    |
-    | --------------------- | ---------------------- | ------------------------------- | --------------------------- |
-    | v0.21.1               | &approx;9              | ✔️                              | Lançamento estável          |
-    | v0.21.1-slim          | &approx;2              | ❌                              | Lançamento estável          |
-    | nightly               | &approx;2              | ❌                              | Construção noturna instável |
+   _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
 
-    > Observação: A partir da `v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
+   ```bash
+        ____   ___    ______ ______ __
+       / __ \ /   |  / ____// ____// /____  _      __
+      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
-4.  Verifique o status do servidor após tê-lo iniciado:
+    * Rodando em todos os endereços (0.0.0.0)
+   ```
 
-    ```bash
-    $ docker logs -f docker-ragflow-cpu-1
-    ```
+   > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network anormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
+   >
+5. No seu navegador, insira o endereço IP do seu servidor e faça login no RAGFlow.
 
-    _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
+   > Com as configurações padrão, você só precisa digitar `http://IP_DO_SEU_MÁQUINA` (**sem** o número da porta), pois a porta HTTP padrão `80` pode ser omitida ao usar as configurações padrão.
+   >
+6. Em [service_conf.yaml.template](./docker/service_conf.yaml.template), selecione a fábrica LLM desejada em `user_default_llm` e atualize o campo `API_KEY` com a chave de API correspondente.
 
-    ```bash
-         ____   ___    ______ ______ __
-        / __ \ /   |  / ____// ____// /____  _      __
-       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-     * Rodando em todos os endereços (0.0.0.0)
-    ```
-
-    > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network anormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
-
-5.  No seu navegador, insira o endereço IP do seu servidor e faça login no RAGFlow.
-
-    > Com as configurações padrão, você só precisa digitar `http://IP_DO_SEU_MÁQUINA` (**sem** o número da porta), pois a porta HTTP padrão `80` pode ser omitida ao usar as configurações padrão.
-
-6.  Em [service_conf.yaml.template](./docker/service_conf.yaml.template), selecione a fábrica LLM desejada em `user_default_llm` e atualize o campo `API_KEY` com a chave de API correspondente.
-
-    > Consulte [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) para mais informações.
+   > Consulte [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) para mais informações.
+   >
 
 _O show está no ar!_
 
@@ -258,9 +264,9 @@ O RAGFlow usa o Elasticsearch por padrão para armazenar texto completo e vetore
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+
    Note: `-v` irá deletar os volumes do contêiner, e os dados existentes serão apagados.
 2. Defina `DOC_ENGINE` no **docker/.env** para `infinity`.
-
 3. Inicie os contêineres:
 
    ```bash
@@ -287,7 +293,6 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    pipx install uv pre-commit
    ```
-
 2. Clone o código-fonte e instale as dependências Python:
 
    ```bash
@@ -297,7 +302,6 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    uv run download_deps.py
    pre-commit install
    ```
-
 3. Inicie os serviços dependentes (MinIO, Elasticsearch, Redis e MySQL) usando Docker Compose:
 
    ```bash
@@ -309,24 +313,21 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
-
 4. Se não conseguir acessar o HuggingFace, defina a variável de ambiente `HF_ENDPOINT` para usar um site espelho:
 
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
-
 5. Se o seu sistema operacional não tiver jemalloc, instale-o da seguinte maneira:
 
-    ```bash
-    # ubuntu
-    sudo apt-get install libjemalloc-dev
-    # centos
-    sudo yum instalar jemalloc
-    # mac
-    sudo brew install jemalloc
-    ```
-
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum instalar jemalloc
+   # mac
+   sudo brew install jemalloc
+   ```
 6. Lance o serviço de back-end:
 
    ```bash
@@ -334,14 +335,12 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
-
 7. Instale as dependências do front-end:
 
    ```bash
    cd web
    npm install
    ```
-
 8. Lance o serviço de front-end:
 
    ```bash
@@ -351,13 +350,11 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
 9. Pare os serviços de front-end e back-end do RAGFlow após a conclusão do desenvolvimento:
 
-    ```bash
-    pkill -f "ragflow_server.py|task_executor.py"
-    ```
-
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
 
 ## 📚 Documentação
 

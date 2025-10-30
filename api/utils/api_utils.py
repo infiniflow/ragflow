@@ -43,7 +43,6 @@ from flask_login import current_user
 from flask import (
     request as flask_request,
 )
-from itsdangerous import URLSafeTimedSerializer
 from peewee import OperationalError
 from werkzeug.http import HTTP_STATUS_CODES
 
@@ -51,8 +50,7 @@ from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db import ActiveEnum
 from api.db.db_models import APIToken
-from api.utils.json import CustomJSONEncoder, json_dumps
-from api.utils import get_uuid
+from api.utils.json_encode import CustomJSONEncoder, json_dumps
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
@@ -410,9 +408,9 @@ def get_error_operating_result(message="Operating error"):
     return get_result(code=settings.RetCode.OPERATING_ERROR, message=message)
 
 
-def generate_confirmation_token(tenant_id):
-    serializer = URLSafeTimedSerializer(tenant_id)
-    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
+def generate_confirmation_token():
+    import secrets
+    return "ragflow-" + secrets.token_urlsafe(32)
 
 
 def get_parser_config(chunk_method, parser_config):
