@@ -52,6 +52,7 @@ export const CreateUserForm = ({
     queryKey: ['admin/listRoles'],
     queryFn: async () => (await listRoles()).data.data.roles,
     enabled: IS_ENTERPRISE,
+    retry: false,
   });
 
   return (

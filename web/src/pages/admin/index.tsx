@@ -81,6 +81,7 @@ function AdminLogin() {
     onError: (error) => {
       console.log('Failed:', error);
     },
+    retry: false,
   });
 
   const loading = loginMutation.isPending;
@@ -151,7 +152,7 @@ function AdminLogin() {
                     id={formId}
                     className="space-y-8 text-text-primary"
                     onSubmit={form.handleSubmit((data) =>
-                      loginMutation.mutateAsync(data),
+                      loginMutation.mutate(data),
                     )}
                   >
                     <FormField

@@ -307,6 +307,7 @@ function AdminUserDetail() {
       };
     },
     enabled: !!id,
+    retry: false,
   });
 
   return (
