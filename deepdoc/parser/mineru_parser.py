@@ -30,7 +30,6 @@ from typing import Any, Callable, Optional
 import requests
 import os
 import zipfile
-from pathlib import Path
 from requests.exceptions import RequestException
 
 import numpy as np
@@ -64,16 +63,13 @@ class MinerUParser(RAGFlowPdfParser):
 
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            # 自动检测根目录
             if not root_dir:
                 files = zip_ref.namelist()
                 if files and files[0].endswith('/'):
-                    # 推测第一个目录为根目录
                     root_dir = files[0]
                 else:
                     root_dir = None
             
-            # 如果 root_dir 不存在或不是目录，直接解压（忽略）
             if not root_dir or not root_dir.endswith('/'):
                 self.logger.info(f"[MinerU] No root directory found, extracting all...fff{root_dir}")
                 zip_ref.extractall(extract_to)
@@ -82,33 +78,27 @@ class MinerUParser(RAGFlowPdfParser):
             root_len = len(root_dir)
             for member in zip_ref.infolist():
                 filename = member.filename
-                # 排除根目录本身
                 if filename == root_dir:
                     self.logger.info("[MinerU] Ignore root folder...")
                     continue
                 
-                # 去除根目录路径
                 path = filename
                 if path.startswith(root_dir):
                     path = path[root_len:]
                 
-                # 文件或目录
                 full_path = os.path.join(extract_to, path)
                 if member.is_dir():
                     os.makedirs(full_path, exist_ok=True)
                 else:
-                    # 创建目录
                     os.makedirs(os.path.dirname(full_path), exist_ok=True)
                     with open(full_path, 'wb') as f:
                         f.write(zip_ref.read(filename))
 
     def _is_http_endpoint_valid(self, url, timeout=5):
         try:
-            # 使用 HEAD 请求更高效，不下载内容
             response = requests.head(url, timeout=timeout, allow_redirects=True)
-            # 判断状态码是否为 200（或 3XX 重定向也可以接受，但一般认为是存在）
             return response.status_code in [200, 301, 302, 307, 308]
-        except RequestException as e:
+        except Exception:
             return False
 
     def check_installation(self) -> bool:
@@ -146,7 +136,7 @@ class MinerUParser(RAGFlowPdfParser):
                 self.using_api = openapi_exists
                 return openapi_exists
             else:
-                logging.info(f"[MinerU] api not exists.")
+                logging.info("[MinerU] api not exists.")
         except Exception as e:
             logging.error(f"[MinerU] Unexpected error during api check: {e}")
         return False
@@ -222,7 +212,7 @@ class MinerUParser(RAGFlowPdfParser):
                 if callback:
                     callback(0.40, f"[MinerU] Unzip to {output_path}...")
             else:
-                self.logger.warning("[MinerU] not zip returned from api：% " % response.headers.get("Content-Type"))
+                self.logger.warning("[MinerU] not zip returned from api：%s " % response.headers.get("Content-Type"))
         except Exception as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
         self.logger.info("[MinerU] Api completed successfully.")
