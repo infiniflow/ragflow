@@ -2,9 +2,11 @@
     "id": 20,
     "title": {
         "en": "Report Agent Using Knowledge Base",
+        "de": "Berichtsagent mit Wissensdatenbank",
         "zh": "知识库检索智能体"},
     "description": {
         "en": "A report generation assistant using local knowledge base, with advanced capabilities in task planning, reasoning, and reflective analysis. Recommended for academic research paper Q&A",
+        "de": "Ein Berichtsgenerierungsassistent, der eine lokale Wissensdatenbank nutzt, mit erweiterten Fähigkeiten in Aufgabenplanung, Schlussfolgerung und reflektierender Analyse. Empfohlen für akademische Forschungspapier-Fragen und -Antworten.",
         "zh": "一个使用本地知识库的报告生成助手，具备高级能力，包括任务规划、推理和反思性分析。推荐用于学术研究论文问答。"},
     "canvas_type": "Agent",
     "dsl": {

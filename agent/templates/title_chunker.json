@@ -2,10 +2,12 @@
     "id": 25,
     "title": {
         "en": "Title Chunker",
+        "de": "Titel basierte Segmentierung",
         "zh": "标题切片"
     },
     "description": {
         "en": "This template slices the parsed file based on its title structure. It is ideal for documents with well-defined headings, such as product manuals, legal contracts, research reports, and academic papers.",
+        "de": "Diese Vorlage segmentiert die geparste Datei basierend auf ihrer Titelstruktur. Sie eignet sich ideal für Dokumente mit klar definierten Überschriften, wie Produkthandbücher, Verträge, Forschungsberichte und wissenschaftliche Arbeiten.",
         "zh": "此模板将解析后的文件按标题结构进行切片，适用于具有清晰标题层级的文档类型，如产品手册、合同法规、研究报告和学术论文等。"
     },
     "canvas_type": "Ingestion Pipeline",

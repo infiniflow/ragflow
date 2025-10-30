@@ -2,10 +2,12 @@
     "id": 24,
     "title": {
         "en": "Chunk Summary",
+        "de": "Segmentzusammenfassung",
         "zh": "总结切片"
     },
     "description": {
         "en": "This template uses an LLM to generate chunk summaries for building text and vector indexes. During retrieval, summaries enhance matching, and the original chunks are returned as results.",
+        "de": "Diese Vorlage nutzt ein LLM zur Generierung von Segmentzusammenfassungen für den Aufbau von Text- und Vektorindizes. Bei der Abfrage verbessern die Zusammenfassungen die Übereinstimmung, während die ursprünglichen Segmente als Ergebnisse zurückgegeben werden.",
         "zh": "此模板利用大模型生成切片摘要，并据此建立全文索引与向量。检索时以摘要提升匹配效果，最终召回对应的原文切片。"
     },
     "canvas_type": "Ingestion Pipeline",

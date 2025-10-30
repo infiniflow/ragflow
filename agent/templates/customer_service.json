@@ -3,9 +3,11 @@
     "id": 2,
     "title": {
         "en": "Multi-Agent Customer Support",
+        "de": "Multi Agenten Kundensupport",
         "zh": "多智能体客服"},
     "description": {
         "en": "This is a multi-agent system for intelligent customer service processing based on user intent classification. It uses the lead-agent to identify the type of user needs, assign tasks to sub-agents for processing.",
+        "de": "Dies ist ein Multi-Agenten-System für die intelligente Kundenservice-Verarbeitung basierend auf Benutzerabsichtsklassifizierung. Es verwendet den Haupt-Agenten zur Identifizierung der Art der Benutzerbedürfnisse und weist Aufgaben an Unter-Agenten zur Verarbeitung zu.",
         "zh": "多智能体系统，用于智能客服场景。基于用户意图分类，使用主智能体识别用户需求类型，并将任务分配给子智能体进行处理。"},
     "canvas_type": "Agent",
     "dsl": {

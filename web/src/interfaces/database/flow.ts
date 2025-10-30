@@ -52,12 +52,14 @@ export interface IFlowTemplate {
   description: {
     en: string;
     zh: string;
+    de: string;
   };
   dsl: DSL;
   id: string;
   title: {
     en: string;
     zh: string;
+    de: string;
   };
   update_date: string;
   update_time: number;
