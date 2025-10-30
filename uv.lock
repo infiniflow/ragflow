@@ -2654,7 +2654,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.1"
+version = "0.6.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2671,7 +2671,7 @@ dependencies = [
     { name = "thrift" },
 ]
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/44/0e/7a596a41a79d15bb6c87e76862aa287bb98243a40fa7a31096b57df01613/infinity_sdk-0.6.1-py3-none-any.whl", hash = "sha256:b9cb1f7fee28569de8b763c353aa299fa141af70e67ceadc70562c84237229e4", size = 75260, upload-time = "2025-10-21T13:11:06.265Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b3/bc/3b8404a1aa5732bdcfbb1026bfc2a944cba8b7f810c420cde8e7b14be91b/infinity_sdk-0.6.2-py3-none-any.whl", hash = "sha256:29d3e7fa4152a5d959a70539ca1a15ad4c00162b6d6d1da4a8766b9d05879874", size = 75263, upload-time = "2025-10-29T15:07:10.682Z" },
 ]
 
 [[package]]
@@ -3724,12 +3724,12 @@ name = "onnxruntime-gpu"
 version = "1.19.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d0/9c/3fa310e0730643051eb88e884f19813a6c8b67d0fbafcda610d960e589db/onnxruntime_gpu-1.19.2-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a49740e079e7c5215830d30cde3df792e903df007aa0b0fd7aa797937061b27a", size = 226178508, upload-time = "2024-09-04T06:43:40.83Z" },
@@ -5385,7 +5385,7 @@ requires-dist = [
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<0.29.0" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.1" },
+    { name = "infinity-sdk", specifier = "==0.6.2" },
     { name = "itsdangerous", specifier = "==2.1.2" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
@@ -6513,9 +6513,9 @@ source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "requests" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3a/47/05163b257f6c0e60aed4272d48bdb816567ab3c805d3e8770430f0cc1be2/tencentcloud-sdk-python-3.0.1478.tar.gz", hash = "sha256:89996462d53a672946aa32d01673a4818ebcd8bc72b024f35ebe96cebe2df179", size = 12297889, upload_time = "2025-10-20T20:54:40.603Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3a/47/05163b257f6c0e60aed4272d48bdb816567ab3c805d3e8770430f0cc1be2/tencentcloud-sdk-python-3.0.1478.tar.gz", hash = "sha256:89996462d53a672946aa32d01673a4818ebcd8bc72b024f35ebe96cebe2df179", size = 12297889, upload-time = "2025-10-20T20:54:40.603Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c5/db/daa85799b9af2aa50539b27eeb0d6a2a0ac35465f62683107847830dbe4d/tencentcloud_sdk_python-3.0.1478-py2.py3-none-any.whl", hash = "sha256:10ddee1c1348f49e2b54af606f978d4cb17fca656639e8d99b6527e6e4793833", size = 12984723, upload_time = "2025-10-20T20:54:27.767Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c5/db/daa85799b9af2aa50539b27eeb0d6a2a0ac35465f62683107847830dbe4d/tencentcloud_sdk_python-3.0.1478-py2.py3-none-any.whl", hash = "sha256:10ddee1c1348f49e2b54af606f978d4cb17fca656639e8d99b6527e6e4793833", size = 12984723, upload-time = "2025-10-20T20:54:27.767Z" },
 ]
 
 [[package]]
