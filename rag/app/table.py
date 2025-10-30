@@ -33,11 +33,11 @@ from deepdoc.parser import ExcelParser
 
 
 class Excel(ExcelParser):
-    def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None):
+    def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None, include_formulas=False):
         if not binary:
-            wb = Excel._load_excel_to_workbook(fnm)
+            wb = Excel._load_excel_to_workbook(fnm, include_formulas)
         else:
-            wb = Excel._load_excel_to_workbook(BytesIO(binary))
+            wb = Excel._load_excel_to_workbook(BytesIO(binary), include_formulas)
         total = 0
         for sheetname in wb.sheetnames:
             total += len(list(wb[sheetname].rows))
@@ -322,7 +322,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+        parser_config = kwargs.get("parser_config", {})
+        include_formulas = parser_config.get("include_formulas", False)
+        dfs = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback, include_formulas=include_formulas)
     elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)

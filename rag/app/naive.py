@@ -583,11 +583,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+
+        # Check if table mode is enabled for Excel parsing
+        if parser_config.get("use_table_mode", False):
+            # Use Table parser mode - each row becomes a chunk
+            from rag.app import table
+            return table.chunk(filename, binary, callback=callback, **kwargs)
+
+        # Use standard Excel parsing
         excel_parser = ExcelParser()
+        include_formulas = parser_config.get("include_formulas", False)
         if parser_config.get("html4excel"):
-            sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+            sections = [(_, "") for _ in excel_parser.html(binary, 12, include_formulas) if _]
         else:
-            sections = [(_, "") for _ in excel_parser(binary) if _]
+            sections = [(_, "") for _ in excel_parser(binary, include_formulas) if _]
         parser_config["chunk_token_num"] = 12800
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):

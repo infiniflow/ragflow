@@ -27,7 +27,7 @@ ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
 
 class RAGFlowExcelParser:
     @staticmethod
-    def _load_excel_to_workbook(file_like_object):
+    def _load_excel_to_workbook(file_like_object, include_formulas=False):
         if isinstance(file_like_object, bytes):
             file_like_object = BytesIO(file_like_object)
 
@@ -48,7 +48,8 @@ class RAGFlowExcelParser:
                 raise Exception(f"Failed to parse CSV and convert to Excel Workbook: {e_csv}")
 
         try:
-            return load_workbook(file_like_object, data_only=True)
+            # data_only=False means formulas will be read, data_only=True means only values
+            return load_workbook(file_like_object, data_only=not include_formulas)
         except Exception as e:
             logging.info(f"openpyxl load error: {e}, try pandas instead")
             try:
@@ -109,17 +110,26 @@ class RAGFlowExcelParser:
                     ws.cell(row=row_num, column=col_num, value=value)
         return wb
 
-    def html(self, fnm, chunk_rows=256):
+    def html(self, fnm, chunk_rows=256, include_formulas=False):
         from html import escape
 
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
-        wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
+        wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object, include_formulas)
         tb_chunks = []
 
-        def _fmt(v):
-            if v is None:
+        def _fmt(cell, include_formulas=False):
+            if cell.value is None:
                 return ""
-            return str(v).strip()
+
+            # Check if cell contains a formula
+            if include_formulas and hasattr(cell, 'data_type') and cell.data_type == 'f':
+                formula = f"={cell.value}"
+                # Try to get cached computed value
+                if hasattr(cell, '_value') and cell._value is not None:
+                    return f"{formula} → {cell._value}"
+                return formula
+
+            return str(cell.value).strip()
 
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
@@ -134,7 +144,7 @@ class RAGFlowExcelParser:
 
             tb_rows_0 = "<tr>"
             for t in list(rows[0]):
-                tb_rows_0 += f"<th>{escape(_fmt(t.value))}</th>"
+                tb_rows_0 += f"<th>{escape(_fmt(t, include_formulas))}</th>"
             tb_rows_0 += "</tr>"
 
             for chunk_i in range((len(rows) - 1) // chunk_rows + 1):
@@ -147,7 +157,7 @@ class RAGFlowExcelParser:
                         if c.value is None:
                             tb += "<td></td>"
                         else:
-                            tb += f"<td>{escape(_fmt(c.value))}</td>"
+                            tb += f"<td>{escape(_fmt(c, include_formulas))}</td>"
                     tb += "</tr>"
                 tb += "</table>\n"
                 tb_chunks.append(tb)
@@ -168,9 +178,9 @@ class RAGFlowExcelParser:
         df = df.replace(r"^\s*$", "", regex=True)
         return df.to_markdown(index=False)
 
-    def __call__(self, fnm):
+    def __call__(self, fnm, include_formulas=False):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
-        wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
+        wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object, include_formulas)
 
         res = []
         for sheetname in wb.sheetnames:
@@ -189,7 +199,16 @@ class RAGFlowExcelParser:
                     if not c.value:
                         continue
                     t = str(ti[i].value) if i < len(ti) else ""
-                    t += ("：" if t else "") + str(c.value)
+
+                    # Format cell value with formula if needed
+                    cell_value = str(c.value)
+                    if include_formulas and hasattr(c, 'data_type') and c.data_type == 'f':
+                        cell_value = f"={c.value}"
+                        # Add computed value if available
+                        if hasattr(c, '_value') and c._value is not None:
+                            cell_value += f" (={c._value})"
+
+                    t += ("：" if t else "") + cell_value
                     fields.append(t)
                 line = "; ".join(fields)
                 if sheetname.lower().find("sheet") < 0:
