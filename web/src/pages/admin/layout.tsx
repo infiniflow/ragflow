@@ -14,13 +14,12 @@ import {
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NavLink, Outlet, useLocation, useNavigate } from 'umi';
+import { NavLink, Outlet, useNavigate } from 'umi';
 import ThemeSwitch from './components/theme-switch';
 import { IS_ENTERPRISE } from './utils';
 
 const AdminLayout = () => {
   const { t } = useTranslation();
-  const { pathname } = useLocation();
   const navigate = useNavigate();
 
   const navItems = useMemo(
@@ -58,11 +57,7 @@ const AdminLayout = () => {
     [t],
   );
 
-  const {
-    data,
-    isPending,
-    mutateAsync: logout,
-  } = useMutation({
+  const logoutMutation = useMutation({
     mutationKey: ['adminLogout'],
     mutationFn: async () => {
       await adminService.logout();
@@ -71,11 +66,12 @@ const AdminLayout = () => {
       authorizationUtil.removeAll();
       navigate(Routes.Admin);
     },
+    retry: false,
   });
 
   return (
     <main className="w-screen h-screen flex flex-row px-6 pt-12 pb-6 dark:*:focus-visible:ring-white">
-      <aside className="w-[28rem] mr-6 flex flex-col gap-6">
+      <aside className="w-72 mr-6 flex flex-col gap-6">
         <div className="flex items-center mb-6">
           <img className="size-8 mr-5" src="/logo.svg" alt="logo" />
           <span className="text-xl font-bold">{t('admin.title')}</span>
@@ -87,17 +83,18 @@ const AdminLayout = () => {
               <li key={it.path}>
                 <NavLink
                   to={it.path}
-                  className={cn(
-                    'px-4 py-3 rounded-lg',
-                    'text-base w-full flex items-center justify-start text-text-secondary',
-                    'hover:bg-bg-card focus:bg-bg-card focus-visible:bg-bg-card',
-                    'hover:text-text-primary focus:text-text-primary focus-visible:text-text-primary',
-                    'active:text-text-primary',
-                    {
-                      'bg-bg-card text-text-primary':
-                        it.path && pathname.startsWith(it.path),
-                    },
-                  )}
+                  className={({ isActive }) =>
+                    cn(
+                      'px-4 py-3 rounded-lg',
+                      'text-base w-full flex items-center justify-start text-text-secondary',
+                      'hover:bg-bg-card focus:bg-bg-card focus-visible:bg-bg-card',
+                      'hover:text-text-primary focus:text-text-primary focus-visible:text-text-primary',
+                      'active:text-text-primary',
+                      {
+                        'bg-bg-card text-text-primary': isActive,
+                      },
+                    )
+                  }
                 >
                   {it.icon}
                   <span className="ml-3">{it.name}</span>
@@ -116,14 +113,14 @@ const AdminLayout = () => {
             size="lg"
             variant="transparent"
             className="block w-full dark:border-border-button"
-            onClick={() => logout()}
+            onClick={() => logoutMutation.mutate()}
           >
             {t('header.logout')}
           </Button>
         </div>
       </aside>
 
-      <section className="w-full h-full">
+      <section className="flex-1 h-full">
         <Outlet />
       </section>
     </main>
