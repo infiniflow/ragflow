@@ -7,7 +7,7 @@ import {
 } from '@/hooks/llm-hooks';
 import { Form, Modal, Select } from 'antd';
 import { useEffect } from 'react';
-import { useFetchSystemModelSettingOnMount } from '../hooks';
+import { useFetchSystemModelSettingOnMount } from '../../hooks';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
