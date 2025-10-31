@@ -1,10 +1,17 @@
 """Configuration constants and enum definitions"""
 import json
 import os
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, cast
 
-from common.data_source.utils import get_current_tz_offset
+
+def get_current_tz_offset() -> int:
+    # datetime now() gets local time, datetime.now(timezone.utc) gets UTC time.
+    # remove tzinfo to compare non-timezone-aware objects.
+    time_diff = datetime.now() - datetime.now(timezone.utc).replace(tzinfo=None)
+    return round(time_diff.total_seconds() / 3600)
+
 
 ONE_HOUR = 3600
 ONE_DAY = ONE_HOUR * 24
@@ -70,7 +77,7 @@ _PAGE_EXPANSION_FIELDS = [
 
 # Configuration constants
 BLOB_STORAGE_SIZE_THRESHOLD = 20 * 1024 * 1024  # 20MB
-INDEX_BATCH_SIZE = 16
+INDEX_BATCH_SIZE = 2
 SLACK_NUM_THREADS = 4
 ENABLE_EXPENSIVE_EXPERT_CALLS = False
 

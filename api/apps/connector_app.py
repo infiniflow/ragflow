@@ -30,7 +30,8 @@ from api.utils.api_utils import get_json_result, validate_request, get_data_erro
 def set_connector():
     req = request.json
     if req.get("id"):
-        conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config"] if fld in req}
+        conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
+        ConnectorService.update_by_id(req["id"], conn)
     else:
         req["id"] = get_uuid()
         conn = {
@@ -42,6 +43,7 @@ def set_connector():
             "config": req["config"],
             "refresh_freq": int(req["refresh_freq"]),
             "prune_freq": int(req["prune_freq"]),
+            "timeout_secs": int(req["timeout_secs"]),
             "status": TaskStatus.SCHEDULE
         }
         conn["status"] = TaskStatus.SCHEDULE
@@ -84,7 +86,7 @@ def resume(connector_id):
 @login_required
 def link_kb(connector_id):
     req = request.json
-    errors = Connector2KbService.link_kb(req["connector_id"], req["kb_ids"], current_user.id)
+    errors = Connector2KbService.link_kb(connector_id, req["kb_ids"], current_user.id)
     if errors:
         return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
     return get_json_result(data=True)

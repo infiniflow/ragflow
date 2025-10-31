@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import time
 from datetime import datetime
 
 from anthropic import BaseModel
@@ -23,6 +25,8 @@ from api.db.db_models import Connector, SyncLogs, Connector2Kb, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
+from api.utils import get_uuid
+from common.time_utils import current_timestamp, timestamp_to_date
 
 
 class ConnectorService(CommonService):
@@ -64,11 +68,12 @@ class SyncLogsService(CommonService):
             Connector.source,
             Connector.config,
             Connector.tenant_id,
+            Connector.timeout_secs,
             Knowledgebase.name.alias("kb_name"),
             cls.model.from_beginning.alias("reindex"),
             cls.model.status
         ]
-        query = cls.model.select(**fields)\
+        query = cls.model.select(*fields)\
             .join(Connector, on=(cls.model.connector_id==Connector.id))\
             .join(Connector2Kb, on=(cls.model.kb_id==Connector2Kb.kb_id))\
             .join(Knowledgebase, on=(cls.model.kb_id==Knowledgebase.id))
@@ -76,15 +81,15 @@ class SyncLogsService(CommonService):
         if connector_id:
             query = query.where(cls.model.connector_id == connector_id)
         else:
-            mins = SQL("INTERVAL '1 minute'")
+            interval_expr = SQL(f"INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
                 Connector.input_type == InputType.POLL,
                 Connector.status == TaskStatus.SCHEDULE,
                 cls.model.status == TaskStatus.SCHEDULE,
-                cls.model.update_date < fn.now() - Connector.refresh_freq * mins
+                cls.model.update_date < (fn.NOW() - interval_expr)
             )
 
-        query = query.order_by(cls.model.update_time)
+        query = query.distinct().order_by(cls.model.update_time.desc())
         if page_number:
             query = query.paginate(page_number, items_per_page)
 
@@ -95,18 +100,40 @@ class SyncLogsService(CommonService):
         cls.update_by_id(id, {"status": TaskStatus.RUNNING, "time_started": datetime.now().strftime('%Y-%m-%d %H:%M:%S') })
 
     @classmethod
+    def done(cls, id):
+        cls.update_by_id(id, {"status": TaskStatus.DONE})
+
+    @classmethod
     def schedule(cls, connector_id, kb_id, poll_range_start=None, reindex=False, total_docs_indexed=0):
-        cls.filter_update([cls.model.connector_id==connector_id, cls.model.kb_id==kb_id, cls.model.status==TaskStatus.SCHEDULE], {"status": TaskStatus.DONE})
-        return cls.save(**{"kb_id": kb_id, "status": TaskStatus.SCHEDULE, "connector_id": connector_id, "poll_range_start": poll_range_start, "from_beginning": reindex, "total_docs_indexed": total_docs_indexed})
+        try:
+            reindex = "1" if reindex else "0"
+            return cls.save(**{
+                "id": get_uuid(),
+                "kb_id": kb_id, "status": TaskStatus.SCHEDULE, "connector_id": connector_id,
+                "poll_range_start": poll_range_start, "from_beginning": reindex,
+                "total_docs_indexed": total_docs_indexed
+            })
+        except Exception as e:
+            logging.exception(e)
+            task = cls.get_latest_task(connector_id, kb_id)
+            if task:
+                cls.model.update(status=TaskStatus.SCHEDULE,
+                                 poll_range_start=poll_range_start,
+                                 error_msg=cls.model.error_msg + str(e),
+                                 full_exception_trace=cls.model.full_exception_trace + str(e)
+                                 ) \
+                .where(cls.model.id == task.id).execute()
 
     @classmethod
     def increase_docs(cls, id, min_update, max_update, doc_num, err_msg="", error_count=0):
         cls.model.update(new_docs_indexed=cls.model.new_docs_indexed + doc_num,
                          total_docs_indexed=cls.model.total_docs_indexed + doc_num,
-                         poll_range_start=fn.MIN(cls.model.poll_range_start,min_update),
-                         poll_range_end=fn.MAX(cls.model.poll_range_end,max_update),
+                         poll_range_start=fn.COALESCE(fn.LEAST(cls.model.poll_range_start,min_update), min_update),
+                         poll_range_end=fn.COALESCE(fn.GREATEST(cls.model.poll_range_end, max_update), max_update),
                          error_msg=cls.model.error_msg + err_msg,
-                         error_count=cls.model.error_count + error_count
+                         error_count=cls.model.error_count + error_count,
+                         update_time=current_timestamp(),
+                         update_date=timestamp_to_date(current_timestamp())
                          )\
             .where(cls.model.id == id).execute()
 
@@ -153,11 +180,12 @@ class Connector2KbService(CommonService):
         for kb_id in kb_ids:
             if kb_id in old_kb_ids:
                 continue
-            Connector2Kb.save(**{
+            cls.save(**{
+                "id": get_uuid(),
                 "connector_id": conn_id,
                 "kb_id": kb_id
             })
-            SyncLogsService.next(conn_id, kb_id, reindex=True)
+            SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 
         errs = []
         e, conn = ConnectorService.get_by_id(conn_id)

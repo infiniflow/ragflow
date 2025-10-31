@@ -124,7 +124,7 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
                 last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
 
-                if not start < last_modified <= end:
+                if not (start < last_modified <= end):
                     continue
 
                 file_name = os.path.basename(obj["Key"])

@@ -4,7 +4,10 @@ import json
 import logging
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Any, cast, Iterator, Callable, Generator, override
+from io import BytesIO
+from pathlib import Path
+from typing import Any, cast, Iterator, Callable, Generator
+from typing_extensions import override
 from urllib.parse import quote
 
 import bs4
@@ -17,7 +20,8 @@ from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource, CONTINUE
     OAUTH_CONFLUENCE_CLOUD_CLIENT_ID, OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET, _DEFAULT_PAGINATION_LIMIT, \
     _PROBLEMATIC_EXPANSIONS, _REPLACEMENT_EXPANSIONS, _USER_NOT_FOUND, _COMMENT_EXPANSION_FIELDS, \
     _ATTACHMENT_EXPANSION_FIELDS, _PAGE_EXPANSION_FIELDS, ONE_DAY, ONE_HOUR, _RESTRICTIONS_EXPANSION_FIELDS, \
-    _SLIM_DOC_BATCH_SIZE
+    _SLIM_DOC_BATCH_SIZE, CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD, \
+    CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD, FileOrigin
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -30,14 +34,15 @@ from common.data_source.interfaces import (
     CredentialsConnector,
     SecondsSinceUnixEpoch,
     SlimConnectorWithPermSync, StaticCredentialsProvider, CheckpointedConnector, SlimConnector,
-    CredentialsProviderInterface, ConfluenceUser, IndexingHeartbeatInterface
+    CredentialsProviderInterface, ConfluenceUser, IndexingHeartbeatInterface, AttachmentProcessingResult,
+    CheckpointOutput
 )
 from common.data_source.models import ConnectorFailure, Document, TextSection, ImageSection, BasicExpertInfo, \
-    DocumentFailure, CheckpointOutput, GenerateSlimDocumentOutput, SlimDocument, ExternalAccess
+    DocumentFailure, GenerateSlimDocumentOutput, SlimDocument, ExternalAccess
 from common.data_source.utils import load_all_docs_from_checkpoint_connector, scoped_url, \
     process_confluence_user_profiles_override, confluence_refresh_tokens, run_with_timeout, _handle_http_error, \
     update_param_in_path, get_start_param_from_url, build_confluence_document_id, datetime_from_string, \
-    is_atlassian_date_error, validate_attachment_filetype, convert_attachment_to_content
+    is_atlassian_date_error, validate_attachment_filetype
 from rag.utils.redis_conn import RedisDB, REDIS_CONN
 
 
@@ -1022,6 +1027,263 @@ def _remove_macro_stylings(soup: bs4.BeautifulSoup) -> None:
             continue
 
         macro_styling.extract()
+
+
+def get_page_restrictions(
+    confluence_client: OnyxConfluence,
+    page_id: str,
+    page_restrictions: dict[str, Any],
+    ancestors: list[dict[str, Any]],
+) -> ExternalAccess | None:
+    """
+    Get page access restrictions for a Confluence page.
+    This functionality requires Enterprise Edition.
+
+    Args:
+        confluence_client: OnyxConfluence client instance
+        page_id: The ID of the page
+        page_restrictions: Dictionary containing page restriction data
+        ancestors: List of ancestor pages with their restriction data
+
+    Returns:
+        ExternalAccess object for the page. None if EE is not enabled or no restrictions found.
+    """
+    # Fetch the EE implementation
+    ee_get_all_page_restrictions = cast(
+        Callable[
+            [OnyxConfluence, str, dict[str, Any], list[dict[str, Any]]],
+            ExternalAccess | None,
+        ],
+        fetch_versioned_implementation(
+            "onyx.external_permissions.confluence.page_access", "get_page_restrictions"
+        ),
+    )
+
+    return ee_get_all_page_restrictions(
+        confluence_client, page_id, page_restrictions, ancestors
+    )
+
+
+def get_all_space_permissions(
+    confluence_client: OnyxConfluence,
+    is_cloud: bool,
+) -> dict[str, ExternalAccess]:
+    """
+    Get access permissions for all spaces in Confluence.
+    This functionality requires Enterprise Edition.
+
+    Args:
+        confluence_client: OnyxConfluence client instance
+        is_cloud: Whether this is a Confluence Cloud instance
+
+    Returns:
+        Dictionary mapping space keys to ExternalAccess objects. Empty dict if EE is not enabled.
+    """
+
+    # Fetch the EE implementation
+    ee_get_all_space_permissions = cast(
+        Callable[
+            [OnyxConfluence, bool],
+            dict[str, ExternalAccess],
+        ],
+        fetch_versioned_implementation(
+            "onyx.external_permissions.confluence.space_access",
+            "get_all_space_permissions",
+        ),
+    )
+
+    return ee_get_all_space_permissions(confluence_client, is_cloud)
+
+
+def _make_attachment_link(
+    confluence_client: "OnyxConfluence",
+    attachment: dict[str, Any],
+    parent_content_id: str | None = None,
+) -> str | None:
+    download_link = ""
+
+    if "api.atlassian.com" in confluence_client.url:
+        # https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-content---attachments/#api-wiki-rest-api-content-id-child-attachment-attachmentid-download-get
+        if not parent_content_id:
+            logging.warning(
+                "parent_content_id is required to download attachments from Confluence Cloud!"
+            )
+            return None
+
+        download_link = (
+            confluence_client.url
+            + f"/rest/api/content/{parent_content_id}/child/attachment/{attachment['id']}/download"
+        )
+    else:
+        download_link = confluence_client.url + attachment["_links"]["download"]
+
+    return download_link
+
+
+def _process_image_attachment(
+    confluence_client: "OnyxConfluence",
+    attachment: dict[str, Any],
+    raw_bytes: bytes,
+    media_type: str,
+) -> AttachmentProcessingResult:
+    """Process an image attachment by saving it without generating a summary."""
+    try:
+        # Use the standardized image storage and section creation
+        section, file_name = store_image_and_create_section(
+            image_data=raw_bytes,
+            file_id=Path(attachment["id"]).name,
+            display_name=attachment["title"],
+            media_type=media_type,
+            file_origin=FileOrigin.CONNECTOR,
+        )
+        logging.info(f"Stored image attachment with file name: {file_name}")
+
+        # Return empty text but include the file_name for later processing
+        return AttachmentProcessingResult(text="", file_name=file_name, error=None)
+    except Exception as e:
+        msg = f"Image storage failed for {attachment['title']}: {e}"
+        logging.error(msg, exc_info=e)
+        return AttachmentProcessingResult(text=None, file_name=None, error=msg)
+
+
+def process_attachment(
+    confluence_client: "OnyxConfluence",
+    attachment: dict[str, Any],
+    parent_content_id: str | None,
+    allow_images: bool,
+) -> AttachmentProcessingResult:
+    """
+    Processes a Confluence attachment. If it's a document, extracts text,
+    or if it's an image, stores it for later analysis. Returns a structured result.
+    """
+    try:
+        # Get the media type from the attachment metadata
+        media_type: str = attachment.get("metadata", {}).get("mediaType", "")
+        # Validate the attachment type
+        if not validate_attachment_filetype(attachment):
+            return AttachmentProcessingResult(
+                text=None,
+                file_name=None,
+                error=f"Unsupported file type: {media_type}",
+            )
+
+        attachment_link = _make_attachment_link(
+            confluence_client, attachment, parent_content_id
+        )
+        if not attachment_link:
+            return AttachmentProcessingResult(
+                text=None, file_name=None, error="Failed to make attachment link"
+            )
+
+        attachment_size = attachment["extensions"]["fileSize"]
+
+        if media_type.startswith("image/"):
+            if not allow_images:
+                return AttachmentProcessingResult(
+                    text=None,
+                    file_name=None,
+                    error="Image downloading is not enabled",
+                )
+        else:
+            if attachment_size > CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD:
+                logging.warning(
+                    f"Skipping {attachment_link} due to size. "
+                    f"size={attachment_size} "
+                    f"threshold={CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD}"
+                )
+                return AttachmentProcessingResult(
+                    text=None,
+                    file_name=None,
+                    error=f"Attachment text too long: {attachment_size} chars",
+                )
+
+        logging.info(
+            f"Downloading attachment: "
+            f"title={attachment['title']} "
+            f"length={attachment_size} "
+            f"link={attachment_link}"
+        )
+
+        # Download the attachment
+        resp: requests.Response = confluence_client._session.get(attachment_link)
+        if resp.status_code != 200:
+            logging.warning(
+                f"Failed to fetch {attachment_link} with status code {resp.status_code}"
+            )
+            return AttachmentProcessingResult(
+                text=None,
+                file_name=None,
+                error=f"Attachment download status code is {resp.status_code}",
+            )
+
+        raw_bytes = resp.content
+        if not raw_bytes:
+            return AttachmentProcessingResult(
+                text=None, file_name=None, error="attachment.content is None"
+            )
+
+        # Process image attachments
+        if media_type.startswith("image/"):
+            return _process_image_attachment(
+                confluence_client, attachment, raw_bytes, media_type
+            )
+
+        # Process document attachments
+        try:
+            text = extract_file_text(
+                file=BytesIO(raw_bytes),
+                file_name=attachment["title"],
+            )
+
+            # Skip if the text is too long
+            if len(text) > CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD:
+                return AttachmentProcessingResult(
+                    text=None,
+                    file_name=None,
+                    error=f"Attachment text too long: {len(text)} chars",
+                )
+
+            return AttachmentProcessingResult(text=text, file_name=None, error=None)
+        except Exception as e:
+            return AttachmentProcessingResult(
+                text=None, file_name=None, error=f"Failed to extract text: {e}"
+            )
+
+    except Exception as e:
+        return AttachmentProcessingResult(
+            text=None, file_name=None, error=f"Failed to process attachment: {e}"
+        )
+
+
+def convert_attachment_to_content(
+    confluence_client: "OnyxConfluence",
+    attachment: dict[str, Any],
+    page_id: str,
+    allow_images: bool,
+) -> tuple[str | None, str | None] | None:
+    """
+    Facade function which:
+      1. Validates attachment type
+      2. Extracts content or stores image for later processing
+      3. Returns (content_text, stored_file_name) or None if we should skip it
+    """
+    media_type = attachment.get("metadata", {}).get("mediaType", "")
+    # Quick check for unsupported types:
+    if media_type.startswith("video/") or media_type == "application/gliffy+json":
+        logging.warning(
+            f"Skipping unsupported attachment type: '{media_type}' for {attachment['title']}"
+        )
+        return None
+
+    result = process_attachment(confluence_client, attachment, page_id, allow_images)
+    if result.error is not None:
+        logging.warning(
+            f"Attachment {attachment['title']} encountered error: {result.error}"
+        )
+        return None
+
+    # Return the text and the file name
+    return result.text, result.file_name
 
 
 class ConfluenceConnector(

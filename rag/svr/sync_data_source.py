@@ -23,7 +23,7 @@ import threading
 import time
 import traceback
 
-from api.db.services.connector_service import SyncLogsService, DocumentFromConnectorService
+from api.db.services.connector_service import SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.log_utils import init_root_logger, get_project_base_directory
 from api.utils.configs import show_configs
@@ -51,16 +51,17 @@ class SyncBase:
     async def __call__(self, task: dict):
         SyncLogsService.start(task["id"])
         try:
-            task["poll_range_start"] = await self._run(task)
+            async with task_limiter:
+                with trio.fail_after(task["timeout_secs"]):
+                    task["poll_range_start"] = await self._run(task)
         except Exception as ex:
             msg = '\n'.join([
                 ''.join(traceback.format_exception_only(None, ex)).strip(),
                 ''.join(traceback.format_exception(None, ex, ex.__traceback__)).strip()
             ])
-            SyncLogsService.update_by_id(task["id"], status=TaskStatus.FAIL, full_exception_trace=msg)
+            SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "full_exception_trace": msg})
 
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
-        task_limiter.release()
 
     async def _run(self, task: dict):
         raise NotImplementedError
@@ -74,12 +75,22 @@ class S3(SyncBase):
             prefix=self.conf.get("prefix", "")
         )
         self.connector.load_credentials(self.conf["credentials"])
-        document_batch_generator = self.connector.load_from_state() if task["reindex"] or not task["poll_range_start"] \
-            else  self.connector.poll_source(task["poll_range_start"], datetime.now(timezone.utc))
+        document_batch_generator = self.connector.load_from_state() if task["reindex"]=="1" or not task["poll_range_start"] \
+            else  self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
 
+        begin_info = "totally" if task["reindex"]=="1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        logging.info("Connect to {}: {} {}".format(self.conf.get("bucket_type", "s3"),
+                                                                  self.conf["bucket_name"],
+                                                                  begin_info
+                                                                  ))
+        doc_num = 0
+        next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        if task["poll_range_start"]:
+            next_update = task["poll_range_start"]
         for document_batch in document_batch_generator:
             min_update = min([doc.doc_updated_at for doc in document_batch])
             max_update = max([doc.doc_updated_at for doc in document_batch])
+            next_update = max([next_update, max_update])
             docs = [{
                     "id": doc.id,
                     "connector_id": task["connector_id"],
@@ -88,14 +99,20 @@ class S3(SyncBase):
                     "extension": doc.extension,
                     "size_bytes": doc.size_bytes,
                     "doc_updated_at": doc.doc_updated_at,
-                    "blob": doc["blob"]
+                    "blob": doc.blob
                 } for doc in document_batch]
 
-            kb = KnowledgebaseService.get_by_id(task["kb_id"]).to_dict()
-            err, dids = DocumentFromConnectorService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.NOTION}/{task['connector_id']}")
+            e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.NOTION}/{task['connector_id']}")
             SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
+            doc_num += len(docs)
 
-        return max_update
+        logging.info("{} docs synchronized from {}: {} {}".format(doc_num, self.conf.get("bucket_type", "s3"),
+                                                                  self.conf["bucket_name"],
+                                                                  begin_info
+                                                                  ))
+        SyncLogsService.done(task["id"])
+        return next_update
 
 
 class Notion(SyncBase):
@@ -167,6 +184,10 @@ func_factory = {
 async def dispatch_tasks():
     async with trio.open_nursery() as nursery:
         for task in SyncLogsService.list_sync_tasks():
+            if task["poll_range_start"]:
+                task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
+            if task["poll_range_end"]:
+                task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
             func = func_factory[task["source"]](task["config"])
             nursery.start_soon(func, task)
     await trio.sleep(1)
@@ -241,10 +262,8 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    async with trio.open_nursery() as nursery:
-        while not stop_event.is_set():
-            await task_limiter.acquire()
-            nursery.start_soon(dispatch_tasks)
+    while not stop_event.is_set():
+        await dispatch_tasks()
     logging.error("BUG!!! You should not reach here!!!")
 
 

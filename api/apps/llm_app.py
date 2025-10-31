@@ -385,11 +385,12 @@ def list_app():
     weighted = []
     model_type = request.args.get("model_type")
     try:
-        objs = TenantLLMService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value)
-        facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
+        objs = TenantLLMService.query(tenant_id=current_user.id)
+        facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key and o.status==StatusEnum.VALID.value])
+        status = {(o.llm_name + "@" + o.llm_factory) for o in objs if o.status == StatusEnum.VALID.value}
         llms = LLMService.get_all()
         llms = [m.to_dict()
-                for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted]
+                for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted and (m.llm_name + "@" + m.fid) in status]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deployed
             if "tei-" in os.getenv("COMPOSE_PROFILES", "") and m["model_type"]==LLMType.EMBEDDING and m["fid"]=="Builtin" and m["llm_name"]==os.getenv('TEI_MODEL', ''):

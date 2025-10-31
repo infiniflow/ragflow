@@ -2,10 +2,9 @@
 import abc
 import uuid
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from enum import IntFlag, auto
 from types import TracebackType
-from typing import Any, Dict, Generator, TypeVar, Generic, Callable
+from typing import Any, Dict, Generator, TypeVar, Generic, Callable, TypeAlias
 
 from anthropic import BaseModel
 
@@ -14,7 +13,7 @@ from common.data_source.models import (
     SlimDocument,
     ConnectorCheckpoint,
     ConnectorFailure,
-    SecondsSinceUnixEpoch, CheckpointOutput, GenerateSlimDocumentOutput
+    SecondsSinceUnixEpoch, GenerateSlimDocumentOutput
 )
 
 
@@ -257,6 +256,7 @@ class BaseConnector(abc.ABC, Generic[CT]):
         return ConnectorCheckpoint(has_more=True)  # type: ignore
 
 
+CheckpointOutput: TypeAlias = Generator[Document | ConnectorFailure, None, CT]
 LoadFunction = Callable[[CT], CheckpointOutput[CT]]
 
 
