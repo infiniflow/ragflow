@@ -496,7 +496,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                     continue
                 try:
                     sub_url_res = chunk(url, html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
-                except:
+                except Exception as e:
+                    logging.info(f"Failed to chunk url in registered file type {url}: {e}")
                     sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
                 url_res.extend(sub_url_res)
 
@@ -724,7 +725,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 continue
             try:
                 sub_url_res = chunk(url, html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
-            except:
+            except Exception as e:
+                logging.info(f"Failed to chunk url in registered file type {url}: {e}")
                 sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             url_res.extend(sub_url_res)
         
