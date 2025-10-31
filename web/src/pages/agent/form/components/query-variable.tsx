@@ -56,6 +56,7 @@ export function QueryVariable({
               options={finalOptions}
               {...field}
               // allowClear
+              type={type}
             ></GroupedSelectWithSecondaryMenu>
           </FormControl>
           <FormMessage />
