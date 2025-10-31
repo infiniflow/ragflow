@@ -351,7 +351,7 @@ class Pdf(PdfParser):
 
 
 class Markdown(MarkdownParser):
-    def get_picture_urls(self, sections):
+    def md_to_html(self, sections):
         if not sections:
             return []
         if isinstance(sections, type("")):
@@ -364,13 +364,23 @@ class Markdown(MarkdownParser):
         from bs4 import BeautifulSoup
         html_content = markdown(text)
         soup = BeautifulSoup(html_content, 'html.parser')
-        html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
-        return html_images
+        return soup
+    
+    def get_picture_urls(self, soup):
+        if soup:
+            return [img.get('src') for img in soup.find_all('img') if img.get('src')]
+        return []
 
+    def get_hyperlink_urls(self, soup):
+        if soup:
+            return set([a.get('href') for a in soup.find_all('a') if a.get('href')])
+        return []
+    
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
         import requests
-        image_urls = self.get_picture_urls(text)
+        soup = self.md_to_html(text)
+        image_urls = self.get_picture_urls(soup)
         images = []
         # Find all image URLs in text
         for url in image_urls:
@@ -446,7 +456,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -478,20 +488,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-
-        if kwargs.get("fetch_url", True):
+        if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_docx(binary)
-            print(f"\n\n {urls} \n\n ")
             for index, url in enumerate(urls):
-                print(url)
-                print("\n\n")
                 html_bytes, metadata = extract_html(url)
-                print(html_bytes)
-                print("\n\n")
                 if not html_bytes:
-                    print("\n\nNot html bytes \n\n")
                     continue
-                sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, fetch_url=False, **kwargs) or []
+                try:
+                    sub_url_res = chunk(url, html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
+                except:
+                    sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
                 url_res.extend(sub_url_res)
 
         # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
@@ -523,8 +529,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
-
-        if kwargs.get("fetch_url", True):
+        if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_pdf(binary)
 
         if isinstance(layout_recognizer, bool):
@@ -621,7 +626,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
         sections, tables = markdown_parser(filename, binary, separate_tables=False)
-
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
@@ -643,9 +647,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                     sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
                 else:
                     section_images.append(None)
+
         else:
             logging.warning("No visual model detected. Skipping figure parsing enhancement.")
 
+        if parser_config.get("hyperlink_urls", False) and is_root:
+            for idx, (section_text, _) in enumerate(sections):
+                soup = markdown_parser.md_to_html(section_text)
+                hyperlink_urls = markdown_parser.get_hyperlink_urls(soup)
+                urls.update(hyperlink_urls)
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
@@ -707,12 +717,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
 
-    if urls and kwargs.get("fetch_url", True):
+    if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):
-            html_bytes, metadata = extract_html(url)   
+            html_bytes, metadata = extract_html(url)
             if not html_bytes:
                 continue
-            sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, fetch_url=False, **kwargs) or []
+            try:
+                sub_url_res = chunk(url, html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
+            except:
+                sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             url_res.extend(sub_url_res)
         
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
