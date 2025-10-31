@@ -28,7 +28,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.utils.api_utils import (
     deep_merge,
     get_error_argument_result,
