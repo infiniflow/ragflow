@@ -27,6 +27,9 @@ from os import PathLike
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable, Optional
+import requests
+import os
+import zipfile
 
 import numpy as np
 import pdfplumber
@@ -51,9 +54,51 @@ class MinerUContentType(StrEnum):
 
 
 class MinerUParser(RAGFlowPdfParser):
-    def __init__(self, mineru_path: str = "mineru"):
+    def __init__(self, mineru_path: str = "mineru", mineru_api: str = "http://host.docker.internal:9987"):
         self.mineru_path = Path(mineru_path)
+        self.mineru_api = mineru_api.rstrip('/')
+        self.using_api = False
         self.logger = logging.getLogger(self.__class__.__name__)
+
+    def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            if not root_dir:
+                files = zip_ref.namelist()
+                if files and files[0].endswith('/'):
+                    root_dir = files[0]
+                else:
+                    root_dir = None
+            
+            if not root_dir or not root_dir.endswith('/'):
+                self.logger.info(f"[MinerU] No root directory found, extracting all...fff{root_dir}")
+                zip_ref.extractall(extract_to)
+                return
+            
+            root_len = len(root_dir)
+            for member in zip_ref.infolist():
+                filename = member.filename
+                if filename == root_dir:
+                    self.logger.info("[MinerU] Ignore root folder...")
+                    continue
+                
+                path = filename
+                if path.startswith(root_dir):
+                    path = path[root_len:]
+                
+                full_path = os.path.join(extract_to, path)
+                if member.is_dir():
+                    os.makedirs(full_path, exist_ok=True)
+                else:
+                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                    with open(full_path, 'wb') as f:
+                        f.write(zip_ref.read(filename))
+
+    def _is_http_endpoint_valid(self, url, timeout=5):
+        try:
+            response = requests.head(url, timeout=timeout, allow_redirects=True)
+            return response.status_code in [200, 301, 302, 307, 308]
+        except Exception:
+            return False
 
     def check_installation(self) -> bool:
         subprocess_kwargs = {
@@ -81,9 +126,97 @@ class MinerUParser(RAGFlowPdfParser):
             logging.warning("[MinerU] MinerU not found. Please install it via: pip install -U 'mineru[core]'")
         except Exception as e:
             logging.error(f"[MinerU] Unexpected error during installation check: {e}")
+
+        try:
+            if self.mineru_api:
+                # check openapi.json
+                openapi_exists = self._is_http_endpoint_valid(self.mineru_api + "/openapi.json")
+                logging.info(f"[MinerU] Detected {self.mineru_api}/openapi.json: {openapi_exists}")
+                self.using_api = openapi_exists
+                return openapi_exists
+            else:
+                logging.info("[MinerU] api not exists.")
+        except Exception as e:
+            logging.error(f"[MinerU] Unexpected error during api check: {e}")
         return False
 
-    def _run_mineru(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None):
+    def _run_mineru(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None):
+        if self.using_api:
+            self._run_mineru_api(input_path, output_dir, method, backend, lang, callback)
+        else:
+            self._run_mineru_executable(input_path, output_dir, method, backend, lang, callback)
+    
+    def _run_mineru_api(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None):
+        OUTPUT_ZIP_PATH = os.path.join(str(output_dir), "output.zip")
+        
+        pdf_file_path = str(input_path)
+
+        if not os.path.exists(pdf_file_path):
+            raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
+
+        pdf_file_name = Path(pdf_file_path).stem.strip()
+        output_path = os.path.join(str(output_dir), pdf_file_name, method)
+        os.makedirs(output_path, exist_ok=True)
+
+        files = {
+            "files": (pdf_file_name + ".pdf", open(pdf_file_path, "rb"), "application/pdf")
+        }
+
+        data = {
+            "output_dir": "./output",
+            "lang_list": lang,
+            "backend": backend,
+            "parse_method": method,
+            "formula_enable": True,
+            "table_enable": True,
+            "server_url": None,
+            "return_md": True,
+            "return_middle_json": True,
+            "return_model_output": True,
+            "return_content_list": True,
+            "return_images": True,
+            "response_format_zip": True,
+            "start_page_id": 0,
+            "end_page_id": 99999
+        }
+
+        headers = {
+            "Accept": "application/json"
+        }
+        try:
+            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse")
+            if callback:
+                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
+            response = requests.post(
+                url=f"{self.mineru_api}/file_parse",
+                files=files,
+                data=data,
+                headers=headers,
+                timeout=1800
+            )
+
+            response.raise_for_status()
+            if response.headers.get("Content-Type") == "application/zip":
+                self.logger.info(f"[MinerU] zip file returned, saving to {OUTPUT_ZIP_PATH}...")
+
+                if callback:
+                    callback(0.30, f"[MinerU] zip file returned, saving to {OUTPUT_ZIP_PATH}...")
+
+                with open(OUTPUT_ZIP_PATH, "wb") as f:
+                    f.write(response.content)
+
+                self.logger.info(f"[MinerU] Unzip to {output_path}...")
+                self._extract_zip_no_root(OUTPUT_ZIP_PATH, output_path, pdf_file_name + "/")
+
+                if callback:
+                    callback(0.40, f"[MinerU] Unzip to {output_path}...")
+            else:
+                self.logger.warning("[MinerU] not zip returned from api：%s " % response.headers.get("Content-Type"))
+        except Exception as e:
+            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+        self.logger.info("[MinerU] Api completed successfully.")
+
+    def _run_mineru_executable(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None):
         cmd = [str(self.mineru_path), "-p", str(input_path), "-o", str(output_dir), "-m", method]
         if backend:
             cmd.extend(["-b", backend])
@@ -261,7 +394,9 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.TEXT:
                     section = output["text"]
                 case MinerUContentType.TABLE:
-                    section = output["table_body"] + "\n".join(output["table_caption"]) + "\n".join(output["table_footnote"])
+                    section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
+                    if not section.strip():
+                        section = "FAILED TO PARSE TABLE"
                 case MinerUContentType.IMAGE:
                     section = "".join(output["image_caption"]) + "\n" + "".join(output["image_footnote"])
                 case MinerUContentType.EQUATION:
@@ -297,9 +432,14 @@ class MinerUParser(RAGFlowPdfParser):
         temp_pdf = None
         created_tmp_dir = False
 
+        # remove spaces, or mineru crash, and _read_output fail too
+        file_path = Path(filepath)
+        pdf_file_name = file_path.stem.replace(" ", "") + ".pdf"
+        pdf_file_path_valid = os.path.join(file_path.parent, pdf_file_name)
+
         if binary:
             temp_dir = Path(tempfile.mkdtemp(prefix="mineru_bin_pdf_"))
-            temp_pdf = temp_dir / Path(filepath).name
+            temp_pdf = temp_dir / pdf_file_name
             with open(temp_pdf, "wb") as f:
                 f.write(binary)
             pdf = temp_pdf
@@ -307,7 +447,10 @@ class MinerUParser(RAGFlowPdfParser):
             if callback:
                 callback(0.15, f"[MinerU] Received binary PDF -> {temp_pdf}")
         else:
-            pdf = Path(filepath)
+            if pdf_file_path_valid != filepath:
+                self.logger.info(f"[MinerU] Remove all space in file name: {pdf_file_path_valid}")
+                shutil.move(filepath, pdf_file_path_valid)
+            pdf = Path(pdf_file_path_valid)
             if not pdf.exists():
                 if callback:
                     callback(-1, f"[MinerU] PDF not found: {pdf}")
@@ -327,7 +470,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.__images__(pdf, zoomin=1)
 
         try:
-            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang)
+            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang, callback=callback)
             outputs = self._read_output(out_dir, pdf.stem, method=method, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
