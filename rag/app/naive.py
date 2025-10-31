@@ -397,7 +397,7 @@ class Markdown(MarkdownParser):
 
         return images if images else None
 
-    def __call__(self, filename, binary=None, separate_tables=True):
+    def __call__(self, filename, binary=None, separate_tables=True,delimiter=None):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -408,7 +408,7 @@ class Markdown(MarkdownParser):
         remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
 
         extractor = MarkdownElementExtractor(txt)
-        element_sections = extractor.extract_elements()
+        element_sections = extractor.extract_elements(delimiter)
         sections = [(element, "") for element in element_sections]
 
         tbls = []
@@ -520,7 +520,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         elif layout_recognizer == "MinerU":
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable)
+            mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
             if not pdf_parser.check_installation():
                 callback(-1, "MinerU not found.")
                 return res
@@ -599,7 +600,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables = markdown_parser(filename, binary, separate_tables=False)
+        sections, tables = markdown_parser(filename, binary, separate_tables=False,delimiter=parser_config.get("delimiter", "\n!?;。；！？"))
 
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
