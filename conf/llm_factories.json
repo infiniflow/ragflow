@@ -975,20 +975,6 @@
             "llm": []
         },
         {
-            "name": "Youdao",
-            "logo": "",
-            "tags": "TEXT EMBEDDING",
-            "status": "1",
-            "llm": [
-                {
-                    "llm_name": "maidalun1020/bce-embedding-base_v1",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                }
-            ]
-        },
-        {
             "name": "DeepSeek",
             "logo": "",
             "tags": "LLM",
@@ -1136,20 +1122,6 @@
                     "llm_name": "jina-embeddings-v3",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 8196,
-                    "model_type": "embedding"
-                }
-            ]
-        },
-        {
-            "name": "BAAI",
-            "logo": "",
-            "tags": "TEXT EMBEDDING",
-            "status": "1",
-            "llm": [
-                {
-                    "llm_name": "BAAI/bge-large-zh-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 1024,
                     "model_type": "embedding"
                 }
             ]
