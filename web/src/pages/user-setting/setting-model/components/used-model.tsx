@@ -10,8 +10,8 @@ export const UsedModel = ({
 }) => {
   const { factoryList, myLlmList: llmList, loading } = useSelectLlmList();
   return (
-    <div className="flex flex-col w-full">
-      <div className="text-text-primary text-2xl mb-4 mt-4">Added models</div>
+    <div className="flex flex-col w-full gap-4 mb-4">
+      <div className="text-text-primary text-2xl mb-2 mt-4">Added models</div>
       {llmList.map((llm) => {
         return (
           <ModelProviderCard

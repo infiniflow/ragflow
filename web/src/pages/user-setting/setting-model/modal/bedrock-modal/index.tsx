@@ -3,7 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Flex, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
 import { useMemo } from 'react';
-import { BedrockRegionList } from '../constant';
+import { BedrockRegionList } from '../../constant';
 
 type FieldType = IAddLlmRequestBody & {
   bedrock_ak: string;

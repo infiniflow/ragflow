@@ -1,6 +1,7 @@
 // src/components/ModelProviderCard.tsx
 import { LlmIcon } from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { LlmItem } from '@/hooks/llm-hooks';
 import { getRealModelName } from '@/utils/llm-util';
@@ -8,7 +9,7 @@ import { EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { ChevronsDown, ChevronsUp, Trash2 } from 'lucide-react';
 import { FC } from 'react';
 import { isLocalLlmFactory } from '../../utils';
-import { useHandleDeleteFactory, useHandleDeleteLlm } from '../hooks';
+import { useHandleDeleteFactory, useHandleEnableLlm } from '../hooks';
 
 interface IModelCardProps {
   item: LlmItem;
@@ -52,7 +53,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
 }) => {
   const { visible, switchVisible } = useSetModalState();
   const { t } = useTranslate('setting');
-  const { handleDeleteLlm } = useHandleDeleteLlm(item.name);
+  const { handleEnableLlm } = useHandleEnableLlm(item.name);
   const { handleDeleteFactory } = useHandleDeleteFactory(item.name);
 
   const handleApiKeyClick = () => {
@@ -66,7 +67,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
   return (
     <div className={`w-full rounded-lg border border-border-default`}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 cursor-pointer transition-colors">
+      <div className="flex h-16  items-center justify-between p-4 cursor-pointer transition-colors">
         <div className="flex items-center space-x-3">
           <LlmIcon name={item.name} />
           <div>
@@ -151,16 +152,12 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
                         <EditOutlined />
                       </Button>
                     )}
-                    <Button
-                      variant={'secondary'}
-                      onClick={() => {
-                        handleDeleteLlm(model.name);
-                        console.log(handleDeleteLlm, model.name);
+                    <Switch
+                      checked={model.status === '1'}
+                      onCheckedChange={(value) => {
+                        handleEnableLlm(model.name, value);
                       }}
-                      className="p-1 hover:text-state-error transition-colors"
-                    >
-                      <Trash2 />
-                    </Button>
+                    />
                   </div>
                 </div>
               ))}

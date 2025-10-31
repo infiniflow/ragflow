@@ -5,6 +5,7 @@ import {
   useAddLlm,
   useDeleteFactory,
   useDeleteLlm,
+  useEnableLlm,
   useSaveApiKey,
   useSaveTenantInfo,
   useSelectLlmOptionsByModelType,
@@ -421,7 +422,7 @@ export const useHandleDeleteLlm = (llmFactory: string) => {
   const { deleteLlm } = useDeleteLlm();
   const showDeleteConfirm = useShowDeleteConfirm();
 
-  const handleDeleteLlm = (name: string) => () => {
+  const handleDeleteLlm = (name: string) => {
     showDeleteConfirm({
       onOk: async () => {
         deleteLlm({ llm_factory: llmFactory, llm_name: name });
@@ -430,6 +431,16 @@ export const useHandleDeleteLlm = (llmFactory: string) => {
   };
 
   return { handleDeleteLlm };
+};
+
+export const useHandleEnableLlm = (llmFactory: string) => {
+  const { enableLlm } = useEnableLlm();
+
+  const handleEnableLlm = (name: string, enable: boolean) => {
+    enableLlm({ llm_factory: llmFactory, llm_name: name, enable });
+  };
+
+  return { handleEnableLlm };
 };
 
 export const useHandleDeleteFactory = (llmFactory: string) => {
