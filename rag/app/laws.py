@@ -87,7 +87,7 @@ class Docx(DocxParser):
             root = Node(level=0, depth=h2_level, texts=[])
             root.build_tree(lines)
 
-            return [("\n").join(element) for element in root.get_tree() if element]
+            return [element for element in root.get_tree() if element]
 
 
     def __str__(self) -> str:

@@ -1,5 +1,4 @@
 .typeahead-popover {
-  background: #fff;
   box-shadow: 0px 5px 10px rgba(0, 0, 0, 0.3);
   border-radius: 8px;
   position: fixed;
@@ -10,16 +9,6 @@
   list-style: none;
   margin: 0;
   max-height: 200px;
-  overflow-y: scroll;
-}
-
-.typeahead-popover ul::-webkit-scrollbar {
-  display: none;
-}
-
-.typeahead-popover ul {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
 }
 
 .typeahead-popover ul li {
@@ -28,7 +17,6 @@
   font-size: 14px;
   outline: none;
   cursor: pointer;
-  border-radius: 8px;
 }
 
 .typeahead-popover ul li.selected {
@@ -37,15 +25,13 @@
 
 .typeahead-popover li {
   margin: 0 8px 0 8px;
-  color: #050505;
   cursor: pointer;
   line-height: 16px;
   font-size: 15px;
-  display: flex;
+  /* display: flex;
   align-content: center;
   flex-direction: row;
-  flex-shrink: 0;
-  background-color: #fff;
+  flex-shrink: 0; */
   border: 0;
 }
 

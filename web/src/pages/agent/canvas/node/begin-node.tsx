@@ -12,6 +12,7 @@ import {
 } from '../../constant';
 import { BeginQuery } from '../../interface';
 import OperatorIcon from '../../operator-icon';
+import { LabelCard } from './card';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';
@@ -43,15 +44,16 @@ function InnerBeginNode({ data, id, selected }: NodeProps<IBeginNode>) {
         {Object.entries(inputs).map(([key, val], idx) => {
           const Icon = BeginQueryTypeIconMap[val.type as BeginQueryType];
           return (
-            <div
-              key={idx}
-              className={cn(styles.conditionBlock, 'flex gap-1.5 items-center')}
-            >
-              <Icon className="size-4" />
-              <label htmlFor="">{key}</label>
-              <span className={styles.parameterValue}>{val.name}</span>
+            <LabelCard key={idx} className={cn('flex gap-1.5 items-center')}>
+              <Icon className="size-3.5" />
+              <label htmlFor="" className="text-accent-primary text-sm italic">
+                {key}
+              </label>
+              <LabelCard className="py-0.5 truncate flex-1">
+                {val.name}
+              </LabelCard>
               <span className="flex-1">{val.optional ? 'Yes' : 'No'}</span>
-            </div>
+            </LabelCard>
           );
         })}
       </section>

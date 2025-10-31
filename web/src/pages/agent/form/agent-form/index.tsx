@@ -1,5 +1,4 @@
 import { Collapse } from '@/components/collapse';
-import { FormContainer } from '@/components/form-container';
 import {
   LargeModelFilterFormSchema,
   LargeModelFormField,
@@ -7,6 +6,7 @@ import {
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -15,6 +15,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
@@ -39,7 +40,9 @@ import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
 import { AgentTools, Agents } from './agent-tools';
+import { StructuredOutputDialog } from './structured-output-dialog';
 import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
+import { useShowStructuredOutputDialog } from './use-show-structured-output-dialog';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -108,6 +111,14 @@ function AgentForm({ node }: INextOperatorForm) {
     name: 'exception_method',
   });
 
+  const {
+    initialStructuredOutput,
+    showStructuredOutputDialog,
+    structuredOutputDialogVisible,
+    hideStructuredOutputDialog,
+    handleStructuredOutputDialogOk,
+  } = useShowStructuredOutputDialog(node?.id);
+
   useEffect(() => {
     if (exceptionMethod !== AgentExceptionMethod.Goto) {
       if (node?.id) {
@@ -122,9 +133,9 @@ function AgentForm({ node }: INextOperatorForm) {
   useWatchFormChange(node?.id, form);
 
   return (
-    <Form {...form}>
-      <FormWrapper>
-        <FormContainer>
+    <>
+      <Form {...form}>
+        <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
           {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
@@ -134,9 +145,6 @@ function AgentForm({ node }: INextOperatorForm) {
               type={VariableType.File}
             ></QueryVariable>
           )}
-        </FormContainer>
-
-        <FormContainer>
           <FormField
             control={form.control}
             name={`sys_prompt`}
@@ -154,10 +162,7 @@ function AgentForm({ node }: INextOperatorForm) {
               </FormItem>
             )}
           />
-        </FormContainer>
-        {isSubAgent || (
-          <FormContainer>
-            {/* <DynamicPrompt></DynamicPrompt> */}
+          {isSubAgent || (
             <FormField
               control={form.control}
               name={`prompts`}
@@ -175,106 +180,119 @@ function AgentForm({ node }: INextOperatorForm) {
                 </FormItem>
               )}
             />
-          </FormContainer>
-        )}
-
-        <FormContainer>
+          )}
+          <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
-        </FormContainer>
-        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
-          <FormContainer>
-            <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
-            <FormField
-              control={form.control}
-              name={`cite`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel tooltip={t('flow.citeTip')}>
-                    {t('flow.cite')}
-                  </FormLabel>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    ></Switch>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name={`max_retries`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>{t('flow.maxRetries')}</FormLabel>
-                  <FormControl>
-                    <NumberInput {...field} max={8}></NumberInput>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name={`delay_after_error`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>{t('flow.delayEfterError')}</FormLabel>
-                  <FormControl>
-                    <NumberInput {...field} max={5} step={0.1}></NumberInput>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            {hasSubAgentOrTool(edges, node?.id) && (
+          <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+            <section className="space-y-5">
+              <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
               <FormField
                 control={form.control}
-                name={`max_rounds`}
+                name={`cite`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel>{t('flow.maxRounds')}</FormLabel>
+                    <FormLabel tooltip={t('flow.citeTip')}>
+                      {t('flow.cite')}
+                    </FormLabel>
                     <FormControl>
-                      <NumberInput {...field}></NumberInput>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
                     </FormControl>
                   </FormItem>
                 )}
               />
-            )}
-            <FormField
-              control={form.control}
-              name={`exception_method`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>{t('flow.exceptionMethod')}</FormLabel>
-                  <FormControl>
-                    <SelectWithSearch
-                      {...field}
-                      options={ExceptionMethodOptions}
-                      allowClear
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            {exceptionMethod === AgentExceptionMethod.Comment && (
               <FormField
                 control={form.control}
-                name={`exception_default_value`}
+                name={`max_retries`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel>{t('flow.ExceptionDefaultValue')}</FormLabel>
+                    <FormLabel>{t('flow.maxRetries')}</FormLabel>
                     <FormControl>
-                      <Input {...field} />
+                      <NumberInput {...field} max={8}></NumberInput>
                     </FormControl>
                   </FormItem>
                 )}
               />
-            )}
-          </FormContainer>
-        </Collapse>
-        <Output list={outputList}></Output>
-      </FormWrapper>
-    </Form>
+              <FormField
+                control={form.control}
+                name={`delay_after_error`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>{t('flow.delayEfterError')}</FormLabel>
+                    <FormControl>
+                      <NumberInput {...field} max={5} step={0.1}></NumberInput>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              {hasSubAgentOrTool(edges, node?.id) && (
+                <FormField
+                  control={form.control}
+                  name={`max_rounds`}
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>{t('flow.maxRounds')}</FormLabel>
+                      <FormControl>
+                        <NumberInput {...field}></NumberInput>
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
+              <FormField
+                control={form.control}
+                name={`exception_method`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormLabel>{t('flow.exceptionMethod')}</FormLabel>
+                    <FormControl>
+                      <SelectWithSearch
+                        {...field}
+                        options={ExceptionMethodOptions}
+                        allowClear
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              {exceptionMethod === AgentExceptionMethod.Comment && (
+                <FormField
+                  control={form.control}
+                  name={`exception_default_value`}
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>{t('flow.ExceptionDefaultValue')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
+            </section>
+          </Collapse>
+          <Output list={outputList}></Output>
+          <section>
+            <div className="flex justify-between items-center">
+              structured_output
+              <Button variant={'outline'} onClick={showStructuredOutputDialog}>
+                {t('flow.structuredOutput.configuration')}
+              </Button>
+            </div>
+          </section>
+        </FormWrapper>
+      </Form>
+      {structuredOutputDialogVisible && (
+        <StructuredOutputDialog
+          hideModal={hideStructuredOutputDialog}
+          onOk={handleStructuredOutputDialogOk}
+          initialValues={initialStructuredOutput}
+        ></StructuredOutputDialog>
+      )}
+    </>
   );
 }
 

@@ -43,7 +43,14 @@
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
-#
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+</div>
+
+<div align="center">
+<a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</div>
+
 
 ## 💡 RAGFlow란?
 
@@ -60,6 +67,7 @@
 
 ## 🔥 업데이트
 
+- 2025-10-23 문서 파싱 방법으로 MinerU 및 Docling을 지원합니다.
 - 2025-10-15 조정된 데이터 파이프라인 지원.
 - 2025-08-08 OpenAI의 최신 GPT-5 시리즈 모델을 지원합니다.
 - 2025-08-01 에이전트 워크플로우와 MCP를 지원합니다.
@@ -177,6 +185,8 @@
    | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
    | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+
+   > 참고: `v0.22.0`부터는 slim 에디션만 배포하며 이미지 태그에 **-slim** 접미사를 더 이상 붙이지 않습니다.
 
 1. 서버가 시작된 후 서버 상태를 확인하세요:
 

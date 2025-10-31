@@ -1,3 +1,5 @@
+import { IS_ENTERPRISE } from './pages/admin/utils';
+
 export enum Routes {
   Root = '/',
   Login = '/login-next',
@@ -44,11 +46,15 @@ export enum Routes {
   ChatShare = `${Chats}/share`,
   ChatWidget = `${Chats}/widget`,
   UserSetting = '/user-setting',
-  DataFlows = '/data-flows',
-  DataFlow = '/data-flow',
   DataSetOverview = '/dataset-overview',
   DataSetSetting = '/dataset-setting',
   DataflowResult = '/dataflow-result',
+  Admin = '/admin',
+  AdminServices = `${Admin}/services`,
+  AdminUserManagement = `${Admin}/users`,
+  AdminWhitelist = `${Admin}/whitelist`,
+  AdminRoles = `${Admin}/roles`,
+  AdminMonitoring = `${Admin}/monitoring`,
 }
 
 const routes = [
@@ -396,21 +402,55 @@ const routes = [
       },
     ],
   },
+
+  // Admin routes
   {
-    path: Routes.DataFlows,
+    path: Routes.Admin,
+    component: `@/pages/admin`,
     layout: false,
-    component: '@/layouts/next',
-    routes: [
-      {
-        path: Routes.DataFlows,
-        component: `@/pages${Routes.DataFlows}`,
-      },
-    ],
   },
   {
-    path: `${Routes.DataFlow}/:id`,
+    path: `${Routes.AdminUserManagement}/:id`,
     layout: false,
-    component: `@/pages${Routes.DataFlow}`,
+    wrappers: ['@/wrappers/authAdmin'],
+    component: `@/pages/admin/user-detail`,
+  },
+  {
+    path: Routes.Admin,
+    component: `@/pages/admin/layout`,
+    layout: false,
+    routes: [
+      {
+        path: Routes.AdminServices,
+        component: `@/pages/admin/service-status`,
+        wrappers: ['@/wrappers/authAdmin'],
+      },
+      {
+        path: Routes.AdminUserManagement,
+        component: `@/pages/admin/users`,
+        wrappers: ['@/wrappers/authAdmin'],
+      },
+
+      ...(IS_ENTERPRISE
+        ? [
+            {
+              path: Routes.AdminWhitelist,
+              component: `@/pages/admin/whitelist`,
+              wrappers: ['@/wrappers/authAdmin'],
+            },
+            {
+              path: Routes.AdminRoles,
+              component: `@/pages/admin/roles`,
+              wrappers: ['@/wrappers/authAdmin'],
+            },
+            {
+              path: Routes.AdminMonitoring,
+              component: `@/pages/admin/monitoring`,
+              wrappers: ['@/wrappers/authAdmin'],
+            },
+          ]
+        : []),
+    ],
   },
 ];
 

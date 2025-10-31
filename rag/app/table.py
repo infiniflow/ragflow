@@ -15,6 +15,7 @@
 #
 
 import copy
+import logging
 import re
 from io import BytesIO
 from xpinyin import Pinyin
@@ -44,7 +45,11 @@ class Excel(ExcelParser):
         rn = 0
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
-            rows = list(ws.rows)
+            try:
+                rows = list(ws.rows)
+            except Exception as e:
+                logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                continue
             if not rows:
                 continue
             headers, header_rows = self._parse_headers(ws, rows)

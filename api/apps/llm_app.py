@@ -215,7 +215,7 @@ def add_llm():
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
-            base_url=llm["api_base"])
+            base_url=llm["api_base"])   
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0:
@@ -264,7 +264,7 @@ def add_llm():
         try:
             image_data = test_image
             m, tc = mdl.describe(image_data)
-            if not m and not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
@@ -368,7 +368,7 @@ def my_llms():
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_app():
-    self_deployed = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
+    self_deployed = ["FastEmbed", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = []
     model_type = request.args.get("model_type")
     try:

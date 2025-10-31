@@ -10,6 +10,7 @@ import useGraphStore from '../../store';
 
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 
@@ -91,11 +92,16 @@ function InnerButtonEdge({
     );
   }, [data?.isHovered, isTargetPlaceholder, sourceHandleId, target]);
 
+  const activeMarkerEnd =
+    selected || !isEmpty(showHighlight) || isTargetPlaceholder
+      ? 'url(#selected-marker)'
+      : markerEnd;
+
   return (
     <>
       <BaseEdge
         path={edgePath}
-        markerEnd={markerEnd}
+        markerEnd={activeMarkerEnd}
         style={{
           ...style,
           ...selectedStyle,

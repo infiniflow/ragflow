@@ -31,6 +31,7 @@ from api.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
+from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
@@ -74,7 +75,7 @@ class ParserParam(ProcessParamBase):
 
         self.setups = {
             "pdf": {
-                "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
+                "parse_method": "deepdoc",  # deepdoc/plain_text/tcadp_parser/vlm
                 "lang": "Chinese",
                 "suffix": [
                     "pdf",
@@ -157,7 +158,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -221,7 +222,8 @@ class Parser(ProcessBase):
             bboxes = [{"text": t} for t, _ in lines]
         elif conf.get("parse_method").lower() == "mineru":
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable)
+            mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
             if not pdf_parser.check_installation():
                 raise RuntimeError("MinerU not found. Please install it via: pip install -U 'mineru[core]'.")
 
@@ -240,6 +242,39 @@ class Parser(ProcessBase):
                     "text": t,
                 }
                 bboxes.append(box)
+        elif conf.get("parse_method").lower() == "tcadp parser":
+            # ADP is a document parsing tool using Tencent Cloud API
+            tcadp_parser = TCADPParser()
+            sections, _ = tcadp_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                file_type="PDF",
+                file_start_page=1,
+                file_end_page=1000
+            )
+            bboxes = []
+            for section, position_tag in sections:
+                if position_tag:
+                    # Extract position information from TCADP's position tag
+                    # Format: @@{page_number}\t{x0}\t{x1}\t{top}\t{bottom}##
+                    import re
+                    match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
+                    if match:
+                        pn, x0, x1, top, bott = match.groups()
+                        bboxes.append({
+                            "page_number": int(pn.split('-')[0]),  # Take the first page number
+                            "x0": float(x0),
+                            "x1": float(x1),
+                            "top": float(top),
+                            "bottom": float(bott),
+                            "text": section
+                        })
+                    else:
+                        # If no position info, add as text without position
+                        bboxes.append({"text": section})
+                else:
+                    bboxes.append({"text": section})
         else:
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
@@ -396,7 +431,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["video"]
         self.set_output("output_format", conf["output_format"])
 
-        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT)
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
         txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
 
         self.set_output("text", txt)

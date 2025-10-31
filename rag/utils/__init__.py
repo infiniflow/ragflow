@@ -15,7 +15,6 @@
 #
 
 import os
-import re
 
 import tiktoken
 
@@ -32,48 +31,6 @@ def singleton(cls, *args, **kw):
         return instances[key]
 
     return _singleton
-
-
-def rmSpace(txt):
-    txt = re.sub(r"([^a-z0-9.,\)>]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
-    return re.sub(r"([^ ]) +([^a-z0-9.,\(<])", r"\1\2", txt, flags=re.IGNORECASE)
-
-
-def findMaxDt(fnm):
-    m = "1970-01-01 00:00:00"
-    try:
-        with open(fnm, "r") as f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                line = line.strip("\n")
-                if line == 'nan':
-                    continue
-                if line > m:
-                    m = line
-    except Exception:
-        pass
-    return m
-
-
-def findMaxTm(fnm):
-    m = 0
-    try:
-        with open(fnm, "r") as f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                line = line.strip("\n")
-                if line == 'nan':
-                    continue
-                if int(line) > m:
-                    m = int(line)
-    except Exception:
-        pass
-    return m
-
 
 tiktoken_cache_dir = get_project_base_directory()
 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
@@ -106,6 +63,12 @@ def total_token_count_from_response(resp):
             return resp["usage"]["total_tokens"]
         except Exception:
             pass
+
+    if 'usage' in resp and 'input_tokens' in resp['usage'] and 'output_tokens' in resp['usage']:
+        try:
+            return resp["usage"]["input_tokens"] + resp["usage"]["output_tokens"]
+        except Exception:
+            pass
     return 0
 
 
@@ -113,18 +76,4 @@ def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     return encoder.decode(encoder.encode(string)[:max_len])
 
-  
-def clean_markdown_block(text):
-    text = re.sub(r'^\s*```markdown\s*\n?', '', text)
-    text = re.sub(r'\n?\s*```\s*$', '', text)
-    return text.strip()
-
-  
-def get_float(v):
-    if v is None:
-        return float('-inf')
-    try:
-        return float(v)
-    except Exception:
-        return float('-inf')
 

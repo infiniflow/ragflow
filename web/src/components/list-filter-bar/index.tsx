@@ -6,7 +6,7 @@ import React, {
   ReactNode,
   useMemo,
 } from 'react';
-import { IconFont } from '../icon-font';
+import { HomeIcon } from '../svg-icon';
 import { Button, ButtonProps } from '../ui/button';
 import { SearchInput } from '../ui/input';
 import { CheckboxFormMultipleProps, FilterPopover } from './filter-popover';
@@ -72,7 +72,8 @@ export default function ListFilterBar({
     <div className={cn('flex justify-between mb-5 items-center', className)}>
       <div className="text-2xl font-semibold flex items-center gap-2.5">
         {typeof icon === 'string' ? (
-          <IconFont name={icon} className="size-6"></IconFont>
+          // <IconFont name={icon} className="size-6"></IconFont>
+          <HomeIcon name={`${icon}`} width={'32'} />
         ) : (
           icon
         )}

@@ -228,7 +228,7 @@ class QWenCV(GptV4):
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
-    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename=""):
+    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
                 summary, summary_num_tokens = self._process_video(video_bytes, filename)
@@ -526,7 +526,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=prompt[0]["content"][0]["text"],
+                prompt=prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -547,7 +547,7 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat(self, system, history, gen_conf, images=None):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
             response = self.client.chat(
                 model=self.model_name,
@@ -561,7 +561,7 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         try:
             response = self.client.chat(
@@ -633,7 +633,7 @@ class GeminiCV(Base):
                 return res.text, total_token_count_from_response(res)
 
 
-    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename=""):
+    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
                 summary, summary_num_tokens = self._process_video(video_bytes, filename)
@@ -651,7 +651,7 @@ class GeminiCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         response = None
         try:
@@ -797,8 +797,7 @@ class NvidiaCV(Base):
         try:
             response = self._request(self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
-            if "usage" in response and "total_tokens" in response["usage"]:
-                total_tokens +=  total_token_count_from_response(response)
+            total_tokens +=  total_token_count_from_response(response)
             for resp in cnt:
                 yield resp
         except Exception as e:
@@ -847,7 +846,7 @@ class AnthropicCV(Base):
         prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
 
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=prompt)
-        return response["content"][0]["text"].strip(), response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
+        return response["content"][0]["text"].strip(), total_token_count_from_response(response)
 
     def _clean_conf(self, gen_conf):
         if "presence_penalty" in gen_conf:
@@ -858,7 +857,7 @@ class AnthropicCV(Base):
             gen_conf["max_tokens"] = self.max_tokens
         return gen_conf
 
-    def chat(self, system, history, gen_conf, images=None):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         try:
@@ -874,12 +873,12 @@ class AnthropicCV(Base):
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return (
                 ans,
-                response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
+                total_token_count_from_response(response),
             )
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         total_tokens = 0
         try:
@@ -963,13 +962,13 @@ class GoogleCV(AnthropicCV, GeminiCV):
         else:
             return GeminiCV.describe_with_prompt(self, image, prompt)
 
-    def chat(self, system, history, gen_conf, images=None):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
             return AnthropicCV.chat(self, system, history, gen_conf, images)
         else:
             return GeminiCV.chat(self, system, history, gen_conf, images)
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
             for ans in AnthropicCV.chat_streamly(self, system, history, gen_conf, images):
                 yield ans

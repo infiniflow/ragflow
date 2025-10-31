@@ -57,7 +57,6 @@ function InnerRetrievalNode({
                     className="size-6 rounded-lg"
                     avatar={id}
                     name={item?.name || (label as string) || 'CN'}
-                    isPerson={true}
                   />
 
                   <div className={'truncate flex-1'}>{label || item?.name}</div>
