@@ -304,6 +304,17 @@ def delete_llm():
     return get_json_result(data=True)
 
 
+@manager.route('/enable_llm', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("llm_factory", "llm_name")
+def enable_llm():
+    req = request.json
+    TenantLLMService.filter_update(
+        [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"],
+         TenantLLM.llm_name == req["llm_name"]], {"status": str(req.get("status", "1"))})
+    return get_json_result(data=True)
+
+
 @manager.route('/delete_factory', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory")
@@ -344,7 +355,8 @@ def my_llms():
                     "name": o_dict["llm_name"],
                     "used_token": o_dict["used_tokens"],
                     "api_base": o_dict["api_base"] or "",
-                    "max_tokens": o_dict["max_tokens"] or 8192
+                    "max_tokens": o_dict["max_tokens"] or 8192,
+                    "status": o_dict["status"] or "1"
                 })
         else:
             res = {}
@@ -357,7 +369,8 @@ def my_llms():
                 res[o["llm_factory"]]["llm"].append({
                     "type": o["model_type"],
                     "name": o["llm_name"],
-                    "used_token": o["used_tokens"]
+                    "used_token": o["used_tokens"],
+                    "status": o["status"]
                 })
 
         return get_json_result(data=res)
@@ -372,7 +385,7 @@ def list_app():
     weighted = []
     model_type = request.args.get("model_type")
     try:
-        objs = TenantLLMService.query(tenant_id=current_user.id)
+        objs = TenantLLMService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict()

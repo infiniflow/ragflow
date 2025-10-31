@@ -713,6 +713,7 @@ class TenantLLM(DataBaseModel):
     api_base = CharField(max_length=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
         return self.llm_name
@@ -1212,6 +1213,10 @@ def migrate_db():
         pass
     try:
         migrate(migrator.alter_column_type("tenant_llm", "api_key", TextField(null=True, help_text="API KEY")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant_llm", "status", CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)
