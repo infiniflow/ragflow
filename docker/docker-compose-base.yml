@@ -203,7 +203,7 @@ services:
     env_file: .env
     networks:
       - ragflow
-    command: ["--model-id", "/data/${TEI_MODEL}"]
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
     restart: on-failure
 
 
@@ -217,7 +217,7 @@ services:
     env_file: .env
     networks:
       - ragflow
-    command: ["--model-id", "/data/${TEI_MODEL}"]
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
     deploy:
       resources:
         reservations:
