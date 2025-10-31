@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,15 +13,24 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import importlib
+
+import base64
+import hashlib
+import uuid
+import requests
+
+def get_uuid():
+    return uuid.uuid1().hex
 
 
-def from_dict_hook(in_dict: dict):
-    if "type" in in_dict and "data" in in_dict:
-        if in_dict["module"] is None:
-            return in_dict["data"]
-        else:
-            return getattr(importlib.import_module(
-                in_dict["module"]), in_dict["type"])(**in_dict["data"])
-    else:
-        return in_dict
+def download_img(url):
+    if not url:
+        return ""
+    response = requests.get(url)
+    return "data:" + \
+        response.headers.get('Content-Type', 'image/jpg') + ";" + \
+        "base64," + base64.b64encode(response.content).decode("utf-8")
+
+
+def hash_str2int(line: str, mod: int = 10 ** 8) -> int:
+    return int(hashlib.sha1(line.encode("utf-8")).hexdigest(), 16) % mod

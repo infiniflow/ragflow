@@ -24,7 +24,7 @@ from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api import settings
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from rag.nlp import tokenize, search
 from ranx import evaluate
 from ranx import Qrels, Run

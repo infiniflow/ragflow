@@ -24,7 +24,7 @@ from api.db.db_models import DB
 from api.db.services import duplicate_name
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, server_error_response, validate_request
 
 

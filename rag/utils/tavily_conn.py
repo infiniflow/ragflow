@@ -15,7 +15,7 @@
 #
 import logging
 from tavily import TavilyClient
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from rag.nlp import rag_tokenizer
 
 
