@@ -88,3 +88,11 @@ def link_kb(connector_id):
     if errors:
         return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
     return get_json_result(data=True)
+
+
+@manager.route("/<connector_id>/rm", methods=["POST"])  # noqa: F821
+@login_required
+def rm_connector(connector_id):
+    ConnectorService.resume(connector_id, TaskStatus.CANCEL)
+    ConnectorService.delete_by_id(connector_id)
+    return get_json_result(data=True)
