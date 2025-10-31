@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { get, isPlainObject } from 'lodash';
 import { ChevronRight } from 'lucide-react';
 import { PropsWithChildren, ReactNode, useCallback } from 'react';
+import { VariableType } from '../../constant';
 
 type DataItem = { label: ReactNode; value: string; parentLabel?: ReactNode };
 
@@ -15,12 +16,24 @@ type StructuredOutputSecondaryMenuProps = {
   data: DataItem;
   click(option: { label: ReactNode; value: string }): void;
   filteredStructuredOutput: JSONSchema;
+  type?: VariableType;
 } & PropsWithChildren;
 export function StructuredOutputSecondaryMenu({
   data,
   click,
   filteredStructuredOutput,
+  type,
 }: StructuredOutputSecondaryMenuProps) {
+  const handleSubMenuClick = useCallback(
+    (option: { label: ReactNode; value: string }, dataType?: string) => () => {
+      // The query variable of the iteration operator can only select array type data.
+      if ((type && type === dataType) || !type) {
+        click(option);
+      }
+    },
+    [click, type],
+  );
+
   const renderAgentStructuredOutput = useCallback(
     (values: any, option: { label: ReactNode; value: string }) => {
       if (isPlainObject(values) && 'properties' in values) {
@@ -37,7 +50,7 @@ export function StructuredOutputSecondaryMenu({
               return (
                 <li key={key} className="pl-1">
                   <div
-                    onClick={() => click(nextOption)}
+                    onClick={handleSubMenuClick(nextOption, dataType)}
                     className="hover:bg-bg-card p-1 text-text-primary rounded-sm flex justify-between"
                   >
                     {key}
@@ -54,13 +67,16 @@ export function StructuredOutputSecondaryMenu({
 
       return <div></div>;
     },
-    [click],
+    [handleSubMenuClick],
   );
 
   return (
     <HoverCard key={data.value} openDelay={100} closeDelay={100}>
       <HoverCardTrigger asChild>
-        <li className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center">
+        <li
+          onClick={() => click(data)}
+          className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center"
+        >
           {data.label} <ChevronRight className="size-3.5 text-text-secondary" />
         </li>
       </HoverCardTrigger>
