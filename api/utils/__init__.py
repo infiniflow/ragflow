@@ -20,8 +20,6 @@ import requests
 
 import importlib
 
-from .common import string_to_bytes
-
 
 def from_dict_hook(in_dict: dict):
     if "type" in in_dict and "data" in in_dict:
