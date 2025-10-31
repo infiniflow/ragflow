@@ -1,6 +1,6 @@
 import { message, notification } from 'antd';
 import axios from 'axios';
-import { Navigate } from 'umi';
+import { history } from 'umi';
 
 import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
@@ -48,7 +48,7 @@ request.interceptors.response.use(
       });
 
       authorizationUtil.removeAll();
-      Navigate({ to: Routes.Admin });
+      history.push(Routes.Admin);
     } else if (data?.code && data.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')}: ${data?.code}`,
@@ -70,15 +70,16 @@ request.interceptors.response.use(
       });
     } else if (data?.code === 100) {
       message.error(data?.message);
-    } else if (data?.code === 401) {
+    } else if (response.status === 401 || data?.code === 401) {
       notification.error({
-        message: data?.message,
-        description: data?.message,
+        message: data?.message || response.statusText,
+        description:
+          data?.message || RetcodeMessage[response?.status as ResultCode],
         duration: 3,
       });
 
       authorizationUtil.removeAll();
-      Navigate({ to: Routes.Admin });
+      history.push(Routes.Admin);
     } else if (data?.code && data.code !== 0) {
       notification.error({
         message: `${i18n.t('message.hint')}: ${data?.code}`,
@@ -93,17 +94,9 @@ request.interceptors.response.use(
       });
     } else if (response.status === 413 || response?.status === 504) {
       message.error(RetcodeMessage[response?.status as ResultCode]);
-    } else if (response.status === 401) {
-      notification.error({
-        message: response.data.message,
-        description: response.data.message,
-        duration: 3,
-      });
-      authorizationUtil.removeAll();
-      window.location.href = location.origin + '/admin';
     }
 
-    return error;
+    throw error;
   },
 );
 
@@ -112,7 +105,7 @@ const {
   adminLogout,
   adminListUsers,
   adminCreateUser,
-  adminGetUserDetails: adminShowUserDetails,
+  adminGetUserDetails,
   adminUpdateUserStatus,
   adminUpdateUserPassword,
   adminDeleteUser,
@@ -260,11 +253,11 @@ export namespace AdminService {
     update_date: string;
   };
 
-  export type AssignRolePermissionInput = {
-    permissions: Record<string, Partial<PermissionData>>;
-  };
-
-  export type RevokeRolePermissionInput = AssignRolePermissionInput;
+  export type AssignRolePermissionsInput = Record<
+    string,
+    Partial<PermissionData>
+  >;
+  export type RevokeRolePermissionInput = AssignRolePermissionsInput;
 
   export type UserDetailWithPermission = {
     user: {
@@ -293,7 +286,7 @@ export const createUser = (email: string, password: string) =>
   });
 export const getUserDetails = (email: string) =>
   request.get<ResponseData<[AdminService.UserDetail]>>(
-    adminShowUserDetails(email),
+    adminGetUserDetails(email),
   );
 export const listUserDatasets = (email: string) =>
   request.get<ResponseData<AdminService.ListUserDatasetItem[]>>(
@@ -317,7 +310,10 @@ export const showServiceDetails = (serviceId: number) =>
     adminShowServiceDetails(String(serviceId)),
   );
 
-export const createRole = (params: { roleName: string; description: string }) =>
+export const createRole = (params: {
+  roleName: string;
+  description?: string;
+}) =>
   request.post<ResponseData<AdminService.RoleDetail>>(adminCreateRole, params);
 export const updateRoleDescription = (role: string, description: string) =>
   request.put<ResponseData<AdminService.RoleDetail>>(
@@ -343,15 +339,17 @@ export const getRolePermissions = (role: string) =>
   );
 export const assignRolePermissions = (
   role: string,
-  params: AdminService.AssignRolePermissionInput,
+  permissions: Partial<AdminService.AssignRolePermissionsInput>,
 ) =>
-  request.post<ResponseData<never>>(adminAssignRolePermissions(role), params);
+  request.post<ResponseData<never>>(adminAssignRolePermissions(role), {
+    new_permissions: permissions,
+  });
 export const revokeRolePermissions = (
   role: string,
-  params: AdminService.RevokeRolePermissionInput,
+  permissions: Partial<AdminService.RevokeRolePermissionInput>,
 ) =>
   request.delete<ResponseData<never>>(adminRevokeRolePermissions(role), {
-    data: params,
+    data: { revoke_permissions: permissions },
   });
 
 export const updateUserRole = (username: string, role: string) =>
@@ -365,12 +363,23 @@ export const getUserPermissions = (username: string) =>
 export const listResources = () =>
   request.get<ResponseData<AdminService.ResourceType>>(adminListResources);
 
+export const whitelistImportFromExcel = (file: File) => {
+  const fd = new FormData();
+
+  fd.append('file', file);
+
+  return request.post<ResponseData<never>>(
+    '/api/v1/admin/whitelist/import',
+    fd,
+  );
+};
+
 export default {
   login,
   logout,
   listUsers,
   createUser,
-  showUserDetails: getUserDetails,
+  getUserDetails,
   updateUserStatus,
   updateUserPassword,
   deleteUser,

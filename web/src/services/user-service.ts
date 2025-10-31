@@ -16,6 +16,7 @@ const {
   set_tenant_info,
   add_llm,
   delete_llm,
+  enable_llm,
   deleteFactory,
   getSystemStatus,
   getSystemVersion,
@@ -77,6 +78,10 @@ const methods = {
   },
   delete_llm: {
     url: delete_llm,
+    method: 'post',
+  },
+  enable_llm: {
+    url: enable_llm,
     method: 'post',
   },
   getSystemStatus: {
