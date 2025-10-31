@@ -15,7 +15,7 @@ const ThemeSwitch = forwardRef<
   return (
     <Root
       ref={ref}
-      className={cn('relative rounded-full')}
+      className={cn('relative rounded-full', className)}
       {...props}
       checked={isDark}
       onCheckedChange={(value) =>

@@ -44,7 +44,7 @@ function ServiceDetail({ content }: ServiceDetailProps) {
 
     if (isPlainObject(content)) {
       return (
-        <dl className="grid grid-cols-[auto,1fr] border border-card rounded-xl overflow-hidden bg-bg-card">
+        <dl className="text-sm text-text-primary grid grid-cols-[auto,1fr] border border-card rounded-xl overflow-hidden bg-bg-card">
           {Object.entries<any>(content).map(([key, value]) => (
             <div key={key} className="contents">
               <dt className="px-3 py-2 bg-bg-card">

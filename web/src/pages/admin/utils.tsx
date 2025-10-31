@@ -4,10 +4,35 @@ import {
   Row,
   RowData,
   SortDirection,
-  Table,
   TransformFilterValueFn,
 } from '@tanstack/react-table';
 import { LucideSortAsc, LucideSortDesc } from 'lucide-react';
+import { DefaultValues } from 'react-hook-form';
+
+type AsyncDefaultValues<TValues> = (payload?: unknown) => Promise<TValues>;
+
+export function formMergeDefaultValues<T>(
+  ...parts: (DefaultValues<T> | AsyncDefaultValues<T> | undefined)[]
+): (payload?: unknown) => Promise<Required<T>> {
+  return async (payload?: unknown) => {
+    if (parts.length === 0) {
+      return {} as DefaultValues<T>;
+    }
+
+    if (parts.length === 1) {
+      return typeof parts[0] === 'function'
+        ? await parts[0](payload)
+        : parts[0];
+    }
+
+    return Object.assign(
+      // @ts-ignore
+      ...(await Promise.all(
+        parts.map((p) => (typeof p === 'function' ? p(payload) : p)),
+      )),
+    );
+  };
+}
 
 export function parseBooleanish(value: any): boolean {
   return typeof value === 'string'
@@ -42,37 +67,6 @@ export function createColumnFilterFn<TData extends RowData>(
   return Object.assign(filterFn, options) as FilterFn<TData>;
 }
 
-export function getColumnFilter<TData extends RowData>(
-  table: Table<TData>,
-  columnId: string,
-) {
-  return table
-    .getState()
-    .columnFilters.find((filter) => filter.id === columnId);
-}
-
-export function setColumnFilter<TData extends RowData>(
-  table: Table<TData>,
-  columnId: string,
-  value?: unknown,
-) {
-  const otherColumnFilters = table
-    .getState()
-    .columnFilters.filter((filter) => filter.id !== columnId);
-
-  if (value == null) {
-    table.setColumnFilters(otherColumnFilters);
-  } else {
-    table.setColumnFilters([
-      ...otherColumnFilters,
-      {
-        id: columnId,
-        value,
-      },
-    ]);
-  }
-}
-
 export function getSortIcon(sorting: false | SortDirection) {
   return {
     asc: <LucideSortAsc />,
@@ -80,6 +74,7 @@ export function getSortIcon(sorting: false | SortDirection) {
   }[sorting as string];
 }
 
+export const PERMISSION_TYPES = ['enable', 'read', 'write', 'share'] as const;
 export const EMPTY_DATA = Object.freeze<any[]>([]) as any[];
 export const IS_ENTERPRISE =
   process.env.UMI_APP_RAGFLOW_ENTERPRISE === 'RAGFLOW_ENTERPRISE';
