@@ -31,9 +31,16 @@ export function TemplateCard({ data, showModal }: IProps) {
             avatar={data.avatar ? data.avatar : 'https://github.com/shadcn.png'}
             name={data?.title[language] || 'CN'}
           ></RAGFlowAvatar>
-          <div className="text-[18px] font-bold break-words hyphens-auto overflow-hidden"lang={language}>{data?.title[language]}</div>
+          <div
+            className="text-[18px] font-bold break-words hyphens-auto overflow-hidden"
+            lang={language}
+          >
+            {data?.title[language]}
+          </div>
         </div>
-        <p className="break-words hypens-auto"lang={language}>{data?.description[language]}</p>
+        <p className="break-words hypens-auto" lang={language}>
+          {data?.description[language]}
+        </p>
         <div className="group-hover:bg-gradient-to-t from-black/70 from-10% via-black/0 via-50% to-black/0 w-full h-full group-hover:block absolute top-0 left-0 hidden rounded-xl">
           <Button
             variant="default"
