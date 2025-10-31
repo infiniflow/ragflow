@@ -82,7 +82,7 @@ class BuiltinEmbed(Base):
 
     def encode(self, texts: list):
         batch_size = 16
-        texts = [truncate(t, self._max_tokens) for t in texts]
+        # TEI is able to auto truncate inputs according to https://github.com/huggingface/text-embeddings-inference.
         token_count = 0
         ress = None
         for i in range(0, len(texts), batch_size):
