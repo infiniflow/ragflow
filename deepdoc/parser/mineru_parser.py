@@ -394,7 +394,9 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.TEXT:
                     section = output["text"]
                 case MinerUContentType.TABLE:
-                    section = output["table_body"] if "table_body" in output else "" + "\n".join(output["table_caption"]) + "\n".join(output["table_footnote"])
+                    section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
+                    if not section.strip():
+                        section = "FAILED TO PARSE TABLE"
                 case MinerUContentType.IMAGE:
                     section = "".join(output["image_caption"]) + "\n" + "".join(output["image_footnote"])
                 case MinerUContentType.EQUATION:
