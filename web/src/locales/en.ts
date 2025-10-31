@@ -1960,6 +1960,7 @@ Important structured information may include: names, dates, locations, events, k
       newRole: 'New Role',
       addNewRole: 'Add new role',
       roleName: 'Role name',
+      roleNameRequired: 'Role name is required',
       resources: 'Resources',
 
       editRoleDescription: 'Edit role description',

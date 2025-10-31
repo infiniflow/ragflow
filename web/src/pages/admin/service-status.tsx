@@ -59,19 +59,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-import {
-  listServices,
-  showServiceDetails,
-  type AdminService,
-} from '@/services/admin-service';
+import { listServices, showServiceDetails } from '@/services/admin-service';
 
 import {
   EMPTY_DATA,
   createColumnFilterFn,
   createFuzzySearchFn,
-  getColumnFilter,
   getSortIcon,
-  setColumnFilter,
 } from './utils';
 
 import ServiceDetail from './service-detail';
@@ -106,7 +100,7 @@ function AdminServiceStatus() {
   const { data: serviceDetails, error: serviceDetailsError } = useQuery({
     queryKey: ['admin/serviceDetails', itemToMakeAction?.id],
     queryFn: async () =>
-      (await showServiceDetails(itemToMakeAction?.id!)).data.data,
+      (await showServiceDetails(itemToMakeAction!?.id)).data.data,
     enabled: !!(itemToMakeAction && detailModalOpen),
     retry: false,
   });
@@ -198,7 +192,7 @@ function AdminServiceStatus() {
         ),
       }),
     ],
-    [],
+    [t],
   );
 
   const table = useReactTable({
@@ -250,11 +244,12 @@ function AdminServiceStatus() {
 
                       <RadioGroup
                         value={
-                          (getColumnFilter(table, 'service_type')
-                            ?.value as string) ?? ''
+                          table
+                            .getColumn('service_type')!
+                            ?.getFilterValue() as string
                         }
-                        onValueChange={(value) =>
-                          setColumnFilter(table, 'service_type', value)
+                        onValueChange={
+                          table.getColumn('service_type')!?.setFilterValue
                         }
                       >
                         <Label className="space-x-2">

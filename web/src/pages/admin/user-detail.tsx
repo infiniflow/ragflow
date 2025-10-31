@@ -41,7 +41,6 @@ import {
   getUserDetails,
   listUserAgents,
   listUserDatasets,
-  type AdminService,
 } from '@/services/admin-service';
 
 import EnterpriseFeature from './components/enterprise-feature';

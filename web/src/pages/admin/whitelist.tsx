@@ -388,10 +388,11 @@ function AdminWhitelist() {
               className="px-4 h-10"
               variant="destructive"
               onClick={() => {
-                itemToMakeAction &&
+                if (itemToMakeAction) {
                   deleteWhitelistEntryMutation.mutate({
                     email: itemToMakeAction?.email,
                   });
+                }
               }}
               disabled={deleteWhitelistEntryMutation.isPending}
               loading={deleteWhitelistEntryMutation.isPending}
@@ -466,12 +467,12 @@ function AdminWhitelist() {
             <editEmailForm.FormComponent
               id={editEmailForm.id}
               onSubmit={(value) => {
-                console.log(itemToMakeAction, value);
-                itemToMakeAction &&
+                if (itemToMakeAction) {
                   updateWhitelistEntryMutation.mutate({
                     id: itemToMakeAction.id,
                     email: value.email,
                   });
+                }
               }}
             />
           </section>

@@ -24,7 +24,8 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs-underlined';
-import { AdminService, listResources } from '@/services/admin-service';
+
+import { listResources } from '@/services/admin-service';
 import { PERMISSION_TYPES, formMergeDefaultValues } from '../utils';
 
 export interface CreateRoleFormData {
@@ -169,7 +170,7 @@ function useCreateRoleForm(props?: {
 
   const schema = useMemo(() => {
     return z.object({
-      name: z.string().min(1, { message: 'Role name is required' }),
+      name: z.string().min(1, { message: t('admin.roleNameRequired') }),
       description: z.string().optional(),
       permissions: z.record(
         z.string(),
@@ -199,7 +200,7 @@ function useCreateRoleForm(props?: {
     (props: Partial<CreateRoleFormProps>) => (
       <CreateRoleForm id={id} form={form} {...props} />
     ),
-    [form],
+    [id, form],
   );
 
   return {

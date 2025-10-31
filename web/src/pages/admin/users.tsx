@@ -84,7 +84,6 @@ import {
   updateUserPassword,
   updateUserRole,
   updateUserStatus,
-  type AdminService,
 } from '@/services/admin-service';
 
 import {
@@ -130,7 +129,7 @@ function AdminUserManagement() {
     retry: false,
   });
 
-  const { data: usersList, isPending } = useQuery({
+  const { data: usersList } = useQuery({
     queryKey: ['admin/listUsers'],
     queryFn: async () => (await listUsers()).data.data,
     retry: false,
@@ -341,13 +340,7 @@ function AdminUserManagement() {
         ),
       }),
     ],
-    [
-      roleList,
-      t,
-      navigate,
-      updateUserStatusMutation.isPending,
-      updateUserRoleMutation.isPending,
-    ],
+    [t, updateUserRoleMutation, roleList, updateUserStatusMutation, navigate],
   );
 
   const table = useReactTable({

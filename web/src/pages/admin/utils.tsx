@@ -4,7 +4,6 @@ import {
   Row,
   RowData,
   SortDirection,
-  Table,
   TransformFilterValueFn,
 } from '@tanstack/react-table';
 import { LucideSortAsc, LucideSortDesc } from 'lucide-react';
@@ -66,37 +65,6 @@ export function createColumnFilterFn<TData extends RowData>(
   },
 ) {
   return Object.assign(filterFn, options) as FilterFn<TData>;
-}
-
-export function getColumnFilter<TData extends RowData>(
-  table: Table<TData>,
-  columnId: string,
-) {
-  return table
-    .getState()
-    .columnFilters.find((filter) => filter.id === columnId);
-}
-
-export function setColumnFilter<TData extends RowData>(
-  table: Table<TData>,
-  columnId: string,
-  value?: unknown,
-) {
-  const otherColumnFilters = table
-    .getState()
-    .columnFilters.filter((filter) => filter.id !== columnId);
-
-  if (value == null) {
-    table.setColumnFilters(otherColumnFilters);
-  } else {
-    table.setColumnFilters([
-      ...otherColumnFilters,
-      {
-        id: columnId,
-        value,
-      },
-    ]);
-  }
 }
 
 export function getSortIcon(sorting: false | SortDirection) {
