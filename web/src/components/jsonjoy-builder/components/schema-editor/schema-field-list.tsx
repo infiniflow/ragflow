@@ -1,14 +1,14 @@
 import { useMemo, type FC } from 'react';
 import { useTranslation } from '../../hooks/use-translation';
-import { getSchemaProperties } from '../../lib/schemaEditor';
+import { getSchemaProperties } from '../../lib/schema-editor';
 import type {
   JSONSchema as JSONSchemaType,
   NewField,
   ObjectJSONSchema,
   SchemaType,
-} from '../../types/jsonSchema';
+} from '../../types/json-schema';
 import { buildValidationTree } from '../../types/validation';
-import SchemaPropertyEditor from './SchemaPropertyEditor';
+import SchemaPropertyEditor from './schema-property-editor';
 
 interface SchemaFieldListProps {
   schema: JSONSchemaType;

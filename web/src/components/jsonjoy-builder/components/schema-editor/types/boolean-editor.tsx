@@ -2,9 +2,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useId } from 'react';
 import { useTranslation } from '../../../hooks/use-translation';
-import type { ObjectJSONSchema } from '../../../types/jsonSchema';
-import { withObjectSchema } from '../../../types/jsonSchema';
-import type { TypeEditorProps } from '../TypeEditor';
+import type { ObjectJSONSchema } from '../../../types/json-schema';
+import { withObjectSchema } from '../../../types/json-schema';
+import type { TypeEditorProps } from '../type-editor';
 
 const BooleanEditor: React.FC<TypeEditorProps> = ({ schema, onChange }) => {
   const t = useTranslation();

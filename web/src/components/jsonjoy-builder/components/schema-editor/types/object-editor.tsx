@@ -4,12 +4,12 @@ import {
   removeObjectProperty,
   updateObjectProperty,
   updatePropertyRequired,
-} from '../../../lib/schemaEditor';
-import type { NewField, ObjectJSONSchema } from '../../../types/jsonSchema';
-import { asObjectSchema, isBooleanSchema } from '../../../types/jsonSchema';
-import AddFieldButton from '../AddFieldButton';
-import SchemaPropertyEditor from '../SchemaPropertyEditor';
-import type { TypeEditorProps } from '../TypeEditor';
+} from '../../../lib/schema-editor';
+import type { NewField, ObjectJSONSchema } from '../../../types/json-schema';
+import { asObjectSchema, isBooleanSchema } from '../../../types/json-schema';
+import AddFieldButton from '../add-field-button';
+import SchemaPropertyEditor from '../schema-property-editor';
+import type { TypeEditorProps } from '../type-editor';
 
 const ObjectEditor: React.FC<TypeEditorProps> = ({
   schema,

@@ -13,7 +13,7 @@ import { useRef, useState } from 'react';
 import { useMonacoTheme } from '../../hooks/use-monaco-theme';
 import { useTranslation } from '../../hooks/use-translation';
 import { createSchemaFromJson } from '../../lib/schema-inference';
-import type { JSONSchema } from '../../types/jsonSchema';
+import type { JSONSchema } from '../../types/json-schema';
 
 /** @public */
 export interface SchemaInferencerProps {

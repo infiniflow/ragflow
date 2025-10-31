@@ -4,11 +4,11 @@ import {
   createFieldSchema,
   updateObjectProperty,
   updatePropertyRequired,
-} from '../../lib/schemaEditor';
-import type { JSONSchema, NewField } from '../../types/jsonSchema';
-import { asObjectSchema, isBooleanSchema } from '../../types/jsonSchema';
-import AddFieldButton from './AddFieldButton';
-import SchemaFieldList from './SchemaFieldList';
+} from '../../lib/schema-editor';
+import type { JSONSchema, NewField } from '../../types/json-schema';
+import { asObjectSchema, isBooleanSchema } from '../../types/json-schema';
+import AddFieldButton from './add-field-button';
+import SchemaFieldList from './schema-field-list';
 
 /** @public */
 export interface SchemaVisualEditorProps {

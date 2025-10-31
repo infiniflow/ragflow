@@ -8,9 +8,9 @@ import {
 } from 'react';
 import { useTranslation } from '../../hooks/use-translation';
 import { cn } from '../../lib/utils';
-import type { JSONSchema } from '../../types/jsonSchema';
-import JsonSchemaVisualizer from './JsonSchemaVisualizer';
-import SchemaVisualEditor from './SchemaVisualEditor';
+import type { JSONSchema } from '../../types/json-schema';
+import JsonSchemaVisualizer from './json-schema-visualizer';
+import SchemaVisualEditor from './schema-visual-editor';
 
 /** @public */
 export interface JsonSchemaEditorProps {

@@ -2,7 +2,7 @@ import type { FC } from 'react';
 import { useTranslation } from '../../hooks/use-translation';
 import type { Translation } from '../../i18n/translation-keys';
 import { cn } from '../../lib/utils';
-import type { SchemaType } from '../../types/jsonSchema';
+import type { SchemaType } from '../../types/json-schema';
 
 interface SchemaTypeSelectorProps {
   id?: string;
