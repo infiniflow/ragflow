@@ -20,7 +20,7 @@ from typing import Any, cast
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, token_required
 from api.utils.api_utils import get_result
 from flask import request
