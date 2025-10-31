@@ -18,8 +18,8 @@ import {
 import { CirclePlus, HelpCircle, Info } from 'lucide-react';
 import { useId, useState, type FC, type FormEvent } from 'react';
 import { useTranslation } from '../../hooks/use-translation';
-import type { NewField, SchemaType } from '../../types/jsonSchema';
-import SchemaTypeSelector from './SchemaTypeSelector';
+import type { NewField, SchemaType } from '../../types/json-schema';
+import SchemaTypeSelector from './schema-type-selector';
 
 interface AddFieldButtonProps {
   onAddField: (field: NewField) => void;

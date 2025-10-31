@@ -2,8 +2,8 @@ import type {
   JSONSchema,
   NewField,
   ObjectJSONSchema,
-} from '../types/jsonSchema.ts';
-import { isBooleanSchema, isObjectSchema } from '../types/jsonSchema.ts';
+} from '../types/json-schema';
+import { isBooleanSchema, isObjectSchema } from '../types/json-schema';
 
 export type Property = {
   name: string;

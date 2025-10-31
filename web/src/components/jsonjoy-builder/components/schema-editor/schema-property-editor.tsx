@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -7,16 +8,15 @@ import type {
   JSONSchema,
   ObjectJSONSchema,
   SchemaType,
-} from '../../types/jsonSchema';
+} from '../../types/json-schema';
 import {
   asObjectSchema,
   getSchemaDescription,
   withObjectSchema,
-} from '../../types/jsonSchema';
+} from '../../types/json-schema';
 import type { ValidationTreeNode } from '../../types/validation';
-import { Badge } from '../ui/badge';
-import TypeDropdown from './TypeDropdown';
-import TypeEditor from './TypeEditor';
+import TypeDropdown from './type-dropdown';
+import TypeEditor from './type-editor';
 
 export interface SchemaPropertyEditorProps {
   name: string;
