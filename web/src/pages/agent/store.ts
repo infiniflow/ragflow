@@ -476,14 +476,13 @@ const useGraphStore = create<RFState>()(
       },
       updateNodeName: (id, name) => {
         if (id) {
-          set({
-            nodes: get().nodes.map((node) => {
+          set((state) => {
+            for (const node of state.nodes) {
               if (node.id === id) {
                 node.data.name = name;
+                break;
               }
-
-              return node;
-            }),
+            }
           });
         }
       },
