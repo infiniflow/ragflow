@@ -32,8 +32,10 @@ from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
 from api import settings, utils
 from api.db import ParserType, SerializedType
-from api.utils.json import json_dumps, json_loads
+from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
+
+from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 
 
 def singleton(cls, *args, **kw):
@@ -189,7 +191,7 @@ class BaseModel(Model):
                         for i, v in enumerate(f_v):
                             if isinstance(v, str) and f_n in auto_date_timestamp_field():
                                 # time type: %Y-%m-%d %H:%M:%S
-                                f_v[i] = utils.date_string_to_timestamp(v)
+                                f_v[i] = date_string_to_timestamp(v)
                         lt_value = f_v[0]
                         gt_value = f_v[1]
                         if lt_value is not None and gt_value is not None:
@@ -218,9 +220,9 @@ class BaseModel(Model):
     @classmethod
     def insert(cls, __data=None, **insert):
         if isinstance(__data, dict) and __data:
-            __data[cls._meta.combined["create_time"]] = utils.current_timestamp()
+            __data[cls._meta.combined["create_time"]] = current_timestamp()
         if insert:
-            insert["create_time"] = utils.current_timestamp()
+            insert["create_time"] = current_timestamp()
 
         return super().insert(__data, **insert)
 
@@ -231,11 +233,11 @@ class BaseModel(Model):
         if not normalized:
             return {}
 
-        normalized[cls._meta.combined["update_time"]] = utils.current_timestamp()
+        normalized[cls._meta.combined["update_time"]] = current_timestamp()
 
         for f_n in AUTO_DATE_TIMESTAMP_FIELD_PREFIX:
             if {f"{f_n}_time", f"{f_n}_date"}.issubset(cls._meta.combined.keys()) and cls._meta.combined[f"{f_n}_time"] in normalized and normalized[cls._meta.combined[f"{f_n}_time"]] is not None:
-                normalized[cls._meta.combined[f"{f_n}_date"]] = utils.timestamp_to_date(normalized[cls._meta.combined[f"{f_n}_time"]])
+                normalized[cls._meta.combined[f"{f_n}_date"]] = timestamp_to_date(normalized[cls._meta.combined[f"{f_n}_time"]])
 
         return normalized
 
@@ -331,9 +333,9 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 # 08006: connection_failure
                 # 08003: connection_does_not_exist
                 # 08000: connection_exception
-                error_messages = ['connection', 'server closed', 'connection refused', 
+                error_messages = ['connection', 'server closed', 'connection refused',
                                 'no connection to the server', 'terminating connection']
-                
+
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
@@ -366,7 +368,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             except (OperationalError, InterfaceError) as e:
                 error_messages = ['connection', 'server closed', 'connection refused',
                                 'no connection to the server', 'terminating connection']
-                
+
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
@@ -394,7 +396,7 @@ class BaseDataBase:
     def __init__(self):
         database_config = settings.DATABASE.copy()
         db_name = database_config.pop("name")
-        
+
         pool_config = {
             'max_retries': 5,
             'retry_delay': 1,
@@ -711,6 +713,7 @@ class TenantLLM(DataBaseModel):
     api_base = CharField(max_length=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
         return self.llm_name
@@ -1258,6 +1261,10 @@ def migrate_db():
         pass
     try:
         migrate(migrator.alter_column_type("tenant_llm", "api_key", TextField(null=True, help_text="API KEY")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant_llm", "status", CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

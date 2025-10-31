@@ -215,7 +215,7 @@ def add_llm():
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
-            base_url=llm["api_base"])
+            base_url=llm["api_base"])   
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0:
@@ -264,7 +264,7 @@ def add_llm():
         try:
             image_data = test_image
             m, tc = mdl.describe(image_data)
-            if not m and not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
@@ -301,6 +301,17 @@ def delete_llm():
     TenantLLMService.filter_delete(
         [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"],
          TenantLLM.llm_name == req["llm_name"]])
+    return get_json_result(data=True)
+
+
+@manager.route('/enable_llm', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("llm_factory", "llm_name")
+def enable_llm():
+    req = request.json
+    TenantLLMService.filter_update(
+        [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"],
+         TenantLLM.llm_name == req["llm_name"]], {"status": str(req.get("status", "1"))})
     return get_json_result(data=True)
 
 
@@ -344,7 +355,8 @@ def my_llms():
                     "name": o_dict["llm_name"],
                     "used_token": o_dict["used_tokens"],
                     "api_base": o_dict["api_base"] or "",
-                    "max_tokens": o_dict["max_tokens"] or 8192
+                    "max_tokens": o_dict["max_tokens"] or 8192,
+                    "status": o_dict["status"] or "1"
                 })
         else:
             res = {}
@@ -357,7 +369,8 @@ def my_llms():
                 res[o["llm_factory"]]["llm"].append({
                     "type": o["model_type"],
                     "name": o["llm_name"],
-                    "used_token": o["used_tokens"]
+                    "used_token": o["used_tokens"],
+                    "status": o["status"]
                 })
 
         return get_json_result(data=res)
@@ -368,11 +381,11 @@ def my_llms():
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_app():
-    self_deployed = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
+    self_deployed = ["FastEmbed", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = []
     model_type = request.args.get("model_type")
     try:
-        objs = TenantLLMService.query(tenant_id=current_user.id)
+        objs = TenantLLMService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key])
         llms = LLMService.get_all()
         llms = [m.to_dict()

@@ -114,7 +114,7 @@ export default function VariablePickerMenuPlugin({
     minLength: 0,
   });
 
-  const [queryString, setQueryString] = React.useState<string| null>('');
+  const [queryString, setQueryString] = React.useState<string | null>('');
 
   const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
 

@@ -191,7 +191,7 @@ export default {
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
-      testingLabel: 'Testing',
+      testingLabel: 'Run',
       similarity: 'Hybrid similarity',
       termSimilarity: 'Term similarity',
       vectorSimilarity: 'Vector similarity',
@@ -278,8 +278,8 @@ export default {
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
-        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results 
-        will remove all derived entities and relationships from this dataset. 
+        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results
+        will remove all derived entities and relationships from this dataset.
         Your original files will remain intact.<p>
         <br/>
         Do you want to continue?
@@ -680,6 +680,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      search: 'Search',
+      availableModels: 'Available models',
       profile: 'Profile',
       avatar: 'Avatar',
       avatarTip: 'This will be displayed on your profile.',
@@ -693,7 +695,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       passwordDescription:
         'Please enter your current password to change your password.',
       model: 'Model providers',
-      modelDescription: 'Configure model parameters and API KEY here.',
+      systemModelDescription: 'Please complete these settings before beginning',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -726,7 +728,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cancel: 'Cancel',
       addedModels: 'Added models',
       modelsToBeAdded: 'Models to be added',
-      addTheModel: 'Add Model',
+      addTheModel: 'Add',
       apiKey: 'API-Key',
       apiKeyMessage:
         'Please enter the API key (for locally deployed model,ignore this).',
@@ -742,21 +744,20 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
       modify: 'Modify',
       systemModelSettings: 'Set default models',
-      chatModel: 'Chat model',
-      chatModelTip:
-        'The default chat model for each newly created knowledge base.',
-      embeddingModel: 'Embedding model',
+      chatModel: 'LLM',
+      chatModelTip: 'The default LLM for each newly created knowledge base.',
+      embeddingModel: 'Embedding',
       embeddingModelTip:
         'The default embedding model for each newly created knowledge base. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
-      img2txtModel: 'Img2txt model',
+      img2txtModel: 'VLM',
       img2txtModelTip:
-        'The default img2txt model for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
-      sequence2txtModel: 'Speech2txt model',
+        'The default VLM for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+      sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'The default ASR model for each newly created knowledgebase. Use this model to translate voices to corresponding text.',
-      rerankModel: 'Rerank model',
+      rerankModel: 'Rerank',
       rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
-      ttsModel: 'TTS Model',
+      ttsModel: 'TTS',
       ttsModelTip:
         'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       workspace: 'Workspace',
@@ -1623,7 +1624,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       outputFormat: 'Output format',
-      fileFormats: 'File format',
+      fileFormats: 'File type',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: 'Spreadsheet',
@@ -1644,7 +1645,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
-      parserMethod: 'Parsing method',
+      parserMethod: 'PDF parser',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
@@ -1719,6 +1720,9 @@ Important structured information may include: names, dates, locations, events, k
       },
       imageParseMethodOptions: {
         ocr: 'OCR',
+      },
+      structuredOutput: {
+        configuration: 'Configuration',
       },
     },
     llmTools: {
@@ -1813,15 +1817,15 @@ Important structured information may include: names, dates, locations, events, k
       </ul>`,
       changeStepModalTitle: 'Step Switch Warning',
       changeStepModalContent: `
-      <p>You are currently editing the results of this stage.</p> 
-      <p>If you switch to a later stage, your changes will be lost. </p> 
+      <p>You are currently editing the results of this stage.</p>
+      <p>If you switch to a later stage, your changes will be lost. </p>
       <p>To keep them, please click Rerun to re-run the current stage.</p> `,
       changeStepModalConfirmText: 'Switch Anyway',
       changeStepModalCancelText: 'Cancel',
       unlinkPipelineModalTitle: 'Unlink Ingestion pipeline',
       unlinkPipelineModalContent: `
-      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p> 
-      <p>Files that are already being parsed  will continue until completion</p> 
+      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p>
+      <p>Files that are already being parsed  will continue until completion</p>
       <p>Files that are not yet parsed will no longer be processed</p> <br/>
       <p>Are you sure you want to proceed?</p> `,
       unlinkPipelineModalConfirmText: 'Unlink',
@@ -1836,6 +1840,126 @@ Important structured information may include: names, dates, locations, events, k
       processingSuccessTip: 'Total successfully processed files',
       processingFailedTip: 'Total failed processes',
       processing: 'Processing',
+    },
+    admin: {
+      loginTitle: 'RAGFlow ADMIN',
+      title: 'RAGFlow admin',
+      confirm: 'Confirm',
+      close: 'Close',
+      yes: 'Yes',
+      no: 'No',
+      delete: 'Delete',
+      cancel: 'Cancel',
+      reset: 'Reset',
+      import: 'Import',
+      description: 'Description',
+      noDescription: 'No description',
+
+      resourceType: {
+        dataset: 'Dataset',
+        chat: 'Chat',
+        agent: 'Agent',
+        search: 'Search',
+        file: 'File',
+        team: 'Team',
+        memory: 'Memory',
+      },
+
+      permissionType: {
+        enable: 'Enable',
+        read: 'Read',
+        write: 'Write',
+        share: 'Share',
+      },
+
+      serviceStatus: 'Service status',
+      userManagement: 'User management',
+      registrationWhitelist: 'Registration whitelist',
+      roles: 'Roles',
+      monitoring: 'Monitoring',
+
+      active: 'Active',
+      inactive: 'Inactive',
+      enable: 'Enable',
+      disable: 'Disable',
+      all: 'All',
+      actions: 'Actions',
+      newUser: 'New User',
+      email: 'Email',
+      name: 'Name',
+      nickname: 'Nickname',
+      status: 'Status',
+      id: 'ID',
+      serviceType: 'Service type',
+      host: 'Host',
+      port: 'Port',
+
+      role: 'Role',
+      user: 'User',
+      superuser: 'Superuser',
+
+      createTime: 'Create time',
+      lastLoginTime: 'Last login time',
+      lastUpdateTime: 'Last update time',
+
+      isAnonymous: 'Is Anonymous',
+
+      deleteUser: 'Delete user',
+      deleteUserConfirmation: 'Are you sure you want to delete this user?',
+
+      createNewUser: 'Create new user',
+      changePassword: 'Change password',
+      newPassword: 'New password',
+      confirmNewPassword: 'Confirm new password',
+      password: 'Password',
+      confirmPassword: 'Confirm password',
+
+      invalidEmail: 'Please input a valid email address!',
+      passwordRequired: 'Please input your password!',
+      passwordMinLength: 'Password must be more than 8 characters.',
+      confirmPasswordRequired: 'Please confirm your password!',
+      confirmPasswordDoNotMatch: 'The password that you entered do not match!',
+
+      read: 'Read',
+      write: 'Write',
+      share: 'Share',
+      create: 'Create',
+
+      extraInfo: 'Extra information',
+      serviceDetail: `Service {{name}} detail`,
+
+      whitelistManagement: 'Whitelist management',
+      exportAsExcel: 'Export Excel',
+      importFromExcel: 'Import Excel',
+      createEmail: 'Create email',
+      deleteEmail: 'Delete email',
+      editEmail: 'Edit email',
+      deleteWhitelistEmailConfirmation:
+        'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
+
+      importWhitelist: 'Import whitelist (excel)',
+      importSelectExcelFile: 'Excel file (.xlsx)',
+      importOverwriteExistingEmails: 'Overwrite existing emails',
+      importInvalidExcelFile: 'Please select a valid Excel file',
+      importFileRequired: 'Please select a file to import',
+      importFileTips:
+        'File must contain a single header column named <code>email</code>.',
+
+      chunkNum: 'Chunks',
+      docNum: 'Documents',
+      tokenNum: 'Tokens used',
+      language: 'Language',
+      createDate: 'Create date',
+      updateDate: 'Update date',
+      permission: 'Permission',
+
+      agentTitle: 'Agent title',
+      canvasCategory: 'Canvas category',
+
+      newRole: 'New Role',
+      addNewRole: 'Add new role',
+      roleName: 'Role name',
+      resources: 'Resources',
     },
   },
 };
