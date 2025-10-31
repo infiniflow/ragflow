@@ -1,18 +1,18 @@
 import { lazy, Suspense } from 'react';
-import { withObjectSchema } from '../../types/jsonSchema';
 import type {
   JSONSchema,
   ObjectJSONSchema,
   SchemaType,
-} from '../../types/jsonSchema.ts';
+} from '../../types/json-schema';
+import { withObjectSchema } from '../../types/json-schema';
 import type { ValidationTreeNode } from '../../types/validation';
 
 // Lazy load specific type editors to avoid circular dependencies
-const StringEditor = lazy(() => import('./types/StringEditor'));
-const NumberEditor = lazy(() => import('./types/NumberEditor'));
-const BooleanEditor = lazy(() => import('./types/BooleanEditor'));
-const ObjectEditor = lazy(() => import('./types/ObjectEditor'));
-const ArrayEditor = lazy(() => import('./types/ArrayEditor'));
+const StringEditor = lazy(() => import('./types/string-editor'));
+const NumberEditor = lazy(() => import('./types/number-editor'));
+const BooleanEditor = lazy(() => import('./types/boolean-editor'));
+const ObjectEditor = lazy(() => import('./types/object-editor'));
+const ArrayEditor = lazy(() => import('./types/array-editor'));
 
 export interface TypeEditorProps {
   schema: JSONSchema;

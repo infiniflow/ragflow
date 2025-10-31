@@ -3,13 +3,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useId, useMemo, useState } from 'react';
 import { useTranslation } from '../../../hooks/use-translation';
-import { getArrayItemsSchema } from '../../../lib/schemaEditor';
+import { getArrayItemsSchema } from '../../../lib/schema-editor';
 import { cn } from '../../../lib/utils';
-import type { ObjectJSONSchema, SchemaType } from '../../../types/jsonSchema';
-import { isBooleanSchema, withObjectSchema } from '../../../types/jsonSchema';
-import TypeDropdown from '../TypeDropdown';
-import type { TypeEditorProps } from '../TypeEditor';
-import TypeEditor from '../TypeEditor';
+import type { ObjectJSONSchema, SchemaType } from '../../../types/json-schema';
+import { isBooleanSchema, withObjectSchema } from '../../../types/json-schema';
+import TypeDropdown from '../type-dropdown';
+import type { TypeEditorProps } from '../type-editor';
+import TypeEditor from '../type-editor';
 
 const ArrayEditor: React.FC<TypeEditorProps> = ({
   schema,

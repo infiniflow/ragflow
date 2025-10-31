@@ -4,7 +4,7 @@ import { useRef, type FC } from 'react';
 import { useMonacoTheme } from '../../hooks/use-monaco-theme';
 import { useTranslation } from '../../hooks/use-translation';
 import { cn } from '../../lib/utils';
-import type { JSONSchema } from '../../types/jsonSchema';
+import type { JSONSchema } from '../../types/json-schema';
 
 /** @public */
 export interface JsonSchemaVisualizerProps {

@@ -5,13 +5,13 @@ import type {
   NewField,
   ObjectJSONSchema,
   SchemaType,
-} from '../../types/jsonSchema';
+} from '../../types/json-schema';
 import {
   asObjectSchema,
   getSchemaDescription,
   withObjectSchema,
-} from '../../types/jsonSchema';
-import SchemaPropertyEditor from './SchemaPropertyEditor';
+} from '../../types/json-schema';
+import SchemaPropertyEditor from './schema-property-editor';
 
 // This component is now just a simple wrapper around SchemaPropertyEditor
 // to maintain backward compatibility during migration

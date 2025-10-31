@@ -2,7 +2,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../hooks/use-translation';
 import { cn, getTypeColor, getTypeLabel } from '../../lib/utils';
-import type { SchemaType } from '../../types/jsonSchema';
+import type { SchemaType } from '../../types/json-schema';
 
 export interface TypeDropdownProps {
   value: SchemaType;

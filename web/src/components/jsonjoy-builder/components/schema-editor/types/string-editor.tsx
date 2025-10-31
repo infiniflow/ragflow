@@ -11,9 +11,9 @@ import { X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { useTranslation } from '../../../hooks/use-translation';
 import { cn } from '../../../lib/utils';
-import type { ObjectJSONSchema } from '../../../types/jsonSchema';
-import { isBooleanSchema, withObjectSchema } from '../../../types/jsonSchema';
-import type { TypeEditorProps } from '../TypeEditor';
+import type { ObjectJSONSchema } from '../../../types/json-schema';
+import { isBooleanSchema, withObjectSchema } from '../../../types/json-schema';
+import type { TypeEditorProps } from '../type-editor';
 
 type Property = 'enum' | 'minLength' | 'maxLength' | 'pattern' | 'format';
 

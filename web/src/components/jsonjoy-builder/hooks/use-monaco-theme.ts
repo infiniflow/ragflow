@@ -1,6 +1,6 @@
 import type * as Monaco from 'monaco-editor';
 import { useEffect, useState } from 'react';
-import type { JSONSchema } from '../types/jsonSchema.ts';
+import type { JSONSchema } from '../types/json-schema.js';
 
 export interface MonacoEditorOptions {
   minimap?: { enabled: boolean };

@@ -1,6 +1,6 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import type { JSONSchema } from '../types/jsonSchema.ts';
+import type { JSONSchema } from '../types/json-schema.js';
 
 // Initialize Ajv with all supported formats and meta-schemas
 const ajv = new Ajv({

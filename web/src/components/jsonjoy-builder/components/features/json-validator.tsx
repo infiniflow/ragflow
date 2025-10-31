@@ -11,8 +11,11 @@ import type * as Monaco from 'monaco-editor';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMonacoTheme } from '../../hooks/use-monaco-theme';
 import { formatTranslation, useTranslation } from '../../hooks/use-translation';
-import type { JSONSchema } from '../../types/jsonSchema';
-import { validateJson, type ValidationResult } from '../../utils/jsonValidator';
+import type { JSONSchema } from '../../types/json-schema';
+import {
+  validateJson,
+  type ValidationResult,
+} from '../../utils/json-validator';
 
 /** @public */
 export interface JsonValidatorProps {
