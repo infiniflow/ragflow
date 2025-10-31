@@ -26,7 +26,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
-from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt
+from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
 
 
 class LLMParam(ComponentParamBase):
@@ -220,8 +220,8 @@ class LLM(ComponentBase):
         except Exception:
             pass
         if output_structure:
-            prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(output_structure, ensure_ascii=False, indent=2)
-            prompt += "\nRedundant information is FORBIDDEN."
+            schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
+            prompt += structured_output_prompt(schema)
             for _ in range(self._param.max_retries+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
                 error = ""
