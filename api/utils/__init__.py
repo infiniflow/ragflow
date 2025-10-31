@@ -13,11 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import base64
-import hashlib
-import uuid
-import requests
-
 import importlib
 
 
@@ -30,4 +25,3 @@ def from_dict_hook(in_dict: dict):
                 in_dict["module"]), in_dict["type"])(**in_dict["data"])
     else:
         return in_dict
-
