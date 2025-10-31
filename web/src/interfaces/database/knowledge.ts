@@ -104,6 +104,7 @@ export interface ITenantInfo {
   tenant_id: string;
   chat_id: string;
   speech2text_id: string;
+  rerank_id?: string;
   tts_id: string;
 }
 
