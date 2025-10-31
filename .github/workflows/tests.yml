@@ -227,4 +227,4 @@ jobs:
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v
-          sudo docker rmi -f ${RAGFLOW_IMAGE}
+          sudo docker rmi -f ${RAGFLOW_IMAGE:-NO_IMAGE} || true
