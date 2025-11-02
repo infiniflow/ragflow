@@ -42,7 +42,8 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.file_utils import filename_type, get_project_base_directory, thumbnail
+from api.utils.file_utils import filename_type, thumbnail
+from common.file_utils import get_project_base_directory
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
