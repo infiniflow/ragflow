@@ -4,7 +4,7 @@ import pymysql
 from urllib.parse import quote_plus
 
 from api.utils.configs import get_base_config
-from rag.utils import singleton
+from common.decorator import singleton
 
 
 CREATE_TABLE_SQL = """
