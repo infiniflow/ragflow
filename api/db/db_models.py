@@ -36,18 +36,7 @@ from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
 
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
-
-
-def singleton(cls, *args, **kw):
-    instances = {}
-
-    def _singleton():
-        key = str(cls) + str(os.getpid())
-        if key not in instances:
-            instances[key] = cls(*args, **kw)
-        return instances[key]
-
-    return _singleton
+from common.decorator import singleton
 
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}

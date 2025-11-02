@@ -26,7 +26,7 @@ from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import singleton
+from common.decorator import singleton
 from api.utils.file_utils import get_project_base_directory
 from api.utils.common import convert_bytes
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
