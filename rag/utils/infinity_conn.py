@@ -29,7 +29,7 @@ from rag import settings
 from rag.settings import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 import pandas as pd
-from api.utils.file_utils import get_project_base_directory
+from common.file_utils import get_project_base_directory
 from rag.nlp import is_english
 
 from rag.utils.doc_store_conn import (

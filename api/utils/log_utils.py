@@ -17,18 +17,9 @@ import os
 import os.path
 import logging
 from logging.handlers import RotatingFileHandler
+from common.file_utils import get_project_base_directory
 
 initialized_root_logger = False
-
-def get_project_base_directory():
-    PROJECT_BASE = os.path.abspath(
-        os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            os.pardir,
-            os.pardir,
-        )
-    )
-    return PROJECT_BASE
 
 def init_root_logger(logfile_basename: str, log_format: str = "%(asctime)-15s %(levelname)-8s %(process)d %(message)s"):
     global initialized_root_logger

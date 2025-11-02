@@ -43,6 +43,7 @@ from ruamel.yaml import YAML
 # Local imports
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
+from common.file_utils import get_project_base_directory
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
 
@@ -50,21 +51,6 @@ LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
-
-def get_project_base_directory(*args):
-    global PROJECT_BASE
-    if PROJECT_BASE is None:
-        PROJECT_BASE = os.path.abspath(
-            os.path.join(
-                os.path.dirname(os.path.realpath(__file__)),
-                os.pardir,
-                os.pardir,
-            )
-        )
-
-    if args:
-        return os.path.join(PROJECT_BASE, *args)
-    return PROJECT_BASE
 
 @cached(cache=LRUCache(maxsize=10))
 def load_json_conf(conf_path):

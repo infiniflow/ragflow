@@ -17,7 +17,7 @@
 import os
 import tiktoken
 
-from api.utils.file_utils import get_project_base_directory
+from common.file_utils import get_project_base_directory
 
 tiktoken_cache_dir = get_project_base_directory()
 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
