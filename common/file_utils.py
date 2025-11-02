@@ -25,7 +25,6 @@ def get_project_base_directory(*args):
             os.path.join(
                 os.path.dirname(os.path.realpath(__file__)),
                 os.pardir,
-                os.pardir,
             )
         )
 
