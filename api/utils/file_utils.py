@@ -45,7 +45,6 @@ from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
-RAG_BASE = os.getenv("RAG_BASE")
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -66,36 +65,6 @@ def get_project_base_directory(*args):
     if args:
         return os.path.join(PROJECT_BASE, *args)
     return PROJECT_BASE
-
-
-def get_rag_directory(*args):
-    global RAG_BASE
-    if RAG_BASE is None:
-        RAG_BASE = os.path.abspath(
-            os.path.join(
-                os.path.dirname(os.path.realpath(__file__)),
-                os.pardir,
-                os.pardir,
-                os.pardir,
-            )
-        )
-    if args:
-        return os.path.join(RAG_BASE, *args)
-    return RAG_BASE
-
-
-def get_rag_python_directory(*args):
-    return get_rag_directory("python", *args)
-
-
-def get_home_cache_dir():
-    dir = os.path.join(os.path.expanduser("~"), ".ragflow")
-    try:
-        os.mkdir(dir)
-    except OSError:
-        pass
-    return dir
-
 
 @cached(cache=LRUCache(maxsize=10))
 def load_json_conf(conf_path):
