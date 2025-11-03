@@ -16,7 +16,7 @@
 import inspect
 import logging
 import re
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 from functools import partial
 from typing import Generator
 from api.db.db_models import LLM

@@ -21,7 +21,7 @@ from graphrag.general.extractor import Extractor
 from graphrag.general.leiden import add_community_info2graph
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import perform_variable_replacements, dict_has_keys_with_types, chat_limiter
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 import trio
 
 

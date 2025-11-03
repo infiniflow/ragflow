@@ -36,7 +36,7 @@ import requests
 import websocket
 from pydantic import BaseModel, conint
 
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 
 
 class ServeReferenceAudio(BaseModel):

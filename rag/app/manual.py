@@ -21,7 +21,7 @@ import re
 from api.db import ParserType
 from io import BytesIO
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, PlainParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from docx import Document

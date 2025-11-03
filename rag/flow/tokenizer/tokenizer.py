@@ -29,7 +29,7 @@ from rag.flow.tokenizer.schema import TokenizerFromUpstream
 from rag.nlp import rag_tokenizer
 from rag.settings import EMBEDDING_BATCH_SIZE
 from rag.svr.task_executor import embed_limiter
-from rag.utils import truncate
+from common.token_utils import truncate
 
 
 class TokenizerParam(ProcessParamBase):

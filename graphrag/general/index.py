@@ -165,7 +165,7 @@ async def run_graphrag_for_kb(
         return {"ok_docs": [], "failed_docs": [], "total_docs": 0, "total_chunks": 0, "seconds": 0.0}
 
     def load_doc_chunks(doc_id: str) -> list[str]:
-        from rag.utils import num_tokens_from_string
+        from common.token_utils import num_tokens_from_string
 
         chunks = []
         current_chunk = ""

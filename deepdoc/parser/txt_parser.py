@@ -17,7 +17,7 @@
 import re
 
 from deepdoc.parser.utils import get_text
-from rag.nlp import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 
 
 class RAGFlowTxtParser:
