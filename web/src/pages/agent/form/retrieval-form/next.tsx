@@ -123,7 +123,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
             <RerankFormFields></RerankFormFields>
-            <MetadataFilter></MetadataFilter>
+            <MetadataFilter canReference></MetadataFilter>
             <EmptyResponseField></EmptyResponseField>
             <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
             <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>

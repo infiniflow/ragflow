@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { useFetchKnowledgeMetadata } from '@/hooks/use-knowledge-request';
 import { SwitchOperatorOptions } from '@/pages/agent/constant';
+import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { useBuildSwitchOperatorOptions } from '@/pages/agent/form/switch-form';
 import { Plus, X } from 'lucide-react';
 import { useCallback } from 'react';
@@ -26,9 +27,11 @@ import { useTranslation } from 'react-i18next';
 export function MetadataFilterConditions({
   kbIds,
   prefix = '',
+  canReference,
 }: {
   kbIds: string[];
   prefix?: string;
+  canReference?: boolean;
 }) {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -117,7 +120,18 @@ export function MetadataFilterConditions({
                 render={({ field }) => (
                   <FormItem className="flex-1 overflow-hidden">
                     <FormControl>
-                      <Input placeholder={t('common.pleaseInput')} {...field} />
+                      {canReference ? (
+                        <PromptEditor
+                          {...field}
+                          multiLine={false}
+                          showToolbar={false}
+                        ></PromptEditor>
+                      ) : (
+                        <Input
+                          placeholder={t('common.pleaseInput')}
+                          {...field}
+                        />
+                      )}
                     </FormControl>
                     <FormMessage />
                   </FormItem>
