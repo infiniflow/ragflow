@@ -161,7 +161,32 @@ class Graph:
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
-        return cpn["obj"].output(var_nm)
+        parts = var_nm.split(".", 1)
+        root_key = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        root_val = cpn["obj"].output(root_key)
+
+        if not rest:
+            return root_val
+        return self.get_variable_param_value(root_val,rest)
+    
+    def get_variable_param_value(self, obj: Any, path: str) -> Any:
+        cur = obj
+        if not path:
+            return cur
+        for key in path.split('.'):
+            if cur is None:
+                return None
+            if isinstance(cur, str):
+                try:
+                    cur = json.loads(cur)
+                except Exception:
+                    return None
+            if isinstance(cur, dict):
+                cur = cur.get(key)
+            else:
+                cur = getattr(cur, key, None)
+        return cur
 
 
 class Canvas(Graph):
