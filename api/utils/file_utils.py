@@ -28,10 +28,14 @@ import sys
 import tempfile
 import threading
 import zipfile
+import requests
+import PyPDF2
+from docx import Document
 from io import BytesIO
+from requests.exceptions import Timeout, RequestException
 
 # Typing
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Optional, Dict
 
 # Third-party imports
 import olefile
@@ -373,3 +377,120 @@ def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes
         return out
 
     return out
+
+
+def extract_links_from_docx(docx_bytes: bytes):
+    """
+    Extract all hyperlinks from a Word (.docx) document binary stream.
+
+    Args:
+        docx_bytes (bytes): Raw bytes of a .docx file.
+
+    Returns:
+        set[str]: A set of unique hyperlink URLs.
+    """
+    links = set()
+    with BytesIO(docx_bytes) as bio:
+        document = Document(bio)
+
+        # Each relationship may represent a hyperlink, image, footer, etc.
+        for rel in document.part.rels.values():
+            if rel.reltype == (
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+            ):
+                links.add(rel.target_ref)
+
+    return links
+
+
+def extract_links_from_pdf(pdf_bytes: bytes):
+    """
+    Extract all clickable hyperlinks from a PDF binary stream.
+
+    Args:
+        pdf_bytes (bytes): Raw bytes of a PDF file.
+
+    Returns:
+        set[str]: A set of unique hyperlink URLs (unordered).
+    """
+    links = set()
+    with BytesIO(pdf_bytes) as bio:
+        pdf = PyPDF2.PdfReader(bio)
+
+        for page in pdf.pages:
+            annots = page.get("/Annots")
+            if not annots or isinstance(annots, PyPDF2.generic.IndirectObject):
+                continue
+            for annot in annots:
+                obj = annot.get_object()
+                a = obj.get("/A")
+                if a and a.get("/URI"):
+                    links.add(a["/URI"])
+
+    return links
+
+
+_GLOBAL_SESSION: Optional[requests.Session] = None
+def _get_session(headers: Optional[Dict[str, str]] = None) -> requests.Session:
+    """Get or create a global reusable session."""
+    global _GLOBAL_SESSION
+    if _GLOBAL_SESSION is None:
+        _GLOBAL_SESSION = requests.Session()
+        _GLOBAL_SESSION.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0 Safari/537.36"
+            )
+        })
+    if headers:
+        _GLOBAL_SESSION.headers.update(headers)
+    return _GLOBAL_SESSION
+
+
+def extract_html(
+    url: str,
+    timeout: float = 60.0,
+    headers: Optional[Dict[str, str]] = None,
+    max_retries: int = 2,
+) -> Tuple[Optional[bytes], Dict[str, str]]:
+    """
+    Extract the full HTML page as raw bytes from a given URL.
+    Automatically reuses a persistent HTTP session and applies robust timeout & retry logic.
+
+    Args:
+        url (str): Target webpage URL.
+        timeout (float): Request timeout in seconds (applies to connect + read).
+        headers (dict, optional): Extra HTTP headers.
+        max_retries (int): Number of retries on timeout or transient errors.
+
+    Returns:
+        tuple(bytes|None, dict):
+            - html_bytes: Raw HTML content (or None if failed)
+            - metadata: HTTP info (status_code, content_type, final_url, error if any)
+    """
+    sess = _get_session(headers=headers)
+    metadata = {"final_url": url, "status_code": "", "content_type": "", "error": ""}
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = sess.get(url, timeout=timeout)
+            resp.raise_for_status()
+
+            html_bytes = resp.content
+            metadata.update({
+                "final_url": resp.url,
+                "status_code": str(resp.status_code),
+                "content_type": resp.headers.get("Content-Type", ""),
+            })
+            return html_bytes, metadata
+
+        except Timeout:
+            metadata["error"] = f"Timeout after {timeout}s (attempt {attempt}/{max_retries})"
+            if attempt >= max_retries:
+                continue
+        except RequestException as e:
+            metadata["error"] = f"Request failed: {e}"
+            continue
+
+    return None, metadata
