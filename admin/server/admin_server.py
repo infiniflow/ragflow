@@ -24,7 +24,7 @@ from werkzeug.serving import run_simple
 from flask import Flask
 from routes import admin_bp
 from api.utils.log_utils import init_root_logger
-from api.constants import SERVICE_CONF
+from common.contants import SERVICE_CONF
 from api import settings
 from config import load_configurations, SERVICE_CONFIGS
 from auth import init_default_admin, setup_auth
