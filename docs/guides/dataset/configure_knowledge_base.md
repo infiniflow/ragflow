@@ -42,10 +42,10 @@ RAGFlow offers multiple built-in chunking template to facilitate chunking files 
 | **Template** | Description                                                           | File format                                                                                   |
 |--------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
 | General      | Files are consecutively chunked based on a preset chunk token number. | MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
-| Q&A          |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
+| Q&A          | Retrieves relevant information and generates answers to respond to questions.     | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Resume       | Enterprise edition only. You can also try it out on demo.ragflow.io.  | DOCX, PDF, TXT                                                                                |
 | Manual       |                                                                       | PDF                                                                                           |
-| Table        |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
+| Table        | The table mode uses TSI technology for efficient data parsing. | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Paper        |                                                                       | PDF                                                                                           |
 | Book         |                                                                       | DOCX, PDF, TXT                                                                                |
 | Laws         |                                                                       | DOCX, PDF, TXT                                                                                |
