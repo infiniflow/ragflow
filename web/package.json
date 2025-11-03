@@ -114,6 +114,7 @@
     "umi-request": "^1.4.0",
     "unist-util-visit-parents": "^6.0.1",
     "uuid": "^9.0.1",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.8",
     "zustand": "^4.5.2"
   },
