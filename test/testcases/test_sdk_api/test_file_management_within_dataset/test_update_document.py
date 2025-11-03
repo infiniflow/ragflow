@@ -17,7 +17,7 @@
 import pytest
 from configs import DOCUMENT_NAME_LIMIT
 from ragflow_sdk import DataSet
-from testcases.utils.config_utils import DEFAULT_PARSER_CONFIG  
+from utils.config_utils import DEFAULT_PARSER_CONFIG  
 
 class TestDocumentsUpdated:
     @pytest.mark.p1
