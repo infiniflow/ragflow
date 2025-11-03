@@ -1,6 +1,6 @@
 import { JSONSchema } from '@/components/jsonjoy-builder';
-import { Operator } from '@/constants/agent';
-import { isPlainObject } from 'lodash';
+import { get, isPlainObject } from 'lodash';
+import { JsonSchemaDataType } from '../constant';
 
 // Loop operators can only accept variables of type list.
 
@@ -8,6 +8,7 @@ import { isPlainObject } from 'lodash';
 
 export function filterLoopOperatorInput(
   structuredOutput: JSONSchema,
+  type: string,
   path = [],
 ) {
   if (typeof structuredOutput === 'boolean') {
@@ -23,9 +24,9 @@ export function filterLoopOperatorInput(
       (pre, [key, value]) => {
         if (
           typeof value !== 'boolean' &&
-          (value.type === 'array' || hasArrayChild(value))
+          (value.type === type || hasArrayChild(value))
         ) {
-          pre[key] = filterLoopOperatorInput(value, path);
+          pre[key] = filterLoopOperatorInput(value, type, path);
         }
         return pre;
       },
@@ -40,7 +41,7 @@ export function filterLoopOperatorInput(
 
 export function filterAgentStructuredOutput(
   structuredOutput: JSONSchema,
-  operator?: string,
+  type?: string,
 ) {
   if (typeof structuredOutput === 'boolean') {
     return structuredOutput;
@@ -49,8 +50,8 @@ export function filterAgentStructuredOutput(
     structuredOutput.properties &&
     isPlainObject(structuredOutput.properties)
   ) {
-    if (operator === Operator.Iteration) {
-      return filterLoopOperatorInput(structuredOutput);
+    if (type) {
+      return filterLoopOperatorInput(structuredOutput, type);
     }
 
     return structuredOutput;
@@ -59,13 +60,16 @@ export function filterAgentStructuredOutput(
   return structuredOutput;
 }
 
-export function hasArrayChild(data: Record<string, any> | Array<any>) {
+export function hasSpecificTypeChild(
+  data: Record<string, any> | Array<any>,
+  type: string,
+) {
   if (Array.isArray(data)) {
     for (const value of data) {
-      if (isPlainObject(value) && value.type === 'array') {
+      if (isPlainObject(value) && value.type === type) {
         return true;
       }
-      if (hasArrayChild(value)) {
+      if (hasSpecificTypeChild(value, type)) {
         return true;
       }
     }
@@ -73,15 +77,24 @@ export function hasArrayChild(data: Record<string, any> | Array<any>) {
 
   if (isPlainObject(data)) {
     for (const value of Object.values(data)) {
-      if (isPlainObject(value) && value.type === 'array') {
+      if (isPlainObject(value) && value.type === type) {
         return true;
       }
 
-      if (hasArrayChild(value)) {
+      if (hasSpecificTypeChild(value, type)) {
         return true;
       }
     }
   }
 
   return false;
+}
+
+export function hasArrayChild(data: Record<string, any> | Array<any>) {
+  return hasSpecificTypeChild(data, JsonSchemaDataType.Array);
+}
+
+export function hasJsonSchemaChild(data: JSONSchema) {
+  const properties = get(data, 'properties') ?? {};
+  return isPlainObject(properties) && Object.keys(properties).length > 0;
 }

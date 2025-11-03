@@ -5,10 +5,10 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
 import { cn } from '@/lib/utils';
-import { get, isPlainObject } from 'lodash';
+import { get, isEmpty, isPlainObject } from 'lodash';
 import { ChevronRight } from 'lucide-react';
 import { PropsWithChildren, ReactNode, useCallback } from 'react';
-import { VariableType } from '../../constant';
+import { JsonSchemaDataType, VariableType } from '../../constant';
 
 type DataItem = { label: ReactNode; value: string; parentLabel?: ReactNode };
 
@@ -16,8 +16,9 @@ type StructuredOutputSecondaryMenuProps = {
   data: DataItem;
   click(option: { label: ReactNode; value: string }): void;
   filteredStructuredOutput: JSONSchema;
-  type?: VariableType;
+  type?: VariableType | JsonSchemaDataType;
 } & PropsWithChildren;
+
 export function StructuredOutputSecondaryMenu({
   data,
   click,
@@ -33,6 +34,12 @@ export function StructuredOutputSecondaryMenu({
     },
     [click, type],
   );
+
+  const handleMenuClick = useCallback(() => {
+    if (isEmpty(type) || type === JsonSchemaDataType.Object) {
+      click(data);
+    }
+  }, [click, data, type]);
 
   const renderAgentStructuredOutput = useCallback(
     (values: any, option: { label: ReactNode; value: string }) => {
@@ -56,7 +63,7 @@ export function StructuredOutputSecondaryMenu({
                     {key}
                     <span className="text-text-secondary">{dataType}</span>
                   </div>
-                  {dataType === 'object' &&
+                  {dataType === JsonSchemaDataType.Object &&
                     renderAgentStructuredOutput(value, nextOption)}
                 </li>
               );
@@ -74,7 +81,7 @@ export function StructuredOutputSecondaryMenu({
     <HoverCard key={data.value} openDelay={100} closeDelay={100}>
       <HoverCardTrigger asChild>
         <li
-          onClick={() => click(data)}
+          onClick={handleMenuClick}
           className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center"
         >
           {data.label} <ChevronRight className="size-3.5 text-text-secondary" />
