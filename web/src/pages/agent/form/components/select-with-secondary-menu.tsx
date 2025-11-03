@@ -25,11 +25,9 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { VariableType } from '../../constant';
 import {
-  useFilterStructuredOutputByValue,
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
 } from '../../hooks/use-build-structured-output';
-import { hasJsonSchemaChild } from '../../utils/filter-agent-structured-output';
 import { StructuredOutputSecondaryMenu } from './structured-output-secondary-menu';
 
 type Item = {
@@ -68,7 +66,6 @@ export function GroupedSelectWithSecondaryMenu({
   const [open, setOpen] = React.useState(false);
 
   const showSecondaryMenu = useShowSecondaryMenu();
-  const filterStructuredOutput = useFilterStructuredOutputByValue();
   const findAgentStructuredOutputLabel = useFindAgentStructuredOutputLabel();
 
   // Find the label of the selected item
@@ -155,21 +152,11 @@ export function GroupedSelectWithSecondaryMenu({
                   );
 
                   if (shouldShowSecondary) {
-                    const filteredStructuredOutput = filterStructuredOutput(
-                      option.value,
-                      type,
-                    );
-
-                    if (!hasJsonSchemaChild(filteredStructuredOutput)) {
-                      return null;
-                    }
-
                     return (
                       <StructuredOutputSecondaryMenu
                         key={option.value}
                         data={option}
                         click={handleSecondaryMenuClick}
-                        filteredStructuredOutput={filteredStructuredOutput}
                         type={type}
                       ></StructuredOutputSecondaryMenu>
                     );
