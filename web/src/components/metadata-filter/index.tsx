@@ -8,6 +8,7 @@ import { MetadataFilterConditions } from './metadata-filter-conditions';
 
 type MetadataFilterProps = {
   prefix?: string;
+  canReference?: boolean;
 };
 
 export const MetadataFilterSchema = {
@@ -27,7 +28,10 @@ export const MetadataFilterSchema = {
     .optional(),
 };
 
-export function MetadataFilter({ prefix = '' }: MetadataFilterProps) {
+export function MetadataFilter({
+  prefix = '',
+  canReference,
+}: MetadataFilterProps) {
   const { t } = useTranslate('chat');
   const form = useFormContext();
 
@@ -68,6 +72,7 @@ export function MetadataFilter({ prefix = '' }: MetadataFilterProps) {
         <MetadataFilterConditions
           kbIds={kbIds}
           prefix={prefix}
+          canReference={canReference}
         ></MetadataFilterConditions>
       )}
     </>
