@@ -21,6 +21,10 @@ from api.db import StatusEnum, TenantPermission
 from api.db.db_models import DB, Document, Knowledgebase, User, UserTenant, UserCanvas
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
+from api.db.services import duplicate_name
+from api.db.services.user_service import TenantService
+from common.misc_utils import get_uuid
+from api.constants import DATASET_NAME_LIMIT
 
 
 class KnowledgebaseService(CommonService):
@@ -362,6 +366,92 @@ class KnowledgebaseService(CommonService):
         # Returns:
         #     List of all knowledge base IDs
         return [m["id"] for m in cls.model.select(cls.model.id).dicts()]
+
+
+    @classmethod
+    @DB.connection_context()
+    def create_with_name(
+        cls,
+        *,
+        name: str,
+        tenant_id: str,
+        parser_id: str | None = None,
+        **kwargs
+    ):
+        """Create a dataset (knowledgebase) by name with kb_app defaults.
+
+        This encapsulates the creation logic used in kb_app.create so other callers
+        (including RESTful endpoints) can reuse the same behavior.
+
+        Returns:
+            (ok: bool, model_or_msg): On success, returns (True, Knowledgebase model instance);
+                                      on failure, returns (False, error_message).
+        """
+        # Validate name
+        if not isinstance(name, str):
+            return False, "Dataset name must be string."
+        dataset_name = name.strip()
+        if dataset_name == "":
+            return False, "Dataset name can't be empty."
+        if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
+            return False, f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}"
+
+        # Deduplicate name within tenant
+        dataset_name = duplicate_name(
+            cls.query,
+            name=dataset_name,
+            tenant_id=tenant_id,
+            status=StatusEnum.VALID.value,
+        )
+
+        # Verify tenant exists
+        ok, _t = TenantService.get_by_id(tenant_id)
+        if not ok:
+            return False, "Tenant not found."
+
+        # Build payload
+        kb_id = get_uuid()
+        payload = {
+            "id": kb_id,
+            "name": dataset_name,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "parser_id": (parser_id or "naive"),
+            **kwargs
+        }
+
+        # Default parser_config (align with kb_app.create) — do not accept external overrides
+        payload["parser_config"] = {
+            "layout_recognize": "DeepDOC",
+            "chunk_token_num": 512,
+            "delimiter": "\n",
+            "auto_keywords": 0,
+            "auto_questions": 0,
+            "html4excel": False,
+            "topn_tags": 3,
+            "raptor": {
+                "use_raptor": True,
+                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                "max_token": 256,
+                "threshold": 0.1,
+                "max_cluster": 64,
+                "random_seed": 0,
+            },
+            "graphrag": {
+                "use_graphrag": True,
+                "entity_types": [
+                    "organization",
+                    "person",
+                    "geo",
+                    "event",
+                    "category",
+                ],
+                "method": "light",
+            },
+        }
+
+        return payload
+
 
     @classmethod
     @DB.connection_context()
