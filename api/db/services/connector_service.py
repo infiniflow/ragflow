@@ -49,6 +49,19 @@ class ConnectorService(CommonService):
         ConnectorService.update_by_id(connector_id, {"status": status})
 
 
+    @classmethod
+    def list(cls, tenant_id):
+        fields = [
+            cls.model.id,
+            cls.model.name,
+            cls.model.source,
+            cls.model.status
+        ]
+        return cls.model.select(*fields).where(
+            cls.model.tenant_id == tenant_id
+        ).dicts()
+
+
 class SyncLogsService(CommonService):
     model = SyncLogs
 

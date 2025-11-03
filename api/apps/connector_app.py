@@ -55,6 +55,12 @@ def set_connector():
     return get_json_result(data=conn.to_dict())
 
 
+@manager.route("/list", methods=["GET"])  # noqa: F821
+@login_required
+def list_connector():
+    return get_json_result(data=ConnectorService.list(current_user.id))
+
+
 @manager.route("/<connector_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get_connector(connector_id):
