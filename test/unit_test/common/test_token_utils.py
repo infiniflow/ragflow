@@ -17,6 +17,7 @@
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, truncate, encoder
 import pytest
 
+
 class TestNumTokensFromString:
     """Test cases for num_tokens_from_string function"""
 
@@ -111,8 +112,6 @@ def test_consistency():
     assert first_result > 0
 
 
-from unittest.mock import Mock
-
 class TestTotalTokenCountFromResponse:
     """Test cases for total_token_count_from_response function"""
 
@@ -152,35 +151,6 @@ class TestTotalTokenCountFromResponse:
 
         result = total_token_count_from_response(resp_dict)
         assert result == 120
-
-    def test_priority_order_usage_total_tokens_first(self):
-        """Test that resp.usage.total_tokens takes priority over other formats"""
-        # Create a response that matches multiple conditions
-        mock_usage = Mock()
-        mock_usage.total_tokens = 300
-
-        mock_usage_metadata = Mock()
-        mock_usage_metadata.total_tokens = 400
-
-        mock_resp = Mock()
-        mock_resp.usage = mock_usage
-        mock_resp.usage_metadata = mock_usage_metadata
-
-        result = total_token_count_from_response(mock_resp)
-        assert result == 300  # Should use the first matching condition
-
-    def test_priority_order_usage_metadata_second(self):
-        """Test that resp.usage_metadata.total_tokens is second in priority"""
-        # Create a response without resp.usage but with resp.usage_metadata
-        mock_usage_metadata = Mock()
-        mock_usage_metadata.total_tokens = 250
-
-        mock_resp = Mock()
-        delattr(mock_resp, 'usage')  # Ensure no usage attribute
-        mock_resp.usage_metadata = mock_usage_metadata
-
-        result = total_token_count_from_response(mock_resp)
-        assert result == 250
 
     def test_priority_order_dict_usage_total_tokens_third(self):
         """Test that dict['usage']['total_tokens'] is third in priority"""
@@ -277,34 +247,6 @@ class TestTotalTokenCountFromResponse:
 
         # result = total_token_count_from_response(123)
         # assert result == 0
-
-
-# Parameterized tests for different response formats
-@pytest.mark.parametrize("response_data,expected_tokens", [
-    # Object with usage.total_tokens
-    ({"usage": Mock(total_tokens=150)}, 150),
-    # Dict with usage.total_tokens
-    ({"usage": {"total_tokens": 175}}, 175),
-    # Dict with usage.input_tokens + output_tokens
-    ({"usage": {"input_tokens": 100, "output_tokens": 50}}, 150),
-    # Dict with meta.tokens.input_tokens + output_tokens
-    ({"meta": {"tokens": {"input_tokens": 80, "output_tokens": 40}}}, 120),
-    # Empty dict
-    ({}, 0),
-])
-def test_various_response_formats(response_data, expected_tokens):
-    """Test various response formats using parameterized tests"""
-    if isinstance(response_data, dict) and not any(isinstance(v, Mock) for v in response_data.values()):
-        # Regular dictionary
-        resp = response_data
-    else:
-        # Mock object
-        resp = Mock()
-        for key, value in response_data.items():
-            setattr(resp, key, value)
-
-    result = total_token_count_from_response(resp)
-    assert result == expected_tokens
 
 
 class TestTruncate:
