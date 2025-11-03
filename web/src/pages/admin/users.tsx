@@ -396,13 +396,16 @@ function AdminUserManagement() {
                               table.getColumn('role')?.setFilterValue(value)
                             }
                           >
-                            <Label className="space-x-2">
+                            <Label className="flex items-center space-x-2">
                               <RadioGroupItem value="" />
                               <span>{t('admin.all')}</span>
                             </Label>
 
                             {roleList?.map(({ id, role_name }) => (
-                              <Label key={id} className="space-x-2">
+                              <Label
+                                key={id}
+                                className="flex items-center space-x-2"
+                              >
                                 <RadioGroupItem
                                   className="bg-bg-input border-border-button"
                                   value={role_name}
@@ -429,7 +432,10 @@ function AdminUserManagement() {
                         }
                       >
                         {STATUS_FILTER_OPTIONS.map(({ label, value }) => (
-                          <Label key={value} className="space-x-2">
+                          <Label
+                            key={value}
+                            className="flex items-center space-x-2"
+                          >
                             <RadioGroupItem
                               className="bg-bg-input border-border-button"
                               value={value}

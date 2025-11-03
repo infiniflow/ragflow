@@ -252,7 +252,7 @@ function AdminServiceStatus() {
                           table.getColumn('service_type')!?.setFilterValue
                         }
                       >
-                        <Label className="space-x-2">
+                        <Label className="flex items-center space-x-2">
                           <RadioGroupItem
                             className="bg-bg-input border-border-button"
                             value=""
@@ -261,7 +261,10 @@ function AdminServiceStatus() {
                         </Label>
 
                         {SERVICE_TYPE_FILTER_OPTIONS.map(({ label, value }) => (
-                          <Label key={value} className="space-x-2">
+                          <Label
+                            key={value}
+                            className="flex items-center space-x-2"
+                          >
                             <RadioGroupItem
                               className="bg-bg-input border-border-button"
                               value={value}
