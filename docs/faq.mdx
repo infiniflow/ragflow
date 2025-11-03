@@ -543,8 +543,39 @@ uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
 1. Set `MINERU_EXECUTABLE` (default: `mineru`) to the path of the MinerU executable.
 2. Set `MINERU_DELETE_OUTPUT` to `0` to keep MinerU's output. (Default: `1`, which deletes temporary output)
 3. Set `MINERU_OUTPUT_DIR` to specify the output directory for MinerU.
-4. Set `MINERU_BACKEND` to `"pipeline"`. (Options: `"pipeline"` (default) | `"vlm-transformers"`)
+4. Set `MINERU_BACKEND` to specify the parsing backend. Options:
+   - `"pipeline"` (default): Traditional multi-model pipeline
+   - `"vlm-transformers"`: Vision-language model using HuggingFace Transformers
+   - `"vlm-vllm-engine"`: Vision-language model using local vLLM engine (requires local GPU)
+   - `"vlm-http-client"`: Vision-language model via HTTP client to remote vLLM server (RAGFlow only needs CPU)
+5. When using `vlm-http-client` backend, set `MINERU_SERVER_URL` to the URL of your vLLM server.
 
 :::tip NOTE
 For information about other environment variables natively supported by MinerU, see [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
+:::
+
+---
+
+### How to use MinerU with vLLM server for document parsing?
+
+RAGFlow supports MinerU's `vlm-http-client` backend, which allows you to connect to a remote vLLM server for document parsing. This enables you to leverage powerful GPU resources on a dedicated server without requiring GPUs on the RAGFlow server.
+
+To use MinerU with vLLM server:
+
+1. Set up a vLLM server running MinerU:
+   ```bash
+   mineru-vllm-server --port 30000
+   ```
+
+2. Configure the following environment variables in your **docker/.env** file:
+   - `MINERU_EXECUTABLE=/ragflow/uv_tools/.venv/bin/mineru` (or the path to your MinerU executable)
+   - `MINERU_BACKEND="vlm-http-client"`
+   - `MINERU_SERVER_URL="http://your-vllm-server-ip:30000"`
+
+3. Follow the standard MinerU setup steps as described above.
+
+With this configuration, RAGFlow will connect to your vLLM server to perform document parsing, which can significantly improve parsing performance for complex documents while reducing the resource requirements on your RAGFlow server.
+
+:::tip NOTE
+When using the `vlm-http-client` backend, the RAGFlow server only requires CPU and network connectivity, not GPUs. This enables cost-effective distributed deployment where multiple RAGFlow instances can share a single powerful vLLM server. The `vlm-vllm-engine` backend is available in MinerU but requires local GPU resources on the RAGFlow server.
 :::
