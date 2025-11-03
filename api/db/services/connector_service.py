@@ -24,7 +24,7 @@ from api.db.db_models import Connector, SyncLogs, Connector2Kb, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, timestamp_to_date
 
 
