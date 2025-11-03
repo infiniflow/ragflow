@@ -3,21 +3,21 @@
 
 import JsonSchemaEditor, {
   type JsonSchemaEditorProps,
-} from './components/SchemaEditor/JsonSchemaEditor';
+} from './components/schema-editor/json-schema-editor';
 import JsonSchemaVisualizer, {
   type JsonSchemaVisualizerProps,
-} from './components/SchemaEditor/JsonSchemaVisualizer';
+} from './components/schema-editor/json-schema-visualizer';
 import SchemaVisualEditor, {
   type SchemaVisualEditorProps,
-} from './components/SchemaEditor/SchemaVisualEditor';
+} from './components/schema-editor/schema-visual-editor';
 
 export * from './i18n/locales/de';
 export * from './i18n/locales/en';
 export * from './i18n/translation-context';
 export * from './i18n/translation-keys';
 
-export * from './components/features/JsonValidator';
-export * from './components/features/SchemaInferencer';
+export * from './components/features/json-validator';
+export * from './components/features/schema-inferencer';
 
 export {
   JsonSchemaEditor,
@@ -28,4 +28,4 @@ export {
   type SchemaVisualEditorProps,
 };
 
-export type { JSONSchema, baseSchema } from './types/jsonSchema.ts';
+export type { JSONSchema, baseSchema } from './types/json-schema';

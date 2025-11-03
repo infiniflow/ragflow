@@ -78,14 +78,12 @@ jobs:
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cd sdk/python && uv build
-          twine upload sdk/python/dist/* -u __token__ -p ${{ secrets.PYPI_API_TOKEN }}
+          cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
 
       - name: Build and push ragflow-cli
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cd admin/client && uv build
-          twine upload admin/client/dist/* -u __token__ -p ${{ secrets.PYPI_API_TOKEN }}
+          cd admin/client && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
 
       - name: Build and push image
         run: |
