@@ -25,7 +25,7 @@ from api.db.services import duplicate_name
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
 from api.constants import DATASET_NAME_LIMIT
-
+from api.utils.api_utils import get_parser_config
 
 class KnowledgebaseService(CommonService):
     """Service class for managing knowledge base operations.
@@ -421,35 +421,7 @@ class KnowledgebaseService(CommonService):
         }
 
         # Default parser_config (align with kb_app.create) — do not accept external overrides
-        payload["parser_config"] = {
-            "layout_recognize": "DeepDOC",
-            "chunk_token_num": 512,
-            "delimiter": "\n",
-            "auto_keywords": 0,
-            "auto_questions": 0,
-            "html4excel": False,
-            "topn_tags": 3,
-            "raptor": {
-                "use_raptor": True,
-                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                "max_token": 256,
-                "threshold": 0.1,
-                "max_cluster": 64,
-                "random_seed": 0,
-            },
-            "graphrag": {
-                "use_graphrag": True,
-                "entity_types": [
-                    "organization",
-                    "person",
-                    "geo",
-                    "event",
-                    "category",
-                ],
-                "method": "light",
-            },
-        }
-
+        payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
         return payload
 
 
