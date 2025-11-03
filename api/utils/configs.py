@@ -26,7 +26,7 @@ from api.utils import file_utils
 from common.file_utils import get_project_base_directory
 from filelock import FileLock
 from api.utils.common import bytes_to_string, string_to_bytes
-from api.constants import SERVICE_CONF
+from common.contants import SERVICE_CONF
 
 
 def conf_realpath(conf_name):
