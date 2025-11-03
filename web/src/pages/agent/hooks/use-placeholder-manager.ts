@@ -1,3 +1,4 @@
+import { pick } from 'lodash';
 import { useCallback, useRef } from 'react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
@@ -113,7 +114,7 @@ export const usePlaceholderManager = (reactFlowInstance: any) => {
           if (newNode) {
             updateNode({
               ...newNode,
-              position: placeholderNode.position,
+              ...pick(placeholderNode, ['position', 'parentId', 'extent']),
             });
           }
         }

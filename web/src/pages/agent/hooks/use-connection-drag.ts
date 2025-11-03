@@ -1,4 +1,10 @@
-import { Connection, OnConnectEnd, Position } from '@xyflow/react';
+import {
+  Connection,
+  OnConnectEnd,
+  OnConnectStart,
+  Position,
+  ReactFlowInstance,
+} from '@xyflow/react';
 import { useCallback, useRef } from 'react';
 import { useDropdownManager } from '../canvas/context';
 import { Operator, PREVENT_CLOSE_DELAY } from '../constant';
@@ -14,7 +20,6 @@ interface ConnectionStartParams {
  * Responsible for handling connection drag start and end logic
  */
 export const useConnectionDrag = (
-  reactFlowInstance: any,
   onConnect: (connection: Connection) => void,
   showModal: () => void,
   hideModal: () => void,
@@ -27,6 +32,7 @@ export const useConnectionDrag = (
   removePlaceholderNode: () => void,
   clearActiveDropdown: () => void,
   checkAndRemoveExistingPlaceholder: () => void,
+  reactFlowInstance?: ReactFlowInstance<any, any>,
 ) => {
   // Reference for whether connection is established
   const isConnectedRef = useRef(false);
@@ -43,7 +49,7 @@ export const useConnectionDrag = (
   /**
    * Connection start handler function
    */
-  const onConnectStart = useCallback((event: any, params: any) => {
+  const onConnectStart: OnConnectStart = useCallback((event, params) => {
     isConnectedRef.current = false;
 
     // Record mouse start position to detect click vs drag
@@ -141,16 +147,16 @@ export const useConnectionDrag = (
     },
     [
       setDropdownPosition,
-      addCanvasNode,
-      setCreatedPlaceholderRef,
-      reactFlowInstance,
-      calculateDropdownPosition,
-      setActiveDropdown,
-      showModal,
       checkAndRemoveExistingPlaceholder,
+      addCanvasNode,
+      reactFlowInstance,
       removePlaceholderNode,
       hideModal,
       clearActiveDropdown,
+      setCreatedPlaceholderRef,
+      calculateDropdownPosition,
+      setActiveDropdown,
+      showModal,
     ],
   );
 

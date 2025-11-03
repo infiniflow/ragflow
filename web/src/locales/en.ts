@@ -1724,6 +1724,7 @@ Important structured information may include: names, dates, locations, events, k
       },
       structuredOutput: {
         configuration: 'Configuration',
+        structuredOutput: 'Structured output',
       },
     },
     llmTools: {

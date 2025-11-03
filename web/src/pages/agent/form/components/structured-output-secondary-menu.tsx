@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { get, isEmpty, isPlainObject } from 'lodash';
 import { ChevronRight } from 'lucide-react';
 import { PropsWithChildren, ReactNode, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { JsonSchemaDataType, VariableType } from '../../constant';
 import { useGetStructuredOutputByValue } from '../../hooks/use-build-structured-output';
 import {
@@ -27,6 +28,7 @@ export function StructuredOutputSecondaryMenu({
   click,
   type,
 }: StructuredOutputSecondaryMenuProps) {
+  const { t } = useTranslation();
   const filterStructuredOutput = useGetStructuredOutputByValue();
   const structuredOutput = filterStructuredOutput(data.value);
 
@@ -113,7 +115,9 @@ export function StructuredOutputSecondaryMenu({
         )}
       >
         <section className="p-2">
-          <div className="p-1">{data?.parentLabel} structured output:</div>
+          <div className="p-1">
+            {t('flow.structuredOutput.structuredOutput')}
+          </div>
           {renderAgentStructuredOutput(structuredOutput, data)}
         </section>
       </HoverCardContent>

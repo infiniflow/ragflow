@@ -1,72 +1,14 @@
-import {
-  Connection,
-  Edge,
-  getOutgoers,
-  Node,
-  Position,
-  ReactFlowInstance,
-} from '@xyflow/react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Connection, Edge, getOutgoers } from '@xyflow/react';
+import React, { useCallback, useEffect } from 'react';
 // import { shallow } from 'zustand/shallow';
 import { settledModelVariableMap } from '@/constants/knowledge';
-import { useFetchModelId } from '@/hooks/logic-hooks';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { humanId } from 'human-id';
 import { get, lowerFirst, omit } from 'lodash';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import {
-  initialAgentValues,
-  initialAkShareValues,
-  initialArXivValues,
-  initialBaiduFanyiValues,
-  initialBaiduValues,
-  initialBeginValues,
-  initialBingValues,
-  initialCategorizeValues,
-  initialCodeValues,
-  initialCrawlerValues,
-  initialDeepLValues,
-  initialDuckValues,
-  initialEmailValues,
-  initialExeSqlValues,
-  initialGithubValues,
-  initialGoogleScholarValues,
-  initialGoogleValues,
-  initialInvokeValues,
-  initialIterationValues,
-  initialJin10Values,
-  initialKeywordExtractValues,
-  initialMessageValues,
-  initialNoteValues,
-  initialPubMedValues,
-  initialQWeatherValues,
-  initialRelevantValues,
-  initialRetrievalValues,
-  initialRewriteQuestionValues,
-  initialSearXNGValues,
-  initialStringTransformValues,
-  initialSwitchValues,
-  initialTavilyExtractValues,
-  initialTavilyValues,
-  initialTuShareValues,
-  initialUserFillUpValues,
-  initialWaitingDialogueValues,
-  initialWenCaiValues,
-  initialWikipediaValues,
-  initialYahooFinanceValues,
-  NodeMap,
-  Operator,
-  RestrictedUpstreamMap,
-} from './constant';
+import { Operator, RestrictedUpstreamMap } from './constant';
 import useGraphStore, { RFState } from './store';
-import {
-  buildCategorizeObjectFromList,
-  generateNodeNamesWithIncreasingIndex,
-  getNodeDragHandle,
-  getRelativePositionToIterationNode,
-  replaceIdWithText,
-} from './utils';
+import { buildCategorizeObjectFromList, replaceIdWithText } from './utils';
 
 const selector = (state: RFState) => ({
   nodes: state.nodes,
@@ -84,72 +26,6 @@ export const useSelectCanvasData = () => {
   // return useStore(useShallow(selector)); // throw error
   // return useStore(selector, shallow);
   return useGraphStore(selector);
-};
-
-export const useInitializeOperatorParams = () => {
-  const llmId = useFetchModelId();
-
-  const initialFormValuesMap = useMemo(() => {
-    return {
-      [Operator.Begin]: initialBeginValues,
-      [Operator.Retrieval]: initialRetrievalValues,
-      [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
-      [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
-      [Operator.RewriteQuestion]: {
-        ...initialRewriteQuestionValues,
-        llm_id: llmId,
-      },
-      [Operator.Message]: initialMessageValues,
-      [Operator.KeywordExtract]: {
-        ...initialKeywordExtractValues,
-        llm_id: llmId,
-      },
-      [Operator.DuckDuckGo]: initialDuckValues,
-      [Operator.Baidu]: initialBaiduValues,
-      [Operator.Wikipedia]: initialWikipediaValues,
-      [Operator.PubMed]: initialPubMedValues,
-      [Operator.ArXiv]: initialArXivValues,
-      [Operator.Google]: initialGoogleValues,
-      [Operator.Bing]: initialBingValues,
-      [Operator.GoogleScholar]: initialGoogleScholarValues,
-      [Operator.DeepL]: initialDeepLValues,
-      [Operator.SearXNG]: initialSearXNGValues,
-      [Operator.GitHub]: initialGithubValues,
-      [Operator.BaiduFanyi]: initialBaiduFanyiValues,
-      [Operator.QWeather]: initialQWeatherValues,
-      [Operator.ExeSQL]: { ...initialExeSqlValues, llm_id: llmId },
-      [Operator.Switch]: initialSwitchValues,
-      [Operator.WenCai]: initialWenCaiValues,
-      [Operator.AkShare]: initialAkShareValues,
-      [Operator.YahooFinance]: initialYahooFinanceValues,
-      [Operator.Jin10]: initialJin10Values,
-      [Operator.TuShare]: initialTuShareValues,
-      [Operator.Note]: initialNoteValues,
-      [Operator.Crawler]: initialCrawlerValues,
-      [Operator.Invoke]: initialInvokeValues,
-      [Operator.Email]: initialEmailValues,
-      [Operator.Iteration]: initialIterationValues,
-      [Operator.IterationStart]: initialIterationValues,
-      [Operator.Code]: initialCodeValues,
-      [Operator.WaitingDialogue]: initialWaitingDialogueValues,
-      [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
-      [Operator.TavilySearch]: initialTavilyValues,
-      [Operator.TavilyExtract]: initialTavilyExtractValues,
-      [Operator.Tool]: {},
-      [Operator.UserFillUp]: initialUserFillUpValues,
-      [Operator.StringTransform]: initialStringTransformValues,
-      [Operator.Placeholder]: {},
-    };
-  }, [llmId]);
-
-  const initializeOperatorParams = useCallback(
-    (operatorName: Operator) => {
-      return initialFormValuesMap[operatorName];
-    },
-    [initialFormValuesMap],
-  );
-
-  return initializeOperatorParams;
 };
 
 export const useHandleDrag = () => {
@@ -171,91 +47,6 @@ export const useGetNodeName = () => {
     const name = t(`flow.${lowerFirst(type)}`);
     return name;
   };
-};
-
-export const useHandleDrop = () => {
-  const addNode = useGraphStore((state) => state.addNode);
-  const nodes = useGraphStore((state) => state.nodes);
-  const [reactFlowInstance, setReactFlowInstance] =
-    useState<ReactFlowInstance<any, any>>();
-  const initializeOperatorParams = useInitializeOperatorParams();
-  const getNodeName = useGetNodeName();
-
-  const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }, []);
-
-  const onDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-
-      const type = event.dataTransfer.getData('application/@xyflow/react');
-
-      // check if the dropped element is valid
-      if (typeof type === 'undefined' || !type) {
-        return;
-      }
-
-      // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
-      // and you don't need to subtract the reactFlowBounds.left/top anymore
-      // details: https://@xyflow/react.dev/whats-new/2023-11-10
-      const position = reactFlowInstance?.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-      const newNode: Node<any> = {
-        id: `${type}:${humanId()}`,
-        type: NodeMap[type as Operator] || 'ragNode',
-        position: position || {
-          x: 0,
-          y: 0,
-        },
-        data: {
-          label: `${type}`,
-          name: generateNodeNamesWithIncreasingIndex(getNodeName(type), nodes),
-          form: initializeOperatorParams(type as Operator),
-        },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        dragHandle: getNodeDragHandle(type),
-      };
-
-      if (type === Operator.Iteration) {
-        newNode.width = 500;
-        newNode.height = 250;
-        const iterationStartNode: Node<any> = {
-          id: `${Operator.IterationStart}:${humanId()}`,
-          type: 'iterationStartNode',
-          position: { x: 50, y: 100 },
-          // draggable: false,
-          data: {
-            label: Operator.IterationStart,
-            name: Operator.IterationStart,
-            form: {},
-          },
-          parentId: newNode.id,
-          extent: 'parent',
-        };
-        addNode(newNode);
-        addNode(iterationStartNode);
-      } else {
-        const subNodeOfIteration = getRelativePositionToIterationNode(
-          nodes,
-          position,
-        );
-        if (subNodeOfIteration) {
-          newNode.parentId = subNodeOfIteration.parentId;
-          newNode.position = subNodeOfIteration.position;
-          newNode.extent = 'parent';
-        }
-        addNode(newNode);
-      }
-    },
-    [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
-  );
-
-  return { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance };
 };
 
 export const useHandleFormValuesChange = (
