@@ -49,8 +49,6 @@ from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 from common.file_utils import get_project_base_directory
 
-PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
-
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
