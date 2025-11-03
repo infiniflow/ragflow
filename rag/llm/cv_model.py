@@ -539,7 +539,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=vision_prompt[0]["content"][0]["text"],
+                prompt=vision_prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
