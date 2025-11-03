@@ -1301,6 +1301,10 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
         d["available_int"] = int(req["available"])
+    if "positions" in req:
+        if not isinstance(req["positions"], list):
+            return get_error_data_result("`positions` should be a list")
+        d["position_int"] = req["positions"]
     embd_id = DocumentService.get_embd_id(document_id)
     embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
     if doc.parser_id == ParserType.QA:
