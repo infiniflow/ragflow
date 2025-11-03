@@ -794,6 +794,29 @@ class DocumentService(CommonService):
             "cancelled": int(cancelled),
         }
 
+    @classmethod
+    def run(cls, tenant_id:str, doc:dict, kb_table_num_map:dict):
+        from api.db.services.task_service import queue_dataflow, queue_tasks
+        from api.db.services.file2document_service import File2DocumentService
+
+        doc["tenant_id"] = tenant_id
+        doc_parser = doc.get("parser_id", ParserType.NAIVE)
+        if doc_parser == ParserType.TABLE:
+            kb_id = doc.get("kb_id")
+            if not kb_id:
+                return
+            if kb_id not in kb_table_num_map:
+                count = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                kb_table_num_map[kb_id] = count
+                if kb_table_num_map[kb_id] <= 0:
+                    KnowledgebaseService.delete_field_map(kb_id)
+        if doc.get("pipeline_id", ""):
+            queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=doc["id"])
+        else:
+            bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
+            queue_tasks(doc, bucket, name, 0)
+
+
 def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", doc_ids=[]):
     """
     You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.

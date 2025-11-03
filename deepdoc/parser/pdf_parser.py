@@ -90,7 +90,7 @@ class RAGFlowPdfParser:
             if torch.cuda.is_available():
                 self.updown_cnt_mdl.set_param({"device": "cuda"})
         except Exception:
-            logging.exception("RAGFlowPdfParser __init__")
+            logging.info("No torch found.")
         try:
             model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
             self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
