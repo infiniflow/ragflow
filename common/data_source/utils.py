@@ -524,7 +524,7 @@ def detect_encoding(file: IO[bytes]) -> str:
     return encoding
 
 
-def get_markitdown_converter() -> "MarkItDown":
+def get_markitdown_converter():
     global _MARKITDOWN_CONVERTER
     from markitdown import MarkItDown
 

@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, cast
+from typing import cast
 
 
 def get_current_tz_offset() -> int:

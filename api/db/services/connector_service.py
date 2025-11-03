@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import logging
-import time
 from datetime import datetime
 
 from anthropic import BaseModel
@@ -83,7 +82,7 @@ class SyncLogsService(CommonService):
         if connector_id:
             query = query.where(cls.model.connector_id == connector_id)
         else:
-            interval_expr = SQL(f"INTERVAL `t2`.`refresh_freq` MINUTE")
+            interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
                 Connector.input_type == InputType.POLL,
                 Connector.status == TaskStatus.SCHEDULE,

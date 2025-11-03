@@ -4,8 +4,6 @@ import json
 import logging
 import time
 from datetime import datetime, timezone, timedelta
-from io import BytesIO
-from pathlib import Path
 from typing import Any, cast, Iterator, Callable, Generator
 
 import requests
@@ -22,8 +20,7 @@ from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource, CONTINUE
     OAUTH_CONFLUENCE_CLOUD_CLIENT_ID, OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET, _DEFAULT_PAGINATION_LIMIT, \
     _PROBLEMATIC_EXPANSIONS, _REPLACEMENT_EXPANSIONS, _USER_NOT_FOUND, _COMMENT_EXPANSION_FIELDS, \
     _ATTACHMENT_EXPANSION_FIELDS, _PAGE_EXPANSION_FIELDS, ONE_DAY, ONE_HOUR, _RESTRICTIONS_EXPANSION_FIELDS, \
-    _SLIM_DOC_BATCH_SIZE, CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD, \
-    CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD, FileOrigin
+    _SLIM_DOC_BATCH_SIZE, CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,

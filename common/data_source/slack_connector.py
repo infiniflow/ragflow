@@ -11,7 +11,7 @@ from urllib.error import URLError
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from slack_sdk.http_retry import ConnectionErrorRetryHandler, RetryHandler
+from slack_sdk.http_retry import ConnectionErrorRetryHandler
 from slack_sdk.http_retry.builtin_interval_calculators import FixedValueRetryIntervalCalculator
 
 from common.data_source.config import (
