@@ -36,7 +36,7 @@ def init_in_out(args):
 
     from PIL import Image
 
-    from api.utils.file_utils import traversal_files
+    from common.file_utils import traversal_files
 
     images = []
     outputs = []
