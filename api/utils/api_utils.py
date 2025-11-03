@@ -22,14 +22,10 @@ import queue
 import random
 import threading
 import time
-from base64 import b64encode
 from copy import deepcopy
 from functools import wraps
-from hmac import HMAC
 from io import BytesIO
 from typing import Any, Callable, Coroutine, Optional, Type, Union
-from urllib.parse import quote, urlencode
-from uuid import uuid1
 
 import requests
 import trio
