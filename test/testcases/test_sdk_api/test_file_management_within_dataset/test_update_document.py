@@ -314,7 +314,12 @@ class TestUpdateDocumentParserConfig:
                 "",
                 marks=pytest.mark.skip(reason="issues/6098"),
             ),
-            ("naive", {"raptor": {"use_raptor": True}}, ""),
+            ("naive", {"raptor": {"use_raptor": True,                 
+                                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                                "max_token": 256,
+                                "threshold": 0.1,
+                                "max_cluster": 64,
+                                "random_seed": 0,}}, ""),
             ("naive", {"raptor": {"use_raptor": False}}, ""),
             pytest.param(
                 "naive",
