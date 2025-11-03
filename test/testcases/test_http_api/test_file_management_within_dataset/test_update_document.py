@@ -308,14 +308,34 @@ class TestUpdateDocumentParserConfig:
             ("naive", {}, 0, ""),
             (
                 "naive",
-                {
-                    "chunk_token_num": 512,
-                    "layout_recognize": "DeepDOC",
-                    "html4excel": False,
-                    "delimiter": r"\n",
-                    "task_page_size": 12,
-                    "raptor": {"use_raptor": False},
-                },
+{
+            "layout_recognize": "DeepDOC",
+            "chunk_token_num": 512,
+            "delimiter": "\n",
+            "auto_keywords": 0,
+            "auto_questions": 0,
+            "html4excel": False,
+            "topn_tags": 3,
+            "raptor": {
+                "use_raptor": True,
+                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                "max_token": 256,
+                "threshold": 0.1,
+                "max_cluster": 64,
+                "random_seed": 0,
+            },
+            "graphrag": {
+                "use_graphrag": True,
+                "entity_types": [
+                    "organization",
+                    "person",
+                    "geo",
+                    "event",
+                    "category",
+                ],
+                "method": "light",
+            },
+        },
                 0,
                 "",
             ),
@@ -419,7 +439,14 @@ class TestUpdateDocumentParserConfig:
                 "",
                 marks=pytest.mark.skip(reason="issues/6098"),
             ),
-            ("naive", {"raptor": {"use_raptor": True}}, 0, ""),
+            ("naive", {"raptor": {"use_raptor": {
+                "use_raptor": True,
+                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                "max_token": 256,
+                "threshold": 0.1,
+                "max_cluster": 64,
+                "random_seed": 0,
+            },}}, 0, ""),
             ("naive", {"raptor": {"use_raptor": False}}, 0, ""),
             pytest.param(
                 "naive",
@@ -535,13 +562,33 @@ class TestUpdateDocumentParserConfig:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             if parser_config == {}:
                 assert res["data"]["docs"][0]["parser_config"] == {
-                    "chunk_token_num": 512,
-                    "delimiter": r"\n",
-                    "html4excel": False,
-                    "layout_recognize": "DeepDOC",
-                    "raptor": {"use_raptor": False},
-                    "graphrag": {"use_graphrag": False},
-                }
+            "layout_recognize": "DeepDOC",
+            "chunk_token_num": 512,
+            "delimiter": "\n",
+            "auto_keywords": 0,
+            "auto_questions": 0,
+            "html4excel": False,
+            "topn_tags": 3,
+            "raptor": {
+                "use_raptor": True,
+                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+                "max_token": 256,
+                "threshold": 0.1,
+                "max_cluster": 64,
+                "random_seed": 0,
+            },
+            "graphrag": {
+                "use_graphrag": True,
+                "entity_types": [
+                    "organization",
+                    "person",
+                    "geo",
+                    "event",
+                    "category",
+                ],
+                "method": "light",
+            },
+        }
             else:
                 for k, v in parser_config.items():
                     assert res["data"]["docs"][0]["parser_config"][k] == v
