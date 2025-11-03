@@ -27,7 +27,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.utils.api_utils import timeout
-from api.utils.base64_image import image2id
+from common.base64_image import image2id
 from api.utils.log_utils import init_root_logger
 from common.file_utils import get_project_base_directory
 from api.utils.configs import show_configs
