@@ -82,46 +82,6 @@ def serialize_for_json(obj):
         return str(obj)
 
 
-def request(**kwargs):
-    sess = requests.Session()
-    stream = kwargs.pop("stream", sess.stream)
-    timeout = kwargs.pop("timeout", None)
-    kwargs["headers"] = {k.replace("_", "-").upper(): v for k, v in kwargs.get("headers", {}).items()}
-    prepped = requests.Request(**kwargs).prepare()
-
-    if settings.CLIENT_AUTHENTICATION and settings.HTTP_APP_KEY and settings.SECRET_KEY:
-        timestamp = str(round(time() * 1000))
-        nonce = str(uuid1())
-        signature = b64encode(
-            HMAC(
-                settings.SECRET_KEY.encode("ascii"),
-                b"\n".join(
-                    [
-                        timestamp.encode("ascii"),
-                        nonce.encode("ascii"),
-                        settings.HTTP_APP_KEY.encode("ascii"),
-                        prepped.path_url.encode("ascii"),
-                        prepped.body if kwargs.get("json") else b"",
-                        urlencode(sorted(kwargs["data"].items()), quote_via=quote, safe="-._~").encode(
-                            "ascii") if kwargs.get("data") and isinstance(kwargs["data"], dict) else b"",
-                    ]
-                ),
-                "sha1",
-            ).digest()
-        ).decode("ascii")
-
-        prepped.headers.update(
-            {
-                "TIMESTAMP": timestamp,
-                "NONCE": nonce,
-                "APP-KEY": settings.HTTP_APP_KEY,
-                "SIGNATURE": signature,
-            }
-        )
-
-    return sess.send(prepped, stream=stream, timeout=timeout)
-
-
 def get_exponential_backoff_interval(retries, full_jitter=False):
     """Calculate the exponential backoff wait time."""
     # Will be zero if factor equals 0
