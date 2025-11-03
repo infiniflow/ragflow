@@ -803,6 +803,7 @@ export const RestrictedUpstreamMap = {
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
+  [Operator.File]: [Operator.Begin],
 };
 
 export const NodeMap = {
