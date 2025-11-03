@@ -1066,7 +1066,7 @@ class Connector2Kb(DataBaseModel):
         db_table = "connector2kb"
 
 
-class DateTimeTzField(Field):
+class DateTimeTzField(CharField):
     field_type = 'VARCHAR'
 
     def db_value(self, value: datetime|None) -> str|None:
@@ -1099,8 +1099,8 @@ class SyncLogs(DataBaseModel):
     error_count = IntegerField(default=0, index=False)
     full_exception_trace = TextField(null=True, help_text="process message", default="")
     time_started = DateTimeField(null=True, index=True)
-    poll_range_start = DateTimeTzField(null=True, index=True)
-    poll_range_end = DateTimeTzField(null=True, index=True)
+    poll_range_start = DateTimeTzField(max_length=255, null=True, index=True)
+    poll_range_end = DateTimeTzField(max_length=255, null=True, index=True)
     kb_id = CharField(max_length=32, null=False, index=True)
 
     class Meta:

@@ -181,14 +181,15 @@ def _manage_async_retrieval(
     start_time = max(filter(None, [start, pull_date])) if start or pull_date else None
 
     end_time: datetime | None = end
+    proxy_url: str | None = os.environ.get("https_proxy") or os.environ.get("http_proxy")
+    if proxy_url:
+        logging.info(f"Using proxy for Discord: {proxy_url}")
 
     async def _async_fetch() -> AsyncIterable[Document]:
         intents = Intents.default()
         intents.message_content = True
-        async with Client(intents=intents) as cli:
-            print("-----------------------------------------", flush=True)
+        async with Client(intents=intents, proxy=proxy_url) as cli:
             asyncio.create_task(coro=cli.start(token))
-            print("-----------------------------------------", flush=True)
             await cli.wait_until_ready()
             print("connected ...", flush=True)
 
