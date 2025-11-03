@@ -25,7 +25,7 @@ from api.db.services import duplicate_name
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
 from api.constants import DATASET_NAME_LIMIT
-from api.utils.api_utils import get_parser_config
+from api.utils.api_utils import get_parser_config, get_data_error_result
 
 class KnowledgebaseService(CommonService):
     """Service class for managing knowledge base operations.
@@ -389,12 +389,12 @@ class KnowledgebaseService(CommonService):
         """
         # Validate name
         if not isinstance(name, str):
-            return False, "Dataset name must be string."
+            return get_data_error_result(message="Dataset name must be string.")
         dataset_name = name.strip()
         if dataset_name == "":
-            return False, "Dataset name can't be empty."
+            return get_data_error_result(message="Dataset name can't be empty.")
         if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
-            return False, f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}"
+            return get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
 
         # Deduplicate name within tenant
         dataset_name = duplicate_name(
