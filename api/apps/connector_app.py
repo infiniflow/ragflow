@@ -79,6 +79,7 @@ def resume(connector_id):
         ConnectorService.resume(connector_id, TaskStatus.SCHEDULE)
     else:
         ConnectorService.resume(connector_id, TaskStatus.CANCEL)
+    return get_json_result(data=True)
 
 
 @manager.route("/<connector_id>/link", methods=["POST"])  # noqa: F821

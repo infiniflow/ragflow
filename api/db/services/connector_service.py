@@ -65,14 +65,16 @@ class SyncLogsService(CommonService):
             cls.model.error_msg,
             cls.model.error_count,
             Connector.name,
-            Connector.source,
-            Connector.config,
+            Connector.source
             Connector.tenant_id,
             Connector.timeout_secs,
             Knowledgebase.name.alias("kb_name"),
             cls.model.from_beginning.alias("reindex"),
             cls.model.status
         ]
+        if not connector_id:
+            fields.append(Connector.config)
+            
         query = cls.model.select(*fields)\
             .join(Connector, on=(cls.model.connector_id==Connector.id))\
             .join(Connector2Kb, on=(cls.model.kb_id==Connector2Kb.kb_id))\
@@ -93,7 +95,7 @@ class SyncLogsService(CommonService):
         if page_number:
             query = query.paginate(page_number, items_per_page)
 
-        return query.dicts()
+        return list(query.dicts())
 
     @classmethod
     def start(cls, id):
@@ -106,6 +108,10 @@ class SyncLogsService(CommonService):
     @classmethod
     def schedule(cls, connector_id, kb_id, poll_range_start=None, reindex=False, total_docs_indexed=0):
         try:
+            e = cls.query(kb_id=kb_id, connector_id=connector_id, status=TaskStatus.SCHEDULE)
+            if e:
+                logging.warning(f"{kb_id}--{connector_id} has already had a scheduling sync task which is abnormal.")
+                return
             reindex = "1" if reindex else "0"
             return cls.save(**{
                 "id": get_uuid(),
@@ -167,7 +173,7 @@ class SyncLogsService(CommonService):
         return cls.model.select().where(
             cls.model.connector_id==connector_id,
             cls.model.kb_id == kb_id
-        ).order_by(cls.model.time_started.desc()).first()
+        ).order_by(cls.model.update_time.desc()).first()
 
 
 class Connector2KbService(CommonService):
@@ -175,7 +181,7 @@ class Connector2KbService(CommonService):
 
     @classmethod
     def link_kb(cls, conn_id:str, kb_ids: list[str], tenant_id:str):
-        arr = cls.query(connect_id=conn_id)
+        arr = cls.query(connector_id=conn_id)
         old_kb_ids = [a.kb_id for a in arr]
         for kb_id in kb_ids:
             if kb_id in old_kb_ids:

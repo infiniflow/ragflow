@@ -21,6 +21,7 @@ import os
 import sys
 import time
 import typing
+from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 
@@ -1076,6 +1077,27 @@ class Connector2Kb(DataBaseModel):
         db_table = "connector2kb"
 
 
+class DateTimeTzField(Field):
+    field_type = 'VARCHAR'
+
+    def db_value(self, value: datetime|None) -> str|None:
+        if value is not None:
+            if value.tzinfo is not None:
+                return value.isoformat()
+            else:
+                return value.replace(tzinfo=timezone.utc).isoformat()
+        return value
+
+    def python_value(self, value: str|None) -> datetime|None:
+        if value is not None:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                import pytz
+                return dt.replace(tzinfo=pytz.UTC)
+            return dt
+        return value
+
+
 class SyncLogs(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     connector_id = CharField(max_length=32, index=True)
@@ -1088,8 +1110,8 @@ class SyncLogs(DataBaseModel):
     error_count = IntegerField(default=0, index=False)
     full_exception_trace = TextField(null=True, help_text="process message", default="")
     time_started = DateTimeField(null=True, index=True)
-    poll_range_start = DateTimeField(null=True, index=True)
-    poll_range_end = DateTimeField(null=True, index=True)
+    poll_range_start = DateTimeTzField(null=True, index=True)
+    poll_range_end = DateTimeTzField(null=True, index=True)
     kb_id = CharField(max_length=32, null=False, index=True)
 
     class Meta:
