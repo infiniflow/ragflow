@@ -1,6 +1,6 @@
 import z from 'zod';
-import type { Translation } from '../i18n/translation-keys.ts';
-import { baseSchema, type JSONSchema } from './jsonSchema';
+import type { Translation } from '../i18n/translation-keys';
+import { baseSchema, type JSONSchema } from './json-schema';
 
 function refineRangeConsistency(
   min: number | undefined,

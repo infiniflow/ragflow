@@ -36,7 +36,7 @@ from api import settings
 from api.apps import app, smtp_mail_server
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
-from api import utils
+from common.file_utils import get_project_base_directory
 
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
@@ -88,7 +88,7 @@ if __name__ == '__main__':
         f'RAGFlow version: {get_ragflow_version()}'
     )
     logging.info(
-        f'project base: {utils.file_utils.get_project_base_directory()}'
+        f'project base: {get_project_base_directory()}'
     )
     show_configs()
     settings.init_settings()

@@ -30,7 +30,7 @@ from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMSer
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
 from api import settings
-from api.utils.file_utils import get_project_base_directory
+from common.file_utils import get_project_base_directory
 from api.common.base64 import encode_to_base64
 
 

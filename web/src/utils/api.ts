@@ -31,6 +31,7 @@ export default {
   set_api_key: `${api_host}/llm/set_api_key`,
   add_llm: `${api_host}/llm/add_llm`,
   delete_llm: `${api_host}/llm/delete_llm`,
+  enable_llm: `${api_host}/llm/enable_llm`,
   deleteFactory: `${api_host}/llm/delete_factory`,
 
   // plugin
@@ -238,9 +239,9 @@ export default {
   adminGetRolePermissions: (roleName: string) =>
     `${ExternalApi}${api_host}/admin/roles/${roleName}/permissions`,
   adminAssignRolePermissions: (roleName: string) =>
-    `${ExternalApi}${api_host}/admin/roles/${roleName}/permissions`,
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permission`,
   adminRevokeRolePermissions: (roleName: string) =>
-    `${ExternalApi}${api_host}/admin/roles/${roleName}/permissions/batch`,
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permission`,
   adminCreateRole: `${ExternalApi}${api_host}/admin/roles`,
   adminDeleteRole: (roleName: string) =>
     `${ExternalApi}${api_host}/admin/roles/${roleName}`,
@@ -252,5 +253,13 @@ export default {
   adminGetUserPermissions: (username: string) =>
     `${ExternalApi}${api_host}/admin/users/${username}/permissions`,
 
-  adminListResources: `${ExternalApi}${api_host}/admin/roles/resources`,
+  adminListResources: `${ExternalApi}${api_host}/admin/roles/resource`,
+
+  adminListWhitelist: `${ExternalApi}${api_host}/admin/whitelist`,
+  adminCreateWhitelistEntry: `${ExternalApi}${api_host}/admin/whitelist/add`,
+  adminUpdateWhitelistEntry: (id: number) =>
+    `${ExternalApi}${api_host}/admin/whitelist/${id}`,
+  adminDeleteWhitelistEntry: (email: string) =>
+    `${ExternalApi}${api_host}/admin/whitelist/${email}`,
+  adminImportWhitelist: `${ExternalApi}${api_host}/admin/whitelist/batch`,
 };

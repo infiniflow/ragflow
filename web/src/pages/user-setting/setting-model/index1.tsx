@@ -34,11 +34,6 @@ import { CircleHelp } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
-import ApiKeyModal from './api-key-modal';
-import AzureOpenAIModal from './azure-openai-modal';
-import BedrockModal from './bedrock-modal';
-import FishAudioModal from './fish-audio-modal';
-import GoogleModal from './google-modal';
 import {
   useHandleDeleteFactory,
   useHandleDeleteLlm,
@@ -55,14 +50,19 @@ import {
   useSubmitVolcEngine,
   useSubmityiyan,
 } from './hooks';
-import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
-import TencentCloudModal from './next-tencent-modal';
-import OllamaModal from './ollama-modal';
-import SparkModal from './spark-modal';
-import SystemModelSettingModal from './system-model-setting-modal';
-import VolcEngineModal from './volcengine-modal';
-import YiyanModal from './yiyan-modal';
+import ApiKeyModal from './modal/api-key-modal';
+import AzureOpenAIModal from './modal/azure-openai-modal';
+import BedrockModal from './modal/bedrock-modal';
+import FishAudioModal from './modal/fish-audio-modal';
+import GoogleModal from './modal/google-modal';
+import HunyuanModal from './modal/hunyuan-modal';
+import TencentCloudModal from './modal/next-tencent-modal';
+import OllamaModal from './modal/ollama-modal';
+import SparkModal from './modal/spark-modal';
+import SystemModelSettingModal from './modal/system-model-setting-modal';
+import VolcEngineModal from './modal/volcengine-modal';
+import YiyanModal from './modal/yiyan-modal';
 
 const { Text } = Typography;
 interface IModelCardProps {

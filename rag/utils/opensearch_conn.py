@@ -26,8 +26,8 @@ from opensearchpy import UpdateByQuery, Q, Search, Index
 from opensearchpy import ConnectionTimeout
 from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import singleton
-from api.utils.file_utils import get_project_base_directory
+from common.decorator import singleton
+from common.file_utils import get_project_base_directory
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer

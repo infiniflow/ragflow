@@ -27,9 +27,9 @@ from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
+from common.misc_utils import get_uuid
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
-from api.utils import get_uuid
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
 from rag.llm.cv_model import GptV4
 from rag.utils.storage_factory import STORAGE_IMPL

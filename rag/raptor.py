@@ -28,7 +28,7 @@ from graphrag.utils import (
     set_llm_cache,
     chat_limiter,
 )
-from rag.utils import truncate
+from common.token_utils import truncate
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:

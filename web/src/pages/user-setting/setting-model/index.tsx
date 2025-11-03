@@ -2,14 +2,9 @@ import { LLMFactory } from '@/constants/llm';
 import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/llm-hooks';
 import { useCallback, useMemo } from 'react';
 import { isLocalLlmFactory } from '../utils';
-import ApiKeyModal from './api-key-modal';
-import AzureOpenAIModal from './azure-openai-modal';
-import BedrockModal from './bedrock-modal';
 import SystemSetting from './components/system-setting';
 import { AvailableModels } from './components/un-add-model';
 import { UsedModel } from './components/used-model';
-import FishAudioModal from './fish-audio-modal';
-import GoogleModal from './google-modal';
 import {
   useSubmitApiKey,
   useSubmitAzure,
@@ -24,12 +19,17 @@ import {
   useSubmitVolcEngine,
   useSubmityiyan,
 } from './hooks';
-import HunyuanModal from './hunyuan-modal';
-import TencentCloudModal from './next-tencent-modal';
-import OllamaModal from './ollama-modal';
-import SparkModal from './spark-modal';
-import VolcEngineModal from './volcengine-modal';
-import YiyanModal from './yiyan-modal';
+import ApiKeyModal from './modal/api-key-modal';
+import AzureOpenAIModal from './modal/azure-openai-modal';
+import BedrockModal from './modal/bedrock-modal';
+import FishAudioModal from './modal/fish-audio-modal';
+import GoogleModal from './modal/google-modal';
+import HunyuanModal from './modal/hunyuan-modal';
+import TencentCloudModal from './modal/next-tencent-modal';
+import OllamaModal from './modal/ollama-modal';
+import SparkModal from './modal/spark-modal';
+import VolcEngineModal from './modal/volcengine-modal';
+import YiyanModal from './modal/yiyan-modal';
 const ModelProviders = () => {
   const { saveSystemModelSettingLoading, onSystemSettingSavingOk } =
     useSubmitSystemModelSetting();
