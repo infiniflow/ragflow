@@ -1960,7 +1960,13 @@ Important structured information may include: names, dates, locations, events, k
       newRole: 'New Role',
       addNewRole: 'Add new role',
       roleName: 'Role name',
+      roleNameRequired: 'Role name is required',
       resources: 'Resources',
+
+      editRoleDescription: 'Edit role description',
+      deleteRole: 'Delete role',
+      deleteRoleConfirmation:
+        'Are you sure you want to delete this role? This action cannot be undone.',
     },
   },
 };
