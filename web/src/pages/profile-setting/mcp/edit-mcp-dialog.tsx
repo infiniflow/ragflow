@@ -86,7 +86,8 @@ export function EditMcpDialog({
   const handleOk = async (values: z.infer<typeof FormSchema>) => {
     const nextValues = {
       ...omit(values, 'authorization_token'),
-      headers: { authorization_token: values.authorization_token },
+      variables: { authorization_token: values.authorization_token },
+      headers: { Authorization: 'Bearer ${authorization_token}' },
     };
     if (isTriggeredBySaving) {
       onOk?.(nextValues);
