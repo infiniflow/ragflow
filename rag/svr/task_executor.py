@@ -232,8 +232,9 @@ async def collect():
         task = msg
         if task["task_type"] in ["graphrag", "raptor", "mindmap"]:
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
-            task["doc_id"] = msg["doc_id"]
-            task["doc_ids"] = msg.get("doc_ids", []) or []
+            if task:
+                task["doc_id"] = msg["doc_id"]
+                task["doc_ids"] = msg.get("doc_ids", []) or []
     else:
         task = TaskService.get_task(msg["id"])
 
