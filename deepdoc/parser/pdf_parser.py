@@ -35,7 +35,7 @@ from PIL import Image
 from pypdf import PdfReader as pdf2_read
 
 from common.file_utils import get_project_base_directory
-from api.utils.common import pip_install_torch
+from common.misc_utils import pip_install_torch
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.nlp import rag_tokenizer
