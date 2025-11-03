@@ -19,8 +19,6 @@
 import base64
 import hashlib
 import io
-import json
-import os
 import re
 import shutil
 import subprocess
@@ -40,14 +38,11 @@ from typing import List, Union, Tuple, Optional, Dict
 # Third-party imports
 import olefile
 import pdfplumber
-from cachetools import LRUCache, cached
 from PIL import Image
-from ruamel.yaml import YAML
 
 # Local imports
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
-from common.file_utils import get_project_base_directory
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
