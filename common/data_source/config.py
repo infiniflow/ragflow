@@ -41,6 +41,7 @@ class DocumentSource(str, Enum):
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     OCI_STORAGE = "oci_storage"
     SLACK = "slack"
+    CONFLUENCE = "confluence"
 
 
 class FileOrigin(str, Enum):

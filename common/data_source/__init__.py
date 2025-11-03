@@ -1,6 +1,7 @@
-# KevinHu2 - Refactored Connectors
-# This package contains refactored connectors for various services
-# All code is self-contained and independent of the original codebase
+
+"""
+Thanks to https://github.com/onyx-dot-app/onyx
+"""
 
 from .blob_connector import BlobStorageConnector
 from .slack_connector import SlackConnector
