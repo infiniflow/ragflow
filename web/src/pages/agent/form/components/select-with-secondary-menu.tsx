@@ -29,6 +29,7 @@ import {
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
 } from '../../hooks/use-build-structured-output';
+import { hasJsonSchemaChild } from '../../utils/filter-agent-structured-output';
 import { StructuredOutputSecondaryMenu } from './structured-output-secondary-menu';
 
 type Item = {
@@ -156,7 +157,13 @@ export function GroupedSelectWithSecondaryMenu({
                   if (shouldShowSecondary) {
                     const filteredStructuredOutput = filterStructuredOutput(
                       option.value,
+                      type,
                     );
+
+                    if (!hasJsonSchemaChild(filteredStructuredOutput)) {
+                      return null;
+                    }
+
                     return (
                       <StructuredOutputSecondaryMenu
                         key={option.value}

@@ -26,12 +26,10 @@ export function useShowSecondaryMenu() {
 }
 
 export function useFilterStructuredOutputByValue() {
-  const { getOperatorTypeFromId, getNode, clickedNodeId } = useGraphStore(
-    (state) => state,
-  );
+  const { getNode } = useGraphStore((state) => state);
 
   const filterStructuredOutput = useCallback(
-    (value: string) => {
+    (value: string, type?: string) => {
       const node = getNode(getNodeId(value));
       const structuredOutput = get(
         node,
@@ -40,12 +38,12 @@ export function useFilterStructuredOutputByValue() {
 
       const filteredStructuredOutput = filterAgentStructuredOutput(
         structuredOutput,
-        getOperatorTypeFromId(clickedNodeId),
+        type,
       );
 
       return filteredStructuredOutput;
     },
-    [clickedNodeId, getNode, getOperatorTypeFromId],
+    [getNode],
   );
 
   return filterStructuredOutput;
