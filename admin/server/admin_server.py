@@ -23,7 +23,7 @@ import traceback
 from werkzeug.serving import run_simple
 from flask import Flask
 from routes import admin_bp
-from api.utils.log_utils import init_root_logger
+from common.log_utils import init_root_logger
 from common.contants import SERVICE_CONF
 from common.config_utils import show_configs
 from api import settings
