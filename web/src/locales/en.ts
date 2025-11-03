@@ -1980,6 +1980,10 @@ Important structured information may include: names, dates, locations, events, k
       deleteRole: 'Delete role',
       deleteRoleConfirmation:
         'Are you sure you want to delete this role? This action cannot be undone.',
+
+      alive: 'Alive',
+      timeout: 'Timeout',
+      fail: 'Fail',
     },
   },
 };

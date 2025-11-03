@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { rsaPsw } from '@/utils';
 
+import Spotlight from '@/components/spotlight';
 import { TableEmpty } from '@/components/table-skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -357,7 +358,9 @@ function AdminUserManagement() {
 
   return (
     <>
-      <Card className="!shadow-none h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+      <Card className="!shadow-none relative h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+        <Spotlight />
+
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.userManagement')}</CardTitle>
