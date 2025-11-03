@@ -29,12 +29,8 @@ from api.db.init_data import encode_to_base64
 from api.db.services import UserService
 from api.db import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt
-from api.utils import (
-    current_timestamp,
-    datetime_format,
-    get_format_time,
-    get_uuid,
-)
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format, get_format_time
 from api.utils.api_utils import (
     construct_response,
 )

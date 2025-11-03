@@ -16,6 +16,7 @@
 import inspect
 import logging
 import re
+from common.token_utils import num_tokens_from_string
 from functools import partial
 from typing import Generator
 from api.db.db_models import LLM
@@ -79,9 +80,19 @@ class LLMBundle(LLM4Tenant):
 
     def encode(self, texts: list):
         if self.langfuse:
-            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode", model=self.llm_name, input={"texts": texts})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode", model=self.llm_name, input={"texts": texts})        
+    
+        safe_texts = []
+        for text in texts:
+            token_size = num_tokens_from_string(text)
+            if token_size > self.max_length:
+                target_len = int(self.max_length * 0.95)
+                safe_texts.append(text[:target_len])
+            else:
+                safe_texts.append(text)
+                
+        embeddings, used_tokens = self.mdl.encode(safe_texts)
 
-        embeddings, used_tokens = self.mdl.encode(texts)
         llm_name = getattr(self, "llm_name", None)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
             logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))

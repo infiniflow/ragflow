@@ -27,7 +27,7 @@ from api.db import LLMType
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.mineru_parser import MinerUParser
@@ -162,7 +162,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp_parser"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -226,7 +226,8 @@ class Parser(ProcessBase):
             bboxes = [{"text": t} for t, _ in lines]
         elif conf.get("parse_method").lower() == "mineru":
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable)
+            mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
             if not pdf_parser.check_installation():
                 raise RuntimeError("MinerU not found. Please install it via: pip install -U 'mineru[core]'.")
 
@@ -245,7 +246,7 @@ class Parser(ProcessBase):
                     "text": t,
                 }
                 bboxes.append(box)
-        elif conf.get("parse_method").lower() == "tcadp_parser":
+        elif conf.get("parse_method").lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             tcadp_parser = TCADPParser()
             sections, _ = tcadp_parser.parse_pdf(
@@ -303,21 +304,21 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
         conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
-        
+
         parse_method = conf.get("parse_method", "deepdoc")
-        
+
         # Handle TCADP parser
-        if parse_method.lower() == "tcadp_parser":
+        if parse_method.lower() == "tcadp parser":
             tcadp_parser = TCADPParser()
             if not tcadp_parser.check_installation():
                 raise RuntimeError("TCADP parser not available. Please check Tencent Cloud API configuration.")
-            
+
             # Determine file type based on extension
             if re.search(r"\.xlsx?$", name, re.IGNORECASE):
                 file_type = "XLSX"
             else:
                 file_type = "CSV"
-            
+
             self.callback(0.2, f"Using TCADP parser for {file_type} file.")
             sections, tables = tcadp_parser.parse_pdf(
                 filepath=name,
@@ -327,10 +328,10 @@ class Parser(ProcessBase):
                 file_start_page=1,
                 file_end_page=1000
             )
-            
+
             # Process TCADP parser output based on configured output_format
             output_format = conf.get("output_format", "html")
-            
+
             if output_format == "html":
                 # For HTML output, combine sections and tables into HTML
                 html_content = ""
@@ -340,9 +341,9 @@ class Parser(ProcessBase):
                 for table in tables:
                     if table:
                         html_content += table + "\n"
-                
+
                 self.set_output("html", html_content)
-            
+
             elif output_format == "json":
                 # For JSON output, create a list of text items
                 result = []
@@ -354,9 +355,9 @@ class Parser(ProcessBase):
                 for table in tables:
                     if table:
                         result.append({"text": table})
-                
+
                 self.set_output("json", result)
-            
+
             elif output_format == "markdown":
                 # For markdown output, combine into markdown
                 md_content = ""
@@ -366,7 +367,7 @@ class Parser(ProcessBase):
                 for table in tables:
                     if table:
                         md_content += table + "\n\n"
-                
+
                 self.set_output("markdown", md_content)
         else:
             # Default DeepDOC parser
@@ -401,12 +402,12 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
 
         parse_method = conf.get("parse_method", "deepdoc")
-        
+
         # Check file extension to determine if it's old PPT format
         file_ext = name.split(".")[-1].lower() if "." in name else ""
 
         # Handle TCADP parser
-        if parse_method.lower() == "tcadp_parser":
+        if parse_method.lower() == "tcadp parser":
             tcadp_parser = TCADPParser()
             if not tcadp_parser.check_installation():
                 raise RuntimeError("TCADP parser not available. Please check Tencent Cloud API configuration.")
@@ -416,7 +417,7 @@ class Parser(ProcessBase):
                 file_type = "PPTX"
             else:
                 file_type = "PPT"
-            
+
             self.callback(0.2, f"Using TCADP parser for {file_type} file.")
 
             sections, tables = tcadp_parser.parse_pdf(
@@ -546,7 +547,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["video"]
         self.set_output("output_format", conf["output_format"])
 
-        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT)
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
         txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
 
         self.set_output("text", txt)
@@ -579,14 +580,27 @@ class Parser(ProcessBase):
             if "body" in target_fields:
                 body_text, body_html = [], []
                 def _add_content(m, content_type):
+                    def _decode_payload(payload, charset, target_list):
+                        try:
+                            target_list.append(payload.decode(charset))
+                        except (UnicodeDecodeError, LookupError):
+                            for enc in ["utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
+                                try:
+                                    target_list.append(payload.decode(enc))
+                                    break
+                                except UnicodeDecodeError:
+                                    continue
+                            else:
+                                target_list.append(payload.decode("utf-8", errors="ignore"))
+
                     if content_type == "text/plain":
-                        body_text.append(
-                            m.get_payload(decode=True).decode(m.get_content_charset())
-                        )
+                        payload = msg.get_payload(decode=True)
+                        charset = msg.get_content_charset() or "utf-8"
+                        _decode_payload(payload, charset, body_text)
                     elif content_type == "text/html":
-                        body_html.append(
-                            m.get_payload(decode=True).decode(m.get_content_charset())
-                        )
+                        payload = msg.get_payload(decode=True)
+                        charset = msg.get_content_charset() or "utf-8"
+                        _decode_payload(payload, charset, body_html)
                     elif "multipart" in content_type:
                         if m.is_multipart():
                             for part in m.iter_parts():
@@ -680,7 +694,7 @@ class Parser(ProcessBase):
             "video": self._video,
             "email": self._email,
         }
-             
+
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
         except Exception as e:

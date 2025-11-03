@@ -23,7 +23,7 @@ import requests
 from yarl import URL
 
 from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate, total_token_count_from_response
+from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
@@ -35,9 +35,6 @@ class Base(ABC):
 
     def similarity(self, query: str, texts: list):
         raise NotImplementedError("Please implement encode method!")
-
-    def total_token_count(self, resp):
-        return total_token_count_from_response(resp)
 
 
 class JinaRerank(Base):
@@ -58,7 +55,7 @@ class JinaRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
-        return rank, self.total_token_count(res)
+        return rank, total_token_count_from_response(res)
 
 
 class XInferenceRerank(Base):
@@ -301,7 +298,7 @@ class SILICONFLOWRerank(Base):
             log_exception(_e, response)
         return (
             rank,
-            response["meta"]["tokens"]["input_tokens"] + response["meta"]["tokens"]["output_tokens"],
+            total_token_count_from_response(response),
         )
 
 
@@ -330,7 +327,7 @@ class BaiduYiyanRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
-        return rank, self.total_token_count(res)
+        return rank, total_token_count_from_response(res)
 
 
 class VoyageRerank(Base):
@@ -378,7 +375,7 @@ class QWenRerank(Base):
                     rank[r.index] = r.relevance_score
             except Exception as _e:
                 log_exception(_e, resp)
-            return rank, resp.usage.total_tokens
+            return rank, total_token_count_from_response(resp)
         else:
             raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")
 

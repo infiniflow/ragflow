@@ -33,7 +33,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import queue_tasks, TaskService
 from api.db.services.user_service import UserTenantService
 from api import settings
-from api.utils import get_uuid, current_timestamp, datetime_format
+from common.misc_utils import get_uuid
 from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request, \
     generate_confirmation_token
 
@@ -41,6 +41,7 @@ from api.utils.file_utils import filename_type, thumbnail
 from rag.app.tag import label_question
 from rag.prompts.generator import keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
+from common.time_utils import current_timestamp, datetime_format
 
 from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
@@ -58,7 +59,7 @@ def new_token():
             return get_data_error_result(message="Tenant not found!")
 
         tenant_id = tenants[0].tenant_id
-        obj = {"tenant_id": tenant_id, "token": generate_confirmation_token(tenant_id),
+        obj = {"tenant_id": tenant_id, "token": generate_confirmation_token(),
                "create_time": current_timestamp(),
                "create_date": datetime_format(datetime.now()),
                "update_time": None,
@@ -867,7 +868,7 @@ def retrieval():
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
-    highlight = bool(req.get("highlight", False)) 
+    highlight = bool(req.get("highlight", False))
 
     try:
         kbs = KnowledgebaseService.get_by_ids(kb_ids)

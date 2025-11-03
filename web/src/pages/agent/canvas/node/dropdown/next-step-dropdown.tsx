@@ -96,7 +96,9 @@ export function InnerNextStepDropdown({
         onClick={(e) => e.stopPropagation()}
         className="w-[300px] font-semibold"
       >
-        <DropdownMenuLabel>{t('flow.nextStep')}</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-text-primary">
+          {t('flow.nextStep')}
+        </DropdownMenuLabel>
         <HideModalContext.Provider value={hideModal}>
           {isPipeline ? (
             <PipelineAccordionOperators></PipelineAccordionOperators>

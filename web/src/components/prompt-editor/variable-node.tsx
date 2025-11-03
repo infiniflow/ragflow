@@ -1,5 +1,5 @@
 import i18n from '@/locales/config';
-import { BeginId } from '@/pages/flow/constant';
+import { BeginId } from '@/pages/agent/constant';
 import { DecoratorNode, LexicalNode, NodeKey } from 'lexical';
 import { ReactNode } from 'react';
 const prefix = BeginId + '@';

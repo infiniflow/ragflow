@@ -35,14 +35,15 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks, queue_dataflow
 from api.db.services.user_service import UserTenantService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
     server_error_response,
     validate_request,
 )
-from api.utils.file_utils import filename_type, get_project_base_directory, thumbnail
+from api.utils.file_utils import filename_type, thumbnail
+from common.file_utils import get_project_base_directory
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer

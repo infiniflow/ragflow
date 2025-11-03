@@ -27,7 +27,8 @@ from api.db import StatusEnum, FileType, TaskStatus
 from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
-from api.utils import current_timestamp, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import get_svr_queue_name
 from rag.utils.storage_factory import STORAGE_IMPL
@@ -365,7 +366,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         page_size = doc["parser_config"].get("task_page_size") or 12
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size") or 22
-        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc", True):
+        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc_extraction", False):
             page_size = 10 ** 9
         page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
         for s, e in page_ranges:

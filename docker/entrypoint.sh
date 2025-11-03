@@ -179,18 +179,52 @@ function start_mcp_server() {
 }
 
 function ensure_docling() {
-  if [[ "${USE_DOCLING}" == "true" ]]; then
-    if ! python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)"; then
-      echo "[docling] not found, installing..."
-      python3 -m pip install --no-cache-dir "docling${DOCLING_VERSION:-}"
-    else
-      echo "[docling] already installed, skip."
+    [[ "${USE_DOCLING}" == "true" ]] || return 0
+    python3 -c 'import pip' >/dev/null 2>&1 || python3 -m ensurepip --upgrade || true
+    DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
+    python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+}
+
+function ensure_mineru() {
+    [[ "${USE_MINERU}" == "true" ]] || { echo "[mineru] disabled by USE_MINERU"; return 0; }
+
+    export HUGGINGFACE_HUB_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+
+    local default_prefix="/ragflow/uv_tools"
+    local venv_dir="${default_prefix}/.venv"
+    local exe="${MINERU_EXECUTABLE:-${venv_dir}/bin/mineru}"
+
+    if [[ -x "${exe}" ]]; then
+      echo "[mineru] found: ${exe}"
+      export MINERU_EXECUTABLE="${exe}"
+      return 0
     fi
-  fi
+
+    echo "[mineru] not found, bootstrapping with uv ..."
+
+    (
+        set -e
+        mkdir -p "${default_prefix}"
+        cd "${default_prefix}"
+        [[ -d "${venv_dir}" ]] || uv venv "${venv_dir}"
+
+        source "${venv_dir}/bin/activate"
+        uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
+        deactivate
+    )
+    export MINERU_EXECUTABLE="${exe}"
+    if ! "${MINERU_EXECUTABLE}" --help >/dev/null 2>&1; then
+      echo "[mineru] installation failed: ${MINERU_EXECUTABLE} not working" >&2
+      return 1
+    fi
+    echo "[mineru] installed: ${MINERU_EXECUTABLE}"
 }
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
+ensure_docling
+ensure_mineru
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
@@ -213,7 +247,6 @@ if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
     start_mcp_server
 fi
 
-ensure_docling
 
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
     if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then

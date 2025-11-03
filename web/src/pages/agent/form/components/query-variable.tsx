@@ -1,4 +1,3 @@
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -12,6 +11,7 @@ import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { VariableType } from '../../constant';
 import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
+import { GroupedSelectWithSecondaryMenu } from './select-with-secondary-menu';
 
 type QueryVariableProps = {
   name?: string;
@@ -52,11 +52,12 @@ export function QueryVariable({
             </FormLabel>
           )}
           <FormControl>
-            <SelectWithSearch
+            <GroupedSelectWithSecondaryMenu
               options={finalOptions}
               {...field}
-              allowClear
-            ></SelectWithSearch>
+              // allowClear
+              type={type}
+            ></GroupedSelectWithSecondaryMenu>
           </FormControl>
           <FormMessage />
         </FormItem>

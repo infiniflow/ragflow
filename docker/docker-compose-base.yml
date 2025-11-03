@@ -72,7 +72,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.1
+    image: infiniflow/infinity:v0.6.2
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -203,7 +203,7 @@ services:
     env_file: .env
     networks:
       - ragflow
-    command: ["--model-id", "/data/${TEI_MODEL}"]
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
     restart: on-failure
 
 
@@ -217,7 +217,7 @@ services:
     env_file: .env
     networks:
       - ragflow
-    command: ["--model-id", "/data/${TEI_MODEL}"]
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
     deploy:
       resources:
         reservations:

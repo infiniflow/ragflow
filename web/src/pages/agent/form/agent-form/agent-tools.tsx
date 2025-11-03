@@ -15,6 +15,7 @@ import {
   useContext,
   useMemo,
 } from 'react';
+import { LabelCard } from '../../canvas/node/card';
 import { Operator } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
@@ -27,24 +28,31 @@ import { useDeleteAgentNodeMCP } from './tool-popover/use-update-mcp';
 import { useDeleteAgentNodeTools } from './tool-popover/use-update-tools';
 import { useGetAgentMCPIds, useGetAgentToolNames } from './use-get-tools';
 
+type ToolCardProps = React.HTMLAttributes<HTMLLIElement> &
+  PropsWithChildren & {
+    isNodeTool?: boolean;
+  };
+
 export function ToolCard({
   children,
   className,
+  isNodeTool = true,
   ...props
-}: PropsWithChildren & React.HTMLAttributes<HTMLLIElement>) {
+}: ToolCardProps) {
   const element = useMemo(() => {
     return (
-      <li
+      <LabelCard
         {...props}
         className={cn(
-          'flex bg-bg-card p-1 rounded-sm justify-between',
+          'flex justify-between ',
+          { 'p-2.5 text-text-primary text-sm': !isNodeTool },
           className,
         )}
       >
         {children}
-      </li>
+      </LabelCard>
     );
-  }, [children, className, props]);
+  }, [children, className, isNodeTool, props]);
 
   if (children === Operator.Code) {
     return (
@@ -72,13 +80,13 @@ function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
   }, [deleteRecord, record]);
 
   return (
-    <div className="flex items-center gap-2 text-text-secondary">
+    <div className="flex items-center gap-4 text-text-secondary">
       <PencilLine
-        className="size-4 cursor-pointer"
+        className="size-3.5 cursor-pointer"
         data-tool={record}
         onClick={edit}
       />
-      <X className="size-4 cursor-pointer" onClick={handleDelete} />
+      <X className="size-3.5 cursor-pointer" onClick={handleDelete} />
     </div>
   );
 }
@@ -107,10 +115,10 @@ export function AgentTools() {
 
   return (
     <section className="space-y-2.5">
-      <span className="text-text-secondary">{t('flow.tools')}</span>
-      <ul className="space-y-2">
+      <span className="text-text-secondary text-sm">{t('flow.tools')}</span>
+      <ul className="space-y-2.5">
         {toolNames.map((x) => (
-          <ToolCard key={x}>
+          <ToolCard key={x} isNodeTool={false}>
             <div className="flex gap-2 items-center">
               <OperatorIcon name={x as Operator}></OperatorIcon>
               {x}
@@ -123,7 +131,7 @@ export function AgentTools() {
           </ToolCard>
         ))}
         {mcpIds.map((id) => (
-          <ToolCard key={id}>
+          <ToolCard key={id} isNodeTool={false}>
             {findMcpById(id)?.name}
             <ActionButton
               record={id}
@@ -161,13 +169,13 @@ export function Agents({ node }: INextOperatorForm) {
 
   return (
     <section className="space-y-2.5">
-      <span className="text-text-secondary">{t('flow.agent')}</span>
-      <ul className="space-y-2">
+      <span className="text-text-secondary text-sm">{t('flow.agent')}</span>
+      <ul className="space-y-2.5">
         {subBottomAgentNodeIds.map((id) => {
           const currentNode = getNode(id);
 
           return (
-            <ToolCard key={id}>
+            <ToolCard key={id} isNodeTool={false}>
               {currentNode?.data.name}
               <ActionButton
                 record={id}

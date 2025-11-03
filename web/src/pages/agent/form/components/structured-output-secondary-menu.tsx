@@ -1,0 +1,122 @@
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card';
+import { cn } from '@/lib/utils';
+import { get, isEmpty, isPlainObject } from 'lodash';
+import { ChevronRight } from 'lucide-react';
+import { PropsWithChildren, ReactNode, useCallback } from 'react';
+import { JsonSchemaDataType, VariableType } from '../../constant';
+import { useGetStructuredOutputByValue } from '../../hooks/use-build-structured-output';
+import {
+  hasJsonSchemaChild,
+  hasSpecificTypeChild,
+} from '../../utils/filter-agent-structured-output';
+
+type DataItem = { label: ReactNode; value: string; parentLabel?: ReactNode };
+
+type StructuredOutputSecondaryMenuProps = {
+  data: DataItem;
+  click(option: { label: ReactNode; value: string }): void;
+  type?: VariableType | JsonSchemaDataType;
+} & PropsWithChildren;
+
+export function StructuredOutputSecondaryMenu({
+  data,
+  click,
+  type,
+}: StructuredOutputSecondaryMenuProps) {
+  const filterStructuredOutput = useGetStructuredOutputByValue();
+  const structuredOutput = filterStructuredOutput(data.value);
+
+  const handleSubMenuClick = useCallback(
+    (option: { label: ReactNode; value: string }, dataType?: string) => () => {
+      // The query variable of the iteration operator can only select array type data.
+      if ((type && type === dataType) || !type) {
+        click(option);
+      }
+    },
+    [click, type],
+  );
+
+  const handleMenuClick = useCallback(() => {
+    if (isEmpty(type) || type === JsonSchemaDataType.Object) {
+      click(data);
+    }
+  }, [click, data, type]);
+
+  const renderAgentStructuredOutput = useCallback(
+    (values: any, option: { label: ReactNode; value: string }) => {
+      if (isPlainObject(values) && 'properties' in values) {
+        return (
+          <ul className="border-l">
+            {Object.entries(values.properties).map(([key, value]) => {
+              const nextOption = {
+                label: option.label + `.${key}`,
+                value: option.value + `.${key}`,
+              };
+
+              const dataType = get(value, 'type');
+
+              if (
+                !type ||
+                (type &&
+                  (dataType === type ||
+                    hasSpecificTypeChild(value ?? {}, type)))
+              ) {
+                return (
+                  <li key={key} className="pl-1">
+                    <div
+                      onClick={handleSubMenuClick(nextOption, dataType)}
+                      className="hover:bg-bg-card p-1 text-text-primary rounded-sm flex justify-between"
+                    >
+                      {key}
+                      <span className="text-text-secondary">{dataType}</span>
+                    </div>
+                    {dataType === JsonSchemaDataType.Object &&
+                      renderAgentStructuredOutput(value, nextOption)}
+                  </li>
+                );
+              }
+
+              return null;
+            })}
+          </ul>
+        );
+      }
+
+      return <div></div>;
+    },
+    [handleSubMenuClick, type],
+  );
+
+  if (!hasJsonSchemaChild(structuredOutput)) {
+    return null;
+  }
+
+  return (
+    <HoverCard key={data.value} openDelay={100} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <li
+          onClick={handleMenuClick}
+          className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center"
+        >
+          {data.label} <ChevronRight className="size-3.5 text-text-secondary" />
+        </li>
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="left"
+        align="start"
+        className={cn(
+          'min-w-[140px]  border border-border rounded-md shadow-lg p-0',
+        )}
+      >
+        <section className="p-2">
+          <div className="p-1">{data?.parentLabel} structured output:</div>
+          {renderAgentStructuredOutput(structuredOutput, data)}
+        </section>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}

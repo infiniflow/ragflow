@@ -177,7 +177,7 @@ export default {
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
-      testingLabel: '测试',
+      testingLabel: '运行',
       similarity: '混合相似度',
       termSimilarity: '关键词相似度',
       vectorSimilarity: '向量相似度',
@@ -336,7 +336,7 @@ export default {
       我们假设手册具有分层部分结构。 我们使用最低的部分标题作为对文档进行切片的枢轴。
       因此，同一部分中的图和表不会被分割，并且块大小可能会很大。
       </p>`,
-      naive: `<p>支持的文件格式为<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式为<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPTX、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
@@ -671,6 +671,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      save: '保存',
+      search: '搜索',
+      availableModels: '可选模型',
       profile: '概要',
       avatar: '头像',
       avatarTip: '这会在你的个人主页展示',
@@ -684,7 +687,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       password: '密码',
       passwordDescription: '请输入您当前的密码以更改您的密码。',
       model: '模型提供商',
-      modelDescription: '在此设置模型参数和 API KEY。',
+      systemModelDescription: '请在开始之前完成这些设置',
       team: '团队',
       system: '系统',
       logout: '登出',
@@ -701,7 +704,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       timezone: '时区',
       timezoneMessage: '请选择时区',
       timezonePlaceholder: '请选择时区',
-      email: '邮箱地址',
+      email: '邮箱',
       emailDescription: '一旦注册，电子邮件将无法更改。',
       currentPassword: '当前密码',
       currentPasswordMessage: '请输入当前密码',
@@ -715,7 +718,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       cancel: '取消',
       addedModels: '添加了的模型',
       modelsToBeAdded: '待添加的模型',
-      addTheModel: '添加模型',
+      addTheModel: '添加',
       apiKey: 'API-Key',
       apiKeyMessage: '请输入api key（如果是本地部署的模型，请忽略它）',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
@@ -729,21 +732,21 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
       modify: '修改',
       systemModelSettings: '设置默认模型',
-      chatModel: '聊天模型',
+      chatModel: 'LLM',
       chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
-      ttsModel: 'TTS模型',
+      ttsModel: 'TTS',
       ttsModelTip:
         '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
-      embeddingModel: '嵌入模型',
+      embeddingModel: 'Embedding',
       embeddingModelTip:
         '所有新创建的知识库使用的默认嵌入模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含嵌入模型)；或根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
-      img2txtModel: 'Img2txt模型',
+      img2txtModel: 'VLM',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的 img2txt 模型。 它可以描述图片或视频。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
-      sequence2txtModel: 'Speech2txt模型',
+      sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
-      rerankModel: 'Rerank模型',
+      rerankModel: 'Rerank',
       rerankModelTip: `默认的 reranking 模型。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。`,
       workspace: '工作空间',
       upgrade: '升级',
@@ -821,9 +824,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
-      updateDate: '更新日期',
-      role: '角色',
-      invite: '邀请',
+      updateDate: '日期',
+      role: '状态',
+      invite: '邀请成员',
       agree: '同意',
       refuse: '拒绝',
       teamMembers: '团队成员',
@@ -1529,7 +1532,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       outputFormat: '输出格式',
-      fileFormats: '文件格式',
+      fileFormats: '文件类型',
       fields: '字段',
       addParser: '增加解析器',
       hierarchy: '层次结构',
@@ -1600,6 +1603,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       cancel: '取消',
       filenameEmbeddingWeight: '文件名嵌入权重',
       switchPromptMessage: '提示词将发生变化，请确认是否放弃已有提示词？',
+      structuredOutput: {
+        configuration: '配置',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1634,6 +1640,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       mcpServers: 'MCP 服务器',
       customizeTheListOfMcpServers: '自定义 MCP 服务器列表',
       cachedTools: '缓存工具',
+      selected: '已选择',
+      bulkManage: '批量管理',
+      exitBulkManage: '退出批量管理',
     },
     search: {
       searchApps: '搜索',
@@ -1687,13 +1696,13 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       confirmRerun: '确认重新运行流程',
       confirmRerunModalContent: `
       <p class="text-sm text-text-disabled font-medium mb-2">
-        您即将从 <strong class="text-text-primary">{{step}}</strong> 步骤开始重新运行该过程
+        您即将从 <span class="text-text-secondary">{{step}}</span> 步骤开始重新运行该过程
       </p>
-      <p class="text-sm mb-3 text-text-secondary">这将:</p>
+      <p class="text-sm mb-3 text-text-disabled">这将:</p>
       <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
-        <li>从当前步骤开始覆盖现有结果</li>
-        <li>创建新的日志条目进行跟踪</li>
-        <li>之前的步骤将保持不变</li>
+        <li>• 从当前步骤开始覆盖现有结果</li>
+        <li>• 创建新的日志条目进行跟踪</li>
+        <li>• 之前的步骤将保持不变</li>
       </ul>`,
       changeStepModalTitle: '切换步骤警告',
       changeStepModalContent: `

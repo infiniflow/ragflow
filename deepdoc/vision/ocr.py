@@ -21,8 +21,8 @@ import os
 
 from huggingface_hub import snapshot_download
 
-from api.utils.file_utils import get_project_base_directory
-from api.utils.common import pip_install_torch
+from common.file_utils import get_project_base_directory
+from common.misc_utils import pip_install_torch
 from rag.settings import PARALLEL_DEVICES
 from .operators import *  # noqa: F403
 from . import operators

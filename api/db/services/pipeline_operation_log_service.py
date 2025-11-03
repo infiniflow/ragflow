@@ -27,7 +27,8 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
-from api.utils import current_timestamp, datetime_format, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
 
 
 class PipelineOperationLogService(CommonService):

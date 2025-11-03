@@ -34,7 +34,8 @@ from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTena
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils import current_timestamp, get_format_time, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, get_format_time
 from rag.nlp import rag_tokenizer, search
 from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN

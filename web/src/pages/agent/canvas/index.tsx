@@ -59,7 +59,6 @@ import { CategorizeNode } from './node/categorize-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExtractorNode } from './node/extractor-node';
 import { FileNode } from './node/file-node';
-import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
@@ -84,7 +83,6 @@ export const nodeTypes: NodeTypes = {
   relevantNode: RelevantNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
-  generateNode: GenerateNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
@@ -250,6 +248,19 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       >
         <defs>
           <marker
+            fill="rgb(var(--accent-primary))"
+            id="selected-marker"
+            viewBox="0 0 40 40"
+            refX="8"
+            refY="5"
+            markerUnits="strokeWidth"
+            markerWidth="20"
+            markerHeight="20"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+          <marker
             fill="var(--text-disabled)"
             id="logo"
             viewBox="0 0 40 40"
@@ -300,7 +311,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         >
           <AgentBackground></AgentBackground>
           <Spotlight className="z-0" opcity={0.7} coverage={70} />
-          <Controls position={'bottom-center'} orientation="horizontal">
+          <Controls
+            position={'bottom-center'}
+            orientation="horizontal"
+            className="bg-bg-base px-4 py-2 h-auto w-auto [&>button]:bg-transparent [&>button]:border-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:p-0 [&>button]:size-4 gap-2.5 rounded-md"
+          >
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>

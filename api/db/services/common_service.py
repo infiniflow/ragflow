@@ -19,7 +19,8 @@ import peewee
 from peewee import InterfaceError, OperationalError
 
 from api.db.db_models import DB
-from api.utils import current_timestamp, datetime_format, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
 
 def retry_db_operation(func):
     @retry(
