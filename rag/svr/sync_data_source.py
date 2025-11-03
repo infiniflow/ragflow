@@ -94,7 +94,7 @@ class S3(SyncBase):
             docs = [{
                     "id": doc.id,
                     "connector_id": task["connector_id"],
-                    "source": FileSource.NOTION,
+                    "source": FileSource.S3,
                     "semantic_identifier": doc.semantic_identifier,
                     "extension": doc.extension,
                     "size_bytes": doc.size_bytes,
@@ -103,7 +103,7 @@ class S3(SyncBase):
                 } for doc in document_batch]
 
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.NOTION}/{task['connector_id']}")
+            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.S3}/{task['connector_id']}")
             SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
             doc_num += len(docs)
 
