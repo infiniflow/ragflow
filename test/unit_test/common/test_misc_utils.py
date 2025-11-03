@@ -15,7 +15,7 @@
 #
 import uuid
 import hashlib
-from common.misc_utils import get_uuid, download_img, hash_str2int
+from common.misc_utils import get_uuid, download_img, hash_str2int, convert_bytes
 
 
 class TestGetUuid:
@@ -270,3 +270,86 @@ class TestHashStr2Int:
             result = hash_str2int(test_str)
             assert isinstance(result, int)
             assert 0 <= result < 10 ** 8
+
+
+class TestConvertBytes:
+    """Test suite for convert_bytes function"""
+
+    def test_zero_bytes(self):
+        """Test that 0 bytes returns '0 B'"""
+        assert convert_bytes(0) == "0 B"
+
+    def test_single_byte(self):
+        """Test single byte values"""
+        assert convert_bytes(1) == "1 B"
+        assert convert_bytes(999) == "999 B"
+
+    def test_kilobyte_range(self):
+        """Test values in kilobyte range with different precisions"""
+        # Exactly 1 KB
+        assert convert_bytes(1024) == "1.00 KB"
+
+        # Values that should show 1 decimal place (10-99.9 range)
+        assert convert_bytes(15360) == "15.0 KB"  # 15 KB exactly
+        assert convert_bytes(10752) == "10.5 KB"  # 10.5 KB
+
+        # Values that should show 2 decimal places (1-9.99 range)
+        assert convert_bytes(2048) == "2.00 KB"  # 2 KB exactly
+        assert convert_bytes(3072) == "3.00 KB"  # 3 KB exactly
+        assert convert_bytes(5120) == "5.00 KB"  # 5 KB exactly
+
+    def test_megabyte_range(self):
+        """Test values in megabyte range"""
+        # Exactly 1 MB
+        assert convert_bytes(1048576) == "1.00 MB"
+
+        # Values with different precision requirements
+        assert convert_bytes(15728640) == "15.0 MB"  # 15.0 MB
+        assert convert_bytes(11010048) == "10.5 MB"  # 10.5 MB
+
+    def test_gigabyte_range(self):
+        """Test values in gigabyte range"""
+        # Exactly 1 GB
+        assert convert_bytes(1073741824) == "1.00 GB"
+
+        # Large value that should show 0 decimal places
+        assert convert_bytes(3221225472) == "3.00 GB"  # 3 GB exactly
+
+    def test_terabyte_range(self):
+        """Test values in terabyte range"""
+        assert convert_bytes(1099511627776) == "1.00 TB"  # 1 TB
+
+    def test_petabyte_range(self):
+        """Test values in petabyte range"""
+        assert convert_bytes(1125899906842624) == "1.00 PB"  # 1 PB
+
+    def test_boundary_values(self):
+        """Test values at unit boundaries"""
+        # Just below 1 KB
+        assert convert_bytes(1023) == "1023 B"
+
+        # Just above 1 KB
+        assert convert_bytes(1025) == "1.00 KB"
+
+        # At 100 KB boundary (should switch to 0 decimal places)
+        assert convert_bytes(102400) == "100 KB"
+        assert convert_bytes(102300) == "99.9 KB"
+
+    def test_precision_transitions(self):
+        """Test the precision formatting transitions"""
+        # Test transition from 2 decimal places to 1 decimal place
+        assert convert_bytes(9216) == "9.00 KB"  # 9.00 KB (2 decimal places)
+        assert convert_bytes(10240) == "10.0 KB"  # 10.0 KB (1 decimal place)
+
+        # Test transition from 1 decimal place to 0 decimal places
+        assert convert_bytes(102400) == "100 KB"  # 100 KB (0 decimal places)
+
+    def test_large_values_no_overflow(self):
+        """Test that very large values don't cause issues"""
+        # Very large value that should use PB
+        large_value = 10 * 1125899906842624  # 10 PB
+        assert "PB" in convert_bytes(large_value)
+
+        # Ensure we don't exceed available units
+        huge_value = 100 * 1125899906842624  # 100 PB (still within PB range)
+        assert "PB" in convert_bytes(huge_value)
