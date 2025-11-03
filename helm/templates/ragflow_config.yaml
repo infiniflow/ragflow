@@ -1,17 +1,120 @@
+{{- $fullname := include "ragflow.fullname" . }}
+{{- $namespace := .Release.Namespace }}
+
+{{- $serviceConf := dict }}
+
+{{- $mysqlCreds := default (dict) .Values.mysql.credentials }}
+{{- $mysqlPassword := default "infini_rag_flow_helm" (get $mysqlCreds "password") }}
+{{- $mysqlDb := default "rag_flow" (get $mysqlCreds "name") }}
+{{- $mysqlUser := default "root" (get $mysqlCreds "user") }}
+{{- $mysqlConf := dict "name" $mysqlDb "user" $mysqlUser "password" $mysqlPassword "host" (printf "%s-mysql.%s.svc" $fullname $namespace) "port" 3306 "max_connections" 900 "stale_timeout" 300 "max_allowed_packet" 1073741824 }}
+{{- if .Values.externalServices.mysql.enabled }}
+  {{- $_ := set $mysqlConf "host" (required "externalServices.mysql.host is required when externalServices.mysql.enabled" .Values.externalServices.mysql.host) }}
+  {{- if .Values.externalServices.mysql.port }}{{- $_ := set $mysqlConf "port" .Values.externalServices.mysql.port }}{{- end }}
+  {{- if .Values.externalServices.mysql.name }}{{- $_ := set $mysqlConf "name" .Values.externalServices.mysql.name }}{{- end }}
+  {{- $extMysqlUser := required "externalServices.mysql.user is required when externalServices.mysql.enabled" .Values.externalServices.mysql.user }}
+  {{- $extMysqlPassword := required "externalServices.mysql.password is required when externalServices.mysql.enabled" .Values.externalServices.mysql.password }}
+  {{- $_ := set $mysqlConf "user" $extMysqlUser }}
+  {{- $_ := set $mysqlConf "password" $extMysqlPassword }}
+  {{- if .Values.externalServices.mysql.max_connections }}{{- $_ := set $mysqlConf "max_connections" .Values.externalServices.mysql.max_connections }}{{- end }}
+  {{- if .Values.externalServices.mysql.stale_timeout }}{{- $_ := set $mysqlConf "stale_timeout" .Values.externalServices.mysql.stale_timeout }}{{- end }}
+  {{- if .Values.externalServices.mysql.max_allowed_packet }}{{- $_ := set $mysqlConf "max_allowed_packet" .Values.externalServices.mysql.max_allowed_packet }}{{- end }}
+{{- end }}
+{{- $_ := set $serviceConf "mysql" $mysqlConf }}
+
+{{- $redisCreds := default (dict) .Values.redis.credentials }}
+{{- $redisPassword := default "infini_rag_flow_helm" (get $redisCreds "password") }}
+{{- $redisDb := default 1 (get $redisCreds "db") }}
+{{- $redisConf := dict "host" (printf "%s-redis.%s.svc:6379" $fullname $namespace) "password" $redisPassword "db" $redisDb }}
+{{- if .Values.externalServices.redis.enabled }}
+  {{- $_ := set $redisConf "host" (required "externalServices.redis.host is required when externalServices.redis.enabled" .Values.externalServices.redis.host) }}
+  {{- if .Values.externalServices.redis.password }}{{- $_ := set $redisConf "password" .Values.externalServices.redis.password }}{{- end }}
+  {{- if hasKey .Values.externalServices.redis "db" }}{{- $_ := set $redisConf "db" .Values.externalServices.redis.db }}{{- end }}
+{{- end }}
+{{- $_ := set $serviceConf "redis" $redisConf }}
+
+{{- if .Values.externalServices.s3.enabled }}
+  {{- $s3Conf := dict "access_key" "rag_flow" "secret_key" "infini_rag_flow_helm" "endpoint_url" (required "externalServices.s3.endpoint_url is required when externalServices.s3.enabled" .Values.externalServices.s3.endpoint_url) }}
+  {{- if .Values.externalServices.s3.access_key }}{{- $_ := set $s3Conf "access_key" .Values.externalServices.s3.access_key }}{{- end }}
+  {{- if .Values.externalServices.s3.secret_key }}{{- $_ := set $s3Conf "secret_key" .Values.externalServices.s3.secret_key }}{{- end }}
+  {{- if .Values.externalServices.s3.session_token }}{{- $_ := set $s3Conf "session_token" .Values.externalServices.s3.session_token }}{{- end }}
+  {{- if .Values.externalServices.s3.region_name }}{{- $_ := set $s3Conf "region_name" .Values.externalServices.s3.region_name }}{{- end }}
+  {{- if and (not .Values.externalServices.s3.region_name) .Values.externalServices.s3.region }}{{- $_ := set $s3Conf "region_name" .Values.externalServices.s3.region }}{{- end }}
+  {{- if .Values.externalServices.s3.bucket }}{{- $_ := set $s3Conf "bucket" .Values.externalServices.s3.bucket }}{{- end }}
+  {{- if .Values.externalServices.s3.prefix_path }}{{- $_ := set $s3Conf "prefix_path" .Values.externalServices.s3.prefix_path }}{{- end }}
+  {{- if .Values.externalServices.s3.signature_version }}{{- $_ := set $s3Conf "signature_version" .Values.externalServices.s3.signature_version }}{{- end }}
+  {{- if .Values.externalServices.s3.addressing_style }}{{- $_ := set $s3Conf "addressing_style" .Values.externalServices.s3.addressing_style }}{{- end }}
+  {{- $_ := set $serviceConf "s3" $s3Conf }}
+{{- else }}
+  {{- $minioCreds := default (dict) .Values.minio.credentials }}
+  {{- $minioUser := default "rag_flow" (get $minioCreds "user") }}
+  {{- $minioPassword := default "infini_rag_flow_helm" (get $minioCreds "password") }}
+  {{- $minioConf := dict "user" $minioUser "password" $minioPassword "host" (printf "%s-minio.%s.svc:9000" $fullname $namespace) }}
+  {{- $_ := set $serviceConf "minio" $minioConf }}
+{{- end }}
+
+{{- $docEngine := default "" .Values.env.DOC_ENGINE }}
+{{- if eq $docEngine "elasticsearch" }}
+  {{- $esCreds := default (dict) .Values.elasticsearch.credentials }}
+  {{- $esUsername := default "elastic" (get $esCreds "username") }}
+  {{- $esPassword := default "infini_rag_flow_helm" (get $esCreds "password") }}
+  {{- $esConf := dict "hosts" (printf "http://%s-es.%s.svc:9200" $fullname $namespace) "username" $esUsername "password" $esPassword }}
+  {{- if .Values.externalServices.elasticsearch.enabled }}
+    {{- $_ := set $esConf "hosts" (required "externalServices.elasticsearch.hosts is required when externalServices.elasticsearch.enabled" .Values.externalServices.elasticsearch.hosts) }}
+    {{- if .Values.externalServices.elasticsearch.username }}
+      {{- $_ := set $esConf "username" .Values.externalServices.elasticsearch.username }}
+    {{- end }}
+    {{- if .Values.externalServices.elasticsearch.password }}
+      {{- $_ := set $esConf "password" .Values.externalServices.elasticsearch.password }}
+    {{- end }}
+  {{- end }}
+  {{- $_ := set $serviceConf "es" $esConf }}
+{{- else if eq $docEngine "opensearch" }}
+  {{- $osConf := dict "hosts" (printf "http://%s-opensearch.%s.svc:9201" $fullname $namespace) "username" "admin" "password" "infini_rag_flow_OS_01" }}
+  {{- $_ := set $serviceConf "os" $osConf }}
+{{- else if eq $docEngine "infinity" }}
+  {{- $infinityConf := dict "uri" (printf "%s-infinity.%s.svc:23817" $fullname $namespace) "db_name" "default_db" }}
+  {{- $_ := set $serviceConf "infinity" $infinityConf }}
+{{- end }}
+
+{{- $hasServiceConf := gt (len $serviceConf) 0 }}
+{{- $hasLocalConf := .Values.ragflow.service_conf }}
+{{- $hasLlmFactories := .Values.ragflow.llm_factories }}
+
+{{- if or $hasServiceConf $hasLocalConf $hasLlmFactories }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: ragflow-service-config
 data:
-  {{- with .Values.ragflow.service_conf }}
+  {{- if $hasLocalConf }}
   local.service_conf.yaml: |
-    {{- . | toYaml | nindent 4 }}
+    {{- .Values.ragflow.service_conf | toYaml | nindent 4 }}
   {{- end }}
-  {{- with .Values.ragflow.llm_factories }}
+  {{- if $hasServiceConf }}
+  service_conf.yaml: |
+    ragflow:
+      host: 0.0.0.0
+      http_port: 9380
+    admin:
+      host: 0.0.0.0
+      http_port: 9381
+    {{- $serviceConf | toYaml | nindent 4 }}
+  {{- end }}
+  {{- if $hasLlmFactories }}
   llm_factories.json: |
-    {{- . | toPrettyJson | nindent 4 }}
+    {{- .Values.ragflow.llm_factories | toPrettyJson | nindent 4 }}
   {{- end }}
+{{- end }}
+---
+{{- $apiServiceName := include "ragflow.componentFullname" (dict "root" . "component" "api") }}
+{{- $apiServiceUrl := printf "http://%s.%s.svc:%d" $apiServiceName .Release.Namespace (int .Values.ragflow.api.service.port) }}
+{{- $adminServiceUrl := "" }}
+{{- if .Values.ragflow.admin.enabled }}
+{{- $adminServiceName := include "ragflow.componentFullname" (dict "root" . "component" "admin") }}
+{{- $adminServiceUrl = printf "http://%s.%s.svc:%d" $adminServiceName .Release.Namespace (int .Values.ragflow.admin.service.port) }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -31,10 +134,24 @@ data:
         gzip_vary on;
         gzip_disable "MSIE [1-6]\.";
 
+        location = /healthz {
+            access_log off;
+            add_header Content-Type text/plain;
+            return 200 "ok\n";
+        }
+
+        {{- if not .Values.ingress.enabled }}
         location ~ ^/(v1|api) {
-            proxy_pass http://localhost:9380;
+            proxy_pass {{ $apiServiceUrl }};
             include proxy.conf;
         }
+{{- if .Values.ragflow.admin.enabled }}
+        location ~ ^/api/v1/admin {
+            proxy_pass {{ $adminServiceUrl }};
+            include proxy.conf;
+        }
+        {{- end }}
+        {{- end }}
 
         location / {
             index index.html;
@@ -49,6 +166,7 @@ data:
     }
   proxy.conf: |
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_http_version 1.1;
@@ -58,7 +176,7 @@ data:
     proxy_send_timeout 3600s;
   nginx.conf: |
     user  root;
-    worker_processes  auto;
+    worker_processes  ${NGINX_WORKER_PROCESSES};
 
     error_log  /var/log/nginx/error.log notice;
     pid        /var/run/nginx.pid;

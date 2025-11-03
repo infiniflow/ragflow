@@ -28,14 +28,48 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
+          {{- $pathFlags := dict "hasV1" false }}
           {{- range .paths }}
+          {{- if eq .path "/v1" }}
+          {{- $_ := set $pathFlags "hasV1" true }}
+          {{- end }}
           - path: {{ .path }}
             {{- with .pathType }}
             pathType: {{ . }}
             {{- end }}
             backend:
               service:
-                name: {{ $.Release.Name }}
+                {{- $backend := .backend | default dict }}
+                {{- if $backend.serviceName }}
+                name: {{ $backend.serviceName }}
+                {{- else if $backend.component }}
+                name: {{ include "ragflow.componentFullname" (dict "root" $ "component" $backend.component) }}
+                {{- else }}
+                name: {{ include "ragflow.componentFullname" (dict "root" $ "component" "frontend") }}
+                {{- end }}
+                {{- $port := default "http" $backend.port }}
+                port:
+                  {{- if kindIs "string" $port }}
+                  name: {{ $port }}
+                  {{- else }}
+                  number: {{ $port }}
+                  {{- end }}
+          {{- end }}
+          {{- if not ($pathFlags.hasV1) }}
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ragflow.componentFullname" (dict "root" $ "component" "api") }}
+                port:
+                  name: http
+          {{- end }}
+          {{- if $.Values.ragflow.admin.enabled }}
+          - path: /api/v1/admin
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ragflow.componentFullname" (dict "root" $ "component" "admin") }}
                 port:
                   name: http
           {{- end }}

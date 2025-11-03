@@ -21,3 +21,5 @@
 .idea/
 *.tmproj
 .vscode/
+README.md
+*.tgz

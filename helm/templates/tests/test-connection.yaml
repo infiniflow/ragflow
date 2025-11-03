@@ -13,5 +13,6 @@ spec:
       command:
       - 'wget'
       args:
-      - {{ printf "%s.%s.svc" (include "ragflow.fullname" .) .Release.Namespace }}
+      - -qO-
+      - {{ printf "http://%s.%s.svc:%d/v1/system/ping" (include "ragflow.componentFullname" (dict "root" . "component" "api")) .Release.Namespace (int .Values.ragflow.api.service.port) }}
   restartPolicy: Never

@@ -1,0 +1,179 @@
+{{- if .Values.ragflow.mcp.enabled }}
+{{- $component := "mcp" }}
+{{- $name := include "ragflow.componentFullname" (dict "root" . "component" $component) }}
+{{- $apiServiceName := include "ragflow.componentFullname" (dict "root" . "component" "api") }}
+{{- $defaultBaseUrl := printf "http://%s.%s.svc:%d" $apiServiceName .Release.Namespace (int .Values.ragflow.api.service.port) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: {{ .Values.ragflow.mcp.replicaCount }}
+  {{- with .Values.ragflow.mcp.deployment.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+      {{- with .Values.ragflow.mcp.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- $globalPullSecrets := .Values.imagePullSecrets }}
+      {{- $basePullSecrets := .Values.ragflow.image.pullSecrets }}
+      {{- $mcpImage := default (dict) .Values.ragflow.mcp.image }}
+      {{- $componentPullSecrets := default list $mcpImage.pullSecrets }}
+      {{- if or (or $globalPullSecrets $basePullSecrets) $componentPullSecrets }}
+      imagePullSecrets:
+        {{- with $globalPullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $basePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $componentPullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- $localServiceConf := .Values.ragflow.service_conf }}
+      {{- $llmFactories := .Values.ragflow.llm_factories }}
+      {{- $extraArgs := join " " .Values.ragflow.mcp.extraArgs }}
+      containers:
+        - name: {{ $component }}
+          {{- $imageRepository := default .Values.ragflow.image.repository $mcpImage.repository }}
+          {{- $imageTag := default .Values.ragflow.image.tag $mcpImage.tag }}
+          image: {{ printf "%s:%s" $imageRepository $imageTag }}
+          {{- $pullPolicy := default .Values.ragflow.image.pullPolicy $mcpImage.pullPolicy }}
+          {{- with $pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -eo pipefail
+              cd /ragflow
+              export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
+              PY=python3
+              SCRIPT_PATH="/ragflow/mcp/server/server.py"
+              exec "${PY}" "${SCRIPT_PATH}" \
+                --host="0.0.0.0" \
+                --port="{{ default 9382 .Values.ragflow.mcp.port }}" \
+                --base-url="{{ $defaultBaseUrl }}" \
+                --mode="{{ .Values.ragflow.mcp.mode }}" \
+                {{- if .Values.ragflow.mcp.hostApiKey }}
+                --api-key="{{ .Values.ragflow.mcp.hostApiKey }}" \
+                {{- else }}
+                --api-key="" \
+                {{- end }}
+                {{- if not .Values.ragflow.mcp.transport.sse }}
+                --no-transport-sse-enabled \
+                {{- else }}
+                --transport-sse-enabled \
+                {{- end }}
+                {{- if not .Values.ragflow.mcp.transport.streamableHttp }}
+                --no-transport-streamable-http-enabled \
+                {{- else }}
+                --transport-streamable-http-enabled \
+                {{- end }}
+                {{- if not .Values.ragflow.mcp.transport.jsonResponse }}
+                --no-json-response{{- else }} --json-response{{- end }}{{ if $extraArgs }} {{ $extraArgs }}{{ end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "ragflow.fullname" . }}-env-config
+          {{- with .Values.ragflow.mcp.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ default 9382 .Values.ragflow.mcp.port }}
+          {{- $probes := default (dict) .Values.ragflow.mcp.probes }}
+          {{- if $probes.liveness }}
+          livenessProbe:
+            {{- toYaml $probes.liveness | nindent 12 }}
+          {{- else }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if $probes.readiness }}
+          readinessProbe:
+            {{- toYaml $probes.readiness | nindent 12 }}
+          {{- else }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if $probes.startup }}
+          startupProbe:
+            {{- toYaml $probes.startup | nindent 12 }}
+          {{- else }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+          {{- end }}
+          volumeMounts:
+            - mountPath: /ragflow/conf/service_conf.yaml
+              subPath: service_conf.yaml
+              name: service-conf-volume
+            {{- if $localServiceConf }}
+            - mountPath: /ragflow/conf/local.service_conf.yaml
+              subPath: local.service_conf.yaml
+              name: service-conf-volume
+            {{- end }}
+            {{- if $llmFactories }}
+            - mountPath: /ragflow/conf/llm_factories.json
+              subPath: llm_factories.json
+              name: service-conf-volume
+            {{- end }}
+          {{- with .Values.ragflow.mcp.deployment.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: service-conf-volume
+          configMap:
+            name: ragflow-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  type: {{ .Values.ragflow.mcp.service.type }}
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+  ports:
+    - name: http
+      port: {{ .Values.ragflow.mcp.service.port }}
+      targetPort: http
+{{- end }}

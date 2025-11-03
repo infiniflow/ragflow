@@ -60,3 +60,13 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create a fully qualified name for a component (frontend, api, worker, admin, mcp).
+Usage: {{ include "ragflow.componentFullname" (dict "root" . "component" "api") }}
+*/}}
+{{- define "ragflow.componentFullname" -}}
+{{- $root := index . "root" -}}
+{{- $component := index . "component" -}}
+{{- printf "%s-%s" (include "ragflow.fullname" $root) $component | trunc 63 | trimSuffix "-" }}
+{{- end }}

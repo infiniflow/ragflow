@@ -1,0 +1,167 @@
+{{- if .Values.ragflow.admin.enabled }}
+{{- $component := "admin" }}
+{{- $name := include "ragflow.componentFullname" (dict "root" . "component" $component) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: {{ .Values.ragflow.admin.replicaCount }}
+  {{- with .Values.ragflow.admin.deployment.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+      {{- with .Values.ragflow.admin.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- $globalPullSecrets := .Values.imagePullSecrets }}
+      {{- $basePullSecrets := .Values.ragflow.image.pullSecrets }}
+      {{- $adminImage := default (dict) .Values.ragflow.admin.image }}
+      {{- $componentPullSecrets := default list $adminImage.pullSecrets }}
+      {{- if or (or $globalPullSecrets $basePullSecrets) $componentPullSecrets }}
+      imagePullSecrets:
+        {{- with $globalPullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $basePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $componentPullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- $localServiceConf := .Values.ragflow.service_conf }}
+      {{- $llmFactories := .Values.ragflow.llm_factories }}
+      {{- $extraArgs := join " " .Values.ragflow.admin.extraArgs }}
+      containers:
+        - name: {{ $component }}
+          {{- $imageRepository := default .Values.ragflow.image.repository $adminImage.repository }}
+          {{- $imageTag := default .Values.ragflow.image.tag $adminImage.tag }}
+          image: {{ printf "%s:%s" $imageRepository $imageTag }}
+          {{- $pullPolicy := default .Values.ragflow.image.pullPolicy $adminImage.pullPolicy }}
+          {{- with $pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -eo pipefail
+              cd /ragflow
+
+              export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
+              PY=python3
+              exec "${PY}" admin/server/admin_server.py{{- if $extraArgs }} {{ $extraArgs }}{{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "ragflow.fullname" . }}-env-config
+          env:
+            - name: FLASK_ENV
+              value: {{ ternary "development" "production" (default false .Values.ragflow.admin.debug) | quote }}
+            - name: FLASK_DEBUG
+              value: {{ ternary "1" "0" (default false .Values.ragflow.admin.debug) | quote }}
+            - name: WERKZEUG_DEBUG_PIN
+              value: "off"
+            - name: RAGFLOW_HOST
+              value: {{ printf "%s.%s.svc" (include "ragflow.componentFullname" (dict "root" . "component" "api")) .Release.Namespace | quote }}
+            {{- with .Values.ragflow.admin.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 9381
+          {{- $probes := default (dict) .Values.ragflow.admin.probes }}
+          {{- if $probes.liveness }}
+          livenessProbe:
+            {{- toYaml $probes.liveness | nindent 12 }}
+          {{- else }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if $probes.readiness }}
+          readinessProbe:
+            {{- toYaml $probes.readiness | nindent 12 }}
+          {{- else }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if $probes.startup }}
+          startupProbe:
+            {{- toYaml $probes.startup | nindent 12 }}
+          {{- else }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+          {{- end }}
+          volumeMounts:
+            - mountPath: /ragflow/conf/service_conf.yaml
+              subPath: service_conf.yaml
+              name: service-conf-volume
+            {{- if $localServiceConf }}
+            - mountPath: /ragflow/conf/local.service_conf.yaml
+              subPath: local.service_conf.yaml
+              name: service-conf-volume
+            {{- end }}
+            {{- if $llmFactories }}
+            - mountPath: /ragflow/conf/llm_factories.json
+              subPath: llm_factories.json
+              name: service-conf-volume
+            {{- end }}
+          {{- with .Values.ragflow.admin.deployment.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: service-conf-volume
+          configMap:
+            name: ragflow-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  type: {{ .Values.ragflow.admin.service.type }}
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+  {{- if gt (int .Values.ragflow.admin.replicaCount) 1 }}
+  sessionAffinity: ClientIP
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.ragflow.admin.service.port }}
+      targetPort: http
+{{- end }}

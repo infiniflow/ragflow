@@ -1,4 +1,4 @@
-{{- if eq .Values.env.DOC_ENGINE "elasticsearch" -}}
+{{- if and (eq .Values.env.DOC_ENGINE "elasticsearch") (not .Values.externalServices.elasticsearch.enabled) -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
