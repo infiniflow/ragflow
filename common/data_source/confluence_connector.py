@@ -7,6 +7,8 @@ from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast, Iterator, Callable, Generator
+
+import requests
 from typing_extensions import override
 from urllib.parse import quote
 
@@ -1049,6 +1051,7 @@ def get_page_restrictions(
         ExternalAccess object for the page. None if EE is not enabled or no restrictions found.
     """
     # Fetch the EE implementation
+    """
     ee_get_all_page_restrictions = cast(
         Callable[
             [OnyxConfluence, str, dict[str, Any], list[dict[str, Any]]],
@@ -1061,7 +1064,7 @@ def get_page_restrictions(
 
     return ee_get_all_page_restrictions(
         confluence_client, page_id, page_restrictions, ancestors
-    )
+    )"""
 
 
 def get_all_space_permissions(
@@ -1079,7 +1082,7 @@ def get_all_space_permissions(
     Returns:
         Dictionary mapping space keys to ExternalAccess objects. Empty dict if EE is not enabled.
     """
-
+    """
     # Fetch the EE implementation
     ee_get_all_space_permissions = cast(
         Callable[
@@ -1092,7 +1095,7 @@ def get_all_space_permissions(
         ),
     )
 
-    return ee_get_all_space_permissions(confluence_client, is_cloud)
+    return ee_get_all_space_permissions(confluence_client, is_cloud)"""
 
 
 def _make_attachment_link(
@@ -1127,6 +1130,7 @@ def _process_image_attachment(
     media_type: str,
 ) -> AttachmentProcessingResult:
     """Process an image attachment by saving it without generating a summary."""
+    """
     try:
         # Use the standardized image storage and section creation
         section, file_name = store_image_and_create_section(
@@ -1144,6 +1148,7 @@ def _process_image_attachment(
         msg = f"Image storage failed for {attachment['title']}: {e}"
         logging.error(msg, exc_info=e)
         return AttachmentProcessingResult(text=None, file_name=None, error=msg)
+    """
 
 
 def process_attachment(
@@ -1229,6 +1234,7 @@ def process_attachment(
             )
 
         # Process document attachments
+        """
         try:
             text = extract_file_text(
                 file=BytesIO(raw_bytes),
@@ -1248,6 +1254,7 @@ def process_attachment(
             return AttachmentProcessingResult(
                 text=None, file_name=None, error=f"Failed to extract text: {e}"
             )
+        """
 
     except Exception as e:
         return AttachmentProcessingResult(

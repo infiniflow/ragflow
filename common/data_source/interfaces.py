@@ -240,12 +240,13 @@ class BaseConnector(abc.ABC, Generic[CT]):
         Don't override this; add a function to perm_sync_valid.py in the ee package
         to do permission sync validation
         """
+        """
         validate_connector_settings_fn = fetch_ee_implementation_or_noop(
             "onyx.connectors.perm_sync_valid",
             "validate_perm_sync",
             noop_return_value=None,
         )
-        validate_connector_settings_fn(self)
+        validate_connector_settings_fn(self)"""
 
     def set_allow_images(self, value: bool) -> None:
         """Implement if the underlying connector wants to skip/allow image downloading

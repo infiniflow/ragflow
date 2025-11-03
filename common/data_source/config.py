@@ -115,7 +115,6 @@ SCOPE_INSTRUCTIONS = (
 )
 
 SLIM_BATCH_SIZE = 100
-_MARKITDOWN_CONVERTER: Optional["MarkItDown"] = None
 
 # Notion API constants
 _NOTION_PAGE_SIZE = 100

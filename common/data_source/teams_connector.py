@@ -5,9 +5,6 @@ from typing import Any
 import msal
 from office365.graph_client import GraphClient
 from office365.runtime.client_request_exception import ClientRequestException
-from office365.runtime.http.request_options import RequestOptions
-from office365.teams.channels.channel import Channel
-from office365.teams.team import Team
 
 from common.data_source.exceptions import (
     ConnectorValidationError,

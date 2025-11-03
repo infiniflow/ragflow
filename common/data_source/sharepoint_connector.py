@@ -3,13 +3,7 @@
 from typing import Any
 import msal
 from office365.graph_client import GraphClient
-from office365.intune.organizations.organization import Organization
-from office365.onedrive.driveitems.driveItem import DriveItem
-from office365.onedrive.sites.site import Site
-from office365.onedrive.sites.sites_with_root import SitesWithRoot
-from office365.runtime.auth.token_response import TokenResponse
 from office365.runtime.client_request import ClientRequestException
-from office365.runtime.queries.client_query import ClientQuery
 from office365.sharepoint.client_context import ClientContext
 
 from common.data_source.config import INDEX_BATCH_SIZE

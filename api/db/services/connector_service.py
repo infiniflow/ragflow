@@ -65,7 +65,7 @@ class SyncLogsService(CommonService):
             cls.model.error_msg,
             cls.model.error_count,
             Connector.name,
-            Connector.source
+            Connector.source,
             Connector.tenant_id,
             Connector.timeout_secs,
             Knowledgebase.name.alias("kb_name"),

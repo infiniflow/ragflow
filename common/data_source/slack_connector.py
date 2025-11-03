@@ -1,30 +1,22 @@
 """Slack connector"""
 
-import contextvars
-import copy
 import itertools
 import logging
 import re
-import time
 from collections.abc import Callable, Generator
-from concurrent.futures import as_completed, Future, ThreadPoolExecutor
 from datetime import datetime, timezone
-from enum import Enum
 from http.client import IncompleteRead, RemoteDisconnected
 from typing import Any, cast
 from urllib.error import URLError
 
-from pydantic import BaseModel
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from slack_sdk.http_retry import ConnectionErrorRetryHandler, RetryHandler
 from slack_sdk.http_retry.builtin_interval_calculators import FixedValueRetryIntervalCalculator
-from typing_extensions import override
 
 from common.data_source.config import (
     INDEX_BATCH_SIZE, SLACK_NUM_THREADS, ENABLE_EXPENSIVE_EXPERT_CALLS,
-    _SLACK_LIMIT, FAST_TIMEOUT, MAX_RETRIES, MAX_CHANNELS_TO_LOG,
-    BOT_CHANNEL_MIN_BATCH_SIZE, BOT_CHANNEL_PERCENTAGE_THRESHOLD
+    _SLACK_LIMIT, FAST_TIMEOUT, MAX_RETRIES, MAX_CHANNELS_TO_LOG
 )
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
@@ -44,7 +36,6 @@ from common.data_source.models import (
     ConnectorFailure,
     Document,
     DocumentFailure,
-    EntityFailure,
     SlimDocument,
     TextSection,
     SecondsSinceUnixEpoch,
@@ -306,7 +297,7 @@ def _get_messages(
 
             logging.exception(f"Error joining channel {channel['name']}")
             raise
-        logger.info(f"Successfully joined '{channel['name']}'")
+        logging.info(f"Successfully joined '{channel['name']}'")
 
     response = client.conversations_history(
         channel=channel["id"],

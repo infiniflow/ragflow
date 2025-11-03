@@ -6,7 +6,7 @@ from retry import retry
 
 from common.data_source.config import (
     INDEX_BATCH_SIZE,
-    DocumentSource, NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP, _NOTION_CALL_TIMEOUT
+    DocumentSource, NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP
 )
 from common.data_source.interfaces import (
     LoadConnector,
