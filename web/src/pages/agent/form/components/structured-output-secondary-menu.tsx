@@ -1,4 +1,3 @@
-import { JSONSchema } from '@/components/jsonjoy-builder';
 import {
   HoverCard,
   HoverCardContent,
@@ -9,22 +8,28 @@ import { get, isEmpty, isPlainObject } from 'lodash';
 import { ChevronRight } from 'lucide-react';
 import { PropsWithChildren, ReactNode, useCallback } from 'react';
 import { JsonSchemaDataType, VariableType } from '../../constant';
+import { useGetStructuredOutputByValue } from '../../hooks/use-build-structured-output';
+import {
+  hasJsonSchemaChild,
+  hasSpecificTypeChild,
+} from '../../utils/filter-agent-structured-output';
 
 type DataItem = { label: ReactNode; value: string; parentLabel?: ReactNode };
 
 type StructuredOutputSecondaryMenuProps = {
   data: DataItem;
   click(option: { label: ReactNode; value: string }): void;
-  filteredStructuredOutput: JSONSchema;
   type?: VariableType | JsonSchemaDataType;
 } & PropsWithChildren;
 
 export function StructuredOutputSecondaryMenu({
   data,
   click,
-  filteredStructuredOutput,
   type,
 }: StructuredOutputSecondaryMenuProps) {
+  const filterStructuredOutput = useGetStructuredOutputByValue();
+  const structuredOutput = filterStructuredOutput(data.value);
+
   const handleSubMenuClick = useCallback(
     (option: { label: ReactNode; value: string }, dataType?: string) => () => {
       // The query variable of the iteration operator can only select array type data.
@@ -54,19 +59,28 @@ export function StructuredOutputSecondaryMenu({
 
               const dataType = get(value, 'type');
 
-              return (
-                <li key={key} className="pl-1">
-                  <div
-                    onClick={handleSubMenuClick(nextOption, dataType)}
-                    className="hover:bg-bg-card p-1 text-text-primary rounded-sm flex justify-between"
-                  >
-                    {key}
-                    <span className="text-text-secondary">{dataType}</span>
-                  </div>
-                  {dataType === JsonSchemaDataType.Object &&
-                    renderAgentStructuredOutput(value, nextOption)}
-                </li>
-              );
+              if (
+                !type ||
+                (type &&
+                  (dataType === type ||
+                    hasSpecificTypeChild(value ?? {}, type)))
+              ) {
+                return (
+                  <li key={key} className="pl-1">
+                    <div
+                      onClick={handleSubMenuClick(nextOption, dataType)}
+                      className="hover:bg-bg-card p-1 text-text-primary rounded-sm flex justify-between"
+                    >
+                      {key}
+                      <span className="text-text-secondary">{dataType}</span>
+                    </div>
+                    {dataType === JsonSchemaDataType.Object &&
+                      renderAgentStructuredOutput(value, nextOption)}
+                  </li>
+                );
+              }
+
+              return null;
             })}
           </ul>
         );
@@ -74,8 +88,12 @@ export function StructuredOutputSecondaryMenu({
 
       return <div></div>;
     },
-    [handleSubMenuClick],
+    [handleSubMenuClick, type],
   );
+
+  if (!hasJsonSchemaChild(structuredOutput)) {
+    return null;
+  }
 
   return (
     <HoverCard key={data.value} openDelay={100} closeDelay={100}>
@@ -96,7 +114,7 @@ export function StructuredOutputSecondaryMenu({
       >
         <section className="p-2">
           <div className="p-1">{data?.parentLabel} structured output:</div>
-          {renderAgentStructuredOutput(filteredStructuredOutput, data)}
+          {renderAgentStructuredOutput(structuredOutput, data)}
         </section>
       </HoverCardContent>
     </HoverCard>
