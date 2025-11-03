@@ -19,8 +19,6 @@
 import base64
 import hashlib
 import io
-import json
-import os
 import re
 import shutil
 import subprocess
@@ -40,83 +38,15 @@ from typing import List, Union, Tuple, Optional, Dict
 # Third-party imports
 import olefile
 import pdfplumber
-from cachetools import LRUCache, cached
 from PIL import Image
-from ruamel.yaml import YAML
 
 # Local imports
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
-from common.file_utils import get_project_base_directory
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
-
-
-@cached(cache=LRUCache(maxsize=10))
-def load_json_conf(conf_path):
-    if os.path.isabs(conf_path):
-        json_conf_path = conf_path
-    else:
-        json_conf_path = os.path.join(get_project_base_directory(), conf_path)
-    try:
-        with open(json_conf_path) as f:
-            return json.load(f)
-    except BaseException:
-        raise EnvironmentError("loading json file config from '{}' failed!".format(json_conf_path))
-
-
-def dump_json_conf(config_data, conf_path):
-    if os.path.isabs(conf_path):
-        json_conf_path = conf_path
-    else:
-        json_conf_path = os.path.join(get_project_base_directory(), conf_path)
-    try:
-        with open(json_conf_path, "w") as f:
-            json.dump(config_data, f, indent=4)
-    except BaseException:
-        raise EnvironmentError("loading json file config from '{}' failed!".format(json_conf_path))
-
-
-def load_json_conf_real_time(conf_path):
-    if os.path.isabs(conf_path):
-        json_conf_path = conf_path
-    else:
-        json_conf_path = os.path.join(get_project_base_directory(), conf_path)
-    try:
-        with open(json_conf_path) as f:
-            return json.load(f)
-    except BaseException:
-        raise EnvironmentError("loading json file config from '{}' failed!".format(json_conf_path))
-
-
-def load_yaml_conf(conf_path):
-    if not os.path.isabs(conf_path):
-        conf_path = os.path.join(get_project_base_directory(), conf_path)
-    try:
-        with open(conf_path) as f:
-            yaml = YAML(typ="safe", pure=True)
-            return yaml.load(f)
-    except Exception as e:
-        raise EnvironmentError("loading yaml file config from {} failed:".format(conf_path), e)
-
-
-def rewrite_yaml_conf(conf_path, config):
-    if not os.path.isabs(conf_path):
-        conf_path = os.path.join(get_project_base_directory(), conf_path)
-    try:
-        with open(conf_path, "w") as f:
-            yaml = YAML(typ="safe")
-            yaml.dump(config, f)
-    except Exception as e:
-        raise EnvironmentError("rewrite yaml file config {} failed:".format(conf_path), e)
-
-
-def rewrite_json_file(filepath, json_data):
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(json_data, f, indent=4, separators=(",", ": "))
-    f.close()
 
 
 def filename_type(filename):
@@ -197,13 +127,6 @@ def thumbnail(filename, blob):
         return IMG_BASE64_PREFIX + base64.b64encode(img).decode("utf-8")
     else:
         return ""
-
-
-def traversal_files(base):
-    for root, ds, fs in os.walk(base):
-        for f in fs:
-            fullname = os.path.join(root, f)
-            yield fullname
 
 
 def repair_pdf_with_ghostscript(input_bytes):
