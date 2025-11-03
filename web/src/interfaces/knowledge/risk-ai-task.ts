@@ -1,5 +1,18 @@
 export type RiskAITaskStatus = 'pending' | 'running' | 'success' | 'failed';
 
+export interface IRiskAITaskRowStatus {
+  pending: number;
+  running: number;
+  success: number;
+  failed: number;
+}
+
+export interface IRiskAITaskFailedRow {
+  row_index: number;
+  error_msg: string;
+  payload: Record<string, any>;
+}
+
 export interface IRiskAITask {
   id: string;
   kb_id: string;
@@ -15,4 +28,6 @@ export interface IRiskAITask {
   created_by: string;
   create_time?: number;
   update_time?: number;
+  row_status_counts?: IRiskAITaskRowStatus;
+  failed_rows_detail?: IRiskAITaskFailedRow[];
 }

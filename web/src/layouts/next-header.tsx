@@ -1,4 +1,3 @@
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
@@ -18,8 +17,6 @@ import { Routes } from '@/routes';
 import { camelCase } from 'lodash';
 import {
   ChevronDown,
-  CircleHelp,
-  Cpu,
   File,
   House,
   Library,
@@ -69,7 +66,7 @@ export function Header() {
       { path: Routes.Datasets, name: t('header.dataset'), icon: Library },
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('header.search'), icon: Search },
-      { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
+      // { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
       { path: Routes.Files, name: t('header.fileManager'), icon: File },
     ],
     [t],
@@ -109,9 +106,9 @@ export function Header() {
     <section className="py-5 px-10 flex justify-between items-center ">
       <div className="flex items-center gap-4">
         <img
-          src={'/logo.svg'}
+          src={'/sw-logo.png'}
           alt="logo"
-          className="size-10 mr-[12] cursor-pointer"
+          className="w-[138px] h-[67px] mr-[12px] cursor-pointer"
           onClick={handleLogoClick}
         />
       </div>
@@ -121,7 +118,7 @@ export function Header() {
         onChange={handleChange}
       ></Segmented>
       <div className="flex items-center gap-5 text-text-badge">
-        <a
+        {/* <a
           target="_blank"
           href="https://discord.com/invite/NjYzJD3GM3"
           rel="noreferrer"
@@ -134,7 +131,7 @@ export function Header() {
           rel="noreferrer"
         >
           <IconFontFill name="GitHub"></IconFontFill>
-        </a>
+        </a> */}
         <DropdownMenu>
           <DropdownMenuTrigger>
             <div className="flex items-center gap-1">
@@ -150,9 +147,9 @@ export function Header() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant={'ghost'} onClick={handleDocHelpCLick}>
+        {/* <Button variant={'ghost'} onClick={handleDocHelpCLick}>
           <CircleHelp />
-        </Button>
+        </Button> */}
         <Button variant={'ghost'} onClick={onThemeClick}>
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>

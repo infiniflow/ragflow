@@ -786,6 +786,52 @@ def delete_kb_task():
   return get_json_result(data=True)
 
 
+@manager.route("/risk_identify/template", methods=["GET"])  # noqa: F821
+@login_required
+def risk_identify_template():
+  """Download Excel template for risk identification"""
+  try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "内控矩阵模板"
+    
+    # Set headers
+    headers = ["循环", "主要风险点", "相应的内部控制"]
+    ws.append(headers)
+    
+    # Style the header row
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    
+    for col_num, header in enumerate(headers, 1):
+      cell = ws.cell(row=1, column=col_num)
+      cell.font = header_font
+      cell.fill = header_fill
+      cell.alignment = header_alignment
+    
+    # Add sample data row for guidance
+    ws.append(["采购与付款", "示例：采购价格不合理", "示例：建立供应商准入和价格审核机制"])
+    
+    # Auto-adjust column widths
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 40
+    ws.column_dimensions['C'].width = 50
+    
+    # Save to BytesIO
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = "内控矩阵模板.xlsx"
+    return send_file_in_mem(buf.getvalue(), filename)
+  except Exception as e:
+    logging.exception("Failed to generate risk identify template")
+    return server_error_response(e)
+
+
 @manager.route("/risk_identify", methods=["POST"])  # noqa: F821
 @login_required
 def risk_identify():
@@ -1084,13 +1130,32 @@ def risk_ai_identify_task():
         created_by=current_user.id,
     )
 
-    message = {
-        "task_type": "risk_ai_identify_batch",
-        "risk_ai_task_id": task_id,
-    }
-    if not REDIS_CONN.queue_product(get_svr_queue_name(0), message):
-      RiskAITaskService.update_task(task_id, {"status": RiskAITaskStatus.FAILED, "error_msg": "Failed to enqueue task."})
-      return get_json_result(data=False, message='Failed to enqueue task.', code=settings.RetCode.SERVER_ERROR)
+    # Create row-level tasks
+    from api.db.services.risk_ai_task_service import RiskAITaskRowService, RiskAITaskRowStatus
+    row_tasks = []
+    for idx, row in enumerate(rows):
+      row_id = get_uuid()
+      row_tasks.append({
+          "id": row_id,
+          "task_id": task_id,
+          "row_index": idx,
+          "payload": row,
+          "status": RiskAITaskRowStatus.PENDING,
+          "created_by": current_user.id,
+      })
+    
+    RiskAITaskRowService.create_rows(row_tasks)
+
+    # Push individual row tasks to Redis for parallel processing
+    for row_task in row_tasks:
+      message = {
+          "task_type": "risk_ai_identify_row",
+          "risk_ai_task_id": task_id,
+          "risk_ai_task_row_id": row_task["id"],
+      }
+      if not REDIS_CONN.queue_product(get_svr_queue_name(0), message):
+        RiskAITaskService.update_task(task_id, {"status": RiskAITaskStatus.FAILED, "error_msg": "Failed to enqueue row task."})
+        return get_json_result(data=False, message='Failed to enqueue row task.', code=settings.RetCode.SERVER_ERROR)
 
     return get_json_result(data={"task_id": task_id})
   except Exception as e:
@@ -1109,7 +1174,38 @@ def risk_ai_identify_task_status():
     if not task:
       return get_json_result(data=False, message='Task not found.', code=settings.RetCode.DATA_ERROR)
 
+    # Check authorization
+    if not KnowledgebaseService.accessible(task.kb_id, current_user.id):
+      return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
     data = task.to_dict()
+    
+    # Get detailed row information
+    from api.db.services.risk_ai_task_service import RiskAITaskRowService, RiskAITaskRowStatus
+    row_tasks = RiskAITaskRowService.get_rows_by_task(task_id)
+    
+    # Count row statuses
+    row_status_counts = {
+        "pending": len([r for r in row_tasks if r["status"] == RiskAITaskRowStatus.PENDING]),
+        "running": len([r for r in row_tasks if r["status"] == RiskAITaskRowStatus.RUNNING]),
+        "success": len([r for r in row_tasks if r["status"] == RiskAITaskRowStatus.SUCCESS]),
+        "failed": len([r for r in row_tasks if r["status"] == RiskAITaskRowStatus.FAILED]),
+    }
+    
+    # Get failed row details
+    failed_rows = [r for r in row_tasks if r["status"] == RiskAITaskRowStatus.FAILED]
+    failed_details = []
+    for row in failed_rows:
+      failed_details.append({
+          "row_index": row["row_index"],
+          "error_msg": row.get("error_msg", ""),
+          "payload": row.get("payload", {})
+      })
+    
+    data["row_status_counts"] = row_status_counts
+    data["failed_rows"] = failed_details
+    data["total_rows"] = len(row_tasks)
+    
     if data.get("result_location"):
       kb_id = data.get("kb_id")
       try:
@@ -1135,6 +1231,10 @@ def risk_ai_identify_task_download():
     if not task:
       return get_json_result(data=False, message='Task not found.', code=settings.RetCode.DATA_ERROR)
 
+    # Check authorization
+    if not KnowledgebaseService.accessible(task.kb_id, current_user.id):
+      return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
     task_dict = task.to_dict()
     result_location = task_dict.get("result_location")
     kb_id = task_dict.get("kb_id")
@@ -1147,6 +1247,103 @@ def risk_ai_identify_task_download():
 
     filename = result_location.split('/')[-1]
     return send_file_in_mem(content, filename)
+  except Exception as e:
+    return server_error_response(e)
+
+
+@manager.route("/risk_ai_identify_task/retry_failed", methods=["POST"])  # noqa: F821
+@login_required
+def risk_ai_identify_task_retry_failed():
+  try:
+    req = request.json
+    task_id = req.get("task_id")
+    if not task_id:
+      return get_json_result(data=False, message='Missing task_id', code=settings.RetCode.ARGUMENT_ERROR)
+
+    task = RiskAITaskService.get_task(task_id)
+    if not task:
+      return get_json_result(data=False, message='Task not found.', code=settings.RetCode.DATA_ERROR)
+
+    # Check authorization
+    if not KnowledgebaseService.accessible(task.kb_id, current_user.id):
+      return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
+    from api.db.services.risk_ai_task_service import RiskAITaskRowService, RiskAITaskRowStatus
+    
+    # Get failed rows
+    row_tasks = RiskAITaskRowService.get_rows_by_task(task_id)
+    failed_rows = [r for r in row_tasks if r["status"] == RiskAITaskRowStatus.FAILED]
+    
+    if not failed_rows:
+      return get_json_result(data=False, message='No failed rows to retry.', code=settings.RetCode.DATA_ERROR)
+
+    # Reset failed rows to pending and re-queue them
+    retry_count = 0
+    for row in failed_rows:
+      RiskAITaskRowService.update_row(row["id"], {
+          "status": RiskAITaskRowStatus.PENDING,
+          "error_msg": ""
+      })
+      
+      # Re-queue the row task
+      message = {
+          "task_type": "risk_ai_identify_row",
+          "risk_ai_task_id": task_id,
+          "risk_ai_task_row_id": row["id"],
+      }
+      if REDIS_CONN.queue_product(get_svr_queue_name(0), message):
+        retry_count += 1
+      else:
+        RiskAITaskRowService.update_row(row["id"], {
+            "status": RiskAITaskRowStatus.FAILED,
+            "error_msg": "Failed to re-queue task"
+        })
+
+    return get_json_result(data={"retried_rows": retry_count})
+  except Exception as e:
+    return server_error_response(e)
+
+
+@manager.route("/risk_ai_identify_task/list", methods=["GET"])  # noqa: F821
+@login_required
+def risk_ai_identify_task_list():
+  try:
+    kb_id = request.args.get("kb_id")
+    page = int(request.args.get("page", 1))
+    page_size = int(request.args.get("page_size", 10))
+    
+    if not kb_id:
+      return get_json_result(data=False, message='Missing kb_id', code=settings.RetCode.ARGUMENT_ERROR)
+
+    # Check authorization
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+      return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+
+    # Query tasks for this knowledge base
+    from api.db.db_models import RiskAiTask
+    query = RiskAiTask.select().where(RiskAiTask.kb_id == kb_id).order_by(RiskAiTask.create_time.desc())
+    
+    total = query.count()
+    tasks = query.paginate(page, page_size)
+    
+    task_list = []
+    for task in tasks:
+      task_dict = task.to_dict()
+      # Add download URL if result is ready
+      if task_dict.get("result_location"):
+        try:
+          base = request.host_url.rstrip('/')
+          task_dict["download_url"] = f"{base}/v1/kb/risk_ai_identify_task/download?task_id={task.id}"
+        except Exception:
+          task_dict["download_url"] = ""
+      task_list.append(task_dict)
+    
+    return get_json_result(data={
+        "tasks": task_list,
+        "total": total,
+        "page": page,
+        "page_size": page_size
+    })
   except Exception as e:
     return server_error_response(e)
 

@@ -247,6 +247,20 @@ async def collect():
         "risk_ai_task_id": task_id,
     }
 
+  if msg.get("task_type") == "risk_ai_identify_row":
+    task_id = msg.get("risk_ai_task_id")
+    row_id = msg.get("risk_ai_task_row_id")
+    if not task_id or not row_id:
+      logging.error("collect risk_ai_identify_row without task_id or row_id")
+      redis_msg.ack()
+      return None, None
+    return redis_msg, {
+        "task_type": "risk_ai_identify_row",
+        "id": row_id,
+        "risk_ai_task_id": task_id,
+        "risk_ai_task_row_id": row_id,
+    }
+
   # Resolve task by msg content
   canceled = False
   if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
@@ -1076,23 +1090,23 @@ async def process_risk_ai_task(task):
             "## 角色",
             "你是一名经验丰富的内控审计专家",
             "## 任务",
-            f"针对{cycle},为了防范{risk}，对“{control}”关键控制点进行审计。",
+            f"针对{cycle},为了防范{risk}，对「{control}」关键控制点进行审计。",
             "### 任务1",
             "根据RAG检索出的被审计单位相关内控制度:",
             f"```{txt}```",
-            "筛选出与该循环的关键控制点相关的内控制度,包含制度名称和对应原文，输出“相关制度”，不相关的制度需要排除。",
+            "筛选出与该循环的关键控制点相关的内控制度,包含制度名称和对应原文，输出「相关制度」，不相关的制度需要排除。",
             "### 任务2",
-            "根据任务1识别的相关制度，整理输出“控制活动描述”，即用一句话进行专业描述，表达要客观清晰、具备可测试性，并包含控制的目的、执行人、控制内容、频率、控制方式和留痕依据等要素，但不需要逐项分点列出，只输出一条完整规范的审计用语。",
+            "根据任务1识别的相关制度，整理输出「控制活动描述」，即用一句话进行专业描述，表达要客观清晰、具备可测试性，并包含控制的目的、执行人、控制内容、频率、控制方式和留痕依据等要素，但不需要逐项分点列出，只输出一条完整规范的审计用语。",
             "### 任务3",
-            "输出“控制频率”，即每年一次、每季一次、每月一次、每周一次、每日一次、每日多次。如果制度中未明确则写“待填写”。",
+            "输出「控制频率」，即每年一次、每季一次、每月一次、每周一次、每日一次、每日多次。如果制度中未明确则写「待填写」。",
             "### 任务4",
-            "输出“相关单据”，列出控制活动中的依据或记录，如盘点表，发货单，对账单等，单据名称用书名号包裹，如：《客户信息表》。",
+            "输出「相关单据」，列出控制活动中的依据或记录，如盘点表，发货单，对账单等，单据名称用书名号包裹，如：《客户信息表》。",
             "### 任务5",
-            "输出“相关人员”，列出控制活动中涉及发起、执行、审核、审批等相关人员。",
+            "输出「相关人员」，列出控制活动中涉及发起、执行、审核、审批等相关人员。",
             "### 任务6",
-            "输出“设计缺陷”，判断是否存在内控制度设计缺陷。如果存在设计缺陷，则输出存在设计缺陷，并简要列示缺陷名称和原因。如果不存在，则输出不存在设计缺陷。",
+            "输出「设计缺陷」，判断是否存在内控制度设计缺陷。如果存在设计缺陷，则输出存在设计缺陷，并简要列示缺陷名称和原因。如果不存在，则输出不存在设计缺陷。",
             "## 输出",
-            "将任务中需要输出的字段以json格式输出，包含：“相关制度”，“控制活动描述”，“控制频率”，“相关单据”，“相关人员”，“设计缺陷”,均为文本格式，不要是数组。",
+            "将任务中需要输出的字段以json格式输出，包含：「相关制度」，「控制活动描述」，「控制频率」，「相关单据」，「相关人员」，「设计缺陷」,均为文本格式，不要是数组。",
         ])
         ans = chat_mdl.chat("", [{
             "role": "user", "content": prompt
@@ -1143,6 +1157,240 @@ async def process_risk_ai_task(task):
       })
 
 
+async def process_risk_ai_row_task(task):
+  """Process a single row task for risk AI identification"""
+  from api.db.services.risk_ai_task_service import RiskAITaskRowService, RiskAITaskRowStatus
+  
+  task_id = task.get("risk_ai_task_id")
+  row_id = task.get("risk_ai_task_row_id")
+  
+  # Get the main task record
+  main_task = RiskAITaskService.get_task(task_id)
+  if not main_task:
+    logging.warning(f"risk_ai_task {task_id} not found")
+    return
+
+  # Get the row task record
+  row_tasks = RiskAITaskRowService.get_rows_by_task(task_id)
+  row_task = next((r for r in row_tasks if r["id"] == row_id), None)
+  if not row_task:
+    logging.warning(f"risk_ai_task_row {row_id} not found")
+    return
+
+  # Update row status to running
+  RiskAITaskRowService.update_row(row_id, {"status": RiskAITaskRowStatus.RUNNING})
+
+  try:
+    # Get knowledge base
+    ok, kb = KnowledgebaseService.get_by_id(main_task.kb_id)
+    if not ok:
+      RiskAITaskRowService.update_row(row_id, {
+          "status": RiskAITaskRowStatus.FAILED,
+          "error_msg": f"Knowledgebase {main_task.kb_id} not found"
+      })
+      return
+
+    # Get models
+    embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+    chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+
+    # Get parameters
+    params = main_task.params or {}
+    default_st = float(params.get("similarity_threshold", 0.6))
+    default_vw = float(params.get("vector_similarity_weight", 0.95))
+    page = int(params.get("page", 1))
+    size = int(params.get("size", 10))
+    parser_type = (params.get("parser_type") or "raw").lower()
+    temperature = float(params.get("temperature", 0.2))
+
+    # Get row data
+    row_data = row_task["payload"]
+    cycle = (row_data.get("循环") or row_data.get("cycle") or "").strip()
+    risk = (row_data.get("主要风险点") or row_data.get("risk") or "").strip()
+    control = (row_data.get("相应的内部控制") or row_data.get("question") or row_data.get("control") or "").strip()
+    st = float(row_data.get("similarity_threshold", default_st))
+    vw = float(row_data.get("vector_similarity_weight", default_vw))
+
+    structured_headers = ["相关制度", "控制活动描述", "控制频率", "相关单据", "相关人员", "设计缺陷"]
+    parsed_values = ["" for _ in structured_headers]
+
+    if control:
+      try:
+        # Perform retrieval
+        ranks = settings.retriever.retrieval(
+            control,
+            embd_mdl,
+            [kb.tenant_id],
+            [main_task.kb_id],
+            page,
+            size,
+            st,
+            vw,
+            int(params.get("top_k", 1024)),
+            row_data.get("doc_ids"),
+            rerank_mdl=None,
+            highlight=False,
+            rank_feature=label_question(control, [kb]),
+        )
+        
+        txt = "\n\n".join([c.get("content_with_weight", "") for c in ranks.get("chunks", [])])
+        
+        # Build prompt
+        prompt = "\n".join([
+            "## 角色",
+            "你是一名经验丰富的内控审计专家",
+            "## 任务",
+            f"针对{cycle},为了防范{risk}，对「{control}」关键控制点进行审计。",
+            "### 任务1",
+            "根据RAG检索出的被审计单位相关内控制度:",
+            f"```{txt}```",
+            "筛选出与该循环的关键控制点相关的内控制度,包含制度名称和对应原文，输出「相关制度」，不相关的制度需要排除。",
+            "### 任务2",
+            "根据任务1识别的相关制度，整理输出「控制活动描述」，即用一句话进行专业描述，表达要客观清晰、具备可测试性，并包含控制的目的、执行人、控制内容、频率、控制方式和留痕依据等要素，但不需要逐项分点列出，只输出一条完整规范的审计用语。",
+            "### 任务3",
+            "输出「控制频率」，即每年一次、每季一次、每月一次、每周一次、每日一次、每日多次。如果制度中未明确则写「待填写」。",
+            "### 任务4",
+            "输出「相关单据」，列出控制活动中的依据或记录，如盘点表，发货单，对账单等，单据名称用书名号包裹，如：《客户信息表》。",
+            "### 任务5",
+            "输出「相关人员」，列出控制活动中涉及发起、执行、审核、审批等相关人员。",
+            "### 任务6",
+            "输出「设计缺陷」，判断是否存在内控制度设计缺陷。如果存在设计缺陷，则输出存在设计缺陷，并简要列示缺陷名称和原因。如果不存在，则输出不存在设计缺陷。",
+            "## 输出",
+            "将任务中需要输出的字段以json格式输出，包含：「相关制度」，「控制活动描述」，「控制频率」，「相关单据」，「相关人员」，「设计缺陷」,均为文本格式，不要是数组。",
+        ])
+        
+        # Call LLM
+        ans = chat_mdl.chat("", [{"role": "user", "content": prompt}], {"temperature": temperature})
+        
+        # Clean and parse answer
+        def clean_answer(text: str) -> str:
+          if not isinstance(text, str):
+            return str(text)
+          match = re.search(r"```(?:json|JSON)?\s*([\s\S]*?)```", text.strip())
+          return (match.group(1).strip() if match else text.strip())
+        
+        cleaned = clean_answer(ans)
+        if parser_type == "structured":
+          try:
+            parsed_json = json.loads(cleaned)
+            for idx, key in enumerate(structured_headers):
+              parsed_values[idx] = str(parsed_json.get(key, "") or "")
+          except Exception:
+            parsed_values[-1] = cleaned
+        else:
+          parsed_values[-1] = cleaned
+
+        # Store result
+        result = {
+            "cycle": cycle,
+            "risk": risk,
+            "control": control,
+            "structured_results": dict(zip(structured_headers, parsed_values)),
+            "raw_result": cleaned
+        }
+        
+        RiskAITaskRowService.update_row(row_id, {
+            "status": RiskAITaskRowStatus.SUCCESS,
+            "result": result,
+            "error_msg": ""
+        })
+        
+      except Exception as err:
+        RiskAITaskRowService.update_row(row_id, {
+            "status": RiskAITaskRowStatus.FAILED,
+            "error_msg": str(err)
+        })
+    else:
+      RiskAITaskRowService.update_row(row_id, {
+          "status": RiskAITaskRowStatus.FAILED,
+          "error_msg": "No control data provided"
+      })
+
+    # Update main task progress
+    all_rows = RiskAITaskRowService.get_rows_by_task(task_id)
+    completed_rows = [r for r in all_rows if r["status"] in [RiskAITaskRowStatus.SUCCESS, RiskAITaskRowStatus.FAILED]]
+    failed_rows = [r for r in all_rows if r["status"] == RiskAITaskRowStatus.FAILED]
+    
+    progress = (len(completed_rows) / len(all_rows) * 100.0) if all_rows else 100.0
+    
+    RiskAITaskService.update_task(task_id, {
+        "processed_rows": len(completed_rows),
+        "failed_rows": len(failed_rows),
+        "progress": progress,
+    })
+
+    # Check if all rows are completed
+    if len(completed_rows) == len(all_rows):
+      # Generate final Excel and update main task
+      await generate_final_excel(task_id, main_task, all_rows)
+
+  except Exception as e:
+    RiskAITaskRowService.update_row(row_id, {
+        "status": RiskAITaskRowStatus.FAILED,
+        "error_msg": str(e)
+    })
+    logging.exception(f"Error processing risk AI row task {row_id}: {e}")
+
+
+async def generate_final_excel(task_id, main_task, all_rows):
+  """Generate the final Excel file when all rows are completed"""
+  from api.db.services.risk_ai_task_service import RiskAITaskRowStatus
+  
+  try:
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "AI识别结果"
+    structured_headers = ["相关制度", "控制活动描述", "控制频率", "相关单据", "相关人员", "设计缺陷"]
+    ws.append(["循环", "主要风险点", "相应的内部控制", *structured_headers])
+
+    # Sort rows by row_index to maintain order
+    sorted_rows = sorted(all_rows, key=lambda x: x["row_index"])
+    
+    for row_task in sorted_rows:
+      row_data = row_task["payload"]
+      cycle = (row_data.get("循环") or row_data.get("cycle") or "").strip()
+      risk = (row_data.get("主要风险点") or row_data.get("risk") or "").strip()
+      control = (row_data.get("相应的内部控制") or row_data.get("question") or row_data.get("control") or "").strip()
+      
+      if row_task["status"] == RiskAITaskRowStatus.SUCCESS and row_task.get("result"):
+        result = row_task["result"]
+        structured_results = result.get("structured_results", {})
+        parsed_values = [structured_results.get(header, "") for header in structured_headers]
+      else:
+        # Failed row - fill with empty values
+        parsed_values = ["" for _ in structured_headers]
+        if row_task["status"] == RiskAITaskRowStatus.FAILED:
+          parsed_values[-1] = f"处理失败: {row_task.get('error_msg', '未知错误')}"
+
+      ws.append([cycle, risk, control, *parsed_values])
+
+    # Save to storage
+    buf = BytesIO()
+    workbook.save(buf)
+    buf.seek(0)
+    location = f"risk_ai_results/{task_id}.xlsx"
+    STORAGE_IMPL.put(main_task.kb_id, location, buf.getvalue())
+
+    # Update main task status
+    failed_count = len([r for r in all_rows if r["status"] == RiskAITaskRowStatus.FAILED])
+    status = RiskAITaskStatus.SUCCESS if failed_count == 0 else RiskAITaskStatus.FAILED
+    
+    RiskAITaskService.update_task(task_id, {
+        "status": status,
+        "result_location": location,
+        "progress": 100.0,
+        "processed_rows": len(all_rows),
+        "failed_rows": failed_count,
+    })
+    
+  except Exception as e:
+    RiskAITaskService.update_task(task_id, {
+        "status": RiskAITaskStatus.FAILED,
+        "error_msg": f"Failed to generate final Excel: {str(e)}"
+    })
+    logging.exception(f"Error generating final Excel for task {task_id}: {e}")
+
+
 async def handle_task():
   global DONE_TASKS, FAILED_TASKS
   redis_msg, task = await collect()
@@ -1153,12 +1401,15 @@ async def handle_task():
   task_type = task["task_type"]
   pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type, PipelineTaskType.PARSE) or PipelineTaskType.PARSE
   risk_task = task_type == "risk_ai_identify_batch"
+  risk_row_task = task_type == "risk_ai_identify_row"
 
   try:
     logging.info(f"handle_task begin for task {json.dumps(task)}")
     CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
     if risk_task:
       await process_risk_ai_task(task)
+    elif risk_row_task:
+      await process_risk_ai_row_task(task)
     else:
       await do_handle_task(task)
     DONE_TASKS += 1
@@ -1170,6 +1421,9 @@ async def handle_task():
     try:
       if risk_task:
         RiskAITaskService.update_task(task["id"], {"status": RiskAITaskStatus.FAILED, "error_msg": str(e)})
+      elif risk_row_task:
+        # For row tasks, we don't need to update the main task here as it's handled in the row processing function
+        pass
       else:
         err_msg = str(e)
         while isinstance(e, exceptiongroup.ExceptionGroup):
@@ -1180,7 +1434,7 @@ async def handle_task():
       pass
     logging.exception(f"handle_task got exception for task {json.dumps(task)}")
   finally:
-    if not risk_task:
+    if not risk_task and not risk_row_task:
       task_document_ids = []
       if task_type in ["graphrag", "raptor", "mindmap"]:
         task_document_ids = task["doc_ids"]

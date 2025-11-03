@@ -256,7 +256,11 @@ export default {
       plainText: 'Naive',
       reRankModelWaring: '重排序模型非常耗时。',
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
-      riskIdentify: '风险识别',
+      riskIdentify: '生成内控矩阵',
+      该设置将应用于所有数据行: '该设置将应用于所有数据行',
+      下载模板: '下载模板',
+      模板下载成功: '模板下载成功',
+      模板下载失败: '模板下载失败',
     },
     knowledgeConfiguration: {
       tocExtractionTip:

@@ -1,5 +1,4 @@
 import {
-  ApiIcon,
   LogOutIcon,
   ModelProviderIcon,
   PasswordIcon,
@@ -18,7 +17,7 @@ export const UserSettingIconMap = {
   [UserSettingRouteKey.System]: <MonitorOutlined style={{ fontSize: 24 }} />,
   [UserSettingRouteKey.Team]: <TeamIcon />,
   [UserSettingRouteKey.Logout]: <LogOutIcon />,
-  [UserSettingRouteKey.Api]: <ApiIcon />,
+  // [UserSettingRouteKey.Api]: <ApiIcon />,
   [UserSettingRouteKey.MCP]: (
     <IconFont name="mcp" className="size-6"></IconFont>
   ),

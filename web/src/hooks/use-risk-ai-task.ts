@@ -1,8 +1,11 @@
 import { IRiskAITask } from '@/interfaces/knowledge/risk-ai-task';
 import {
   createRiskAITask,
+  downloadRiskAITaskResult,
   getRiskAITaskStatus,
+  retryFailedRiskAITaskRows,
 } from '@/services/knowledge-service';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const useRiskAiTask = () => {
@@ -18,7 +21,7 @@ export const useRiskAiTask = () => {
     }
   }, []);
 
-  const parseResponse = async (res: any) => {
+  const parseResponse = useCallback(async (res: any) => {
     if (res && typeof res === 'object') {
       if ('data' in res && res.data) {
         return res.data;
@@ -28,7 +31,7 @@ export const useRiskAiTask = () => {
       }
     }
     return res;
-  };
+  }, []);
 
   const pollStatus = useCallback(
     (taskId: string) => {
@@ -88,6 +91,48 @@ export const useRiskAiTask = () => {
     [clearTimer, pollStatus, parseResponse],
   );
 
+  const downloadResult = useCallback(
+    async (taskId: string, filename?: string) => {
+      try {
+        const response = await downloadRiskAITaskResult(taskId);
+        // The response is a Response object when responseType is 'blob'
+        // We need to get the blob from it
+        let blob: Blob;
+
+        if (response instanceof Blob) {
+          // Already a Blob
+          blob = response;
+        } else if ((response as any)?.data instanceof Blob) {
+          // Response has data property containing Blob
+          blob = (response as any).data;
+        } else if (response instanceof Response) {
+          // It's a Response object, extract blob
+          blob = await response.blob();
+        } else {
+          throw new Error('Invalid response type for file download');
+        }
+
+        downloadFileFromBlob(blob, filename || `控制矩阵${taskId}.xlsx`);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+    [],
+  );
+
+  const retryFailedRows = useCallback(
+    async (taskId: string) => {
+      try {
+        await retryFailedRiskAITaskRows(taskId);
+        // Refresh task status after retry
+        pollStatus(taskId);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+    [pollStatus],
+  );
+
   useEffect(() => () => clearTimer(), [clearTimer]);
 
   return {
@@ -96,5 +141,7 @@ export const useRiskAiTask = () => {
     error,
     startTask,
     pollStatus,
+    downloadResult,
+    retryFailedRows,
   };
 };

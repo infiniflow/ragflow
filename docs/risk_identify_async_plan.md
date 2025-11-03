@@ -114,4 +114,26 @@
 ---
 
 > 文档若有更新，会同步此处。下一步可按上述任务拆分实现。
-- [ ] 添加 risk_ai_task 表
+
+## 6. 下一轮任务拆解
+
+1. **数据行任务化**
+   - 新增 `risk_ai_task_row` 表（或先手动建表）记录每一行的 payload、状态、LLM 输出。
+   - 创建批量任务时：遍历 rows 写入行记录，状态 `pending`，同时针对每行推送 `risk_ai_identify_row` 消息到 Redis，以便多个 executor 并行消费。
+
+2. **Worker 行级处理**
+   - `task_executor.collect` 支持识别 `risk_ai_identify_row`。
+   - 新增行处理函数：读取行记录 → 检索 → 调用 LLM → 写回 `result/status`，并更新主任务的 `processed_rows`/`failed_rows`。
+   - 当所有行完成时，最后一个 worker 负责汇总 Excel、写入对象存储、更新主任务状态与 `result_location`。
+
+3. **状态与下载接口**
+   - `/risk_ai_identify_task/status` 基于行记录统计进度，返回成功/失败行数及错误信息。
+   - `/risk_ai_identify_task/download` 读取汇总后的 Excel 并下发，供前端“下载结果”按钮使用。
+
+4. **前端适配**
+   - 保留现有创建接口，轮询 `/status` 展示进度与错误明细。
+   - 任务成功后使用新的 `/download` 接口下载结果；若失败提供“重试失败行”入口。
+
+5. **测试与验证**
+   - 长任务、大批量、多任务并发、失败重试等场景。
+   - 校验导出的 Excel 内容顺序与输入一致。

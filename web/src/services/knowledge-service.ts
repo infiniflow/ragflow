@@ -295,6 +295,12 @@ export const get_risk_identify = (formData: FormData) => {
   });
 };
 
+export const downloadRiskIdentifyTemplate = () =>
+  request(api.get_risk_identify_template, {
+    method: 'get',
+    responseType: 'blob',
+  });
+
 export default kbService;
 
 // Export batch AI identify result as Excel (blob)
@@ -312,4 +318,27 @@ export const getRiskAITaskStatus = (task_id: string) =>
   request(api.risk_ai_identify_task_status, {
     method: 'get',
     params: { task_id },
+  });
+
+export const downloadRiskAITaskResult = (task_id: string) =>
+  request(api.risk_ai_identify_task_download, {
+    method: 'get',
+    params: { task_id },
+    responseType: 'blob',
+  });
+
+export const retryFailedRiskAITaskRows = (task_id: string) =>
+  request(api.risk_ai_identify_task_retry_failed, {
+    method: 'post',
+    data: { task_id },
+  });
+
+export const getRiskAITaskList = (
+  kb_id: string,
+  page: number = 1,
+  page_size: number = 10,
+) =>
+  request(api.risk_ai_identify_task_list, {
+    method: 'get',
+    params: { kb_id, page, page_size },
   });

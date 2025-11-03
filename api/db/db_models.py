@@ -1061,6 +1061,22 @@ class RiskAiTask(DataBaseModel):
         db_table = "risk_ai_task"
 
 
+class RiskAiTaskRow(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    task_id = CharField(max_length=32, index=True, null=False)
+    row_index = IntegerField(null=False)
+    payload = JSONField(null=True, default=dict)
+    status = CharField(max_length=16, default="pending", index=True)
+    result = JSONField(null=True, default=dict)
+    error_msg = LongTextField(null=True)
+    result_location = CharField(max_length=512, null=True, default="")
+    embedding_cache_key = CharField(max_length=128, null=True, default="", index=True)
+    created_by = CharField(max_length=32, index=True, null=False)
+
+    class Meta:
+        db_table = "risk_ai_task_row"
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)

@@ -271,7 +271,11 @@ export default {
         'The document is associated with the knowledge graph. After deletion, the related node and relationship information will be deleted, but the graph will not be updated immediately. The update graph action is performed during the process of parsing the new document that carries the knowledge graph extraction task.',
       plainText: 'Naive',
       reRankModelWaring: 'Re-rank model is very time consuming.',
-      riskIdentify: 'Risk Identification',
+      riskIdentify: 'Generate internal control matrix',
+      该设置将应用于所有数据行: 'This setting will be applied to all data rows',
+      下载模板: 'Download Template',
+      模板下载成功: 'Template downloaded successfully',
+      模板下载失败: 'Failed to download template',
     },
     knowledgeConfiguration: {
       tocExtraction: 'TOC Enhance',

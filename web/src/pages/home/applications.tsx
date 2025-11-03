@@ -28,7 +28,7 @@ export function Applications() {
     () => [
       { value: Routes.Chats, label: t('chat.chatApps') },
       { value: Routes.Searches, label: t('search.searchApps') },
-      { value: Routes.Agents, label: t('header.flow') },
+      // { value: Routes.Agents, label: t('header.flow') },
     ],
     [t],
   );
