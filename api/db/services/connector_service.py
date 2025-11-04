@@ -57,9 +57,9 @@ class ConnectorService(CommonService):
             cls.model.source,
             cls.model.status
         ]
-        return cls.model.select(*fields).where(
+        return list(cls.model.select(*fields).where(
             cls.model.tenant_id == tenant_id
-        ).dicts()
+        ).dicts())
 
 
 class SyncLogsService(CommonService):
@@ -217,4 +217,46 @@ class Connector2KbService(CommonService):
             if err:
                 errs.append(err)
         return "\n".join(errs)
+
+    @classmethod
+    def link_connectors(cls, kb_id:str, connector_ids: list[str], tenant_id:str):
+        arr = cls.query(kb_id=kb_id)
+        old_conn_ids = [a.connector_id for a in arr]
+        for conn_id in connector_ids:
+            if conn_id in old_conn_ids:
+                continue
+            cls.save(**{
+                "id": get_uuid(),
+                "connector_id": conn_id,
+                "kb_id": kb_id
+            })
+            SyncLogsService.schedule(conn_id, kb_id, reindex=True)
+
+        errs = []
+        for conn_id in old_conn_ids:
+            if conn_id in connector_ids:
+                continue
+            cls.filter_delete([cls.model.kb_id==kb_id, cls.model.connector_id==conn_id])
+            e, conn = ConnectorService.get_by_id(conn_id)
+            SyncLogsService.filter_update([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id, SyncLogs.status==TaskStatus.SCHEDULE], {"status": TaskStatus.CANCEL})
+            docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
+            err = FileService.delete_docs([d.id for d in docs], tenant_id)
+            if err:
+                errs.append(err)
+        return "\n".join(errs)
+
+    @classmethod
+    def list_connectors(cls, kb_id):
+        fields = [
+            Connector.id,
+            Connector.source,
+            Connector.name,
+            Connector.status
+        ]
+        return list(cls.model.select(*fields)\
+                    .join(Connector, on=(cls.model.connector_id==Connector.id))\
+                    .where(
+                        cls.model.kb_id==kb_id
+                    ).dicts()
+        )
 

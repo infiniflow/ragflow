@@ -23,6 +23,7 @@ import numpy as np
 
 from api.db import LLMType
 from api.db.services import duplicate_name
+from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
@@ -194,6 +195,8 @@ def detail():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
         kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
+        kb["connectors"] = Connector2KbService.list_connectors(kb_id)
+
         for key in ["graphrag_task_finish_at", "raptor_task_finish_at", "mindmap_task_finish_at"]:
             if finish_at := kb.get(key):
                 kb[key] = finish_at.strftime("%Y-%m-%d %H:%M:%S")
@@ -931,3 +934,15 @@ def check_embedding():
     if summary["avg_cos_sim"] > 0.99:
         return get_json_result(data={"summary": summary, "results": results})
     return get_json_result(code=settings.RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+
+
+@manager.route("/<kb_id>/link", methods=["POST"])  # noqa: F821
+@validate_request("connector_ids")
+@login_required
+def link_connector(kb_id):
+    req = request.json
+    errors = Connector2KbService.link_connectors(kb_id, req["connector_ids"], current_user.id)
+    if errors:
+        return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
+    return get_json_result(data=True)
+
