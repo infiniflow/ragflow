@@ -19,7 +19,7 @@ from PIL import Image
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.prompts.generator import vision_llm_figure_describe_prompt
 
