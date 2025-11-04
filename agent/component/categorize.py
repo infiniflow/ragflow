@@ -18,7 +18,7 @@ import os
 import re
 from abc import ABC
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component.llm import LLMParam, LLM
 from common.connection_utils import timeout

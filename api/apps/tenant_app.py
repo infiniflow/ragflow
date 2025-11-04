@@ -19,11 +19,11 @@ from flask_login import login_required, current_user
 
 from api import settings
 from api.apps import smtp_mail_server
-from api.db import UserTenantRole, StatusEnum
+from api.db import UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
 
-from common.constants import RetCode
+from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
 from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result

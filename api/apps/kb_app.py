@@ -21,7 +21,6 @@ from flask import request
 from flask_login import login_required, current_user
 import numpy as np
 
-from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
@@ -30,7 +29,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
-from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES, VALID_TASK_STATUS
+from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
@@ -41,7 +40,7 @@ from rag.settings import PAGERANK_FLD
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr  
-from common.constants import RetCode
+from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821

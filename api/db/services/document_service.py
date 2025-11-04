@@ -28,7 +28,7 @@ from peewee import fn, Case, JOIN
 
 from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole, CanvasCategory
+from api.db import FileType, UserTenantRole, CanvasCategory
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, \
     User
 from api.db.db_utils import bulk_insert_into_db
@@ -36,6 +36,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
+from common.constants import LLMType, ParserType, StatusEnum, TaskStatus
 from rag.nlp import rag_tokenizer, search
 from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN

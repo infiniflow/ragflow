@@ -21,14 +21,13 @@ import json
 from flask import request
 from peewee import OperationalError
 from api import settings
-from api.db import FileSource, StatusEnum
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
-from common.constants import RetCode
+from common.constants import RetCode, FileSource, StatusEnum
 from api.utils.api_utils import (
     deep_merge,
     get_error_argument_result,

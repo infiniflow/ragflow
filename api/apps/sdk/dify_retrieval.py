@@ -17,7 +17,6 @@ import logging
 
 from flask import request, jsonify
 
-from api.db import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
@@ -25,7 +24,7 @@ from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
 from api.db.services.dialog_service import meta_filter, convert_conditions
-from common.constants import RetCode
+from common.constants import RetCode, LLMType
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required

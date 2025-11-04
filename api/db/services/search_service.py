@@ -17,7 +17,7 @@ from datetime import datetime
 
 from peewee import fn
 
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.db_models import DB, Search, User
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format

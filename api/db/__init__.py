@@ -13,19 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from enum import Enum
+
 from enum import IntEnum
 from strenum import StrEnum
-
-
-class StatusEnum(Enum):
-    VALID = "1"
-    INVALID = "0"
-
-
-class ActiveEnum(Enum):
-    ACTIVE = "1"
-    INACTIVE = "0"
 
 
 class UserTenantRole(StrEnum):
@@ -55,45 +45,6 @@ class FileType(StrEnum):
     OTHER = "other"
 
 VALID_FILE_TYPES = {FileType.PDF, FileType.DOC, FileType.VISUAL, FileType.AURAL, FileType.VIRTUAL, FileType.FOLDER, FileType.OTHER}
-
-class LLMType(StrEnum):
-    CHAT = 'chat'
-    EMBEDDING = 'embedding'
-    SPEECH2TEXT = 'speech2text'
-    IMAGE2TEXT = 'image2text'
-    RERANK = 'rerank'
-    TTS    = 'tts'
-
-
-class TaskStatus(StrEnum):
-    UNSTART = "0"
-    RUNNING = "1"
-    CANCEL = "2"
-    DONE = "3"
-    FAIL = "4"
-    SCHEDULE = "5"
-
-
-VALID_TASK_STATUS     = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
-
-
-class ParserType(StrEnum):
-    PRESENTATION = "presentation"
-    LAWS = "laws"
-    MANUAL = "manual"
-    PAPER = "paper"
-    RESUME = "resume"
-    BOOK = "book"
-    QA = "qa"
-    TABLE = "table"
-    NAIVE = "naive"
-    PICTURE = "picture"
-    ONE = "one"
-    AUDIO = "audio"
-    EMAIL = "email"
-    KG = "knowledge_graph"
-    TAG = "tag"
-
 
 class FileSource(StrEnum):
     LOCAL = ""
